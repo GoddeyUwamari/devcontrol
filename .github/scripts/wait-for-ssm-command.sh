@@ -44,6 +44,15 @@
 #   SSM_WAIT_REGISTRATION_BACKOFF_SECONDS
 #                          First retry delay for InvocationDoesNotExist,
 #                          doubled each retry and capped at 15. Default 1.
+#   SSM_WAIT_ANY_TERMINAL_OK
+#                          When "1", ANY terminal status (Success, Failed,
+#                          Cancelled, TimedOut) exits 0 after printing it.
+#                          Used by deploy-backend's "Stop the deploy command
+#                          before rollback" step, which needs to know only
+#                          that the deploy is no longer running — a
+#                          Cancelled deploy is the expected outcome there,
+#                          not a failure. Non-terminal outcomes (deadline,
+#                          errors, unrecognized status) still exit 1.
 #
 # On Success: prints the command's stdout, exits 0.
 # On any other terminal status, an unrecognized status, a non-retryable
@@ -61,6 +70,7 @@ POLL_INTERVAL_SECONDS="${SSM_WAIT_POLL_SECONDS:-15}"
 REGISTRATION_MAX_SECONDS="${SSM_WAIT_REGISTRATION_MAX_SECONDS:-60}"
 REGISTRATION_BACKOFF_SECONDS="${SSM_WAIT_REGISTRATION_BACKOFF_SECONDS:-1}"
 REGISTRATION_BACKOFF_CAP_SECONDS=15
+ANY_TERMINAL_OK="${SSM_WAIT_ANY_TERMINAL_OK:-0}"
 
 ERR_FILE="$(mktemp)"
 trap 'rm -f "$ERR_FILE"' EXIT
@@ -150,6 +160,11 @@ while true; do
   sleep "$POLL_INTERVAL_SECONDS"
   elapsed=$((elapsed + POLL_INTERVAL_SECONDS))
 done
+
+if [ "$ANY_TERMINAL_OK" = "1" ]; then
+  echo "SSM command $COMMAND_ID on $INSTANCE_ID reached terminal status: $STATUS"
+  exit 0
+fi
 
 if [ "$STATUS" != "Success" ]; then
   fail_with_diagnostics "SSM command $COMMAND_ID on $INSTANCE_ID finished with status: $STATUS"

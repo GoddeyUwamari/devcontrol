@@ -16,7 +16,13 @@
  *   - the deploy step's "live release untouched" output logic, executed
  *     from ci.yml against a stubbed wait script;
  *   - the rollback / verify-rollback / fail-job `if:` expressions,
- *     evaluated as a truth table over step outcomes.
+ *     evaluated as a truth table over step outcomes;
+ *   - the deploy step's runner side (payload encoding guard, send-command
+ *     failure → "untouched"), the "Stop the deploy command before
+ *     rollback" step (cancel → terminal, or rollback skipped) and the
+ *     fail-job messages, each executed from ci.yml with a stubbed `aws`;
+ *   - corrupt / truncated / empty base64 payloads on the host, which must
+ *     stop every deploy before any download or deletion.
  *
  * No AWS credentials, network calls or real hosts are involved.
  */
@@ -62,7 +68,7 @@ function minFreeMib(): number {
  */
 function buildParams(jobName: string, stepName: string): { commands: string[]; executionTimeout?: string[] } {
   const step = extractStep(jobName, stepName);
-  const b64Lines = step.match(/^\s*[A-Z_]+_SCRIPT_B64=\$\(base64 < .*\)$/gm) ?? [];
+  const b64Lines = step.match(/^\s*[A-Z_]+_SCRIPT_(?:B64|SHA256)=\$\((?:base64|sha256sum) < .*\)$/gm) ?? [];
   const params = step.match(/PARAMS=\$\(jq -n[\s\S]*?\}'\)/);
   if (!params) throw new Error(`No PARAMS=$(jq -n ...) block in ${jobName} / ${stepName}`);
   const script = [...b64Lines.map((l) => l.trim()), params[0], 'echo "$PARAMS"']
@@ -225,6 +231,9 @@ function runOnSandbox(
     env: {
       PATH: `${path.join(sb.root, 'bin')}:${process.env.PATH}`,
       HOME: sb.root,
+      // Decoded payloads go through `mktemp`; keep them inside the sandbox
+      // so leftovers are visible to the assertions.
+      TMPDIR: sb.tmp,
       ...env,
     },
   });
@@ -238,6 +247,25 @@ function runOnSandbox(
 
 const ENOUGH_KIB = String((minFreeMib() + 500) * 1024);
 const TOO_LITTLE_KIB = String((minFreeMib() - 1) * 1024);
+
+type Corruption = 'invalid' | 'truncated' | 'empty';
+const CORRUPTIONS: Corruption[] = ['invalid', 'truncated', 'empty'];
+
+/**
+ * Replaces the base64 payload in the real `echo <b64> | base64 -d > "$<VAR>"`
+ * command with a bad one: not base64 at all, a valid-but-truncated prefix
+ * (decodes fine, fails the SHA-256 check), or nothing.
+ */
+function corruptPayload(commands: string[], target: 'PREFLIGHT_SH' | 'SYMLINK_SH', mode: Corruption): string[] {
+  const suffix = ` | base64 -d > "$${target}"`;
+  const idx = commands.findIndex((c) => c.startsWith('echo ') && c.endsWith(suffix));
+  if (idx === -1) throw new Error(`No ${target} decode command found`);
+  const b64 = commands[idx].slice('echo '.length, -suffix.length);
+  const bad = mode === 'invalid' ? '@@not-base64@@' : mode === 'truncated' ? b64.slice(0, 200) : '';
+  const out = [...commands];
+  out[idx] = `echo ${bad}${suffix}`;
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // deploy-disk-preflight.sh
@@ -335,21 +363,33 @@ describe('deploy-backend SSM command (executes the real jq-built command list fr
   function expectNoDeployLeftovers(sb: Sandbox): void {
     expect(fs.existsSync(path.join(sb.tmp, `dist-${SHA}.tar.gz`))).toBe(false);
     expect(fs.existsSync(path.join(sb.app, `.deploy-staging-${SHA}`))).toBe(false);
+    // Only the unrelated seeded file remains: decoded payload temp files are gone.
+    expect(fs.readdirSync(sb.tmp)).toEqual(['unrelated-dist-other.tar.gz']);
   }
 
-  it('sets an executionTimeout below the poller ceiling so rollback never races a running deploy', () => {
+  it('bounds the command: 120s delivery timeout + 480s executionTimeout fit within the poller ceiling (defense in depth — the settle step is the real guard)', () => {
     const pollerSrc = fs.readFileSync(path.join(REPO_ROOT, '.github/scripts/wait-for-ssm-command.sh'), 'utf8');
     const ceiling = Number(pollerSrc.match(/SSM_WAIT_MAX_SECONDS:-(\d+)/)![1]);
-    const registration = Number(pollerSrc.match(/SSM_WAIT_REGISTRATION_MAX_SECONDS:-(\d+)/)![1]);
-    const poll = Number(pollerSrc.match(/SSM_WAIT_POLL_SECONDS:-(\d+)/)![1]);
     expect(params.executionTimeout).toEqual(['480']);
-    expect(480 + registration + poll).toBeLessThan(ceiling);
+    expect(extractStep(BACKEND.job, BACKEND.step)).toMatch(/--timeout-seconds 120 \\\n/);
+    expect(120 + 480).toBeLessThanOrEqual(ceiling);
+  });
+
+  it.each([
+    [BACKEND.job, BACKEND.step],
+    [BACKEND.job, 'Roll back to previous deploy'],
+    [MIGRATION.job, MIGRATION.step],
+    [ADMIN.job, ADMIN.step],
+  ])('%s / %s: send-command sets a 120s delivery timeout so an undelivered command never starts late', (job, step) => {
+    const src = extractStep(job, step);
+    expect(src).toContain('aws ssm send-command');
+    expect(src).toMatch(/--timeout-seconds 120 \\\n/);
   });
 
   it('runs the disk preflight on /tmp AND the install root before any download, extraction or deletion', () => {
     const cmds = params.commands;
-    const preflightIdx = cmds.findIndex((c) => c.includes('base64 -d | bash -s -- '));
-    expect(cmds[preflightIdx]).toMatch(new RegExp(`bash -s -- ${minFreeMib()} /tmp /home/ubuntu/devcontrol$`));
+    const preflightIdx = cmds.findIndex((c) => c.startsWith('bash "$PREFLIGHT_SH" '));
+    expect(cmds[preflightIdx]).toBe(`bash "$PREFLIGHT_SH" ${minFreeMib()} /tmp /home/ubuntu/devcontrol`);
     const firstMutating = cmds.findIndex((c) => /aws s3 cp|tar xzf|rm -rf|rm -f |mkdir|mv /.test(c) && !c.startsWith('trap'));
     expect(preflightIdx).toBeGreaterThan(-1);
     expect(preflightIdx).toBeLessThan(firstMutating);
@@ -424,6 +464,22 @@ describe('deploy-backend SSM command (executes the real jq-built command list fr
     expectNoDeployLeftovers(sb);
     expectPersistentIntact(sb, before);
   });
+
+  it.each(CORRUPTIONS)('S1. %s preflight payload: stops before preflight/download/delete, live release byte-identical, marker printed', (mode) => {
+    const sb = makeSandbox();
+    seedBackend(sb);
+    const before = snapshot(sb.app);
+    const { status, stdout, stderr, log } = runOnSandbox(sb, corruptPayload(params.commands, 'PREFLIGHT_SH', mode), {
+      FAKE_DF_AVAIL_KIB: ENOUGH_KIB,
+    });
+    expect(status).not.toBe(0);
+    if (mode !== 'invalid') expect(stderr).toContain('payload failed to decode or verify');
+    // Nothing ran at all: no df (preflight never executed), no sudo, no aws.
+    expect(log).toEqual([]);
+    expect(snapshot(sb.app)).toEqual(before);
+    expect(stdout).toContain('DEPLOY_ABORTED_BEFORE_LIVE_CHANGES');
+    expectNoDeployLeftovers(sb);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -462,11 +518,14 @@ describe.each([
 
   it('preflight is the first command after setup, before the download', () => {
     const cmds = params.commands;
-    const preflightIdx = cmds.findIndex((x) => x.includes(`bash -s -- ${minFreeMib()} `));
+    const preflightIdx = cmds.findIndex((x) => x.startsWith('bash "$PREFLIGHT_SH" '));
+    const symlinkDecodeIdx = cmds.findIndex((x) => x.includes('| base64 -d > "$SYMLINK_SH"'));
     const downloadIdx = cmds.findIndex((x) => x.includes('aws s3 cp'));
-    expect(cmds[preflightIdx]).toMatch(new RegExp(`bash -s -- ${minFreeMib()} ${c.preflightArgs}$`));
+    expect(cmds[preflightIdx]).toBe(`bash "$PREFLIGHT_SH" ${minFreeMib()} ${c.preflightArgs}`);
     expect(preflightIdx).toBeGreaterThan(-1);
+    expect(symlinkDecodeIdx).toBeGreaterThan(-1);
     expect(preflightIdx).toBeLessThan(downloadIdx);
+    expect(symlinkDecodeIdx).toBeLessThan(downloadIdx);
   });
 
   it('uses the shared bounded poller, never `aws ssm wait command-executed`', () => {
@@ -527,6 +586,27 @@ describe.each([
     expect(status).not.toBe(0);
     expect(fs.existsSync(path.join(c.releases(sb), SHA))).toBe(false);
     expect(fs.existsSync(path.join(sb.tmp, c.tarball))).toBe(false);
+  });
+
+  it.each(
+    (['PREFLIGHT_SH', 'SYMLINK_SH'] as const).flatMap((target) => CORRUPTIONS.map((mode) => [target, mode] as const))
+  )('S1. %s payload %s: stops before preflight/download, creates and touches nothing', (target, mode) => {
+    const sb = makeSandbox();
+    seed(sb);
+    const before = snapshot(sb.root);
+    const { status, stderr, log } = runOnSandbox(sb, corruptPayload(params.commands, target, mode), {
+      FAKE_DF_AVAIL_KIB: ENOUGH_KIB,
+    });
+    expect(status).not.toBe(0);
+    if (mode !== 'invalid') expect(stderr).toContain('payload failed to decode or verify');
+    expect(log).toEqual([]);
+    const after = snapshot(sb.root);
+    delete after['commands.log'];
+    delete after['_script.sh'];
+    const beforeCmp = { ...before };
+    delete beforeCmp['commands.log'];
+    // Includes the sandbox tmp dir: the decoded temp files were removed too.
+    expect(after).toEqual(beforeCmp);
   });
 });
 
@@ -592,6 +672,7 @@ interface Ctx {
   deploy: Outcome;
   untouched: string;
   smoke: Outcome;
+  settled: string;
   rollback: Outcome;
   prevExists: string;
   prevSha: string;
@@ -610,6 +691,7 @@ function compileCondition(expr: string): (ctx: Ctx) => boolean {
     .trim()
     .replace(/!cancelled\(\)/g, '!ctx.cancelled')
     .replace(/steps\.deploy\.outputs\.live_release_untouched/g, 'ctx.untouched')
+    .replace(/steps\.settle_deploy\.outputs\.settled/g, 'ctx.settled')
     .replace(/steps\.get_prev_sha\.outputs\.prev_artifact_exists/g, 'ctx.prevExists')
     .replace(/steps\.get_prev_sha\.outputs\.prev_sha/g, 'ctx.prevSha')
     .replace(/steps\.deploy\.outcome/g, 'ctx.deploy')
@@ -635,7 +717,18 @@ function stepIf(stepName: string): string {
 }
 
 describe('9. rollback / verify-rollback / fail-job conditions (evaluated)', () => {
+  const settleIf = compileCondition(stepIf('Stop the deploy command before rollback'));
   const rollbackIf = compileCondition(stepIf('Roll back to previous deploy'));
+
+  /**
+   * Rollback is two steps: the settle step decides whether rollback is
+   * needed and, if so, confirms the deploy command finished (writing
+   * settled=true); rollback runs only on that output.
+   */
+  function rollbackRuns(ctx: Ctx, settleConfirmsStopped = true): boolean {
+    const settleRan = settleIf(ctx);
+    return rollbackIf({ ...ctx, settled: settleRan && settleConfirmsStopped ? 'true' : '' });
+  }
   const verifyIf = compileCondition(stepIf('Verify rollback health'));
   const failIf = compileCondition(stepIf('Fail job on broken deploy'));
 
@@ -644,6 +737,7 @@ describe('9. rollback / verify-rollback / fail-job conditions (evaluated)', () =
     deploy: 'success',
     untouched: '',
     smoke: 'success',
+    settled: '',
     rollback: 'skipped',
     prevExists: 'true',
     prevSha: 'previous-sha',
@@ -659,7 +753,22 @@ describe('9. rollback / verify-rollback / fail-job conditions (evaluated)', () =
     ['deploy failed, no previous artifact', { deploy: 'failure', smoke: 'skipped', prevExists: 'false' }, false],
     ['deploy failed, previous sha == this sha', { deploy: 'failure', smoke: 'skipped', prevSha: SHA }, false],
   ])('rollback: %s — overrides %j → runs: %p', (_label, overrides, expected) => {
-    expect(rollbackIf({ ...base, ...overrides })).toBe(expected);
+    expect(rollbackRuns({ ...base, ...overrides })).toBe(expected);
+  });
+
+  it.each<[string, Partial<Ctx>]>([
+    ['deploy step failed', { deploy: 'failure', smoke: 'skipped' }],
+    ['smoke test failed', { smoke: 'failure' }],
+  ])('B1. %s but the deploy command could not be confirmed stopped → rollback SKIPPED', (_label, overrides) => {
+    const ctx = { ...base, ...overrides };
+    expect(settleIf(ctx)).toBe(true);
+    expect(rollbackRuns(ctx, false)).toBe(false);
+  });
+
+  it('rollback never runs on its own: without settled=true, or once cancelled', () => {
+    expect(rollbackIf({ ...base, deploy: 'failure', smoke: 'failure', settled: '' })).toBe(false);
+    expect(rollbackIf({ ...base, settled: 'true', cancelled: true })).toBe(false);
+    expect(rollbackIf({ ...base, settled: 'true' })).toBe(true);
   });
 
   it('verify-rollback health runs after a successful rollback even though the deploy step failed', () => {
@@ -677,5 +786,261 @@ describe('9. rollback / verify-rollback / fail-job conditions (evaluated)', () =
 
   it('the translator rejects constructs it does not understand (guards against a silently wrong truth table)', () => {
     expect(() => compileCondition("always() && steps.deploy.outcome == 'failure'")).toThrow(/Untranslated/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runner side, executed from ci.yml: deploy step, settle step, fail-job
+// ---------------------------------------------------------------------------
+
+/** A step's `run: |` block, de-indented, with `${{ ... }}` resolved from ctx. */
+function runBlock(job: string, stepName: string, ctx: Record<string, string>): string {
+  const step = extractStep(job, stepName);
+  const m = step.match(/\n {8}run: \|\n([\s\S]*)$/);
+  if (!m) throw new Error(`No run: | block in ${job} / ${stepName}`);
+  const body = m[1]
+    .split('\n')
+    .map((l) => {
+      if (l.startsWith('          ')) return l.slice(10);
+      if (l.trim() === '') return '';
+      throw new Error(`Unexpected indentation in ${stepName}: ${l}`);
+    })
+    .join('\n');
+  return body.replace(/\$\{\{\s*([^}]+?)\s*\}\}/g, (_m, expr: string) => {
+    if (!(expr in ctx)) throw new Error(`No test value for \${{ ${expr} }} in ${stepName}`);
+    return ctx[expr];
+  });
+}
+
+/**
+ * Fake `aws` covering what these steps call: send-command, cancel-command
+ * and get-command-invocation (Status sequence from FAKE_STATUSES, one entry
+ * per call, last one repeating; `ERR:<Code>` fails like the real CLI).
+ * Plus a no-op `sleep`, and optionally a `base64` that prints nothing.
+ */
+function makeFakeRunnerBin(dir: string, emptyBase64: boolean): void {
+  writeExecutable(
+    path.join(dir, 'aws'),
+    `echo "aws $*" >> "$FAKE_AWS_LOG"
+err() { echo "An error occurred ($1) when calling the $2 operation: fake" >&2; exit 254; }
+case "$1 $2" in
+  "ssm send-command")
+    [ -n "$FAKE_SEND_FAILS" ] && err AccessDeniedException SendCommand
+    [ -n "$FAKE_SEND_EMPTY" ] && exit 0
+    echo cmd-fake-1; exit 0 ;;
+  "ssm cancel-command")
+    [ -n "$FAKE_CANCEL_FAILS" ] && err AccessDeniedException CancelCommand
+    exit 0 ;;
+  "ssm get-command-invocation")
+    q=""; prev=""; for a in "$@"; do [ "$prev" = "--query" ] && q="$a"; prev="$a"; done
+    case "$q" in
+      Status)
+        IFS=, read -r -a S <<< "$FAKE_STATUSES"
+        n=$(cat "$FAKE_AWS_LOG.count" 2>/dev/null || echo 0)
+        i=$n; [ "$i" -ge "\${#S[@]}" ] && i=$((\${#S[@]} - 1))
+        echo $((n + 1)) > "$FAKE_AWS_LOG.count"
+        e="\${S[$i]}"
+        case "$e" in ERR:*) err "\${e#ERR:}" GetCommandInvocation ;; esac
+        echo "$e"; exit 0 ;;
+      StandardOutputContent) printf '%s\\n' "$FAKE_STDOUT"; exit 0 ;;
+      StandardErrorContent) echo "fake stderr"; exit 0 ;;
+    esac ;;
+esac
+echo "fake aws: unhandled $*" >&2
+exit 1
+`
+  );
+  writeExecutable(path.join(dir, 'sleep'), 'exit 0\n');
+  if (emptyBase64) writeExecutable(path.join(dir, 'base64'), 'cat > /dev/null\nexit 0\n');
+}
+
+function runStep(
+  job: string,
+  stepName: string,
+  ctx: Record<string, string>,
+  env: Record<string, string> = {},
+  opts: { emptyBase64?: boolean } = {}
+) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-step-')));
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  makeFakeRunnerBin(bin, !!opts.emptyBase64);
+  const scriptPath = path.join(dir, 'step.sh');
+  fs.writeFileSync(scriptPath, runBlock(job, stepName, ctx));
+  const outputFile = path.join(dir, 'github-output');
+  const awsLog = path.join(dir, 'aws.log');
+  fs.writeFileSync(outputFile, '');
+  fs.writeFileSync(awsLog, '');
+  // `bash -e {0}` is what Actions runs for a `run:` step without `shell:`.
+  const r = spawnSync('bash', ['-e', scriptPath], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      GITHUB_OUTPUT: outputFile,
+      RUNNER_TEMP: dir,
+      DEPLOY_MIN_FREE_MIB: String(minFreeMib()),
+      FAKE_AWS_LOG: awsLog,
+      FAKE_STATUSES: 'Success',
+      FAKE_STDOUT: 'remote stdout',
+      ...env,
+    },
+  });
+  const outputs: Record<string, string> = {};
+  for (const line of fs.readFileSync(outputFile, 'utf8').split('\n').filter(Boolean)) {
+    const eq = line.indexOf('=');
+    outputs[line.slice(0, eq)] = line.slice(eq + 1);
+  }
+  const awsCalls = fs.readFileSync(awsLog, 'utf8').split('\n').filter(Boolean);
+  return { status: r.status, stdout: r.stdout, stderr: r.stderr, outputs, awsCalls };
+}
+
+describe('deploy step (runner side, executed from ci.yml)', () => {
+  const ctx = { 'github.sha': SHA };
+
+  it('success: records command_id, sends with --timeout-seconds 120, no "untouched" output', () => {
+    const r = runStep(BACKEND.job, BACKEND.step, ctx, { FAKE_STATUSES: 'InProgress,Success' });
+    expect(r.status).toBe(0);
+    expect(r.outputs).toEqual({ command_id: 'cmd-fake-1' });
+    const send = r.awsCalls.find((c) => c.startsWith('aws ssm send-command'))!;
+    expect(send).toContain('--timeout-seconds 120');
+  });
+
+  it.each([
+    ['send-command errors', { FAKE_SEND_FAILS: '1' }],
+    ['send-command returns no command ID', { FAKE_SEND_EMPTY: '1' }],
+  ])('N4. %s → nothing was sent: live_release_untouched=true, no command_id, never polled', (_l, env) => {
+    const r = runStep(BACKEND.job, BACKEND.step, ctx, env);
+    expect(r.status).not.toBe(0);
+    expect(r.outputs).toEqual({ live_release_untouched: 'true' });
+    expect(r.stdout).toContain('failed before an SSM command ID was received');
+    expect(r.awsCalls.some((c) => c.includes('get-command-invocation'))).toBe(false);
+  });
+
+  it('S1. empty preflight payload on the runner → refuses before send-command, marked untouched', () => {
+    const r = runStep(BACKEND.job, BACKEND.step, ctx, {}, { emptyBase64: true });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('Could not encode .github/scripts/deploy-disk-preflight.sh');
+    expect(r.awsCalls).toEqual([]);
+    expect(r.outputs).toEqual({ live_release_untouched: 'true' });
+  });
+
+  it('remote failure without the marker: command_id recorded, NOT untouched (rollback path)', () => {
+    const r = runStep(BACKEND.job, BACKEND.step, ctx, { FAKE_STATUSES: 'Failed', FAKE_STDOUT: 'npm ERR! ENOSPC' });
+    expect(r.status).toBe(1);
+    expect(r.outputs).toEqual({ command_id: 'cmd-fake-1' });
+  });
+
+  it('remote failure WITH the marker: command_id recorded AND untouched', () => {
+    const r = runStep(BACKEND.job, BACKEND.step, ctx, {
+      FAKE_STATUSES: 'Failed',
+      FAKE_STDOUT: 'DEPLOY_ABORTED_BEFORE_LIVE_CHANGES',
+    });
+    expect(r.status).toBe(1);
+    expect(r.outputs).toEqual({ command_id: 'cmd-fake-1', live_release_untouched: 'true' });
+  });
+});
+
+describe.each([MIGRATION, ADMIN])('$job deploy step (runner side, executed from ci.yml)', (spec) => {
+  const ctx = { 'github.sha': SHA };
+
+  it('success: sends with --timeout-seconds 120', () => {
+    const r = runStep(spec.job, spec.step, ctx);
+    expect(r.status).toBe(0);
+    expect(r.awsCalls.find((c) => c.startsWith('aws ssm send-command'))).toContain('--timeout-seconds 120');
+  });
+
+  it('S1. empty payloads on the runner → refuses before send-command', () => {
+    const r = runStep(spec.job, spec.step, ctx, {}, { emptyBase64: true });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('Could not encode .github/scripts/');
+    expect(r.awsCalls).toEqual([]);
+  });
+});
+
+describe('B1. "Stop the deploy command before rollback" (executed from ci.yml, real poller, stubbed aws)', () => {
+  const STEP = 'Stop the deploy command before rollback';
+  const run = (env: Record<string, string>) =>
+    runStep(BACKEND.job, STEP, {}, { DEPLOY_COMMAND_ID: 'cmd-deploy-9', INSTANCE_ID: 'i-test', ...env });
+
+  it('step env wires the deploy step command_id and the instance', () => {
+    const step = extractStep(BACKEND.job, STEP);
+    expect(step).toContain('DEPLOY_COMMAND_ID: ${{ steps.deploy.outputs.command_id }}');
+    expect(step).toContain('INSTANCE_ID: i-0c3e55c290844ec59');
+  });
+
+  it.each(['Success', 'Failed', 'TimedOut', 'Cancelled'])('deploy already %s → settled without cancelling', (st) => {
+    const r = run({ FAKE_STATUSES: st });
+    expect(r.status).toBe(0);
+    expect(r.outputs).toEqual({ settled: 'true' });
+    expect(r.awsCalls.some((c) => c.includes('cancel-command'))).toBe(false);
+  });
+
+  it.each([
+    ['still InProgress', 'InProgress,Cancelling,Cancelled'],
+    ['lookup fails (InvocationDoesNotExist)', 'ERR:InvocationDoesNotExist,Pending,Cancelled'],
+    ['still Pending (queued, not delivered)', 'Pending,Pending,Cancelled'],
+  ])('deploy %s → cancel → terminal → settled, rollback may run', (_l, statuses) => {
+    const r = run({ FAKE_STATUSES: statuses });
+    expect(r.status).toBe(0);
+    expect(r.outputs).toEqual({ settled: 'true' });
+    const cancelIdx = r.awsCalls.findIndex((c) => c.startsWith('aws ssm cancel-command'));
+    expect(cancelIdx).toBe(1);
+    expect(r.awsCalls[cancelIdx]).toContain('--command-id cmd-deploy-9 --instance-ids i-test');
+    expect(r.stdout).toContain('reached terminal status: Cancelled');
+  });
+
+  it('cancel accepted but the command never reaches terminal within 180s → NOT settled, fails loudly with IDs', () => {
+    const r = run({ FAKE_STATUSES: 'InProgress' });
+    expect(r.status).toBe(1);
+    expect(r.outputs).toEqual({});
+    expect(r.stdout).toContain('did not reach a terminal state within 180s');
+    expect(r.stdout).toContain('Deploy command cmd-deploy-9 on instance i-test did not reach a terminal status');
+    expect(r.stdout).toContain('rollback is SKIPPED');
+  });
+
+  it('cancel-command fails (e.g. ssm:CancelCommand not granted) → NOT settled, fails loudly, never polls', () => {
+    const r = run({ FAKE_STATUSES: 'InProgress', FAKE_CANCEL_FAILS: '1' });
+    expect(r.status).toBe(1);
+    expect(r.outputs).toEqual({});
+    expect(r.stdout).toContain('cancel-command failed for deploy command cmd-deploy-9 on instance i-test');
+    expect(r.stdout).toContain('ssm:CancelCommand');
+    expect(r.awsCalls.filter((c) => c.includes('get-command-invocation'))).toHaveLength(1);
+  });
+
+  it('no deploy command ID recorded → NOT settled, fails loudly, no AWS calls', () => {
+    const r = run({ DEPLOY_COMMAND_ID: '' });
+    expect(r.status).toBe(1);
+    expect(r.outputs).toEqual({});
+    expect(r.stdout).toContain('rollback SKIPPED');
+    expect(r.awsCalls).toEqual([]);
+  });
+});
+
+describe('N1. "Fail job on broken deploy" messages (executed from ci.yml)', () => {
+  const base: Record<string, string> = {
+    'github.sha': SHA,
+    'steps.deploy.outcome': 'failure',
+    'steps.deploy.outputs.live_release_untouched': '',
+    'steps.deploy.outputs.command_id': 'cmd-deploy-9',
+    'steps.settle_deploy.outcome': 'skipped',
+    'steps.rollback.outcome': 'skipped',
+    'steps.rollback_smoke_test.outcome': 'skipped',
+    'steps.get_prev_sha.outputs.prev_sha': 'previous-sha',
+    'steps.get_prev_sha.outputs.prev_artifact_exists': 'true',
+  };
+  const fail = (o: Record<string, string>) => runStep(BACKEND.job, 'Fail job on broken deploy', { ...base, ...o });
+
+  it.each<[string, Record<string, string>, string]>([
+    ['untouched release', { 'steps.deploy.outputs.live_release_untouched': 'true' }, 'aborted before modifying the live release'],
+    ['deploy command not confirmed stopped', { 'steps.settle_deploy.outcome': 'failure' }, "deploy command 'cmd-deploy-9' on instance i-0c3e55c290844ec59 could not be confirmed stopped"],
+    ['prev_sha == this sha', { 'steps.get_prev_sha.outputs.prev_sha': SHA }, `last known-good marker already points at ${SHA}`],
+    ['rollback + verify succeeded', { 'steps.settle_deploy.outcome': 'success', 'steps.rollback.outcome': 'success', 'steps.rollback_smoke_test.outcome': 'success' }, 'Automatic rollback to previous deploy (previous-sha) succeeded'],
+    ['no usable previous artifact', { 'steps.get_prev_sha.outputs.prev_artifact_exists': 'false' }, 'No usable previous known-good deploy artifact'],
+  ])('%s → job fails with an accurate message', (_l, o, expected) => {
+    const r = fail(o);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain(expected);
   });
 });

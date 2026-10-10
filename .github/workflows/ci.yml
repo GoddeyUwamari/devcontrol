@@ -119,6 +119,15 @@ jobs:
   deploy-backend:
     runs-on: ubuntu-24.04
     needs: lint-and-build
+    # One production run of this job at a time, across workflow runs (two
+    # quick pushes to main, or a re-run while an earlier attempt's SSM
+    # command is still on the host). Never cancels a job that has started.
+    # One group PER JOB, not a shared one: GitHub keeps at most one pending
+    # job per group and cancels any older pending one, so a single group
+    # spanning these three jobs of the same run would cancel one of them.
+    concurrency:
+      group: production-deploy-backend
+      cancel-in-progress: false
     if: >
       github.ref == 'refs/heads/main' &&
       (
@@ -250,15 +259,38 @@ jobs:
           # deploy's own tarball and staging dir on success and failure; it
           # never touches dist/, node_modules/ or anything else persistent.
           #
-          # executionTimeout (480s) is deliberately below
-          # wait-for-ssm-command.sh's 600s ceiling (minus its 60s
-          # registration window and one 15s poll), so the agent stops a hung
-          # deploy itself and reports TimedOut — rollback below then never
-          # races a deploy command that is still running on the host.
+          # The preflight script travels base64-encoded with its SHA-256. The
+          # host decodes it to a temp file and verifies the hash before
+          # running it, so a corrupt or truncated payload stops the deploy
+          # (with the untouched marker) instead of silently running an empty
+          # or partial preflight.
+          #
+          # Timeouts: --timeout-seconds 120 (delivery) means a command the
+          # agent hasn't started within 120s never starts; executionTimeout
+          # 480s stops a hung one. Together they bound the command's life to
+          # about the poller's 600s ceiling. That's only defense in depth:
+          # the poller can also give up early (non-retryable API error,
+          # registration deadline), so "Stop the deploy command before
+          # rollback" below cancels the command and confirms a terminal
+          # status before any rollback is sent, and skips rollback if it
+          # can't.
+          #
+          # Anything that fails before send-command returns a command ID
+          # (encoding, jq, send-command itself) has sent nothing to the
+          # host, so the EXIT trap marks the live release untouched and
+          # rollback is skipped.
+          SENT=0
+          trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$SENT" = 0 ]; then echo "live_release_untouched=true" >> "$GITHUB_OUTPUT"; echo "::error::Deploy ${{ github.sha }} failed before an SSM command ID was received (payload encoding, jq or send-command failed), so no deploy command is known to have been sent. If send-command failed after SSM accepted the request (e.g. a lost response), a command with comment \"Deploy devcontrol-api ${{ github.sha }}\" could still exist; check SSM command history."; fi' EXIT
           PREFLIGHT_SCRIPT_B64=$(base64 < .github/scripts/deploy-disk-preflight.sh | tr -d '\n')
+          PREFLIGHT_SCRIPT_SHA256=$(sha256sum < .github/scripts/deploy-disk-preflight.sh | cut -d' ' -f1)
+          if [ -z "$PREFLIGHT_SCRIPT_B64" ] || [ "${#PREFLIGHT_SCRIPT_SHA256}" -ne 64 ]; then
+            echo "::error::Could not encode .github/scripts/deploy-disk-preflight.sh for the SSM payload — refusing to deploy."
+            exit 1
+          fi
           PARAMS=$(jq -n \
             --arg sha "${{ github.sha }}" \
             --arg preflight_b64 "$PREFLIGHT_SCRIPT_B64" \
+            --arg preflight_sha256 "$PREFLIGHT_SCRIPT_SHA256" \
             --arg min_free "$DEPLOY_MIN_FREE_MIB" \
             '("/home/ubuntu/devcontrol/.deploy-staging-" + $sha) as $stage
             | ("/tmp/dist-" + $sha + ".tar.gz") as $tarball
@@ -266,8 +298,12 @@ jobs:
               "set -e",
               "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
               "LIVE_RELEASE_TOUCHED=0",
-              ("trap '\''rc=$?; rm -f " + $tarball + "; rm -rf " + $stage + "; if [ $rc -ne 0 ] && [ $LIVE_RELEASE_TOUCHED = 0 ]; then echo DEPLOY_ABORTED_BEFORE_LIVE_CHANGES; fi'\'' EXIT"),
-              ("echo " + $preflight_b64 + " | base64 -d | bash -s -- " + $min_free + " /tmp /home/ubuntu/devcontrol"),
+              "PREFLIGHT_SH=",
+              ("trap '\''rc=$?; rm -f " + $tarball + "; rm -rf " + $stage + "; [ -z \"$PREFLIGHT_SH\" ] || rm -f \"$PREFLIGHT_SH\"; if [ $rc -ne 0 ] && [ $LIVE_RELEASE_TOUCHED = 0 ]; then echo DEPLOY_ABORTED_BEFORE_LIVE_CHANGES; fi'\'' EXIT"),
+              "PREFLIGHT_SH=$(mktemp)",
+              ("echo " + $preflight_b64 + " | base64 -d > \"$PREFLIGHT_SH\""),
+              ("if ! { [ -s \"$PREFLIGHT_SH\" ] && echo \"" + $preflight_sha256 + "  $PREFLIGHT_SH\" | sha256sum -c --status; }; then echo \"ERROR: deploy-disk-preflight.sh payload failed to decode or verify — refusing to deploy.\" >&2; exit 1; fi"),
+              ("bash \"$PREFLIGHT_SH\" " + $min_free + " /tmp /home/ubuntu/devcontrol"),
               ("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/dist.tar.gz " + $tarball),
               ("sudo -H -u ubuntu --preserve-env=PATH rm -rf " + $stage),
               ("sudo -H -u ubuntu --preserve-env=PATH mkdir -p " + $stage + "/dist " + $stage + "/manifests"),
@@ -294,8 +330,15 @@ jobs:
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy devcontrol-api ${{ github.sha }}" \
+            --timeout-seconds 120 \
             --parameters "$PARAMS" \
             --query "Command.CommandId" --output text)
+          if [ -z "$COMMAND_ID" ] || [ "$COMMAND_ID" = "None" ]; then
+            echo "::error::send-command returned no command ID."
+            exit 1
+          fi
+          SENT=1
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
           echo "SSM command ID: $COMMAND_ID"
 
           # A real deploy runs `npm ci` on the host and can legitimately take
@@ -314,7 +357,7 @@ jobs:
           # is treated as "possibly modified", so rollback still runs.
           if grep -q 'DEPLOY_ABORTED_BEFORE_LIVE_CHANGES' "$SSM_LOG"; then
             echo "live_release_untouched=true" >> "$GITHUB_OUTPUT"
-            echo "::error::Deploy ${{ github.sha }} aborted before modifying the live release (e.g. disk preflight or artifact download failed) — the previous release is still running; rollback is not needed."
+            echo "::error::Deploy ${{ github.sha }} aborted before modifying the live release (e.g. disk preflight, payload verification or artifact download failed) — the previous release is still running; rollback is not needed."
           fi
           exit 1
 
@@ -377,11 +420,24 @@ jobs:
       # `!cancelled()` is required: without a status function, `if:`
       # implicitly ANDs success(), which is false once the deploy step has
       # failed. The one deploy failure that skips rollback is the one that
-      # positively proved, via the remote EXIT trap's marker, that the live
-      # release was never modified — rolling back a healthy release on a
-      # disk that just failed preflight would itself risk an outage.
-      - name: Roll back to previous deploy
-        id: rollback
+      # positively proved, via the remote EXIT trap's marker (or by never
+      # sending a command), that the live release was never modified —
+      # rolling back a healthy release on a disk that just failed preflight
+      # would itself risk an outage.
+      #
+      # This step carries the rollback decision; "Roll back to previous
+      # deploy" runs only if it confirms the deploy command is no longer
+      # running on the host. The deploy and the rollback both delete and
+      # reinstall node_modules/ in the same directory, so they must never
+      # overlap. The poller can give up while the deploy is still running
+      # or queued: a non-retryable API error, the registration deadline, or
+      # a command still Pending/Delayed. So unless the deploy command is
+      # already terminal, this step cancels it and waits for a terminal
+      # status. If that can't be confirmed (cancel-command fails, e.g.
+      # ssm:CancelCommand not granted, or no terminal status within 180s),
+      # rollback is skipped and the job fails loudly.
+      - name: Stop the deploy command before rollback
+        id: settle_deploy
         if: >
           !cancelled() &&
           (
@@ -393,6 +449,40 @@ jobs:
           ) &&
           steps.get_prev_sha.outputs.prev_artifact_exists == 'true' &&
           steps.get_prev_sha.outputs.prev_sha != github.sha
+        env:
+          DEPLOY_COMMAND_ID: ${{ steps.deploy.outputs.command_id }}
+          INSTANCE_ID: i-0c3e55c290844ec59
+        run: |
+          set -eo pipefail
+          if [ -z "$DEPLOY_COMMAND_ID" ]; then
+            echo "::error::No deploy command ID was recorded, so it can't be confirmed that no deploy command is running on $INSTANCE_ID — rollback SKIPPED. Check SSM command history and production /health now."
+            exit 1
+          fi
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$DEPLOY_COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query "Status" --output text 2>/dev/null) || STATUS="unknown (lookup failed)"
+          case "$STATUS" in
+            Success|Failed|Cancelled|TimedOut)
+              echo "Deploy command $DEPLOY_COMMAND_ID on $INSTANCE_ID already finished ($STATUS) — safe to roll back."
+              echo "settled=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          echo "Deploy command $DEPLOY_COMMAND_ID on $INSTANCE_ID is not finished (status: $STATUS) — cancelling it before rollback."
+          if ! aws ssm cancel-command --command-id "$DEPLOY_COMMAND_ID" --instance-ids "$INSTANCE_ID"; then
+            echo "::error::cancel-command failed for deploy command $DEPLOY_COMMAND_ID on instance $INSTANCE_ID (is ssm:CancelCommand granted to the deploy role?). The deploy may still be running, so rollback is SKIPPED to avoid two installs racing on the host. Check the command in SSM and production /health now."
+            exit 1
+          fi
+          if SSM_WAIT_ANY_TERMINAL_OK=1 SSM_WAIT_MAX_SECONDS=180 bash .github/scripts/wait-for-ssm-command.sh "$DEPLOY_COMMAND_ID" "$INSTANCE_ID"; then
+            echo "settled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::Deploy command $DEPLOY_COMMAND_ID on instance $INSTANCE_ID did not reach a terminal status within 180s of cancel-command. It may still be running, so rollback is SKIPPED to avoid two installs racing on the host. Check the command in SSM and production /health now."
+          exit 1
+
+      - name: Roll back to previous deploy
+        id: rollback
+        if: "!cancelled() && steps.settle_deploy.outputs.settled == 'true'"
         run: |
           set -e
           echo "Deploy step outcome: ${{ steps.deploy.outcome }}, smoke test outcome: ${{ steps.smoke_test.outcome }} — rolling back to previous known-good deploy: ${{ steps.get_prev_sha.outputs.prev_sha }}"
@@ -435,6 +525,7 @@ jobs:
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Rollback devcontrol-api to ${{ steps.get_prev_sha.outputs.prev_sha }}" \
+            --timeout-seconds 120 \
             --parameters "$PARAMS" \
             --query "Command.CommandId" --output text)
           echo "Rollback SSM command ID: $COMMAND_ID"
@@ -443,7 +534,7 @@ jobs:
           # `npm install`/`npm ci` on the host and can take several minutes,
           # so it needs the same bounded-polling fix rather than the
           # short-ceiling `aws ssm wait command-executed`, and the same
-          # executionTimeout below the poller's ceiling. No disk preflight
+          # delivery timeout and executionTimeout. No disk preflight
           # here: rollback only runs once the live release may already be
           # broken, so refusing to try would never leave production better.
           bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59"
@@ -499,13 +590,17 @@ jobs:
             echo "::error::Deploy ${{ github.sha }} FAILED its post-deploy smoke test."
           fi
           if [ "${{ steps.deploy.outputs.live_release_untouched }}" == "true" ]; then
-            echo "::error::The deploy aborted before modifying the live release (see the deploy step log, e.g. disk preflight), so rollback was intentionally skipped — the previous release should still be serving. Confirm /health and fix the cause before redeploying."
+            echo "::error::The deploy aborted before modifying the live release (see the deploy step log: disk preflight, payload verification, artifact download, or no SSM command sent), so rollback was intentionally skipped — the previous release should still be serving. Confirm /health and fix the cause before redeploying."
+          elif [ "${{ steps.settle_deploy.outcome }}" == "failure" ]; then
+            echo "::error::Rollback was SKIPPED: deploy command '${{ steps.deploy.outputs.command_id }}' on instance i-0c3e55c290844ec59 could not be confirmed stopped (see \"Stop the deploy command before rollback\"). Production may be mid-install. Investigate immediately."
           elif [ "${{ steps.rollback.outcome }}" == "success" ] && [ "${{ steps.rollback_smoke_test.outcome }}" == "success" ]; then
             echo "::error::Automatic rollback to previous deploy (${{ steps.get_prev_sha.outputs.prev_sha }}) succeeded — production is stable again, but ${{ github.sha }} must be fixed before redeploying."
           elif [ "${{ steps.rollback.outcome }}" == "success" ]; then
             echo "::error::Rollback ran but the restored version ALSO failed its smoke test — production may still be down. Investigate immediately."
           elif [ "${{ steps.get_prev_sha.outputs.prev_artifact_exists }}" != "true" ]; then
             echo "::error::No usable previous known-good deploy artifact was found (marker: '${{ steps.get_prev_sha.outputs.prev_sha }}'), so automatic rollback was skipped — production may be down. Investigate immediately."
+          elif [ "${{ steps.get_prev_sha.outputs.prev_sha }}" == "${{ github.sha }}" ]; then
+            echo "::error::Rollback was skipped: the last known-good marker already points at ${{ github.sha }} (this same commit was previously verified healthy), so there is no earlier release to roll back to. Production may be down. Investigate immediately."
           else
             echo "::error::Automatic rollback did not run or failed to execute — production may still be running the broken deploy. Investigate immediately."
           fi
@@ -527,6 +622,15 @@ jobs:
   deploy-migration-tooling:
     runs-on: ubuntu-24.04
     needs: lint-and-build
+    # One production run of this job at a time, across workflow runs (two
+    # quick pushes to main, or a re-run while an earlier attempt's SSM
+    # command is still on the host). Never cancels a job that has started.
+    # One group PER JOB, not a shared one: GitHub keeps at most one pending
+    # job per group and cancels any older pending one, so a single group
+    # spanning these three jobs of the same run would cancel one of them.
+    concurrency:
+      group: production-deploy-migration-tooling
+      cancel-in-progress: false
     if: >
       github.ref == 'refs/heads/main' &&
       (
@@ -591,7 +695,7 @@ jobs:
       - name: Deploy migration tooling via SSM (files only — never executes migrations)
         id: deploy_migration_tooling
         run: |
-          set -e
+          set -eo pipefail
           # The destination-symlink decision tree (Case A/B/B2/C/D/E) lives in
           # .github/scripts/deploy-migration-symlink.sh, not inline here. It is
           # base64-encoded and shipped as an opaque token — no `$`, quotes, or
@@ -601,28 +705,56 @@ jobs:
           #
           # Disk preflight (.github/scripts/deploy-disk-preflight.sh, shipped
           # the same base64 way) runs before the download; the EXIT trap
-          # removes this deploy's own tarball on success and failure. The
+          # removes this deploy's own tarball and decoded payloads on
+          # success and failure. Both payloads are decoded to temp files and
+          # verified against their SHA-256 before anything is downloaded,
+          # so a corrupt payload stops the deploy instead of silently
+          # running an empty script. --timeout-seconds 120 means a command
+          # the agent hasn't started within 120s never starts late. The
           # release directory is only ever removed after a failed extract
           # into a directory THIS run created — a re-run for the same SHA
           # must never delete an existing (possibly live) release.
+          # An existing same-SHA release dir is extracted over in place:
+          # the artifact for one SHA has identical contents, so this only
+          # rewrites files with the same bytes.
           SYMLINK_SCRIPT_B64=$(base64 < .github/scripts/deploy-migration-symlink.sh | tr -d '\n')
+          SYMLINK_SCRIPT_SHA256=$(sha256sum < .github/scripts/deploy-migration-symlink.sh | cut -d' ' -f1)
           PREFLIGHT_SCRIPT_B64=$(base64 < .github/scripts/deploy-disk-preflight.sh | tr -d '\n')
+          PREFLIGHT_SCRIPT_SHA256=$(sha256sum < .github/scripts/deploy-disk-preflight.sh | cut -d' ' -f1)
+          if [ -z "$SYMLINK_SCRIPT_B64" ] || [ "${#SYMLINK_SCRIPT_SHA256}" -ne 64 ]; then
+            echo "::error::Could not encode .github/scripts/deploy-migration-symlink.sh for the SSM payload — refusing to deploy."
+            exit 1
+          fi
+          if [ -z "$PREFLIGHT_SCRIPT_B64" ] || [ "${#PREFLIGHT_SCRIPT_SHA256}" -ne 64 ]; then
+            echo "::error::Could not encode .github/scripts/deploy-disk-preflight.sh for the SSM payload — refusing to deploy."
+            exit 1
+          fi
           PARAMS=$(jq -n \
             --arg sha "${{ github.sha }}" \
             --arg script_b64 "$SYMLINK_SCRIPT_B64" \
+            --arg script_sha256 "$SYMLINK_SCRIPT_SHA256" \
             --arg preflight_b64 "$PREFLIGHT_SCRIPT_B64" \
+            --arg preflight_sha256 "$PREFLIGHT_SCRIPT_SHA256" \
             --arg min_free "$DEPLOY_MIN_FREE_MIB" \
             '{"commands": [
               "set -e",
               "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
               ("export RELEASE_DIR=/home/ubuntu/devcontrol/database-releases/" + $sha),
-              ("trap '\''rm -f /tmp/migrations-" + $sha + ".tar.gz'\'' EXIT"),
-              ("echo " + $preflight_b64 + " | base64 -d | bash -s -- " + $min_free + " /tmp /home/ubuntu/devcontrol/database-releases"),
+              "PREFLIGHT_SH=",
+              "SYMLINK_SH=",
+              ("trap '\''rm -f /tmp/migrations-" + $sha + ".tar.gz; [ -z \"$PREFLIGHT_SH\" ] || rm -f \"$PREFLIGHT_SH\"; [ -z \"$SYMLINK_SH\" ] || rm -f \"$SYMLINK_SH\"'\'' EXIT"),
+              "PREFLIGHT_SH=$(mktemp)",
+              ("echo " + $preflight_b64 + " | base64 -d > \"$PREFLIGHT_SH\""),
+              ("if ! { [ -s \"$PREFLIGHT_SH\" ] && echo \"" + $preflight_sha256 + "  $PREFLIGHT_SH\" | sha256sum -c --status; }; then echo \"ERROR: deploy-disk-preflight.sh payload failed to decode or verify — refusing to deploy.\" >&2; exit 1; fi"),
+              "SYMLINK_SH=$(mktemp)",
+              ("echo " + $script_b64 + " | base64 -d > \"$SYMLINK_SH\""),
+              ("if ! { [ -s \"$SYMLINK_SH\" ] && echo \"" + $script_sha256 + "  $SYMLINK_SH\" | sha256sum -c --status; }; then echo \"ERROR: deploy-migration-symlink.sh payload failed to decode or verify — refusing to deploy.\" >&2; exit 1; fi"),
+              ("bash \"$PREFLIGHT_SH\" " + $min_free + " /tmp /home/ubuntu/devcontrol/database-releases"),
               ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR aws s3 cp s3://devcontrol-deploy-artifacts/database/" + $sha + "/migrations.tar.gz /tmp/migrations-" + $sha + ".tar.gz"),
               ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"if [ -e $RELEASE_DIR ]; then tar xzf /tmp/migrations-" + $sha + ".tar.gz -C $RELEASE_DIR; else mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-" + $sha + ".tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1); fi\""),
               ("sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/migrations-" + $sha + ".tar.gz"),
               ("sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -c \"echo " + $sha + " > $RELEASE_DIR/.deployed_sha\""),
-              ("echo " + $script_b64 + " | base64 -d | sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- \"$RELEASE_DIR\" /home/ubuntu/devcontrol/database"),
+              "sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- \"$RELEASE_DIR\" /home/ubuntu/devcontrol/database < \"$SYMLINK_SH\"",
               "echo \"✅ Migration tooling deployed (files only — never executes migrations). The symlink step above logged its own Case A/B result, or this whole step already failed if it exited non-zero.\"",
               "echo \"Operator commands (run manually via an authenticated session — never automatically):\"",
               "echo \"  cd /home/ubuntu/devcontrol && NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --dry-run\"",
@@ -632,6 +764,7 @@ jobs:
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy migration tooling ${{ github.sha }} (files only, no execution)" \
+            --timeout-seconds 120 \
             --parameters "$PARAMS" \
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"
@@ -677,6 +810,15 @@ jobs:
   deploy-migration-tooling-admin:
     runs-on: ubuntu-24.04
     needs: lint-and-build
+    # One production run of this job at a time, across workflow runs (two
+    # quick pushes to main, or a re-run while an earlier attempt's SSM
+    # command is still on the host). Never cancels a job that has started.
+    # One group PER JOB, not a shared one: GitHub keeps at most one pending
+    # job per group and cancels any older pending one, so a single group
+    # spanning these three jobs of the same run would cancel one of them.
+    concurrency:
+      group: production-deploy-migration-tooling-admin
+      cancel-in-progress: false
     if: >
       github.ref == 'refs/heads/main' &&
       (
@@ -746,23 +888,44 @@ jobs:
       - name: Deploy admin migration tooling via SSM (files only — never executes migrations)
         id: deploy_migration_tooling_admin
         run: |
-          set -e
-          # Disk preflight, tarball-cleanup trap and "never remove a release
-          # directory this run didn't create" exactly as in
+          set -eo pipefail
+          # Disk preflight, verified payload decoding, delivery timeout,
+          # cleanup trap and "never remove a release directory this run
+          # didn't create" (same-SHA in-place extract) exactly as in
           # deploy-migration-tooling above.
           SYMLINK_SCRIPT_B64=$(base64 < .github/scripts/deploy-migration-symlink.sh | tr -d '\n')
+          SYMLINK_SCRIPT_SHA256=$(sha256sum < .github/scripts/deploy-migration-symlink.sh | cut -d' ' -f1)
           PREFLIGHT_SCRIPT_B64=$(base64 < .github/scripts/deploy-disk-preflight.sh | tr -d '\n')
+          PREFLIGHT_SCRIPT_SHA256=$(sha256sum < .github/scripts/deploy-disk-preflight.sh | cut -d' ' -f1)
+          if [ -z "$SYMLINK_SCRIPT_B64" ] || [ "${#SYMLINK_SCRIPT_SHA256}" -ne 64 ]; then
+            echo "::error::Could not encode .github/scripts/deploy-migration-symlink.sh for the SSM payload — refusing to deploy."
+            exit 1
+          fi
+          if [ -z "$PREFLIGHT_SCRIPT_B64" ] || [ "${#PREFLIGHT_SCRIPT_SHA256}" -ne 64 ]; then
+            echo "::error::Could not encode .github/scripts/deploy-disk-preflight.sh for the SSM payload — refusing to deploy."
+            exit 1
+          fi
           PARAMS=$(jq -n \
             --arg sha "${{ github.sha }}" \
             --arg script_b64 "$SYMLINK_SCRIPT_B64" \
+            --arg script_sha256 "$SYMLINK_SCRIPT_SHA256" \
             --arg preflight_b64 "$PREFLIGHT_SCRIPT_B64" \
+            --arg preflight_sha256 "$PREFLIGHT_SCRIPT_SHA256" \
             --arg min_free "$DEPLOY_MIN_FREE_MIB" \
             '{"commands": [
               "set -e",
               "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
               ("export RELEASE_DIR=/opt/devcontrol-admin/database-releases/" + $sha),
-              ("trap '\''rm -f /tmp/migrations-admin-" + $sha + ".tar.gz'\'' EXIT"),
-              ("echo " + $preflight_b64 + " | base64 -d | bash -s -- " + $min_free + " /tmp /opt/devcontrol-admin/database-releases"),
+              "PREFLIGHT_SH=",
+              "SYMLINK_SH=",
+              ("trap '\''rm -f /tmp/migrations-admin-" + $sha + ".tar.gz; [ -z \"$PREFLIGHT_SH\" ] || rm -f \"$PREFLIGHT_SH\"; [ -z \"$SYMLINK_SH\" ] || rm -f \"$SYMLINK_SH\"'\'' EXIT"),
+              "PREFLIGHT_SH=$(mktemp)",
+              ("echo " + $preflight_b64 + " | base64 -d > \"$PREFLIGHT_SH\""),
+              ("if ! { [ -s \"$PREFLIGHT_SH\" ] && echo \"" + $preflight_sha256 + "  $PREFLIGHT_SH\" | sha256sum -c --status; }; then echo \"ERROR: deploy-disk-preflight.sh payload failed to decode or verify — refusing to deploy.\" >&2; exit 1; fi"),
+              "SYMLINK_SH=$(mktemp)",
+              ("echo " + $script_b64 + " | base64 -d > \"$SYMLINK_SH\""),
+              ("if ! { [ -s \"$SYMLINK_SH\" ] && echo \"" + $script_sha256 + "  $SYMLINK_SH\" | sha256sum -c --status; }; then echo \"ERROR: deploy-migration-symlink.sh payload failed to decode or verify — refusing to deploy.\" >&2; exit 1; fi"),
+              ("bash \"$PREFLIGHT_SH\" " + $min_free + " /tmp /opt/devcontrol-admin/database-releases"),
               "mkdir -p /opt/devcontrol-admin/database-releases",
               ("aws s3 cp s3://devcontrol-deploy-artifacts/database-admin/" + $sha + "/migrations-admin.tar.gz /tmp/migrations-admin-" + $sha + ".tar.gz"),
               ("bash -c \"if [ -e $RELEASE_DIR ]; then tar xzf /tmp/migrations-admin-" + $sha + ".tar.gz -C $RELEASE_DIR; else mkdir -p $RELEASE_DIR && tar xzf /tmp/migrations-admin-" + $sha + ".tar.gz -C $RELEASE_DIR || (rm -rf $RELEASE_DIR; exit 1); fi\""),
@@ -770,7 +933,7 @@ jobs:
               ("bash -c \"echo " + $sha + " > $RELEASE_DIR/.deployed_sha\""),
               ("chgrp -R postgres $RELEASE_DIR"),
               ("chmod -R o-rwx,g+rX $RELEASE_DIR"),
-              ("echo " + $script_b64 + " | base64 -d | bash -s -- \"$RELEASE_DIR\" /opt/devcontrol-admin/database"),
+              "bash -s -- \"$RELEASE_DIR\" /opt/devcontrol-admin/database < \"$SYMLINK_SH\"",
               "echo \"✅ Administrative migration tooling deployed (files only — never executes migrations). Readable by OS users root and postgres only.\"",
               "echo \"Running an administrative migration remains a separate, explicitly-authorized, manual operation — see database/migrations-admin/README.md.\""
             ]}')
@@ -778,6 +941,7 @@ jobs:
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy admin migration tooling ${{ github.sha }} (files only, no execution)" \
+            --timeout-seconds 120 \
             --parameters "$PARAMS" \
             --query "Command.CommandId" --output text)
           echo "SSM command ID: $COMMAND_ID"

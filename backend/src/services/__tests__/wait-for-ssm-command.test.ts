@@ -326,6 +326,38 @@ describe('wait-for-ssm-command.sh', () => {
       expect(stdout).toContain('could not retrieve StandardOutputContent');
     });
   });
+
+  describe('SSM_WAIT_ANY_TERMINAL_OK=1 ("is it still running?" mode used before rollback)', () => {
+    it.each(['Success', 'Failed', 'Cancelled', 'TimedOut'])('18. %s counts as finished: exits 0 and names the status', (terminal) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['InProgress', 'Cancelling', terminal], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_ANY_TERMINAL_OK: '1',
+      });
+      expect(status).toBe(0);
+      expect(stdout).toContain(`reached terminal status: ${terminal}`);
+    });
+
+    it('19. still running at the deadline is NOT finished: exits 1', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['Cancelling'], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_MAX_SECONDS: '0',
+        SSM_WAIT_ANY_TERMINAL_OK: '1',
+      });
+      expect(status).toBe(1);
+      expect(stdout).toContain('did not reach a terminal state');
+    });
+
+    it.each(['ERR:AccessDeniedException', 'Exploded'])('20. %s is NOT finished: exits 1', (entry) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status } = runScript(tmpDir, ['InProgress', entry], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_ANY_TERMINAL_OK: '1',
+      });
+      expect(status).toBe(1);
+    });
+  });
 });
 
 describe('deploy-backend and rollback steps use the shared script instead of the raw waiter', () => {
@@ -364,6 +396,10 @@ describe('deploy-backend and rollback steps use the shared script instead of the
     );
     expect(ciYml).toContain(
       "- name: Verify rollback health\n        id: rollback_smoke_test\n        if: \"!cancelled() && steps.rollback.outcome == 'success'\""
+    );
+    // Rollback runs only once the deploy command is confirmed finished.
+    expect(ciYml).toContain(
+      "- name: Roll back to previous deploy\n        id: rollback\n        if: \"!cancelled() && steps.settle_deploy.outputs.settled == 'true'\""
     );
     expect(ciYml).toContain(
       "- name: Fail job on broken deploy\n        if: >\n          !cancelled() &&\n          (steps.deploy.outcome == 'failure' || steps.smoke_test.outcome == 'failure')"

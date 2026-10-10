@@ -325,28 +325,32 @@ describe('deploy-migration-tooling destination pre-flight (executes the real .gi
 
   /**
    * Runs the script through the same general execution shape the real
-   * deployment uses: base64-decode piped into `bash -s -- <args>`, wrapped
-   * in a bare `set -e` with NO `pipefail`. That is deliberate, not an
-   * oversight — the real production SSM script (see the "Deploy migration
-   * tooling via SSM" step in ci.yml) only ever sets bare `set -e`, never
-   * `pipefail`. Using a stricter wrapper here would validate a
-   * configuration that isn't actually deployed and could mask a real
-   * regression (a failure that only fails to propagate without pipefail
-   * specifically). A sentinel command after the pipe proves whether the
-   * failure actually survived, since a bare `set -e` still aborts on a
-   * pipeline's failure as long as the failing stage is the pipeline's last
-   * command — which it is here (bash -s -- is last) — but this is exactly
-   * the propagation behavior that must be proven, not assumed.
+   * deployment uses: base64-decoded to a temp file, checked non-empty and
+   * against its SHA-256, then fed to `bash -s -- <args>` on stdin — all
+   * wrapped in a bare `set -e` with NO `pipefail`. That is deliberate, not
+   * an oversight — the real production SSM script (see the "Deploy
+   * migration tooling via SSM" step in ci.yml) only ever sets bare
+   * `set -e`, never `pipefail`. Using a stricter wrapper here would
+   * validate a configuration that isn't actually deployed and could mask a
+   * real regression (a failure that only fails to propagate without
+   * pipefail specifically). A sentinel command after the invocation proves
+   * whether a failure actually survived — exactly the propagation behavior
+   * that must be proven, not assumed.
    */
   function runThroughPipeline(releaseDir: string, dest: string): { status: number; stdout: string; stderr: string } {
-    const scriptB64 = fs.readFileSync(SYMLINK_SCRIPT_PATH).toString('base64');
+    const scriptBytes = fs.readFileSync(SYMLINK_SCRIPT_PATH);
+    const scriptB64 = scriptBytes.toString('base64');
+    const scriptSha256 = require('crypto').createHash('sha256').update(scriptBytes).digest('hex');
     const wrapperPath = path.join(tmpBase, `pipeline-wrapper-${Date.now()}-${Math.random()}.sh`);
     fs.writeFileSync(
       wrapperPath,
       [
         'set -e', // bare set -e, NO pipefail — matches the real deployed outer script exactly
         `export RELEASE_DIR=${JSON.stringify(releaseDir)}`,
-        `echo ${scriptB64} | base64 -d | bash -s -- "$RELEASE_DIR" ${JSON.stringify(dest)}`,
+        'SYMLINK_SH=$(mktemp)',
+        `echo ${scriptB64} | base64 -d > "$SYMLINK_SH"`,
+        `if ! { [ -s "$SYMLINK_SH" ] && echo "${scriptSha256}  $SYMLINK_SH" | sha256sum -c --status; }; then echo "payload verify failed" >&2; exit 1; fi`,
+        `bash -s -- "$RELEASE_DIR" ${JSON.stringify(dest)} < "$SYMLINK_SH"`,
         'echo SENTINEL_AFTER_PIPE_RAN',
       ].join('\n'),
       'utf8'
@@ -386,20 +390,22 @@ describe('deploy-migration-tooling destination pre-flight (executes the real .gi
     const decoded = Buffer.from(encoded, 'base64').toString('utf8');
     expect(decoded).toBe(fs.readFileSync(SYMLINK_SCRIPT_PATH, 'utf8'));
 
-    // Confirm the real, executed (not raw-source) command text pipes the
-    // decoded script into a standalone `bash -s --` invocation with the
-    // right arguments — checked against actual jq output so escaped-quote
-    // differences between jq source and decoded JSON can't produce a false
-    // match or a false failure here.
+    // Confirm the real, executed (not raw-source) command text decodes this
+    // script's payload to $SYMLINK_SH and later feeds that file to a
+    // standalone `bash -s --` invocation with the right arguments — checked
+    // against actual jq output so escaped-quote differences between jq
+    // source and decoded JSON can't produce a false match or a false
+    // failure here.
     const stubScriptB64 = Buffer.from('#!/usr/bin/env bash\necho stub\n').toString('base64');
     const commands = buildDeployMigrationToolingCommands('deadbeef'.repeat(5), stubScriptB64);
-    // The disk-preflight script is also shipped via `base64 -d` (and runs
-    // first), so select the command carrying this script's own payload.
-    const symlinkInvocation = commands.find((c) => c.includes(stubScriptB64));
-    expect(symlinkInvocation).toBeTruthy();
-    expect(symlinkInvocation).toMatch(
-      /base64 -d \| sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- "\$RELEASE_DIR" \/home\/ubuntu\/devcontrol\/database/
+    // The disk-preflight script is also shipped base64, so select the
+    // command carrying this script's own payload.
+    const decodeIdx = commands.findIndex((c) => c.includes(stubScriptB64));
+    expect(commands[decodeIdx]).toBe(`echo ${stubScriptB64} | base64 -d > "$SYMLINK_SH"`);
+    const runIdx = commands.findIndex((c) =>
+      c.includes('sudo -H -u ubuntu --preserve-env=PATH,RELEASE_DIR bash -s -- "$RELEASE_DIR" /home/ubuntu/devcontrol/database < "$SYMLINK_SH"')
     );
+    expect(runIdx).toBeGreaterThan(decodeIdx);
   });
 
   it('Case A — destination does not exist: creates the symlink and succeeds', () => {
