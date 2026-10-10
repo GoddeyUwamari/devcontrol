@@ -119,12 +119,18 @@ jobs:
   deploy-backend:
     runs-on: ubuntu-24.04
     needs: lint-and-build
-    # One production run of this job at a time, across workflow runs (two
-    # quick pushes to main, or a re-run while an earlier attempt's SSM
-    # command is still on the host). Never cancels a job that has started.
-    # One group PER JOB, not a shared one: GitHub keeps at most one pending
-    # job per group and cancels any older pending one, so a single group
-    # spanning these three jobs of the same run would cancel one of them.
+    # One run of this job at a time across workflow runs, while the job is
+    # running. cancel-in-progress: false never cancels a started job, but
+    # GitHub keeps at most one PENDING job per group: a third push cancels
+    # the second push's still-queued job (the newest wins). One group PER
+    # JOB, not a shared one, or the three jobs of the same run would cancel
+    # each other while pending.
+    #
+    # This does NOT prevent overlap on the host: the group is released when
+    # the job ends, and the job can end while its SSM command is still
+    # running (settle step failed or skipped, lost send-command response,
+    # cancelled run). The host deploy lock in the deploy and rollback
+    # commands is what prevents that (see "Deploy via SSM and restart PM2").
     concurrency:
       group: production-deploy-backend
       cancel-in-progress: false
@@ -246,6 +252,7 @@ jobs:
           #
           # Ordering (run 38037952336 deleted the live dist/ and
           # node_modules/ and only then hit a full disk in `npm ci`):
+          #   0. the host deploy lock (see below);
           #   1. disk preflight (.github/scripts/deploy-disk-preflight.sh,
           #      shipped base64 like the migration jobs' symlink script) on
           #      every filesystem written to — /tmp and the install root;
@@ -258,6 +265,27 @@ jobs:
           # for a release that was never modified. The trap also removes the
           # deploy's own tarball and staging dir on success and failure; it
           # never touches dist/, node_modules/ or anything else persistent.
+          #
+          # Host deploy lock: the job's concurrency group only serializes
+          # while the job is running. The job can end while its SSM command
+          # is still running on the host (the settle step fails or is
+          # skipped, a lost send-command response, a cancelled run), and
+          # the next queued deploy then starts at once. What actually
+          # prevents two deploys/rollbacks from overlapping on the host is
+          # this lock: `flock -n` on fd 9 of
+          # /var/lock/devcontrol-backend-deploy.lock, held by this SSM
+          # script's shell until it exits. If another deploy or rollback
+          # holds it, this deploy aborts before touching anything (untouched
+          # marker). The EXIT trap only removes the per-SHA tarball and
+          # staging dir once the lock is held — a same-SHA deploy that lost
+          # the race must not delete the running one's files. No missing
+          # flock fallback: without it the deploy refuses to run.
+          #
+          # fd 9 must never outlive this script in a long-lived process, or
+          # the lock would never be released: pm2 (whose daemon may be
+          # started by these commands) runs with `9>&-`. Real sudo also
+          # closes fds >= 3 by default (closefrom), so nothing run via sudo
+          # inherits it today; `9>&-` keeps that true even if it changes.
           #
           # The preflight script travels base64-encoded with its SHA-256. The
           # host decodes it to a temp file and verifies the hash before
@@ -298,8 +326,13 @@ jobs:
               "set -e",
               "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
               "LIVE_RELEASE_TOUCHED=0",
+              "LOCK_HELD=0",
               "PREFLIGHT_SH=",
-              ("trap '\''rc=$?; rm -f " + $tarball + "; rm -rf " + $stage + "; [ -z \"$PREFLIGHT_SH\" ] || rm -f \"$PREFLIGHT_SH\"; if [ $rc -ne 0 ] && [ $LIVE_RELEASE_TOUCHED = 0 ]; then echo DEPLOY_ABORTED_BEFORE_LIVE_CHANGES; fi'\'' EXIT"),
+              ("trap '\''rc=$?; if [ $LOCK_HELD = 1 ]; then rm -f " + $tarball + "; rm -rf " + $stage + "; fi; [ -z \"$PREFLIGHT_SH\" ] || rm -f \"$PREFLIGHT_SH\"; if [ $rc -ne 0 ] && [ $LIVE_RELEASE_TOUCHED = 0 ]; then echo DEPLOY_ABORTED_BEFORE_LIVE_CHANGES; fi'\'' EXIT"),
+              "if ! command -v flock >/dev/null 2>&1; then echo \"ERROR: flock (util-linux) not found on the host — refusing to deploy without the host deploy lock.\" >&2; exit 1; fi",
+              "exec 9>/var/lock/devcontrol-backend-deploy.lock",
+              "if ! flock -n 9; then echo \"ERROR: another backend deploy or rollback holds /var/lock/devcontrol-backend-deploy.lock — refusing to deploy. The live release was not touched.\" >&2; exit 1; fi",
+              "LOCK_HELD=1",
               "PREFLIGHT_SH=$(mktemp)",
               ("echo " + $preflight_b64 + " | base64 -d > \"$PREFLIGHT_SH\""),
               ("if ! { [ -s \"$PREFLIGHT_SH\" ] && echo \"" + $preflight_sha256 + "  $PREFLIGHT_SH\" | sha256sum -c --status; }; then echo \"ERROR: deploy-disk-preflight.sh payload failed to decode or verify — refusing to deploy.\" >&2; exit 1; fi"),
@@ -322,8 +355,8 @@ jobs:
               "sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/node_modules",
               "sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/node_modules",
               "sudo -H -u ubuntu --preserve-env=PATH bash -c \"cd /home/ubuntu/devcontrol && npm ci --workspace=backend --include-workspace-root=false --omit=dev --legacy-peer-deps\"",
-              "sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env",
-              "sudo -H -u ubuntu --preserve-env=PATH pm2 save",
+              "sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env 9>&-",
+              "sudo -H -u ubuntu --preserve-env=PATH pm2 save 9>&-",
               "echo ✅ Backend deployed, awaiting smoke test"
             ], "executionTimeout": ["480"]}')
           COMMAND_ID=$(aws ssm send-command \
@@ -357,7 +390,7 @@ jobs:
           # is treated as "possibly modified", so rollback still runs.
           if grep -q 'DEPLOY_ABORTED_BEFORE_LIVE_CHANGES' "$SSM_LOG"; then
             echo "live_release_untouched=true" >> "$GITHUB_OUTPUT"
-            echo "::error::Deploy ${{ github.sha }} aborted before modifying the live release (e.g. disk preflight, payload verification or artifact download failed) — the previous release is still running; rollback is not needed."
+            echo "::error::Deploy ${{ github.sha }} aborted before modifying the live release (e.g. another deploy or rollback held the host deploy lock, or disk preflight, payload verification or artifact download failed) — the previous release is still running; rollback is not needed."
           fi
           exit 1
 
@@ -484,13 +517,24 @@ jobs:
         id: rollback
         if: "!cancelled() && steps.settle_deploy.outputs.settled == 'true'"
         run: |
-          set -e
+          set -eo pipefail
           echo "Deploy step outcome: ${{ steps.deploy.outcome }}, smoke test outcome: ${{ steps.smoke_test.outcome }} — rolling back to previous known-good deploy: ${{ steps.get_prev_sha.outputs.prev_sha }}"
 
           # Which install command to use is decided here (build time), not
           # inside the remote script, so the SSM payload never needs a
           # runtime if/else — it just ships the install steps for whichever
           # path applies to this specific prev_sha.
+          #
+          # Host deploy lock (see "Deploy via SSM and restart PM2"): the
+          # rollback takes the same lock, waiting up to 300s for it, since a
+          # deploy or rollback left running by an earlier run may still hold
+          # it. If it is not acquired, the rollback stops before touching
+          # anything and prints ROLLBACK_NOT_STARTED; this step then reports
+          # it (output not_started=true) and the job fails loudly, as when
+          # the deploy command can't be confirmed stopped. executionTimeout
+          # is 300s of lock wait + the 480s install budget, and the poller's
+          # ceiling (960s) covers that plus the 120s delivery timeout.
+          # pm2 runs with fd 9 closed so its daemon never holds the lock.
           PARAMS=$(jq -n \
             --arg sha "${{ steps.get_prev_sha.outputs.prev_sha }}" \
             --arg ws "${{ steps.get_prev_sha.outputs.prev_workspace_artifacts_exist }}" \
@@ -509,6 +553,9 @@ jobs:
               end) as $install_steps
             | {"commands": (
                 ["set -e", "export PATH=$PATH:/snap/bin:/usr/local/bin:/usr/bin",
+                 "if ! command -v flock >/dev/null 2>&1; then echo ROLLBACK_NOT_STARTED; echo \"ERROR: flock (util-linux) not found on the host — refusing to roll back without the host deploy lock.\" >&2; exit 1; fi",
+                 "exec 9>/var/lock/devcontrol-backend-deploy.lock",
+                 "if ! flock -w 300 9; then echo ROLLBACK_NOT_STARTED; echo \"ERROR: another backend deploy or rollback still held /var/lock/devcontrol-backend-deploy.lock after 300s — rollback NOT started, nothing was changed.\" >&2; exit 1; fi",
                  "trap '\''rm -f /tmp/dist-rollback.tar.gz'\'' EXIT"]
                 + [("sudo -H -u ubuntu --preserve-env=PATH aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/dist.tar.gz /tmp/dist-rollback.tar.gz")]
                 + ["sudo -H -u ubuntu --preserve-env=PATH rm -rf /home/ubuntu/devcontrol/backend/dist",
@@ -517,10 +564,10 @@ jobs:
                    "sudo -H -u ubuntu --preserve-env=PATH rm -f /tmp/dist-rollback.tar.gz"]
                 + [("sudo -H -u ubuntu --preserve-env=PATH bash -c \"aws s3 cp s3://devcontrol-deploy-artifacts/backend/" + $sha + "/package.json /home/ubuntu/devcontrol/backend/package.json || echo '\''No package.json artifact for this SHA, keeping existing file'\''\"")]
                 + $install_steps
-                + ["sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env",
-                   "sudo -H -u ubuntu --preserve-env=PATH pm2 save",
+                + ["sudo -H -u ubuntu --preserve-env=PATH pm2 restart devcontrol-api --update-env 9>&-",
+                   "sudo -H -u ubuntu --preserve-env=PATH pm2 save 9>&-",
                    ("echo Rolled back to " + $sha)]
-              ), "executionTimeout": ["480"]}')
+              ), "executionTimeout": ["780"]}')
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "i-0c3e55c290844ec59" \
             --document-name "AWS-RunShellScript" \
@@ -534,10 +581,18 @@ jobs:
           # `npm install`/`npm ci` on the host and can take several minutes,
           # so it needs the same bounded-polling fix rather than the
           # short-ceiling `aws ssm wait command-executed`, and the same
-          # delivery timeout and executionTimeout. No disk preflight
-          # here: rollback only runs once the live release may already be
-          # broken, so refusing to try would never leave production better.
-          bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59"
+          # delivery timeout. No disk preflight here: rollback only runs once
+          # the live release may already be broken, so refusing to try would
+          # never leave production better.
+          ROLLBACK_LOG="$RUNNER_TEMP/rollback-ssm-output.log"
+          if SSM_WAIT_MAX_SECONDS=960 bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59" 2>&1 | tee "$ROLLBACK_LOG"; then
+            exit 0
+          fi
+          if grep -q 'ROLLBACK_NOT_STARTED' "$ROLLBACK_LOG"; then
+            echo "not_started=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Rollback SKIPPED: the host deploy lock was not acquired within 300s (another deploy or rollback is still running on i-0c3e55c290844ec59, or flock is missing). Nothing was changed by the rollback. Check SSM command history and production /health now."
+          fi
+          exit 1
 
       - name: Verify rollback health
         id: rollback_smoke_test
@@ -590,9 +645,11 @@ jobs:
             echo "::error::Deploy ${{ github.sha }} FAILED its post-deploy smoke test."
           fi
           if [ "${{ steps.deploy.outputs.live_release_untouched }}" == "true" ]; then
-            echo "::error::The deploy aborted before modifying the live release (see the deploy step log: disk preflight, payload verification, artifact download, or no SSM command sent), so rollback was intentionally skipped — the previous release should still be serving. Confirm /health and fix the cause before redeploying."
+            echo "::error::The deploy aborted before modifying the live release (see the deploy step log: host deploy lock held by another deploy or rollback, disk preflight, payload verification, artifact download, or no SSM command sent), so rollback was intentionally skipped — the previous release should still be serving. Confirm /health and fix the cause before redeploying."
           elif [ "${{ steps.settle_deploy.outcome }}" == "failure" ]; then
             echo "::error::Rollback was SKIPPED: deploy command '${{ steps.deploy.outputs.command_id }}' on instance i-0c3e55c290844ec59 could not be confirmed stopped (see \"Stop the deploy command before rollback\"). Production may be mid-install. Investigate immediately."
+          elif [ "${{ steps.rollback.outputs.not_started }}" == "true" ]; then
+            echo "::error::Rollback was SKIPPED: the host deploy lock (/var/lock/devcontrol-backend-deploy.lock) was not acquired within 300s — another deploy or rollback is still running on instance i-0c3e55c290844ec59 (or flock is missing). Production may be mid-install. Investigate immediately."
           elif [ "${{ steps.rollback.outcome }}" == "success" ] && [ "${{ steps.rollback_smoke_test.outcome }}" == "success" ]; then
             echo "::error::Automatic rollback to previous deploy (${{ steps.get_prev_sha.outputs.prev_sha }}) succeeded — production is stable again, but ${{ github.sha }} must be fixed before redeploying."
           elif [ "${{ steps.rollback.outcome }}" == "success" ]; then
@@ -622,12 +679,21 @@ jobs:
   deploy-migration-tooling:
     runs-on: ubuntu-24.04
     needs: lint-and-build
-    # One production run of this job at a time, across workflow runs (two
-    # quick pushes to main, or a re-run while an earlier attempt's SSM
-    # command is still on the host). Never cancels a job that has started.
-    # One group PER JOB, not a shared one: GitHub keeps at most one pending
-    # job per group and cancels any older pending one, so a single group
-    # spanning these three jobs of the same run would cancel one of them.
+    # One run of this job at a time across workflow runs, while the job is
+    # running. cancel-in-progress: false never cancels a started job, but
+    # GitHub keeps at most one PENDING job per group: a third push cancels
+    # the second push's still-queued job (the newest wins). One group PER
+    # JOB, not a shared one, or the three jobs of the same run would cancel
+    # each other while pending.
+    #
+    # No host lock here, unlike deploy-backend: this job only writes files
+    # for its own SHA (database-releases/<sha>, never deleting a directory
+    # it did not create), runs no npm/pm2, and repoints the symlink with an
+    # atomic temp-symlink + `mv -T` swap. An overlap with a command left
+    # running by an earlier run is last-writer-wins on the symlink, never a
+    # half-written release; migrations are only ever run by hand. It must
+    # not share deploy-backend's lock: the two jobs are deliberately
+    # independent.
     concurrency:
       group: production-deploy-migration-tooling
       cancel-in-progress: false
@@ -810,12 +876,21 @@ jobs:
   deploy-migration-tooling-admin:
     runs-on: ubuntu-24.04
     needs: lint-and-build
-    # One production run of this job at a time, across workflow runs (two
-    # quick pushes to main, or a re-run while an earlier attempt's SSM
-    # command is still on the host). Never cancels a job that has started.
-    # One group PER JOB, not a shared one: GitHub keeps at most one pending
-    # job per group and cancels any older pending one, so a single group
-    # spanning these three jobs of the same run would cancel one of them.
+    # One run of this job at a time across workflow runs, while the job is
+    # running. cancel-in-progress: false never cancels a started job, but
+    # GitHub keeps at most one PENDING job per group: a third push cancels
+    # the second push's still-queued job (the newest wins). One group PER
+    # JOB, not a shared one, or the three jobs of the same run would cancel
+    # each other while pending.
+    #
+    # No host lock here, unlike deploy-backend: this job only writes files
+    # for its own SHA (database-releases/<sha>, never deleting a directory
+    # it did not create), runs no npm/pm2, and repoints the symlink with an
+    # atomic temp-symlink + `mv -T` swap. An overlap with a command left
+    # running by an earlier run is last-writer-wins on the symlink, never a
+    # half-written release; migrations are only ever run by hand. It must
+    # not share deploy-backend's lock: the two jobs are deliberately
+    # independent.
     concurrency:
       group: production-deploy-migration-tooling-admin
       cancel-in-progress: false

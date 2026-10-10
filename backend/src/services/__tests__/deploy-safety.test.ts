@@ -22,12 +22,16 @@
  *     rollback" step (cancel → terminal, or rollback skipped) and the
  *     fail-job messages, each executed from ci.yml with a stubbed `aws`;
  *   - corrupt / truncated / empty base64 payloads on the host, which must
- *     stop every deploy before any download or deletion.
+ *     stop every deploy before any download or deletion;
+ *   - the host deploy lock, with real flock: a second deploy aborts
+ *     untouched, rollback waits for the lock or reports ROLLBACK_NOT_STARTED,
+ *     and a pm2 daemon started by a deploy never keeps the lock held;
+ *   - one concurrency group per production deploy job.
  *
  * No AWS credentials, network calls or real hosts are involved.
  */
 
-import { execSync, spawnSync } from 'child_process';
+import { ChildProcess, execSync, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -62,18 +66,26 @@ function minFreeMib(): number {
 
 /**
  * Executes a step's real `*_SCRIPT_B64=$(base64 < ...)` lines and its
- * `PARAMS=$(jq -n ...)` assignment (with `${{ github.sha }}` resolved, as
- * the Actions runner does before any shell runs) and returns the parsed
- * SSM parameters.
+ * `PARAMS=$(jq -n ...)` assignment (with `${{ github.sha }}` and any other
+ * `${{ ... }}` from ctx resolved, as the Actions runner does before any
+ * shell runs) and returns the parsed SSM parameters.
  */
-function buildParams(jobName: string, stepName: string): { commands: string[]; executionTimeout?: string[] } {
+function buildParams(
+  jobName: string,
+  stepName: string,
+  ctx: Record<string, string> = {}
+): { commands: string[]; executionTimeout?: string[] } {
   const step = extractStep(jobName, stepName);
   const b64Lines = step.match(/^\s*[A-Z_]+_SCRIPT_(?:B64|SHA256)=\$\((?:base64|sha256sum) < .*\)$/gm) ?? [];
   const params = step.match(/PARAMS=\$\(jq -n[\s\S]*?\}'\)/);
   if (!params) throw new Error(`No PARAMS=$(jq -n ...) block in ${jobName} / ${stepName}`);
   const script = [...b64Lines.map((l) => l.trim()), params[0], 'echo "$PARAMS"']
     .join('\n')
-    .replace(/\$\{\{ github\.sha \}\}/g, SHA);
+    .replace(/\$\{\{ github\.sha \}\}/g, SHA)
+    .replace(/\$\{\{\s*([^}]+?)\s*\}\}/g, (_m, expr: string) => {
+      if (!(expr in ctx)) throw new Error(`No test value for \${{ ${expr} }} in ${stepName}`);
+      return ctx[expr];
+    });
   const output = execSync(script, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -102,6 +114,7 @@ interface Sandbox {
   app: string; // stands in for /home/ubuntu/devcontrol
   admin: string; // stands in for /opt/devcontrol-admin
   tmp: string; // stands in for /tmp
+  lock: string; // stands in for /var/lock
   fixtures: string; // stands in for the S3 bucket
   log: string;
 }
@@ -117,10 +130,11 @@ function makeSandbox(): Sandbox {
     app: path.join(root, 'home/ubuntu/devcontrol'),
     admin: path.join(root, 'opt/devcontrol-admin'),
     tmp: path.join(root, 'tmp'),
+    lock: path.join(root, 'var/lock'),
     fixtures: path.join(root, 's3'),
     log: path.join(root, 'commands.log'),
   };
-  for (const d of [sb.app, path.join(root, 'opt'), sb.tmp, sb.fixtures, path.join(root, 'bin')]) {
+  for (const d of [sb.app, path.join(root, 'opt'), sb.tmp, sb.lock, sb.fixtures, path.join(root, 'bin')]) {
     fs.mkdirSync(d, { recursive: true });
   }
   fs.writeFileSync(sb.log, '');
@@ -213,6 +227,8 @@ function toSandbox(sb: Sandbox, commands: string[]): string[] {
       .join(sb.app)
       .split('/opt/devcontrol-admin')
       .join(sb.admin)
+      .split('/var/lock/')
+      .join(`${sb.lock}/`)
   );
 }
 
@@ -479,6 +495,191 @@ describe('deploy-backend SSM command (executes the real jq-built command list fr
     expect(snapshot(sb.app)).toEqual(before);
     expect(stdout).toContain('DEPLOY_ABORTED_BEFORE_LIVE_CHANGES');
     expectNoDeployLeftovers(sb);
+  });
+
+  // -------------------------------------------------------------------------
+  // Host deploy lock: real flock, real dash, two "SSM commands" racing
+  // -------------------------------------------------------------------------
+
+  describe('host deploy lock (deploy + rollback, executed with real flock)', () => {
+    const LOCK = '/var/lock/devcontrol-backend-deploy.lock';
+    const PREV = 'cafef00d'.repeat(5);
+    const ROLLBACK_STEP = 'Roll back to previous deploy';
+    const rollbackParams = (ws: 'true' | 'false') =>
+      buildParams(BACKEND.job, ROLLBACK_STEP, {
+        'steps.get_prev_sha.outputs.prev_sha': PREV,
+        'steps.get_prev_sha.outputs.prev_workspace_artifacts_exist': ws,
+      });
+    const children: ChildProcess[] = [];
+    const pids: number[] = [];
+
+    afterEach(() => {
+      for (const c of children.splice(0)) c.kill('SIGKILL');
+      for (const p of pids.splice(0)) {
+        try {
+          process.kill(p, 'SIGKILL');
+        } catch {
+          // already gone
+        }
+      }
+    });
+
+    const lockFile = (sb: Sandbox) => path.join(sb.lock, path.basename(LOCK));
+
+    function waitFor(cond: () => boolean, ms = 5000): void {
+      const end = Date.now() + ms;
+      while (!cond()) {
+        if (Date.now() > end) throw new Error('waitFor timed out');
+        execSync('sleep 0.05');
+      }
+    }
+
+    /** Another deploy/rollback "SSM command": holds the lock for `seconds`. */
+    function holdLock(sb: Sandbox, seconds: number): ChildProcess {
+      const ready = path.join(sb.root, 'holder.ready');
+      const child = spawn(
+        'sh',
+        ['-c', 'exec 9>"$1"; flock -n 9 || exit 3; : > "$2"; exec sleep "$3"', 'sh', lockFile(sb), ready, String(seconds)],
+        { stdio: 'ignore' }
+      );
+      children.push(child);
+      waitFor(() => fs.existsSync(ready));
+      return child;
+    }
+
+    const isLocked = (sb: Sandbox) => spawnSync('flock', ['-n', lockFile(sb), 'true']).status !== 0;
+
+    function seedPrevious(sb: Sandbox): void {
+      tarFromFiles(path.join(sb.fixtures, `backend/${PREV}/dist.tar.gz`), { 'index.js': 'PREVIOUS RELEASE' });
+      writeFile(path.join(sb.fixtures, `backend/${PREV}/package.json`), 'previous backend manifest');
+      writeFile(path.join(sb.fixtures, `backend/${PREV}/workspace-package.json`), 'previous workspace manifest');
+      writeFile(path.join(sb.fixtures, `backend/${PREV}/package-lock.json`), 'previous lockfile');
+    }
+
+    /** pm2 stub that, like a real first `pm2 restart`, leaves a daemon behind. */
+    function daemonizingPm2(sb: Sandbox): string {
+      const pidFile = path.join(sb.root, 'pm2-daemon.pid');
+      writeExecutable(
+        path.join(sb.root, 'bin/pm2'),
+        `echo "pm2 $*" >> "${sb.log}"
+if [ "$1" = restart ]; then nohup sleep 60 >/dev/null 2>&1 </dev/null & echo $! > "${pidFile}"; fi
+`
+      );
+      return pidFile;
+    }
+
+    it('deploy and rollback take the same lock before anything else runs; every pm2 call closes fd 9', () => {
+      for (const cmds of [params.commands, rollbackParams('true').commands, rollbackParams('false').commands]) {
+        const lockIdx = cmds.findIndex((c) => c === `exec 9>${LOCK}`);
+        expect(lockIdx).toBeGreaterThan(-1);
+        expect(cmds[lockIdx + 1]).toMatch(/^if ! flock -(n|w 300) 9; then /);
+        const firstWork = cmds.findIndex((c) => /mktemp|aws s3 cp|tar xzf|rm -rf|rm -f |mkdir|mv |npm |pm2 /.test(c) && !c.startsWith('trap'));
+        expect(lockIdx).toBeLessThan(firstWork);
+        expect(cmds.findIndex((c) => c.includes('command -v flock'))).toBeLessThan(lockIdx);
+        const pm2 = cmds.filter((c) => / pm2 /.test(c));
+        expect(pm2.length).toBe(2);
+        for (const c of pm2) expect(c).toMatch(/ 9>&-$/);
+      }
+      expect(params.commands).toContain(`if ! flock -n 9; then echo "ERROR: another backend deploy or rollback holds ${LOCK} — refusing to deploy. The live release was not touched." >&2; exit 1; fi`);
+    });
+
+    it('rollback is bounded: 300s lock wait + 480s install = executionTimeout 780, and 120s delivery + 780 fit the 960s poller ceiling', () => {
+      expect(rollbackParams('true').executionTimeout).toEqual(['780']);
+      expect(rollbackParams('true').commands.some((c) => c.startsWith('if ! flock -w 300 9; then '))).toBe(true);
+      expect(extractStep(BACKEND.job, ROLLBACK_STEP)).toContain(
+        'SSM_WAIT_MAX_SECONDS=960 bash .github/scripts/wait-for-ssm-command.sh "$COMMAND_ID" "i-0c3e55c290844ec59"'
+      );
+      expect(120 + 300 + 480).toBeLessThanOrEqual(960);
+    });
+
+    it('a second deploy aborts while another deploy/rollback holds the lock: untouched marker, nothing run, same-SHA staging + tarball of the running one kept', () => {
+      const sb = makeSandbox();
+      seedBackend(sb);
+      // The lock holder is a same-SHA deploy mid-flight (e.g. a re-run).
+      writeFile(path.join(sb.app, `.deploy-staging-${SHA}/dist/index.js`), 'IN-FLIGHT STAGING');
+      writeFile(path.join(sb.tmp, `dist-${SHA}.tar.gz`), 'IN-FLIGHT TARBALL');
+      const before = snapshot(sb.app);
+      holdLock(sb, 30);
+      const { status, stdout, stderr, log } = runOnSandbox(sb, params.commands, { FAKE_DF_AVAIL_KIB: ENOUGH_KIB });
+      expect(status).not.toBe(0);
+      expect(stdout).toContain('DEPLOY_ABORTED_BEFORE_LIVE_CHANGES');
+      expect(stderr).toContain(`another backend deploy or rollback holds ${sb.lock}/devcontrol-backend-deploy.lock`);
+      expect(log).toEqual([]);
+      expect(snapshot(sb.app)).toEqual(before);
+      expect(fs.readFileSync(path.join(sb.tmp, `dist-${SHA}.tar.gz`), 'utf8')).toBe('IN-FLIGHT TARBALL');
+    });
+
+    it('deploy fails closed when flock is missing: untouched marker, nothing run', () => {
+      const sb = makeSandbox();
+      seedBackend(sb);
+      const before = snapshot(sb.app);
+      const cmds = params.commands.map((c) => c.replace('command -v flock ', 'command -v flock-not-installed '));
+      expect(cmds).not.toEqual(params.commands);
+      const { status, stdout, stderr, log } = runOnSandbox(sb, cmds, { FAKE_DF_AVAIL_KIB: ENOUGH_KIB });
+      expect(status).not.toBe(0);
+      expect(stdout).toContain('DEPLOY_ABORTED_BEFORE_LIVE_CHANGES');
+      expect(stderr).toContain('flock (util-linux) not found on the host — refusing to deploy');
+      expect(log).toEqual([]);
+      expect(snapshot(sb.app)).toEqual(before);
+    });
+
+    it('a pm2 daemon started during the deploy does NOT keep the lock held after the deploy ends', () => {
+      const sb = makeSandbox();
+      seedBackend(sb);
+      const pidFile = daemonizingPm2(sb);
+      const { status } = runOnSandbox(sb, params.commands, { FAKE_DF_AVAIL_KIB: ENOUGH_KIB });
+      expect(status).toBe(0);
+      const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+      pids.push(pid);
+      expect(() => process.kill(pid, 0)).not.toThrow(); // the "daemon" is still alive...
+      expect(isLocked(sb)).toBe(false); // ...and the lock is free.
+    });
+
+    it('control: without `9>&-` the same daemon WOULD keep the lock held (proves the test above can fail)', () => {
+      const sb = makeSandbox();
+      seedBackend(sb);
+      const pidFile = daemonizingPm2(sb);
+      const cmds = params.commands.map((c) => c.replace(/ 9>&-$/, ''));
+      expect(cmds).not.toEqual(params.commands);
+      const { status } = runOnSandbox(sb, cmds, { FAKE_DF_AVAIL_KIB: ENOUGH_KIB });
+      expect(status).toBe(0);
+      pids.push(Number(fs.readFileSync(pidFile, 'utf8')));
+      expect(isLocked(sb)).toBe(true);
+    });
+
+    it('rollback waits for the lock, then proceeds once it is released', () => {
+      const sb = makeSandbox();
+      seedBackend(sb);
+      seedPrevious(sb);
+      holdLock(sb, 2);
+      const started = Date.now();
+      const { status, stdout, log } = runOnSandbox(sb, rollbackParams('true').commands, {});
+      const elapsed = Date.now() - started;
+      expect(status).toBe(0);
+      expect(elapsed).toBeGreaterThanOrEqual(1500);
+      expect(stdout).toContain(`Rolled back to ${PREV}`);
+      expect(stdout).not.toContain('ROLLBACK_NOT_STARTED');
+      expect(fs.readFileSync(path.join(sb.app, 'backend/dist/index.js'), 'utf8')).toBe('PREVIOUS RELEASE');
+      expect(log).toContain('sudo pm2 restart devcontrol-api --update-env');
+      expect(isLocked(sb)).toBe(false);
+    });
+
+    it('rollback times out on the lock: ROLLBACK_NOT_STARTED, nothing run, live release untouched', () => {
+      const sb = makeSandbox();
+      seedBackend(sb);
+      seedPrevious(sb);
+      const before = snapshot(sb.app);
+      holdLock(sb, 30);
+      // Same command list with the 300s wait shortened so the test is fast.
+      const cmds = rollbackParams('true').commands.map((c) => c.replace('flock -w 300 9', 'flock -w 1 9'));
+      expect(cmds).not.toEqual(rollbackParams('true').commands);
+      const { status, stdout, stderr, log } = runOnSandbox(sb, cmds, {});
+      expect(status).not.toBe(0);
+      expect(stdout).toContain('ROLLBACK_NOT_STARTED');
+      expect(stderr).toContain('rollback NOT started, nothing was changed');
+      expect(log).toEqual([]);
+      expect(snapshot(sb.app)).toEqual(before);
+    });
   });
 });
 
@@ -1026,6 +1227,7 @@ describe('N1. "Fail job on broken deploy" messages (executed from ci.yml)', () =
     'steps.deploy.outputs.command_id': 'cmd-deploy-9',
     'steps.settle_deploy.outcome': 'skipped',
     'steps.rollback.outcome': 'skipped',
+    'steps.rollback.outputs.not_started': '',
     'steps.rollback_smoke_test.outcome': 'skipped',
     'steps.get_prev_sha.outputs.prev_sha': 'previous-sha',
     'steps.get_prev_sha.outputs.prev_artifact_exists': 'true',
@@ -1035,12 +1237,62 @@ describe('N1. "Fail job on broken deploy" messages (executed from ci.yml)', () =
   it.each<[string, Record<string, string>, string]>([
     ['untouched release', { 'steps.deploy.outputs.live_release_untouched': 'true' }, 'aborted before modifying the live release'],
     ['deploy command not confirmed stopped', { 'steps.settle_deploy.outcome': 'failure' }, "deploy command 'cmd-deploy-9' on instance i-0c3e55c290844ec59 could not be confirmed stopped"],
-    ['prev_sha == this sha', { 'steps.get_prev_sha.outputs.prev_sha': SHA }, `last known-good marker already points at ${SHA}`],
+    [
+      'rollback could not take the host deploy lock',
+      { 'steps.settle_deploy.outcome': 'success', 'steps.rollback.outcome': 'failure', 'steps.rollback.outputs.not_started': 'true' },
+      'the host deploy lock (/var/lock/devcontrol-backend-deploy.lock) was not acquired within 300s',
+    ],
+    ['prev_sha == this sha',{ 'steps.get_prev_sha.outputs.prev_sha': SHA }, `last known-good marker already points at ${SHA}`],
     ['rollback + verify succeeded', { 'steps.settle_deploy.outcome': 'success', 'steps.rollback.outcome': 'success', 'steps.rollback_smoke_test.outcome': 'success' }, 'Automatic rollback to previous deploy (previous-sha) succeeded'],
     ['no usable previous artifact', { 'steps.get_prev_sha.outputs.prev_artifact_exists': 'false' }, 'No usable previous known-good deploy artifact'],
   ])('%s → job fails with an accurate message', (_l, o, expected) => {
     const r = fail(o);
     expect(r.status).toBe(1);
     expect(r.stdout).toContain(expected);
+  });
+});
+
+describe('rollback step (runner side, executed from ci.yml, real poller, stubbed aws)', () => {
+  const ctx = {
+    'steps.deploy.outcome': 'failure',
+    'steps.smoke_test.outcome': 'skipped',
+    'steps.get_prev_sha.outputs.prev_sha': 'cafef00d'.repeat(5),
+    'steps.get_prev_sha.outputs.prev_workspace_artifacts_exist': 'true',
+  };
+  const run = (env: Record<string, string>) => runStep(BACKEND.job, 'Roll back to previous deploy', ctx, env);
+
+  it('success: exits 0, no not_started output', () => {
+    const r = run({ FAKE_STATUSES: 'InProgress,Success', FAKE_STDOUT: 'Rolled back' });
+    expect(r.status).toBe(0);
+    expect(r.outputs).toEqual({});
+  });
+
+  it('host lock not acquired (ROLLBACK_NOT_STARTED): exits 1, not_started=true, loud error', () => {
+    const r = run({ FAKE_STATUSES: 'Failed', FAKE_STDOUT: 'ROLLBACK_NOT_STARTED' });
+    expect(r.status).toBe(1);
+    expect(r.outputs).toEqual({ not_started: 'true' });
+    expect(r.stdout).toContain('::error::Rollback SKIPPED: the host deploy lock was not acquired within 300s');
+  });
+
+  it('rollback failed mid-install (no marker): exits 1, not_started unset', () => {
+    const r = run({ FAKE_STATUSES: 'Failed', FAKE_STDOUT: 'npm ERR! ENOSPC' });
+    expect(r.status).toBe(1);
+    expect(r.outputs).toEqual({});
+  });
+});
+
+describe('N2. production deploy concurrency groups', () => {
+  const JOBS = [BACKEND.job, MIGRATION.job, ADMIN.job];
+
+  it.each(JOBS)('%s has its own group with cancel-in-progress: false', (job) => {
+    expect(extractJobBlock(job)).toContain(
+      `\n    concurrency:\n      group: production-${job}\n      cancel-in-progress: false\n`
+    );
+  });
+
+  it('the groups are distinct (a shared group would cancel pending sibling jobs of the same run) and there is no workflow-level group', () => {
+    const groups = JOBS.map((job) => extractJobBlock(job).match(/\n {6}group: (.*)\n/)![1]);
+    expect(new Set(groups).size).toBe(JOBS.length);
+    expect(ciYml).not.toMatch(/^concurrency:/m);
   });
 });
