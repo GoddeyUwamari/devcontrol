@@ -14,6 +14,12 @@
  * `get-command-invocation` responses, so the script under test really runs
  * `bash .github/scripts/wait-for-ssm-command.sh`, just against a stubbed AWS
  * CLI instead of the real one.
+ *
+ * Also covers the run 38037952336 false failure: `get-command-invocation`
+ * returning InvocationDoesNotExist right after `send-command`, before the
+ * invocation is registered. Status-sequence entries of the form
+ * `ERR:<Code>` make the fake CLI fail the way the real one does (exit 254,
+ * "An error occurred (<Code>) ..." on stderr).
  */
 
 import { spawnSync } from 'child_process';
@@ -54,12 +60,28 @@ if [ "$1" = "ssm" ] && [ "$2" = "get-command-invocation" ]; then
     IDX=$COUNT
     if [ $IDX -ge \${#STATUSES[@]} ]; then IDX=$((\${#STATUSES[@]} - 1)); fi
     echo $((COUNT + 1)) > "${counterFile}"
-    echo "\${STATUSES[$IDX]}"
+    ENTRY="\${STATUSES[$IDX]}"
+    case "$ENTRY" in
+      ERR:*)
+        echo "" >&2
+        echo "An error occurred (\${ENTRY#ERR:}) when calling the GetCommandInvocation operation: fake" >&2
+        exit 254
+        ;;
+    esac
+    echo "$ENTRY"
     exit 0
   elif [ "$QUERY" = "StandardOutputContent" ]; then
+    if [ -n "$FAKE_OUTPUT_FETCH_FAILS" ]; then
+      echo "An error occurred (InvocationDoesNotExist) when calling the GetCommandInvocation operation: fake" >&2
+      exit 254
+    fi
     echo "fake stdout content"
     exit 0
   elif [ "$QUERY" = "StandardErrorContent" ]; then
+    if [ -n "$FAKE_OUTPUT_FETCH_FAILS" ]; then
+      echo "An error occurred (InvocationDoesNotExist) when calling the GetCommandInvocation operation: fake" >&2
+      exit 254
+    fi
     echo "fake stderr content"
     exit 0
   fi
@@ -70,6 +92,11 @@ exit 1
 
   const awsPath = path.join(tmpDir, 'aws');
   fs.writeFileSync(awsPath, script, { mode: 0o755 });
+}
+
+/** How many `--query Status` calls the fake CLI received. */
+function statusCallCount(tmpDir: string): number {
+  return Number(fs.readFileSync(path.join(tmpDir, 'call-count'), 'utf8').trim());
 }
 
 function runScript(
@@ -168,6 +195,169 @@ describe('wait-for-ssm-command.sh', () => {
     });
     expect(status).toBe(0);
   });
+
+  describe('registration delay (InvocationDoesNotExist right after send-command — run 38037952336)', () => {
+    it('8. retries InvocationDoesNotExist several times, then follows the invocation to Success', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(
+        tmpDir,
+        ['ERR:InvocationDoesNotExist', 'ERR:InvocationDoesNotExist', 'ERR:InvocationDoesNotExist', 'InProgress', 'Success'],
+        { SSM_WAIT_POLL_SECONDS: '0', SSM_WAIT_REGISTRATION_BACKOFF_SECONDS: '0' }
+      );
+      expect(status).toBe(0);
+      expect(statusCallCount(tmpDir)).toBe(5);
+      expect(stdout.match(/not registered yet \(InvocationDoesNotExist/g)).toHaveLength(3);
+      expect(stdout).toContain('fake stdout content');
+    });
+
+    it('9. a registration delay followed by a real Failed status still fails (retry never masks the outcome)', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['ERR:InvocationDoesNotExist', 'Failed'], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_REGISTRATION_BACKOFF_SECONDS: '0',
+      });
+      expect(status).toBe(1);
+      expect(stdout).toContain('SSM command finished with status: Failed');
+    });
+
+    it('10. persistent InvocationDoesNotExist fails once the registration deadline passes, with command/instance diagnostics', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout, stderr } = runScript(tmpDir, ['ERR:InvocationDoesNotExist'], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_REGISTRATION_MAX_SECONDS: '1',
+        SSM_WAIT_REGISTRATION_BACKOFF_SECONDS: '1',
+        // Output can't be fetched for an invocation that doesn't exist —
+        // the diagnostics must say so instead of crashing.
+        FAKE_OUTPUT_FETCH_FAILS: '1',
+      });
+      expect(status).toBe(1);
+      // How many retries fit in 1s depends on machine load (a slow first
+      // call can consume the whole window); retry counting is covered
+      // deterministically by test 8. This test pins the bounded deadline.
+      expect(statusCallCount(tmpDir)).toBeGreaterThanOrEqual(1);
+      expect(stdout).toMatch(/was still not registered \(InvocationDoesNotExist\) after \d+s \(limit 1s\)/);
+      expect(stdout).toContain('SSM command ID: cmd-123');
+      expect(stdout).toContain('Instance ID: i-fakeinstance');
+      expect(stdout).toContain('InvocationDoesNotExist');
+      expect(stderr).toContain('(InvocationDoesNotExist)');
+    });
+
+    it('11. a registration deadline of 0 fails on the first InvocationDoesNotExist without sleeping', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status } = runScript(tmpDir, ['ERR:InvocationDoesNotExist', 'Success'], {
+        SSM_WAIT_REGISTRATION_MAX_SECONDS: '0',
+        FAKE_OUTPUT_FETCH_FAILS: '1',
+      });
+      expect(status).toBe(1);
+      expect(statusCallCount(tmpDir)).toBe(1);
+    });
+  });
+
+  describe('genuine errors fail immediately — never retried', () => {
+    it.each(['AccessDeniedException', 'InvalidCommandId', 'InvalidInstanceId', 'ThrottlingException'])(
+      '12. %s fails on the first call with no retry',
+      (code) => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+        const { status, stdout, stderr } = runScript(tmpDir, [`ERR:${code}`, 'Success'], {
+          SSM_WAIT_POLL_SECONDS: '0',
+          SSM_WAIT_REGISTRATION_BACKOFF_SECONDS: '0',
+        });
+        expect(status).toBe(1);
+        expect(statusCallCount(tmpDir)).toBe(1);
+        expect(stdout).not.toContain('retrying');
+        expect(stdout).toContain('non-retryable error');
+        expect(stderr).toContain(`(${code})`);
+      }
+    );
+
+    it('13. InvocationDoesNotExist AFTER the invocation was already seen is not a registration delay — fails immediately', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['InProgress', 'ERR:InvocationDoesNotExist', 'Success'], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_REGISTRATION_BACKOFF_SECONDS: '0',
+      });
+      expect(status).toBe(1);
+      expect(statusCallCount(tmpDir)).toBe(2);
+      expect(stdout).toContain('non-retryable error');
+    });
+
+    it.each([['an empty status', ''], ['None', 'None'], ['an unknown status', 'Exploded']])(
+      '14. %s is treated as malformed and fails immediately, never polled forever',
+      (_label, value) => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+        const { status, stdout } = runScript(tmpDir, [value, 'Success'], { SSM_WAIT_POLL_SECONDS: '0' });
+        expect(status).toBe(1);
+        expect(statusCallCount(tmpDir)).toBe(1);
+        expect(stdout).toContain('unrecognized status');
+      }
+    );
+  });
+
+  describe('terminal statuses print full diagnostics', () => {
+    it.each(['Failed', 'TimedOut', 'Cancelled'])('15. %s exits 1 and prints command ID, instance ID, stdout and stderr', (terminal) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['Pending', 'InProgress', terminal], { SSM_WAIT_POLL_SECONDS: '0' });
+      expect(status).toBe(1);
+      expect(stdout).toContain('SSM command ID: cmd-123');
+      expect(stdout).toContain('Instance ID: i-fakeinstance');
+      expect(stdout).toContain('fake stdout content');
+      expect(stdout).toContain('fake stderr content');
+      expect(stdout).toContain(`SSM command finished with status: ${terminal}`);
+    });
+
+    it('16. timing out while still InProgress prints command ID, instance ID and output diagnostics', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['InProgress'], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_MAX_SECONDS: '0',
+      });
+      expect(status).toBe(1);
+      expect(stdout).toContain('SSM command ID: cmd-123');
+      expect(stdout).toContain('Instance ID: i-fakeinstance');
+      expect(stdout).toContain('fake stdout content');
+      expect(stdout).toContain('fake stderr content');
+    });
+
+    it('17. Success is not turned into a failure when fetching stdout afterwards errors', () => {
+      // A false failure here would trigger a rollback of a healthy deploy.
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['Success'], { FAKE_OUTPUT_FETCH_FAILS: '1' });
+      expect(status).toBe(0);
+      expect(stdout).toContain('could not retrieve StandardOutputContent');
+    });
+  });
+
+  describe('SSM_WAIT_ANY_TERMINAL_OK=1 ("is it still running?" mode used before rollback)', () => {
+    it.each(['Success', 'Failed', 'Cancelled', 'TimedOut'])('18. %s counts as finished: exits 0 and names the status', (terminal) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['InProgress', 'Cancelling', terminal], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_ANY_TERMINAL_OK: '1',
+      });
+      expect(status).toBe(0);
+      expect(stdout).toContain(`reached terminal status: ${terminal}`);
+    });
+
+    it('19. still running at the deadline is NOT finished: exits 1', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status, stdout } = runScript(tmpDir, ['Cancelling'], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_MAX_SECONDS: '0',
+        SSM_WAIT_ANY_TERMINAL_OK: '1',
+      });
+      expect(status).toBe(1);
+      expect(stdout).toContain('did not reach a terminal state');
+    });
+
+    it.each(['ERR:AccessDeniedException', 'Exploded'])('20. %s is NOT finished: exits 1', (entry) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssm-wait-test-'));
+      const { status } = runScript(tmpDir, ['InProgress', entry], {
+        SSM_WAIT_POLL_SECONDS: '0',
+        SSM_WAIT_ANY_TERMINAL_OK: '1',
+      });
+      expect(status).toBe(1);
+    });
+  });
 });
 
 describe('deploy-backend and rollback steps use the shared script instead of the raw waiter', () => {
@@ -193,17 +383,26 @@ describe('deploy-backend and rollback steps use the shared script instead of the
     expect(getPrevShaStep![0]).toContain('aws ssm wait command-executed');
   });
 
-  it('7. downstream steps (smoke test, record-success, rollback, verify-rollback, fail-on-broken) are untouched by this change', () => {
-    // These `if:`/id contracts are exactly what determines which steps run
-    // after a Success vs a Failure from the deploy step — asserting they're
-    // byte-identical to before proves this fix only changed *how* the
-    // terminal status is determined, not what happens once it is.
+  it('7. smoke-test and record-success contracts are unchanged; rollback, verify-rollback and fail-on-broken now also cover deploy-step failure', () => {
+    // Unchanged: these decide what happens after a SUCCESSFUL deploy step.
     expect(ciYml).toContain("id: smoke_test\n        continue-on-error: true");
     expect(ciYml).toContain("- name: Record successful deploy\n        if: steps.smoke_test.outcome == 'success'");
+    // Changed on purpose (run 38037952336): see deploy-safety.test.ts for
+    // the evaluated truth table of these expressions.
+    expect(ciYml).toContain("- name: Deploy via SSM and restart PM2\n        id: deploy\n");
+    expect(ciYml).toContain("steps.deploy.outcome == 'failure' &&\n              steps.deploy.outputs.live_release_untouched != 'true'");
     expect(ciYml).toContain(
-      "steps.smoke_test.outcome == 'failure' &&\n          steps.get_prev_sha.outputs.prev_artifact_exists == 'true' &&\n          steps.get_prev_sha.outputs.prev_sha != github.sha"
+      "steps.get_prev_sha.outputs.prev_artifact_exists == 'true' &&\n          steps.get_prev_sha.outputs.prev_sha != github.sha"
     );
-    expect(ciYml).toContain("- name: Verify rollback health\n        id: rollback_smoke_test\n        if: steps.rollback.outcome == 'success'");
-    expect(ciYml).toContain("- name: Fail job on broken deploy\n        if: steps.smoke_test.outcome == 'failure'");
+    expect(ciYml).toContain(
+      "- name: Verify rollback health\n        id: rollback_smoke_test\n        if: \"!cancelled() && steps.rollback.outcome == 'success'\""
+    );
+    // Rollback runs only once the deploy command is confirmed finished.
+    expect(ciYml).toContain(
+      "- name: Roll back to previous deploy\n        id: rollback\n        if: \"!cancelled() && steps.settle_deploy.outputs.settled == 'true'\""
+    );
+    expect(ciYml).toContain(
+      "- name: Fail job on broken deploy\n        if: >\n          !cancelled() &&\n          (steps.deploy.outcome == 'failure' || steps.smoke_test.outcome == 'failure')"
+    );
   });
 });
