@@ -84,8 +84,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202609010800_add_payment_failed_notification_tracking.sql`**,
 **`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**,
 **`202609040035_add_account_security_findings_disposition.sql`**,
-**`202610102024_drop_auto_detect_resource_ownership.sql`**, and
-**`202610112300_create_framework_evaluation_persistence.sql`**.
+**`202610102024_drop_auto_detect_resource_ownership.sql`**,
+**`202610112300_create_framework_evaluation_persistence.sql`**, and
+**`202610101200_create_resource_health_evaluations.sql`**.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
@@ -731,3 +732,39 @@ application:
 A resource that is no longer scanned (soft-terminated, or in an organization
 with no AWS connection) keeps its old entries in the column; the read rule
 above still applies to them.
+
+## Classification — `202610101200_create_resource_health_evaluations.sql`
+
+Placed here from the start, for two ownership reasons: it adds
+`aws_resources_id_org_unique UNIQUE (id, organization_id)` to
+`aws_resources` (`postgres`-owned, created by
+`008_create_aws_resources.sql` in this directory), and it enables and forces
+row-level security, with policies, on the two tables it creates
+(`resource_health_evaluation_runs`, `resource_health_evaluation_results`),
+which the `postgres` role creates and therefore owns. `devcontrol` receives
+`SELECT`, `INSERT`, `UPDATE` and `DELETE` on both, and not `TRUNCATE`, which
+row-level security does not apply to.
+
+It is a plain create: it refuses to run if either table, or
+`aws_resources_id_org_unique`, already exists.
+
+### Rollback
+
+`202610101200_create_resource_health_evaluations_rollback.sql` is the first
+rollback file in this directory. It ships in the admin artifact with the
+other `*.sql` files, but `migrate.js` never executes it: `getMigrationFiles()`
+excludes every file whose name contains `rollback`, so neither a sweep nor
+`--execute-only` can select it, and `ci-bootstrap-schema.js` skips it the
+same way. Running it is a separate, manually authorized operation, as the
+`postgres` role, in one transaction:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202610101200_create_resource_health_evaluations_rollback.sql
+```
+
+It removes only what the migration created, and only that migration's
+`schema_migrations` row. It never cascades: it refuses if any foreign key
+other than the migration's own references `aws_resources_id_org_unique`, or
+if anything else references the two tables. Roll back the application
+release that uses these tables first.
