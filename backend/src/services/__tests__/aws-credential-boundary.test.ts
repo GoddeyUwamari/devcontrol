@@ -247,7 +247,8 @@ describe('the checker catches each way the boundary can be crossed', () => {
 });
 
 describe('backend source', () => {
-  const analyses = sourceFiles(SOURCE_ROOT).map((file) => analyze(path.relative(SOURCE_ROOT, file), fs.readFileSync(file, 'utf8')));
+  const files = sourceFiles(SOURCE_ROOT);
+  const analyses = files.map((file) => analyze(path.relative(SOURCE_ROOT, file), fs.readFileSync(file, 'utf8')));
 
   it('constructs no AWS client outside the boundary', () => {
     expect(analyses.flatMap((a) => a.violations)).toEqual([]);
@@ -258,6 +259,13 @@ describe('backend source', () => {
     // real constructions rather than nothing.
     expect(analyses.reduce((n, a) => n + a.customerClients, 0)).toBeGreaterThan(0);
     expect(analyses.reduce((n, a) => n + a.stsClients, 0)).toBeGreaterThan(0);
+  });
+
+  it('builds the platform STS client in one place only: assumeRoleAsPlatform, a new client per call', () => {
+    const stsModules = files
+      .map((file, i) => ({ file: path.relative(SOURCE_ROOT, file).split(path.sep).join('/'), sts: analyses[i].stsClients }))
+      .filter(({ sts }) => sts > 0);
+    expect(stsModules).toEqual([{ file: 'services/platform-sts.ts', sts: 1 }]);
   });
 
   it('the modules allowed to check that the platform keys are present build no AWS client', () => {

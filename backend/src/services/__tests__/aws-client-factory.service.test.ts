@@ -90,6 +90,9 @@ jest.doMock('../../config/database', () => ({ pool: { query: poolQuery } }));
 // Loaded after the mocks above are registered.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { AWSClientFactory } = require('../aws-client-factory.service') as typeof import('../aws-client-factory.service');
+// Same registry as the factory's own import, so it sees the mocked STSClient.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { PlatformAwsCredentialsUnavailableError } = require('../platform-sts') as typeof import('../platform-sts');
 
 const PLATFORM_KEYS = { accessKeyId: 'AKIAPLATFORMKEYID', secretAccessKey: 'platform-secret-not-a-credential' };
 const TEMPORARY = { accessKeyId: 'ASIACUSTOMERTEMP', secretAccessKey: 'customer-temp-secret', sessionToken: 'customer-session-token' };
@@ -208,6 +211,42 @@ describe('an account row that cannot be assumed', () => {
     await expect(AWSClientFactory.createClients('org-role-revoked')).rejects.toThrow('AWS_NOT_CONNECTED');
     // Only the STS client that made the refused call.
     expect(constructed.map((c) => c.client)).toEqual(['STSClient']);
+  });
+
+  it.each([
+    ['the default chain finds no credentials', Object.assign(new Error('Could not load credentials from any providers'), { name: 'CredentialsProviderError' })],
+    ['instance metadata times out', Object.assign(new Error('TimeoutError from instance metadata service'), { name: 'ProviderError' })],
+    ['STS rejects the platform key', Object.assign(new Error('The security token included in the request is invalid.'), { name: 'InvalidClientTokenId' })],
+  ])('the platform identity unavailable (%s): PLATFORM_AWS_CREDENTIALS_UNAVAILABLE, never AWS_NOT_CONNECTED, and no service client', async (_label, cause) => {
+    connected();
+    stsSend.mockRejectedValue(cause);
+
+    const thrown = await AWSClientFactory.createClients('org-connected').catch((err: unknown) => err);
+
+    expect(thrown).toBeInstanceOf(PlatformAwsCredentialsUnavailableError);
+    expect((thrown as Error).message).toMatch(/^PLATFORM_AWS_CREDENTIALS_UNAVAILABLE: /);
+    expect((thrown as Error).message).not.toContain('AWS_NOT_CONNECTED');
+    expect(constructed.map((c) => c.client)).toEqual(['STSClient']);
+  });
+});
+
+describe('the platform STS client', () => {
+  it('is built anew for every AssumeRole and never kept across calls', async () => {
+    connected();
+    await AWSClientFactory.createClients('org-connected');
+    await AWSClientFactory.createClients('org-connected');
+    connected({ ...ACCOUNT_ROW, region: 'ap-southeast-2' });
+    await AWSClientFactory.createClients('org-connected');
+    await AWSClientFactory.createClients('org-connected');
+
+    expect(stsSend).toHaveBeenCalledTimes(4);
+    // One STS client per AssumeRole -- each with a region and no credentials.
+    expect(constructed.filter((c) => c.client === 'STSClient').map((c) => c.config)).toEqual([
+      { region: 'eu-west-1' },
+      { region: 'eu-west-1' },
+      { region: 'ap-southeast-2' },
+      { region: 'ap-southeast-2' },
+    ]);
   });
 });
 

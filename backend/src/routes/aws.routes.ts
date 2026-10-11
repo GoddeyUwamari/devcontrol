@@ -2,13 +2,13 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { randomBytes } from 'crypto'
 import awsCostService from '../services/aws-cost.service'
 import { pool } from '../config/database'
-import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
 import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents'
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 import { checkNewConnectionRoleArn, DEVCONTROL_ROLE_NAME_PREFIX } from '../utils/devcontrolRoleArn'
+import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -76,10 +76,12 @@ router.get('/costs/monthly', async (req: Request, res: Response) => {
     const costs = await awsCostService.fetchMonthlyCosts(orgId)
     res.json(costs)
   } catch (error) {
+    // The real error stays in the server log: AWS messages can name ARNs and
+    // account IDs, so the response carries only a fixed message.
     console.error('Error fetching monthly costs:', error)
     res.status(500).json({
       error: 'Failed to fetch monthly costs',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: 'Monthly cost data is unavailable right now. Please try again later.',
     })
   }
 })
@@ -199,15 +201,20 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
 
   // Validate via STS AssumeRole as the platform's own identity (the SDK's
   // default credential chain)
-  const sts = new STSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
   try {
-    await sts.send(new AssumeRoleCommand({
+    await assumeRoleAsPlatform(process.env.AWS_REGION ?? 'us-east-1', {
       RoleArn: decodedRoleArn,
       RoleSessionName: 'devcontrol-validation',
       ExternalId: externalId,
       DurationSeconds: 900,
-    }))
+    }, `Connect AWS org ${orgId}`)
   } catch (stsError: any) {
+    // The platform's own identity is unavailable: the role was never tested,
+    // so the owner is not told to fix it. Nothing is saved and the connect
+    // session stays for a retry.
+    if (isPlatformAwsCredentialsUnavailable(stsError)) {
+      return res.status(503).json({ success: false, message: PLATFORM_AWS_UNAVAILABLE_MESSAGE })
+    }
     console.error('[Connect AWS] STS validation failed:', {
       name: stsError?.name,
       code: stsError?.Code,
@@ -215,10 +222,11 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
       requestId: stsError?.$metadata?.requestId,
       message: stsError?.message,
     })
+    // No raw AWS message in the response: it names the platform's own
+    // principal. The full message is in the server log above.
     return res.status(422).json({
       success: false,
       message: mapStsError(stsError),
-      detail: stsError?.message ?? null,
     })
   }
   // Persist with org_id.

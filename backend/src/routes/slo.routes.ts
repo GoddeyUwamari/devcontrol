@@ -5,6 +5,7 @@ import { authenticateToken } from '../middleware/auth.middleware'
 import { requireMember } from '../middleware/rbac.middleware'
 import { requireEnterprise } from '../middleware/subscription.middleware'
 import { SUPPORTED_SLIS, SUPPORTED_WINDOWS } from '../services/slo-evaluation'
+import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 
 /**
  * SLO 3A API. Every route enforces authenticateToken + requireEnterprise server-side —
@@ -104,6 +105,9 @@ export const createSloRoutes = (pool: Pool): Router => {
       const result = await service.evaluateSloById(req.params.id, organizationId)
       return res.json({ success: true, data: result })
     } catch (err: any) {
+      if (isPlatformAwsCredentialsUnavailable(err)) {
+        return res.status(503).json({ success: false, message: PLATFORM_AWS_UNAVAILABLE_MESSAGE })
+      }
       console.error('[SLO EVALUATE]', err)
       const status = err instanceof SloNotFoundError ? 404 : 500
       return res.status(status).json({ success: false, message: err.message ?? 'Failed to evaluate SLO' })
@@ -121,6 +125,9 @@ export const createSloRoutes = (pool: Pool): Router => {
       const results = await service.evaluateAllSlos(organizationId)
       return res.json({ success: true, data: results })
     } catch (err: any) {
+      if (isPlatformAwsCredentialsUnavailable(err)) {
+        return res.status(503).json({ success: false, message: PLATFORM_AWS_UNAVAILABLE_MESSAGE })
+      }
       console.error('[SLO EVALUATE ALL]', err)
       return res.status(500).json({ success: false, message: 'Failed to evaluate SLOs' })
     }

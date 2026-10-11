@@ -17,6 +17,7 @@ import { Pool } from 'pg';
 import { CostRecommendationsController } from '../cost-recommendations.controller';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import costOptimizationService from '../../services/cost-optimization.service';
+import { PlatformAwsCredentialsUnavailableError, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../../services/platform-sts';
 import type { RecommendationStats } from '../../types';
 
 function dbConfig() {
@@ -145,6 +146,27 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
     expect(runs[0].total_potential_savings).toBeNull();
     // Full raw error preserved server-side for diagnostics.
     expect(runs[0].error_message).toContain('AWS_NOT_CONNECTED');
+  });
+
+  it('2b. the platform identity unavailable: 503 and "try again", not "no AWS account connected", in the response and the run history', async () => {
+    const orgId = await insertOrg();
+    const controller = new CostRecommendationsController();
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockRejectedValue(
+      new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers'))
+    );
+
+    const { req, res, json } = mockReqRes(orgId);
+    await controller.analyze(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(json).toHaveBeenCalledWith({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
+
+    const { req: listReq, res: listRes, json: listJson } = mockReqRes(orgId);
+    await controller.getAnalysisRuns(listReq, listRes);
+    const returnedRun = listJson.mock.calls[0][0].data[0];
+    expect(returnedRun.status).toBe('failed');
+    expect(returnedRun.error_message).toBe(PLATFORM_AWS_UNAVAILABLE_MESSAGE);
   });
 
   it('3. does not write a resource_discovery_jobs row -- manual analysis is never mislabeled as resource discovery', async () => {

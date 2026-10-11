@@ -3,6 +3,7 @@ import { CostRecommendationsRepository } from '../repositories/cost-recommendati
 import { CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
 import costOptimizationService from '../services/cost-optimization.service';
 import { RemediationService } from '../services/remediation.service';
+import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILABLE, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
@@ -32,6 +33,9 @@ const optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
  */
 function classifyRunFailureMessage(rawMessage: string | null): string | null {
   if (!rawMessage) return null;
+  if (rawMessage.includes(PLATFORM_AWS_CREDENTIALS_UNAVAILABLE)) {
+    return PLATFORM_AWS_UNAVAILABLE_MESSAGE;
+  }
   if (rawMessage.includes('AWS_NOT_CONNECTED')) {
     return 'No AWS account connected for this organization.';
   }
@@ -472,6 +476,12 @@ export class CostRecommendationsController {
       }
 
       // Check for specific AWS errors
+      if (isPlatformAwsCredentialsUnavailable(error)) {
+        const response: ApiResponse = { success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE };
+        res.status(503).json(response);
+        return;
+      }
+
       if (error.message && error.message.includes('AWS_NOT_CONNECTED')) {
         const response: ApiResponse = {
           success: false,

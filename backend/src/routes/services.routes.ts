@@ -8,6 +8,7 @@ import { requireMember } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
 import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscription.middleware';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
+import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
 
 const router = Router();
@@ -348,7 +349,13 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
       res.status(409).json({ error: 'aws_not_connected', message: 'Please connect your AWS account in Settings to run audits.' });
       return;
     }
-    res.status(500).json({ success: false, error: err.message || 'Discovery failed — check AWS connection' });
+    if (isPlatformAwsCredentialsUnavailable(err)) {
+      res.status(503).json({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
+      return;
+    }
+    // The real error is logged above; AWS messages can name ARNs and account
+    // IDs, so the response carries only a fixed message.
+    res.status(500).json({ success: false, error: 'Discovery failed. Please try again later.' });
   }
 });
 

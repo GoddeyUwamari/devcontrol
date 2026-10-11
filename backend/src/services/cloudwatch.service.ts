@@ -4,6 +4,7 @@ import { EKSClient, DescribeClusterCommand } from '@aws-sdk/client-eks'
 import { EC2Client, paginateDescribeVolumeStatus, VolumeStatusItem } from '@aws-sdk/client-ec2'
 import { RDSClient } from '@aws-sdk/client-rds'
 import { AWSClientFactory } from './aws-client-factory.service'
+import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
 import { fetchMetricDataBatch, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult } from './cloudwatch-metric-batch.util'
@@ -1656,6 +1657,9 @@ export class CloudWatchService {
     try {
       clients = await AWSClientFactory.createClients(organizationId)
     } catch (err) {
+      // null reads as "not connected"; the platform's own identity being
+      // unavailable is not that, so it propagates as an error instead.
+      if (isPlatformAwsCredentialsUnavailable(err)) throw err
       console.error('[CloudWatch] Failed to create AWS clients:', err)
       return null
     }
@@ -2132,6 +2136,8 @@ export class CloudWatchService {
     try {
       clients = await AWSClientFactory.createClients(organizationId)
     } catch (err) {
+      // null evaluates as aws_not_connected; see computeMetrics().
+      if (isPlatformAwsCredentialsUnavailable(err)) throw err
       console.error('[CloudWatch] SLO: failed to create AWS clients:', err)
       return null
     }

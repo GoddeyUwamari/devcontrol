@@ -7,7 +7,7 @@
  */
 
 import { Pool } from 'pg';
-import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
+import { assumeRoleAsPlatform } from './platform-sts';
 import {
   EC2Client,
   StopInstancesCommand,
@@ -286,13 +286,12 @@ export class RemediationService {
     const region = process.env.AWS_DEFAULT_REGION || 'us-east-1';
 
     // The platform's own identity, from the SDK's default credential chain.
-    const sts = new STSClient({ region });
-    const assumed = await sts.send(new AssumeRoleCommand({
+    const assumed = await assumeRoleAsPlatform(region, {
       RoleArn: roleArn,
       RoleSessionName: `devcontrol-remediation-${Date.now()}`,
       ExternalId: externalId,
       DurationSeconds: 900, // 15 minutes — enough for any single action
-    }));
+    }, `RemediationService org ${organizationId}`);
 
     const creds = assumed.Credentials;
     if (!creds?.AccessKeyId || !creds.SecretAccessKey || !creds.SessionToken) {
