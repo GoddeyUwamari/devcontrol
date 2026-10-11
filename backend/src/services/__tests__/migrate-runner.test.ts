@@ -21,6 +21,7 @@ import { Client } from 'pg';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const {
@@ -30,6 +31,8 @@ const {
   computeChecksum,
   hasApplicationSchema,
   ADVISORY_LOCK_KEY,
+  requiresExplicitDatabaseName,
+  assertExplicitDatabaseName,
 } = require('../../../../database/migrate.js');
 
 function dbConfig() {
@@ -1107,5 +1110,162 @@ describe('database/migrate.js — targeted execution (--execute-only)', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+describe('database/migrate.js — explicit DB_NAME (no silent default for write-capable runs)', () => {
+  const MIGRATE_JS = path.join(__dirname, '../../../../database/migrate.js');
+  const ENV_KEYS = ['DB_NAME', 'DB_HOST', 'DB_PORT', 'PGOPTIONS'] as const;
+  let savedEnv: Record<string, string | undefined> = {};
+  let schemaCounter = 0;
+  const schemas: string[] = [];
+  const fixtureDirs: string[] = [];
+  // Captured before any test changes process.env, so the live checks below
+  // always reach the real test database.
+  const liveConfig = dbConfig();
+
+  function nextSchema() {
+    const name = `migrate_dbname_test_${Date.now()}_${schemaCounter++}`;
+    schemas.push(name);
+    return name;
+  }
+
+  async function createSchema(schema: string) {
+    const admin = new Client(liveConfig);
+    await admin.connect();
+    try {
+      await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      await admin.query(`CREATE SCHEMA ${schema}`);
+    } finally {
+      await admin.end();
+    }
+  }
+
+  async function tablesIn(schema: string): Promise<string[]> {
+    const admin = new Client(liveConfig);
+    await admin.connect();
+    try {
+      const { rows } = await admin.query(
+        'SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY table_name',
+        [schema]
+      );
+      return rows.map((r: { table_name: string }) => r.table_name);
+    } finally {
+      await admin.end();
+    }
+  }
+
+  beforeEach(() => {
+    savedEnv = {};
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  afterAll(async () => {
+    const admin = new Client(liveConfig);
+    await admin.connect();
+    try {
+      for (const s of schemas) await admin.query(`DROP SCHEMA IF EXISTS ${s} CASCADE`);
+    } finally {
+      await admin.end();
+    }
+    for (const d of fixtureDirs) rmFixtureDir(d);
+  });
+
+  it('(36) DB_NAME is required for --execute-only (real and preview), --init-baseline and a non-dry-run sweep; only a plain --dry-run/--pending sweep keeps the default', () => {
+    expect(requiresExplicitDatabaseName({ executeOnly: 'x.sql' })).toBe(true);
+    expect(requiresExplicitDatabaseName({ executeOnly: 'x.sql', dryRun: true })).toBe(true);
+    expect(requiresExplicitDatabaseName({ executeOnly: '' })).toBe(true);
+    expect(requiresExplicitDatabaseName({ initBaselineNote: 'n' })).toBe(true);
+    expect(requiresExplicitDatabaseName({ dryRun: false })).toBe(true);
+    expect(requiresExplicitDatabaseName({})).toBe(true);
+    expect(requiresExplicitDatabaseName({ dryRun: true })).toBe(false);
+
+    expect(() => assertExplicitDatabaseName({ executeOnly: 'x.sql' }, {})).toThrow(/DB_NAME is not set/);
+    expect(() => assertExplicitDatabaseName({ executeOnly: 'x.sql' }, { DB_NAME: '  ' })).toThrow(/DB_NAME is not set/);
+    expect(() => assertExplicitDatabaseName({ executeOnly: 'x.sql' }, { DB_NAME: 'some_db' })).not.toThrow();
+    expect(() => assertExplicitDatabaseName({ dryRun: true }, {})).not.toThrow();
+  });
+
+  it('(37) unset DB_NAME + --execute-only (no injected client): refuses before connecting, and nothing is written', async () => {
+    const schema = nextSchema();
+    await createSchema(schema);
+    const dir = mkFixtureDir({ '001_dbname_target.sql': 'CREATE TABLE dbname_target (id SERIAL PRIMARY KEY);' });
+    fixtureDirs.push(dir);
+
+    delete process.env.DB_NAME;
+    // Had the runner tried to connect, it would get ECONNREFUSED on this
+    // port rather than the DB_NAME refusal; and any write would land in the
+    // isolated schema checked below.
+    process.env.DB_HOST = '127.0.0.1';
+    process.env.DB_PORT = '1';
+    process.env.PGOPTIONS = `-c search_path=${schema}`;
+
+    await expect(
+      runMigrations({ migrationsDir: dir, executeOnly: '001_dbname_target.sql' })
+    ).rejects.toThrow(/Refusing to run: DB_NAME is not set/);
+    await expect(
+      runMigrations({ migrationsDir: dir, executeOnly: '001_dbname_target.sql', dryRun: true })
+    ).rejects.toThrow(/Refusing to run: DB_NAME is not set/);
+
+    expect(await tablesIn(schema)).toEqual([]);
+  });
+
+  it('(38) CLI: unset DB_NAME + --execute-only exits non-zero with the refusal message, never attempting a connection', () => {
+    const env: NodeJS.ProcessEnv = { ...process.env, DB_HOST: '127.0.0.1', DB_PORT: '1' };
+    delete env.DB_NAME;
+    const res = spawnSync(process.execPath, [MIGRATE_JS, '--execute-only', '999_never_executed.sql'], {
+      env,
+      encoding: 'utf8',
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/Refusing to run: DB_NAME is not set/);
+    expect(res.stderr + res.stdout).not.toMatch(/ECONNREFUSED|Connecting to database/);
+  });
+
+  it('(39) DB_NAME set + --execute-only (no injected client): proceeds, prints current_database(), current_user and the target, and applies only the target', async () => {
+    const schema = nextSchema();
+    await createSchema(schema);
+    const dir = mkFixtureDir({
+      '001_dbname_other.sql': 'CREATE TABLE dbname_other (id SERIAL PRIMARY KEY);',
+      '002_dbname_target.sql': 'CREATE TABLE dbname_target (id SERIAL PRIMARY KEY);',
+    });
+    fixtureDirs.push(dir);
+
+    process.env.DB_NAME = liveConfig.database;
+    process.env.PGOPTIONS = `-c search_path=${schema}`;
+
+    const logs: string[] = [];
+    const logSpy = jest.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let result;
+    try {
+      result = await runMigrations({ migrationsDir: dir, executeOnly: '002_dbname_target.sql' });
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+
+    expect(result.executed).toEqual(['002_dbname_target.sql']);
+    expect(await tablesIn(schema)).toEqual(['dbname_target', 'migration_tracking_baseline', 'schema_migrations']);
+
+    const output = logs.join('\n');
+    expect(output).toContain(`Database: ${liveConfig.database} (current_user: ${liveConfig.user})`);
+    expect(output).toContain(`Database (current_database()):\n  ${liveConfig.database}`);
+    expect(output).toContain(`Role (current_user):\n  ${liveConfig.user}`);
+    expect(output).toContain('Target:\n  002_dbname_target.sql');
+    expect(output).toContain(
+      `Executing (targeted): 002_dbname_target.sql on database ${liveConfig.database} as ${liveConfig.user}`
+    );
+    // The identity line is printed before anything is executed.
+    expect(output.indexOf('Database: ')).toBeLessThan(output.indexOf('Executing (targeted)'));
   });
 });

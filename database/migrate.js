@@ -39,7 +39,11 @@
  * Environment Variables:
  * - DB_HOST: Database host (default: localhost)
  * - DB_PORT: Database port (default: 5432)
- * - DB_NAME: Database name (default: platform_portal)
+ * - DB_NAME: Database name. REQUIRED (no default) for every invocation that
+ *   can execute or record anything: --execute-only (including its
+ *   --dry-run preview), --init-baseline, and a normal non-dry-run sweep.
+ *   Only a plain --dry-run/--pending sweep still falls back to
+ *   platform_portal. See assertExplicitDatabaseName.
  * - DB_USER: Database user (default: postgres)
  * - DB_PASSWORD: Database password
  */
@@ -65,6 +69,42 @@ function getClient(overrides = {}) {
     password: process.env.DB_PASSWORD || 'postgres',
     ...overrides,
   });
+}
+
+/**
+ * Fails closed when a write-capable invocation would otherwise connect to
+ * getClient()'s silent DB_NAME default. A command that leaves DB_NAME out
+ * (for example as a different OS user whose environment has none) could
+ * otherwise create this runner's ledger tables in, and record a migration
+ * as applied against, whatever database that default names, while the
+ * intended database is untouched.
+ *
+ * Required for --execute-only (both real and --dry-run, since the preview
+ * is the step that confirms the target), --init-baseline, and a normal
+ * non-dry-run sweep. A plain --dry-run/--pending sweep keeps the default.
+ * Only applies when this runner opens its own connection: an injected
+ * client (tests, .github/scripts/ci-bootstrap-schema.js) already names its
+ * database explicitly. Called before any connection is attempted.
+ */
+function requiresExplicitDatabaseName({ dryRun = false, executeOnly = null, initBaselineNote = null } = {}) {
+  return executeOnly !== null || initBaselineNote !== null || !dryRun;
+}
+
+function assertExplicitDatabaseName(options, env = process.env) {
+  if (!requiresExplicitDatabaseName(options)) return;
+  if (!env.DB_NAME || !env.DB_NAME.trim()) {
+    throw new Error(
+      'Refusing to run: DB_NAME is not set. --execute-only, --init-baseline and non-dry-run ' +
+      'migration runs require the target database to be named explicitly, e.g. ' +
+      'DB_NAME=<database name> node database/migrate.js --execute-only <name> --dry-run. ' +
+      'Nothing was connected to or written.'
+    );
+  }
+}
+
+async function getConnectionIdentity(client) {
+  const { rows } = await client.query('SELECT current_database() AS database, current_user AS role');
+  return rows[0];
 }
 
 function computeChecksum(sql) {
@@ -271,11 +311,13 @@ const PROVENANCE_WARNING =
   'Pending status does not prove historical non-execution. Post-baseline status is not ' +
   'verified by this tool and must be independently confirmed by the operator before invocation.';
 
-function printTargetedBanner({ target, otherPending, executed }) {
+function printTargetedBanner({ target, otherPending, executed, identity }) {
   console.log(`\n${'='.repeat(60)}`);
   console.log('TARGETED MIGRATION MODE');
   console.log('='.repeat(60));
-  console.log(`\nTarget:\n  ${target}\n`);
+  console.log(`\nDatabase (current_database()):\n  ${identity.database}`);
+  console.log(`Role (current_user):\n  ${identity.role}`);
+  console.log(`Target:\n  ${target}\n`);
   console.log(executed ? 'ONLY the target migration was executed.' : 'ONLY the target migration will be executed.');
   console.log('\nOther migrations currently classified as pending:');
   if (otherPending.length === 0) {
@@ -305,7 +347,7 @@ function printTargetedBanner({ target, otherPending, executed }) {
  * everything) before calling this — targeted mode never weakens that
  * check, it only ever runs after it has already passed.
  */
-async function runTargetedExecution({ client, migrationsDir, executeOnly, dryRun, files, pending, result }) {
+async function runTargetedExecution({ client, migrationsDir, executeOnly, dryRun, files, pending, result, identity }) {
   if (!executeOnly.trim()) {
     throw new Error(
       '--execute-only requires a migration name, e.g.: --execute-only 031_new_migration.sql'
@@ -336,14 +378,16 @@ async function runTargetedExecution({ client, migrationsDir, executeOnly, dryRun
 
   if (dryRun) {
     console.log('\n🔍 Dry run — targeted execution preview (not executed):');
-    printTargetedBanner({ target: executeOnly, otherPending, executed: false });
+    printTargetedBanner({ target: executeOnly, otherPending, executed: false, identity });
     return result;
   }
 
   await client.query(`SELECT pg_advisory_lock(${ADVISORY_LOCK_KEY})`);
   try {
     const sql = fs.readFileSync(path.join(migrationsDir, executeOnly), 'utf8');
-    console.log(`\n🚀 Executing (targeted): ${executeOnly}`);
+    console.log(
+      `\n🚀 Executing (targeted): ${executeOnly} on database ${identity.database} as ${identity.role}`
+    );
     try {
       await client.query('BEGIN');
       await client.query(sql);
@@ -364,7 +408,7 @@ async function runTargetedExecution({ client, migrationsDir, executeOnly, dryRun
     await client.query(`SELECT pg_advisory_unlock(${ADVISORY_LOCK_KEY})`);
   }
 
-  printTargetedBanner({ target: executeOnly, otherPending, executed: true });
+  printTargetedBanner({ target: executeOnly, otherPending, executed: true, identity });
   return result;
 }
 
@@ -438,6 +482,10 @@ async function runMigrations(options = {}) {
     );
   }
 
+  if (!injectedClient) {
+    assertExplicitDatabaseName({ dryRun, executeOnly, initBaselineNote });
+  }
+
   const client = injectedClient || getClient();
   const ownsConnection = !injectedClient;
   const result = { executed: [], mismatched: [], pending: [], baseline: null };
@@ -448,6 +496,12 @@ async function runMigrations(options = {}) {
       await client.connect();
       console.log('✅ Connected to database');
     }
+
+    // Printed before this runner writes anything, including its own
+    // tracking tables, so the operator sees which database and role the
+    // run is actually using.
+    const identity = await getConnectionIdentity(client);
+    console.log(`ℹ️  Database: ${identity.database} (current_user: ${identity.role})`);
 
     await ensureTrackingTables(client);
     await backfillLegacyChecksums(client, migrationsDir);
@@ -529,7 +583,7 @@ async function runMigrations(options = {}) {
     // normal mode's own behavior is completely unreachable from here.
     if (executeOnly !== null) {
       result.executeOnlyTarget = executeOnly;
-      return await runTargetedExecution({ client, migrationsDir, executeOnly, dryRun, files, pending, result });
+      return await runTargetedExecution({ client, migrationsDir, executeOnly, dryRun, files, pending, result, identity });
     }
 
     if (dryRun) {
@@ -543,7 +597,7 @@ async function runMigrations(options = {}) {
     try {
       for (const { file, checksum } of pending) {
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
-        console.log(`\n🚀 Executing: ${file}`);
+        console.log(`\n🚀 Executing: ${file} on database ${identity.database} as ${identity.role}`);
         try {
           await client.query('BEGIN');
           await client.query(sql);
@@ -634,6 +688,8 @@ module.exports = {
   getMigrationFiles,
   getClient,
   parseCliArgs,
+  requiresExplicitDatabaseName,
+  assertExplicitDatabaseName,
   MIGRATIONS_DIR,
   ADVISORY_LOCK_KEY,
 };

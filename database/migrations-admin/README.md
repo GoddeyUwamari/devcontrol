@@ -82,8 +82,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202608312100_add_billing_lifecycle_state.sql`**,
 **`202608312300_add_subscription_event_ordering.sql`**,
 **`202609010800_add_payment_failed_notification_tracking.sql`**,
-**`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**, and
-**`202609040035_add_account_security_findings_disposition.sql`**.
+**`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**,
+**`202609040035_add_account_security_findings_disposition.sql`**, and
+**`202610102024_drop_auto_detect_resource_ownership.sql`**.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
@@ -337,12 +338,22 @@ documented for the ordinary migration path in
 ## Execution mechanism
 
 ```bash
-cd /opt/devcontrol-admin
-DB_USER=postgres DB_HOST=/var/run/postgresql \
-node database/migrate.js --execute-only <name>
+# 1. preview: prints current_database(), current_user and the target; executes nothing
+cd /opt/devcontrol-admin && runuser -u postgres -- env DB_NAME=<production database name> DB_USER=postgres DB_HOST=/var/run/postgresql node database/migrate.js --execute-only <name> --dry-run
+# 2. review the preview output, then the same command without --dry-run:
+cd /opt/devcontrol-admin && runuser -u postgres -- env DB_NAME=<production database name> DB_USER=postgres DB_HOST=/var/run/postgresql node database/migrate.js --execute-only <name>
 ```
 
-This is the **unmodified** canonical `database/migrate.js` — same
+`DB_NAME` is required. `database/migrate.js` refuses `--execute-only`
+(including its `--dry-run` preview), `--init-baseline` and any non-dry-run
+run when `DB_NAME` is unset, before it connects to anything. Without that
+check, a command run as OS user `postgres`, whose environment has no
+`DB_NAME`, would silently target the runner's `platform_portal` default
+instead of the production database. Check the `Database` and `Role` lines
+in the preview before running step 2. The production database name is
+deliberately not written in this public repository.
+
+This is the canonical `database/migrate.js` — same
 checksum validation, same per-migration `BEGIN`/`COMMIT`/`ROLLBACK`, same
 advisory lock, same `schema_migrations` insert on success. Only the
 connection identity differs from the ordinary path (`DB_USER=postgres`,
@@ -358,9 +369,9 @@ way the historical `sudo -u postgres psql -f` precedent for
 successful administrative migration is recorded in `schema_migrations`
 exactly like any other.
 
-This invocation must run as OS user `postgres` (e.g. via `runuser -u
-postgres --`) for peer authentication to apply — see "Why Unix-socket
-peer authentication," above.
+This invocation must run as OS user `postgres` (the `runuser -u postgres
+-- env ...` form above) for peer authentication to apply — see "Why
+Unix-socket peer authentication," above.
 
 ## Production execution history — `202608270610_add_stripe_fields.sql`
 
@@ -498,3 +509,150 @@ adds five nullable/additive columns (`disposition`, `disposition_actor_id`,
 `disposition_at`, `disposition_note`, `evidence`) to that table; it contains
 no RLS or policy DDL, so, as with `005_migrate_existing_data.sql` above,
 this classification is ownership-based, not keyword-based.
+
+## Classification -- `202610102024_drop_auto_detect_resource_ownership.sql`
+
+Removes `public.auto_detect_resource_ownership()`, created by
+`011_add_cost_attribution_to_aws_resources.sql`. The reason is tenant
+isolation: the function sets `aws_resources.team_id` and `service_id` by
+matching the resource's `Team`/`Service` tags against `teams.name` and
+`services.name` with no `organization_id` predicate. Run by a role that
+bypasses row-level security, as administrative SQL is, it can attach one
+organization's resources to another organization's team or service. Nothing
+in this repository calls it (no trigger, application code, script, scheduled
+job or CI step), and the dead frontend method that targeted a nonexistent
+backend route for it is removed in the same change. It is removed as a
+precaution, not because a wrong mapping is known to exist.
+
+Placed here from the start: 011 is an administrative migration, so the
+function is expected to be `postgres`-owned, and only its owner or a
+superuser can drop it. The migration is idempotent (a no-op if 011 never ran
+or the function is already gone), targets only the exact zero-argument
+`public` signature, and never uses `CASCADE`. Before dropping, it raises an
+exception naming anything that uses the function: `pg_depend` dependents,
+extension membership, other functions whose source mentions it, and pg_cron
+jobs that call it. On that exception the runner rolls back and nothing is
+dropped.
+
+The paired `202610102024_drop_auto_detect_resource_ownership_rollback.sql`
+is **manual-only and unsafe to execute**: it restores the function
+byte-for-byte as 011 defined it, and with it the cross-tenant
+ownership-assignment risk. `database/migrate.js` and
+`.github/scripts/ci-bootstrap-schema.js` skip any filename containing
+`rollback`, so no sweep applies it and `--execute-only` refuses it as not
+found. The file also refuses to run without an explicit session opt-in.
+
+As with every entry above, adding this file does not apply it anywhere. No
+claim is made that it has been executed against production.
+
+### Applying `202610102024_drop_auto_detect_resource_ownership.sql`
+
+Each step is its own explicitly authorized operation. Steps 1 and 4 are
+read-only: each runs inside `BEGIN TRANSACTION READ ONLY` and ends in
+`ROLLBACK`. They are psql scripts (they use `\gset`/`\if`), run as OS user
+`postgres` against the production database, by name:
+
+```bash
+cd /tmp && runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d <production database name> -f <check file>
+```
+
+The check SQL lives here, not as a `.sql` file in this directory: every
+`*.sql` file here is packaged as a migration and would be picked up by the
+runner.
+
+**1. Pre-check (read-only).** Expected: the first row shows the production
+database and `postgres`; the identity query shows exactly one row,
+`auto_detect_resource_ownership()` in schema `public`, owned by `postgres`
+(or none, in which case the migration is a no-op); the dependents,
+extension and untracked-caller queries return zero rows; and the pg_cron
+check either reports pg_cron absent or returns zero rows. Any other result
+means stop: the migration would refuse anyway, and the finding needs review
+first.
+
+```sql
+BEGIN TRANSACTION READ ONLY;
+
+SELECT current_database(), current_user;
+
+-- Function identity, schema and owner (every function with this name)
+SELECT p.oid::pg_catalog.regprocedure AS signature,
+       n.nspname AS schema,
+       pg_catalog.pg_get_userbyid(p.proowner) AS owner,
+       l.lanname AS language,
+       p.prosecdef AS security_definer,
+       p.proconfig
+  FROM pg_catalog.pg_proc p
+  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+  JOIN pg_catalog.pg_language l ON l.oid = p.prolang
+ WHERE p.proname = 'auto_detect_resource_ownership'
+ ORDER BY n.nspname, p.oid::pg_catalog.regprocedure::text;
+
+-- Objects that depend on the target (expect 0 rows)
+SELECT pg_catalog.pg_describe_object(d.classid, d.objid, d.objsubid) AS dependent,
+       d.deptype
+  FROM pg_catalog.pg_depend d
+ WHERE d.refclassid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+   AND d.refobjid = pg_catalog.to_regprocedure('public.auto_detect_resource_ownership()');
+
+-- Extension membership (expect 0 rows)
+SELECT e.extname
+  FROM pg_catalog.pg_depend d
+  JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid
+ WHERE d.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+   AND d.objid = pg_catalog.to_regprocedure('public.auto_detect_resource_ownership()')
+   AND d.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+   AND d.deptype = 'e';
+
+-- Callers pg_depend does not track: other functions whose source mentions it (expect 0 rows)
+SELECT p.oid::pg_catalog.regprocedure AS signature
+  FROM pg_catalog.pg_proc p
+ WHERE p.oid IS DISTINCT FROM pg_catalog.to_regprocedure('public.auto_detect_resource_ownership()')
+   AND pg_catalog.strpos(pg_catalog.lower(p.prosrc), 'auto_detect_resource_ownership') > 0;
+
+-- pg_cron: is it installed, and does any job call the function (expect absent, or 0 rows)
+SELECT pg_catalog.to_regclass('cron.job') IS NOT NULL AS pg_cron_installed \gset
+\if :pg_cron_installed
+SELECT jobid, schedule, command
+  FROM cron.job
+ WHERE pg_catalog.strpos(pg_catalog.lower(command), 'auto_detect_resource_ownership') > 0;
+\else
+\echo 'pg_cron not installed (cron.job does not exist)'
+\endif
+
+ROLLBACK;
+```
+
+**2. Preview**, then **3. apply**, with the commands from "Execution
+mechanism" above and
+`<name>` = `202610102024_drop_auto_detect_resource_ownership.sql`. In the
+preview, confirm the `Database` and `Role` lines before applying.
+
+**4. Post-check (read-only).** Expected: the production database and
+`postgres`; `function_absent` is `t`; the remaining-functions query shows
+only same-named functions in other schemas or with arguments, if any
+existed in step 1 (the migration does not touch them); and exactly one
+ledger row for the migration.
+
+```sql
+BEGIN TRANSACTION READ ONLY;
+
+SELECT current_database(), current_user;
+
+SELECT pg_catalog.to_regprocedure('public.auto_detect_resource_ownership()') IS NULL AS function_absent;
+
+-- Remaining functions with this name, if any (never the public zero-argument one)
+SELECT p.oid::pg_catalog.regprocedure AS signature,
+       n.nspname AS schema,
+       pg_catalog.pg_get_userbyid(p.proowner) AS owner
+  FROM pg_catalog.pg_proc p
+  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+ WHERE p.proname = 'auto_detect_resource_ownership'
+ ORDER BY n.nspname, p.oid::pg_catalog.regprocedure::text;
+
+-- Ledger row (expect exactly 1)
+SELECT migration_name, checksum, executed_at
+  FROM public.schema_migrations
+ WHERE migration_name = '202610102024_drop_auto_detect_resource_ownership.sql';
+
+ROLLBACK;
+```

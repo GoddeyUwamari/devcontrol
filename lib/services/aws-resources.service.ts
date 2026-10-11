@@ -219,14 +219,6 @@ export const awsResourcesService = {
   },
 
   /**
-   * Auto-detect ownership from AWS tags
-   */
-  autoDetectOwnership: async () => {
-    const response = await api.post('/api/aws-resources/auto-detect-ownership');
-    return handleApiResponse(response);
-  },
-
-  /**
    * Get cost breakdown by team
    */
   getCostByTeam: async () => {

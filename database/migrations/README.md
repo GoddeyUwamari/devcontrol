@@ -157,16 +157,22 @@ review — see the note at the bottom of this document.
 ### Commands
 
 ```bash
-node database/migrate.js                          # run all pending migrations
+DB_NAME=<db> node database/migrate.js            # run all pending migrations
 node database/migrate.js --dry-run                # list pending migrations, execute nothing
 node database/migrate.js --pending                 # same as --dry-run
-node database/migrate.js --init-baseline "<note>" [--repository-ref <ref>]
+DB_NAME=<db> node database/migrate.js --init-baseline "<note>" [--repository-ref <ref>]
                                                     # establish the baseline (one-time)
-node database/migrate.js --execute-only <name> [--dry-run]
+DB_NAME=<db> node database/migrate.js --execute-only <name> [--dry-run]
                                                     # execute exactly one named, currently-pending
                                                     # migration, leaving every other pending
                                                     # migration untouched
 ```
+
+`DB_NAME` must be set explicitly for every command above except a plain
+`--dry-run`/`--pending` sweep: the runner refuses, before connecting, rather
+than fall back to its `platform_portal` default for anything that can
+execute or record a migration. Every run prints `current_database()` and
+`current_user` before it writes anything.
 
 `--repository-ref` is optional and purely operator-supplied (e.g. a deployed
 git SHA read from `.deployed_sha` — see "Production deployment" below). It
@@ -315,7 +321,7 @@ deployment**:
 
 ```bash
 cd /home/ubuntu/devcontrol
-NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js \
+DB_NAME=<production database name> NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js \
   --init-baseline "production schema as of <date>; historical migration provenance not reconstructed, see database/migrations/README.md" \
   --repository-ref "$(cat database/.deployed_sha)"
 ```
@@ -326,9 +332,9 @@ approved step, never part of any deployment:
 
 ```bash
 cd /home/ubuntu/devcontrol
-NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --dry-run --execute-only <name>
-# review the preview output, then:
-NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --execute-only <name>
+DB_NAME=<production database name> NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --dry-run --execute-only <name>
+# review the preview output (including the Database and Role lines), then:
+DB_NAME=<production database name> NODE_PATH=/home/ubuntu/devcontrol/backend/node_modules node database/migrate.js --execute-only <name>
 ```
 
 ## Naming convention for new migrations
