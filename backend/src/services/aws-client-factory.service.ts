@@ -2,8 +2,9 @@
  * AWS Client Factory
  * Creates AWS SDK clients via STS AssumeRole using the org's stored role ARN.
  *
- * The platform's own credentials are used for exactly one thing here: as the
- * caller identity for sts:AssumeRole. Every client this factory returns
+ * The platform's own identity -- whatever the SDK's default credential chain
+ * resolves -- is used for exactly one thing here: as the caller identity for
+ * sts:AssumeRole. Every client this factory returns
  * carries the temporary credentials of the organization's connected role. An
  * organization with no connected account gets AWS_NOT_CONNECTED and no
  * client, whatever the environment.
@@ -121,14 +122,9 @@ export class AWSClientFactory {
 
     const awsRegion = region ?? 'us-east-1';
 
-    // Assume the customer's role using the platform's own credentials
-    const sts = new STSClient({
-      region: awsRegion,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
-    });
+    // Assume the customer's role as the platform's own identity, resolved by
+    // the SDK's default credential chain (the instance role in production).
+    const sts = new STSClient({ region: awsRegion });
 
     let tempCredentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string };
     try {

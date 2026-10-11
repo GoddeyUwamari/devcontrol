@@ -5,8 +5,11 @@
  *   - An organization with no connected AWS account gets AWS_NOT_CONNECTED
  *     and NO AWS client is constructed -- in every environment, whether or
  *     not the platform's own credentials are present. NODE_ENV has no say.
- *   - The platform's credentials are used for exactly one thing: as the
- *     caller identity of the STS client that assumes the organization's role.
+ *   - The platform's identity is used for exactly one thing: as the caller
+ *     identity of the STS client that assumes the organization's role. That
+ *     STS client is built with no `credentials` at all, so the SDK's default
+ *     chain resolves it (env keys in local development, the instance role in
+ *     production) -- the platform keys are never copied into code.
  *   - Every client the factory returns carries the temporary credentials of
  *     that assumed role, explicitly -- never the platform's keys, never the
  *     SDK's default credential chain.
@@ -209,14 +212,20 @@ describe('an account row that cannot be assumed', () => {
 });
 
 describe('a connected organization', () => {
-  it('assumes the organization\'s role with the platform identity, and that is the only use of the platform keys', async () => {
+  it.each([
+    ['present', true],
+    ['absent', false],
+  ])('with platform keys %s in the environment, assumes the organization\'s role on the default credential chain and that is the only use of the platform identity', async (_keys, platformKeys) => {
+    setEnvironment('production', platformKeys);
     connected();
 
     await AWSClientFactory.createClients('org-connected');
 
     const sts = constructed.filter((c) => c.client === 'STSClient');
     expect(sts).toHaveLength(1);
-    expect(sts[0].config).toEqual({ region: 'eu-west-1', credentials: PLATFORM_KEYS });
+    // Region only: no credentials key, so the SDK's default chain supplies the identity.
+    expect(sts[0].config).toEqual({ region: 'eu-west-1' });
+    expect(sts[0].config).not.toHaveProperty('credentials');
     expect(stsSend).toHaveBeenCalledTimes(1);
     expect(stsSend.mock.calls[0][0].input).toMatchObject({
       RoleArn: ACCOUNT_ROW.role_arn,

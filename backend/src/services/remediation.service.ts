@@ -285,13 +285,8 @@ export class RemediationService {
 
     const region = process.env.AWS_DEFAULT_REGION || 'us-east-1';
 
-    const sts = new STSClient({
-      region,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
-    });
+    // The platform's own identity, from the SDK's default credential chain.
+    const sts = new STSClient({ region });
     const assumed = await sts.send(new AssumeRoleCommand({
       RoleArn: roleArn,
       RoleSessionName: `devcontrol-remediation-${Date.now()}`,

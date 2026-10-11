@@ -190,16 +190,9 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
   }
   const externalId = sessionResult.rows[0].external_id
 
-  // Validate via STS AssumeRole using the platform's own credentials
-  const sts = new STSClient({
-    region: process.env.AWS_REGION ?? 'us-east-1',
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-     
-     
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    },
-  })
+  // Validate via STS AssumeRole as the platform's own identity (the SDK's
+  // default credential chain)
+  const sts = new STSClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
   try {
     await sts.send(new AssumeRoleCommand({
       RoleArn: decodedRoleArn,
