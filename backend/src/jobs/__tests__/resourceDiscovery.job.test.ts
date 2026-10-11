@@ -95,6 +95,15 @@ async function insertOrg(awsStatus: string | null | 'none' = 'active'): Promise<
   return rows[0];
 }
 
+/** Whether this test database's aws_accounts.status column accepts NULL. */
+async function statusIsNullable(): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT is_nullable FROM information_schema.columns
+     WHERE table_schema = current_schema() AND table_name = 'aws_accounts' AND column_name = 'status'`
+  );
+  return rows[0]?.is_nullable === 'YES';
+}
+
 beforeAll(async () => {
   await ensureSharedFixtureTable(pool, 'aws_accounts');
 });
@@ -229,6 +238,13 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
   });
 
   it.each([['disconnected'], [null]])('an aws_accounts row with status %p: one warning naming the org and status, no discovery, no error', async (status) => {
+    // The CI fixture leaves status nullable; a database whose status column is
+    // NOT NULL cannot hold this row at all, so there the null case only
+    // confirms that the database refuses it.
+    if (status === null && !(await statusIsNullable())) {
+      await expect(insertOrg(null)).rejects.toThrow(/not-null constraint/);
+      return;
+    }
     const org = await insertOrg(status);
 
     const summary = await job.scanOrganizations([org]);
@@ -355,6 +371,59 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
     ]);
     expect(logged(log)).toContain(
       '[Resource Discovery Job] Scanned 0, skipped 1 (no AWS connection), inactive 0, failed 0, platform_failed 2, 2 remaining not checked (stopped early)'
+    );
+  });
+
+  it.each([
+    ['an inactive organization', 'inactive'],
+    ['an organization whose connection check fails', 'check-failed'],
+  ] as const)('credential failures on two organizations with %s in between: the count is unchanged and the run still stops', async (_label, between) => {
+    const credA = await insertOrg();
+    const middle = await insertOrg(between === 'inactive' ? 'disconnected' : 'active');
+    const credB = await insertOrg();
+    const remaining = await insertOrg();
+    mockDiscoverAllResources.mockImplementation(async () => {
+      throw credentialFailure();
+    });
+
+    // For 'check-failed', only the middle organization's aws_accounts read rejects.
+    const realConnect = pool.connect.bind(pool) as () => Promise<PoolClient>;
+    const originals = new Map<PoolClient, PoolClient['query']>();
+    const connectSpy = (jest.spyOn(pool, 'connect') as unknown as jest.SpyInstance<Promise<PoolClient>, []>)
+      .mockImplementation(async () => {
+        const client = await realConnect();
+        if (between === 'check-failed' && !originals.has(client)) {
+          originals.set(client, client.query);
+          const realQuery = client.query.bind(client) as unknown as (text: unknown, values?: unknown[]) => Promise<QueryResult>;
+          client.query = (async (text: unknown, values?: unknown[]) => {
+            if (typeof text === 'string' && text.includes('FROM aws_accounts') && values?.[0] === middle.id) {
+              throw new Error('placeholder: relation is unavailable');
+            }
+            return realQuery(text, values);
+          }) as unknown as PoolClient['query'];
+        }
+        return client;
+      });
+
+    let summary;
+    try {
+      summary = await job.scanOrganizations([credA, middle, credB, remaining]);
+    } finally {
+      connectSpy.mockRestore();
+      for (const [client, realQuery] of originals) client.query = realQuery;
+    }
+
+    expect(summary).toEqual({
+      scanned: 0,
+      skipped: 0,
+      inactive: between === 'inactive' ? 1 : 0,
+      failed: between === 'check-failed' ? 1 : 0,
+      platformFailed: 2,
+      notAttempted: 1,
+    });
+    expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([credA.id, credB.id]);
+    expect(logged(error)).toContain(
+      `[Resource Discovery Job] Platform AWS credentials unavailable for 2 organizations in a row (last org ${credB.id}); stopping this run, 1 remaining organizations not checked`
     );
   });
 
