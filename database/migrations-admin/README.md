@@ -82,8 +82,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202608312100_add_billing_lifecycle_state.sql`**,
 **`202608312300_add_subscription_event_ordering.sql`**,
 **`202609010800_add_payment_failed_notification_tracking.sql`**,
-**`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**, and
-**`202609040035_add_account_security_findings_disposition.sql`**.
+**`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**,
+**`202609040035_add_account_security_findings_disposition.sql`**, and
+**`202610102024_drop_auto_detect_resource_ownership.sql`**.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
@@ -498,3 +499,38 @@ adds five nullable/additive columns (`disposition`, `disposition_actor_id`,
 `disposition_at`, `disposition_note`, `evidence`) to that table; it contains
 no RLS or policy DDL, so, as with `005_migrate_existing_data.sql` above,
 this classification is ownership-based, not keyword-based.
+
+## Classification -- `202610102024_drop_auto_detect_resource_ownership.sql`
+
+Removes `public.auto_detect_resource_ownership()`, created by
+`011_add_cost_attribution_to_aws_resources.sql`. The reason is tenant
+isolation: the function sets `aws_resources.team_id` and `service_id` by
+matching the resource's `Team`/`Service` tags against `teams.name` and
+`services.name` with no `organization_id` predicate. Run by a role that
+bypasses row-level security, as administrative SQL is, it can attach one
+organization's resources to another organization's team or service. Nothing
+in this repository calls it (no trigger, application code, script, scheduled
+job or CI step), and the dead frontend method that targeted a nonexistent
+backend route for it is removed in the same change. It is removed as a
+precaution, not because a wrong mapping is known to exist.
+
+Placed here from the start: 011 is an administrative migration, so the
+function is expected to be `postgres`-owned, and only its owner or a
+superuser can drop it. The migration is idempotent (a no-op if 011 never ran
+or the function is already gone), targets only the exact zero-argument
+`public` signature, and never uses `CASCADE`. Before dropping, it raises an
+exception naming anything that uses the function: `pg_depend` dependents,
+extension membership, other functions whose source mentions it, and pg_cron
+jobs that call it. On that exception the runner rolls back and nothing is
+dropped.
+
+The paired `202610102024_drop_auto_detect_resource_ownership_rollback.sql`
+is **manual-only and unsafe to execute**: it restores the function
+byte-for-byte as 011 defined it, and with it the cross-tenant
+ownership-assignment risk. `database/migrate.js` and
+`.github/scripts/ci-bootstrap-schema.js` skip any filename containing
+`rollback`, so no sweep applies it and `--execute-only` refuses it as not
+found. The file also refuses to run without an explicit session opt-in.
+
+As with every entry above, adding this file does not apply it anywhere. No
+claim is made that it has been executed against production.
