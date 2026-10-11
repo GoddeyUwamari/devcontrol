@@ -18,6 +18,7 @@ jest.mock('../aws-client-factory.service', () => ({ AWSClientFactory: { createCl
 
 import { pool } from '../../config/database';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { PlatformAwsCredentialsUnavailableError } from '../platform-sts';
 import {
   ObservabilityReadinessService,
   evaluateDiscoveryGate,
@@ -507,6 +508,17 @@ describe('connection states', () => {
     const { result } = await readiness({ account: null });
     expect(result).toBeNull();
     expect(createClients).not.toHaveBeenCalled();
+  });
+
+  it('the platform identity unavailable is error with connected:true, and does not blame the connected role', async () => {
+    const { result } = await readiness({
+      clients: new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers')),
+      inventory: [resourceRow(CURRENT_EC2)],
+    });
+    expect(result.connected).toBe(true);
+    expect(result.state).toBe('error');
+    expect(result.reason).toBe('DevControl could not reach AWS (not a problem with the connected role)');
+    expect(result.readiness_score).toBeNull();
   });
 
   it('an STS AssumeRole failure is error with connected:true -- distinct from "no account connected"', async () => {

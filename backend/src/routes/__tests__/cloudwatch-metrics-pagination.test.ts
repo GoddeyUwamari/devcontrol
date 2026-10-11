@@ -28,6 +28,7 @@ import { Pool } from 'pg';
 import cloudwatchRoutes from '../cloudwatch.routes';
 import { authService } from '../../services/auth.service';
 import { CloudWatchService, CloudWatchServiceHealth, CloudWatchMetrics } from '../../services/cloudwatch.service';
+import { PlatformAwsCredentialsUnavailableError, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../../services/platform-sts';
 
 function dbConfig() {
   return {
@@ -297,5 +298,35 @@ describe('GET /api/cloudwatch/metrics — Phase 2D pagination', () => {
     expect(crossOrgRes.status).toBe(200);
     expect(crossOrgBody.data.services.every((s: any) => s.resourceId.startsWith('org-b-tag'))).toBe(true);
     expect(crossOrgBody.data.services.some((s: any) => s.resourceId.startsWith('org-a-tag'))).toBe(false);
+  });
+});
+
+describe('GET /api/cloudwatch/metrics -- the platform identity unavailable', () => {
+  it('answers 503, never `data: null` (which the UI reads as "not connected"), and caches nothing', async () => {
+    const orgId = await insertOrg('platform-unavailable');
+    await stubAuth(orgId);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const computeSpy = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics')
+      .mockRejectedValueOnce(new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers')))
+      .mockResolvedValueOnce(fleetFixture('p', 3));
+
+    const res = await getMetrics();
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
+
+    // The failure was not cached: the next request computes again.
+    const retry = await getMetrics();
+    expect(retry.status).toBe(200);
+    expect(computeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('any other failure is still a 500', async () => {
+    const orgId = await insertOrg('other-failure');
+    await stubAuth(orgId);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockRejectedValue(new Error('boom'));
+
+    const res = await getMetrics();
+    expect(res.status).toBe(500);
   });
 });

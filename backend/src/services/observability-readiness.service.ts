@@ -5,6 +5,7 @@ import {
 } from '@aws-sdk/client-cloudwatch'
 import { pool } from '../config/database'
 import { AWSClientFactory } from './aws-client-factory.service'
+import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
 import { resourceTypeRegistry } from './cloudwatch.service'
 import {
   collectSection,
@@ -440,6 +441,9 @@ export class ObservabilityReadinessService {
       if (!clients.enabled) throw new Error('AWS clients are not enabled')
     } catch (err) {
       console.error('[Readiness] AWS credentials failed:', err instanceof Error ? err.message : err)
+      if (isPlatformAwsCredentialsUnavailable(err)) {
+        return this.failedResult(true, null, 'DevControl could not reach AWS (not a problem with the connected role)')
+      }
       return this.failedResult(true, null, 'the connected AWS role could not be assumed')
     }
 

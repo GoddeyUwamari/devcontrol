@@ -8,6 +8,7 @@ import { requireMember } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
 import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscription.middleware';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
+import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
 
 const router = Router();
@@ -346,6 +347,10 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
     console.error('[Services/discover]', err);
     if (err.message?.startsWith('AWS_NOT_CONNECTED:')) {
       res.status(409).json({ error: 'aws_not_connected', message: 'Please connect your AWS account in Settings to run audits.' });
+      return;
+    }
+    if (isPlatformAwsCredentialsUnavailable(err)) {
+      res.status(503).json({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
       return;
     }
     res.status(500).json({ success: false, error: err.message || 'Discovery failed — check AWS connection' });

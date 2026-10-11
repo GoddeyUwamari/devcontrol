@@ -4,9 +4,9 @@ import {
   Granularity,
   Metric,
 } from '@aws-sdk/client-cost-explorer'
-import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts'
 import { Pool } from 'pg'
 import { pool } from '../config/database'
+import { assumeRoleAsPlatform } from './platform-sts'
 import type { SpendProvenance } from './ai-context-contract'
 
 
@@ -404,13 +404,12 @@ class AWSCostService {
 
     const { role_arn: roleArn, external_id: externalId, region } = result.rows[0]
 
-    const stsClient = new STSClient({ region: 'us-east-1' })
-    const assumed = await stsClient.send(new AssumeRoleCommand({
+    const assumed = await assumeRoleAsPlatform('us-east-1', {
       RoleArn: roleArn,
       RoleSessionName: 'DevControlCostSession',
       ExternalId: externalId,
       DurationSeconds: 3600,
-    }))
+    }, `AWSCostService org ${organizationId}`)
 
     const credentials = {
       accessKeyId: assumed.Credentials!.AccessKeyId!,

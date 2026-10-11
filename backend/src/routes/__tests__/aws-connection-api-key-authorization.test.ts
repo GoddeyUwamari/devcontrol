@@ -27,6 +27,7 @@ import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery
 import { auditEvents, createAuditEventWriter } from '../../services/auditEvents.service';
 import { requestContext } from '../../config/database';
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
+import { PLATFORM_AWS_UNAVAILABLE_MESSAGE, resetPlatformStsClientsForTests } from '../../services/platform-sts';
 
 jest.mock('@aws-sdk/client-sts', () => ({
   STSClient: jest.fn().mockImplementation(() => ({
@@ -126,6 +127,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  // Each test sees its own platform STS client construction.
+  resetPlatformStsClientsForTests();
   jest.spyOn(AWSResourceDiscoveryService.prototype, 'discoverAllResources').mockResolvedValue({
     job_id: 'stub-job',
     resources_discovered: 0,
@@ -547,6 +550,30 @@ describe('AWS account connection -- role name', () => {
     expect((await res.json()).message).toMatch(/Invalid Role ARN format/);
     expect(assumeCallsFor(roleArn)).toHaveLength(0);
     await expectNoBinding(org.orgId);
+  });
+});
+
+describe('AWS account connection -- the platform identity unavailable', () => {
+  it.each([
+    ['the default chain finds no credentials', 'CredentialsProviderError', 'Could not load credentials from any providers'],
+    ['STS rejects the platform key', 'InvalidClientTokenId', 'The security token included in the request is invalid.'],
+  ])('%s: 503, not the trust-policy advice, binding nothing and keeping the connect session', async (_label, name, message) => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    const sessionBefore = await connectSession(org.orgId);
+    jest.mocked(STSClient).mockImplementationOnce(() => ({
+      send: jest.fn().mockRejectedValue(Object.assign(new Error(message), { name })),
+    }) as unknown as STSClient);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await as(org.owner, org.orgId).connect({ roleArn: `arn:aws:iam::${uniqueAccountId()}:role/DevControlRole` });
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({ success: false, message: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
+    expect(body.message).not.toMatch(/trust policy|ExternalId|Role ARN/);
+    await expectNoBinding(org.orgId);
+    expect(await connectSession(org.orgId)).toEqual(sessionBefore);
   });
 });
 

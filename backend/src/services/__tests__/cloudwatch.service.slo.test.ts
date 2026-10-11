@@ -11,6 +11,7 @@ import { Pool } from 'pg';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { CloudWatchService } from '../cloudwatch.service';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { PlatformAwsCredentialsUnavailableError } from '../platform-sts';
 import { pool as appPool } from '../../config/database';
 
 function dbConfig() {
@@ -70,6 +71,20 @@ describe('CloudWatchService.evaluateResourceForSlo', () => {
     await pool.end();
     await appPool.end();
   }, 15000);
+
+  it('(1b) an organization AssumeRole failure (AWS_NOT_CONNECTED) also returns null', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new Error('AWS_NOT_CONNECTED: org has not connected an AWS account'));
+
+    expect(await service.evaluateResourceForSlo(orgId, 'ec2', 'i-anything', '24h')).toBeNull();
+  });
+
+  it('(1c) the platform identity unavailable propagates as an error -- never null, which would read as "AWS not connected"', async () => {
+    const unavailable = new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers'));
+    jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(unavailable);
+
+    await expect(service.evaluateResourceForSlo(orgId, 'ec2', 'i-anything', '24h')).rejects.toBe(unavailable);
+  });
 
   it('(1) AWS not connected returns null, never a fabricated observation', async () => {
     jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({ enabled: false } as any);

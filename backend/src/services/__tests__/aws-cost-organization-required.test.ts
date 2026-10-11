@@ -58,6 +58,7 @@ process.env.AWS_REGION = 'us-east-1';
 
 import type { Pool } from 'pg';
 import sharedCostService, { AWSCostService } from '../aws-cost.service';
+import { resetPlatformStsClientsForTests } from '../platform-sts';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ambientPool = require('../../config/database').pool as { query: jest.Mock };
 
@@ -76,6 +77,8 @@ function monthlyResponse(amount: string) {
 
 beforeEach(() => {
   mockConstructed.length = 0;
+  // The platform STS client is cached per region; each test sees its own construction.
+  resetPlatformStsClientsForTests();
   mockStsSend.mockReset();
   mockCostExplorerSend.mockReset();
   ambientPool.query.mockReset();

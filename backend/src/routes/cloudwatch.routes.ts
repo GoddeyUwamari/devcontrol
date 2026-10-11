@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authenticateToken } from '../middleware/auth.middleware'
 import { cloudWatchService } from '../services/cloudwatch.service'
+import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 import { clampPageSize, decodeCursor, paginateServices, InvalidCursorError } from '../services/cloudwatch-pagination.util'
 
 const router = Router()
@@ -62,6 +63,9 @@ router.get('/metrics', authenticateToken, async (req, res) => {
 
     res.json({ success: true, data: { ...metrics, services, pagination }, connected: true })
   } catch (err) {
+    if (isPlatformAwsCredentialsUnavailable(err)) {
+      return res.status(503).json({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE })
+    }
     console.error('[CloudWatch] Metrics error:', err)
     res.status(500).json({ success: false, error: 'Failed to fetch CloudWatch metrics' })
   }
