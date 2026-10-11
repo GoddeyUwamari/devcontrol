@@ -21,6 +21,8 @@ Only an organization **owner** can connect AWS. In the app, open **Connect AWS**
 3. Paste the role's ARN into the page. DevControl checks the role name, then verifies that it can assume the role before saving the connection. A role ARN with any other name, or with a path, is refused with a 422 and nothing is saved. Connections saved before this rule existed are not re-checked.
 4. The first resource scan starts automatically. Cost Explorer data can take a day or two to become available from AWS.
 
+> **Cutover warning:** existing connections are not re-checked by the app, but once the platform identity may only assume `role/DevControlRole*`, any stored `aws_accounts.role_arn` with a different role name or with an IAM path will fail to assume and the organization will see `AWS_NOT_CONNECTED`. Before removing the AWS keys from the production environment, operators must confirm that every stored `role_arn` matches the rule (no path, name starting with `DevControlRole`). Run the count query with the organization RLS context set, or as the database owner: a query run without either is silently filtered by RLS and can report zero non-matching rows when there are some.
+
 You control the role: deleting it in AWS removes DevControl's access.
 
 The endpoints behind this flow are `GET /api/aws/accounts/connect-init`, `POST /api/aws/accounts` and `GET /api/aws/accounts`.
@@ -36,7 +38,7 @@ Pages stay reachable and say that AWS is not connected; they do not show figures
 
 The backend needs its own AWS identity so that it can call `sts:AssumeRole`. Its STS clients are built **without explicit credentials**, so the AWS SDK's default credential provider chain supplies that identity:
 
-- **Production:** the EC2 instance role. No AWS keys are set in the backend environment.
+- **Production (target):** the EC2 instance role, with no AWS keys set in the backend environment. Until the cutover is complete, production may still supply keys via the environment; the default chain uses them first.
 - **Local development:** whatever the default chain finds first, for example `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in `backend/.env` (never commit that file) or a local AWS profile. Environment keys are a local-development fallback only.
 
 Because the chain reads environment keys before the instance role, an environment that still sets the keys keeps using them.
