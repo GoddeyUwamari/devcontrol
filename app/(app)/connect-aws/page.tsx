@@ -44,7 +44,9 @@ export default function ConnectAwsPage() {
     return match ? match[1] : ''
   }
 
-  const arnValid = /^arn:aws:iam::\d{12}:role\/\S+$/.test(roleArn.trim())
+  // Same rule the server applies to a new connection: a role with no IAM path
+  // whose name starts with DevControlRole.
+  const arnValid = /^arn:aws:iam::\d{12}:role\/DevControlRole[\w+=,.@-]*$/.test(roleArn.trim())
   const extractedId = extractAccountId(roleArn.trim())
 
   const trustPolicyStr = initData
@@ -64,7 +66,7 @@ export default function ConnectAwsPage() {
     if (connecting || success) return
     if (!initData) { toast.error('Connect session not ready — please wait a moment.'); return }
     if (!roleArn.trim()) { toast.error('Role ARN is required'); return }
-    if (!arnValid) { toast.error('Role ARN must match format: arn:aws:iam::123456789012:role/RoleName'); return }
+    if (!arnValid) { toast.error('Role ARN must match format: arn:aws:iam::123456789012:role/DevControlRole — the role name must start with DevControlRole'); return }
 
     setConnecting(true)
     try {
@@ -111,6 +113,9 @@ export default function ConnectAwsPage() {
                     <p className="text-sm text-slate-500 leading-relaxed mb-4">
                       In your AWS Console, create a new IAM role with the following trust policy. This gives DevControl read-only access to your account.
                     </p>
+                    <p className="text-sm text-slate-500 leading-relaxed mb-4">
+                      The role name <strong className="text-slate-700">must start with <code className="font-mono text-xs text-violet-600">DevControlRole</code></strong>, for example <code className="font-mono text-xs text-violet-600">DevControlRole</code> or <code className="font-mono text-xs text-violet-600">DevControlRole-Prod</code>, and must not use an IAM path. DevControl cannot assume a role with any other name.
+                    </p>
 
                     {initError ? (
                       <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
@@ -145,7 +150,7 @@ export default function ConnectAwsPage() {
                   <div className="flex-1 min-w-0">
                     <h2 className="text-base sm:text-lg font-semibold text-slate-900 mb-2">Enter your Role ARN</h2>
                     <p className="text-sm text-slate-500 leading-relaxed mb-5">
-                      After creating the role, paste the Role ARN below. It looks like:{' '}
+                      After creating the role, paste the Role ARN below. Its name must start with DevControlRole, so it looks like:{' '}
                       <code className="font-mono text-xs text-violet-600">arn:aws:iam::123456789012:role/DevControlRole</code>
                     </p>
                     <div className="mb-4">
@@ -160,7 +165,7 @@ export default function ConnectAwsPage() {
                       />
                       {roleArn.trim() && (
                         <p className={`mt-1.5 text-xs leading-snug ${arnValid ? 'text-green-700' : 'text-amber-700'}`}>
-                          {arnValid ? `✓ Valid ARN format · Account ID: ${extractedId}` : 'Expected format: arn:aws:iam::123456789012:role/RoleName'}
+                          {arnValid ? `✓ Valid ARN format · Account ID: ${extractedId}` : 'Expected format: arn:aws:iam::123456789012:role/DevControlRole… (role name must start with DevControlRole, no IAM path)'}
                         </p>
                       )}
                     </div>

@@ -8,6 +8,7 @@ import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
 import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents'
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
+import { checkNewConnectionRoleArn, DEVCONTROL_ROLE_NAME_PREFIX } from '../utils/devcontrolRoleArn'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -170,11 +171,17 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
   if (!decodedRoleArn) {
     return res.status(400).json({ success: false, message: 'roleArn is required' })
   }
-  const arnMatch = decodedRoleArn.match(/arn:aws:iam::(\d+):role\//)
-  if (!arnMatch) {
-    return res.status(400).json({ success: false, message: 'Invalid Role ARN format. Expected: arn:aws:iam::123456789012:role/RoleName' })
+  const arnCheck = checkNewConnectionRoleArn(decodedRoleArn)
+  if (!arnCheck.ok && arnCheck.reason === 'malformed') {
+    return res.status(400).json({ success: false, message: 'Invalid Role ARN format. Expected: arn:aws:iam::123456789012:role/DevControlRole' })
   }
-  const accountId = arnMatch[1]
+  if (!arnCheck.ok) {
+    return res.status(422).json({
+      success: false,
+      message: `The IAM role name must start with "${DEVCONTROL_ROLE_NAME_PREFIX}" (for example ${DEVCONTROL_ROLE_NAME_PREFIX} or ${DEVCONTROL_ROLE_NAME_PREFIX}-Prod) and the role must not use an IAM path. Create or rename the role, then paste its ARN again.`,
+    })
+  }
+  const accountId = arnCheck.accountId
 
   // Retrieve the pending external_id for this org
   const sessionResult = await pool.query(
