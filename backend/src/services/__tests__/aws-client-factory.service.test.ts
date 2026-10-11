@@ -92,7 +92,7 @@ jest.doMock('../../config/database', () => ({ pool: { query: poolQuery } }));
 const { AWSClientFactory } = require('../aws-client-factory.service') as typeof import('../aws-client-factory.service');
 // Same registry as the factory's own import, so it sees the mocked STSClient.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { resetPlatformStsClientsForTests, PlatformAwsCredentialsUnavailableError } = require('../platform-sts') as typeof import('../platform-sts');
+const { PlatformAwsCredentialsUnavailableError } = require('../platform-sts') as typeof import('../platform-sts');
 
 const PLATFORM_KEYS = { accessKeyId: 'AKIAPLATFORMKEYID', secretAccessKey: 'platform-secret-not-a-credential' };
 const TEMPORARY = { accessKeyId: 'ASIACUSTOMERTEMP', secretAccessKey: 'customer-temp-secret', sessionToken: 'customer-session-token' };
@@ -131,8 +131,6 @@ async function resolvedCredentials(client: unknown) {
 
 beforeEach(() => {
   constructed.length = 0;
-  // The platform STS client is cached per region; each test sees its own construction.
-  resetPlatformStsClientsForTests();
   stsSend.mockReset();
   poolQuery.mockReset();
   jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -233,7 +231,7 @@ describe('an account row that cannot be assumed', () => {
 });
 
 describe('the platform STS client', () => {
-  it('is built once per region and reused for every later AssumeRole there', async () => {
+  it('is built anew for every AssumeRole and never kept across calls', async () => {
     connected();
     await AWSClientFactory.createClients('org-connected');
     await AWSClientFactory.createClients('org-connected');
@@ -242,9 +240,11 @@ describe('the platform STS client', () => {
     await AWSClientFactory.createClients('org-connected');
 
     expect(stsSend).toHaveBeenCalledTimes(4);
-    // Two regions, two STS clients -- each with a region and no credentials.
+    // One STS client per AssumeRole -- each with a region and no credentials.
     expect(constructed.filter((c) => c.client === 'STSClient').map((c) => c.config)).toEqual([
       { region: 'eu-west-1' },
+      { region: 'eu-west-1' },
+      { region: 'ap-southeast-2' },
       { region: 'ap-southeast-2' },
     ]);
   });

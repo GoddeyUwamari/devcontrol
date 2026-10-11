@@ -353,7 +353,9 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
       res.status(503).json({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
       return;
     }
-    res.status(500).json({ success: false, error: err.message || 'Discovery failed — check AWS connection' });
+    // The real error is logged above; AWS messages can name ARNs and account
+    // IDs, so the response carries only a fixed message.
+    res.status(500).json({ success: false, error: 'Discovery failed. Please try again later.' });
   }
 });
 

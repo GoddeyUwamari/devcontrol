@@ -27,7 +27,7 @@ import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery
 import { auditEvents, createAuditEventWriter } from '../../services/auditEvents.service';
 import { requestContext } from '../../config/database';
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
-import { PLATFORM_AWS_UNAVAILABLE_MESSAGE, resetPlatformStsClientsForTests } from '../../services/platform-sts';
+import { PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../../services/platform-sts';
 
 jest.mock('@aws-sdk/client-sts', () => ({
   STSClient: jest.fn().mockImplementation(() => ({
@@ -127,8 +127,6 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  // Each test sees its own platform STS client construction.
-  resetPlatformStsClientsForTests();
   jest.spyOn(AWSResourceDiscoveryService.prototype, 'discoverAllResources').mockResolvedValue({
     job_id: 'stub-job',
     resources_discovered: 0,
@@ -553,10 +551,51 @@ describe('AWS account connection -- role name', () => {
   });
 });
 
+// Placeholder principal: the platform's instance-role session as AWS names it.
+const PLATFORM_CALLER = 'arn:aws:sts::111122223333:assumed-role/DevControlInstanceRole/i-0123456789abcdef0';
+
+describe('AWS account connection -- the role refuses: 422 advice, never the raw AWS message', () => {
+  it.each([
+    ['the trust policy or ExternalId', ''],
+    ['a resource control policy on the role account', ' with an explicit deny in a resource control policy'],
+  ])('%s: the fixed trust-policy advice, with no ARN, account ID or AWS text in the body', async (_label, suffix) => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    const accountId = uniqueAccountId();
+    const roleArn = `arn:aws:iam::${accountId}:role/DevControlRole`;
+    const raw = `User: ${PLATFORM_CALLER} is not authorized to perform: sts:AssumeRole on resource: ${roleArn}${suffix}`;
+    jest.mocked(STSClient).mockImplementationOnce(() => ({
+      send: jest.fn().mockRejectedValue(Object.assign(new Error(raw), { name: 'AccessDenied' })),
+    }) as unknown as STSClient);
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await as(org.owner, org.orgId).connect({ roleArn });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body).toEqual({
+      success: false,
+      message: 'Access denied — ensure the trust policy allows our account and the ExternalId matches exactly.',
+    });
+    const text = JSON.stringify(body);
+    expect(text).not.toMatch(/arn:aws:/);
+    expect(text).not.toMatch(/\b\d{12}\b/);
+    expect(text).not.toContain('is not authorized to perform');
+    await expectNoBinding(org.orgId);
+    // The full AWS message stays in the server log.
+    expect(logged).toHaveBeenCalledWith('[Connect AWS] STS validation failed:', expect.objectContaining({ name: 'AccessDenied', message: raw }));
+  });
+});
+
 describe('AWS account connection -- the platform identity unavailable', () => {
   it.each([
     ['the default chain finds no credentials', 'CredentialsProviderError', 'Could not load credentials from any providers'],
     ['STS rejects the platform key', 'InvalidClientTokenId', 'The security token included in the request is invalid.'],
+    [
+      'the platform identity policy does not allow AssumeRole on the role',
+      'AccessDenied',
+      `User: ${PLATFORM_CALLER} is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::123456789012:role/DevControlRole because no identity-based policy allows the sts:AssumeRole action`,
+    ],
   ])('%s: 503, not the trust-policy advice, binding nothing and keeping the connect session', async (_label, name, message) => {
     const org = await buildOrg();
     await insertConnectSession(org.orgId);

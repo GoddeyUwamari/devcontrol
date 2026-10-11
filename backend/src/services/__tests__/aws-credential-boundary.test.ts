@@ -261,7 +261,7 @@ describe('backend source', () => {
     expect(analyses.reduce((n, a) => n + a.stsClients, 0)).toBeGreaterThan(0);
   });
 
-  it('builds the platform STS client in one place only: the shared, per-region cached client', () => {
+  it('builds the platform STS client in one place only: assumeRoleAsPlatform, a new client per call', () => {
     const stsModules = files
       .map((file, i) => ({ file: path.relative(SOURCE_ROOT, file).split(path.sep).join('/'), sts: analyses[i].stsClients }))
       .filter(({ sts }) => sts > 0);

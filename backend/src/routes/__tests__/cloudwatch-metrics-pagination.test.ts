@@ -29,6 +29,7 @@ import cloudwatchRoutes from '../cloudwatch.routes';
 import { authService } from '../../services/auth.service';
 import { CloudWatchService, CloudWatchServiceHealth, CloudWatchMetrics } from '../../services/cloudwatch.service';
 import { PlatformAwsCredentialsUnavailableError, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../../services/platform-sts';
+import { AWSClientFactory } from '../../services/aws-client-factory.service';
 
 function dbConfig() {
   return {
@@ -318,6 +319,28 @@ describe('GET /api/cloudwatch/metrics -- the platform identity unavailable', () 
     const retry = await getMetrics();
     expect(retry.status).toBe(200);
     expect(computeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('through the real computeMetrics: createClients failing on the platform identity is a 503, not cached, while an organization failure is still "not connected"', async () => {
+    const orgId = await insertOrg('real-compute');
+    await stubAuth(orgId);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    // Only the account lookup and the AWS client factory are stubbed: computeMetrics() itself runs.
+    jest.spyOn(CloudWatchService.prototype as any, 'getAccount').mockResolvedValue({ account_id: '123456789012', nickname: null });
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients')
+      .mockRejectedValueOnce(new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers')))
+      .mockRejectedValueOnce(new Error(`AWS_NOT_CONNECTED: org ${orgId} has not connected an AWS account`));
+
+    const unavailable = await getMetrics();
+    expect(unavailable.status).toBe(503);
+    expect(await unavailable.json()).toEqual({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
+
+    // Not cached as null: the next request runs computeMetrics() again, and an
+    // organization-side failure is still answered as not connected.
+    const notConnected = await getMetrics();
+    expect(notConnected.status).toBe(200);
+    expect(await notConnected.json()).toEqual({ success: true, data: null, connected: false });
+    expect(createClients).toHaveBeenCalledTimes(2);
   });
 
   it('any other failure is still a 500', async () => {

@@ -76,10 +76,12 @@ router.get('/costs/monthly', async (req: Request, res: Response) => {
     const costs = await awsCostService.fetchMonthlyCosts(orgId)
     res.json(costs)
   } catch (error) {
+    // The real error stays in the server log: AWS messages can name ARNs and
+    // account IDs, so the response carries only a fixed message.
     console.error('Error fetching monthly costs:', error)
     res.status(500).json({
       error: 'Failed to fetch monthly costs',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: 'Monthly cost data is unavailable right now. Please try again later.',
     })
   }
 })
@@ -220,10 +222,11 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
       requestId: stsError?.$metadata?.requestId,
       message: stsError?.message,
     })
+    // No raw AWS message in the response: it names the platform's own
+    // principal. The full message is in the server log above.
     return res.status(422).json({
       success: false,
       message: mapStsError(stsError),
-      detail: stsError?.message ?? null,
     })
   }
   // Persist with org_id.
