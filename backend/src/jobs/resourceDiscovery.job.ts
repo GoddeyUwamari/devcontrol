@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { Soc2EvidenceService } from '../services/soc2-evidence.service';
-import { isPlatformAwsCredentialsUnavailable } from '../services/platform-sts';
+import { isPlatformAwsCredentialsUnavailable, isPlatformCredentialFailure } from '../services/platform-sts';
 
 /** One scheduled run's outcome per organization. Every organization lands in exactly one count. */
 export interface DiscoveryRunSummary {
@@ -14,11 +14,25 @@ export interface DiscoveryRunSummary {
   inactive: number;
   /** Discovery failed for the organization's own reasons (e.g. its role refused AssumeRole). */
   failed: number;
-  /** Discovery failed because the platform's own AWS identity was unavailable. */
+  /**
+   * Discovery failed on the platform's side: its own AWS identity could not
+   * be resolved, or its own IAM policies refused the AssumeRole.
+   */
   platformFailed: number;
-  /** Left unprocessed because the run stopped early on a platform failure. */
+  /**
+   * Organizations after the point where the run stopped early, never checked:
+   * connected or not, nothing is known about them this run.
+   */
   notAttempted: number;
 }
+
+/**
+ * Consecutive organizations whose discovery failed because the platform's
+ * credentials could not be resolved, after which the run stops: every other
+ * organization would fail the same way. Two, so that one transient failure
+ * (e.g. an instance metadata timeout) does not cost the whole cycle.
+ */
+const CREDENTIAL_FAILURE_STOP_STREAK = 2;
 
 type AwsConnection = { kind: 'none' } | { kind: 'inactive'; status: string | null } | { kind: 'active' };
 
@@ -96,13 +110,19 @@ export class ResourceDiscoveryJob {
    * happens, and one whose row is not active gets a single warning: neither
    * gets a discovery job row or any AWS call. Every other failure stays an
    * error: the organization's own (its role refused AssumeRole) counts as
-   * failed, the platform's own AWS identity being unavailable counts as
-   * platform_failed. If that happens on the first organization attempted,
-   * the run stops: every other organization would fail the same way.
+   * failed, the platform's own (its credentials could not be resolved, or its
+   * IAM policies refused the AssumeRole) counts as platform_failed.
+   *
+   * The run stops early only when the platform's credentials could not be
+   * resolved for CREDENTIAL_FAILURE_STOP_STREAK organizations in a row. A
+   * platform IAM denial never stops it: the platform's policy may allow some
+   * organizations' roles and not others (e.g. a role name outside the
+   * allowed pattern). Any other attempted outcome resets the streak;
+   * organizations skipped before any AWS call leave it unchanged.
    */
   async scanOrganizations(organizations: Array<{ id: string; name: string }>): Promise<DiscoveryRunSummary> {
     const summary: DiscoveryRunSummary = { scanned: 0, skipped: 0, inactive: 0, failed: 0, platformFailed: 0, notAttempted: 0 };
-    let attempted = 0;
+    let credentialFailureStreak = 0;
 
     // Run discovery for each organization sequentially
     for (const [index, org] of organizations.entries()) {
@@ -125,10 +145,10 @@ export class ResourceDiscoveryJob {
         continue;
       }
 
-      attempted++;
       try {
         console.log(`[Resource Discovery Job] Scanning organization: ${org.name} (${org.id})`);
         const discoveryResult = await this.service.discoverAllResources(org.id);
+        credentialFailureStreak = 0;
         summary.scanned++;
         console.log(
           `[Resource Discovery Job] ${org.name}: ` +
@@ -137,18 +157,24 @@ export class ResourceDiscoveryJob {
           `Errors: ${discoveryResult.errors.length}`
         );
       } catch (error: any) {
-        if (isPlatformAwsCredentialsUnavailable(error)) {
+        if (isPlatformAwsCredentialsUnavailable(error) && isPlatformCredentialFailure(error.cause)) {
           summary.platformFailed++;
-          if (attempted === 1) {
+          credentialFailureStreak++;
+          if (credentialFailureStreak >= CREDENTIAL_FAILURE_STOP_STREAK) {
             summary.notAttempted = organizations.length - index - 1;
             console.error(
-              `[Resource Discovery Job] Platform AWS identity unavailable on the first organization attempted (org ${org.id}); ` +
-              `stopping this run, ${summary.notAttempted} organizations not attempted`
+              `[Resource Discovery Job] Platform AWS credentials unavailable for ${credentialFailureStreak} organizations in a row (last org ${org.id}); ` +
+              `stopping this run, ${summary.notAttempted} remaining organizations not checked`
             );
             break;
           }
-          console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: platform AWS identity unavailable`);
+          console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: platform AWS credentials unavailable`);
+        } else if (isPlatformAwsCredentialsUnavailable(error)) {
+          credentialFailureStreak = 0;
+          summary.platformFailed++;
+          console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: the platform's IAM policies refused AssumeRole for this organization's role`);
         } else {
+          credentialFailureStreak = 0;
           summary.failed++;
           console.error(`[Resource Discovery Job] Failed for org ${org.id} (${error?.name ?? 'Error'}):`, error?.message);
         }
@@ -201,7 +227,7 @@ export class ResourceDiscoveryJob {
     console.log(
       `[Resource Discovery Job] Scanned ${summary.scanned}, skipped ${summary.skipped} (no AWS connection), ` +
       `inactive ${summary.inactive}, failed ${summary.failed}, platform_failed ${summary.platformFailed}` +
-      (summary.notAttempted > 0 ? `, not attempted ${summary.notAttempted} (stopped early)` : '')
+      (summary.notAttempted > 0 ? `, ${summary.notAttempted} remaining not checked (stopped early)` : '')
     );
     return summary;
   }

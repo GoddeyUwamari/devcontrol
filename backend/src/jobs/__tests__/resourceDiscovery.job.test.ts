@@ -259,42 +259,151 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
     expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id);
   });
 
-  it('a platform failure on the first organization attempted stops the run with one error line', async () => {
-    const unconnected = await insertOrg('none');
-    const first = await insertOrg();
-    const second = await insertOrg();
-    const third = await insertOrg('none');
-    mockDiscoverAllResources.mockRejectedValue(new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers')));
-
-    const summary = await job.scanOrganizations([unconnected, first, second, third]);
-
-    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, platformFailed: 1, notAttempted: 2 });
-    expect(mockDiscoverAllResources).toHaveBeenCalledTimes(1);
-    expect(mockDiscoverAllResources).toHaveBeenCalledWith(first.id);
-    expect(logged(error)).toEqual([
-      `[Resource Discovery Job] Platform AWS identity unavailable on the first organization attempted (org ${first.id}); stopping this run, 2 organizations not attempted`,
-    ]);
-    expect(logged(log)).toContain(
-      '[Resource Discovery Job] Scanned 0, skipped 1 (no AWS connection), inactive 0, failed 0, platform_failed 1, not attempted 2 (stopped early)'
+  /** Every name, ARN and account ID below is a placeholder. */
+  const credentialFailure = () =>
+    new PlatformAwsCredentialsUnavailableError(
+      Object.assign(new Error('Could not load credentials from any providers'), { name: 'CredentialsProviderError' })
     );
-  });
+  const platformIamDenial = () =>
+    new PlatformAwsCredentialsUnavailableError(
+      Object.assign(
+        new Error(
+          'User: arn:aws:sts::111122223333:assumed-role/DevControlInstanceRole/i-0123456789abcdef0 is not authorized to perform: ' +
+          'sts:AssumeRole on resource: arn:aws:iam::444455556666:role/PlaceholderCustomRole because no identity-based policy allows the sts:AssumeRole action'
+        ),
+        { name: 'AccessDenied' }
+      )
+    );
+  const credentialFailureLine = (orgId: string) =>
+    `[Resource Discovery Job] Failed for org ${orgId}: PlatformAwsCredentialsUnavailableError: platform AWS credentials unavailable`;
+  const iamDenialLine = (orgId: string) =>
+    `[Resource Discovery Job] Failed for org ${orgId}: PlatformAwsCredentialsUnavailableError: the platform's IAM policies refused AssumeRole for this organization's role`;
 
-  it('a platform failure after an organization was attempted is counted as platform_failed, not failed, and the run continues', async () => {
-    const orgA = await insertOrg();
-    const orgB = await insertOrg();
-    const orgC = await insertOrg();
+  it("a platform IAM denial is platform_failed and never stops the run, even on the first organizations attempted (one org's role may be outside the platform's policy)", async () => {
+    const deniedA = await insertOrg();
+    const deniedB = await insertOrg();
+    const second = await insertOrg();
     mockDiscoverAllResources.mockImplementation(async (id: string) => {
-      if (id === orgB.id) throw new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers'));
+      if (id === deniedA.id || id === deniedB.id) throw platformIamDenial();
       return successfulDiscovery();
     });
 
-    const summary = await job.scanOrganizations([orgA, orgB, orgC]);
+    const summary = await job.scanOrganizations([deniedA, deniedB, second]);
 
-    expect(summary).toEqual({ scanned: 2, skipped: 0, inactive: 0, failed: 0, platformFailed: 1, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 0, platformFailed: 2, notAttempted: 0 });
+    expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([deniedA.id, deniedB.id, second.id]);
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(second.id);
+    expect(logged(error)).toEqual([iamDenialLine(deniedA.id), iamDenialLine(deniedB.id)]);
+  });
+
+  it('one credential failure is platform_failed and does not stop the run; a success resets the count', async () => {
+    const credA = await insertOrg();
+    const okA = await insertOrg();
+    const credB = await insertOrg();
+    const okB = await insertOrg();
+    mockDiscoverAllResources.mockImplementation(async (id: string) => {
+      if (id === credA.id || id === credB.id) throw credentialFailure();
+      return successfulDiscovery();
+    });
+
+    const summary = await job.scanOrganizations([credA, okA, credB, okB]);
+
+    expect(summary).toEqual({ scanned: 2, skipped: 0, inactive: 0, failed: 0, platformFailed: 2, notAttempted: 0 });
+    expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([credA.id, okA.id, credB.id, okB.id]);
+    expect(logged(error)).toEqual([credentialFailureLine(credA.id), credentialFailureLine(credB.id)]);
+  });
+
+  it.each([
+    ["the organization's own failure", () => new Error('AWS_NOT_CONNECTED: org placeholder has not connected an AWS account')],
+    ['a platform IAM denial', () => platformIamDenial()],
+  ])('a credential failure, then %s, then another credential failure: the count was reset, the run continues', async (_label, between) => {
+    const credA = await insertOrg();
+    const middle = await insertOrg();
+    const credB = await insertOrg();
+    const last = await insertOrg();
+    mockDiscoverAllResources.mockImplementation(async (id: string) => {
+      if (id === credA.id || id === credB.id) throw credentialFailure();
+      if (id === middle.id) throw between();
+      return successfulDiscovery();
+    });
+
+    const summary = await job.scanOrganizations([credA, middle, credB, last]);
+
+    expect(summary.notAttempted).toBe(0);
+    expect(summary.scanned).toBe(1);
+    expect(mockDiscoverAllResources).toHaveBeenCalledWith(last.id);
+  });
+
+  it('credential failures on two different organizations in a row stop the run; organizations skipped in between do not reset the count', async () => {
+    const credA = await insertOrg();
+    const unconnected = await insertOrg('none');
+    const credB = await insertOrg();
+    const remainingConnected = await insertOrg();
+    const remainingUnconnected = await insertOrg('none');
+    mockDiscoverAllResources.mockImplementation(async () => {
+      throw credentialFailure();
+    });
+
+    const summary = await job.scanOrganizations([credA, unconnected, credB, remainingConnected, remainingUnconnected]);
+
+    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, platformFailed: 2, notAttempted: 2 });
+    expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([credA.id, credB.id]);
+    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalled();
     expect(logged(error)).toEqual([
-      `[Resource Discovery Job] Failed for org ${orgB.id}: PlatformAwsCredentialsUnavailableError: platform AWS identity unavailable`,
+      credentialFailureLine(credA.id),
+      `[Resource Discovery Job] Platform AWS credentials unavailable for 2 organizations in a row (last org ${credB.id}); stopping this run, 2 remaining organizations not checked`,
     ]);
-    expect(mockDiscoverAllResources).toHaveBeenCalledWith(orgC.id);
+    expect(logged(log)).toContain(
+      '[Resource Discovery Job] Scanned 0, skipped 1 (no AWS connection), inactive 0, failed 0, platform_failed 2, 2 remaining not checked (stopped early)'
+    );
+  });
+
+  it.each([
+    ['pool.connect rejects', 'connect'],
+    ['the aws_accounts query rejects', 'query'],
+  ] as const)('the connection check fails (%s): failed, one error line, no discovery, and the run continues', async (_label, where) => {
+    const broken = await insertOrg();
+    const healthy = await insertOrg();
+    const realConnect = pool.connect.bind(pool) as () => Promise<PoolClient>;
+    const originals = new Map<PoolClient, PoolClient['query']>();
+    let failed = false;
+    const connectSpy = (jest.spyOn(pool, 'connect') as unknown as jest.SpyInstance<Promise<PoolClient>, []>)
+      .mockImplementation(async () => {
+        if (where === 'connect' && !failed) {
+          failed = true;
+          throw new Error('placeholder: connection refused');
+        }
+        const client = await realConnect();
+        if (where === 'query' && !originals.has(client)) {
+          originals.set(client, client.query);
+          const realQuery = client.query.bind(client) as unknown as (text: unknown, values?: unknown[]) => Promise<QueryResult>;
+          client.query = (async (text: unknown, values?: unknown[]) => {
+            if (!failed && typeof text === 'string' && text.includes('FROM aws_accounts')) {
+              failed = true;
+              throw new Error('placeholder: relation is unavailable');
+            }
+            return realQuery(text, values);
+          }) as unknown as PoolClient['query'];
+        }
+        return client;
+      });
+
+    let summary;
+    try {
+      summary = await job.scanOrganizations([broken, healthy]);
+    } finally {
+      connectSpy.mockRestore();
+      for (const [client, realQuery] of originals) client.query = realQuery;
+    }
+
+    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 1, platformFailed: 0, notAttempted: 0 });
+    expect(mockDiscoverAllResources).not.toHaveBeenCalledWith(broken.id);
+    expect(mockDiscoverAllResources).toHaveBeenCalledWith(healthy.id);
+    const message = where === 'connect' ? 'placeholder: connection refused' : 'placeholder: relation is unavailable';
+    expect(logged(error)).toEqual([
+      `[Resource Discovery Job] Failed for org ${broken.id}: could not read its AWS connection (Error): ${message}`,
+    ]);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('one summary line with every count, across a mixed set of organizations', async () => {
@@ -307,7 +416,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
     const scannedB = await insertOrg();
     mockDiscoverAllResources.mockImplementation(async (id: string) => {
       if (id === failing.id) throw new Error(`AWS_NOT_CONNECTED: org ${id} has not connected an AWS account`);
-      if (id === platformFailing.id) throw new PlatformAwsCredentialsUnavailableError(new Error('expired'));
+      if (id === platformFailing.id) throw credentialFailure();
       return successfulDiscovery();
     });
 
