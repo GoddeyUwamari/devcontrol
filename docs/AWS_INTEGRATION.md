@@ -10,16 +10,18 @@ How DevControl reads an organization's AWS account, and how to work with AWS-bac
 - For every AWS operation on behalf of that organization, the backend assumes that role (`sts:AssumeRole`, with the organization's external ID) and builds its AWS clients with the temporary credentials it gets back.
 - An organization that has not connected an account gets **`AWS_NOT_CONNECTED`**. No AWS client is created and no AWS call is made. There is no fallback to any other credentials and no mock data.
 
-The backend's own AWS credentials are used for one thing only: as the caller identity for `sts:AssumeRole`. They are never used to read cost, inventory, metrics or security data, in any environment.
+The backend's own AWS identity is used for one thing only: as the caller identity for `sts:AssumeRole`. It is never used to read cost, inventory, metrics or security data, in any environment.
 
 ## Connecting an AWS account
 
 Only an organization **owner** can connect AWS. In the app, open **Connect AWS** (`/connect-aws`):
 
 1. The page shows a trust policy containing DevControl's account and an external ID generated for your organization.
-2. In your AWS account, create an IAM role with that trust policy and attach the `ReadOnlyAccess` managed policy, as the page instructs.
-3. Paste the role's ARN into the page. DevControl verifies that it can assume the role before saving the connection.
+2. In your AWS account, create an IAM role with that trust policy and attach the `ReadOnlyAccess` managed policy, as the page instructs. **The role name must start with `DevControlRole`** (for example `DevControlRole` or `DevControlRole-Prod`) and the role must not use an IAM path, because DevControl's own identity is only allowed to assume roles matching `arn:aws:iam::*:role/DevControlRole*`.
+3. Paste the role's ARN into the page. DevControl checks the role name, then verifies that it can assume the role before saving the connection. A role ARN with any other name, or with a path, is refused with a 422 and nothing is saved. Connections saved before this rule existed are not re-checked.
 4. The first resource scan starts automatically. Cost Explorer data can take a day or two to become available from AWS.
+
+> **Cutover warning:** existing connections are not re-checked by the app, but once the platform identity may only assume `role/DevControlRole*`, any stored `aws_accounts.role_arn` with a different role name or with an IAM path will fail to assume and the organization will see `AWS_NOT_CONNECTED`. Before removing the AWS keys from the production environment, operators must confirm that every stored `role_arn` matches the rule (no path, name starting with `DevControlRole`). Run the count query with the organization RLS context set, or as the database owner: a query run without either is silently filtered by RLS and can report zero non-matching rows when there are some.
 
 You control the role: deleting it in AWS removes DevControl's access.
 
@@ -34,15 +36,35 @@ Pages stay reachable and say that AWS is not connected; they do not show figures
 
 ## Backend configuration
 
-The backend needs its own AWS identity so that it can call `sts:AssumeRole`. Set these in `backend/.env` (never commit that file):
+The backend needs its own AWS identity so that it can call `sts:AssumeRole`. Its STS clients are built **without explicit credentials**, so the AWS SDK's default credential provider chain supplies that identity:
+
+- **Production (target):** the EC2 instance role, with no AWS keys set in the backend environment. Until the cutover is complete, production may still supply keys via the environment; the default chain uses them first.
+- **Local development:** whatever the default chain finds first, for example `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in `backend/.env` (never commit that file) or a local AWS profile. Environment keys are a local-development fallback only.
+
+Because the chain reads environment keys before the instance role, an environment that still sets the keys keeps using them.
 
 | Variable | Purpose |
 |---|---|
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The platform identity used to assume organizations' roles. |
-| `AWS_REGION` | Region for the STS call made while validating a new connection. |
+| `AWS_REGION` | Region for the STS call made while validating a new connection. Required by `POST /api/infrastructure/sync-aws`. |
 | `AWS_ACCOUNT_ID` | The platform's AWS account ID, placed in the trust policy shown to organizations. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Optional, local development only: one way to give the default chain an identity. |
 
-These credentials only need permission to assume the roles organizations create for DevControl. Setting them does **not** make AWS data appear for any organization: that requires a connected account.
+The platform identity only needs permission to assume the roles organizations create for DevControl:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::*:role/DevControlRole*"
+    }
+  ]
+}
+```
+
+Having an identity does **not** make AWS data appear for any organization: that requires a connected account.
 
 ## Local development
 
@@ -58,6 +80,9 @@ Older local databases may contain resource rows that were written before this ru
 
 **`AWS_NOT_CONNECTED`**
 The organization has no connected AWS account, its stored connection is missing its external ID, or DevControl could no longer assume the role. Connect the account, or check that the role and its trust policy still exist in AWS.
+
+**"The IAM role name must start with DevControlRole" when connecting**
+The role's name does not start with `DevControlRole`, or the role was created under an IAM path. Create a role named `DevControlRole…` with no path and paste its ARN.
 
 **"Access denied" when connecting**
 The role's trust policy does not allow DevControl's account, or the external ID does not match the one shown on the Connect AWS page. Copy the trust policy from the page again.

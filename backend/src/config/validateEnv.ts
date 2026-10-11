@@ -104,8 +104,10 @@ export function validateEnv(): void {
       );
     }
 
-    // Check for other production-critical variables
-    const productionRecommended = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'STRIPE_SECRET_KEY'];
+    // Check for other production-critical variables. AWS keys are not among
+    // them: the platform's AWS identity comes from the SDK's default
+    // credential chain (the instance role in production).
+    const productionRecommended = ['STRIPE_SECRET_KEY'];
     const missingRecommended = productionRecommended.filter(key => !process.env[key]);
 
     if (missingRecommended.length > 0) {

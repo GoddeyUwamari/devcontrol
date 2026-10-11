@@ -235,15 +235,13 @@ export class InfrastructureController {
 
   async syncAWS(req: Request, res: Response): Promise<void> {
     try {
-      // Check if AWS credentials are configured
-      const isConfigured = process.env.AWS_ACCESS_KEY_ID &&
-                          process.env.AWS_SECRET_ACCESS_KEY &&
-                          process.env.AWS_REGION;
-
-      if (!isConfigured) {
+      // The platform's AWS identity comes from the SDK's default credential
+      // chain, so there are no key variables to check; only the region is
+      // read from the environment.
+      if (!process.env.AWS_REGION) {
         const response: ApiResponse = {
           success: false,
-          error: 'AWS credentials not configured. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION in environment variables.',
+          error: 'AWS region not configured. Please set AWS_REGION in environment variables.',
         };
         res.status(400).json(response);
         return;

@@ -49,8 +49,10 @@ function dbConfig() {
 const WEBHOOK_SECRET = 'workspace-viewer-gate-test-secret';
 // The webhook reads its organization once, at module load.
 const WEBHOOK_ORG_ID = randomUUID();
-// syncAWS only checks that these are set; the Cost Explorer fetch is stubbed.
-const AWS_ENV = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'] as const;
+// syncAWS requires only AWS_REGION; the platform's AWS identity comes from the
+// SDK's default credential chain, so the key variables are deliberately left
+// unset here. The Cost Explorer fetch is stubbed.
+const AWS_ENV = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_REGION'] as const;
 const DISCOVERY_BUDGET = 10;
 const COST_SYNC_BUDGET = 10;
 
@@ -169,7 +171,8 @@ beforeAll(async () => {
   process.env.GITHUB_WEBHOOK_SECRET = WEBHOOK_SECRET;
   for (const key of AWS_ENV) {
     savedEnv[key] = process.env[key];
-    process.env[key] = key === 'AWS_REGION' ? 'us-east-1' : 'not-a-credential';
+    if (key === 'AWS_REGION') process.env[key] = 'us-east-1';
+    else delete process.env[key];
   }
   // Loaded after the environment is set: the router captures its
   // organization when the module is first evaluated.
@@ -444,6 +447,40 @@ describe('cost sync budget', () => {
     // Neither the other organization nor this one's discovery budget is touched.
     expect((await sync(other, 'member')).status).toBe(syncStatus);
     expect((await send(limited, 'member', 'POST', '/services/discover')).status).toBe(200);
+  });
+});
+
+describe('cost sync configuration check', () => {
+  const sync = (target: Org, role: Role) => send(target, role, 'POST', '/infrastructure/sync-aws');
+
+  it('does not refuse when the platform key variables are absent and AWS_REGION is set', async () => {
+    const target = await buildOrg();
+    expect(process.env.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(process.env.AWS_REGION).toBe('us-east-1');
+
+    const res = await sync(target, 'member');
+
+    expect(res.status).not.toBe(400);
+    expect(res.status).toBe(syncStatus);
+    expect(costSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still refuses with 400 when AWS_REGION is unset, before any Cost Explorer fetch', async () => {
+    const target = await buildOrg();
+    delete process.env.AWS_REGION;
+    try {
+      const res = await sync(target, 'member');
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: 'AWS region not configured. Please set AWS_REGION in environment variables.',
+      });
+      expect(costSpy).not.toHaveBeenCalled();
+    } finally {
+      process.env.AWS_REGION = 'us-east-1';
+    }
   });
 });
 

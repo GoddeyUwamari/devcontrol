@@ -7,9 +7,12 @@
  *      (nothing read from process.env). A client constructed without
  *      `credentials` would fall back to the SDK's default provider chain --
  *      the server's ambient identity -- for an organization's AWS operations.
- *   2. The platform's credentials (process.env.AWS_ACCESS_KEY_ID / SECRET /
- *      SESSION_TOKEN) reach an AWS client only as the identity of an STS
- *      client, and a module that builds an STS client uses it for AssumeRole
+ *   2. The platform's identity is never written into code: every STS client
+ *      is constructed WITHOUT a `credentials` key, so the SDK's default chain
+ *      resolves it (env keys in local development, the instance role in
+ *      production). The platform key variables (process.env.AWS_ACCESS_KEY_ID
+ *      / SECRET / SESSION_TOKEN) are read nowhere except a startup presence
+ *      report, and a module that builds an STS client uses it for AssumeRole
  *      and nothing else.
  *   3. No module opts into an SDK credential provider (fromEnv, fromIni, the
  *      node provider chain, ...).
@@ -28,10 +31,9 @@ const SOURCE_ROOT = path.join(__dirname, '..', '..');
 const PLATFORM_KEY_VARIABLES = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'];
 /**
  * Modules that read the platform keys without building any AWS client: a
- * startup report of what is configured, and a "the platform can call STS at
- * all" precondition. Neither can sign a request.
+ * startup report of what is configured. It cannot sign a request.
  */
-const PRESENCE_CHECK_ONLY = ['config/validateEnv.ts', 'controllers/infrastructure.controller.ts'];
+const PRESENCE_CHECK_ONLY = ['config/validateEnv.ts'];
 const STS_PACKAGE = '@aws-sdk/client-sts';
 const ALLOWED_STS_IMPORTS = ['STSClient', 'AssumeRoleCommand'];
 
@@ -146,6 +148,12 @@ function analyze(file: string, text: string): Analysis {
       const client = node.expression.text;
       if (awsImports.get(client) === STS_PACKAGE) {
         stsClients++;
+        // The platform identity comes from the default chain: no credentials
+        // object of any kind, from the environment or anywhere else.
+        const argument = node.arguments?.[0];
+        if (argument && credentialsOf(argument).length > 0) {
+          report(node, `${client} is constructed with explicit credentials (the platform identity must come from the default credential chain)`);
+        }
       } else {
         customerClients++;
         const argument = node.arguments?.[0];
@@ -154,13 +162,10 @@ function analyze(file: string, text: string): Analysis {
         else if (credentials.some((value) => readsEnvironment(value))) report(node, `${client} is constructed with credentials read from the environment (platform keys)`);
       }
     }
-    // process.env.AWS_ACCESS_KEY_ID and friends.
+    // process.env.AWS_ACCESS_KEY_ID and friends: not even an STS client may read them.
     if (ts.isPropertyAccessExpression(node) && PLATFORM_KEY_VARIABLES.includes(node.name.text) && /^process\s*\.\s*env$/.test(node.expression.getText(source))) {
-      let ancestor: ts.Node | undefined = node.parent;
-      while (ancestor && !ts.isNewExpression(ancestor)) ancestor = ancestor.parent;
-      const insideSts = !!ancestor && ts.isNewExpression(ancestor) && ts.isIdentifier(ancestor.expression) && awsImports.get(ancestor.expression.text) === STS_PACKAGE;
       const presenceCheckOnly = PRESENCE_CHECK_ONLY.some((allowed) => file.split(path.sep).join('/').endsWith(allowed));
-      if (!insideSts && !presenceCheckOnly) report(node, `${node.name.text} is read outside an STS client's identity`);
+      if (!presenceCheckOnly) report(node, `${node.name.text} is read outside a startup presence check`);
     }
     ts.forEachChild(node, visit);
   };
@@ -198,12 +203,25 @@ describe('the checker catches each way the boundary can be crossed', () => {
     for (const sample of [inline, viaConfig, viaSpread, viaName]) {
       const found = problems(`${IMPORTS} const region = 'us-east-1'; ${sample};`);
       expect(found).toContain('EC2Client is constructed with credentials read from the environment (platform keys)');
-      expect(found).toContain('AWS_ACCESS_KEY_ID is read outside an STS client\'s identity');
+      expect(found).toContain('AWS_ACCESS_KEY_ID is read outside a startup presence check');
     }
   });
 
-  it('the platform keys read anywhere but an STS client, STS used for more than AssumeRole, and SDK credential providers', () => {
-    expect(problems(`const k = process.env.AWS_SECRET_ACCESS_KEY;`)).toEqual(['AWS_SECRET_ACCESS_KEY is read outside an STS client\'s identity']);
+  it('an STS client given explicit credentials: the old env-key pattern, or any other credentials object', () => {
+    const envKeys = `new STSClient({ region, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID!, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY! } })`;
+    expect(problems(`${IMPORTS} const region = 'us-east-1'; ${envKeys};`)).toEqual([
+      'STSClient is constructed with explicit credentials (the platform identity must come from the default credential chain)',
+      'AWS_ACCESS_KEY_ID is read outside a startup presence check',
+      'AWS_SECRET_ACCESS_KEY is read outside a startup presence check',
+    ]);
+    const viaConfig = `const keys = { accessKeyId: 'x', secretAccessKey: 'y' }; const config = { region: 'us-east-1', credentials: keys }; new STSClient({ ...config });`;
+    expect(problems(`${IMPORTS} ${viaConfig}`)).toEqual([
+      'STSClient is constructed with explicit credentials (the platform identity must come from the default credential chain)',
+    ]);
+  });
+
+  it('the platform keys read anywhere but a presence check, STS used for more than AssumeRole, and SDK credential providers', () => {
+    expect(problems(`const k = process.env.AWS_SECRET_ACCESS_KEY;`)).toEqual(['AWS_SECRET_ACCESS_KEY is read outside a startup presence check']);
     expect(problems(`import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';`)).toEqual([
       'uses STS for more than AssumeRole (GetCallerIdentityCommand)',
     ]);
@@ -215,7 +233,7 @@ describe('the checker catches each way the boundary can be crossed', () => {
   it('and accepts the two allowed patterns', () => {
     const allowed = `${IMPORTS}
       async function clientsFor(roleArn: string, externalId: string, region: string) {
-        const sts = new STSClient({ region, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID!, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY! } });
+        const sts = new STSClient({ region });
         const assumed = await sts.send(new AssumeRoleCommand({ RoleArn: roleArn, RoleSessionName: 's', ExternalId: externalId }));
         let tempCredentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string };
         tempCredentials = { accessKeyId: assumed.Credentials!.AccessKeyId!, secretAccessKey: assumed.Credentials!.SecretAccessKey!, sessionToken: assumed.Credentials!.SessionToken! };

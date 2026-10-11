@@ -26,6 +26,7 @@ import { authService } from '../../services/auth.service';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
 import { auditEvents, createAuditEventWriter } from '../../services/auditEvents.service';
 import { requestContext } from '../../config/database';
+import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 
 jest.mock('@aws-sdk/client-sts', () => ({
   STSClient: jest.fn().mockImplementation(() => ({
@@ -477,6 +478,75 @@ describe('AWS account connection -- owner only, by current membership', () => {
     expect((await as(org.admin, org.orgId).connect()).status).toBe(403);
     // The owner still reaches the existing 409 already-connected branch.
     expect((await as(org.owner, org.orgId).connect()).status).toBe(409);
+  });
+});
+
+describe('AWS account connection -- role name', () => {
+  /** AssumeRole inputs naming this ARN (the stubbed command returns its input). */
+  const assumeCallsFor = (roleArn: string) =>
+    jest.mocked(AssumeRoleCommand).mock.calls.filter(([input]) => (input as { RoleArn?: string }).RoleArn === roleArn);
+
+  it.each([
+    ['DevControlRole', 'DevControlRole'],
+    ['DevControlRole-Prod', 'DevControlRole-Prod'],
+  ])('accepts a role named %s, assuming it on the default credential chain', async (_label, roleName) => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    const accountId = uniqueAccountId();
+    const roleArn = `arn:aws:iam::${accountId}:role/${roleName}`;
+    const stsBefore = jest.mocked(STSClient).mock.calls.length;
+
+    const res = await as(org.owner, org.orgId).connect({ roleArn });
+
+    expect(res.status).toBe(201);
+    expect(await awsAccountRow(org.orgId)).toEqual({ org_id: org.orgId, account_id: accountId });
+    expect(assumeCallsFor(roleArn)).toHaveLength(1);
+    // The validation STS client carries a region and no credentials object.
+    const stsConfigs = jest.mocked(STSClient).mock.calls.slice(stsBefore).map(([config]) => config);
+    expect(stsConfigs).toHaveLength(1);
+    expect(stsConfigs[0]).not.toHaveProperty('credentials');
+  });
+
+  it.each([
+    ['another role name', 'role/devcontrol-readonly'],
+    ['a lowercase prefix', 'role/devcontrolrole'],
+    ['the prefix later in the name', 'role/MyDevControlRole'],
+    ['an IAM path', 'role/service-roles/DevControlRole'],
+    ['a character IAM role names cannot contain', 'role/DevControlRole*'],
+  ])('refuses %s with 422, before any AssumeRole, binding nothing', async (_label, resource) => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+    const roleArn = `arn:aws:iam::${uniqueAccountId()}:${resource}`;
+
+    const res = await as(org.owner, org.orgId).connect({ roleArn });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.message).toMatch(/must start with "DevControlRole"/);
+    expect(body.message).toMatch(/IAM path/);
+    expect(assumeCallsFor(roleArn)).toHaveLength(0);
+    await expectNoBinding(org.orgId);
+    // The connect session is left in place so the owner can retry with a valid role.
+    expect(await connectSession(org.orgId)).not.toBeNull();
+  });
+
+  it.each([
+    ['a short account ID', 'arn:aws:iam::12345:role/DevControlRole'],
+    ['a user, not a role', 'arn:aws:iam::123456789012:user/DevControlRole'],
+    ['another partition prefix', 'arn:aws-cn:iam::123456789012:role/DevControlRole'],
+    ['leading text', 'x arn:aws:iam::123456789012:role/DevControlRole'],
+    ['no role name', 'arn:aws:iam::123456789012:role/'],
+  ])('refuses a malformed ARN (%s) with 400, binding nothing', async (_label, roleArn) => {
+    const org = await buildOrg();
+    await insertConnectSession(org.orgId);
+
+    const res = await as(org.owner, org.orgId).connect({ roleArn });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(/Invalid Role ARN format/);
+    expect(assumeCallsFor(roleArn)).toHaveLength(0);
+    await expectNoBinding(org.orgId);
   });
 });
 
