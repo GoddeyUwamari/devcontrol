@@ -17,8 +17,10 @@
 -- PLACEMENT NOTE: classified into database/migrations-admin/ from the start.
 -- The function was created by an administrative migration (011, run as
 -- postgres), so it is expected to be owned by postgres, and only a
--- function's owner (or a superuser) can drop it. The owner-only pre-check
--- SQL for this change confirms the actual owner before execution.
+-- function's owner (or a superuser) can drop it. The read-only pre-check
+-- SQL, which confirms the actual owner before execution, and the post-check
+-- SQL are in database/migrations-admin/README.md, under "Applying
+-- 202610102024_drop_auto_detect_resource_ownership.sql".
 --
 -- No caller is expected: no trigger, application code, script, scheduled job
 -- or CI step invokes it, and the frontend method that pointed at a backend
