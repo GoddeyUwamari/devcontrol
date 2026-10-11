@@ -21,6 +21,7 @@ jest.mock('../../services/awsResourceDiscovery', () => ({
 }));
 
 import { ResourceDiscoveryJob } from '../resourceDiscovery.job';
+import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
 function dbConfig() {
   return {
@@ -48,8 +49,20 @@ async function insertOrg(): Promise<string> {
     [`SOC2 Job Isolation Org ${suffix}`, `soc2-job-isolation-${suffix}`, `SOC2 Job Isolation Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // The job only runs discovery for an organization with an active AWS
+  // connection. Placeholder account ID.
+  const accountId = String(Math.floor(1e11 + Math.random() * 9e11));
+  await pool.query(
+    `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, connected_at, status)
+     VALUES ($1, $2, $3, 'placeholder-external-id', 'us-east-1', NOW(), 'active')`,
+    [rows[0].id, `arn:aws:iam::${accountId}:role/DevControlRole`, accountId]
+  );
   return rows[0].id as string;
 }
+
+beforeAll(async () => {
+  await ensureSharedFixtureTable(pool, 'aws_accounts');
+});
 
 describe('ResourceDiscoveryJob -> real Soc2EvidenceService — Risk Score / legacy / customer-evidence isolation (live DB, actual trigger path)', () => {
   it('running the real scheduled trigger for an organization with pre-existing Risk Score, legacy compliance, and customer-evidence data leaves all of it byte-identical, and never touches AWS or Security Hub', async () => {
@@ -136,6 +149,7 @@ describe('ResourceDiscoveryJob -> real Soc2EvidenceService — Risk Score / lega
 
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
+    await pool.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

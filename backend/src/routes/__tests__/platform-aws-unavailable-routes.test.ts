@@ -11,6 +11,9 @@
  *   - A 500 from POST /api/services/discover or GET /api/aws/costs/monthly
  *     carries a fixed message: no ARN, no account ID, no raw AWS message. The
  *     real error goes to the server log.
+ *   - POST /api/services/discover still answers an organization that is not
+ *     connected with its 409, and a discovery run that fails stores only a
+ *     fixed error_message (the user reads it on GET /discovery/jobs).
  *
  * Real routes over an in-process HTTP server against live Postgres. Stubbed:
  * authService.verifyToken (to choose the caller), AWSClientFactory.createClients
@@ -28,6 +31,7 @@ import { AWSClientFactory } from '../../services/aws-client-factory.service';
 import awsCostService from '../../services/aws-cost.service';
 import { SloService, SloDefinition } from '../../services/slo.service';
 import { PlatformAwsCredentialsUnavailableError, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../../services/platform-sts';
+import { DISCOVERY_FAILED_MESSAGE } from '../../services/awsResourceDiscovery';
 import { pool as appPool } from '../../config/database';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
@@ -211,9 +215,23 @@ describe('the platform identity unavailable: 503, not "not connected"', () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
     expect(createClients).toHaveBeenCalledWith(caller.orgId);
-    // The run itself was recorded as failed.
-    const { rows } = await pool.query('SELECT status FROM resource_discovery_jobs WHERE organization_id = $1', [caller.orgId]);
-    expect(rows.map((r) => r.status)).toEqual(['failed']);
+    // The run itself was recorded as failed, with the fixed message, not the internal tag.
+    const { rows } = await pool.query('SELECT status, error_message FROM resource_discovery_jobs WHERE organization_id = $1', [caller.orgId]);
+    expect(rows).toEqual([{ status: 'failed', error_message: PLATFORM_AWS_UNAVAILABLE_MESSAGE }]);
+  });
+});
+
+describe('POST /api/services/discover for an organization that is not connected: unchanged', () => {
+  it('409 aws_not_connected, and the failed run stores the fixed message', async () => {
+    const caller = await buildOrg();
+    createClients.mockRejectedValue(new Error(`AWS_NOT_CONNECTED: org ${caller.orgId} has not connected an AWS account`));
+
+    const res = await send(caller, 'POST', '/services/discover');
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'aws_not_connected', message: 'Please connect your AWS account in Settings to run audits.' });
+    const { rows } = await pool.query('SELECT status, error_message FROM resource_discovery_jobs WHERE organization_id = $1', [caller.orgId]);
+    expect(rows).toEqual([{ status: 'failed', error_message: DISCOVERY_FAILED_MESSAGE }]);
   });
 });
 
@@ -228,6 +246,9 @@ describe('a 500 carries a fixed message, never the AWS error', () => {
     const body = await res.json();
     expect(body).toEqual({ success: false, error: 'Discovery failed. Please try again later.' });
     expectNothingInternal(body);
+    const { rows } = await pool.query('SELECT error_message FROM resource_discovery_jobs WHERE organization_id = $1', [caller.orgId]);
+    expect(rows).toEqual([{ error_message: DISCOVERY_FAILED_MESSAGE }]);
+    expectNothingInternal(rows[0].error_message);
   });
 
   it('GET /api/aws/costs/monthly', async () => {

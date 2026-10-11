@@ -41,6 +41,7 @@ import {
 } from '@aws-sdk/client-cloudfront';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
+import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from './platform-sts';
 import { createAwsBackupEvidenceCache, checkEBSBackupCoverage, BackupEvidenceResult } from './aws-backup-evidence.util';
 import {
   AWSResource,
@@ -112,6 +113,18 @@ const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
     'eks', 'dynamodb', 'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
   ], // All 16 types
 };
+
+/** What a fatally failed discovery job stores in error_message, for the organization to read. */
+export const DISCOVERY_FAILED_MESSAGE = 'Discovery could not complete. Check the AWS connection in Settings, then try again.';
+
+/**
+ * The user-safe error_message for a discovery run that failed before
+ * finishing. Unprefixed, so the readiness discovery gate still treats it as
+ * an unrecognized failure (observability-readiness.service.ts).
+ */
+export function fatalDiscoveryErrorMessage(error: unknown): string {
+  return isPlatformAwsCredentialsUnavailable(error) ? PLATFORM_AWS_UNAVAILABLE_MESSAGE : DISCOVERY_FAILED_MESSAGE;
+}
 
 export class AWSResourceDiscoveryService {
   private resourceExplorer = new ResourceExplorerService();
@@ -800,13 +813,16 @@ export class AWSResourceDiscoveryService {
       console.error(`\n❌ [Discovery] Fatal error during discovery:`, error.message);
       console.error(`Stack trace:`, error.stack);
 
-      // Update job as failed
+      // Update job as failed. error_message is shown to the organization
+      // (GET /api/aws-resources/discovery/jobs), so it carries a fixed message,
+      // never error.message: that can hold internal tags, ARNs, account IDs or
+      // raw AWS text. The full error is logged above.
       if (jobId!) {
         await client.query(
           `UPDATE resource_discovery_jobs
            SET status = $1, completed_at = NOW(), error_message = $2
            WHERE id = $3`,
-          ['failed', error.message, jobId]
+          ['failed', fatalDiscoveryErrorMessage(error), jobId]
         );
       }
       throw error;
