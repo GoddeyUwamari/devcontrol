@@ -13,7 +13,10 @@ import { join } from 'path';
 import {
   DISCOVERY_ERROR_PREFIXES,
   DISCOVERY_ERROR_SEPARATOR,
+  evaluateDiscoveryGate,
 } from '../observability-readiness.service';
+import { DISCOVERY_FAILED_MESSAGE } from '../awsResourceDiscovery';
+import { PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../platform-sts';
 
 const source = readFileSync(join(__dirname, '..', 'awsResourceDiscovery.ts'), 'utf8');
 
@@ -41,7 +44,13 @@ describe('readiness discovery gate -- pinned to runDiscovery() error format', ()
     expect(source).toContain("errors.join('; ')");
   });
 
-  it('a fatal error is written unprefixed (error.message only), which the gate treats as unrecognized', () => {
-    expect(source).toMatch(/SET status = \$1, completed_at = NOW\(\), error_message = \$2[\s\S]{0,80}\['failed', error\.message, jobId\]/);
+  it('a fatal error is written as a fixed unprefixed message, which the gate treats as unrecognized', () => {
+    expect(source).toMatch(/SET status = \$1, completed_at = NOW\(\), error_message = \$2[\s\S]{0,80}\['failed', fatalDiscoveryErrorMessage\(error\), jobId\]/);
+    for (const errorMessage of [DISCOVERY_FAILED_MESSAGE, PLATFORM_AWS_UNAVAILABLE_MESSAGE]) {
+      const run = { id: 'run', status: 'failed' as const, startedAt: new Date(), completedAt: new Date(), resourceTypes: ['ec2', 'rds'], errorMessage };
+      for (const type of ['ec2', 'rds'] as const) {
+        expect(evaluateDiscoveryGate(run, type)).toEqual({ kind: 'error', reason: 'the latest discovery run failed with an unrecognized error' });
+      }
+    }
   });
 });

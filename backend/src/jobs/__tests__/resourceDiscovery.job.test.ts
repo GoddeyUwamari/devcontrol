@@ -12,10 +12,15 @@
  * always scoped to this file's own created org ids via .toHaveBeenCalledWith / filter,
  * so any other pre-existing active organization in the shared test database cannot
  * make an assertion here pass or fail incorrectly.
+ *
+ * The job only runs discovery for an organization with an active aws_accounts
+ * row, so insertOrg() connects one by default. The skip/inactive/failure
+ * counting tests call scanOrganizations() with an explicit list, so the run's
+ * summary counts only this file's organizations.
  */
 import fs from 'fs';
 import path from 'path';
-import { Pool } from 'pg';
+import { Pool, PoolClient, QueryResult } from 'pg';
 
 const mockDiscoverAllResources = jest.fn();
 const mockComputeAndPersistEvidence = jest.fn();
@@ -33,6 +38,8 @@ jest.mock('../../services/soc2-evidence.service', () => ({
 }));
 
 import { ResourceDiscoveryJob } from '../resourceDiscovery.job';
+import { PlatformAwsCredentialsUnavailableError } from '../../services/platform-sts';
+import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
 function dbConfig() {
   return {
@@ -61,7 +68,13 @@ function successfulDiscovery(overrides: { errors?: string[] } = {}) {
   };
 }
 
-async function insertOrg(): Promise<{ id: string; name: string }> {
+/** A random 12-digit placeholder account ID; never a real account. */
+function placeholderAccountId(): string {
+  return String(Math.floor(1e11 + Math.random() * 9e11));
+}
+
+/** awsStatus: the aws_accounts row's status, or 'none' for no row at all. */
+async function insertOrg(awsStatus: string | null | 'none' = 'active'): Promise<{ id: string; name: string }> {
   const suffix = uniqueSuffix();
   const name = `Discovery Job Org ${suffix}`;
   const { rows } = await pool.query(
@@ -71,8 +84,20 @@ async function insertOrg(): Promise<{ id: string; name: string }> {
     [name, `discovery-job-org-${suffix}`, name]
   );
   createdOrgIds.push(rows[0].id);
+  if (awsStatus !== 'none') {
+    const accountId = placeholderAccountId();
+    await pool.query(
+      `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, connected_at, status)
+       VALUES ($1, $2, $3, 'placeholder-external-id', 'us-east-1', NOW(), $4)`,
+      [rows[0].id, `arn:aws:iam::${accountId}:role/DevControlRole`, accountId, awsStatus]
+    );
+  }
   return rows[0];
 }
+
+beforeAll(async () => {
+  await ensureSharedFixtureTable(pool, 'aws_accounts');
+});
 
 describe('ResourceDiscoveryJob — SOC 2 evidence trigger integration (Phase 5, Option B)', () => {
   let job: ResourceDiscoveryJob;
@@ -166,6 +191,178 @@ describe('ResourceDiscoveryJob — SOC 2 evidence trigger integration (Phase 5, 
   });
 });
 
+describe('ResourceDiscoveryJob — which organizations are scanned, and how each outcome is counted and logged', () => {
+  let job: ResourceDiscoveryJob;
+  let log: jest.SpyInstance;
+  let warn: jest.SpyInstance;
+  let error: jest.SpyInstance;
+
+  const logged = (spy: jest.SpyInstance) => spy.mock.calls.map((args) => args.map(String).join(' '));
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDiscoverAllResources.mockResolvedValue(successfulDiscovery());
+    mockComputeAndPersistEvidence.mockResolvedValue(undefined);
+    log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    job = new ResourceDiscoveryJob(pool);
+  });
+
+  afterEach(() => {
+    log.mockRestore();
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it('an organization with no aws_accounts row is skipped silently: no discovery, no SOC 2, nothing logged for it', async () => {
+    const org = await insertOrg('none');
+
+    const summary = await job.scanOrganizations([org]);
+
+    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, platformFailed: 0, notAttempted: 0 });
+    expect(mockDiscoverAllResources).not.toHaveBeenCalled();
+    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+    expect(logged(log).filter((line) => line.includes(org.id))).toEqual([]);
+  });
+
+  it.each([['disconnected'], [null]])('an aws_accounts row with status %p: one warning naming the org and status, no discovery, no error', async (status) => {
+    const org = await insertOrg(status);
+
+    const summary = await job.scanOrganizations([org]);
+
+    expect(summary).toEqual({ scanned: 0, skipped: 0, inactive: 1, failed: 0, platformFailed: 0, notAttempted: 0 });
+    expect(mockDiscoverAllResources).not.toHaveBeenCalled();
+    expect(logged(warn)).toEqual([`[Resource Discovery Job] Skipping org ${org.id}: AWS connection status is ${status ?? 'null'}, not active`]);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("the organization's own AssumeRole failure is an error naming the error class, counted as failed, and the run continues", async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    mockDiscoverAllResources.mockImplementation(async (id: string) => {
+      if (id === orgA.id) throw new Error(`AWS_NOT_CONNECTED: org ${id} has not connected an AWS account`);
+      return successfulDiscovery();
+    });
+
+    const summary = await job.scanOrganizations([orgA, orgB]);
+
+    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 1, platformFailed: 0, notAttempted: 0 });
+    expect(logged(error)).toEqual([
+      `[Resource Discovery Job] Failed for org ${orgA.id} (Error): AWS_NOT_CONNECTED: org ${orgA.id} has not connected an AWS account`,
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+    expect(mockDiscoverAllResources).toHaveBeenCalledWith(orgB.id);
+    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalledWith(orgA.id);
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id);
+  });
+
+  it('a platform failure on the first organization attempted stops the run with one error line', async () => {
+    const unconnected = await insertOrg('none');
+    const first = await insertOrg();
+    const second = await insertOrg();
+    const third = await insertOrg('none');
+    mockDiscoverAllResources.mockRejectedValue(new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers')));
+
+    const summary = await job.scanOrganizations([unconnected, first, second, third]);
+
+    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, platformFailed: 1, notAttempted: 2 });
+    expect(mockDiscoverAllResources).toHaveBeenCalledTimes(1);
+    expect(mockDiscoverAllResources).toHaveBeenCalledWith(first.id);
+    expect(logged(error)).toEqual([
+      `[Resource Discovery Job] Platform AWS identity unavailable on the first organization attempted (org ${first.id}); stopping this run, 2 organizations not attempted`,
+    ]);
+    expect(logged(log)).toContain(
+      '[Resource Discovery Job] Scanned 0, skipped 1 (no AWS connection), inactive 0, failed 0, platform_failed 1, not attempted 2 (stopped early)'
+    );
+  });
+
+  it('a platform failure after an organization was attempted is counted as platform_failed, not failed, and the run continues', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const orgC = await insertOrg();
+    mockDiscoverAllResources.mockImplementation(async (id: string) => {
+      if (id === orgB.id) throw new PlatformAwsCredentialsUnavailableError(new Error('Could not load credentials from any providers'));
+      return successfulDiscovery();
+    });
+
+    const summary = await job.scanOrganizations([orgA, orgB, orgC]);
+
+    expect(summary).toEqual({ scanned: 2, skipped: 0, inactive: 0, failed: 0, platformFailed: 1, notAttempted: 0 });
+    expect(logged(error)).toEqual([
+      `[Resource Discovery Job] Failed for org ${orgB.id}: PlatformAwsCredentialsUnavailableError: platform AWS identity unavailable`,
+    ]);
+    expect(mockDiscoverAllResources).toHaveBeenCalledWith(orgC.id);
+  });
+
+  it('one summary line with every count, across a mixed set of organizations', async () => {
+    const scannedA = await insertOrg();
+    const unconnectedA = await insertOrg('none');
+    const inactive = await insertOrg('suspended');
+    const failing = await insertOrg();
+    const unconnectedB = await insertOrg('none');
+    const platformFailing = await insertOrg();
+    const scannedB = await insertOrg();
+    mockDiscoverAllResources.mockImplementation(async (id: string) => {
+      if (id === failing.id) throw new Error(`AWS_NOT_CONNECTED: org ${id} has not connected an AWS account`);
+      if (id === platformFailing.id) throw new PlatformAwsCredentialsUnavailableError(new Error('expired'));
+      return successfulDiscovery();
+    });
+
+    const summary = await job.scanOrganizations([scannedA, unconnectedA, inactive, failing, unconnectedB, platformFailing, scannedB]);
+
+    expect(summary).toEqual({ scanned: 2, skipped: 2, inactive: 1, failed: 1, platformFailed: 1, notAttempted: 0 });
+    const summaryLines = logged(log).filter((line) => line.startsWith('[Resource Discovery Job] Scanned '));
+    expect(summaryLines).toEqual([
+      '[Resource Discovery Job] Scanned 2, skipped 2 (no AWS connection), inactive 1, failed 1, platform_failed 1',
+    ]);
+    expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([scannedA.id, failing.id, platformFailing.id, scannedB.id]);
+  });
+
+  it("reads each organization's connection under its own tenant tag: another organization's row never counts", async () => {
+    const connected = await insertOrg();
+    const unconnected = await insertOrg('none');
+    const seen: Array<{ tag: string; orgId: string }> = [];
+    const realConnect = pool.connect.bind(pool) as () => Promise<PoolClient>;
+    type Query = (text: unknown, values?: unknown[]) => Promise<QueryResult>;
+    // The pool hands back the same client object again: wrap each one once,
+    // and put every original query() back afterwards so later pool.query()
+    // calls (which pass a callback) reach the real method.
+    const originals = new Map<PoolClient, PoolClient['query']>();
+    const connectSpy = (jest.spyOn(pool, 'connect') as unknown as jest.SpyInstance<Promise<PoolClient>, []>)
+      .mockImplementation(async () => {
+        const client = await realConnect();
+        if (!originals.has(client)) {
+          originals.set(client, client.query);
+          const realQuery = client.query.bind(client) as unknown as Query;
+          const observed: Query = async (text, values) => {
+            if (typeof text === 'string' && text.includes('FROM aws_accounts')) {
+              const { rows } = await realQuery("SELECT current_setting('app.current_organization_id', true) AS tag");
+              seen.push({ tag: rows[0].tag, orgId: String(values?.[0]) });
+            }
+            return realQuery(text, values);
+          };
+          client.query = observed as unknown as PoolClient['query'];
+        }
+        return client;
+      });
+
+    try {
+      const summary = await job.scanOrganizations([connected, unconnected]);
+      expect(summary).toMatchObject({ scanned: 1, skipped: 1 });
+    } finally {
+      connectSpy.mockRestore();
+      for (const [client, realQuery] of originals) client.query = realQuery;
+    }
+    expect(seen).toEqual([
+      { tag: connected.id, orgId: connected.id },
+      { tag: unconnected.id, orgId: unconnected.id },
+    ]);
+  });
+});
+
 describe('SOC 2 computation is not wired into any on-demand discovery entry point (static)', () => {
   function readCode(filePath: string): string {
     const full = fs.readFileSync(filePath, 'utf-8');
@@ -222,6 +419,7 @@ describe('SOC 2 computation is not wired into any on-demand discovery entry poin
 
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
+    await pool.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

@@ -2,6 +2,25 @@ import cron from 'node-cron';
 import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { Soc2EvidenceService } from '../services/soc2-evidence.service';
+import { isPlatformAwsCredentialsUnavailable } from '../services/platform-sts';
+
+/** One scheduled run's outcome per organization. Every organization lands in exactly one count. */
+export interface DiscoveryRunSummary {
+  /** Discovery ran to completion (its own sub-step errors included). */
+  scanned: number;
+  /** No aws_accounts row: nothing to discover, no job row, no AWS calls. */
+  skipped: number;
+  /** An aws_accounts row whose status is not 'active': no job row, no AWS calls. */
+  inactive: number;
+  /** Discovery failed for the organization's own reasons (e.g. its role refused AssumeRole). */
+  failed: number;
+  /** Discovery failed because the platform's own AWS identity was unavailable. */
+  platformFailed: number;
+  /** Left unprocessed because the run stopped early on a platform failure. */
+  notAttempted: number;
+}
+
+type AwsConnection = { kind: 'none' } | { kind: 'inactive'; status: string | null } | { kind: 'active' };
 
 /**
  * Resource Discovery Background Job
@@ -58,74 +77,155 @@ export class ResourceDiscoveryJob {
    * Run discovery for all active organizations
    */
   private async runDiscoveryForAllOrganizations(): Promise<void> {
+    // Get all active organizations
+    const result = await this.pool.query(
+      `SELECT id, name FROM organizations WHERE is_active = true`
+    );
+
+    const organizations = result.rows;
+    console.log(`[Resource Discovery Job] Found ${organizations.length} active organizations`);
+
+    await this.scanOrganizations(organizations);
+  }
+
+  /**
+   * Discovery, then SOC 2 evidence, for each organization in turn, and one
+   * summary line for the run.
+   *
+   * An organization with no aws_accounts row is skipped before anything else
+   * happens, and one whose row is not active gets a single warning: neither
+   * gets a discovery job row or any AWS call. Every other failure stays an
+   * error: the organization's own (its role refused AssumeRole) counts as
+   * failed, the platform's own AWS identity being unavailable counts as
+   * platform_failed. If that happens on the first organization attempted,
+   * the run stops: every other organization would fail the same way.
+   */
+  async scanOrganizations(organizations: Array<{ id: string; name: string }>): Promise<DiscoveryRunSummary> {
+    const summary: DiscoveryRunSummary = { scanned: 0, skipped: 0, inactive: 0, failed: 0, platformFailed: 0, notAttempted: 0 };
+    let attempted = 0;
+
+    // Run discovery for each organization sequentially
+    for (const [index, org] of organizations.entries()) {
+      let connection: AwsConnection;
+      try {
+        connection = await this.getAwsConnection(org.id);
+      } catch (error: unknown) {
+        const { name, message } = error instanceof Error ? error : { name: 'Error', message: String(error) };
+        console.error(`[Resource Discovery Job] Failed for org ${org.id}: could not read its AWS connection (${name}):`, message);
+        summary.failed++;
+        continue;
+      }
+      if (connection.kind === 'none') {
+        summary.skipped++;
+        continue;
+      }
+      if (connection.kind === 'inactive') {
+        console.warn(`[Resource Discovery Job] Skipping org ${org.id}: AWS connection status is ${connection.status ?? 'null'}, not active`);
+        summary.inactive++;
+        continue;
+      }
+
+      attempted++;
+      try {
+        console.log(`[Resource Discovery Job] Scanning organization: ${org.name} (${org.id})`);
+        const discoveryResult = await this.service.discoverAllResources(org.id);
+        summary.scanned++;
+        console.log(
+          `[Resource Discovery Job] ${org.name}: ` +
+          `Discovered ${discoveryResult.resources_discovered}, ` +
+          `Updated ${discoveryResult.resources_updated}, ` +
+          `Errors: ${discoveryResult.errors.length}`
+        );
+      } catch (error: any) {
+        if (isPlatformAwsCredentialsUnavailable(error)) {
+          summary.platformFailed++;
+          if (attempted === 1) {
+            summary.notAttempted = organizations.length - index - 1;
+            console.error(
+              `[Resource Discovery Job] Platform AWS identity unavailable on the first organization attempted (org ${org.id}); ` +
+              `stopping this run, ${summary.notAttempted} organizations not attempted`
+            );
+            break;
+          }
+          console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: platform AWS identity unavailable`);
+        } else {
+          summary.failed++;
+          console.error(`[Resource Discovery Job] Failed for org ${org.id} (${error?.name ?? 'Error'}):`, error?.message);
+        }
+        // Continue with next organization even if this one fails -- and skip SOC 2
+        // computation for it this cycle (below): discoverAllResources() throwing here
+        // means it never reached its own resource_discovery_jobs completion write for
+        // this attempt, so there is nothing new for this cycle to compute from.
+        continue;
+      }
+
+      // PHASE 5 -- SOC 2 evidence computation. Runs strictly after this organization's
+      // discovery attempt has finished and persisted its own completion state
+      // (resource_discovery_jobs, aws_resources, account_security_findings).
+      //
+      // Deliberately its own try/catch, entirely separate from discovery's above: a
+      // SOC 2 computation failure must never be reported as, or mistaken for, a
+      // discovery failure, and must never stop this loop from reaching the next
+      // organization -- discovery for this organization already succeeded/was
+      // recorded above regardless of what happens next.
+      //
+      // No separate completeness gate is re-implemented here on purpose:
+      // computeAndPersistEvidence() already consults the one structurally-persisted
+      // completeness signal (Soc2EvidenceRepository.isLatestDiscoveryComplete(), i.e.
+      // resource_discovery_jobs.compliance_scan_completed) internally, per criterion,
+      // to decide whether an absence of findings may become SUPPORTS or must stay
+      // UNKNOWN. A second, cruder gate here (e.g. skipping computation whenever
+      // discoveryResult.errors is non-empty) would be wrong, not just redundant: that
+      // errors array also covers cost-analysis and orphaned-resource detection, which
+      // have nothing to do with SOC 2's actual evidence sources, and would
+      // needlessly withhold evidence for an organization whose aws_resources /
+      // account_security_findings are otherwise fine and fresh -- the same
+      // whole-job-status pitfall onboarding.service.ts already avoids by checking
+      // aws_resources directly instead of resource_discovery_jobs.status.
+      try {
+        const soc2StartedAt = Date.now();
+        await this.soc2EvidenceService.computeAndPersistEvidence(org.id);
+        console.log(
+          `[Resource Discovery Job] ${org.name}: SOC 2 evidence computed (${Date.now() - soc2StartedAt}ms)`
+        );
+      } catch (error: any) {
+        console.error(
+          `[Resource Discovery Job] SOC 2 evidence computation failed for ${org.name}:`,
+          error.message
+        );
+        // Non-fatal: this organization's discovery result above is unaffected, and
+        // the loop continues to the next organization regardless.
+      }
+    }
+
+    console.log(
+      `[Resource Discovery Job] Scanned ${summary.scanned}, skipped ${summary.skipped} (no AWS connection), ` +
+      `inactive ${summary.inactive}, failed ${summary.failed}, platform_failed ${summary.platformFailed}` +
+      (summary.notAttempted > 0 ? `, not attempted ${summary.notAttempted} (stopped early)` : '')
+    );
+    return summary;
+  }
+
+  /**
+   * Whether the organization has a connected AWS account. Read inside a
+   * transaction tagged for that organization (the tag ends with it) and
+   * filtered by it, so the answer never comes from another organization's row.
+   */
+  private async getAwsConnection(organizationId: string): Promise<AwsConnection> {
     const client = await this.pool.connect();
     try {
-      // Get all active organizations
-      const result = await client.query(
-        `SELECT id, name FROM organizations WHERE is_active = true`
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.current_organization_id', $1, true)", [organizationId]);
+      const { rows } = await client.query(
+        `SELECT status FROM aws_accounts WHERE org_id = $1 LIMIT 1`,
+        [organizationId]
       );
-
-      const organizations = result.rows;
-      console.log(`[Resource Discovery Job] Found ${organizations.length} active organizations`);
-
-      // Run discovery for each organization sequentially
-      for (const org of organizations) {
-        try {
-          console.log(`[Resource Discovery Job] Scanning organization: ${org.name} (${org.id})`);
-          const discoveryResult = await this.service.discoverAllResources(org.id);
-          console.log(
-            `[Resource Discovery Job] ${org.name}: ` +
-            `Discovered ${discoveryResult.resources_discovered}, ` +
-            `Updated ${discoveryResult.resources_updated}, ` +
-            `Errors: ${discoveryResult.errors.length}`
-          );
-        } catch (error: any) {
-          console.error(`[Resource Discovery Job] Failed for ${org.name}:`, error.message);
-          // Continue with next organization even if this one fails -- and skip SOC 2
-          // computation for it this cycle (below): discoverAllResources() throwing here
-          // means it never reached its own resource_discovery_jobs completion write for
-          // this attempt, so there is nothing new for this cycle to compute from.
-          continue;
-        }
-
-        // PHASE 5 -- SOC 2 evidence computation. Runs strictly after this organization's
-        // discovery attempt has finished and persisted its own completion state
-        // (resource_discovery_jobs, aws_resources, account_security_findings).
-        //
-        // Deliberately its own try/catch, entirely separate from discovery's above: a
-        // SOC 2 computation failure must never be reported as, or mistaken for, a
-        // discovery failure, and must never stop this loop from reaching the next
-        // organization -- discovery for this organization already succeeded/was
-        // recorded above regardless of what happens next.
-        //
-        // No separate completeness gate is re-implemented here on purpose:
-        // computeAndPersistEvidence() already consults the one structurally-persisted
-        // completeness signal (Soc2EvidenceRepository.isLatestDiscoveryComplete(), i.e.
-        // resource_discovery_jobs.compliance_scan_completed) internally, per criterion,
-        // to decide whether an absence of findings may become SUPPORTS or must stay
-        // UNKNOWN. A second, cruder gate here (e.g. skipping computation whenever
-        // discoveryResult.errors is non-empty) would be wrong, not just redundant: that
-        // errors array also covers cost-analysis and orphaned-resource detection, which
-        // have nothing to do with SOC 2's actual evidence sources, and would
-        // needlessly withhold evidence for an organization whose aws_resources /
-        // account_security_findings are otherwise fine and fresh -- the same
-        // whole-job-status pitfall onboarding.service.ts already avoids by checking
-        // aws_resources directly instead of resource_discovery_jobs.status.
-        try {
-          const soc2StartedAt = Date.now();
-          await this.soc2EvidenceService.computeAndPersistEvidence(org.id);
-          console.log(
-            `[Resource Discovery Job] ${org.name}: SOC 2 evidence computed (${Date.now() - soc2StartedAt}ms)`
-          );
-        } catch (error: any) {
-          console.error(
-            `[Resource Discovery Job] SOC 2 evidence computation failed for ${org.name}:`,
-            error.message
-          );
-          // Non-fatal: this organization's discovery result above is unaffected, and
-          // the loop continues to the next organization regardless.
-        }
-      }
+      await client.query('COMMIT');
+      if (rows.length === 0) return { kind: 'none' };
+      return rows[0].status === 'active' ? { kind: 'active' } : { kind: 'inactive', status: rows[0].status ?? null };
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
     } finally {
       client.release();
     }
