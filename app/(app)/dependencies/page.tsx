@@ -35,6 +35,7 @@ import { LastSynced } from '@/components/ui/last-synced'
 import { SyncStatusBanner } from '@/components/ui/sync-status-banner'
 import { DEMO_LAST_SYNCED, DEMO_SYNC_STATUS } from '@/lib/demo/demo-timestamps'
 import { useOnboardingTour } from '@/lib/hooks/use-onboarding-tour'
+import { useOrgScopedCache, useSessionOrganizationId } from '@/lib/hooks/use-org-scoped-cache'
 import { TourButton } from '@/components/onboarding/tour-button'
 import { WelcomeModal } from '@/components/onboarding/welcome-modal'
 import { SystemStatusBadge } from '@/components/ui/system-status-badge'
@@ -128,8 +129,6 @@ const SECTION_HEADER: React.CSSProperties = {
 // --- End helpers ---
 
 const DEMO_MODE_KEY = 'devcontrol_demo_mode'
-const CACHE_KEY = 'dependencies_cache'
-const CACHE_TIMESTAMP_KEY = 'dependencies_cache_timestamp'
 
 export default function DependenciesPage() {
   const router = useRouter()
@@ -156,9 +155,13 @@ export default function DependenciesPage() {
   const [isRetrying, setIsRetrying] = useState(false)
   const [loadingTimeout, setLoadingTimeout] = useState(false)
 
-  // Cached data for graceful degradation
-  const [cachedDependencies, setCachedDependencies] = useState<typeof DEMO_DEPENDENCIES>([])
-  const [cachedTimestamp, setCachedTimestamp] = useState<Date | null>(null)
+  // Cached data for graceful degradation -- this session's organization's
+  // own cache only (lib/org-scoped-cache.ts); never another organization's.
+  const sessionOrganizationId = useSessionOrganizationId()
+  const { entry: cacheEntry, save: saveCache } =
+    useOrgScopedCache<typeof DEMO_DEPENDENCIES>('dependencies', sessionOrganizationId)
+  const cachedDependencies = cacheEntry?.data ?? []
+  const cachedTimestamp = cacheEntry ? new Date(cacheEntry.savedAt) : null
 
   // Sync local state with global demo mode
   useEffect(() => {
@@ -184,25 +187,10 @@ export default function DependenciesPage() {
     }))
   }, [])
 
-  // Load cached data on mount
-  useEffect(() => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY)
-      const timestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY)
-      if (cached) {
-        setCachedDependencies(JSON.parse(cached))
-      }
-      if (timestamp) {
-        setCachedTimestamp(new Date(timestamp))
-      }
-    } catch (e) {
-      console.error('Failed to load cached dependencies:', e)
-    }
-  }, [])
-
   // Fetch all dependencies with retry logic
   const {
     data: dependencies = [],
+    isSuccess: dependenciesLoaded,
     isLoading,
     error: queryError,
     refetch,
@@ -226,19 +214,11 @@ export default function DependenciesPage() {
     staleTime: 30000, // 30 seconds
   })
 
-  // Save dependencies to cache on successful fetch
+  // Save each successful fetch to this organization's cache -- an empty list
+  // too, so a later failure never falls back to dependencies since deleted.
   useEffect(() => {
-    if (dependencies && dependencies.length > 0) {
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(dependencies))
-        localStorage.setItem(CACHE_TIMESTAMP_KEY, new Date().toISOString())
-        setCachedDependencies(dependencies)
-        setCachedTimestamp(new Date())
-      } catch (e) {
-        console.error('Failed to cache dependencies:', e)
-      }
-    }
-  }, [dependencies])
+    if (dependenciesLoaded) saveCache(dependencies)
+  }, [dependenciesLoaded, dependencies, saveCache])
 
   // Loading timeout detection
   useEffect(() => {
@@ -505,15 +485,25 @@ export default function DependenciesPage() {
           </div>
         </div>
 
-        {/* Enhanced Empty State */}
-        <EnhancedEmptyState
-          onAddDependency={() => setIsAddDialogOpen(true)}
-          onEnableDemoMode={enableDemoMode}
-          onImport={() => {
-            // Future: Handle import functionality
-          }}
-          hasServices={hasServices}
-        />
+        {/* A failed load with no cache of this organization's own is an error,
+            not "no dependencies". */}
+        {!demoMode && pageError ? (
+          <ErrorDisplay
+            error={pageError}
+            onRetry={pageError.retryable ? handleRetryError : undefined}
+            onDismiss={handleDismissError}
+            isRetrying={isRetrying}
+          />
+        ) : (
+          <EnhancedEmptyState
+            onAddDependency={() => setIsAddDialogOpen(true)}
+            onEnableDemoMode={enableDemoMode}
+            onImport={() => {
+              // Future: Handle import functionality
+            }}
+            hasServices={hasServices}
+          />
+        )}
 
         {/* Add Dependency Dialog */}
         {hasServices && (

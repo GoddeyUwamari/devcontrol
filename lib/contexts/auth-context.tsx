@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { resetQueryClientForIdentityChange } from "../query-client";
+import { clearOrgScopedCaches } from "../org-scoped-cache";
 import { MEMBERSHIP_REVOKED_EVENT } from "../api";
 import type { User } from "../types";
 import { authService, tokenManager } from "../services/auth.service";
@@ -52,6 +53,19 @@ interface AuthContextValue {
 export const REFRESH_RACE_RECHECK_MS = 1000;
 
 /**
+ * Drops every browser cache of the previous identity's or organization's
+ * data: the localStorage caches (lib/org-scoped-cache.ts), which outlive the
+ * session, and the in-memory query cache. Runs on login, registration,
+ * logout, forced logout, and every organization change.
+ */
+async function resetCachesForIdentityChange(
+  queryClient: ReturnType<typeof useQueryClient>
+): Promise<void> {
+  clearOrgScopedCaches();
+  await resetQueryClientForIdentityChange(queryClient);
+}
+
+/**
  * Auth Context
  */
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -71,7 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
   // The app's single QueryClient (app/providers.tsx wraps AuthProvider in
   // QueryClientProvider with the lib/query-client singleton). Every identity
-  // transition below resets it -- see resetQueryClientForIdentityChange.
+  // transition below resets it -- see resetCachesForIdentityChange.
   const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -164,7 +178,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // New identity: drop any previous identity's cached queries before the
         // new session's tokens exist, so no query can run as (or be served
         // from) the old identity once this user lands on /dashboard.
-        await resetQueryClientForIdentityChange(queryClient);
+        await resetCachesForIdentityChange(queryClient);
 
         // Store tokens
         tokenManager.setAccessToken(accessToken);
@@ -235,7 +249,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Check if tokens are in response
         if (response.data.accessToken && response.data.refreshToken) {
           // New identity -- same reset as login().
-          await resetQueryClientForIdentityChange(queryClient);
+          await resetCachesForIdentityChange(queryClient);
 
           // Store tokens
           tokenManager.setAccessToken(response.data.accessToken);
@@ -313,7 +327,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // Identity ended: drop its cached queries before navigating away, so a
       // later login in this same tab starts from an empty cache.
-      await resetQueryClientForIdentityChange(queryClient);
+      await resetCachesForIdentityChange(queryClient);
 
       toast.success("Logged out successfully");
 
@@ -400,7 +414,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setOrganization(null);
         setOrganizations([]);
         // Same identity-ended reset as logout() -- this path doesn't call it.
-        await resetQueryClientForIdentityChange(queryClient);
+        await resetCachesForIdentityChange(queryClient);
         router.push("/login");
       } else {
         // Non-401 error (network down, 5xx, etc.) — don't clear the session,
@@ -458,7 +472,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Add to organizations list
         setOrganizations((prev) => [...prev, newOrg]);
 
-        // Switch to new organization
+        // Switch to new organization. Drop the previous organization's cached
+        // data first, so none of it is ever shown as the new one's.
+        await resetCachesForIdentityChange(queryClient);
         setOrganization(newOrg);
 
         toast.success("Organization created!", {
@@ -478,7 +494,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
     },
-    []
+    [queryClient]
   );
 
   /**
@@ -493,6 +509,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Find organization in list
         const org = organizations.find((o) => o.id === organizationId);
         if (org) {
+          // Same as an identity change: no cached data of the previous
+          // organization may be served once this one is current.
+          await resetCachesForIdentityChange(queryClient);
           setOrganization(org);
           toast.success(`Switched to ${org.name}`);
 
@@ -507,7 +526,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         });
       }
     },
-    [organizations, router]
+    [organizations, router, queryClient]
   );
 
   /**

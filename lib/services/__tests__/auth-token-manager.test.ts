@@ -82,3 +82,28 @@ describe("tokenManager auth cookie over http", () => {
     expect(loggedText(spies)).not.toContain(TOKEN.slice(0, 20));
   });
 });
+
+/** An unsigned JWT-shaped token whose payload is `claims`, base64url-encoded. */
+function tokenWithClaims(claims: Record<string, unknown>): string {
+  const payload = btoa(JSON.stringify(claims)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `eyJhbGciOiJIUzI1NiJ9.${payload}.c2lnbmF0dXJl`;
+}
+
+describe("tokenManager claims", () => {
+  it("getCurrentOrganizationId reads the access token's organizationId claim", () => {
+    tokenManager.setAccessToken(tokenWithClaims({ organizationId: "org-from-token", role: "admin" }));
+    expect(tokenManager.getCurrentOrganizationId()).toBe("org-from-token");
+    expect(tokenManager.getCurrentRole()).toBe("admin");
+  });
+
+  it("getCurrentOrganizationId is null without a token, a claim, or a readable payload", () => {
+    expect(tokenManager.getCurrentOrganizationId()).toBeNull();
+    tokenManager.setAccessToken(tokenWithClaims({ role: "admin" }));
+    expect(tokenManager.getCurrentOrganizationId()).toBeNull();
+    tokenManager.setAccessToken(tokenWithClaims({ organizationId: "" }));
+    expect(tokenManager.getCurrentOrganizationId()).toBeNull();
+    tokenManager.setAccessToken("not-a-jwt");
+    expect(tokenManager.getCurrentOrganizationId()).toBeNull();
+    expect(tokenManager.getCurrentRole()).toBeNull();
+  });
+});
