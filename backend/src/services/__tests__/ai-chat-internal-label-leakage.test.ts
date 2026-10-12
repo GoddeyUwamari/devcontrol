@@ -48,13 +48,13 @@ function noData(state: ContextSection<never>['state'], extra: Partial<ContextSec
   return section<never>(state, null, extra);
 }
 
-const INVENTORY_SCOPE: ChatContext['inventoryScope'] = { kind: 'resource_inventory', connectedAccountId: '815931739526', discoveryRegion: 'us-east-1' };
+const INVENTORY_SCOPE: ChatContext['inventoryScope'] = { kind: 'resource_inventory', connectedAccountId: '123456789012', discoveryRegion: 'us-east-1' };
 
 /** Every state and scope kind appears somewhere in this context. */
 function everyStateContext(): ChatContext {
   return {
     discovery: section('available', { completedAt: '2026-09-25T06:00:03.693Z' }, { asOf: '2026-09-25T06:00:03.693Z' }),
-    account: section('available', { accountId: '815931739526', region: 'us-east-1' }),
+    account: section('available', { accountId: '123456789012', region: 'us-east-1' }),
     services: section('partial', ['ec2', 's3'], {
       scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only',
       reason: 'Latest discovery run is incomplete; inventory data may be stale or incomplete.',
@@ -62,7 +62,7 @@ function everyStateContext(): ChatContext {
     costs: {
       state: 'available', source: 'actual', current: 15.07, asOf: '2026-09-25T15:17:36.123Z',
       period: { start: '2026-09-01', endExclusive: '2026-09-26' },
-      scope: { kind: 'cost_explorer', connectedAccountId: '815931739526', linkedAccountFilter: 'none', consolidatedBilling: 'unknown', regions: 'all' },
+      scope: { kind: 'cost_explorer', connectedAccountId: '123456789012', linkedAccountFilter: 'none', consolidatedBilling: 'unknown', regions: 'all' },
       topSpenders: [
         { service: 'Amazon Elastic Compute Cloud - Compute', cost: 6.7, percentage: 44.4 },
         { service: 'AWS Cost Explorer', cost: 2.88, percentage: 19.1 },

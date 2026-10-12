@@ -119,8 +119,11 @@ async function fetchSessionRow(orgId: string) {
 
 let server: http.Server;
 let baseUrl: string;
+// connect-init has no default platform account; configure one for this suite.
+const savedPlatformAccountId = process.env.AWS_ACCOUNT_ID;
 
 beforeAll(async () => {
+  process.env.AWS_ACCOUNT_ID = '123456789012';
   await ensureSharedFixtureTable(pool, 'aws_accounts');
   await ensureSharedFixtureTable(pool, 'aws_connect_sessions');
 
@@ -135,6 +138,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (savedPlatformAccountId === undefined) delete process.env.AWS_ACCOUNT_ID;
+  else process.env.AWS_ACCOUNT_ID = savedPlatformAccountId;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const table of ['aws_accounts', 'aws_connect_sessions']) {
     await pool.query(`DELETE FROM ${table} WHERE org_id = ANY($1)`, [createdOrgIds]);

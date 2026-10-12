@@ -96,6 +96,17 @@ export function validateEnv(): void {
       );
     }
 
+    // The platform's AWS account ID is the principal in the trust policy every
+    // organization creates to connect its AWS account (routes/aws.routes.ts).
+    // It has no default, so a deployment without it cannot onboard anyone.
+    if (!process.env.AWS_ACCOUNT_ID?.trim()) {
+      throw new Error(
+        `❌ AWS_ACCOUNT_ID is required in production\n` +
+        `   Set it to the platform's 12-digit AWS account ID -- the account customers\n` +
+        `   trust in the IAM role they create to connect their AWS account.`
+      );
+    }
+
     // Ensure database is not localhost in production
     if (process.env.DB_HOST === 'localhost' || process.env.DB_HOST === '127.0.0.1') {
       console.warn(

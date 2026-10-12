@@ -105,8 +105,12 @@ async function buildOrg() {
 
 let server: http.Server;
 let baseUrl: string;
+// The platform account configured for this suite (connect-init has no default).
+const PLATFORM_ACCOUNT_ID = '123456789012';
+const savedPlatformAccountId = process.env.AWS_ACCOUNT_ID;
 
 beforeAll(async () => {
+  process.env.AWS_ACCOUNT_ID = PLATFORM_ACCOUNT_ID;
   // aws_accounts, aws_connect_sessions, and api_keys are not created by the
   // canonical migrations CI bootstraps. Shared with other suites: ensured
   // here, never dropped (shared-fixture-tables.ts).
@@ -141,6 +145,8 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  if (savedPlatformAccountId === undefined) delete process.env.AWS_ACCOUNT_ID;
+  else process.env.AWS_ACCOUNT_ID = savedPlatformAccountId;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const table of ['aws_accounts', 'aws_connect_sessions']) {
     await pool.query(`DELETE FROM ${table} WHERE org_id = ANY($1)`, [createdOrgIds]);
@@ -584,6 +590,52 @@ describe('AWS account connection -- the role refuses: 422 advice, never the raw 
     await expectNoBinding(org.orgId);
     // The full AWS message stays in the server log.
     expect(logged).toHaveBeenCalledWith('[Connect AWS] STS validation failed:', expect.objectContaining({ name: 'AccessDenied', message: raw }));
+  });
+});
+
+describe('AWS account connection -- connect-init trust policy names the configured platform account', () => {
+  afterEach(() => {
+    process.env.AWS_ACCOUNT_ID = PLATFORM_ACCOUNT_ID;
+  });
+
+  async function startedEvents(orgId: string): Promise<number> {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM analytics_events WHERE organization_id = $1 AND event_name = 'aws_connection_started'`,
+      [orgId]
+    );
+    return rows[0].n;
+  }
+
+  it('uses AWS_ACCOUNT_ID for the trust-policy principal and the account shown', async () => {
+    const org = await buildOrg();
+
+    const res = await as(org.owner, org.orgId).connectInit();
+
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as {
+      data: { platformAccountId: string; trustPolicy: { Statement: Array<{ Principal: { AWS: string } }> } };
+    };
+    expect(data.platformAccountId).toBe(PLATFORM_ACCOUNT_ID);
+    expect(data.trustPolicy.Statement[0].Principal.AWS).toBe(`arn:aws:iam::${PLATFORM_ACCOUNT_ID}:root`);
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['blank', '  '],
+    ['not a 12-digit account ID', 'devcontrol-platform'],
+  ])('AWS_ACCOUNT_ID %s: 500 with a generic message, logged server-side, nothing created', async (_label, value) => {
+    if (value === undefined) delete process.env.AWS_ACCOUNT_ID;
+    else process.env.AWS_ACCOUNT_ID = value;
+    const org = await buildOrg();
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await as(org.owner, org.orgId).connectInit();
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ success: false, message: 'Failed to initialise connect session.' });
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('AWS_ACCOUNT_ID'));
+    expect(await connectSession(org.orgId)).toBeNull();
+    expect(await startedEvents(org.orgId)).toBe(0);
   });
 });
 

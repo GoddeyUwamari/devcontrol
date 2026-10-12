@@ -46,7 +46,7 @@ Because the chain reads environment keys before the instance role, an environmen
 | Variable | Purpose |
 |---|---|
 | `AWS_REGION` | Region for the STS call made while validating a new connection. Required by `POST /api/infrastructure/sync-aws`. |
-| `AWS_ACCOUNT_ID` | The platform's AWS account ID, placed in the trust policy shown to organizations. |
+| `AWS_ACCOUNT_ID` | The platform's 12-digit AWS account ID, placed in the trust policy shown to organizations. Required, with no default: the backend does not start in production without it, and connecting an AWS account fails (500) in any environment where it is missing or not 12 digits. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Optional, local development only: one way to give the default chain an identity. |
 
 The platform identity only needs permission to assume the roles organizations create for DevControl:

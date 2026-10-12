@@ -32,7 +32,7 @@ describe('CloudWatchService.evaluateEksService', () => {
     resource_id: 'my-cluster',
     resource_name: 'my-cluster',
     resource_type: 'eks' as const,
-    resource_arn: 'arn:aws:eks:us-east-1:815931739526:cluster/my-cluster',
+    resource_arn: 'arn:aws:eks:us-east-1:123456789012:cluster/my-cluster',
     status: 'unknown',
     metadata: { source: 'resource-explorer', service: 'eks' },
   };

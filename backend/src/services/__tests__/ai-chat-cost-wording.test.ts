@@ -38,11 +38,11 @@ function systemPrompt(): string {
 
 /** The real production context shape observed 2026-09-25 (figures as returned by /api/ai-chat/context). */
 function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, dora: ChatContext['dora'] = NO_DEPLOYMENTS): ChatContext {
-  const inventoryScope: ChatContext['inventoryScope'] = { kind: 'resource_inventory', connectedAccountId: '815931739526', discoveryRegion: 'us-east-1' };
+  const inventoryScope: ChatContext['inventoryScope'] = { kind: 'resource_inventory', connectedAccountId: '123456789012', discoveryRegion: 'us-east-1' };
   const inventory = { source: 'DevControl resource inventory (periodic AWS discovery)', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: '2026-09-25T06:00:03.693Z', scope: inventoryScope, reason: null };
   return {
     discovery: { state: 'available', source: 'DevControl resource discovery runs', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: '2026-09-25T06:00:03.693Z', scope: null, coverage: null, reason: null, data: { completedAt: '2026-09-25T06:00:03.693Z' } },
-    account: { state: 'available', source: 'DevControl connected AWS account record', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data: { accountId: '815931739526', region: 'us-east-1' } },
+    account: { state: 'available', source: 'DevControl connected AWS account record', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data: { accountId: '123456789012', region: 'us-east-1' } },
     services: { state: 'available', ...inventory, coverage: null, data: ['ec2', 's3', 'sns', 'vpc'] },
     costs: {
       state: 'available',
@@ -50,7 +50,7 @@ function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, do
       current: 14.83,
       asOf: '2026-09-25T08:57:16.538Z',
       period: { start: '2026-09-01', endExclusive: '2026-09-26' },
-      scope: { kind: 'cost_explorer', connectedAccountId: '815931739526', linkedAccountFilter: 'none', consolidatedBilling: 'unknown', regions: 'all' },
+      scope: { kind: 'cost_explorer', connectedAccountId: '123456789012', linkedAccountFilter: 'none', consolidatedBilling: 'unknown', regions: 'all' },
       topSpenders: [
         { service: 'Amazon Elastic Compute Cloud - Compute', cost: 6.6, percentage: 44.5 },
         { service: 'Amazon Virtual Private Cloud', cost: 2.87, percentage: 19.3 },

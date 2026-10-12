@@ -579,7 +579,7 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // disposable ECS service has been evaluated end-to-end.
   ecs: 'deployed',
   // Deployed and type-safe; eks:DescribeCluster has never actually been called against a
-  // real cluster — the connected test account (815931739526, us-east-1 + us-west-2) has
+  // real cluster — the connected test account (123456789012, us-east-1 + us-west-2) has
   // zero EKS clusters. Unlike ECS, the IAM permission itself IS confirmed: live-tested via
   // eks:DescribeCluster/ListNodegroups/DescribeNodegroup against a nonexistent cluster name
   // under the connected org's actual assumed role (DevControlRole-Test, AWS managed
@@ -590,7 +590,7 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // been evaluated end-to-end.
   eks: 'deployed',
   // Service Health Coverage Expansion: live-verified 2026-09-14 in production (account
-  // 815931739526, us-east-1) against two real EBS volumes (vol-01f542a56c1d5e998,
+  // 123456789012, us-east-1) against two real EBS volumes (vol-01f542a56c1d5e998,
   // available; and the devcontrol-backend instance's attached root volume, in-use) —
   // ec2:DescribeVolumeStatus succeeded (IAM permission confirmed granted, distinct from
   // discovery's own ec2:DescribeVolumes), both resolved VolumeStatus.Status 'ok', and
