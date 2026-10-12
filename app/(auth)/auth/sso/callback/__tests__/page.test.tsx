@@ -62,6 +62,30 @@ describe("SSO callback", () => {
     expect(document.cookie).toContain(`auth-token=${ACCESS}`);
   });
 
+  it("clears every organization's browser cache before storing the new session's tokens", async () => {
+    // An entry under org A's key holding rows another tab fetched as org B,
+    // plus an ordinary entry: neither may survive into the SSO session.
+    const entry = (organizationId: string) =>
+      JSON.stringify({ organizationId, savedAt: new Date().toISOString(), data: [{ id: "dep-from-another-org" }] });
+    localStorage.setItem("dependencies_cache:org-a", entry("org-a"));
+    localStorage.setItem("dependencies_cache:org-b", entry("org-b"));
+    localStorage.setItem("dependencies_cache", "[]");
+    localStorage.setItem("announcement-dismissed", "true");
+    const cacheKeysWhenStored: string[][] = [];
+    vi.spyOn(tokenManager, "setAccessToken").mockImplementation(function (this: unknown, t: string) {
+      cacheKeysWhenStored.push(Object.keys(localStorage).filter((k) => k.startsWith("dependencies_cache")));
+      localStorage.setItem("accessToken", t);
+    });
+    visit(fragmentLink({ token: ACCESS, refreshToken: REFRESH, orgId: "org-a" }));
+
+    render(<SSOCallbackPage />);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
+    expect(cacheKeysWhenStored).toEqual([[]]);
+    expect(Object.keys(localStorage).filter((k) => k.startsWith("dependencies_cache"))).toEqual([]);
+    expect(localStorage.getItem("announcement-dismissed")).toBe("true");
+  });
+
   it("removes the fragment from the URL, keeping the callback path", async () => {
     visit(fragmentLink({ token: ACCESS, refreshToken: REFRESH, orgId: "org-1" }));
 

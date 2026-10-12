@@ -16,7 +16,7 @@
  * "standards/nist-800-53/v/5.0.0"). Live, read-only `securityhub describe-standards`
  * verification -- the same empirical check that confirmed the CIS and PCI ARNs in the
  * sibling files below -- was attempted against us-east-1 and eu-west-1 using the only
- * credential available in this environment (arn:aws:iam::815931739526:user/terraform-deploy)
+ * credential available in this environment (arn:aws:iam::123456789012:user/terraform-deploy)
  * and returned a genuine AccessDeniedException for securityhub:DescribeStandards in both
  * regions (an IAM permission gap on that specific credential, not a "standard doesn't
  * exist" or "not subscribed" response -- see backend/src/services/security-hub-client.service.ts's

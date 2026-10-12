@@ -8,6 +8,7 @@ import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEve
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 import { checkNewConnectionRoleArn, DEVCONTROL_ROLE_NAME_PREFIX } from '../utils/devcontrolRoleArn'
+import { parseAwsAccountId } from '../utils/awsAccountId'
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 
 const router = Router()
@@ -40,15 +41,24 @@ async function requireCurrentOwner(req: Request, res: Response, next: NextFuncti
   }
 }
 
-const PLATFORM_AWS_ACCOUNT_ID = process.env.AWS_ACCOUNT_ID ?? '815931739526'
+/**
+ * The platform's AWS account ID: the principal in the trust policy every
+ * organization creates for DevControl. Required configuration with no
+ * default (validateEnv requires it in production) -- a fallback would hand
+ * customers a policy trusting whatever account it named. Read per request;
+ * null unless it is a 12-digit AWS account ID.
+ */
+function platformAwsAccountId(): string | null {
+  return parseAwsAccountId(process.env.AWS_ACCOUNT_ID)
+}
 
-function buildTrustPolicy(externalId: string): object {
+function buildTrustPolicy(externalId: string, platformAccountId: string): object {
   return {
     Version: '2012-10-17',
     Statement: [
       {
         Effect: 'Allow',
-        Principal: { AWS: `arn:aws:iam::${PLATFORM_AWS_ACCOUNT_ID}:root` },
+        Principal: { AWS: `arn:aws:iam::${platformAccountId}:root` },
         Action: 'sts:AssumeRole',
         Condition: {
           StringEquals: { 'sts:ExternalId': externalId },
@@ -105,6 +115,14 @@ router.get('/costs/monthly', async (req: Request, res: Response) => {
 router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, res: Response) => {
   const orgId = req.user!.organizationId
 
+  // Without the platform account there is no trust policy to show: fail
+  // before creating a session or recording the funnel event.
+  const platformAccountId = platformAwsAccountId()
+  if (!platformAccountId) {
+    console.error('[connect-init] AWS_ACCOUNT_ID is missing or not a 12-digit AWS account ID; cannot build the trust policy')
+    return res.status(500).json({ success: false, message: 'Failed to initialise connect session.' })
+  }
+
   try {
     // Reuse existing session if valid — don't generate a new ExternalId on every page load,
     // which would force the user to update their AWS trust policy each time.
@@ -148,8 +166,8 @@ router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, r
       success: true,
       data: {
         externalId,
-        platformAccountId: PLATFORM_AWS_ACCOUNT_ID,
-        trustPolicy: buildTrustPolicy(externalId),
+        platformAccountId,
+        trustPolicy: buildTrustPolicy(externalId, platformAccountId),
       },
     })
   } catch (err: any) {

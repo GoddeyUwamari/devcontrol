@@ -4,6 +4,7 @@
  */
 
 import stripeService from '../services/stripe.service';
+import { parseAwsAccountId } from '../utils/awsAccountId';
 
 /**
  * Validate required environment variables
@@ -93,6 +94,25 @@ export function validateEnv(): void {
       throw new Error(
         `❌ JWT_SECRET must be changed from default value in production!\n` +
         `   Generate a strong secret with: openssl rand -base64 32`
+      );
+    }
+
+    // The platform's AWS account ID is the principal in the trust policy every
+    // organization creates to connect its AWS account (routes/aws.routes.ts).
+    // It has no default, so a deployment without it cannot onboard anyone --
+    // and neither can one where it is malformed, which the route rejects on
+    // every request. Same check as the route; the value is never echoed.
+    if (!process.env.AWS_ACCOUNT_ID?.trim()) {
+      throw new Error(
+        `❌ AWS_ACCOUNT_ID is required in production\n` +
+        `   Set it to the platform's 12-digit AWS account ID -- the account customers\n` +
+        `   trust in the IAM role they create to connect their AWS account.`
+      );
+    }
+    if (!parseAwsAccountId(process.env.AWS_ACCOUNT_ID)) {
+      throw new Error(
+        `❌ AWS_ACCOUNT_ID must be a 12-digit AWS account ID in production\n` +
+        `   Set it to exactly 12 digits: no quotes, no ARN, no other characters.`
       );
     }
 

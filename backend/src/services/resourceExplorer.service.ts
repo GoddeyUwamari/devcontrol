@@ -60,7 +60,7 @@ export const OWN_DISCOVERY_CFN_TYPES: Partial<Record<string, ResourceType>> = {
  * Resource types this service treats as "generic inventory" — populated
  * directly from Resource Explorer Search results. Keyed by CfnResourceType,
  * the most stable identifier Resource Explorer returns (live-verified against
- * test account 815931739526: AWS::EC2::VPC and AWS::SNS::Topic matched exactly
+ * test account 123456789012: AWS::EC2::VPC and AWS::SNS::Topic matched exactly
  * this format; other entries here follow the same documented AWS::Service::Type
  * convention but weren't all present in that account to verify live).
  *

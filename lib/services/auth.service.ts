@@ -142,6 +142,20 @@ function authCookieAttributes(): string {
   return `; path=/; SameSite=Strict${secure}`;
 }
 
+/** The JWT payload of an access token, decoded without verification; null if unreadable. */
+function decodeAccessTokenPayload(token: string | null): Record<string, unknown> | null {
+  if (!token) return null;
+  try {
+    const payloadSegment = token.split('.')[1];
+    if (!payloadSegment) return null;
+    const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(normalized));
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Token Management Utilities
  */
@@ -217,18 +231,21 @@ export const tokenManager = {
    * issue-refund-dialog.tsx's caller for why this exists.
    */
   getCurrentRole(): string | null {
-    const token = this.getAccessToken();
-    if (!token) return null;
-    try {
-      const payloadSegment = token.split('.')[1];
-      if (!payloadSegment) return null;
-      const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
-      const json = atob(normalized);
-      const payload = JSON.parse(json);
-      return typeof payload.role === 'string' ? payload.role : null;
-    } catch {
-      return null;
-    }
+    const payload = decodeAccessTokenPayload(this.getAccessToken());
+    return typeof payload?.role === 'string' ? payload.role : null;
+  },
+
+  /**
+   * The organization the stored access token is scoped to -- the
+   * organization every API response in this session belongs to. Decoded,
+   * not verified, like getCurrentRole(): used only to key browser caches of
+   * that organization's data (lib/org-scoped-cache.ts), never to authorize.
+   */
+  getCurrentOrganizationId(): string | null {
+    const payload = decodeAccessTokenPayload(this.getAccessToken());
+    return typeof payload?.organizationId === 'string' && payload.organizationId
+      ? payload.organizationId
+      : null;
   },
 
   /**
