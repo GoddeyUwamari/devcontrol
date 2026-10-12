@@ -56,7 +56,10 @@ export const REFRESH_RACE_RECHECK_MS = 1000;
  * Drops every browser cache of the previous identity's or organization's
  * data: the localStorage caches (lib/org-scoped-cache.ts), which outlive the
  * session, and the in-memory query cache. Runs on login, registration,
- * logout, forced logout, and every organization change.
+ * logout, forced logout, and creating an organization. switchOrganization
+ * also calls it, but only after organizationsService.switch succeeds -- and
+ * that call has no backend route yet, so today a switch never reaches it.
+ * The SSO callback page clears the localStorage caches itself.
  */
 async function resetCachesForIdentityChange(
   queryClient: ReturnType<typeof useQueryClient>

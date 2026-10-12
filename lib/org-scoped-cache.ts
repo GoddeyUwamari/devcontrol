@@ -11,8 +11,9 @@
  * so the caller shows its normal loading or error state instead.
  *
  * clearOrgScopedCaches() removes every entry, for every organization, plus
- * the pre-scoping keys that held unattributed data. It runs on every identity
- * or organization change (see AuthProvider).
+ * the pre-scoping keys that held unattributed data. It runs on the identity
+ * changes AuthProvider and the SSO callback page handle; see AuthProvider for
+ * which organization changes reach it.
  */
 
 /** The browser caches of organization data. Each name is a key prefix. */

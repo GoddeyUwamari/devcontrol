@@ -40,6 +40,10 @@ export function useSessionOrganizationId(): string | null {
  * organization, after an organization change until that organization's
  * entry is read, and when it has none -- never another organization's.
  * `save` stores data under the given organization; without one it does nothing.
+ * It also does nothing once the access token names a different organization:
+ * the token lives in localStorage, shared by every tab, so another tab's
+ * sign-in changes whose data this tab's requests return while the given
+ * organization is still the one captured here.
  */
 export function useOrgScopedCache<T>(
   name: OrgScopedCacheName,
@@ -53,6 +57,7 @@ export function useOrgScopedCache<T>(
 
   const save = useCallback(
     (data: T) => {
+      if (!organizationId || tokenManager.getCurrentOrganizationId() !== organizationId) return;
       const saved = writeOrgScopedCache(name, organizationId, data);
       if (saved) setEntry(saved);
     },

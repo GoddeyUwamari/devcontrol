@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { tokenManager } from "@/lib/services/auth.service";
 import { takeUrlCredentials } from "@/lib/url-credentials";
+import { clearOrgScopedCaches } from "@/lib/org-scoped-cache";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -32,6 +33,10 @@ function SSOCallbackContent() {
     }
 
     try {
+      // New identity: drop every organization's browser cache before the new
+      // session's tokens exist, as the password login does (AuthProvider).
+      clearOrgScopedCaches();
+
       // Store tokens exactly as the standard login flow does
       tokenManager.setAccessToken(token);
       tokenManager.setRefreshToken(refreshToken);
