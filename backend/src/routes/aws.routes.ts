@@ -8,6 +8,7 @@ import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEve
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 import { checkNewConnectionRoleArn, DEVCONTROL_ROLE_NAME_PREFIX } from '../utils/devcontrolRoleArn'
+import { parseAwsAccountId } from '../utils/awsAccountId'
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 
 const router = Router()
@@ -48,8 +49,7 @@ async function requireCurrentOwner(req: Request, res: Response, next: NextFuncti
  * null unless it is a 12-digit AWS account ID.
  */
 function platformAwsAccountId(): string | null {
-  const value = process.env.AWS_ACCOUNT_ID?.trim()
-  return value && /^\d{12}$/.test(value) ? value : null
+  return parseAwsAccountId(process.env.AWS_ACCOUNT_ID)
 }
 
 function buildTrustPolicy(externalId: string, platformAccountId: string): object {
