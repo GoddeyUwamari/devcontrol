@@ -6,8 +6,8 @@
  *
  * IAM evidence (Phase 3E, Checkpoint C): AWS-managed `ReadOnlyAccess`, as
  * granted to the connected "Test Account" role
- * (arn:aws:iam::123456789012:role/DevControlRole-Test, org
- * c4c6d2b0-3a4d-4507-8577-fc232c5e99fb -- the same account
+ * (arn:aws:iam::123456789012:role/DevControlRole-Test; the organization's
+ * ID is not recorded here -- the same account
  * cloudwatch.service.ts's CAPABILITY_VALIDATION_STATUS already uses for
  * exactly this kind of IAM-permission-boundary check), was live-tested
  * against real AssumeRole credentials in this session:

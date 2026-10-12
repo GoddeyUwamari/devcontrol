@@ -590,7 +590,7 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // been evaluated end-to-end.
   eks: 'deployed',
   // Service Health Coverage Expansion: live-verified 2026-09-14 in production (account
-  // 123456789012, us-east-1) against two real EBS volumes (vol-01f542a56c1d5e998,
+  // 123456789012, us-east-1) against two real EBS volumes (IDs not recorded here: one
   // available; and the devcontrol-backend instance's attached root volume, in-use) —
   // ec2:DescribeVolumeStatus succeeded (IAM permission confirmed granted, distinct from
   // discovery's own ec2:DescribeVolumes), both resolved VolumeStatus.Status 'ok', and
