@@ -10,7 +10,8 @@ import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscript
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
-import { isActiveComplianceFinding } from '../utils/frameworkApplicability';
+import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/frameworkApplicability';
+import { lifecycleStateFor } from '../utils/resourceLifecycle';
 
 const router = Router();
 const controller = new ServicesController();
@@ -42,11 +43,29 @@ async function requireCurrentAdminOrOwner(req: Request, res: Response, next: Nex
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
 
-export function mapStatus(resourceType: string, rawStatus: string | null): 'healthy' | 'warning' | 'critical' {
-  if (!rawStatus) return 'warning';
-  const s = rawStatus.toLowerCase();
+/**
+ * The operational status a resource's stored lifecycle state stands for.
+ *
+ * 'unknown' is not a milder warning: it means there is no lifecycle state to judge.
+ * Either the resource type has none (S3, SNS, VPC: see utils/resourceLifecycle.ts)
+ * or it was not read ('unknown', as Resource Explorer-sourced rows are stored).
+ * Neither says the resource is stopped or degraded, so neither raises a status
+ * signal (see statusSeverity). Both used to map to 'warning'.
+ */
+export type OperationalStatus = 'healthy' | 'warning' | 'critical' | 'unknown';
+
+export function mapStatus(resourceType: string, rawStatus: string | null): OperationalStatus {
+  const lifecycleState = lifecycleStateFor(resourceType, rawStatus);
+  if (lifecycleState === null) return 'unknown';
+  const s = lifecycleState.toLowerCase();
 
   switch (resourceType) {
+    case 'ebs':
+      // 'in-use' (attached) and 'available' (unattached) are a volume's two normal states.
+      if (s === 'in-use' || s === 'available') return 'healthy';
+      if (s === 'error') return 'critical';
+      return 'warning';
+
     case 'ec2':
       if (s === 'running') return 'healthy';
       if (s === 'stopped') return 'warning';
@@ -140,7 +159,7 @@ function worstCostRecommendation(recs: any[] | null): SeverityFinding | null {
   return { severity: COST_SEVERITY_MAP[worst.severity], reason: worst.issue };
 }
 
-function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFinding | null {
+function statusSeverity(status: OperationalStatus): SeverityFinding | null {
   if (status === 'critical') return { severity: 'critical', reason: 'Resource in a failed or terminated state' };
   if (status === 'warning')  return { severity: 'medium',   reason: 'Resource is stopped or degraded' };
   return null;
@@ -169,7 +188,7 @@ function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFin
 const NEEDS_ATTENTION_FLOOR: PrioritySeverity = 'high';
 
 export function derivePrioritySeverity(
-  status: 'healthy' | 'warning' | 'critical',
+  status: OperationalStatus,
   complianceIssues: any[] | null,
   costRecommendations: any[] | null
 ): { priority_severity: PrioritySeverity | null; reason: string | null; needs_attention: boolean } {
@@ -322,9 +341,28 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     const needsAttention = services.filter((s) => s.needs_attention).length;
     const healthy        = total - needsAttention;
 
+    // How many current findings of each severity the same resources carry. A page
+    // that labels the needs_attention count has to be able to say how many of them
+    // are Critical instead of assuming so. Same rows as fetchServices (this
+    // organization, not terminated) and the same currency rule as needs_attention
+    // (isActiveComplianceFinding), so the two cannot disagree.
+    const { rows: findingRows } = await pool.query(
+      `SELECT compliance_issues FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
+      [orgId]
+    );
+    const findingsBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const row of findingRows) {
+      for (const finding of activeComplianceFindings(row.compliance_issues)) {
+        if (finding.severity in findingsBySeverity) findingsBySeverity[finding.severity]++;
+      }
+    }
+
     // No real monitoring data source exists yet — avg_uptime is intentionally null
     // rather than a fabricated figure.
-    res.json({ success: true, stats: { total, healthy, needs_attention: needsAttention, avg_uptime: null } });
+    res.json({
+      success: true,
+      stats: { total, healthy, needs_attention: needsAttention, avg_uptime: null, findings_by_severity: findingsBySeverity },
+    });
   } catch (err: any) {
     console.error('[Services/stats]', err);
     res.status(500).json({ success: false, error: err.message });

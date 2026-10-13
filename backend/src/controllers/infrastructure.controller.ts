@@ -4,6 +4,7 @@ import { InfrastructureRepository } from '../repositories/infrastructure.reposit
 import { CreateInfrastructureRequest, InfrastructureFilters, ApiResponse } from '../types';
 import awsCostService from '../services/aws-cost.service';
 import { pool } from '../config/database';
+import { lifecycleStateFor } from '../utils/resourceLifecycle';
 
 const repository = new InfrastructureRepository();
 const awsRepository = new AWSResourcesRepository(pool);
@@ -49,13 +50,14 @@ export class InfrastructureController {
             r.aws_region ||
             r.awsRegion ||
             '—',
+          // null when there is no lifecycle state to show: the resource type has none
+          // (S3, SNS, VPC -- stored as 'not_applicable') or it was not read ('unknown').
+          // Those used to be shown as 'running' and 'pending' respectively.
           status:
             (() => {
-              const s = (
-                r.status ||
-                r.resource_status ||
-                ''
-              ).toLowerCase()
+              const state = lifecycleStateFor(r.resource_type || r.resourceType || '', r.status || r.resource_status)
+              if (state === null) return null
+              const s = state.toLowerCase()
               return s === 'available' ||
                 s === 'running' ||
                 s === 'active' ||
@@ -63,9 +65,7 @@ export class InfrastructureController {
                   ? 'running'
                   : s === 'stopped'
                     ? 'stopped'
-                    : s
-                      ? 'pending'
-                      : 'running'
+                    : 'pending'
             })(),
           // null (never 0) when the cost hasn't actually been calculated yet
           // for this resource (e.g. a Lambda function whose CloudWatch usage

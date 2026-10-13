@@ -4,6 +4,7 @@ import { DeploymentsRepository } from '../repositories/deployments.repository';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import { ApiResponse, PlatformStats } from '../types';
 import { pool } from '../config/database';
+import { NO_LIFECYCLE_RESOURCE_TYPES, NOT_APPLICABLE_STATUS, UNKNOWN_STATUS } from '../utils/resourceLifecycle';
 import awsCostService, { CostTrendRange } from '../services/aws-cost.service';
 import { monthOverMonthSection, spendSection } from '../services/cost-context-sections';
 
@@ -39,6 +40,7 @@ export class StatsController {
       const [
         resourceCountResult,
         healthyCountResult,
+        noLifecycleResult,
         activeDeployments,
         recentDeployments,
       ] = await Promise.all([
@@ -49,6 +51,15 @@ export class StatsController {
         pool.query(
           "SELECT COUNT(*) as healthy FROM aws_resources WHERE organization_id = $1 AND status IN ('running', 'active', 'available')",
           [organizationId]
+        ),
+        // Resources with no lifecycle state to judge: a type that has none (stored
+        // 'not_applicable', or still carrying an earlier release's made-up status)
+        // or one whose state was not read. Neither healthy nor unhealthy.
+        pool.query(
+          `SELECT COUNT(*) FILTER (WHERE resource_type = ANY($2::text[]) AND status IN ('running', 'active', 'available')) AS counted_healthy,
+                  COUNT(*) FILTER (WHERE resource_type = ANY($2::text[]) OR status IN ('${NOT_APPLICABLE_STATUS}', '${UNKNOWN_STATUS}', 'UNKNOWN')) AS without_state
+             FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
+          [organizationId, NO_LIFECYCLE_RESOURCE_TYPES]
         ),
         deploymentsRepo.countByStatus(organizationId, 'running'),
         deploymentsRepo.findRecentByLimit(organizationId, 5),
@@ -61,7 +72,10 @@ export class StatsController {
         await awsCostService.getMonthlySpendWithFallback(organizationId);
 
       const totalResources = parseInt(resourceCountResult.rows[0].total, 10);
-      const healthyResources = parseInt(healthyCountResult.rows[0].healthy, 10);
+      const withoutLifecycleState = parseInt(noLifecycleResult.rows[0].without_state, 10);
+      // A no-lifecycle row an earlier release stored as 'active'/'available' is not healthy either.
+      const healthyResources =
+        parseInt(healthyCountResult.rows[0].healthy, 10) - parseInt(noLifecycleResult.rows[0].counted_healthy, 10);
 
       const stats: PlatformStats = {
         total_services: totalResources,
@@ -72,7 +86,7 @@ export class StatsController {
         recent_deployments: recentDeployments,
         service_health: {
           healthy: healthyResources,
-          unhealthy: totalResources - healthyResources,
+          unhealthy: totalResources - healthyResources - withoutLifecycleState,
         },
       };
 

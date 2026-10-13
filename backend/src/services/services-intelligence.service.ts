@@ -51,6 +51,7 @@ import {
   ServicesIntelligence,
 } from '../types/services-intelligence.types';
 import { REGISTERED_FRAMEWORKS, evaluationReasonText, isActiveComplianceFinding } from '../utils/frameworkApplicability';
+import { lifecycleStateFor } from '../utils/resourceLifecycle';
 import { FRAMEWORK_CHECKS, checkAppliesTo } from './framework-checks';
 import {
   CheckEvaluationRow,
@@ -429,7 +430,7 @@ function toResource(
   reconciliation: ReconciliationRow | undefined
 ): Resource {
   const health = resourceHealthFrom(
-    { type: row.resource_type, lifecycleState: row.status, metadataType: row.metadata_type },
+    { type: row.resource_type, lifecycleState: lifecycleStateFor(row.resource_type, row.status), metadataType: row.metadata_type },
     evaluation,
     evaluatedRow
   );
@@ -440,7 +441,8 @@ function toResource(
     name: row.resource_name,
     type: row.resource_type,
     region: row.region,
-    lifecycle_state: row.status,
+    // null for a type with no lifecycle status (stored 'not_applicable') and for one not read.
+    lifecycle_state: lifecycleStateFor(row.resource_type, row.status),
     service_id: row.service_id,
     last_seen_at: iso(row.last_synced_at),
     findings: [...scanFindings(row.compliance_issues, storage, stored), ...recommendations.map(recommendationFinding)],

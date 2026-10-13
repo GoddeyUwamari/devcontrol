@@ -683,7 +683,8 @@ describe('grouping', () => {
       name: null,
       type: 's3',
       region: 'test-region-9',
-      lifecycle_state: 'active',
+      // An S3 bucket has no lifecycle state, whatever status an earlier release stored for it.
+      lifecycle_state: null,
     });
   });
 });
