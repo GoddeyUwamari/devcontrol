@@ -35,6 +35,7 @@ import {
 } from '@aws-sdk/client-s3-control';
 import { ComplianceIssue } from '../types/aws-resources.types';
 import { S3_FINDING_KEYS, S3FindingKey } from '../utils/s3FindingKeys';
+import { evaluationReasonText } from '../utils/frameworkApplicability';
 
 export { S3_FINDING_KEYS };
 export type { S3FindingKey };
@@ -561,14 +562,22 @@ export function s3FindingsFromEvaluation(resourceArn: string, evaluation: S3Secu
 /**
  * For each control that evaluated to 'unknown', keep the previous snapshot's finding
  * for the same key, marked unverified. A 'pass' carries nothing forward, so the
- * finding leaves the next snapshot. Previous findings without a key are carried only
+ * finding leaves the next snapshot.
+ *
+ * A carried entry is a record of what an earlier scan found, not a finding of this
+ * one: it is given this scan's evaluation state -- 'unable_to_evaluate' when the
+ * bucket's configuration could not be read, 'error' (`cause: 'exception'`) when the
+ * evaluation itself threw -- with fixed wording for why. It keeps the severity it
+ * was recorded with, which nothing may count while the entry is unverified (see
+ * isActiveComplianceFinding). Previous findings without a key are carried only
  * when they are a listed legacy text (see LEGACY_S3_FINDING_KEYS). Malformed entries
  * (null, non-objects) are skipped, never thrown on: this runs inside the per-resource
  * scan loop, including its error fallback.
  */
 export function carryForwardUnverifiedS3Findings(
   previousIssues: unknown,
-  evaluation: S3SecurityEvaluation
+  evaluation: S3SecurityEvaluation,
+  cause: 'evidence_unavailable' | 'exception' = 'evidence_unavailable'
 ): ComplianceIssue[] {
   const unknownKeys = new Set(
     [evaluation.publicPolicy, evaluation.publicAcl, evaluation.httpsOnly]
@@ -588,7 +597,16 @@ export function carryForwardUnverifiedS3Findings(
     }
     if (!key || !unknownKeys.has(key as S3FindingKey) || seen.has(key)) continue;
     seen.add(key);
-    carried.push({ ...issue, findingKey: key, verification: 'unverified' });
+    carried.push({
+      ...issue,
+      findingKey: key,
+      verification: 'unverified',
+      evaluation_state: cause === 'exception' ? 'error' : 'unable_to_evaluate',
+      evidence_basis: 'none',
+      evaluation_reason: evaluationReasonText(
+        cause === 'exception' ? 'check_exception_not_reverified' : 'evidence_unavailable_not_reverified'
+      ),
+    });
   }
   return carried;
 }

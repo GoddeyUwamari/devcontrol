@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { activeComplianceFindings } from '../utils/frameworkApplicability';
 import {
   AWSResource,
   ResourceFilters,
@@ -282,11 +283,12 @@ export class AWSResourcesRepository {
       [organizationId]
     );
 
+    // Current findings only. An entry kept from an earlier scan that this scan could
+    // not re-evaluate, or one written for a framework before frameworks had to be
+    // explicitly enabled, is not a finding and must not move the score.
     const allIssues: ComplianceIssue[] = [];
     result.rows.forEach(row => {
-      if (row.compliance_issues && Array.isArray(row.compliance_issues)) {
-        allIssues.push(...row.compliance_issues);
-      }
+      allIssues.push(...activeComplianceFindings(row.compliance_issues));
     });
 
     const bySeverity = {
@@ -334,10 +336,11 @@ export class AWSResourcesRepository {
       [organizationId]
     );
 
-    return result.rows.map(row => ({
-      ...row,
-      issues: row.compliance_issues || [],
-    }));
+    // Current findings only (see isActiveComplianceFinding); a resource whose stored
+    // entries are all legacy or unverified has no issues to list.
+    return result.rows
+      .map(row => ({ ...row, issues: activeComplianceFindings(row.compliance_issues) }))
+      .filter(row => row.issues.length > 0);
   }
 
   /**

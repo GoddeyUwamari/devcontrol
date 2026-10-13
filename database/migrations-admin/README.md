@@ -83,8 +83,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202608312300_add_subscription_event_ordering.sql`**,
 **`202609010800_add_payment_failed_notification_tracking.sql`**,
 **`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**,
-**`202609040035_add_account_security_findings_disposition.sql`**, and
-**`202610102024_drop_auto_detect_resource_ownership.sql`**.
+**`202609040035_add_account_security_findings_disposition.sql`**,
+**`202610102024_drop_auto_detect_resource_ownership.sql`**, and
+**`202610112300_create_framework_evaluation_persistence.sql`**.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
@@ -656,3 +657,77 @@ SELECT migration_name, checksum, executed_at
 
 ROLLBACK;
 ```
+
+## Classification -- `202610112300_create_framework_evaluation_persistence.sql`
+
+Placed here from the start: it creates three tables that the `postgres` role
+must own (`framework_evaluation_runs`, `compliance_check_evaluations`,
+`framework_evaluation_reconciliations`), enables and forces row-level security
+on them with one tenant policy each, and may add a unique constraint to
+`aws_resources` (`postgres`-owned). `devcontrol` receives `SELECT`, `INSERT`,
+`UPDATE` and `DELETE` on the three tables, and not `TRUNCATE`. No sequence
+privilege is granted: `framework_evaluation_runs.generation` is an identity
+column, and inserting through it needs only the table's `INSERT` privilege.
+
+It is a plain create: it refuses to run if any of the three tables, or
+`aws_resources_compliance_evaluation_ref_key`, already exists.
+
+**`aws_resources (id, organization_id)` uniqueness.** The composite foreign
+keys need a unique constraint over exactly `(id, organization_id)`. The
+migration reuses one if any exists, whatever its name, and otherwise adds its
+own as `aws_resources_compliance_evaluation_ref_key`. It never creates or drops
+`aws_resources_id_org_unique`, the name another pending migration adds and
+refuses to run over, so the two can be applied in either order without editing
+either.
+
+**Nothing applies it automatically.** Like every file in this directory it is
+run with `--execute-only` as `postgres`, after explicit authorization (see
+"Execution mechanism"). The application works with or without it:
+
+- **Not applied.** Each scan logs one error line containing
+  `FRAMEWORK_EVAL_STORAGE_UNAVAILABLE`. Frameworks are not evaluated. Each
+  resource's baseline findings are refreshed and its existing framework
+  findings are left exactly as they are. `GET /api/services/intelligence`
+  reports `framework_evaluation.storage: "unavailable"` and marks framework
+  findings `current: false` (`storage_unavailable`).
+- **Applied.** The first scan afterwards opens a run and rebuilds every
+  resource's framework findings from what it stores.
+
+Apply it before, or at any time after, deploying a release that uses it.
+
+### Rollback
+
+`202610112300_create_framework_evaluation_persistence_rollback.sql`, run
+manually as `postgres` in one transaction (the runner and the CI bootstrap skip
+files whose name contains `rollback`):
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202610112300_create_framework_evaluation_persistence_rollback.sql
+```
+
+It drops the three tables and the migration's own `schema_migrations` row. It
+drops `aws_resources_compliance_evaluation_ref_key` only if the migration added
+it and no other foreign key uses it; otherwise it leaves the constraint in
+place and says so. It never uses `CASCADE`, and refuses if another table
+references one of the three. Stored evaluations are discarded;
+`aws_resources.compliance_issues` is not touched. With the tables gone, a
+release that uses them behaves as under "Not applied" above.
+
+### Framework entries stored before this release
+
+No data migration accompanies this one. Entries the scanner wrote into
+`aws_resources.compliance_issues` before frameworks had to be explicitly
+enabled (HIPAA and SOC 2 entries with no `framework` key) are handled by the
+application:
+
+- **Read.** From the moment the release is live they are not findings: scores,
+  at-risk counts, reports and exports all skip them
+  (`isActiveComplianceFinding`).
+- **Next scan.** The scan rewrites each scanned resource's `compliance_issues`
+  from this scan's baseline findings plus the stored framework failures, which
+  drops them. This happens whether or not this migration is applied.
+
+A resource that is no longer scanned (soft-terminated, or in an organization
+with no AWS connection) keeps its old entries in the column; the read rule
+above still applies to them.

@@ -29,6 +29,7 @@
 import { ComplianceScannerService } from '../complianceScanner';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
 import { AWSResource, ComplianceIssue, ComplianceIssueProvenance } from '../../types/aws-resources.types';
+import { resolveFrameworkApplicability } from '../../utils/frameworkApplicability';
 import { calculateRiskScore } from '../../utils/riskScoring';
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { S3Client } from '@aws-sdk/client-s3';
@@ -122,43 +123,41 @@ describe('OBSERVED producers -- checkEncryption/checkPublicAccess/checkBackups',
   });
 });
 
-describe('SELF_ATTESTED producers -- generic checkTags and the three surviving checkSOC2Compliance signals', () => {
+describe('SELF_ATTESTED producers -- generic checkTags; the former tag-only signals produce no finding at all', () => {
   it('checkTags emits SELF_ATTESTED', () => {
     const issues = (service as any).checkTags(resource({ tags: {} }));
     expect(issues).toHaveLength(1);
     expect(issues[0].provenance).toBe('SELF_ATTESTED');
   });
 
-  it('signal 1 (IAM role/owner tag) emits SELF_ATTESTED', () => {
-    const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 'ec2', tags: {} }));
-    const finding = issues.find((i: ComplianceIssue) => i.issue === 'Tagging: IAM role/owner not documented');
-    expect(finding.provenance).toBe('SELF_ATTESTED');
-  });
-
-  it('signal 3 (monitoring/logging tag) emits SELF_ATTESTED', () => {
-    const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 'ec2', tags: {} }));
-    const finding = issues.find((i: ComplianceIssue) => i.issue === 'Observability: Monitoring/logging not documented via tag');
-    expect(finding.provenance).toBe('SELF_ATTESTED');
-  });
-
-  it('signal 2 (change-management tags) no longer produces any finding, provenanced or otherwise', () => {
-    const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 'ec2', tags: {} }));
-    expect(issues.find((i: ComplianceIssue) => i.issue === 'Tagging: Missing change-tracking tags')).toBeUndefined();
-  });
-
-  it('signal 4 (S3 access-logging tag) no longer produces any finding, provenanced or otherwise -- retired as a structurally-guaranteed false positive (S3 tags are never collected by discovery)', () => {
-    const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 's3', tags: {} }));
-    expect(issues.find((i: ComplianceIssue) => i.issue === 'S3: Access logging not documented via tag')).toBeUndefined();
+  // The IAM role/owner and monitoring/logging tag signals are SOC 2 framework checks
+  // now (complianceScanner.soc2-framework.test.ts): they run only for an enabled
+  // framework and report unable_to_evaluate, so neither is a finding with a provenance.
+  it.each(['ec2', 's3'] as const)('the baseline checks emit none of the former tag-only signals for an untagged %s', (resource_type) => {
+    const texts = service.evaluateBaseline(resource({ resource_type, tags: {} })).map((i: ComplianceIssue) => i.issue);
+    for (const retired of [
+      'Tagging: IAM role/owner not documented',
+      'Observability: Monitoring/logging not documented via tag',
+      'Tagging: Missing change-tracking tags',
+      'S3: Access logging not documented via tag',
+    ]) {
+      expect(texts).not.toContain(retired);
+    }
   });
 });
 
 describe('HIPAA findings are NOT assigned a blanket provenance', () => {
-  it('checkHIPAACompliance findings have provenance left unset (undefined), not guessed', () => {
-    const issues = (service as any).checkHIPAACompliance(resource({
-      resource_type: 's3',
+  // The tag-only HIPAA checks no longer produce findings at all (a missing tag is not
+  // evidence), and HIPAA runs only when explicitly enabled, so this uses the one check
+  // that can still fail: EBS automated backups.
+  it('HIPAA findings have provenance left unset (undefined), not guessed', async () => {
+    const enabled = resolveFrameworkApplicability({ status: 'ok', rows: [{ standard_name: 'HIPAA', enabled: true }] });
+    const issues = (await service.scanResource(resource({
+      resource_type: 'ebs',
       is_encrypted: true,
-      tags: {},
-    }));
+      has_backup: false,
+      tags: { Owner: 'o', Environment: 'e', Team: 't' },
+    }), enabled)).filter((i) => i.framework === 'HIPAA');
     expect(issues.length).toBeGreaterThan(0);
     for (const issue of issues) {
       expect(issue.provenance).toBeUndefined();
@@ -260,15 +259,6 @@ describe('observability category -- wired into exhaustive backend structures, no
     expect(stats.by_category.observability).toBe(1);
     expect(stats.by_category.tagging).toBe(1);
     expect(stats.total_issues).toBe(2);
-  });
-
-  it('Signal 3\'s category is unchanged (still networking) -- the new category exists but is not yet produced by this detector', () => {
-    const issues = (service as any).checkSOC2Compliance(resource({ resource_type: 's3', tags: {} }));
-    expect(issues).toHaveLength(1); // signal 3 only -- signal 4 is retired, signal 1 excludes s3
-    for (const i of issues) {
-      expect(i.category).not.toBe('observability');
-      expect(i.category).toBe('networking');
-    }
   });
 });
 

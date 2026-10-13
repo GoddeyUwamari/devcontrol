@@ -352,7 +352,16 @@ describe('Soc2EvidenceService — CC6.6 S3, legacy wildcard-policy false positiv
   it('legacy wildcard finding + Unknown re-scan -> UNKNOWN, not SUPPORTS (carried forward unverified)', async () => {
     const issues = await rescan(deniedS3);
     expect(issues).toEqual([
-      { ...LEGACY_SNAPSHOT[0], findingKey: S3_FINDING_KEYS.publicPolicy, verification: 'unverified' },
+      {
+        ...LEGACY_SNAPSHOT[0],
+        findingKey: S3_FINDING_KEYS.publicPolicy,
+        verification: 'unverified',
+        // The carried entry records why it was not re-verified; SOC 2 evidence still reads only its marker.
+        evaluation_state: 'unable_to_evaluate',
+        evidence_basis: 'none',
+        evaluation_reason:
+          'The configuration this check reads could not be read on the latest scan; this finding is from an earlier scan and was not re-verified',
+      },
     ]);
     const obs = await cc66For(issues);
     expect(obs?.result).toBe('UNKNOWN');

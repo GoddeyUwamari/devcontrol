@@ -43,6 +43,7 @@ import { AWSClientFactory } from '../../services/aws-client-factory.service';
 import awsCostService from '../../services/aws-cost.service';
 import { CloudWatchService, CloudWatchServiceHealth, cloudWatchService } from '../../services/cloudwatch.service';
 import { ServicesIntelligenceRepository } from '../../repositories/services-intelligence.repository';
+import * as evaluationsRepository from '../../repositories/framework-evaluations.repository';
 import { servicesIntelligenceResponseSchema, servicesIntelligenceSchema } from '../../services/__tests__/services-intelligence-contract';
 import { ServicesIntelligence, Resource } from '../../types/services-intelligence.types';
 import { createRoleGateHarness, Role, RoleGateOrg } from './role-gate-harness';
@@ -572,12 +573,26 @@ describe('organization context and RLS', () => {
     expect(statements[1].values).toEqual([a.org.orgId]);
     expect(texts[texts.length - 1]).toBe('COMMIT');
 
-    // Every statement in between is a SELECT bound to the caller's organization.
+    // Every statement in between is a read bound to the caller's organization and to
+    // nothing else. The one exception takes no parameter at all: the catalog lookup
+    // of whether the framework evaluation tables exist, which reads no tenant data.
     const reads = statements.slice(2, -1);
     expect(reads.length).toBeGreaterThan(0);
+    const storageLookups = reads.filter((statement) => /to_regclass\(/.test(statement.text));
+    expect(storageLookups).toHaveLength(1);
     for (const statement of reads) {
-      expect(statement.text.trim()).toMatch(/^SELECT/);
-      expect(statement.values).toEqual([a.org.orgId]);
+      expect(statement.text.trim()).toMatch(/^(SELECT|WITH)\b/);
+      expect(statement.text).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/);
+      if (storageLookups.includes(statement)) {
+        expect(statement.values).toBeUndefined();
+        expect(statement.text).not.toMatch(/\bFROM\b/i);
+      } else {
+        expect(statement.values).toEqual([a.org.orgId]);
+      }
+    }
+    // The framework evaluation reads are among them.
+    for (const table of ['framework_evaluation_runs', 'compliance_check_evaluations', 'framework_evaluation_reconciliations']) {
+      expect(reads.some((statement) => statement.text.includes(`FROM ${table}`))).toBe(true);
     }
   });
 
@@ -690,6 +705,14 @@ describe('findings', () => {
         category: 'public_access',
         title: 'si-finding-alpha-carried',
         provenance: 'OBSERVED',
+        framework: null,
+        applicability: null,
+        evaluation_state: null,
+        evidence_basis: null,
+        evaluation_reason: null,
+        // Carried forward unverified: still listed, with its marker, and not current.
+        current: false,
+        not_current_reason: 'not_reverified',
         remediation: null,
       },
       {
@@ -702,6 +725,13 @@ describe('findings', () => {
         category: 'encryption',
         title: 'si-finding-alpha-legacy',
         provenance: null,
+        framework: null,
+        applicability: null,
+        evaluation_state: null,
+        evidence_basis: null,
+        evaluation_reason: null,
+        current: true,
+        not_current_reason: null,
         remediation: null,
       },
     ]);
@@ -1236,6 +1266,13 @@ describe('remediation eligibility', () => {
         category: 'cost',
         title: ISSUE_EC2_IDLE_INSTANCE,
         provenance: null,
+        framework: null,
+        applicability: null,
+        evaluation_state: null,
+        evidence_basis: null,
+        evaluation_reason: null,
+        current: true,
+        not_current_reason: null,
         remediation: {
           available: true,
           path: 'cost_recommendation_execute',
@@ -1329,8 +1366,208 @@ describe('response contract', () => {
 
   it('has exactly these top-level keys', async () => {
     expect(Object.keys(await intelligence(a)).sort()).toEqual([
-      'capabilities', 'contract_version', 'discovery', 'generated_at', 'health',
+      'capabilities', 'contract_version', 'discovery', 'framework_evaluation', 'generated_at', 'health',
       'organization_id', 'remediation_execution_enabled', 'services', 'totals', 'unassigned',
     ]);
   });
 });
+
+// ─── Framework evaluations ──────────────────────────────────────────────────
+
+describe('framework evaluations', () => {
+  const CHECK = 'hipaa.automated_backups';
+
+  /** A finished HIPAA run for the organization, and one stored check outcome on a resource of it. */
+  async function store(seeded: Seeded, resourceId: string, state: 'failed' | 'passed', status: 'complete' | 'partial' = 'complete'): Promise<string> {
+    const { rows } = await pool.query(
+      `INSERT INTO framework_evaluation_runs
+         (organization_id, framework, applicability, applicability_reason_code, evaluator_version, status, finished_at,
+          resources_in_scope, resources_persisted, resources_failed)
+       VALUES ($1, 'HIPAA', 'enabled', 'explicitly_enabled', '1', $2, clock_timestamp(), 2, $3, $4)
+       RETURNING generation::text AS generation`,
+      [seeded.org.orgId, status, status === 'complete' ? 2 : 1, status === 'complete' ? 0 : 1]
+    );
+    await pool.query(
+      `INSERT INTO compliance_check_evaluations
+         (organization_id, resource_id, source_kind, source_key, check_key, evaluation_state, severity, evidence_basis, provenance,
+          reason_code, run_generation, evaluator_version, last_conclusive_state, last_conclusive_at, last_conclusive_severity)
+       VALUES ($1, $2, 'framework', 'HIPAA', $3, $4, $5, 'aws_api', 'OBSERVED', $6, $7, '1', $4, clock_timestamp(), $5)`,
+      [seeded.org.orgId, resourceId, CHECK, state, state === 'failed' ? 'critical' : null, state === 'failed' ? 'no_backup_reported' : 'backup_reported', rows[0].generation]
+    );
+    return rows[0].generation;
+  }
+
+  const FINDING = (label: string) => ({
+    severity: 'critical', category: 'backups', issue: `si-finding-${label}-framework`, recommendation: 'synthetic',
+    findingKey: CHECK, framework: 'HIPAA', applicability: 'enabled', evaluation_state: 'failed', evidence_basis: 'aws_api',
+  });
+
+  async function addFrameworkFinding(seeded: Seeded, resourceId: string): Promise<void> {
+    await pool.query(`UPDATE aws_resources SET compliance_issues = compliance_issues || $2::jsonb WHERE id = $1`, [resourceId, JSON.stringify([FINDING(seeded.label)])]);
+  }
+
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    const orgIds = [a.org.orgId, b.org.orgId];
+    await pool.query('DELETE FROM framework_evaluation_reconciliations WHERE organization_id = ANY($1)', [orgIds]);
+    await pool.query('DELETE FROM compliance_check_evaluations WHERE organization_id = ANY($1)', [orgIds]);
+    await pool.query('DELETE FROM framework_evaluation_runs WHERE organization_id = ANY($1)', [orgIds]);
+    await pool.query(
+      `UPDATE aws_resources r SET compliance_issues = COALESCE((SELECT jsonb_agg(e) FROM jsonb_array_elements(r.compliance_issues) e WHERE NOT (e ? 'framework')), '[]'::jsonb)
+        WHERE organization_id = ANY($1)`,
+      [orgIds]
+    );
+  });
+
+  const hipaa = (data: ServicesIntelligence) => data.framework_evaluation.frameworks.find((f) => f.framework === 'HIPAA')!;
+  const resourceOf = (data: ServicesIntelligence, id: string) => allResources(data).find((r) => r.id === id)!;
+
+  it('with no run: storage is available, nothing is claimed about HIPAA, and every resource has no evaluations', async () => {
+    const data = await intelligence(a);
+    expect(data.framework_evaluation.storage).toBe('available');
+    expect(hipaa(data)).toMatchObject({ applicability: null, latest_run: null, running: false, stale: true, stale_reason: 'no_run', reconciliation_required: 0 });
+    for (const resource of allResources(data)) {
+      expect(resource.check_evaluations).toEqual([]);
+      expect(resource.framework_reconciliation).toBeNull();
+    }
+  });
+
+  it('returns the stored evaluation and marks the finding it backs as current, through the real route and the strict contract', async () => {
+    await store(a, a.instanceId, 'failed');
+    await addFrameworkFinding(a, a.instanceId);
+
+    const { status, body } = await read(a.org.orgId, a.org.member);
+    expect(status).toBe(200);
+    const parsed = servicesIntelligenceResponseSchema.safeParse(body);
+    expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
+
+    const data = body.data as ServicesIntelligence;
+    expect(hipaa(data)).toMatchObject({
+      applicability: 'enabled', applicability_reason: 'Framework is explicitly enabled for this organization',
+      latest_run: expect.objectContaining({ status: 'complete', evaluator_version: '1' }), stale: false, stale_reason: null,
+      counts: expect.objectContaining({ failed: 1, stale: 0 }),
+    });
+    const instance = resourceOf(data, a.instanceId);
+    expect(instance.check_evaluations.find((c) => c.check === CHECK)).toMatchObject({
+      source: { kind: 'framework', key: 'HIPAA' }, evaluation_state: 'failed', severity: 'critical', evidence_basis: 'aws_api',
+      provenance: 'OBSERVED', reason: 'AWS Backup reports no backup for this resource', recorded: true, stale: false,
+    });
+    expect(instance.findings.find((f) => f.framework === 'HIPAA')).toMatchObject({ current: true, not_current_reason: null, severity: 'critical' });
+    // The existing findings of the resource are untouched and still current.
+    expect(instance.findings.filter((f) => f.source === 'resource_scan' && f.framework === null).every((f) => f.current)).toBe(true);
+    // No run generation, in any form, reaches the client.
+    expect(JSON.stringify(body)).not.toMatch(/generation/i);
+  });
+
+  it('a newer partial run that did not store the resource: its finding stays listed, as preserved and not current', async () => {
+    await store(a, a.instanceId, 'failed');
+    await addFrameworkFinding(a, a.instanceId);
+    // A later run finishes partial without touching the instance's row.
+    await pool.query(
+      `INSERT INTO framework_evaluation_runs
+         (organization_id, framework, applicability, applicability_reason_code, evaluator_version, status, finished_at, resources_in_scope, resources_persisted, resources_failed)
+       VALUES ($1, 'HIPAA', 'enabled', 'explicitly_enabled', '1', 'partial', clock_timestamp(), 2, 1, 1)`,
+      [a.org.orgId]
+    );
+    await pool.query(
+      `INSERT INTO framework_evaluation_reconciliations (organization_id, resource_id, failure_code, last_run_generation) VALUES ($1, $2, 'persist_error', 1)`,
+      [a.org.orgId, a.instanceId]
+    );
+
+    const data = await intelligence(a);
+
+    expect(hipaa(data)).toMatchObject({ latest_run: expect.objectContaining({ status: 'partial' }), counts: expect.objectContaining({ failed: 1, stale: 1 }), reconciliation_required: 1 });
+    const instance = resourceOf(data, a.instanceId);
+    expect(instance.findings.find((f) => f.framework === 'HIPAA')).toMatchObject({ current: false, not_current_reason: 'stale_evaluation', severity: 'critical' });
+    expect(instance.check_evaluations.find((c) => c.check === CHECK)).toMatchObject({ evaluation_state: 'failed', stale: true, recorded: true });
+    expect(instance.framework_reconciliation).toMatchObject({ required: true, attempts: 1, reason_code: 'persist_error' });
+    expect(servicesIntelligenceSchema.safeParse(data).success).toBe(true);
+  });
+
+  it('a failed newer run does not replace the latest finished run', async () => {
+    await store(a, a.instanceId, 'passed');
+    await pool.query(
+      `INSERT INTO framework_evaluation_runs (organization_id, framework, applicability, applicability_reason_code, evaluator_version, status, finished_at, failure_code)
+       VALUES ($1, 'HIPAA', 'disabled', 'explicitly_disabled', '1', 'failed', clock_timestamp(), 'unexpected')`,
+      [a.org.orgId]
+    );
+    const data = await intelligence(a);
+    expect(hipaa(data)).toMatchObject({ applicability: 'enabled', last_attempt_failed: true, latest_run: expect.objectContaining({ status: 'complete' }) });
+    expect(resourceOf(data, a.instanceId).check_evaluations.find((c) => c.check === CHECK)).toMatchObject({ evaluation_state: 'passed', severity: null, stale: false });
+  });
+
+  it('one organization\'s runs, evaluations, counts and reconciliation markers never appear in another\'s response', async () => {
+    // B has a finished run, a stored failure, a finding and a marker. A has none of them.
+    await store(b, b.instanceId, 'failed', 'partial');
+    await addFrameworkFinding(b, b.instanceId);
+    await pool.query(
+      `INSERT INTO framework_evaluation_reconciliations (organization_id, resource_id, failure_code, last_run_generation) VALUES ($1, $2, 'persist_error', 1)`,
+      [b.org.orgId, b.bucketId]
+    );
+
+    const forA = await intelligence(a);
+    expect(hipaa(forA)).toEqual({
+      framework: 'HIPAA', applicability: null, applicability_reason_code: null, applicability_reason: null, latest_run: null,
+      running: false, last_attempt_failed: false, stale: true, stale_reason: 'no_run',
+      counts: { failed: 0, passed: 0, unable_to_evaluate: 0, error: 0, not_evaluated: 0, not_applicable: 0, stale: 0 },
+      reconciliation_required: 0,
+    });
+    for (const resource of allResources(forA)) {
+      expect(resource.check_evaluations).toEqual([]);
+      expect(resource.framework_reconciliation).toBeNull();
+    }
+    const text = JSON.stringify(forA);
+    for (const identifier of identifiersOf(b)) expect(text).not.toContain(identifier);
+
+    // And B sees its own.
+    const forB = await intelligence(b);
+    expect(hipaa(forB)).toMatchObject({ applicability: 'enabled', latest_run: expect.objectContaining({ status: 'partial' }), counts: expect.objectContaining({ failed: 1 }), reconciliation_required: 1 });
+    expect(resourceOf(forB, b.bucketId).framework_reconciliation).toMatchObject({ required: true });
+  });
+
+  it('under a role RLS applies to, the evaluation reads return only the tagged organization, whatever organization is asked for', async () => {
+    await store(a, a.instanceId, 'failed');
+    await store(b, b.instanceId, 'failed');
+    const role = `si_fw_probe_${randomUUID().replace(/-/g, '')}`;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`CREATE ROLE ${role} NOLOGIN NOSUPERUSER NOBYPASSRLS`);
+      await client.query(`GRANT pg_read_all_data TO ${role}`);
+      await client.query(`SET LOCAL ROLE ${role}`);
+      await client.query("SELECT set_config('app.current_organization_id', $1, true)", [a.org.orgId]);
+
+      const own = await evaluationsRepository.readFrameworkEvaluations(client, a.org.orgId);
+      expect(own.checks.map((c) => c.resource_id)).toEqual([a.instanceId]);
+      expect(own.latestRuns).toHaveLength(1);
+
+      const foreign = await evaluationsRepository.readFrameworkEvaluations(client, b.org.orgId);
+      expect(foreign).toEqual({ latestRuns: [], activity: [], checks: [], reconciliations: [] });
+    } finally {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+    }
+  });
+
+  it('storage unavailable: 200, storage says so, no framework is described, and a framework finding in the snapshot is preserved but not current', async () => {
+    await store(a, a.instanceId, 'failed');
+    await addFrameworkFinding(a, a.instanceId);
+    jest.spyOn(evaluationsRepository, 'frameworkEvaluationStorageAvailable').mockResolvedValue(false);
+
+    const { status, body } = await read(a.org.orgId, a.org.member);
+
+    expect(status).toBe(200);
+    const parsed = servicesIntelligenceResponseSchema.safeParse(body);
+    expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
+    const data = body.data as ServicesIntelligence;
+    expect(data.framework_evaluation).toEqual({ storage: 'unavailable', frameworks: [] });
+    const instance = resourceOf(data, a.instanceId);
+    expect(instance.check_evaluations).toEqual([]);
+    expect(instance.findings.find((f) => f.framework === 'HIPAA')).toMatchObject({ severity: 'critical', current: false, not_current_reason: 'storage_unavailable' });
+    // Everything else in the response is unaffected.
+    expect(instance.findings.filter((f) => f.framework === null && f.source === 'resource_scan').every((f) => f.current)).toBe(true);
+    expect(data.totals.resources).toBe(allResources(data).length);
+    expect(data.totals.resources).toBeGreaterThan(0);
+  });
+});
+

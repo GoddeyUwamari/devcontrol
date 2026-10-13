@@ -309,6 +309,7 @@ function resource(n: number, type: string, status: string | null, extra: { servi
 
 function rows(resources: ServicesIntelligenceRows['resources']): ServicesIntelligenceRows {
   return {
+    frameworkEvaluations: { latestRuns: [], activity: [], checks: [], reconciliations: [] },
     resources,
     services: [{ id: SERVICE, name: 'synthetic-service', description: null, owner: null, team_id: null, team_name: null }],
     recommendations: [],

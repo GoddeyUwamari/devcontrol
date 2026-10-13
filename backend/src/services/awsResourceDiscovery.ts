@@ -45,6 +45,8 @@ import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE }
 import { createAwsBackupEvidenceCache, checkEBSBackupCoverage, BackupEvidenceResult } from './aws-backup-evidence.util';
 import {
   AWSResource,
+  ComplianceIssue,
+  FrameworkCheckEvaluation,
   CreateAWSResourceInput,
   ResourceType,
   ResourceStatus,
@@ -57,6 +59,32 @@ import {
 } from '../types/aws-resources.types';
 import { SubscriptionTier } from '../middleware/subscription.middleware';
 import { ComplianceScannerService } from './complianceScanner';
+import { readBuiltInFrameworkSettings } from '../repositories/compliance-frameworks.repository';
+import { FrameworkApplicability, REGISTERED_FRAMEWORKS, resolveFrameworkApplicability } from '../utils/frameworkApplicability';
+import { FRAMEWORK_EVALUATOR_VERSION } from './framework-checks';
+import {
+  FrameworkRun,
+  failFrameworkRun,
+  finishFrameworkRun,
+  frameworkEvaluationStorageAvailable,
+  heartbeatFrameworkRun,
+  persistResourceEvaluation,
+  recordReconciliationRequired,
+  startFrameworkRun,
+  writeBaselinePreservingFrameworkFindings,
+} from '../repositories/framework-evaluations.repository';
+
+/** One scan's framework evaluation: the runs it opened and how its resources fared. */
+interface FrameworkEvaluationScan {
+  /** False = frameworks are not evaluated this scan (see startFrameworkEvaluation). */
+  storageAvailable: boolean;
+  runs: FrameworkRun[];
+  /** Resources whose evaluation was stored / could not be stored. */
+  persisted: number;
+  failed: number;
+  /** Per framework, how many check outcomes of each state were stored. */
+  stateCounts: Record<string, Record<string, number>>;
+}
 import { OrphanedResourceDetectorService } from './orphanedResourceDetector';
 import costOptimizationService from './cost-optimization.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
@@ -135,6 +163,195 @@ export class AWSResourceDiscoveryService {
   /**
    * Get organization's subscription tier
    */
+  /**
+   * The organization's framework applicability for this scan. A failed settings
+   * read is reported as 'unavailable' for every framework and logged; it is not
+   * rethrown, because the baseline checks do not depend on it, and it is never
+   * resolved to enabled or to disabled.
+   */
+  private async resolveFrameworkApplicability(client: PoolClient, organizationId: string): Promise<FrameworkApplicability[]> {
+    try {
+      const rows = await readBuiltInFrameworkSettings(client, organizationId);
+      return resolveFrameworkApplicability({ status: 'ok', rows });
+    } catch (error: any) {
+      console.error(`❌ [Discovery] Framework settings could not be read; framework checks not evaluated:`, error.message);
+      return resolveFrameworkApplicability({ status: 'unavailable' });
+    }
+  }
+
+  /**
+   * Opens one run per registered framework, or establishes that there is nowhere
+   * to store an evaluation.
+   *
+   * STORAGE UNAVAILABLE (the evaluation tables do not exist, or a run cannot be
+   * written). For this scan: no framework check is evaluated; nothing is written
+   * to the evaluation tables; each resource's baseline findings are refreshed and
+   * its existing framework findings are left exactly as they are. One error line
+   * with the token FRAMEWORK_EVAL_STORAGE_UNAVAILABLE is logged per scan, and the
+   * API reports the storage as unavailable instead of describing those findings
+   * as current. The first scan after the storage exists opens a run and rebuilds
+   * every resource's framework findings from what it then stores.
+   */
+  private async startFrameworkEvaluation(
+    client: PoolClient,
+    organizationId: string,
+    jobId: string,
+    applicability: FrameworkApplicability[]
+  ): Promise<FrameworkEvaluationScan> {
+    const scan: FrameworkEvaluationScan = { storageAvailable: false, runs: [], persisted: 0, failed: 0, stateCounts: {} };
+    try {
+      if (!(await frameworkEvaluationStorageAvailable(client))) {
+        console.error(
+          `❌ [Discovery] FRAMEWORK_EVAL_STORAGE_UNAVAILABLE: the framework evaluation tables do not exist; ` +
+          `frameworks were not evaluated and existing framework findings were kept unverified.`
+        );
+        return scan;
+      }
+      // Only registered frameworks get a run: a setting that names anything else is
+      // reported in the applicability log line and evaluated by nothing.
+      const registered = new Set(REGISTERED_FRAMEWORKS.map((f) => f.key));
+      for (const framework of applicability.filter((a) => registered.has(a.framework))) {
+        scan.runs.push(
+          await startFrameworkRun(client, {
+            organizationId,
+            framework: framework.framework,
+            applicability: framework.state,
+            reasonCode: framework.reason_code,
+            discoveryJobId: jobId,
+            evaluatorVersion: FRAMEWORK_EVALUATOR_VERSION,
+          })
+        );
+      }
+      scan.storageAvailable = true;
+      return scan;
+    } catch (error: any) {
+      console.error(
+        `❌ [Discovery] FRAMEWORK_EVAL_STORAGE_UNAVAILABLE: a framework evaluation run could not be started; ` +
+        `frameworks were not evaluated and existing framework findings were kept unverified:`,
+        error.message
+      );
+      // Runs opened before the failure are closed: a run that will store nothing must
+      // not be left looking as though it is in progress.
+      await this.failFrameworkEvaluation(client, organizationId, scan);
+      return { ...scan, storageAvailable: false, runs: [] };
+    }
+  }
+
+  /**
+   * Stores one resource's framework evaluation and writes its findings.
+   *
+   *   stored (one transaction)   compliance_issues = baseline + the stored failures.
+   *   resource gone              nothing to write.
+   *   lock timeout               another scan holds the resource and is writing it;
+   *                              this scan writes nothing for it.
+   *   any other failure          the transaction rolled back, so the check rows and the
+   *                              framework findings are both still what they were. The
+   *                              baseline findings are then written on their own, with
+   *                              the framework findings left untouched.
+   *
+   * In both failure cases the resource counts as failed (the run ends 'partial'),
+   * its check rows keep their older generation (so they read as stale once this
+   * run finishes), and a reconciliation marker is recorded. The next scan retries
+   * the resource; nothing here retries in a loop.
+   */
+  private async persistResourceCompliance(
+    client: PoolClient,
+    organizationId: string,
+    scanner: ComplianceScannerService,
+    resource: AWSResource,
+    baselineIssues: ComplianceIssue[],
+    frameworkEvaluations: FrameworkCheckEvaluation[],
+    scan: FrameworkEvaluationScan
+  ): Promise<void> {
+    if (!scan.storageAvailable) {
+      await writeBaselinePreservingFrameworkFindings(client, { organizationId, resourceId: resource.id, baselineIssues });
+      return;
+    }
+
+    const result = await persistResourceEvaluation(client, {
+      organizationId,
+      resourceId: resource.id,
+      evaluatorVersion: FRAMEWORK_EVALUATOR_VERSION,
+      baselineIssues,
+      frameworks: scan.runs.map((run) => ({
+        run,
+        evaluations: frameworkEvaluations.filter((e) => e.framework === run.framework && e.check !== null),
+        registeredCheckKeys: scanner.registeredCheckKeys(run.framework),
+      })),
+      project: (failures) =>
+        failures.map((failure) => scanner.frameworkFinding(resource, failure.framework, failure.check, failure)),
+    });
+
+    if (result.outcome === 'resource_missing') return;
+
+    if (result.outcome === 'persisted') {
+      scan.persisted++;
+      for (const evaluation of frameworkEvaluations) {
+        if (evaluation.check === null) continue;
+        const counts = (scan.stateCounts[evaluation.framework] ??= {});
+        counts[evaluation.evaluation_state] = (counts[evaluation.evaluation_state] ?? 0) + 1;
+      }
+      return;
+    }
+
+    scan.failed++;
+    console.error(
+      `[Discovery] Framework evaluation for ${resource.resource_arn} could not be stored (${result.failureCode}); ` +
+      `previous framework findings kept.`
+    );
+    // Each of the two statements below is independent of the other and of the scan:
+    // a failure of either is logged and the scan goes on to the next resource.
+    const newestGeneration = scan.runs.reduce((max, run) => (BigInt(run.generation) > BigInt(max) ? run.generation : max), '0');
+    await recordReconciliationRequired(client, {
+      organizationId,
+      resourceId: resource.id,
+      failureCode: result.failureCode,
+      generation: newestGeneration,
+    }).catch((error: any) => {
+      console.error(`[Discovery] Could not record the reconciliation marker for ${resource.resource_arn}:`, error.message);
+    });
+    if (result.failureCode !== 'lock_timeout') {
+      await writeBaselinePreservingFrameworkFindings(client, { organizationId, resourceId: resource.id, baselineIssues }).catch(
+        (error: any) => {
+          console.error(`[Discovery] Could not write baseline findings for ${resource.resource_arn}:`, error.message);
+        }
+      );
+    }
+  }
+
+  private async heartbeatFrameworkEvaluation(client: PoolClient, organizationId: string, scan: FrameworkEvaluationScan): Promise<void> {
+    for (const run of scan.runs) {
+      await heartbeatFrameworkRun(client, organizationId, run.id).catch(() => {});
+    }
+  }
+
+  /** complete when every resource was stored, partial otherwise -- the same count the stale rule follows from. */
+  private async finishFrameworkEvaluation(
+    client: PoolClient,
+    organizationId: string,
+    scan: FrameworkEvaluationScan,
+    inScope: number
+  ): Promise<void> {
+    for (const run of scan.runs) {
+      const finished = await finishFrameworkRun(client, organizationId, run.id, {
+        inScope,
+        persisted: scan.persisted,
+        failed: scan.failed,
+        stateCounts: scan.stateCounts[run.framework] ?? {},
+      });
+      if (!finished) {
+        console.error(`[Discovery] Framework evaluation run for ${run.framework} was closed before it finished; its stored results stand.`);
+      }
+    }
+  }
+
+  /** Best effort: the scan is already failing, and a run left 'running' is closed as abandoned by a later scan. */
+  private async failFrameworkEvaluation(client: PoolClient, organizationId: string, scan: FrameworkEvaluationScan): Promise<void> {
+    for (const run of scan.runs) {
+      await failFrameworkRun(client, organizationId, run.id, 'unexpected').catch(() => {});
+    }
+  }
+
   private async getOrganizationTier(organizationId: string, executor?: PoolClient): Promise<SubscriptionTier> {
     const result = await (executor ?? this.pool).query(
       'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
@@ -530,7 +747,8 @@ export class AWSResourceDiscoveryService {
       }
 
       // Compliance scan: evaluate every currently-known resource for this org against
-      // real encryption/public-access/backup/tag/SOC2/HIPAA checks, persisting genuine
+      // real encryption/public-access/backup/tag checks, plus the checks of any framework
+      // the organization has explicitly enabled, persisting genuine
       // compliance_issues instead of the stubbed always-[] value. Excludes soft-terminated
       // rows (see resourceReconciliation.service.ts / ResourceReconciliationService, NOT
       // touched by this line) — a resource AWS no longer has can't be re-scanned for real
@@ -545,35 +763,73 @@ export class AWSResourceDiscoveryService {
           [organizationId]
         );
 
+        // Framework checks run only for a framework this organization has explicitly
+        // enabled. Settings that are missing, unreadable or uninterpretable are each
+        // their own state, and none of them is treated as enabled.
+        const frameworkApplicability = await this.resolveFrameworkApplicability(client, organizationId);
+        console.log(
+          `🧭 [Discovery] Framework applicability: ` +
+          frameworkApplicability.map((f) => `${f.framework}=${f.state} (${f.reason_code})`).join(', ')
+        );
+        // Framework outcomes are stored in their own tables, and the framework findings
+        // in compliance_issues are rebuilt from what is stored. When there is nowhere to
+        // store them, frameworks are NOT evaluated this scan: see the storage-unavailable
+        // branch below.
+        const evaluation = await this.startFrameworkEvaluation(client, organizationId, jobId, frameworkApplicability);
+
         const s3Tally = newS3EvaluationTally();
-        for (const resource of allResources as AWSResource[]) {
-          const issues = await scanner.scanResource(resource);
+        let scanned = 0;
+        try {
+          for (const resource of allResources as AWSResource[]) {
+            const evaluated = evaluation.storageAvailable
+              ? await scanner.evaluateResource(resource, frameworkApplicability)
+              : { baselineIssues: scanner.evaluateBaseline(resource), frameworkEvaluations: [] };
+            const baselineIssues = [...evaluated.baselineIssues];
 
-          if (resource.resource_type === 's3') {
-            let evaluation: S3SecurityEvaluation;
-            try {
-              const result = await scanner.evaluateS3Security(resource, awsClients.s3!, {
-                s3Control: awsClients.s3Control,
-                accountId: awsClients.accountId,
-              });
-              evaluation = result!.evaluation;
-              issues.push(...result!.issues);
-            } catch (error: any) {
-              console.error(`[Discovery] S3 security evaluation failed for ${resource.resource_arn}:`, error.message);
-              evaluation = unknownS3Evaluation('evaluation failed');
-              issues.push(...carryForwardUnverifiedS3Findings(resource.compliance_issues, evaluation));
+            if (resource.resource_type === 's3') {
+              let s3Evaluation: S3SecurityEvaluation;
+              try {
+                const result = await scanner.evaluateS3Security(resource, awsClients.s3!, {
+                  s3Control: awsClients.s3Control,
+                  accountId: awsClients.accountId,
+                });
+                s3Evaluation = result!.evaluation;
+                baselineIssues.push(...result!.issues);
+              } catch (error: any) {
+                console.error(`[Discovery] S3 security evaluation failed for ${resource.resource_arn}:`, error.message);
+                s3Evaluation = unknownS3Evaluation('evaluation failed');
+                baselineIssues.push(...carryForwardUnverifiedS3Findings(resource.compliance_issues, s3Evaluation, 'exception'));
+              }
+              addToS3EvaluationTally(s3Tally, s3Evaluation);
             }
-            addToS3EvaluationTally(s3Tally, evaluation);
-          }
 
-          await client.query(
-            `UPDATE aws_resources SET compliance_issues = $1 WHERE id = $2`,
-            [JSON.stringify(issues), resource.id]
-          );
+            await this.persistResourceCompliance(client, organizationId, scanner, resource, baselineIssues, evaluated.frameworkEvaluations, evaluation);
+
+            scanned++;
+            if (scanned % 25 === 0) await this.heartbeatFrameworkEvaluation(client, organizationId, evaluation);
+          }
+        } catch (error) {
+          await this.failFrameworkEvaluation(client, organizationId, evaluation);
+          throw error;
         }
+        await this.finishFrameworkEvaluation(client, organizationId, evaluation, allResources.length);
 
         if (s3Tally.buckets > 0) {
           console.log(`🪣 [Discovery] S3 security evaluation: ${formatS3EvaluationTally(s3Tally)}`);
+        }
+        if (Object.keys(evaluation.stateCounts).length > 0) {
+          console.log(
+            `🧭 [Discovery] Framework check outcomes: ` +
+            Object.entries(evaluation.stateCounts)
+              .flatMap(([framework, counts]) => Object.entries(counts).map(([state, count]) => `${framework} ${state}=${count}`))
+              .join(', ')
+          );
+        }
+        if (evaluation.failed > 0) {
+          console.error(
+            `❌ [Discovery] FRAMEWORK_EVAL_RECONCILIATION_REQUIRED: the framework evaluation of ${evaluation.failed} ` +
+            `resource(s) could not be stored; their previous findings were kept and are reported as not re-verified.`
+          );
         }
         console.log(`✅ [Discovery] Compliance scan complete (${allResources.length} resources scanned)`);
         complianceScanCompleted = true;

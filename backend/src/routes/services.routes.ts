@@ -10,6 +10,7 @@ import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscript
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
+import { isActiveComplianceFinding } from '../utils/frameworkApplicability';
 
 const router = Router();
 const controller = new ServicesController();
@@ -112,8 +113,11 @@ function worseSeverity(a: SeverityFinding | null, b: SeverityFinding | null): Se
   return SEVERITY_RANK[a.severity] <= SEVERITY_RANK[b.severity] ? a : b;
 }
 
-function worstComplianceIssue(issues: any[] | null): SeverityFinding | null {
-  if (!issues || issues.length === 0) return null;
+// Current findings only (see isActiveComplianceFinding): an entry's severity is
+// consulted only once the entry is known to be a finding.
+function worstComplianceIssue(allIssues: any[] | null): SeverityFinding | null {
+  const issues = Array.isArray(allIssues) ? allIssues.filter((issue) => isActiveComplianceFinding(issue)) : [];
+  if (issues.length === 0) return null;
   let worst = issues[0];
   for (const issue of issues) {
     if (SEVERITY_RANK[issue.severity as PrioritySeverity] < SEVERITY_RANK[worst.severity as PrioritySeverity]) worst = issue;
@@ -152,8 +156,10 @@ function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFin
 // applies to most resources regardless of real risk, which would defeat the
 // point of collapsing the boring majority. (The former "change-management
 // tags" signal was the other 'medium' example that motivated this floor —
-// it has since been retired outright rather than just excluded here; see
-// complianceScanner.ts's checkSOC2Compliance doc comment.)
+// it has since been retired outright rather than just excluded here. The two
+// other tag-only signals of that group are now SOC 2 framework checks, which
+// run only for an enabled framework and cannot fail on a tag: see
+// framework-checks.ts SOC2_CHECKS.)
 //
 // This floor applies to compliance/cost findings only, not to operational
 // status — a stopped/terminated resource keeps surfacing at its existing
@@ -162,7 +168,7 @@ function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFin
 // part of what this floor was scoped to address.
 const NEEDS_ATTENTION_FLOOR: PrioritySeverity = 'high';
 
-function derivePrioritySeverity(
+export function derivePrioritySeverity(
   status: 'healthy' | 'warning' | 'critical',
   complianceIssues: any[] | null,
   costRecommendations: any[] | null

@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { AWSResourcesExportService } from './awsResourcesExport.service';
 import { ExportColumn } from '../types/export.types';
 import { ResourceFilters } from '../types/aws-resources.types';
+import { activeComplianceFindings } from '../utils/frameworkApplicability';
 
 export interface ReportData {
   organizationId: string;
@@ -389,53 +390,32 @@ export class ReportGeneratorService {
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-    const complianceStatsQuery = `
-      SELECT
-        COUNT(*) as total_resources,
-        COUNT(*) FILTER (WHERE jsonb_array_length(r.compliance_issues) > 0) as resources_with_issues
+    const totalResourcesQuery = `
+      SELECT COUNT(*) as total_resources
       FROM aws_resources r
       ${whereClause}
     `;
 
-    const severityQuery = `
-      SELECT
-        jsonb_array_elements(r.compliance_issues)->>'severity' as severity,
-        COUNT(*) as count
-      FROM aws_resources r
-      ${whereClause} AND jsonb_array_length(r.compliance_issues) > 0
-      GROUP BY severity
-    `;
-
-    const categoryQuery = `
-      SELECT
-        jsonb_array_elements(r.compliance_issues)->>'category' as category,
-        COUNT(*) as count
-      FROM aws_resources r
-      ${whereClause} AND jsonb_array_length(r.compliance_issues) > 0
-      GROUP BY category
-      ORDER BY count DESC
-    `;
-
-    const topNonCompliantQuery = `
+    // Every figure below counts current findings only -- the same rule the score and
+    // the at-risk flag use (isActiveComplianceFinding). That rule is applied here, not
+    // in SQL, so there is one definition of it: an entry carried forward unverified,
+    // or written for a framework before frameworks had to be enabled, is stored in
+    // compliance_issues but is not an issue to report.
+    const issuesQuery = `
       SELECT
         r.resource_name as name,
         r.resource_type as type,
-        jsonb_array_length(r.compliance_issues) as issue_count
+        r.compliance_issues
       FROM aws_resources r
-      ${whereClause} AND jsonb_array_length(r.compliance_issues) > 0
-      ORDER BY issue_count DESC
-      LIMIT 10
+      ${whereClause} AND jsonb_typeof(r.compliance_issues) = 'array' AND jsonb_array_length(r.compliance_issues) > 0
     `;
 
     // Sequential, not Promise.all: single shared, RLS-tagged client (see note above).
     const client = executor ?? this.pool;
-    const statsResult = await client.query(complianceStatsQuery, values);
-    const severityResult = await client.query(severityQuery, values).catch(() => ({ rows: [] }));
-    const categoryResult = await client.query(categoryQuery, values).catch(() => ({ rows: [] }));
-    const topNonCompliantResult = await client.query(topNonCompliantQuery, values);
+    const statsResult = await client.query(totalResourcesQuery, values);
+    const issuesResult = await client.query(issuesQuery, values);
 
     const totalResources = parseInt(statsResult.rows[0]?.total_resources || 0);
-    const resourcesWithIssues = parseInt(statsResult.rows[0]?.resources_with_issues || 0);
 
     const bySeverity = {
       critical: 0,
@@ -443,13 +423,22 @@ export class ReportGeneratorService {
       medium: 0,
       low: 0,
     };
+    const categoryCounts = new Map<string, number>();
+    const nonCompliant: Array<{ name: string; type: string; issueCount: number }> = [];
 
-    severityResult.rows.forEach((row) => {
-      const severity = row.severity?.toLowerCase();
-      if (severity && severity in bySeverity) {
-        bySeverity[severity as keyof typeof bySeverity] = parseInt(row.count);
+    for (const row of issuesResult.rows) {
+      const issues = activeComplianceFindings(row.compliance_issues);
+      if (issues.length === 0) continue;
+      nonCompliant.push({ name: row.name, type: row.type, issueCount: issues.length });
+      for (const issue of issues) {
+        const severity = typeof issue.severity === 'string' ? issue.severity.toLowerCase() : '';
+        if (severity in bySeverity) bySeverity[severity as keyof typeof bySeverity]++;
+        if (typeof issue.category === 'string') {
+          categoryCounts.set(issue.category, (categoryCounts.get(issue.category) ?? 0) + 1);
+        }
       }
-    });
+    }
+    const resourcesWithIssues = nonCompliant.length;
 
     const totalIssues = Object.values(bySeverity).reduce((sum, count) => sum + count, 0);
     const complianceScore = totalResources > 0 ? ((totalResources - resourcesWithIssues) / totalResources) * 100 : 100;
@@ -458,12 +447,12 @@ export class ReportGeneratorService {
       totalResources,
       totalIssues,
       bySeverity,
-      byCategory: categoryResult.rows.map((r) => ({ category: r.category, count: parseInt(r.count) })),
-      topNonCompliantResources: topNonCompliantResult.rows.map((r) => ({
-        name: r.name,
-        type: r.type,
-        issueCount: parseInt(r.issue_count),
-      })),
+      byCategory: Array.from(categoryCounts, ([category, count]) => ({ category, count })).sort(
+        (x, y) => y.count - x.count || x.category.localeCompare(y.category)
+      ),
+      topNonCompliantResources: nonCompliant
+        .sort((x, y) => y.issueCount - x.issueCount || String(x.name).localeCompare(String(y.name)))
+        .slice(0, 10),
       complianceScore,
     };
   }
