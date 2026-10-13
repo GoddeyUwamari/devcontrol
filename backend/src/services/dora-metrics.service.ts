@@ -5,23 +5,44 @@ import {
 } from '../repositories/dora-metrics.repository';
 
 export type BenchmarkLevel = 'elite' | 'high' | 'medium' | 'low';
-export type TrendDirection = 'improving' | 'stable' | 'declining';
 
-export interface DORAMetric {
-  value: number;
+/** A metric the deployment records can support. */
+export interface TrackedDORAMetric {
+  tracked: true;
+  /** Null when there is nothing in the window to measure it from. */
+  value: number | null;
   unit: string;
-  benchmark: BenchmarkLevel;
+  /** Null whenever value is null: no tier without a measurement. */
+  benchmark: BenchmarkLevel | null;
   isCustomBenchmark: boolean;
-  trend: TrendDirection;
   breakdown?: { [key: string]: number };
   description?: string;
 }
 
+/** A metric the deployment records cannot support. Never estimated. */
+export interface UntrackedDORAMetric {
+  tracked: false;
+  reason: string;
+}
+
+export type DORAMetric = TrackedDORAMetric | UntrackedDORAMetric;
+
+export const LEAD_TIME_NOT_TRACKED_REASON =
+  'Deployment records hold no commit or change timestamp, so the time from change to deployment cannot be measured.';
+export const TIME_TO_RESTORE_NOT_TRACKED_REASON =
+  'No incident or service-restoration records are collected; a failed deployment is not evidence of an outage.';
+
 export interface ComprehensiveDORAMetrics {
-  deploymentFrequency: DORAMetric;
-  leadTime: DORAMetric;
-  changeFailureRate: DORAMetric;
-  mttr: DORAMetric;
+  deploymentFrequency: TrackedDORAMetric;
+  leadTime: UntrackedDORAMetric;
+  changeFailureRate: TrackedDORAMetric;
+  mttr: UntrackedDORAMetric;
+  /** Finished deployments in the period, as recorded. */
+  deployments: {
+    successful: number;
+    failed: number;
+    finished: number;
+  };
   period: {
     start: string;
     end: string;
@@ -91,7 +112,11 @@ export class DORAMetricsService {
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /**
-   * Get all four DORA metrics with benchmarks and trends.
+   * The DORA metrics the deployment records support -- deployment frequency
+   * and change failure rate -- with benchmarks. Lead time for changes and
+   * time to restore are reported as not tracked, with the reason; they are
+   * never estimated from deployment timestamps.
+   *
    * If filters.organizationId is set and a pool was injected, custom
    * benchmarks from custom_dora_benchmarks take precedence over industry
    * standards for any metric that has been configured.
@@ -101,65 +126,54 @@ export class DORAMetricsService {
   ): Promise<ComprehensiveDORAMetrics> {
     const [
       deploymentFrequency,
-      leadTime,
       changeFailureRate,
-      mttr,
       period,
       custom,
     ] = await Promise.all([
       this.repository.calculateDeploymentFrequency(filters),
-      this.repository.calculateLeadTime(filters),
       this.repository.calculateChangeFailureRate(filters),
-      this.repository.calculateMTTR(filters),
       this.repository.getDateRangePeriod(filters.dateRange || '30d'),
       this.loadCustomBenchmarks(filters.organizationId),
     ]);
 
+    const successful = deploymentFrequency.totalDeployments;
+    const finished = changeFailureRate.totalDeployments;
+    const failed = changeFailureRate.failedDeployments;
+    // With nothing finished in the period there is no measurement to grade.
+    const measured = finished > 0;
+
     return {
       deploymentFrequency: {
+        tracked: true,
         value: deploymentFrequency.deploymentsPerDay,
         unit: 'per day',
-        ...this.resolveDeploymentFrequency(
-          deploymentFrequency.deploymentsPerDay,
-          custom.deployment_frequency
-        ),
-        trend: 'stable', // TODO: Calculate from historical data
+        ...(measured
+          ? this.resolveDeploymentFrequency(
+              deploymentFrequency.deploymentsPerDay,
+              custom.deployment_frequency
+            )
+          : { benchmark: null, isCustomBenchmark: false }),
         breakdown: deploymentFrequency.breakdown,
-        description: `${deploymentFrequency.totalDeployments} deployments in ${period.days} days`,
+        description: `${successful} successful deployments in ${period.days} days`,
       },
-      leadTime: {
-        value: leadTime.averageLeadTimeHours,
-        unit: 'hours',
-        ...this.resolveLeadTime(
-          leadTime.averageLeadTimeHours,
-          custom.lead_time
-        ),
-        trend: 'stable',
-        breakdown: leadTime.breakdown,
-        description: 'Average time between consecutive deployments',
-      },
+      leadTime: { tracked: false, reason: LEAD_TIME_NOT_TRACKED_REASON },
       changeFailureRate: {
-        value: changeFailureRate.failureRate,
+        tracked: true,
+        value: measured ? changeFailureRate.failureRate : null,
         unit: 'percentage',
-        ...this.resolveChangeFailureRate(
-          changeFailureRate.failureRate,
-          custom.change_failure_rate
-        ),
-        trend: 'stable',
+        ...(measured
+          ? this.resolveChangeFailureRate(
+              changeFailureRate.failureRate,
+              custom.change_failure_rate
+            )
+          : { benchmark: null, isCustomBenchmark: false }),
         breakdown: changeFailureRate.breakdown,
-        description: `${changeFailureRate.failedDeployments} failed out of ${changeFailureRate.totalDeployments} deployments`,
+        description: measured
+          ? `${failed} failed out of ${finished} finished deployments`
+          : 'No finished deployments in this period',
       },
-      mttr: {
-        value: mttr.averageMTTRMinutes,
-        unit: 'minutes',
-        ...this.resolveMTTR(
-          mttr.averageMTTRMinutes,
-          custom.recovery_time
-        ),
-        trend: 'stable',
-        breakdown: mttr.breakdown,
-        description: `${mttr.incidents} incidents recovered`,
-      },
+      mttr: { tracked: false, reason: TIME_TO_RESTORE_NOT_TRACKED_REASON },
+      deployments: { successful, failed, finished },
       period,
     };
   }
@@ -275,27 +289,5 @@ export class DORAMetricsService {
       mttrMinutes <= 10080 ? 'medium' :
                              'low';
     return { benchmark, isCustomBenchmark: false };
-  }
-
-  // ─── Trend helper ────────────────────────────────────────────────────────────
-
-  /**
-   * Calculate trend by comparing current period to previous period.
-   * TODO: Wire up to historical data from repository.
-   */
-  private calculateTrend(
-    currentValue: number,
-    previousValue: number,
-    lowerIsBetter: boolean = false
-  ): TrendDirection {
-    const changePercent = ((currentValue - previousValue) / previousValue) * 100;
-
-    if (Math.abs(changePercent) < 5) return 'stable';
-
-    if (lowerIsBetter) {
-      return changePercent < 0 ? 'improving' : 'declining';
-    } else {
-      return changePercent > 0 ? 'improving' : 'declining';
-    }
   }
 }

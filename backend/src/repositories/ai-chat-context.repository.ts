@@ -586,7 +586,7 @@ export class AIChatContextRepository {
     return collectSection<NonNullable<ChatContext['dora']['data']>>({
       source: 'DevControl deployment records',
       scope: { kind: 'organization', window: 'last 30 days' },
-      coverage: 'deployments and incidents recorded in DevControl for this organization; deployments made outside DevControl are not included',
+      coverage: 'deployments recorded in DevControl for this organization; deployments made outside DevControl are not included',
     }, async () => {
       const asOf = new Date().toISOString();
       const metrics = await this.doraMetricsService.getComprehensiveMetrics({
@@ -594,11 +594,10 @@ export class AIChatContextRepository {
         dateRange: '30d',
       });
 
-      // deploymentsPerDay is 0 only when totalDeployments is 0 — no deployment
-      // history at all in this window, so there's genuinely nothing to report
-      // rather than a real measured zero across every metric.
-      if (metrics.deploymentFrequency.value === 0) {
-        return { state: 'unavailable', reason: 'no deployments were recorded for this organization in the last 30 days', asOf };
+      // Nothing finished in this window: there is genuinely nothing to report
+      // rather than a real measured zero.
+      if (metrics.deployments.finished === 0) {
+        return { state: 'unavailable', reason: 'no finished deployments were recorded for this organization in the last 30 days', asOf };
       }
 
       return {
@@ -607,11 +606,10 @@ export class AIChatContextRepository {
         data: {
           deploymentFrequency: metrics.deploymentFrequency.description
             ?? `${metrics.deploymentFrequency.value} ${metrics.deploymentFrequency.unit}`,
-          // Carries the metric's own description: DORAMetricsService measures the
-          // average gap between consecutive deployments, not commit-to-deploy time,
-          // and the model must not restate it as the latter.
-          leadTime: `${metrics.leadTime.value} ${metrics.leadTime.unit}${metrics.leadTime.description ? ` (${metrics.leadTime.description})` : ''}`,
-          mttr: `${metrics.mttr.value} ${metrics.mttr.unit}${metrics.mttr.description ? ` (${metrics.mttr.description})` : ''}`,
+          // Neither is measurable from deployment records. The model is given
+          // the reason, never a number it could restate as the real metric.
+          leadTime: `Not tracked (${metrics.leadTime.reason})`,
+          mttr: `Not tracked (${metrics.mttr.reason})`,
         },
       };
     });

@@ -4,26 +4,40 @@ import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { deploymentsService } from '@/lib/services/deployments.service'
-import type { Deployment, DeploymentEnvironment, DeploymentStatus } from '@/lib/types'
+import type { DeploymentEnvironment } from '@/lib/types'
+import {
+  deploymentStatusDisplay,
+  deploymentSummaryText,
+  formatChangeFailureRate,
+  summarizeDeployments,
+  type RecordedDeployment as Deployment,
+  type StatsWindow,
+} from '@/lib/deployments/status'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
-import { Rocket, RefreshCw, ArrowRight, Sparkles, XCircle, X, AlertTriangle } from 'lucide-react'
+import { Rocket, RefreshCw, ArrowRight, XCircle, X, AlertTriangle } from 'lucide-react'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
+
+const STATS_WINDOWS: { value: StatsWindow; days: number }[] = [
+  { value: '7d', days: 7 },
+  { value: '30d', days: 30 },
+  { value: '90d', days: 90 },
+]
 
 const _now = Date.now()
 
 const DEMO_DEPLOYMENTS: Deployment[] = [
-  { id: 'd1', serviceId: 'svc-1', serviceName: 'api-gateway',         environment: 'production', awsRegion: 'us-east-1', status: 'running',   costEstimate: 245.50, deployedBy: 'sarah.chen@company.com',   deployedAt: new Date(_now - 1000 * 60 * 45).toISOString(),      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'd2', serviceId: 'svc-2', serviceName: 'auth-service',         environment: 'production', awsRegion: 'us-east-1', status: 'running',   costEstimate: 178.00, deployedBy: 'mike.johnson@company.com', deployedAt: new Date(_now - 1000 * 60 * 120).toISOString(),     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'd1', serviceId: 'svc-1', serviceName: 'api-gateway',         environment: 'production', awsRegion: 'us-east-1', status: 'success',   costEstimate: 245.50, deployedBy: 'sarah.chen@company.com',   deployedAt: new Date(_now - 1000 * 60 * 45).toISOString(),      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'd2', serviceId: 'svc-2', serviceName: 'auth-service',         environment: 'production', awsRegion: 'us-east-1', status: 'success',   costEstimate: 178.00, deployedBy: 'mike.johnson@company.com', deployedAt: new Date(_now - 1000 * 60 * 120).toISOString(),     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'd3', serviceId: 'svc-3', serviceName: 'payment-processor',    environment: 'staging',    awsRegion: 'us-west-2', status: 'deploying', costEstimate: 89.50,  deployedBy: 'alex.wong@company.com',    deployedAt: new Date(_now - 1000 * 60 * 5).toISOString(),       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'd4', serviceId: 'svc-4', serviceName: 'notification-service', environment: 'production', awsRegion: 'eu-west-1', status: 'running',   costEstimate: 156.30, deployedBy: 'emma.davis@company.com',   deployedAt: new Date(_now - 1000 * 60 * 60 * 6).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'd5', serviceId: 'svc-5', serviceName: 'analytics-worker',     environment: 'production', awsRegion: 'us-east-1', status: 'running',   costEstimate: 312.80, deployedBy: 'david.kim@company.com',    deployedAt: new Date(_now - 1000 * 60 * 60 * 24).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'd4', serviceId: 'svc-4', serviceName: 'notification-service', environment: 'production', awsRegion: 'eu-west-1', status: 'success',   costEstimate: 156.30, deployedBy: 'emma.davis@company.com',   deployedAt: new Date(_now - 1000 * 60 * 60 * 6).toISOString(),  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'd5', serviceId: 'svc-5', serviceName: 'analytics-worker',     environment: 'production', awsRegion: 'us-east-1', status: 'success',   costEstimate: 312.80, deployedBy: 'david.kim@company.com',    deployedAt: new Date(_now - 1000 * 60 * 60 * 24).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'd6', serviceId: 'svc-2', serviceName: 'auth-service',         environment: 'staging',    awsRegion: 'us-east-1', status: 'failed',    costEstimate: 45.00,  deployedBy: 'mike.johnson@company.com', deployedAt: new Date(_now - 1000 * 60 * 60 * 30).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'd7', serviceId: 'svc-1', serviceName: 'api-gateway',         environment: 'production', awsRegion: 'us-east-1', status: 'running',   costEstimate: 238.00, deployedBy: 'sarah.chen@company.com',   deployedAt: new Date(_now - 1000 * 60 * 60 * 48).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'd8', serviceId: 'svc-5', serviceName: 'analytics-worker',     environment: 'production', awsRegion: 'us-east-1', status: 'stopped',   costEstimate: 0,      deployedBy: 'david.kim@company.com',    deployedAt: new Date(_now - 1000 * 60 * 60 * 72).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'd7', serviceId: 'svc-1', serviceName: 'api-gateway',         environment: 'production', awsRegion: 'us-east-1', status: 'success',   costEstimate: 238.00, deployedBy: 'sarah.chen@company.com',   deployedAt: new Date(_now - 1000 * 60 * 60 * 48).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'd8', serviceId: 'svc-5', serviceName: 'analytics-worker',     environment: 'production', awsRegion: 'us-east-1', status: 'success',   costEstimate: 0,      deployedBy: 'david.kim@company.com',    deployedAt: new Date(_now - 1000 * 60 * 60 * 72).toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
 ]
 
 const DEMO_DORA = {
@@ -74,9 +88,13 @@ function DeploymentsContent() {
 
   useEffect(() => {
     if (!socket) return
-    socket.on('deployment:started',   () => queryClient.invalidateQueries({ queryKey: ['deployments'] }))
-    socket.on('deployment:status',    () => queryClient.invalidateQueries({ queryKey: ['deployments'] }))
-    socket.on('deployment:completed', () => queryClient.invalidateQueries({ queryKey: ['deployments'] }))
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: ['deployments'] })
+      queryClient.invalidateQueries({ queryKey: ['deployment-stats'] })
+    }
+    socket.on('deployment:started',   refresh)
+    socket.on('deployment:status',    refresh)
+    socket.on('deployment:completed', refresh)
     return () => {
       socket.off('deployment:started')
       socket.off('deployment:status')
@@ -91,9 +109,14 @@ function DeploymentsContent() {
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
-  const { data: deploymentStats } = useQuery({
-    queryKey: ['deployment-stats'],
-    queryFn: () => deploymentsService.getStats(),
+  const [statsWindow, setStatsWindow] = useState<StatsWindow>('30d')
+  const windowDays = STATS_WINDOWS.find(w => w.value === statsWindow)!.days
+
+  // Totals, change failure rate and last deployment come from the windowed
+  // counts for the whole organization -- never from the (capped) list below.
+  const { data: deploymentStats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery({
+    queryKey: ['deployment-stats', environmentFilter, statsWindow],
+    queryFn: () => deploymentsService.getStats({ environment: environmentFilter, dateRange: statsWindow }),
     enabled: !isDemoActive,
   })
 
@@ -120,6 +143,7 @@ function DeploymentsContent() {
       })
       setModalSuccess(`Deployment of ${modalForm.serviceName} to ${modalForm.environment} started`)
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
+      queryClient.invalidateQueries({ queryKey: ['deployment-stats'] })
       setModalForm({ serviceName: '', environment: 'production', region: 'us-east-1', version: '' })
       setTimeout(() => { setShowModal(false); setModalSuccess(null) }, 2000)
     } catch (err: any) {
@@ -133,14 +157,25 @@ function DeploymentsContent() {
     !environmentFilter || environmentFilter === 'all' || d.environment === environmentFilter
   )
 
-  const totalDeployments   = filteredDeployments.length
-  const successCount       = filteredDeployments.filter((d: Deployment) => d.status === 'running').length
-  const failedCount        = filteredDeployments.filter((d: Deployment) => d.status === 'failed').length
-  const deployingCount     = filteredDeployments.filter((d: Deployment) => d.status === 'deploying').length
-  const successRate        = totalDeployments > 0 ? Math.round((successCount / totalDeployments) * 100) : 0
-  const totalCost          = filteredDeployments.reduce((sum: number, d: Deployment) => sum + (d.costEstimate || 0), 0)
-  const displaySuccessRate = isDemoActive ? 94 : (totalDeployments > 0 ? successRate : null)
-  const displayRunning     = isDemoActive ? 7  : successCount
+  // Demo mode has no API: the same counts, from the demo fixtures.
+  const stats = isDemoActive
+    ? summarizeDeployments(filteredDeployments, windowDays)
+    : deploymentStats
+  const finishedCount = stats ? stats.success + stats.failed : 0
+  const unfinishedNote = stats
+    ? [
+        stats.in_progress > 0 ? `${stats.in_progress} in progress` : null,
+        stats.no_completion_recorded > 0 ? `${stats.no_completion_recorded} with no completion recorded` : null,
+        stats.unknown > 0 ? `${stats.unknown} with an unrecognised status` : null,
+      ].filter(Boolean).join(' · ')
+    : ''
+  const lastDeployment = stats?.last_deployment ?? null
+  const lastDeploymentDisplay = lastDeployment ? deploymentStatusDisplay(lastDeployment.status, null) : null
+  const windowLabel = `Last ${windowDays} days`
+  // Nothing has ever been recorded for this organization (in this
+  // environment): say that, instead of a row of zeros that reads like data.
+  const nothingRecorded = !!stats && stats.total === 0 && !stats.last_deployment
+    && !isLoading && !error && filteredDeployments.length === 0
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
@@ -151,17 +186,12 @@ function DeploymentsContent() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1">Deployment History</h1>
           <p className="text-sm text-slate-500 leading-relaxed">
-            Track all service deployments across environments · Real-time status
-            {!isDemoActive && deploymentStats && (
-              <span className="ml-2 text-slate-400">
-                · {deploymentStats.deployments_this_month} deployment{deploymentStats.deployments_this_month !== 1 ? 's' : ''} this month
-              </span>
-            )}
+            Track all service deployments across environments · Status as recorded by your pipeline
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => refetch()}
+            onClick={() => { refetch(); refetchStats() }}
             className="flex items-center gap-2 bg-white text-slate-500 px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap"
           >
             <RefreshCw size={14} /> Refresh
@@ -201,64 +231,98 @@ function DeploymentsContent() {
         </div>
       )}
 
-      {/* ── AI INSIGHT ── */}
-      <div className="bg-white rounded-xl px-5 py-4 border border-slate-100 mb-6 flex items-start gap-3.5">
-        <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0">
-          <Sparkles size={14} className="text-white" />
+      {nothingRecorded ? (
+        <div className="bg-white rounded-xl px-5 py-6 border border-slate-200 mb-6 flex items-start gap-3.5" data-testid="deployments-empty-state">
+          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+            <Rocket size={14} className="text-slate-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900 mb-1">No deployments recorded</p>
+            <p className="text-sm text-slate-500 leading-relaxed m-0">Connect your CI to record deployments. Success, failure and change failure rate appear here once a deployment has been recorded.</p>
+          </div>
+        </div>
+      ) : (<>
+      {/* ── SUMMARY (built from the recorded counts; not model output) ── */}
+      <div className="bg-white rounded-xl px-5 py-4 border border-slate-100 mb-6 flex items-start gap-3.5" data-testid="deployment-summary">
+        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+          <Rocket size={14} className="text-slate-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-widest mb-1">AI Insight</p>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1">Summary · {windowLabel}</p>
           <p className="text-sm text-slate-800 leading-relaxed m-0">
-            {isDemoActive
-              ? 'Deployment frequency is Elite tier at 12/week. All 4 DORA metrics are Elite tier — top 10% of engineering teams. payment-processor has a deploying status in staging — monitor for completion.'
-              : totalDeployments === 0
-                ? 'No deployments found. Connect your CI/CD pipeline to start tracking deployment history automatically.'
-                : `${successCount} of ${totalDeployments} deployments are running successfully with ${successRate}% success rate. ${failedCount > 0 ? `${failedCount} failed deployment${failedCount > 1 ? 's' : ''} require attention.` : 'No failed deployments detected.'}`
-            }
+            {stats
+              ? deploymentSummaryText(stats)
+              : statsError
+                ? 'The deployment summary could not be loaded.'
+                : 'Loading deployment summary…'}
           </p>
         </div>
-        {failedCount > 0 && (
-          <a href="/anomalies" className="text-xs font-semibold text-violet-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">
-            Investigate <ArrowRight size={12} />
-          </a>
-        )}
+        <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 shrink-0" role="group" aria-label="Summary window">
+          {STATS_WINDOWS.map(w => (
+            <button
+              key={w.value}
+              onClick={() => setStatsWindow(w.value)}
+              aria-pressed={statsWindow === w.value}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold border-none cursor-pointer whitespace-nowrap transition-all ${
+                statsWindow === w.value ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'
+              }`}
+            >
+              {w.value}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* ── 4 KPI CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {/* ── 4 SUMMARY CARDS ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
         {[
           {
-            label: 'Total Deployments',
-            value: totalDeployments,
-            sub: 'In selected filter',
+            label: 'Succeeded',
+            value: stats ? stats.success : '—',
+            sub: windowLabel,
             valueClass: 'text-slate-900',
           },
           {
-            label: 'Success Rate',
-            value: displaySuccessRate !== null ? `${displaySuccessRate}%` : '—',
-            sub: `${displayRunning} running`,
-            valueClass: displaySuccessRate === null ? 'text-slate-900' : displaySuccessRate >= 90 ? 'text-green-600' : displaySuccessRate >= 70 ? 'text-amber-500' : 'text-red-600',
+            label: 'Failed',
+            value: stats ? stats.failed : '—',
+            sub: windowLabel,
+            valueClass: stats && stats.failed > 0 ? 'text-red-600' : 'text-slate-900',
           },
           {
-            label: 'Active Now',
-            value: deployingCount,
-            sub: 'Currently deploying',
-            valueClass: deployingCount > 0 ? 'text-amber-500' : 'text-green-600',
-          },
-          {
-            label: 'Est. Cost',
-            value: `$${Math.round(totalCost).toLocaleString()}`,
-            sub: 'Total cost estimate',
+            label: 'Change Failure Rate',
+            value: stats ? formatChangeFailureRate(stats.change_failure_rate) : '—',
+            sub: !stats
+              ? windowLabel
+              : finishedCount > 0
+                ? `${stats.failed} of ${finishedCount} finished deployment${finishedCount !== 1 ? 's' : ''} failed`
+                : 'No finished deployments in this window',
             valueClass: 'text-slate-900',
           },
-        ].map(({ label, value, sub, valueClass }) => (
-          <div key={label} className="bg-white rounded-xl p-5 sm:p-8 border border-slate-200">
+          {
+            label: 'Last Deployment',
+            value: lastDeployment
+              ? new Date(lastDeployment.deployed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+              : '—',
+            sub: lastDeploymentDisplay ? lastDeploymentDisplay.label : stats ? 'No finished deployment recorded' : windowLabel,
+            valueClass: 'text-slate-900',
+            small: true,
+          },
+        ].map(({ label, value, sub, valueClass, small }) => (
+          <div key={label} className="bg-white rounded-xl p-5 sm:p-8 border border-slate-200" data-testid={`deployment-card-${label.toLowerCase().replace(/ /g, '-')}`}>
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
-            <div className={`text-3xl sm:text-4xl font-bold tracking-tight leading-none mb-2 ${valueClass}`}>{value}</div>
+            <div className={`${small ? 'text-xl sm:text-2xl' : 'text-3xl sm:text-4xl'} font-bold tracking-tight leading-none mb-2 ${valueClass}`}>{value}</div>
             <p className="text-xs text-slate-500 m-0">{sub}</p>
           </div>
         ))}
       </div>
+      <p className="text-xs text-slate-500 mb-6 min-h-4" data-testid="deployment-unfinished-note">
+        {!isDemoActive && statsLoading
+          ? ''
+          : unfinishedNote
+            ? `Not counted as succeeded or failed: ${unfinishedNote}.`
+            : ''}
+      </p>
+      </>)}
 
       {/* ── DORA METRICS ── */}
       {isDemoActive ? (
@@ -297,10 +361,10 @@ function DeploymentsContent() {
         <div className="bg-white rounded-2xl p-6 border border-slate-100 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1">DORA Metrics</p>
-            <p className="text-sm text-slate-500 leading-relaxed m-0">Connect your CI/CD pipeline to unlock deployment frequency, lead time, and reliability metrics.</p>
+            <p className="text-sm text-slate-500 leading-relaxed m-0">{nothingRecorded ? 'Deployment frequency and change failure rate need recorded deployments.' : 'Deployment frequency and change failure rate are computed from these deployment records.'}</p>
           </div>
-          <a href="/dora-metrics" className="text-sm font-semibold text-violet-600 no-underline flex items-center gap-1 shrink-0">
-            Learn more <ArrowRight size={13} />
+          <a href="/app/dora-metrics" className="text-sm font-semibold text-violet-600 no-underline flex items-center gap-1 shrink-0">
+            View DORA metrics <ArrowRight size={13} />
           </a>
         </div>
       )}
@@ -312,7 +376,7 @@ function DeploymentsContent() {
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Deployment Log</p>
-            <p className="text-xs text-slate-400 m-0">{filteredDeployments.length} deployments</p>
+            <p className="text-xs text-slate-400 m-0">{filteredDeployments.length} most recent deployment{filteredDeployments.length !== 1 ? 's' : ''}</p>
           </div>
           {/* Environment filter */}
           <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
@@ -348,8 +412,8 @@ function DeploymentsContent() {
             <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
               <Rocket size={22} className="text-slate-400" />
             </div>
-            <p className="text-base font-semibold text-slate-900 mb-1.5">No deployments found</p>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed max-w-sm mx-auto">Connect your CI/CD pipeline to start tracking deployments automatically.</p>
+            <p className="text-base font-semibold text-slate-900 mb-1.5">No deployments recorded</p>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed max-w-sm mx-auto">Connect your CI to record deployments.</p>
             <button
               onClick={() => { setShowModal(true); setModalError(null); setModalSuccess(null) }}
               className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors"
@@ -359,9 +423,8 @@ function DeploymentsContent() {
           </div>
         ) : (
           filteredDeployments.map((d: Deployment, idx: number) => {
-            const statusColor = d.status === 'running' ? '#059669' : d.status === 'deploying' ? '#D97706' : d.status === 'failed' ? '#DC2626' : '#64748B'
-            const statusBg    = d.status === 'running' ? '#F0FDF4' : d.status === 'deploying' ? '#FFFBEB' : d.status === 'failed' ? '#FEF2F2' : '#F8FAFC'
-            const statusLabel = d.status === 'running' ? 'Running' : d.status === 'deploying' ? 'Deploying' : d.status === 'failed' ? 'Failed' : 'Stopped'
+            // The status as recorded; unrecognised values are Unknown.
+            const { label: statusLabel, color: statusColor, background: statusBg } = deploymentStatusDisplay(d.status, d.createdAt)
             const envColor    = d.environment === 'production' ? '#059669' : d.environment === 'staging' ? '#D97706' : '#64748B'
             const envBg       = d.environment === 'production' ? '#F0FDF4' : d.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
 

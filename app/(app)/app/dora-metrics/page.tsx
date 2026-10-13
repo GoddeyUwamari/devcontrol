@@ -9,20 +9,22 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import api from '@/lib/api';
-import { doraMetricsService } from '@/lib/services/dora-metrics.service';
+import { doraMetricsService, type DORAMetricsData } from '@/lib/services/dora-metrics.service';
+import { doraCsvRows, isNotTracked, type DisplayMetric } from '@/lib/deployments/dora-display';
 import { servicesService } from '@/lib/services/services.service';
 import { teamsService } from '@/lib/services/teams.service';
-import { DORAMetricsFilters, DateRangeOption, BenchmarkLevel, TrendDirection, DORAMetric, Service, Team } from '@/lib/types';
+import { DORAMetricsFilters, DateRangeOption, BenchmarkLevel, TrendDirection, Service, Team } from '@/lib/types';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 
-function generateTrendData(baseValue: number, variance: number = 0.2) {
+// Demo mode only: decorative sparkline. Real mode shows no trend, because
+// none is computed from real data.
+function generateDemoTrendData(baseValue: number, variance: number = 0.2) {
   return Array.from({ length: 30 }, (_, i) => ({ day: i + 1, value: Math.max(0, baseValue + (Math.random() - 0.5) * variance * baseValue) }));
 }
 
 function exportToCSV(metrics: any, dateRange: string) {
-  const csvData = [['Metric', 'Value', 'Unit', 'Benchmark', 'Trend'], ['Deployment Frequency', metrics.deploymentFrequency.value.toFixed(2), metrics.deploymentFrequency.unit, metrics.deploymentFrequency.benchmark, metrics.deploymentFrequency.trend], ['Lead Time for Changes', metrics.leadTime.value.toFixed(2), metrics.leadTime.unit, metrics.leadTime.benchmark, metrics.leadTime.trend], ['Change Failure Rate', metrics.changeFailureRate.value.toFixed(2), metrics.changeFailureRate.unit, metrics.changeFailureRate.benchmark, metrics.changeFailureRate.trend], ['Mean Time to Recovery', metrics.mttr.value.toFixed(2), metrics.mttr.unit, metrics.mttr.benchmark, metrics.mttr.trend]];
-  const csv = csvData.map(row => row.join(',')).join('\n');
+  const csv = doraCsvRows(metrics).map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = `dora-metrics-${dateRange}-${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url);
@@ -103,11 +105,24 @@ export default function DORAMetricsPage() {
     catch { setSaveError('Failed to reset. Please try again.'); }
   }, [refetchBenchmarks, queryClient]);
 
-  const metrics = demoMode ? DEMO_DORA_METRICS : (metricsData?.data ?? null);
-  const totalDeployments = isDemoActive ? 847 : 0;
-  const dataState: 'inactive' | 'insufficient' | 'active' = !isDemoActive && totalDeployments === 0 ? 'inactive' : !isDemoActive && totalDeployments < 5 ? 'insufficient' : 'active';
-  const dataStateLabel = dataState === 'inactive' ? 'Pipeline inactive — no delivery activity in selected period' : dataState === 'insufficient' ? 'Insufficient data for benchmarking — fewer than 5 deployments detected' : `Based on ${totalDeployments} deployments`;
-  const dataStateColor = dataState === 'inactive' ? '#DC2626' : dataState === 'insufficient' ? '#D97706' : '#059669';
+  const realMetrics: DORAMetricsData | null = metricsData?.data ?? null;
+  const metrics = isDemoActive ? DEMO_DORA_METRICS : realMetrics;
+  // Real mode: the finished (succeeded + failed) deployments in the period,
+  // as the API counted them. Unknown until the metrics have loaded.
+  const totalDeployments = isDemoActive ? 847 : (realMetrics?.deployments.finished ?? 0);
+  const dataState: 'pending' | 'inactive' | 'insufficient' | 'active' =
+    isDemoActive ? 'active'
+    : !realMetrics ? 'pending'
+    : totalDeployments === 0 ? 'inactive'
+    : totalDeployments < 5 ? 'insufficient'
+    : 'active';
+  const dataStateLabel =
+    dataState === 'pending' ? (error ? 'Deployment data could not be loaded' : 'Loading deployment data…')
+    : dataState === 'inactive' ? 'No deployments recorded in the selected period'
+    : dataState === 'insufficient' ? `Insufficient data for benchmarking — ${totalDeployments} finished deployment${totalDeployments !== 1 ? 's' : ''} in the selected period, fewer than 5`
+    : `Based on ${totalDeployments} ${isDemoActive ? '' : 'finished '}deployments`;
+  const dataStateColor = dataState === 'pending' ? '#64748B' : dataState === 'inactive' ? '#DC2626' : dataState === 'insufficient' ? '#D97706' : '#059669';
+  const exportDisabled = !isDemoActive && dataState !== 'active' && dataState !== 'insufficient';
 
   return (
     <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">
@@ -124,10 +139,10 @@ export default function DORAMetricsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button disabled={dataState === 'inactive' && !isDemoActive} onClick={() => metrics && exportToCSV(metrics, dateRange)} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
+          <button disabled={exportDisabled} onClick={() => metrics && exportToCSV(metrics, dateRange)} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
             <FileText size={13} /> Export CSV
           </button>
-          <button disabled={dataState === 'inactive' && !isDemoActive} onClick={exportToPDF} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
+          <button disabled={exportDisabled} onClick={exportToPDF} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-500 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
             <Download size={13} /> Download PDF
           </button>
         </div>
@@ -169,7 +184,17 @@ export default function DORAMetricsPage() {
       {/* Engineering Intelligence Strip */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          {(isDemoActive || dataState === 'active') ? (
+          {!isDemoActive && realMetrics && dataState === 'active' ? (
+            <div className="flex items-center gap-4" data-testid="dora-real-summary">
+              <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
+                <Activity size={17} className="text-slate-500" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900 mb-0.5">{totalDeployments} finished deployments in the last {realMetrics.period.days} days</p>
+                <p className="text-xs text-slate-500">{realMetrics.deployments.successful} succeeded · {realMetrics.deployments.failed} failed · measured from the deployments your pipeline recorded</p>
+              </div>
+            </div>
+          ) : isDemoActive ? (
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5 flex-wrap">
               {/* Score ring */}
               <div className="flex items-center gap-3">
@@ -218,20 +243,21 @@ export default function DORAMetricsPage() {
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900 mb-0.5">{dataState === 'inactive' ? 'Pipeline Inactive' : 'Insufficient Data for Benchmarking'}</p>
-                <p className="text-xs text-slate-500">{dataState === 'inactive' ? 'No deployment activity detected. Connect your CI/CD pipeline to begin tracking.' : `Only ${totalDeployments} deployment${totalDeployments !== 1 ? 's' : ''} detected — minimum 5 required.`}</p>
+                <p className="text-sm font-semibold text-slate-900 mb-0.5">{dataState === 'pending' ? (error ? 'Deployment data unavailable' : 'Loading deployment data') : dataState === 'inactive' ? 'No deployments recorded' : 'Insufficient Data for Benchmarking'}</p>
+                <p className="text-xs text-slate-500">{dataState === 'pending' ? (error ? 'The metrics could not be loaded.' : 'Fetching the deployments recorded for this period.') : dataState === 'inactive' ? 'No finished deployments were recorded in the selected period. Connect your CI to record deployments.' : `Only ${totalDeployments} finished deployment${totalDeployments !== 1 ? 's' : ''} recorded — minimum 5 required.`}</p>
               </div>
             </div>
           )}
-          {dataState === 'inactive' && !isDemoActive
-            ? <a href="/connect-aws" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Connect CI/CD <ArrowRight size={10} /></a>
+          {/* No link in the empty states: /connect-aws connects an AWS account, not a CI pipeline. */}
+          {!isDemoActive && dataState !== 'active'
+            ? null
             : <a href="/ai-reports" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
           }
         </div>
       </div>
 
-      {/* Decision Intelligence */}
-      {(isDemoActive || dataState === 'active') && (
+      {/* Decision Intelligence — demo only: there is no real-mode analysis behind it */}
+      {isDemoActive && (
         <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-5 py-4 flex items-start gap-3.5">
           <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={12} className="text-white" /></div>
           <div className="flex-1">
@@ -318,33 +344,58 @@ export default function DORAMetricsPage() {
             { label: 'Lead Time for Changes', metric: metrics.leadTime,           icon: Clock,       formatVal: (v: number) => `${v.toFixed(1)} hrs`,  change: isDemoActive ? '−0.6 hrs · CI queue time reducing' : null },
             { label: 'Change Failure Rate',   metric: metrics.changeFailureRate,  icon: AlertTriangle, formatVal: (v: number) => `${v.toFixed(1)}%`,  change: isDemoActive ? '−0.3% · test coverage improving' : null },
             { label: 'Mean Time to Recovery', metric: metrics.mttr,               icon: Timer,       formatVal: (v: number) => `${Math.round(v)} min`, change: isDemoActive ? '−22 min · incident response process maturing' : null },
-          ].map(({ label, metric, icon: Icon, formatVal, change }) => {
+          ].map(({ label, metric: rawMetric, formatVal, change }) => {
+            const metric = rawMetric as DisplayMetric
+            const testId = `dora-card-${label.toLowerCase().replace(/ /g, '-')}`
+
+            // The deployment records cannot support this metric: say so, with
+            // the reason. No value, tier or chart.
+            if (isNotTracked(metric)) {
+              return (
+                <Card key={label} data-testid={testId} style={{ borderTop: '3px solid #94A3B8', overflow: 'hidden' }}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl sm:text-3xl font-bold text-slate-400 tracking-tight leading-none mb-1.5">Not tracked</div>
+                    <div className="text-xs text-slate-500 mt-2.5 pt-2.5 border-t border-slate-50">{metric.reason}</div>
+                  </CardContent>
+                </Card>
+              )
+            }
+
             const isInactiveState = dataState === 'inactive' && !isDemoActive
-            const ts = isInactiveState ? { color: '#94A3B8', bg: '#F1F5F9' } : tierStyle(metric.benchmark)
-            const trendData = generateTrendData(metric.value)
+            const tier = isInactiveState ? null : metric.benchmark ?? null
+            const ts = tier ? tierStyle(tier) : { color: '#94A3B8', bg: '#F1F5F9' }
             return (
-              <Card key={label} style={{ borderTop: `3px solid ${ts.color}`, overflow: 'hidden' }}>
+              <Card key={label} data-testid={testId} style={{ borderTop: `3px solid ${ts.color}`, overflow: 'hidden' }}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</CardTitle>
                     <div className="flex flex-col items-end gap-1">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.color}30` }}>{isInactiveState ? 'N/A' : metric.benchmark.charAt(0).toUpperCase() + metric.benchmark.slice(1)}</span>
-                      {(metric as DORAMetric).isCustomBenchmark && <span className="text-xs font-semibold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5 whitespace-nowrap">Custom benchmark</span>}
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.color}30` }}>{tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'N/A'}</span>
+                      {metric.isCustomBenchmark && <span className="text-xs font-semibold text-violet-600 bg-violet-50 rounded px-1.5 py-0.5 whitespace-nowrap">Custom benchmark</span>}
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-none mb-1.5">{formatVal(metric.value)}</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-none mb-1.5">{metric.value == null || isInactiveState ? '—' : formatVal(metric.value)}</div>
                   {change && <div className="text-xs font-medium text-green-600 mb-3 flex items-center gap-1">↑ {change} vs last period</div>}
-                  <div className="h-10">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={trendData}>
-                        <Area type="monotone" dataKey="value" stroke={ts.color} fill={ts.color} fillOpacity={0.15} strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {/* Sparkline is demo decoration; real mode has no computed trend to draw. */}
+                  {isDemoActive && metric.value != null && (
+                    <div className="h-10">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={generateDemoTrendData(metric.value)}>
+                          <Area type="monotone" dataKey="value" stroke={ts.color} fill={ts.color} fillOpacity={0.15} strokeWidth={2} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                   <div className="text-xs text-slate-500 mt-2.5 pt-2.5 border-t border-slate-50">
-                    {isInactiveState ? 'Pipeline inactive — no activity detected in this period' : metric.benchmark === 'elite' ? 'Exceeds Elite benchmark — no immediate action required' : metric.benchmark === 'high' ? 'Above industry median — monitor for regression' : metric.benchmark === 'medium' ? 'Below Elite threshold — review pipeline constraints' : dataState === 'insufficient' ? 'Insufficient data — fewer than 5 deployments' : metric.description}
+                    {isDemoActive
+                      ? (metric.benchmark === 'elite' ? 'Exceeds Elite benchmark — no immediate action required' : metric.benchmark === 'high' ? 'Above industry median — monitor for regression' : metric.benchmark === 'medium' ? 'Below Elite threshold — review pipeline constraints' : metric.description)
+                      : isInactiveState ? 'No finished deployments recorded in this period'
+                      : <>{metric.description}{dataState === 'insufficient' ? ' · fewer than 5 finished deployments, so the tier is indicative only' : ''}</>}
                   </div>
                 </CardContent>
               </Card>

@@ -370,9 +370,10 @@ describe('Anomalies section', () => {
 
 describe('DORA section', () => {
   const METRICS = {
-    deploymentFrequency: { value: 3.8, unit: 'per day', description: '114 deployments in 30 days' },
-    leadTime: { value: 6.12, unit: 'hours', description: 'Average time between consecutive deployments' },
-    mttr: { value: 71.35, unit: 'minutes', description: '1 incidents recovered' },
+    deploymentFrequency: { tracked: true, value: 3.8, unit: 'per day', description: '114 successful deployments in 30 days' },
+    leadTime: { tracked: false, reason: 'no change timestamp is recorded' },
+    mttr: { tracked: false, reason: 'no incident records are collected' },
+    deployments: { successful: 114, failed: 2, finished: 116 },
   };
 
   it('success is "available" with deployment-record provenance, a computed-at asOf, and an explicit 30-day organization scope', async () => {
@@ -386,17 +387,20 @@ describe('DORA section', () => {
     expect(dora.scope).toEqual({ kind: 'organization', window: 'last 30 days' });
     expect(dora.coverage).toMatch(/recorded in DevControl for this organization/);
     expect(Date.parse(dora.asOf)).toBeGreaterThanOrEqual(before - 1000);
-    expect(dora.data.leadTime).toBe('6.12 hours (Average time between consecutive deployments)');
+    expect(dora.data.leadTime).toBe('Not tracked (no change timestamp is recorded)');
+    expect(dora.data.mttr).toBe('Not tracked (no incident records are collected)');
   });
 
-  it('no deployments in the window is "unavailable" -- not an omitted section', async () => {
+  it('no finished deployments in the window is "unavailable" -- not an omitted section', async () => {
     jest.spyOn((contextRepo as any).doraMetricsService, 'getComprehensiveMetrics').mockResolvedValue({
-      ...METRICS, deploymentFrequency: { value: 0, unit: 'per day', description: '0 deployments in 30 days' },
+      ...METRICS,
+      deploymentFrequency: { tracked: true, value: 0, unit: 'per day', description: '0 successful deployments in 30 days' },
+      deployments: { successful: 0, failed: 0, finished: 0 },
     });
 
     const dora = await (contextRepo as any).getDORAMetrics('org-id');
 
-    expect(dora).toMatchObject({ state: 'unavailable', data: null, reason: 'no deployments were recorded for this organization in the last 30 days' });
+    expect(dora).toMatchObject({ state: 'unavailable', data: null, reason: 'no finished deployments were recorded for this organization in the last 30 days' });
   });
 
   it('a failed computation is "error" with data null -- not undefined', async () => {

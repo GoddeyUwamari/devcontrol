@@ -37,7 +37,9 @@ export class DORAMetricsRepository {
 
   /**
    * Calculate Deployment Frequency
-   * How often code is deployed to production
+   * How often a deployment succeeds. Only rows recorded as 'success' count:
+   * failed deployments, ones with no completion on record and unrecognised
+   * statuses did not deliver anything.
    */
   async calculateDeploymentFrequency(
     filters: DORAMetricsFilters
@@ -53,7 +55,8 @@ export class DORAMetricsRepository {
           COUNT(d.id) as deployment_count
         FROM deployments d
         JOIN services s ON d.service_id = s.id
-        WHERE d.deployed_at >= $1
+        WHERE d.status = 'success'
+          AND d.deployed_at >= $1
           AND d.organization_id = $2
     `;
 
@@ -226,7 +229,9 @@ export class DORAMetricsRepository {
 
   /**
    * Calculate Change Failure Rate
-   * Percentage of deployments that fail
+   * Failed deployments as a share of finished ones (success + failed).
+   * totalDeployments is that finished count; rows with no completion on
+   * record or an unrecognised status are in neither side of the ratio.
    */
   async calculateChangeFailureRate(
     filters: DORAMetricsFilters
@@ -243,7 +248,8 @@ export class DORAMetricsRepository {
           COUNT(*) FILTER (WHERE d.status = 'failed') as failed_deployments
         FROM deployments d
         JOIN services s ON d.service_id = s.id
-        WHERE d.deployed_at >= $1
+        WHERE d.status IN ('success', 'failed')
+          AND d.deployed_at >= $1
           AND d.organization_id = $2
     `;
 

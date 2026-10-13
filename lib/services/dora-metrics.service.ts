@@ -1,6 +1,40 @@
 import { isAxiosError } from 'axios';
 import api from '../api';
-import { DORAMetricsResponse, DORAMetricsFilters } from '../types';
+import type { BenchmarkLevel, DORAMetricsFilters } from '../types';
+
+/** A metric the deployment records can support. */
+export interface TrackedDORAMetric {
+  tracked: true;
+  /** Null when there is nothing in the period to measure it from. */
+  value: number | null;
+  unit: string;
+  /** Null whenever there is no measurement to grade. */
+  benchmark: BenchmarkLevel | null;
+  isCustomBenchmark: boolean;
+  breakdown?: { [key: string]: number };
+  description?: string;
+}
+
+/** A metric the deployment records cannot support. Never estimated. */
+export interface UntrackedDORAMetric {
+  tracked: false;
+  reason: string;
+}
+
+export interface DORAMetricsData {
+  deploymentFrequency: TrackedDORAMetric;
+  leadTime: UntrackedDORAMetric;
+  changeFailureRate: TrackedDORAMetric;
+  mttr: UntrackedDORAMetric;
+  /** Finished deployments in the period, as recorded. */
+  deployments: { successful: number; failed: number; finished: number };
+  period: { start: string; end: string; days: number };
+}
+
+export interface DORAMetricsResponse {
+  success: boolean;
+  data: DORAMetricsData;
+}
 
 export const doraMetricsService = {
   /**
