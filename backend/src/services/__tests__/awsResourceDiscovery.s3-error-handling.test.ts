@@ -207,7 +207,7 @@ describe('(7) unrelated S3 discovery behavior does not regress', () => {
     expect(resource.resource_type).toBe('s3');
     expect(resource.region).toBe('us-east-1');
     expect(resource.estimated_monthly_cost).toBe(5);
-    expect(resource.has_backup).toBe(false); // unchanged -- S3 has versioning, not traditional backups
+    expect(resource.has_backup).toBeNull(); // nothing reads a bucket's backups: unknown, not "none"
   });
 });
 
@@ -242,7 +242,7 @@ describe('upsertResource — is_public parameter binding no longer coerces null 
     expect(isPublicParam).toBeNull();
   });
 
-  it('an undefined is_public (resource type that never set the field) still defaults to false, preserving prior behavior', async () => {
+  it('an undefined is_public (resource type that never set the field) is stored as NULL: not read is unknown, not "not public"', async () => {
     const query = jest.fn().mockResolvedValue({ rows: [{ inserted: true }] });
     const mockClient = { query };
 
@@ -250,7 +250,7 @@ describe('upsertResource — is_public parameter binding no longer coerces null 
 
     const params = query.mock.calls[0][1];
     const isPublicParam = params[12];
-    expect(isPublicParam).toBe(false);
+    expect(isPublicParam).toBeNull();
   });
 
   it('a confirmed-true is_public is passed through unchanged', async () => {

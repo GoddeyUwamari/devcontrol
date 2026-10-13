@@ -14,7 +14,7 @@
  * machine (resourceReconciliation.service.ts) depends on.
  */
 import { ResourceExplorer2Client, paginateSearch, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
-import { ResourceType } from '../types/aws-resources.types';
+import { ResourceType, TagsState } from '../types/aws-resources.types';
 
 /**
  * Resource types whose deep CloudWatch monitoring (see cloudwatch.service.ts's
@@ -104,6 +104,8 @@ export interface NormalizedResourceEntry {
   region: string;
   service: string | undefined;
   tags: Record<string, string>;
+  /** 'unavailable' when the result carried no tags property: the tags are then unknown, not empty. */
+  tagsState: TagsState;
 }
 
 export type SearchResult =
@@ -157,12 +159,14 @@ export class ResourceExplorerService {
       const resourceType = GENERIC_CFN_TYPE_MAP[cfnType];
       if (!resourceType) continue;
 
+      const tags = this.extractTags(resource);
       genericEntries.push({
         arn: resource.Arn,
         resourceType,
         region: resource.Region || fallbackRegion,
         service: resource.Service,
-        tags: this.extractTags(resource),
+        tags: tags ?? {},
+        tagsState: tags ? 'observed' : 'unavailable',
       });
     }
 
@@ -173,11 +177,15 @@ export class ResourceExplorerService {
    * Resource Explorer inlines tags as a Properties entry named "tags" (lowercase,
    * live-verified) whose Data is an array of {Key, Value} pairs — the same shape
    * DescribeTags-family calls return elsewhere in this codebase.
+   *
+   * Returns null when the result carries no such property (or one that is not a
+   * list): the tags were not reported, which is not the same as there being none.
+   * An empty list is a resource with no tags.
    */
-  private extractTags(resource: REResource): Record<string, string> {
+  private extractTags(resource: REResource): Record<string, string> | null {
     const tagsProperty = (resource.Properties || []).find((p) => p.Name === 'tags');
     const data = tagsProperty?.Data;
-    if (!Array.isArray(data)) return {};
+    if (!Array.isArray(data)) return null;
 
     return data.reduce((acc: Record<string, string>, tag: any) => {
       if (tag?.Key && tag?.Value) acc[tag.Key] = tag.Value;

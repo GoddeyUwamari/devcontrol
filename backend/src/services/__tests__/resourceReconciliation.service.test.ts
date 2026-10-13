@@ -218,8 +218,8 @@ describe('Terminated resource reappears — full upsert + reconcile path, live P
   const discoveryService = new AWSResourceDiscoveryService(pool);
 
   it('a terminated generic (Resource Explorer-sourced) resource seen again clears status and, once reconciled, resets missing_scan_count to 0', async () => {
-    const arn = 'arn:aws:ec2:us-east-1:123456789012:vpc/vpc-reappear';
-    await insertRow({ resource_arn: arn, resource_type: 'vpc', missing_scan_count: 2, status: 'terminated' });
+    const arn = 'arn:aws:dynamodb:us-east-1:123456789012:table/table-reappear';
+    await insertRow({ resource_arn: arn, resource_type: 'dynamodb', missing_scan_count: 2, status: 'terminated' });
 
     // Step 1: the exact code path discoverAllResources runs for every entry a
     // successful Resource Explorer search returns — upsertGenericResource is
@@ -227,10 +227,11 @@ describe('Terminated resource reappears — full upsert + reconcile path, live P
     // private discover* methods.
     await (discoveryService as any).upsertGenericResource(client, orgId, {
       arn,
-      resourceType: 'vpc',
+      resourceType: 'dynamodb',
       region: TEST_REGION,
-      service: 'ec2',
+      service: 'dynamodb',
       tags: {},
+      tagsState: 'observed',
     });
 
     const afterUpsert = await getRow(arn);
@@ -239,7 +240,7 @@ describe('Terminated resource reappears — full upsert + reconcile path, live P
 
     // Step 2: the reconcile() call discoverAllResources makes right after the
     // upsert loop, in the same scan, with this ARN in the present set.
-    const result = await service.reconcile(client, orgId, TEST_REGION, new Set([arn]), ['vpc']);
+    const result = await service.reconcile(client, orgId, TEST_REGION, new Set([arn]), ['dynamodb']);
 
     expect(result.resetCount).toBe(1);
     const afterReconcile = await getRow(arn);
@@ -247,21 +248,53 @@ describe('Terminated resource reappears — full upsert + reconcile path, live P
     expect(afterReconcile.missing_scan_count).toBe(0);
   });
 
-  it('a non-terminated generic resource keeps its existing status across re-upsert (only the terminated case is special-cased)', async () => {
-    const arn = 'arn:aws:ec2:us-east-1:123456789012:vpc/vpc-still-unknown';
-    await insertRow({ resource_arn: arn, resource_type: 'vpc', missing_scan_count: 0, status: 'unknown' });
+  it('a terminated resource of a type with no lifecycle status (a VPC) seen again is not_applicable, and reconciles the same way', async () => {
+    const arn = 'arn:aws:ec2:us-east-1:123456789012:vpc/vpc-reappear';
+    await insertRow({ resource_arn: arn, resource_type: 'vpc', missing_scan_count: 2, status: 'terminated' });
 
     await (discoveryService as any).upsertGenericResource(client, orgId, {
-      arn,
-      resourceType: 'vpc',
-      region: TEST_REGION,
-      service: 'ec2',
-      tags: {},
+      arn, resourceType: 'vpc', region: TEST_REGION, service: 'ec2', tags: {}, tagsState: 'observed',
     });
+    expect((await getRow(arn)).status).toBe('not_applicable'); // no longer stuck at 'terminated'
 
-    const row = await getRow(arn);
-    expect(row.status).toBe('unknown');
+    const result = await service.reconcile(client, orgId, TEST_REGION, new Set([arn]), ['vpc']);
+    expect(result.resetCount).toBe(1);
+    expect(await getRow(arn)).toMatchObject({ status: 'not_applicable', missing_scan_count: 0 });
   });
+
+  it.each([['vpc', 'available'], ['vpc', 'unknown'], ['sns', 'active']])(
+    'a %s row an earlier release stored as %s is rewritten to not_applicable by the next upsert',
+    async (resourceType, storedStatus) => {
+      const arn = `arn:aws:${resourceType}:us-east-1:123456789012:legacy/${resourceType}-${storedStatus}`;
+      await insertRow({ resource_arn: arn, resource_type: resourceType, missing_scan_count: 0, status: storedStatus });
+
+      await (discoveryService as any).upsertGenericResource(client, orgId, {
+        arn, resourceType, region: TEST_REGION, service: resourceType, tags: {}, tagsState: 'observed',
+      });
+
+      expect((await getRow(arn)).status).toBe('not_applicable');
+    }
+  );
+
+  it.each([['unknown'], ['active']])(
+    'a non-terminated generic resource of a type that has a lifecycle status keeps its existing status (%s) across re-upsert',
+    async (storedStatus) => {
+      const arn = `arn:aws:dynamodb:us-east-1:123456789012:table/table-still-${storedStatus}`;
+      await insertRow({ resource_arn: arn, resource_type: 'dynamodb', missing_scan_count: 0, status: storedStatus });
+
+      await (discoveryService as any).upsertGenericResource(client, orgId, {
+        arn,
+        resourceType: 'dynamodb',
+        region: TEST_REGION,
+        service: 'dynamodb',
+        tags: {},
+        tagsState: 'observed',
+      });
+
+      const row = await getRow(arn);
+      expect(row.status).toBe(storedStatus);
+    }
+  );
 
   it('a terminated deep-monitored (own-Describe*-discovery) resource seen again is restored to whatever status the scan actually reports, via the same upsertResource path every discovered resource goes through', async () => {
     const arn = 'arn:aws:ec2:us-east-1:*:instance/i-reappear';

@@ -405,7 +405,8 @@ describe('baseline (non-framework) findings are unaffected by framework applicab
   });
   const EXPECTED = [
     ['high', 'encryption', 'EC2 instance has unencrypted EBS volumes', 'OBSERVED'],
-    ['high', 'public_access', 'EC2 instance has a public IP address', 'OBSERVED'],
+    // No security group data is recorded for this row, so the public IP is Medium, "exposure unknown".
+    ['medium', 'public_access', 'EC2 instance has a public IP address; exposure unknown: its security groups could not be read', 'OBSERVED'],
     ['medium', 'backups', 'EC2 instance does not have regular snapshots', 'OBSERVED'],
     ['low', 'tagging', 'Resource is missing required tags: Owner, Environment, Team', 'SELF_ATTESTED'],
   ];
@@ -418,7 +419,9 @@ describe('baseline (non-framework) findings are unaffected by framework applicab
     expect(evaluation.baselineIssues).toEqual(issues);
     expect(service().evaluateBaseline(exposed())).toEqual(issues);
     for (const issue of issues) {
-      expect(Object.keys(issue).sort()).toEqual(['category', 'issue', 'provenance', 'recommendation', 'resource_arn', 'severity']);
+      // The public-IP finding also carries what its security groups showed (network_exposure).
+      const evidence = issue.category === 'public_access' ? ['network_exposure'] : [];
+      expect(Object.keys(issue).sort()).toEqual(['category', 'issue', ...evidence, 'provenance', 'recommendation', 'resource_arn', 'severity']);
       expect(isActiveComplianceFinding(issue)).toBe(true);
     }
   });

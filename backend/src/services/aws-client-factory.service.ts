@@ -95,6 +95,17 @@ export interface AWSClients {
    * calls.
    */
   getCloudWatchClientForRegion: (region: string) => CloudWatchClient;
+  /**
+   * Same regional escape hatch, for S3: a bucket's tags are answered by the bucket's
+   * own region, which can differ from the org's primary region. Optional so mocks
+   * that never read a bucket outside the primary region need not provide it.
+   */
+  getS3ClientForRegion?: (region: string) => S3Client;
+  /**
+   * Same regional escape hatch, for EC2: an instance's security groups are read in
+   * the instance's own region. Optional for the same reason.
+   */
+  getEC2ClientForRegion?: (region: string) => EC2Client;
 }
 
 /** Extracts the 12-digit account ID from an IAM role/user ARN, e.g. arn:aws:iam::123456789012:role/x */
@@ -185,6 +196,8 @@ export class AWSClientFactory {
       getApplicationAutoScalingClientForRegion: (region: string) =>
         new ApplicationAutoScalingClient({ region, credentials: tempCredentials }),
       getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: tempCredentials }),
+      getS3ClientForRegion: (region: string) => new S3Client({ region, credentials: tempCredentials }),
+      getEC2ClientForRegion: (region: string) => new EC2Client({ region, credentials: tempCredentials }),
     };
   }
 

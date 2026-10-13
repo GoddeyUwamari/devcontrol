@@ -31,6 +31,7 @@ function entry(overrides: Partial<NormalizedResourceEntry> = {}): NormalizedReso
     region: 'us-east-1',
     service: 'dynamodb',
     tags: {},
+    tagsState: 'observed',
     ...overrides,
   };
 }

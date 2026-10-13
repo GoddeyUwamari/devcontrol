@@ -5,6 +5,7 @@ import {
   EC2Client,
   paginateDescribeInstances,
   paginateDescribeVolumes,
+  paginateDescribeSecurityGroups,
   Instance,
   Volume,
   DescribeVolumesCommand,
@@ -56,9 +57,14 @@ import {
   EBSVolumeMetadata,
   RDSInstanceMetadata,
   S3BucketMetadata,
+  TagsState,
 } from '../types/aws-resources.types';
 import { SubscriptionTier } from '../middleware/subscription.middleware';
 import { ComplianceScannerService } from './complianceScanner';
+import { getBucketTags, regionFromLocationConstraint } from './s3-bucket-tags.util';
+import { NetworkExposure, SecurityGroupRules, evaluateNetworkExposure } from '../utils/adminPortExposure';
+import { NOT_APPLICABLE_STATUS, UNKNOWN_STATUS, storedStatusFor } from '../utils/resourceLifecycle';
+import { AwsCallPolicy, DEFAULT_AWS_CALL_POLICY, mapWithConcurrency, withCallPolicy } from '../utils/awsCallPolicy';
 import { readBuiltInFrameworkSettings } from '../repositories/compliance-frameworks.repository';
 import { FrameworkApplicability, REGISTERED_FRAMEWORKS, resolveFrameworkApplicability } from '../utils/frameworkApplicability';
 import { FRAMEWORK_EVALUATOR_VERSION } from './framework-checks';
@@ -157,8 +163,39 @@ export function fatalDiscoveryErrorMessage(error: unknown): string {
 export class AWSResourceDiscoveryService {
   private resourceExplorer = new ResourceExplorerService();
   private reconciliation = new ResourceReconciliationService();
+  // How the per-bucket, per-instance, per-volume and per-region AWS calls are made:
+  // bounded concurrency, a time limit per call, throttled calls retried with backoff.
+  private callPolicy: AwsCallPolicy = DEFAULT_AWS_CALL_POLICY;
 
   constructor(private pool: Pool) {}
+
+  /**
+   * The clients discovery makes its per-resource calls with, each call under
+   * callPolicy (a time limit, and retries with backoff when throttled). Regional
+   * clients are built once per region and reused.
+   */
+  private applyCallPolicy(clients: AWSClients): AWSClients {
+    const regional = <T extends { send: (...args: any[]) => any }>(build?: (region: string) => T) => {
+      if (!build) return undefined;
+      const byRegion = new Map<string, T>();
+      return (region: string): T => {
+        let client = byRegion.get(region);
+        if (!client) {
+          client = withCallPolicy(build(region), this.callPolicy);
+          byRegion.set(region, client);
+        }
+        return client;
+      };
+    };
+    return {
+      ...clients,
+      ec2: withCallPolicy(clients.ec2, this.callPolicy),
+      s3: withCallPolicy(clients.s3, this.callPolicy),
+      backup: withCallPolicy(clients.backup, this.callPolicy),
+      getS3ClientForRegion: regional(clients.getS3ClientForRegion),
+      getEC2ClientForRegion: regional(clients.getEC2ClientForRegion),
+    };
+  }
 
   /**
    * Get organization's subscription tier
@@ -435,11 +472,12 @@ export class AWSResourceDiscoveryService {
       console.log(`📋 [Discovery] Created discovery job: ${jobId}`);
 
       // Get AWS clients
-      const awsClients = await AWSClientFactory.createClients(organizationId);
+      const connectedClients = await AWSClientFactory.createClients(organizationId);
 
-      if (!awsClients.enabled) {
+      if (!connectedClients.enabled) {
         throw new Error('AWS credentials not configured for this organization');
       }
+      const awsClients = this.applyCallPolicy(connectedClients);
 
       console.log(`✅ [Discovery] AWS clients created successfully`);
       console.log(`🌍 [Discovery] Target region: ${awsClients.region}`);
@@ -461,7 +499,10 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EC2 instances...`);
         try {
-          const ec2Resources = await this.discoverEC2Instances(organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence);
+          const ec2Resources = await this.discoverEC2Instances(
+            organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence,
+            awsClients.getEC2ClientForRegion
+          );
           for (const resource of ec2Resources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -536,7 +577,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('s3', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering S3 buckets...`);
         try {
-          const s3Resources = await this.discoverS3Buckets(organizationId, awsClients.s3!, awsClients.region);
+          const s3Resources = await this.discoverS3Buckets(organizationId, awsClients.s3!, awsClients.region, awsClients.getS3ClientForRegion);
           for (const resource of s3Resources) {
             s3ArnsFound.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
@@ -777,6 +818,26 @@ export class AWSResourceDiscoveryService {
         // branch below.
         const evaluation = await this.startFrameworkEvaluation(client, organizationId, jobId, frameworkApplicability);
 
+        // Each bucket's S3 security evaluation is several AWS calls. They are made
+        // ahead of the loop below, a bounded number of buckets at a time, so the loop
+        // (which writes to the database one resource after another) does not wait on
+        // AWS bucket by bucket. A bucket whose evaluation throws is settled here as an
+        // error for that bucket alone.
+        type S3Outcome = { result: Awaited<ReturnType<ComplianceScannerService['evaluateS3Security']>> } | { error: any };
+        const s3Resources = (allResources as AWSResource[]).filter((resource) => resource.resource_type === 's3');
+        const s3Outcomes = new Map<string, S3Outcome>();
+        await mapWithConcurrency(s3Resources, this.callPolicy.concurrency, async (resource) => {
+          try {
+            const result = await scanner.evaluateS3Security(resource, awsClients.s3!, {
+              s3Control: awsClients.s3Control,
+              accountId: awsClients.accountId,
+            });
+            s3Outcomes.set(resource.id, { result });
+          } catch (error: any) {
+            s3Outcomes.set(resource.id, { error });
+          }
+        });
+
         const s3Tally = newS3EvaluationTally();
         let scanned = 0;
         try {
@@ -789,10 +850,9 @@ export class AWSResourceDiscoveryService {
             if (resource.resource_type === 's3') {
               let s3Evaluation: S3SecurityEvaluation;
               try {
-                const result = await scanner.evaluateS3Security(resource, awsClients.s3!, {
-                  s3Control: awsClients.s3Control,
-                  accountId: awsClients.accountId,
-                });
+                const outcome = s3Outcomes.get(resource.id)!;
+                if ('error' in outcome) throw outcome.error;
+                const result = outcome.result;
                 s3Evaluation = result!.evaluation;
                 baselineIssues.push(...result!.issues);
               } catch (error: any) {
@@ -1095,7 +1155,8 @@ export class AWSResourceDiscoveryService {
     ec2Client: EC2Client,
     region: string,
     accountId: string | undefined,
-    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>
+    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>,
+    ec2ClientForRegion?: (region: string) => EC2Client
   ): Promise<CreateAWSResourceInput[]> {
     const instances: Instance[] = [];
     let pageCount = 0;
@@ -1108,11 +1169,13 @@ export class AWSResourceDiscoveryService {
     this.logIfPaginated('EC2 instances', pageCount, instances.length);
 
     const volumeEncryptionMap = await this.getVolumeEncryptionMap(ec2Client, instances);
+    const securityGroupsByRegion = await this.readSecurityGroupsByRegion(
+      instances, region, (target) => (target === region || !ec2ClientForRegion ? ec2Client : ec2ClientForRegion(target))
+    );
 
-    const resources: CreateAWSResourceInput[] = [];
-
-    for (const instance of instances) {
-      if (!instance.InstanceId) continue;
+    // One unit of work per instance, a bounded number at a time (utils/awsCallPolicy.ts).
+    const resources = await mapWithConcurrency(instances, this.callPolicy.concurrency, async (instance): Promise<CreateAWSResourceInput | null> => {
+      if (!instance.InstanceId) return null;
 
       const tags = this.extractTags(instance.Tags);
       const name = tags.Name || instance.InstanceId;
@@ -1128,6 +1191,17 @@ export class AWSResourceDiscoveryService {
         launch_time: instance.LaunchTime?.toISOString(),
       };
 
+      // What the instance's security groups show, read from the instance's own region.
+      // Recorded on every discovery, whether or not the instance has a public IP, and
+      // graded by ComplianceScannerService.checkPublicAccess.
+      const securityGroupIds = (instance.SecurityGroups || []).map((group) => group.GroupId).filter((id): id is string => !!id);
+      const exposure: NetworkExposure = evaluateNetworkExposure(
+        securityGroupIds,
+        securityGroupsByRegion.get(this.instanceRegion(instance, region)) ?? null
+      );
+      metadata.security_group_ids = securityGroupIds;
+      metadata.network_exposure = exposure;
+
       // Security Truthfulness #41: has_backup is real AWS Backup recovery-point evidence,
       // never a hardcoded value. A real ARN (with the actual account ID) is required for
       // the AWS Backup API call -- resource_arn below uses a wildcard account segment and
@@ -1136,7 +1210,7 @@ export class AWSResourceDiscoveryService {
       const realInstanceArn = accountId ? `arn:aws:ec2:${region}:${accountId}:instance/${instance.InstanceId}` : null;
       const hasBackup: BackupEvidenceResult = realInstanceArn ? await checkBackupEvidence(realInstanceArn) : null;
 
-      resources.push({
+      return {
         organization_id: organizationId,
         resource_arn: `arn:aws:ec2:${region}:*:instance/${instance.InstanceId}`,
         resource_id: instance.InstanceId,
@@ -1150,10 +1224,10 @@ export class AWSResourceDiscoveryService {
         is_encrypted: this.checkEC2Encryption(instance, volumeEncryptionMap),
         is_public: !!instance.PublicIpAddress,
         has_backup: hasBackup,
-      });
-    }
+      };
+    });
 
-    return resources;
+    return resources.filter((resource): resource is CreateAWSResourceInput => resource !== null);
   }
 
   /**
@@ -1178,10 +1252,9 @@ export class AWSResourceDiscoveryService {
     }
     this.logIfPaginated('EBS volumes', pageCount, volumes.length);
 
-    const resources: CreateAWSResourceInput[] = [];
-
-    for (const volume of volumes) {
-      if (!volume.VolumeId) continue;
+    // One unit of work per volume, a bounded number at a time (utils/awsCallPolicy.ts).
+    const resources = await mapWithConcurrency(volumes, this.callPolicy.concurrency, async (volume): Promise<CreateAWSResourceInput | null> => {
+      if (!volume.VolumeId) return null;
 
       const tags = this.extractTags(volume.Tags);
       const name = tags.Name || volume.VolumeId;
@@ -1211,7 +1284,7 @@ export class AWSResourceDiscoveryService {
         ? await checkEBSBackupCoverage(checkBackupEvidence, realVolumeArn, realParentInstanceArn)
         : null;
 
-      resources.push({
+      return {
         organization_id: organizationId,
         resource_arn: `arn:aws:ec2:${volume.AvailabilityZone?.slice(0, -1) || region}:*:volume/${volume.VolumeId}`,
         resource_id: volume.VolumeId,
@@ -1222,13 +1295,16 @@ export class AWSResourceDiscoveryService {
         metadata,
         status: this.mapEBSStatus(volume.State),
         estimated_monthly_cost: this.estimateEBSCost(volume.VolumeType, volume.Size || 0),
-        is_encrypted: volume.Encrypted || false,
+        // As DescribeVolumes reports it. A volume it reports nothing for is unknown,
+        // never "not encrypted".
+        is_encrypted: typeof volume.Encrypted === 'boolean' ? volume.Encrypted : null,
+        // A volume has no network address: not applicable, recorded as false.
         is_public: false,
         has_backup: hasBackup,
-      });
-    }
+      };
+    });
 
-    return resources;
+    return resources.filter((resource): resource is CreateAWSResourceInput => resource !== null);
   }
 
   /**
@@ -1276,9 +1352,10 @@ export class AWSResourceDiscoveryService {
         metadata,
         status: this.mapRDSStatus(dbInstance.DBInstanceStatus),
         estimated_monthly_cost: this.estimateRDSCost(dbInstance.DBInstanceClass || 'unknown'),
-        is_encrypted: dbInstance.StorageEncrypted || false,
-        is_public: dbInstance.PubliclyAccessible || false,
-        has_backup: (dbInstance.BackupRetentionPeriod || 0) > 0,
+        // As DescribeDBInstances reports them. A field it leaves out is unknown, never false.
+        is_encrypted: dbInstance.StorageEncrypted ?? null,
+        is_public: dbInstance.PubliclyAccessible ?? null,
+        has_backup: typeof dbInstance.BackupRetentionPeriod === 'number' ? dbInstance.BackupRetentionPeriod > 0 : null,
       });
     }
 
@@ -1291,7 +1368,8 @@ export class AWSResourceDiscoveryService {
   private async discoverS3Buckets(
     organizationId: string,
     s3Client: S3Client,
-    defaultRegion: string
+    defaultRegion: string,
+    s3ClientForRegion?: (region: string) => S3Client
   ): Promise<CreateAWSResourceInput[]> {
     // No generated paginator for ListBuckets in this SDK version — manual
     // ContinuationToken loop (added along with S3's 2023 quota increase to
@@ -1308,10 +1386,9 @@ export class AWSResourceDiscoveryService {
     } while (continuationToken);
     this.logIfPaginated('S3 buckets', pageCount, buckets.length);
 
-    const resources: CreateAWSResourceInput[] = [];
-
-    for (const bucket of buckets) {
-      if (!bucket.Name) continue;
+    // One unit of work per bucket, a bounded number at a time (utils/awsCallPolicy.ts).
+    const resources = await mapWithConcurrency(buckets, this.callPolicy.concurrency, async (bucket): Promise<CreateAWSResourceInput | null> => {
+      if (!bucket.Name) return null;
 
       let region = defaultRegion;
       // Security Truthfulness #40 (extended to S3): null means unknown/unavailable
@@ -1319,12 +1396,16 @@ export class AWSResourceDiscoveryService {
       // verified, specific AWS signal may set these to `false`.
       let isEncrypted: boolean | null = null;
       let isPublic: boolean | null = null;
+      // The region to read the bucket's tags in. The home region until GetBucketLocation
+      // answers; getBucketTags follows S3's redirect if that turns out to be wrong.
+      let bucketRegion = defaultRegion;
 
       try {
         // Get bucket region
         const locationCommand = new GetBucketLocationCommand({ Bucket: bucket.Name });
         const locationResponse = await s3Client.send(locationCommand);
         region = locationResponse.LocationConstraint || 'us-east-1';
+        bucketRegion = regionFromLocationConstraint(locationResponse.LocationConstraint);
 
         // Check encryption. AWS's well-known signal for "no default encryption
         // configured" is a ServerSideEncryptionConfigurationNotFoundError -- the S3
@@ -1363,33 +1444,46 @@ export class AWSResourceDiscoveryService {
       // queried. An 'unavailable' read (AccessDenied/throttling/etc.) is
       // stored as such, not silently written as "no rules".
       const lifecycleStatus = await getBucketLifecycleStatus(s3Client, bucket.Name);
+
+      // The bucket's tags, read in its own region. 'unavailable' (denied, throttled)
+      // is recorded as such: the tags are then unknown, and no tag finding is raised.
+      const bucketTags = await getBucketTags(
+        (target) => (target === defaultRegion || !s3ClientForRegion ? s3Client : s3ClientForRegion(target)),
+        bucket.Name,
+        bucketRegion
+      );
+      if (bucketTags.state === 'unavailable') {
+        console.error(`[S3 Discovery] Tags of bucket ${bucket.Name} could not be read (${bucketTags.reason}); recorded as unknown`);
+      }
+
       const metadata: S3BucketMetadata = {
         creation_date: bucket.CreationDate?.toISOString(),
-        versioning_enabled: false, // Could query GetBucketVersioning
-        logging_enabled: false,
+        tags_state: bucketTags.state,
         lifecycle_status: lifecycleStatus.state,
         ...(lifecycleStatus.state === 'has_lifecycle_rules' ? { lifecycle_rules: lifecycleStatus.enabledRuleCount } : {}),
         ...(lifecycleStatus.state === 'no_lifecycle_configuration' ? { lifecycle_rules: 0 } : {}),
       };
 
-      resources.push({
+      return {
         organization_id: organizationId,
         resource_arn: `arn:aws:s3:::${bucket.Name}`,
         resource_id: bucket.Name,
         resource_name: bucket.Name,
         resource_type: 's3',
         region,
-        tags: {}, // S3 bucket tags require separate API call
+        tags: bucketTags.state === 'observed' ? bucketTags.tags : {},
         metadata,
-        status: 'active' as ResourceStatus,
+        // A bucket has no lifecycle status: see utils/resourceLifecycle.ts.
+        status: storedStatusFor('s3', UNKNOWN_STATUS) as ResourceStatus,
         estimated_monthly_cost: this.estimateS3Cost(),
         is_encrypted: isEncrypted,
         is_public: isPublic,
-        has_backup: false, // S3 has versioning, not traditional backups
-      });
-    }
+        // Nothing reads a bucket's versioning or backups, so this is unknown.
+        has_backup: null,
+      };
+    });
 
-    return resources;
+    return resources.filter((resource): resource is CreateAWSResourceInput => resource !== null);
   }
 
   /**
@@ -1455,19 +1549,15 @@ export class AWSResourceDiscoveryService {
         resource.status,
         resource.estimated_monthly_cost ?? null,
         resource.actual_monthly_cost || 0,
-        // Security Truthfulness #40/#41 (is_public extended to match): `undefined`
-        // (this resource type never set the field at all -- e.g. Lambda/ALB/DynamoDB/
-        // ECS/EKS for has_backup) still defaults to `false`, preserving exact prior
-        // behavior for every type this doesn't touch. A genuine `null` (e.g. EC2/EBS's
-        // AWS Backup lookup, or S3's GetBucketAcl/GetBucketEncryption call, was
-        // attempted and came back indeterminate) must be preserved as-is -- `|| false`
-        // would have silently turned that real "unknown" into a fabricated "false",
-        // exactly what the locked decision prohibits. (is_public previously used
-        // `|| false` here, which did exactly that for every S3 bucket whose ACL check
-        // failed -- fixed to match is_encrypted/has_backup's pattern.)
-        resource.is_encrypted === undefined ? false : resource.is_encrypted,
-        resource.is_public === undefined ? false : resource.is_public,
-        resource.has_backup === undefined ? false : resource.has_backup,
+        // Security Truthfulness #40/#41: each flag is stored as discovery determined
+        // it. `null` (a lookup that came back indeterminate) and `undefined` (this
+        // resource type's discovery does not read the field at all -- e.g. has_backup
+        // for Lambda, load balancers and CloudFront) are both stored as NULL, unknown.
+        // `undefined` used to be stored as `false`, which stated "not encrypted",
+        // "not public" or "no backup" for a field nothing had read.
+        resource.is_encrypted ?? null,
+        resource.is_public ?? null,
+        resource.has_backup ?? null,
         JSON.stringify(resource.compliance_issues || []),
       ]
     );
@@ -1496,11 +1586,24 @@ export class AWSResourceDiscoveryService {
 
   /**
    * Upsert a Resource Explorer-sourced generic-inventory resource. Unlike upsertResource
-   * (used by the Describe*-based deep-monitored discovery), this never overwrites status,
-   * is_encrypted, is_public, has_backup, or compliance_issues on conflict — Resource
-   * Explorer's thin {arn, type, region, tags} data can't determine any of those, so
-   * clobbering them on every re-discovery would silently erase whatever a prior scan
-   * (or the compliance scanner) already determined. Termination is handled exclusively
+   * (used by the Describe*-based deep-monitored discovery), this never overwrites
+   * compliance_issues on conflict, and keeps a known status (see below).
+   *
+   * is_encrypted, is_public and has_backup are written as NULL (unknown), on insert
+   * and again on every conflict: Resource Explorer's {arn, type, region, tags} data
+   * says nothing about any of them. They used to be inserted as `false` and then
+   * never rewritten, so rows written by an earlier release kept a "not encrypted"
+   * that nothing had observed.
+   *
+   * GUARD: the per-discovery NULL rewrite is only safe while no enrichment step
+   * (enrichDynamoDBTables, enrichAuroraClusters, or a new one) writes these three
+   * columns for a generic type. One that starts to must stop this upsert from
+   * clearing what it wrote, in the same change. awsResourceDiscovery.placeholder-
+   * unknown.test.ts fails if an enrichment step writes them.
+   *
+   * A type with no lifecycle status (utils/resourceLifecycle.ts) is stored with
+   * NOT_APPLICABLE_STATUS, on insert and on conflict, replacing the 'active' or
+   * 'available' an earlier release stored for it. Termination is handled exclusively
    * by ResourceReconciliationService, never by this upsert — except for the one case
    * this upsert must undo: if the row was previously terminated and Resource Explorer
    * just found its ARN again (this method only runs for entries the scan returned),
@@ -1536,11 +1639,17 @@ export class AWSResourceDiscoveryService {
         organization_id, resource_arn, resource_id, resource_name, resource_type, region,
         tags, metadata, status, estimated_monthly_cost, actual_monthly_cost,
         is_encrypted, is_public, has_backup, compliance_issues, missing_scan_count, last_synced_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'unknown', $9, 0, false, false, false, '[]', 0, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $10, $9, 0, NULL, NULL, NULL, '[]', 0, NOW())
       ON CONFLICT (organization_id, resource_arn)
       DO UPDATE SET
         resource_name = EXCLUDED.resource_name,
         tags = EXCLUDED.tags,
+        -- Unknown, rewritten on every discovery: Resource Explorer reports none of the
+        -- three, and nothing else writes them for a generic type (see the doc comment).
+        -- This is what clears the 'false' an earlier release stored for these rows.
+        is_encrypted = NULL,
+        is_public = NULL,
+        has_backup = NULL,
         -- Merge, not overwrite: a dedicated enrichment step (e.g.
         -- enrichDynamoDBTables()) can add real per-resource config on top of
         -- this generic {source, service} baseline in the same discovery run.
@@ -1555,7 +1664,11 @@ export class AWSResourceDiscoveryService {
         -- on overlap, so a changed service/source value still updates.
         metadata = aws_resources.metadata || EXCLUDED.metadata,
         region = EXCLUDED.region,
-        status = CASE WHEN aws_resources.status = 'terminated' THEN 'unknown' ELSE aws_resources.status END,
+        status = CASE
+          WHEN EXCLUDED.status = '${NOT_APPLICABLE_STATUS}' THEN EXCLUDED.status
+          WHEN aws_resources.status = 'terminated' THEN '${UNKNOWN_STATUS}'
+          ELSE aws_resources.status
+        END,
         last_synced_at = NOW(),
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted`,
@@ -1567,8 +1680,9 @@ export class AWSResourceDiscoveryService {
         entry.resourceType,
         entry.region,
         JSON.stringify(entry.tags || {}),
-        JSON.stringify({ source: 'resource-explorer', service: entry.service }),
+        JSON.stringify({ source: 'resource-explorer', service: entry.service, tags_state: entry.tagsState }),
         estimatedMonthlyCost,
+        storedStatusFor(entry.resourceType, UNKNOWN_STATUS),
       ]
     );
 
@@ -1841,7 +1955,9 @@ export class AWSResourceDiscoveryService {
         const { Volumes } = await ec2Client.send(new DescribeVolumesCommand({ VolumeIds: chunk }));
         for (const volume of Volumes || []) {
           if (volume.VolumeId) {
-            encryptionMap.set(volume.VolumeId, volume.Encrypted ?? false);
+            // Only what AWS reported. A volume with no reported value stays out of
+            // the map, i.e. unknown.
+            if (typeof volume.Encrypted === 'boolean') encryptionMap.set(volume.VolumeId, volume.Encrypted);
           }
         }
       } catch (error: any) {
@@ -1853,19 +1969,61 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
-   * Check if EC2 instance has encrypted volumes.
-   * An instance counts as encrypted only if every EBS volume in its BlockDeviceMappings
-   * is confirmed Encrypted via DescribeVolumes. Volumes whose lookup failed are skipped
-   * (treated as compliant) rather than reported unencrypted — see getVolumeEncryptionMap.
+   * Whether an EC2 instance's EBS volumes are encrypted, from DescribeVolumes.
+   *
+   *   false   a volume is confirmed unencrypted (whatever the others are).
+   *   true    every volume is confirmed encrypted.
+   *   null    unknown: a volume's lookup failed or reported nothing, or the instance
+   *           has no EBS volume to speak of. Never "encrypted" by default.
    */
-  private checkEC2Encryption(instance: Instance, volumeEncryptionMap: Map<string, boolean>): boolean {
+  private checkEC2Encryption(instance: Instance, volumeEncryptionMap: Map<string, boolean>): boolean | null {
     const volumeIds = (instance.BlockDeviceMappings || [])
       .map(mapping => mapping.Ebs?.VolumeId)
       .filter((id): id is string => !!id);
 
-    if (volumeIds.length === 0) return true;
+    if (volumeIds.length === 0) return null;
 
-    return volumeIds.every(id => volumeEncryptionMap.get(id) ?? true);
+    const states = volumeIds.map(id => volumeEncryptionMap.get(id));
+    if (states.some(state => state === false)) return false;
+    return states.every(state => state === true) ? true : null;
+  }
+
+  /** The region an instance runs in: its availability zone without the zone letter. */
+  private instanceRegion(instance: Instance, fallbackRegion: string): string {
+    const zone = instance.Placement?.AvailabilityZone;
+    return zone && /[a-z]$/.test(zone) ? zone.slice(0, -1) : fallbackRegion;
+  }
+
+  /**
+   * Every security group of each region the given instances are in, by region and
+   * group id. A region whose read fails (denied, throttled, any error) maps to null:
+   * its instances' exposure is then unknown, and what was read before the failure is
+   * not used, because a partial read cannot show that a rule is absent.
+   */
+  private async readSecurityGroupsByRegion(
+    instances: Instance[],
+    fallbackRegion: string,
+    clientForRegion: (region: string) => EC2Client
+  ): Promise<Map<string, Map<string, SecurityGroupRules> | null>> {
+    const regions = new Set(
+      instances.filter(instance => (instance.SecurityGroups || []).length > 0).map(instance => this.instanceRegion(instance, fallbackRegion))
+    );
+    const byRegion = new Map<string, Map<string, SecurityGroupRules> | null>();
+    await mapWithConcurrency([...regions], this.callPolicy.concurrency, async (region) => {
+      try {
+        const groups = new Map<string, SecurityGroupRules>();
+        for await (const page of paginateDescribeSecurityGroups({ client: clientForRegion(region) }, {})) {
+          for (const group of page.SecurityGroups || []) {
+            if (group.GroupId) groups.set(group.GroupId, group);
+          }
+        }
+        byRegion.set(region, groups);
+      } catch (error: any) {
+        console.error(`[Discovery] DescribeSecurityGroups failed in ${region}; instance exposure recorded as unknown:`, error.message);
+        byRegion.set(region, null);
+      }
+    });
+    return byRegion;
   }
 
   /**
@@ -1964,13 +2122,15 @@ export class AWSResourceDiscoveryService {
         if (!func.FunctionArn || !func.FunctionName) continue;
 
         let tags: Record<string, string> = {};
+        let tagsState: TagsState = 'unavailable';
         try {
           const { Tags } = await lambdaClient.send(
             new ListTagsCommand({ Resource: func.FunctionArn })
           );
           tags = Tags || {};
+          tagsState = 'observed';
         } catch (error) {
-          // Tags might not be accessible
+          // The tags could not be read: unknown, not "no tags".
           tags = {};
         }
 
@@ -1987,6 +2147,7 @@ export class AWSResourceDiscoveryService {
           region,
           tags,
           metadata: {
+            tags_state: tagsState,
             runtime: func.Runtime,
             memory: func.MemorySize,
             timeout: func.Timeout,
@@ -2051,6 +2212,7 @@ export class AWSResourceDiscoveryService {
         if (!lb.LoadBalancerArn || !lb.LoadBalancerName) continue;
 
         let tags: Record<string, string> = {};
+        let tagsState: TagsState = 'unavailable';
         try {
           const { TagDescriptions } = await elbClient.send(
             new DescribeELBTagsCommand({ ResourceArns: [lb.LoadBalancerArn] })
@@ -2062,7 +2224,9 @@ export class AWSResourceDiscoveryService {
             }
             return acc;
           }, {} as Record<string, string>);
+          tagsState = 'observed';
         } catch (error) {
+          // The tags could not be read: unknown, not "no tags".
           tags = {};
         }
 
@@ -2077,6 +2241,7 @@ export class AWSResourceDiscoveryService {
           region,
           tags,
           metadata: {
+            tags_state: tagsState,
             type: lb.Type,
             scheme: lb.Scheme,
             vpc_id: lb.VpcId,
@@ -2139,8 +2304,11 @@ export class AWSResourceDiscoveryService {
           resource_name: dist.DomainName || dist.Id,
           resource_type: 'cloudfront',
           region: 'global',
+          // A distribution's tags are not read (that takes ListTagsForResource per
+          // distribution), so they are unknown rather than empty.
           tags: {},
           metadata: {
+            tags_state: 'unavailable' as TagsState,
             domain_name: dist.DomainName,
             status: dist.Status,
             price_class: dist.PriceClass,

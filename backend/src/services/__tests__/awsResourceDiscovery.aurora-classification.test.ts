@@ -26,6 +26,7 @@ function auroraEntry(overrides: Partial<NormalizedResourceEntry> = {}): Normaliz
     region: 'us-east-1',
     service: 'rds',
     tags: {},
+    tagsState: 'observed',
     ...overrides,
   };
 }

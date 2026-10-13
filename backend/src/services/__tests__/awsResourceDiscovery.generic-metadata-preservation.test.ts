@@ -45,6 +45,7 @@ function genericEntry(overrides: Partial<NormalizedResourceEntry> = {}): Normali
     region: 'us-east-1',
     service: 'dynamodb',
     tags: {},
+    tagsState: 'observed',
     ...overrides,
   };
 }
@@ -83,7 +84,7 @@ describe('AWSResourceDiscoveryService.upsertGenericResource -- metadata merge (n
     await (service as any).upsertGenericResource(client, orgId, genericEntry());
 
     const metadata = await getMetadata();
-    expect(metadata).toEqual({ source: 'resource-explorer', service: 'dynamodb' });
+    expect(metadata).toEqual({ source: 'resource-explorer', service: 'dynamodb', tags_state: 'observed' });
   });
 
   it('enrichment metadata written after the generic upsert survives a later re-run of upsertGenericResource', async () => {
@@ -106,6 +107,7 @@ describe('AWSResourceDiscoveryService.upsertGenericResource -- metadata merge (n
     expect(metadata).toEqual({
       source: 'resource-explorer',
       service: 'dynamodb',
+      tags_state: 'observed',
       billing_mode: 'PROVISIONED',
       provisioned_read_capacity: 50,
     });
@@ -125,6 +127,7 @@ describe('AWSResourceDiscoveryService.upsertGenericResource -- metadata merge (n
     expect(metadata).toEqual({
       source: 'resource-explorer',
       service: 'dynamodb-v2', // updated
+      tags_state: 'observed',
       billing_mode: 'PAY_PER_REQUEST', // preserved
     });
   });
@@ -150,7 +153,7 @@ describe('AWSResourceDiscoveryService.upsertGenericResource -- metadata merge (n
         `SELECT metadata FROM aws_resources WHERE organization_id = $1 AND resource_arn = $2`,
         [otherOrgId, TABLE_ARN]
       );
-      expect(otherRows[0].metadata).toEqual({ source: 'resource-explorer', service: 'dynamodb' });
+      expect(otherRows[0].metadata).toEqual({ source: 'resource-explorer', service: 'dynamodb', tags_state: 'observed' });
       expect(otherRows[0].metadata.billing_mode).toBeUndefined();
     } finally {
       await client.query(`DELETE FROM aws_resources WHERE organization_id = $1`, [otherOrgId]);
