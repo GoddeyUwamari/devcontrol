@@ -583,21 +583,23 @@ describe('Comparison partial-day semantics', () => {
 });
 
 describe('DORA context labeling', () => {
-  it('lead time carries the metric\'s own description (time between deployments), not an implied commit-to-deploy time', async () => {
+  it('lead time and time to restore are passed as "Not tracked" with the reason, never as a number the model could restate', async () => {
     jest.spyOn((contextRepo as any).doraMetricsService, 'getComprehensiveMetrics').mockResolvedValue({
-      deploymentFrequency: { value: 3.8, unit: 'per day', description: '114 deployments in 30 days' },
-      leadTime: { value: 6.12, unit: 'hours', description: 'Average time between consecutive deployments' },
-      mttr: { value: 71.35, unit: 'minutes', description: '1 incidents recovered' },
+      deploymentFrequency: { tracked: true, value: 3.8, unit: 'per day', description: '114 successful deployments in 30 days' },
+      leadTime: { tracked: false, reason: 'no change timestamp is recorded' },
+      mttr: { tracked: false, reason: 'no incident records are collected' },
+      deployments: { successful: 114, failed: 2, finished: 116 },
     });
 
     const dora = await (contextRepo as any).getDORAMetrics('org-id');
 
     expect(dora.state).toBe('available');
     expect(dora.data).toEqual({
-      deploymentFrequency: '114 deployments in 30 days',
-      leadTime: '6.12 hours (Average time between consecutive deployments)',
-      mttr: '71.35 minutes (1 incidents recovered)',
+      deploymentFrequency: '114 successful deployments in 30 days',
+      leadTime: 'Not tracked (no change timestamp is recorded)',
+      mttr: 'Not tracked (no incident records are collected)',
     });
+    expect(`${dora.data.leadTime} ${dora.data.mttr}`).not.toMatch(/\d/);
   });
 });
 
