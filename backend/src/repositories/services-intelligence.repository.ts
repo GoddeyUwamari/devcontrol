@@ -16,6 +16,11 @@
  */
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
+import {
+  FrameworkEvaluationRows,
+  frameworkEvaluationStorageAvailable,
+  readFrameworkEvaluations,
+} from './framework-evaluations.repository';
 
 export interface IntelligenceResourceRow {
   id: string;
@@ -58,6 +63,8 @@ export interface IntelligenceDiscoveryJobRow {
 }
 
 export interface ServicesIntelligenceRows {
+  /** Stored framework evaluations; null = the evaluation tables do not exist in this database. */
+  frameworkEvaluations: FrameworkEvaluationRows | null;
   resources: IntelligenceResourceRow[];
   services: IntelligenceServiceRow[];
   recommendations: IntelligenceRecommendationRow[];
@@ -176,7 +183,14 @@ export class ServicesIntelligenceRepository {
       [organizationId]
     );
 
+    // Looked up, not attempted: a missing table must not fail this read-only
+    // transaction. null = the evaluation tables do not exist in this database.
+    const frameworkEvaluations = (await frameworkEvaluationStorageAvailable(executor))
+      ? await readFrameworkEvaluations(executor, organizationId)
+      : null;
+
     return {
+      frameworkEvaluations,
       resources: resources.rows,
       services: services.rows,
       recommendations: recommendations.rows,

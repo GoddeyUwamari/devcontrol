@@ -91,6 +91,33 @@ export interface Remediation {
 
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low';
 export type FindingProvenance = 'OBSERVED' | 'DERIVED' | 'SELF_ATTESTED';
+export type FindingApplicability = 'enabled' | 'disabled' | 'not_configured' | 'unavailable' | 'invalid';
+export type FindingEvaluationState =
+  | 'failed'
+  | 'passed'
+  | 'unable_to_evaluate'
+  | 'error'
+  | 'not_evaluated'
+  | 'not_applicable';
+/**
+ * Why a recorded finding is not a current one:
+ *   legacy_unattributed    written for a framework before frameworks had to be enabled;
+ *   not_current_state      its recorded or stored state is not 'failed';
+ *   not_reverified         carried forward from an earlier scan because the latest one could
+ *                          not read what the check needs (verification: 'unverified');
+ *   storage_unavailable    framework evaluations cannot be read, so it cannot be confirmed;
+ *   no_evaluation_record   no stored evaluation backs it;
+ *   stale_evaluation       the evaluation behind it predates the framework's latest finished run.
+ * The last four are findings that were PRESERVED from an earlier scan rather than re-verified.
+ */
+export type FindingNotCurrentReason =
+  | 'legacy_unattributed'
+  | 'not_current_state'
+  | 'not_reverified'
+  | 'storage_unavailable'
+  | 'no_evaluation_record'
+  | 'stale_evaluation';
+export type FindingEvidenceBasis = 'aws_api' | 'tag' | 'none';
 
 export interface Finding {
   /** Detector table: `resource_scan` (aws_resources.compliance_issues) or `cost_recommendation`. */
@@ -113,7 +140,107 @@ export interface Finding {
   title: string | null;
   /** Evidence classification as recorded; null = none recorded. */
   provenance: FindingProvenance | null;
+  /**
+   * The compliance framework the entry belongs to, as recorded; null = a baseline
+   * (non-framework) finding, or a cost recommendation.
+   */
+  framework: string | null;
+  /** The framework's applicability when the entry was written, as recorded; null = none recorded. */
+  applicability: FindingApplicability | null;
+  /**
+   * What happened when the check ran, as recorded. Independent of severity. null =
+   * none recorded, which is not a statement that the check failed or passed. Any
+   * recorded value other than 'failed' marks an entry that is not a current finding.
+   */
+  evaluation_state: FindingEvaluationState | null;
+  /** What the outcome rests on, as recorded; null = none recorded. */
+  evidence_basis: FindingEvidenceBasis | null;
+  /** Why the entry has its evaluation_state, as recorded; null = none recorded. */
+  evaluation_reason: string | null;
+  /**
+   * Whether the entry is a current finding. A framework finding is current only
+   * when a stored evaluation of the same check for this resource is 'failed' and
+   * is not stale. A baseline finding or a cost recommendation is current.
+   */
+  current: boolean;
+  /** Why `current` is false; null when it is true. */
+  not_current_reason: FindingNotCurrentReason | null;
   remediation: Remediation | null;
+}
+
+/**
+ * The stored outcome of one check for one resource -- every outcome, not only
+ * failures. Severity is set only on 'failed'.
+ */
+export interface CheckEvaluation {
+  /** What the check belongs to. Only frameworks today. */
+  source: { kind: 'framework'; key: string };
+  check: string;
+  evaluation_state: FindingEvaluationState;
+  severity: FindingSeverity | null;
+  evidence_basis: FindingEvidenceBasis | null;
+  provenance: FindingProvenance | null;
+  reason_code: string;
+  /** Fixed wording for reason_code. */
+  reason: string;
+  /** A category, set only on 'error'. */
+  error_code: string | null;
+  /** null when nothing is recorded. */
+  evaluated_at: string | null;
+  /**
+   * false = no evaluation of this check is stored for the resource, although the
+   * check applies to it and its framework was evaluated. Such an entry is always
+   * 'not_evaluated' and never stale: there is no stored result to be stale.
+   */
+  recorded: boolean;
+  /** The stored evaluation predates the framework's latest finished run. */
+  stale: boolean;
+  /** The last real pass or fail, when the current state is not one. */
+  last_conclusive: { state: 'failed' | 'passed'; at: string; severity: FindingSeverity | null } | null;
+}
+
+/** Set while the resource's last framework evaluation could not be stored. */
+export interface FrameworkReconciliation {
+  required: true;
+  since: string;
+  last_attempt_at: string;
+  attempts: number;
+  reason_code: string;
+}
+
+export interface FrameworkEvaluationSummary {
+  framework: string;
+  /** As applied by the latest finished run -- not the live setting. null = never evaluated. */
+  applicability: FindingApplicability | null;
+  applicability_reason_code: string | null;
+  applicability_reason: string | null;
+  /** The latest run that finished 'complete' or 'partial'. A failed run is never it. */
+  latest_run: {
+    status: 'complete' | 'partial';
+    started_at: string;
+    finished_at: string;
+    evaluator_version: string;
+  } | null;
+  /** A run is in progress. Everything else here still describes the latest finished run. */
+  running: boolean;
+  /** The most recent attempt failed; the latest finished run above still stands. */
+  last_attempt_failed: boolean;
+  stale: boolean;
+  stale_reason: 'no_run' | 'run_too_old' | null;
+  /** Stored check outcomes for the organization's current resources, by state. */
+  counts: Record<FindingEvaluationState, number> & { stale: number };
+  /** Resources whose last evaluation could not be stored. */
+  reconciliation_required: number;
+}
+
+export interface FrameworkEvaluationBlock {
+  /**
+   * unavailable = framework evaluations cannot be read from this deployment's
+   * database. Nothing is then claimed about any framework: `frameworks` is empty
+   * and framework findings are reported as not current (storage_unavailable).
+   */
+  storage: 'available' | 'unavailable';
+  frameworks: FrameworkEvaluationSummary[];
 }
 
 export interface Resource {
@@ -132,6 +259,9 @@ export interface Resource {
   /** aws_resources.last_synced_at; null when never recorded. */
   last_seen_at: string | null;
   findings: Finding[];
+  /** Stored check outcomes for the resource; empty when storage is unavailable. */
+  check_evaluations: CheckEvaluation[];
+  framework_reconciliation: FrameworkReconciliation | null;
   health: ResourceHealth;
   cost: ResourceCost;
 }
@@ -203,6 +333,7 @@ export interface ServicesIntelligence {
    */
   remediation_execution_enabled: boolean;
   health: HealthFreshness;
+  framework_evaluation: FrameworkEvaluationBlock;
   /** A type absent from the map has no described capability. */
   capabilities: Record<string, Capability>;
   totals: Totals;

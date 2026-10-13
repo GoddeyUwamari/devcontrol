@@ -35,6 +35,13 @@ import {
   Capability,
   Discovery,
   Finding,
+  CheckEvaluation,
+  FindingApplicability,
+  FindingEvaluationState,
+  FindingEvidenceBasis,
+  FindingNotCurrentReason,
+  FrameworkEvaluationBlock,
+  FrameworkEvaluationSummary,
   FindingProvenance,
   FindingSeverity,
   Remediation,
@@ -43,6 +50,13 @@ import {
   Service,
   ServicesIntelligence,
 } from '../types/services-intelligence.types';
+import { REGISTERED_FRAMEWORKS, evaluationReasonText, isActiveComplianceFinding } from '../utils/frameworkApplicability';
+import { FRAMEWORK_CHECKS, checkAppliesTo } from './framework-checks';
+import {
+  CheckEvaluationRow,
+  FrameworkEvaluationRows,
+  ReconciliationRow,
+} from '../repositories/framework-evaluations.repository';
 
 // ─── Remediation eligibility ────────────────────────────────────────────────
 // One entry per cost recommendation that an existing endpoint can act on.
@@ -150,6 +164,14 @@ export function buildCapabilities(): Record<string, Capability> {
 
 const SEVERITIES: readonly FindingSeverity[] = ['critical', 'high', 'medium', 'low'];
 const PROVENANCES: readonly FindingProvenance[] = ['OBSERVED', 'DERIVED', 'SELF_ATTESTED'];
+const APPLICABILITIES: readonly FindingApplicability[] = ['enabled', 'disabled', 'not_configured', 'unavailable', 'invalid'];
+const EVALUATION_STATES: readonly FindingEvaluationState[] = ['failed', 'passed', 'unable_to_evaluate', 'error', 'not_evaluated', 'not_applicable'];
+const EVIDENCE_BASES: readonly FindingEvidenceBasis[] = ['aws_api', 'tag', 'none'];
+
+/** A recorded value when it is one of the known ones, else null: an unknown value is never mapped to a known one. */
+function knownOrNull<T extends string>(known: readonly T[], value: unknown): T | null {
+  return known.includes(value as T) ? (value as T) : null;
+}
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
@@ -161,8 +183,57 @@ function normaliseSeverity(value: unknown): FindingSeverity | null {
   return SEVERITIES.includes(lowered) ? lowered : null;
 }
 
+// ─── Framework evaluations ──────────────────────────────────────────────────
+
+/** A resource's stored check rows, by framework and check. */
+type StoredChecks = Map<string, CheckEvaluationRow>;
+
+function checkKey(framework: string, check: string): string {
+  return `${framework}\u0000${check}`;
+}
+
+function storedChecksByResource(rows: FrameworkEvaluationRows | null): Map<string, StoredChecks> {
+  const byResource = new Map<string, StoredChecks>();
+  for (const row of rows?.checks ?? []) {
+    const stored = byResource.get(row.resource_id) ?? new Map<string, CheckEvaluationRow>();
+    stored.set(checkKey(row.framework, row.check), row);
+    byResource.set(row.resource_id, stored);
+  }
+  return byResource;
+}
+
+/**
+ * Whether a recorded finding is current, and if not, why. A framework finding is
+ * only as good as the stored evaluation behind it: with no readable storage, no
+ * stored row, a row that is not 'failed', or a stale row, it is a finding kept
+ * from an earlier scan, not one this deployment can vouch for now.
+ */
+function findingCurrency(
+  issue: Record<string, unknown>,
+  storage: FrameworkEvaluationRows | null,
+  stored: StoredChecks | undefined
+): { current: boolean; not_current_reason: FindingNotCurrentReason | null } {
+  const framework = stringOrNull(issue.framework);
+  if (issue.verification === 'unverified') return { current: false, not_current_reason: 'not_reverified' };
+  if (!isActiveComplianceFinding(issue)) {
+    return { current: false, not_current_reason: framework === null && issue.evaluation_state == null ? 'legacy_unattributed' : 'not_current_state' };
+  }
+  if (framework === null) return { current: true, not_current_reason: null };
+
+  if (storage === null) return { current: false, not_current_reason: 'storage_unavailable' };
+  const row = stored?.get(checkKey(framework, stringOrNull(issue.findingKey) ?? ''));
+  if (!row) return { current: false, not_current_reason: 'no_evaluation_record' };
+  if (row.evaluation_state !== 'failed') return { current: false, not_current_reason: 'not_current_state' };
+  if (row.stale) return { current: false, not_current_reason: 'stale_evaluation' };
+  return { current: true, not_current_reason: null };
+}
+
 /** One aws_resources.compliance_issues entry, passed through as recorded. */
-function scanFinding(issue: Record<string, unknown>): Finding {
+function scanFinding(
+  issue: Record<string, unknown>,
+  storage: FrameworkEvaluationRows | null,
+  stored: StoredChecks | undefined
+): Finding {
   const provenance = issue.provenance as FindingProvenance;
   return {
     source: 'resource_scan',
@@ -174,15 +245,145 @@ function scanFinding(issue: Record<string, unknown>): Finding {
     category: stringOrNull(issue.category),
     title: stringOrNull(issue.issue),
     provenance: PROVENANCES.includes(provenance) ? provenance : null,
+    framework: stringOrNull(issue.framework),
+    applicability: knownOrNull(APPLICABILITIES, issue.applicability),
+    evaluation_state: knownOrNull(EVALUATION_STATES, issue.evaluation_state),
+    evidence_basis: knownOrNull(EVIDENCE_BASES, issue.evidence_basis),
+    evaluation_reason: stringOrNull(issue.evaluation_reason),
+    ...findingCurrency(issue, storage, stored),
     remediation: null,
   };
 }
 
-function scanFindings(complianceIssues: unknown): Finding[] {
+function scanFindings(
+  complianceIssues: unknown,
+  storage: FrameworkEvaluationRows | null,
+  stored: StoredChecks | undefined
+): Finding[] {
   if (!Array.isArray(complianceIssues)) return [];
   return complianceIssues
     .filter((issue): issue is Record<string, unknown> => typeof issue === 'object' && issue !== null && !Array.isArray(issue))
-    .map(scanFinding);
+    .map((issue) => scanFinding(issue, storage, stored));
+}
+
+function storedCheckEvaluation(row: CheckEvaluationRow): CheckEvaluation {
+  return {
+    source: { kind: 'framework', key: row.framework },
+    check: row.check,
+    evaluation_state: row.evaluation_state,
+    // Severity belongs to a failure and to nothing else, whatever is stored.
+    severity: row.evaluation_state === 'failed' ? normaliseSeverity(row.severity) : null,
+    evidence_basis: knownOrNull(EVIDENCE_BASES, row.evidence_basis),
+    provenance: knownOrNull(PROVENANCES, row.provenance),
+    reason_code: row.reason_code,
+    reason: evaluationReasonText(row.reason_code),
+    error_code: row.evaluation_state === 'error' ? row.error_code : null,
+    evaluated_at: row.evaluated_at.toISOString(),
+    recorded: true,
+    stale: row.stale,
+    last_conclusive:
+      row.last_conclusive_state && row.last_conclusive_at && row.evaluation_state !== row.last_conclusive_state
+        ? {
+            state: row.last_conclusive_state,
+            at: row.last_conclusive_at.toISOString(),
+            severity: row.last_conclusive_state === 'failed' ? normaliseSeverity(row.last_conclusive_severity) : null,
+          }
+        : null,
+  };
+}
+
+/**
+ * The resource's stored check outcomes, plus one 'not_evaluated' entry for each
+ * check that applies to it, belongs to a framework whose latest finished run
+ * evaluated it (applicability enabled), and has no stored row. Those entries are
+ * marked `recorded: false` and are never stale: nothing is stored to be stale.
+ */
+function checkEvaluationsFor(
+  resourceType: string,
+  storage: FrameworkEvaluationRows | null,
+  stored: StoredChecks | undefined
+): CheckEvaluation[] {
+  if (storage === null) return [];
+  const evaluations = Array.from(stored?.values() ?? []).map(storedCheckEvaluation);
+
+  for (const run of storage.latestRuns) {
+    if (run.applicability !== 'enabled') continue;
+    for (const check of FRAMEWORK_CHECKS[run.framework] ?? []) {
+      if (!checkAppliesTo(check, resourceType) || stored?.has(checkKey(run.framework, check.key))) continue;
+      evaluations.push({
+        source: { kind: 'framework', key: run.framework },
+        check: check.key,
+        evaluation_state: 'not_evaluated',
+        severity: null,
+        evidence_basis: null,
+        provenance: null,
+        reason_code: 'no_evaluation_recorded',
+        reason: evaluationReasonText('no_evaluation_recorded'),
+        error_code: null,
+        evaluated_at: null,
+        recorded: false,
+        stale: false,
+        last_conclusive: null,
+      });
+    }
+  }
+  return evaluations.sort((a, b) => a.source.key.localeCompare(b.source.key) || a.check.localeCompare(b.check));
+}
+
+const ZERO_COUNTS = (): FrameworkEvaluationSummary['counts'] => ({
+  failed: 0, passed: 0, unable_to_evaluate: 0, error: 0, not_evaluated: 0, not_applicable: 0, stale: 0,
+});
+
+/**
+ * One entry per registered framework and per framework that has a run. Describes
+ * the latest FINISHED run: a run in progress or a failed attempt is flagged
+ * beside it and never replaces it.
+ */
+function buildFrameworkEvaluation(rows: ServicesIntelligenceRows): FrameworkEvaluationBlock {
+  const storage = rows.frameworkEvaluations;
+  if (storage === null) return { storage: 'unavailable', frameworks: [] };
+
+  const inScope = new Set(rows.resources.map((r) => r.id));
+  const latest = new Map(storage.latestRuns.map((run) => [run.framework, run]));
+  const activity = new Map(storage.activity.map((a) => [a.framework, a]));
+  const names = new Set<string>([...REGISTERED_FRAMEWORKS.map((f) => f.key), ...latest.keys(), ...activity.keys()]);
+
+  const counts = new Map<string, FrameworkEvaluationSummary['counts']>();
+  for (const row of storage.checks) {
+    if (!inScope.has(row.resource_id)) continue;
+    const tally = counts.get(row.framework) ?? ZERO_COUNTS();
+    if (EVALUATION_STATES.includes(row.evaluation_state)) tally[row.evaluation_state]++;
+    if (row.stale) tally.stale++;
+    counts.set(row.framework, tally);
+  }
+  const reconciliationRequired = storage.reconciliations.filter((r) => inScope.has(r.resource_id)).length;
+
+  return {
+    storage: 'available',
+    frameworks: Array.from(names).sort().map((framework) => {
+      const run = latest.get(framework);
+      return {
+        framework,
+        applicability: run ? knownOrNull(APPLICABILITIES, run.applicability) : null,
+        applicability_reason_code: run ? run.applicability_reason_code : null,
+        applicability_reason: run ? evaluationReasonText(run.applicability_reason_code) : null,
+        latest_run: run
+          ? {
+              status: run.status,
+              started_at: run.started_at.toISOString(),
+              finished_at: run.finished_at.toISOString(),
+              evaluator_version: run.evaluator_version,
+            }
+          : null,
+        running: activity.get(framework)?.running ?? false,
+        last_attempt_failed: activity.get(framework)?.last_attempt_failed ?? false,
+        stale: !run || run.aged,
+        stale_reason: !run ? 'no_run' : run.aged ? 'run_too_old' : null,
+        counts: counts.get(framework) ?? ZERO_COUNTS(),
+        reconciliation_required: reconciliationRequired,
+      };
+    }),
+  };
 }
 
 function recommendationFinding(recommendation: IntelligenceRecommendationRow): Finding {
@@ -196,6 +397,13 @@ function recommendationFinding(recommendation: IntelligenceRecommendationRow): F
     category: 'cost',
     title: stringOrNull(recommendation.issue),
     provenance: null,
+    framework: null,
+    applicability: null,
+    evaluation_state: null,
+    evidence_basis: null,
+    evaluation_reason: null,
+    current: true,
+    not_current_reason: null,
     remediation: remediationFor(recommendation),
   };
 }
@@ -215,7 +423,10 @@ function toResource(
   row: IntelligenceResourceRow,
   recommendations: IntelligenceRecommendationRow[],
   evaluation: CloudWatchMetrics | null,
-  evaluatedRow: CloudWatchServiceHealth | undefined
+  evaluatedRow: CloudWatchServiceHealth | undefined,
+  storage: FrameworkEvaluationRows | null,
+  stored: StoredChecks | undefined,
+  reconciliation: ReconciliationRow | undefined
 ): Resource {
   const health = resourceHealthFrom(
     { type: row.resource_type, lifecycleState: row.status, metadataType: row.metadata_type },
@@ -232,7 +443,17 @@ function toResource(
     lifecycle_state: row.status,
     service_id: row.service_id,
     last_seen_at: iso(row.last_synced_at),
-    findings: [...scanFindings(row.compliance_issues), ...recommendations.map(recommendationFinding)],
+    findings: [...scanFindings(row.compliance_issues, storage, stored), ...recommendations.map(recommendationFinding)],
+    check_evaluations: checkEvaluationsFor(row.resource_type, storage, stored),
+    framework_reconciliation: reconciliation
+      ? {
+          required: true,
+          since: reconciliation.first_failed_at.toISOString(),
+          last_attempt_at: reconciliation.last_failed_at.toISOString(),
+          attempts: reconciliation.failure_count,
+          reason_code: reconciliation.failure_code,
+        }
+      : null,
     health: {
       state: health.state,
       group: null,
@@ -283,6 +504,11 @@ export function composeServicesIntelligence(
     recommendationsByResource.set(key, list);
   }
 
+  const storedByResource = storedChecksByResource(rows.frameworkEvaluations);
+  const reconciliationByResource = new Map(
+    (rows.frameworkEvaluations?.reconciliations ?? []).map((r) => [r.resource_id, r])
+  );
+
   // Every resource lands in exactly one place: its service, or unassigned.
   const serviceIds = new Set(rows.services.map((s) => s.id));
   const byService = new Map<string, Resource[]>();
@@ -292,7 +518,10 @@ export function composeServicesIntelligence(
       row,
       recommendationsByResource.get(recommendationKey(row.resource_type, row.resource_id)) ?? [],
       evaluation,
-      evaluatedById.get(row.id)
+      evaluatedById.get(row.id),
+      rows.frameworkEvaluations,
+      storedByResource.get(row.id),
+      reconciliationByResource.get(row.id)
     );
     if (resource.service_id && serviceIds.has(resource.service_id)) {
       const list = byService.get(resource.service_id) ?? [];
@@ -332,6 +561,7 @@ export function composeServicesIntelligence(
       cache: evaluation ? 'hit' : 'miss',
       max_age_seconds: RESOURCE_HEALTH_MAX_AGE_MS / 1000,
     },
+    framework_evaluation: buildFrameworkEvaluation(rows),
     capabilities: buildCapabilities(),
     totals: {
       resources: rows.resources.length,

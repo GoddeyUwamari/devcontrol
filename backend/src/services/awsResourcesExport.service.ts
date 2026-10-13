@@ -3,6 +3,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ExportColumn, ColumnMapping } from '../types/export.types';
 import { ResourceFilters, AWSResource } from '../types/aws-resources.types';
+import { activeComplianceFindings } from '../utils/frameworkApplicability';
 
 // Extend jsPDF type to include autoTable
 declare module 'jspdf' {
@@ -80,8 +81,8 @@ export class AWSResourcesExportService {
       label: 'Compliance Issues',
       field: 'compliance_issues',
       formatter: (r: any) => {
-        const issues = r.compliance_issues || [];
-        const count = Array.isArray(issues) ? issues.length : 0;
+        // Current findings only: the same rule the score and the at-risk flag use.
+        const count = activeComplianceFindings(r.compliance_issues).length;
         return count === 0 ? 'No issues' : `${count} issue${count > 1 ? 's' : ''}`;
       },
     },
