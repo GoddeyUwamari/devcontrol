@@ -123,7 +123,7 @@ describe('generic (Resource Explorer) resources', () => {
   describe('Resource Explorer tags', () => {
     const normalize = (Properties: unknown) =>
       new ResourceExplorerService().normalize(
-        [{ Arn: 'arn:aws:ec2:us-east-1:111122223333:vpc/vpc-0abc000000001234', CfnResourceType: 'AWS::EC2::VPC', Region: 'us-east-1', Properties } as any],
+        [{ Arn: 'arn:aws:ec2:us-east-1:111122223333:vpc/vpc-1234567890abcdef0', CfnResourceType: 'AWS::EC2::VPC', Region: 'us-east-1', Properties } as any],
         'us-east-1'
       ).genericEntries[0];
 
@@ -185,7 +185,7 @@ describe('generic (Resource Explorer) resources', () => {
 describe('EBS volumes', () => {
   const volumes = (Encrypted: unknown) =>
     client(new EC2Client({ region: 'us-east-1' }), {
-      DescribeVolumesCommand: () => ({ Volumes: [{ VolumeId: 'vol-0abc000000001234', VolumeType: 'gp3', Size: 8, State: 'available', Encrypted, AvailabilityZone: 'us-east-1a' }] }),
+      DescribeVolumesCommand: () => ({ Volumes: [{ VolumeId: 'vol-1234567890abcdef0', VolumeType: 'gp3', Size: 8, State: 'available', Encrypted, AvailabilityZone: 'us-east-1a' }] }),
     });
   const discover = async (Encrypted: unknown) =>
     (await service().discoverEBSVolumes(ORG, volumes(Encrypted), 'us-east-1', '111122223333', noBackupEvidence))[0];
@@ -209,20 +209,20 @@ describe('EBS volumes', () => {
 
 describe('EC2 instances', () => {
   const instance = (overrides: Record<string, unknown> = {}) => ({
-    InstanceId: 'i-0abc000000001234', InstanceType: 't3.micro', State: { Name: 'running' }, PublicIpAddress: '203.0.113.10',
-    Placement: { AvailabilityZone: 'us-east-1a' }, SecurityGroups: [{ GroupId: 'sg-0abc000000001234' }],
-    BlockDeviceMappings: [{ Ebs: { VolumeId: 'vol-0abc000000001234' } }], ...overrides,
+    InstanceId: 'i-1234567890abcdef0', InstanceType: 't3.micro', State: { Name: 'running' }, PublicIpAddress: '203.0.113.10',
+    Placement: { AvailabilityZone: 'us-east-1a' }, SecurityGroups: [{ GroupId: 'sg-1234567890abcdef0' }],
+    BlockDeviceMappings: [{ Ebs: { VolumeId: 'vol-1234567890abcdef0' } }], ...overrides,
   });
   function ec2(opts: { instances?: unknown[]; volumes?: () => unknown; groups?: () => unknown } = {}) {
     return client(new EC2Client({ region: 'us-east-1' }), {
       DescribeInstancesCommand: () => ({ Reservations: [{ Instances: opts.instances ?? [instance()] }] }),
-      DescribeVolumesCommand: opts.volumes ?? (() => ({ Volumes: [{ VolumeId: 'vol-0abc000000001234', Encrypted: true }] })),
-      DescribeSecurityGroupsCommand: opts.groups ?? (() => ({ SecurityGroups: [{ GroupId: 'sg-0abc000000001234', IpPermissions: [] }] })),
+      DescribeVolumesCommand: opts.volumes ?? (() => ({ Volumes: [{ VolumeId: 'vol-1234567890abcdef0', Encrypted: true }] })),
+      DescribeSecurityGroupsCommand: opts.groups ?? (() => ({ SecurityGroups: [{ GroupId: 'sg-1234567890abcdef0', IpPermissions: [] }] })),
     });
   }
   const discover = async (c: EC2Client, forRegion?: (region: string) => EC2Client) =>
     service().discoverEC2Instances(ORG, c, 'us-east-1', '111122223333', noBackupEvidence, forRegion);
-  const openSsh = { GroupId: 'sg-0abc000000001234', IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }] };
+  const openSsh = { GroupId: 'sg-1234567890abcdef0', IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }] };
 
   describe('volume encryption', () => {
     it('every volume confirmed encrypted: true', async () => {
@@ -230,7 +230,7 @@ describe('EC2 instances', () => {
     });
 
     it('a volume confirmed unencrypted: false', async () => {
-      expect((await discover(ec2({ volumes: () => ({ Volumes: [{ VolumeId: 'vol-0abc000000001234', Encrypted: false }] }) })))[0].is_encrypted).toBe(false);
+      expect((await discover(ec2({ volumes: () => ({ Volumes: [{ VolumeId: 'vol-1234567890abcdef0', Encrypted: false }] }) })))[0].is_encrypted).toBe(false);
     });
 
     it('the volume lookup failed: unknown, not "encrypted"', async () => {
@@ -238,7 +238,7 @@ describe('EC2 instances', () => {
     });
 
     it('a volume AWS returned no encryption state for: unknown', async () => {
-      expect((await discover(ec2({ volumes: () => ({ Volumes: [{ VolumeId: 'vol-0abc000000001234' }] }) })))[0].is_encrypted).toBeNull();
+      expect((await discover(ec2({ volumes: () => ({ Volumes: [{ VolumeId: 'vol-1234567890abcdef0' }] }) })))[0].is_encrypted).toBeNull();
     });
 
     it('an instance with no EBS volume: unknown, not "encrypted"', async () => {
@@ -249,10 +249,10 @@ describe('EC2 instances', () => {
   describe('security groups', () => {
     it('records the attached groups and an open administrative port', async () => {
       const [resource] = await discover(ec2({ groups: () => ({ SecurityGroups: [openSsh] }) }));
-      expect(resource.metadata.security_group_ids).toEqual(['sg-0abc000000001234']);
+      expect(resource.metadata.security_group_ids).toEqual(['sg-1234567890abcdef0']);
       expect(resource.metadata.network_exposure).toEqual({
         state: 'open_admin_port',
-        rules: [{ security_group_id: 'sg-0abc000000001234', protocol: 'tcp', from_port: 22, to_port: 22, cidr: '0.0.0.0/0', admin_ports: [22] }],
+        rules: [{ security_group_id: 'sg-1234567890abcdef0', protocol: 'tcp', from_port: 22, to_port: 22, cidr: '0.0.0.0/0', admin_ports: [22] }],
       });
     });
 
@@ -284,17 +284,17 @@ describe('EC2 instances', () => {
     });
 
     it('reads the groups once per region, however many instances there are', async () => {
-      const c = ec2({ instances: [instance(), instance({ InstanceId: 'i-0abc000000005678' })] });
+      const c = ec2({ instances: [instance(), instance({ InstanceId: 'i-0123456789abcdef0' })] });
       await discover(c);
       expect(commandsSent(c).filter((name) => name === 'DescribeSecurityGroupsCommand')).toHaveLength(1);
     });
 
     it('reads each instance\'s groups in the instance\'s own region', async () => {
       const home = ec2({
-        instances: [instance(), instance({ InstanceId: 'i-0abc000000005678', Placement: { AvailabilityZone: 'eu-west-1b' }, SecurityGroups: [{ GroupId: 'sg-0abc000000005678' }] })],
+        instances: [instance(), instance({ InstanceId: 'i-0123456789abcdef0', Placement: { AvailabilityZone: 'eu-west-1b' }, SecurityGroups: [{ GroupId: 'sg-0123456789abcdef0' }] })],
       });
       const elsewhere = client(new EC2Client({ region: 'eu-west-1' }), {
-        DescribeSecurityGroupsCommand: () => ({ SecurityGroups: [{ ...openSsh, GroupId: 'sg-0abc000000005678' }] }),
+        DescribeSecurityGroupsCommand: () => ({ SecurityGroups: [{ ...openSsh, GroupId: 'sg-0123456789abcdef0' }] }),
       });
       const regionsAsked: string[] = [];
       const resources = await discover(home, (region) => { regionsAsked.push(region); return elsewhere; });
@@ -307,7 +307,7 @@ describe('EC2 instances', () => {
 
     it('a region that cannot be read leaves only that region\'s instances unknown', async () => {
       const home = ec2({
-        instances: [instance(), instance({ InstanceId: 'i-0abc000000005678', Placement: { AvailabilityZone: 'eu-west-1b' }, SecurityGroups: [{ GroupId: 'sg-0abc000000005678' }] })],
+        instances: [instance(), instance({ InstanceId: 'i-0123456789abcdef0', Placement: { AvailabilityZone: 'eu-west-1b' }, SecurityGroups: [{ GroupId: 'sg-0123456789abcdef0' }] })],
       });
       const denied = client(new EC2Client({ region: 'eu-west-1' }), { DescribeSecurityGroupsCommand: () => { throw awsError('UnauthorizedOperation'); } });
       const resources = await discover(home, () => denied);

@@ -45,14 +45,14 @@ const measurements: Record<string, unknown> = {};
 
 const REGION = 'us-east-1';
 const ACCOUNT_ID = '111122223333';
-const INSTANCE_ID = 'i-0abc000000001234';
-const VOL_UNATTACHED = 'vol-0abc000000001234';
-const VOL_ATTACHED = 'vol-0abc000000005678';
-const SECURITY_GROUP = 'sg-0abc000000001234';
+const INSTANCE_ID = 'i-1234567890abcdef0';
+const VOL_UNATTACHED = 'vol-1234567890abcdef0';
+const VOL_ATTACHED = 'vol-0123456789abcdef0';
+const SECURITY_GROUP = 'sg-1234567890abcdef0';
 const BUCKETS = ['app-prod-backups', 'app-deploy-artifacts', 'marketing-site'];
 const HTTPS_FAILING = new Set(['app-prod-backups', 'app-deploy-artifacts']);
 const TOPIC_ARN = `arn:aws:sns:${REGION}:${ACCOUNT_ID}:app-alerts`;
-const VPC_ARNS = ['vpc-0abc000000001234', 'vpc-0abc000000005678'].map((id) => `arn:aws:ec2:${REGION}:${ACCOUNT_ID}:vpc/${id}`);
+const VPC_ARNS = ['vpc-1234567890abcdef0', 'vpc-0123456789abcdef0'].map((id) => `arn:aws:ec2:${REGION}:${ACCOUNT_ID}:vpc/${id}`);
 
 // The 41 entries the scanner of the release before 2A stored for these resources.
 const T = (severity: string, category: string, issue: string, extra: Record<string, unknown> = {}) => ({ severity, category, issue, recommendation: 'r', ...extra });

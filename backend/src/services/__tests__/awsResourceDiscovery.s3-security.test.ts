@@ -165,7 +165,9 @@ describe('discovery compliance loop: S3 security evaluation', () => {
     // Wiring: every S3 row is evaluated with the factory's S3 client, S3 Control client and account id.
     expect(evaluateSpy).toHaveBeenCalledTimes(2);
     for (const call of evaluateSpy.mock.calls) {
-      expect(call[1]).toBe(s3);
+      // The organization's own S3 client, with discovery's call policy (time limit,
+      // throttling retries) around its send: the same client underneath.
+      expect(Object.getPrototypeOf(call[1])).toBe(s3);
       expect(call[2]).toEqual({ s3Control, accountId: ACCOUNT_ID });
     }
     // Account-level Block Public Access: one lookup for the whole scan, for this account.

@@ -16,7 +16,7 @@ const TAGGED = { Owner: 'o', Environment: 'e', Team: 't' };
 
 function resource(overrides: Partial<AWSResource>): AWSResource {
   return {
-    id: 'r1', organization_id: 'o1', resource_arn: 'arn:aws:ec2:us-east-1:*:instance/i-0abc000000001234', resource_id: 'i-0abc000000001234',
+    id: 'r1', organization_id: 'o1', resource_arn: 'arn:aws:ec2:us-east-1:*:instance/i-1234567890abcdef0', resource_id: 'i-1234567890abcdef0',
     resource_name: 'r', resource_type: 'ec2', region: 'us-east-1', tags: TAGGED, metadata: {}, status: 'running',
     estimated_monthly_cost: 0, actual_monthly_cost: 0, is_encrypted: true, is_public: false, has_backup: true,
     compliance_issues: [], is_orphaned: false, orphaned_monthly_savings: 0, last_synced_at: null,
@@ -28,7 +28,7 @@ const publicAccess = (r: AWSResource) => baseline(r).filter((i) => i.category ==
 
 /** An instance with a public IP whose one security group has the given ingress rules. */
 function publicInstance(rules: IngressRule[] | 'unreadable' | 'never-read'): AWSResource {
-  const SG = 'sg-0abc000000001234';
+  const SG = 'sg-1234567890abcdef0';
   if (rules === 'never-read') return resource({ is_public: true, metadata: {} });
   const groups = rules === 'unreadable' ? null : new Map([[SG, { GroupId: SG, IpPermissions: rules }]]);
   return resource({ is_public: true, metadata: { security_group_ids: [SG], network_exposure: evaluateNetworkExposure([SG], groups) } });
@@ -67,11 +67,11 @@ describe('EC2 public IP severity', () => {
         severity: 'high',
         category: 'public_access',
         provenance: 'OBSERVED',
-        issue: 'EC2 instance has a public IP address and security group sg-0abc000000001234 allows tcp 20-25 from 0.0.0.0/0, which covers port 22',
+        issue: 'EC2 instance has a public IP address and security group sg-1234567890abcdef0 allows tcp 20-25 from 0.0.0.0/0, which covers port 22',
         network_exposure: {
           schema_version: 1,
           state: 'open_admin_port',
-          rules: [{ security_group_id: 'sg-0abc000000001234', protocol: 'tcp', from_port: 20, to_port: 25, cidr: '0.0.0.0/0', admin_ports: [22] }],
+          rules: [{ security_group_id: 'sg-1234567890abcdef0', protocol: 'tcp', from_port: 20, to_port: 25, cidr: '0.0.0.0/0', admin_ports: [22] }],
         },
       });
     });
@@ -140,7 +140,7 @@ describe('EC2 public IP severity', () => {
   });
 
   it('an instance with no public IP has no public-access finding, whatever its security groups allow', () => {
-    const SG = 'sg-0abc000000001234';
+    const SG = 'sg-1234567890abcdef0';
     const exposure = evaluateNetworkExposure([SG], new Map([[SG, { GroupId: SG, IpPermissions: [open({ IpProtocol: '-1' })] }]]));
     expect(publicAccess(resource({ is_public: false, metadata: { network_exposure: exposure } }))).toEqual([]);
     expect(publicAccess(resource({ is_public: null, metadata: { network_exposure: exposure } }))).toEqual([]);
