@@ -6,7 +6,8 @@ export interface AWSService {
   type: string          // resource_type: 'ec2' | 'ecs' | 'lambda' | 'rds' | 'eks' etc.
   environment: string
   region: string
-  status: 'healthy' | 'warning' | 'critical'
+  // 'unknown': no lifecycle state to judge -- the type has none (S3, SNS, VPC) or it was not read.
+  status: 'healthy' | 'warning' | 'critical' | 'unknown'
   uptime: number
   owner: string | null
   team: string | null
@@ -25,6 +26,8 @@ export interface AWSServicesStats {
   healthy: number
   needs_attention: number
   avg_uptime: number | null
+  // Current findings on those resources, by severity. Absent from an older backend.
+  findings_by_severity?: { critical: number; high: number; medium: number; low: number }
 }
 
 export interface DiscoverResult {
