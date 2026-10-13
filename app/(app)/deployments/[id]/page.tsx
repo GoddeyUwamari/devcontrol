@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
-import type { Deployment } from '@/lib/types';
+import { deploymentStatusDisplay, type RecordedDeployment as Deployment } from '@/lib/deployments/status';
 
 export default function DeploymentDetailsPage() {
   const params = useParams();
@@ -56,18 +56,12 @@ export default function DeploymentDetailsPage() {
     );
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      running: 'bg-green-100 text-green-800',
-      stopped: 'bg-gray-100 text-gray-800',
-      deploying: 'bg-blue-100 text-blue-800',
-      success: 'bg-green-100 text-green-800',
-      failed: 'bg-red-100 text-red-800',
-    };
-
+  // The status as recorded; unrecognised values are Unknown.
+  const getStatusBadge = (status: string, createdAt: string) => {
+    const { label, color, background } = deploymentStatusDisplay(status, createdAt);
     return (
-      <Badge className={variants[status] || 'bg-gray-100 text-gray-800'} variant="secondary">
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+      <Badge variant="secondary" style={{ color, background }}>
+        {label}
       </Badge>
     );
   };
@@ -94,7 +88,7 @@ export default function DeploymentDetailsPage() {
           </div>
 
           {/* Status Badge */}
-          {getStatusBadge(deployment.status)}
+          {getStatusBadge(deployment.status, deployment.createdAt)}
         </div>
       </div>
 

@@ -1,14 +1,14 @@
 import api, { handleApiResponse } from '../api';
 import type {
-  Deployment,
   CreateDeploymentPayload,
   DeploymentFilters,
   ApiResponse,
 } from '../types';
+import type { DeploymentStats, RecordedDeployment, StatsWindow } from '../deployments/status';
 
 export const deploymentsService = {
   // Get all deployments with optional filters
-  getAll: async (filters?: DeploymentFilters): Promise<Deployment[]> => {
+  getAll: async (filters?: DeploymentFilters): Promise<RecordedDeployment[]> => {
     const params = new URLSearchParams();
     if (filters?.serviceId) params.append('service_id', filters.serviceId);
     if (filters?.environment) params.append('environment', filters.environment);
@@ -39,7 +39,7 @@ export const deploymentsService = {
   },
 
   // Get deployment by ID
-  getById: async (id: string): Promise<Deployment> => {
+  getById: async (id: string): Promise<RecordedDeployment> => {
     const response = await api.get<ApiResponse<any>>(`/api/deployments/${id}`);
     const d = handleApiResponse(response);
     
@@ -62,7 +62,7 @@ export const deploymentsService = {
   },
 
   // Create new deployment
-  create: async (payload: CreateDeploymentPayload): Promise<Deployment> => {
+  create: async (payload: CreateDeploymentPayload): Promise<RecordedDeployment> => {
     const response = await api.post<ApiResponse<any>>('/api/deployments', payload);
     const d = handleApiResponse(response);
     
@@ -89,13 +89,14 @@ export const deploymentsService = {
     await api.delete(`/api/deployments/${id}`);
   },
 
-  // Get deployment stats (total, running, failed, deploying, success_rate, total_cost, deployments_this_month)
-  getStats: async (environment?: string): Promise<{
-    total: number; running: number; failed: number; deploying: number;
-    success_rate: number | null; total_cost: number; deployments_this_month: number;
-  }> => {
-    const query = environment && environment !== 'all' ? `?environment=${environment}` : '';
-    const response = await api.get<{ success: boolean; stats: any }>(`/api/deployments/stats${query}`);
+  // Counts for the caller's organization over a window (default 30 days):
+  // statuses as recorded, change failure rate, and the last finished deployment.
+  getStats: async (filters?: { environment?: string; dateRange?: StatsWindow }): Promise<DeploymentStats> => {
+    const params = new URLSearchParams();
+    if (filters?.environment && filters.environment !== 'all') params.append('environment', filters.environment);
+    if (filters?.dateRange) params.append('date_range', filters.dateRange);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await api.get<{ success: boolean; stats: DeploymentStats }>(`/api/deployments/stats${query}`);
     if (!response.data.success) throw new Error('Failed to load deployment stats');
     return response.data.stats;
   },
