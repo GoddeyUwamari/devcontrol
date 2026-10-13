@@ -219,7 +219,7 @@ describe('Monitoring page — DevControl Platform Status is separate and never f
     expect(await screen.findByText('DevControl Platform Status')).toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByText('DevControl API').length).toBeGreaterThan(0))
     // The real AWS resource must still render distinctly in Service Health.
-    expect(screen.getByText('i-123')).toBeInTheDocument()
+    expect(await screen.findByText('i-123')).toBeInTheDocument()
   })
 
   it('never fabricates a default latency or fake history when Prometheus has no data', async () => {
