@@ -6,7 +6,13 @@ import {
   SecurityGroupEvidence,
   IamMfaEvidence,
   IamAccessKeyEvidence,
+  FindingEvidenceBasis,
+  FrameworkCheckEvaluation,
 } from '../types/aws-resources.types';
+import { FrameworkApplicability, evaluationReasonText, withRegisteredFrameworks } from '../utils/frameworkApplicability';
+import { FRAMEWORK_CHECKS, FrameworkCheck, FrameworkCheckOutcome, checkAppliesTo } from './framework-checks';
+
+export { FrameworkCheck, FrameworkCheckOutcome } from './framework-checks';
 import { S3Client, PublicAccessBlockConfiguration } from '@aws-sdk/client-s3';
 import { S3ControlClient } from '@aws-sdk/client-s3-control';
 import {
@@ -44,11 +50,30 @@ export interface CategoryObservation {
   issues: ComplianceIssue[];
 }
 
+/** A resource's baseline findings, plus every framework check outcome. */
+export interface ResourceComplianceEvaluation {
+  /** Findings of the checks that always run. Not part of any framework. */
+  baselineIssues: ComplianceIssue[];
+  /** Every framework outcome, including the ones that are not findings. */
+  frameworkEvaluations: FrameworkCheckEvaluation[];
+  /**
+   * baselineIssues plus the finding of each framework check that failed in THIS
+   * evaluation. Discovery does not persist this: it stores frameworkEvaluations
+   * and rebuilds the framework findings from what is stored (see
+   * framework-evaluations.repository.ts), so the two can never disagree.
+   */
+  issues: ComplianceIssue[];
+}
+
 /**
  * Compliance Scanner Service
  * Scans AWS resources for security and compliance issues
  */
 export class ComplianceScannerService {
+  // The checks each framework runs, by framework key. A framework with no entry here
+  // is never evaluated. An instance copy, so a test can register a check.
+  private readonly frameworkChecks: Record<string, readonly FrameworkCheck[]> = { ...FRAMEWORK_CHECKS };
+
   // Account-level Block Public Access, fetched once per account for the lifetime of
   // this scanner. Discovery creates one scanner per scan, so this is once per scan
   // rather than once per bucket. A failed lookup is cached too: every bucket in the
@@ -56,32 +81,153 @@ export class ComplianceScannerService {
   private readonly accountPublicAccessBlocks = new Map<string, Promise<Observed<PublicAccessBlockConfiguration>>>();
 
   /**
-   * Scan a single resource for compliance issues
+   * Scan a single resource and return its findings from this evaluation alone.
+   * See evaluateResource.
    */
-  async scanResource(resource: AWSResource, frameworks?: string[]): Promise<ComplianceIssue[]> {
-    const issues: ComplianceIssue[] = [];
+  async scanResource(
+    resource: AWSResource,
+    applicability: readonly FrameworkApplicability[] = []
+  ): Promise<ComplianceIssue[]> {
+    return (await this.evaluateResource(resource, applicability)).issues;
+  }
 
-    // Generic security checks (always run)
-    issues.push(...this.checkEncryption(resource));
-    issues.push(...this.checkPublicAccess(resource));
-    issues.push(...this.checkBackups(resource));
-    issues.push(...this.checkTags(resource));
+  /** The checks that always run. Not part of any framework. */
+  evaluateBaseline(resource: AWSResource): ComplianceIssue[] {
+    return [
+      ...this.checkEncryption(resource),
+      ...this.checkPublicAccess(resource),
+      ...this.checkBackups(resource),
+      ...this.checkTags(resource),
+    ];
+  }
 
-    // Framework-specific checks
-    if (!frameworks || frameworks.length === 0) {
-      // If no frameworks specified, run all framework-specific checks
-      issues.push(...this.checkSOC2Compliance(resource));
-      issues.push(...this.checkHIPAACompliance(resource));
-    } else {
-      if (frameworks.includes('SOC2')) {
-        issues.push(...this.checkSOC2Compliance(resource));
-      }
-      if (frameworks.includes('HIPAA')) {
-        issues.push(...this.checkHIPAACompliance(resource));
-      }
+  /**
+   * Scan a single resource.
+   *
+   * Baseline checks always run. A framework's checks run only when `applicability`
+   * says it is explicitly enabled; a registered framework that `applicability` does
+   * not mention is treated as not configured, never as enabled.
+   */
+  async evaluateResource(
+    resource: AWSResource,
+    applicability: readonly FrameworkApplicability[] = []
+  ): Promise<ResourceComplianceEvaluation> {
+    const baselineIssues = this.evaluateBaseline(resource);
+
+    const frameworkEvaluations: FrameworkCheckEvaluation[] = [];
+    for (const framework of withRegisteredFrameworks(applicability)) {
+      frameworkEvaluations.push(...this.evaluateFramework(resource, framework));
     }
 
-    return issues;
+    const frameworkIssues = frameworkEvaluations
+      .filter((evaluation) => evaluation.evaluation_state === 'failed' && evaluation.check !== null)
+      .map((evaluation) =>
+        this.frameworkFinding(resource, evaluation.framework, evaluation.check as string, {
+          severity: evaluation.severity as ComplianceSeverity,
+          evidence_basis: evaluation.evidence_basis,
+          reason_code: evaluation.reason_code,
+        })
+      );
+
+    return { baselineIssues, frameworkEvaluations, issues: [...baselineIssues, ...frameworkIssues] };
+  }
+
+  /** The check keys registered for a framework, whether or not they apply to any given resource. */
+  registeredCheckKeys(framework: string): string[] {
+    return (this.frameworkChecks[framework] ?? []).map((check) => check.key);
+  }
+
+  /**
+   * The finding a failed framework check is reported as, built from the stored
+   * outcome (severity, evidence basis, reason code) and the check's own wording.
+   * This is the only place a framework finding is written, so an entry in
+   * aws_resources.compliance_issues always describes a stored 'failed' evaluation.
+   */
+  frameworkFinding(
+    resource: Pick<AWSResource, 'resource_arn' | 'resource_type'>,
+    framework: string,
+    checkKey: string,
+    stored: { severity: ComplianceSeverity; evidence_basis: string; reason_code: string }
+  ): ComplianceIssue {
+    const check = (this.frameworkChecks[framework] ?? []).find((candidate) => candidate.key === checkKey);
+    // A stored failure whose check has no wording any more (it was retired between the
+    // scan that stored it and this one) is still reported, by its key.
+    const wording = check?.finding?.(resource) ?? {
+      category: 'tagging' as const,
+      issue: `${framework}: check ${checkKey} failed`,
+      recommendation: 'Review this check for the resource.',
+    };
+    return {
+      severity: stored.severity,
+      ...wording,
+      resource_arn: resource.resource_arn,
+      findingKey: checkKey,
+      framework,
+      applicability: 'enabled',
+      evaluation_state: 'failed',
+      evidence_basis: stored.evidence_basis as FindingEvidenceBasis,
+      evaluation_reason: evaluationReasonText(stored.reason_code),
+    };
+  }
+
+  private evaluateFramework(resource: AWSResource, framework: FrameworkApplicability): FrameworkCheckEvaluation[] {
+    const base = { framework: framework.framework, applicability: framework.state, resource_arn: resource.resource_arn };
+    const notRun = (reason_code: string): FrameworkCheckEvaluation => ({
+      ...base,
+      check: null,
+      evaluation_state: 'not_evaluated',
+      severity: null,
+      evidence_basis: 'none',
+      provenance: null,
+      reason_code,
+      reason: evaluationReasonText(reason_code),
+      error_code: null,
+    });
+
+    // Not evaluated, for the reason the applicability gives. No check runs, so
+    // there is no pass and no finding.
+    if (framework.state !== 'enabled') return [notRun(framework.reason_code)];
+
+    const checks = this.frameworkChecks[framework.framework];
+    if (!checks) return [notRun('no_checks_registered')];
+
+    const evaluations: FrameworkCheckEvaluation[] = [];
+    for (const check of checks) {
+      let outcome: FrameworkCheckOutcome;
+      try {
+        if (!checkAppliesTo(check, resource.resource_type)) continue;
+        outcome = check.evaluate(resource);
+      } catch (error: any) {
+        // An exception is not a result: record it as an error, never as a pass. Only
+        // a category is kept; the message goes to the log and nowhere else.
+        console.error(`[ComplianceScanner] ${check.key} failed for ${resource.resource_arn}:`, error?.message);
+        evaluations.push({
+          ...base,
+          check: check.key,
+          evaluation_state: 'error',
+          severity: null,
+          evidence_basis: 'none',
+          provenance: null,
+          reason_code: 'check_exception',
+          reason: evaluationReasonText('check_exception'),
+          error_code: 'check_exception',
+        });
+        continue;
+      }
+
+      evaluations.push({
+        ...base,
+        check: check.key,
+        evaluation_state: outcome.state,
+        severity: outcome.state === 'failed' ? outcome.severity : null,
+        evidence_basis: outcome.evidence_basis,
+        provenance: outcome.provenance,
+        reason_code: outcome.reason_code,
+        reason: evaluationReasonText(outcome.reason_code),
+        error_code: null,
+      });
+    }
+    return evaluations;
   }
 
   /**
@@ -254,248 +400,16 @@ export class ComplianceScannerService {
   }
 
   /**
-   * Legacy tag-inferred infrastructure checks (formerly labeled "SOC2-specific").
-   *
-   * These checks were previously labeled with a "SOC2:" issue prefix, implying
-   * they are SOC 2 evidence. They are not: each one only checks for the
-   * *presence of a specific tag key* — none of them call an AWS API to verify
-   * the underlying condition (IAM role attachment or actual monitoring/logging
-   * configuration). Relabeled to plain infrastructure/tagging/observability
-   * signals per the SOC 2 Readiness disposition decision, and each carries
-   * `provenance: 'SELF_ATTESTED'` for the same reason. Findings, severities,
-   * and categories are otherwise unchanged (except signal 1's category,
-   * iam -> tagging, since this check has always been a tag-documentation
-   * check, not a real IAM security check) -- this remains a relabel of the
-   * two signals below, not a scoring change to them. The former
-   * "change-management tags" signal (LastModifiedBy/ChangeTicket/Version) has
-   * been retired outright per the signal-disposition audit: it fired on
-   * nearly every resource regardless of real risk (see services.routes.ts's
-   * NEEDS_ATTENTION_FLOOR comment) and has no AWS-observed replacement --
-   * "was there an approved change ticket" is not something any AWS API can
-   * attest to.
-   *
-   * The former "S3: Access logging not documented via tag" signal has also
-   * been retired outright, for a different reason: S3 discovery does not
-   * collect S3 bucket tags at all (see discoverS3Buckets() in
-   * awsResourceDiscovery.ts -- `tags: {}` is written unconditionally for
-   * every bucket, on every scan, with no enrichment step that ever populates
-   * it). That made this specific tag-presence check structurally guaranteed
-   * to fire for every S3 bucket in every organization, regardless of the
-   * bucket's actual AWS configuration -- not weak self-attested evidence, but
-   * a permanent false positive with no possible customer remediation through
-   * tagging. A real AWS-observed replacement (GetBucketLoggingCommand) is a
-   * separate, later change; this removal only stops the false positive.
-   *
-   * The disposition of the two remaining signals (retain/upgrade/retire) is a
-   * separate, not-yet-made decision; do not reintroduce SOC2/HIPAA/
-   * compliance-framework language here.
-   */
-  private checkSOC2Compliance(resource: AWSResource): ComplianceIssue[] {
-    const issues: ComplianceIssue[] = [];
-
-    // Tagging: IAM role/owner not documented - check for IAM role/policy attachment tag
-    if (['ec2', 'lambda', 'ecs'].includes(resource.resource_type)) {
-      // Check if resource has proper IAM role attached
-      const hasIAMRole = resource.tags?.['IAMRole'] || resource.tags?.['Role'];
-      if (!hasIAMRole) {
-        issues.push({
-          severity: 'high',
-          category: 'tagging',
-          issue: 'Tagging: IAM role/owner not documented',
-          recommendation: 'Attach an IAM role with least-privilege permissions and tag the resource with "IAMRole" or "Role" for audit tracking.',
-          resource_arn: resource.resource_arn,
-          provenance: 'SELF_ATTESTED',
-        });
-      }
-    }
-
-    // Observability: Monitoring/logging not documented via tag
-    if (['ec2', 'rds', 'lambda', 's3'].includes(resource.resource_type)) {
-      const hasMonitoring = resource.tags?.['MonitoringEnabled'] ||
-                           resource.tags?.['LoggingEnabled'] ||
-                           resource.tags?.['CloudWatchAlarms'];
-
-      if (!hasMonitoring) {
-        let recommendation = '';
-        switch (resource.resource_type) {
-          case 's3':
-            recommendation = 'Enable S3 server access logging and tag with "LoggingEnabled:true". Configure CloudWatch metrics for bucket monitoring.';
-            break;
-          case 'rds':
-            recommendation = 'Enable RDS Enhanced Monitoring, audit logs, and error logs. Tag with "MonitoringEnabled:true" and "LoggingEnabled:true".';
-            break;
-          case 'ec2':
-            recommendation = 'Install CloudWatch agent for detailed monitoring. Enable VPC Flow Logs. Tag with "MonitoringEnabled:true".';
-            break;
-          case 'lambda':
-            recommendation = 'Ensure CloudWatch Logs are enabled (default). Add CloudWatch alarms for errors and throttles.';
-            break;
-          default:
-            recommendation = 'Enable monitoring and logging for this resource type and document it with the appropriate tag.';
-        }
-
-        issues.push({
-          severity: 'high',
-          category: 'networking',
-          issue: 'Observability: Monitoring/logging not documented via tag',
-          recommendation,
-          resource_arn: resource.resource_arn,
-          provenance: 'SELF_ATTESTED',
-        });
-      }
-    }
-
-    return issues;
-  }
-
-  /**
-   * HIPAA-specific compliance checks
-   * Focuses on: PHI Data Encryption, Access Logging, Backup Requirements
-   */
-  private checkHIPAACompliance(resource: AWSResource): ComplianceIssue[] {
-    const issues: ComplianceIssue[] = [];
-
-    // HIPAA: PHI Data Encryption - Stricter encryption requirements. The "not encrypted
-    // at all" case is intentionally NOT re-flagged here: checkEncryption() already reports
-    // it for every resource type (including these four), so re-reporting it under a HIPAA
-    // label would count the same real problem twice. Only check the HIPAA-specific nuance
-    // (CMK vs AWS-managed key) that applies once a resource is actually encrypted.
-    if (['s3', 'rds', 'ebs', 'ec2'].includes(resource.resource_type) && resource.is_encrypted) {
-      const usesKMSCMK = resource.tags?.['KMSKey'] || resource.tags?.['EncryptionKey'];
-      if (!usesKMSCMK) {
-        issues.push({
-          severity: 'medium',
-          category: 'encryption',
-          issue: 'HIPAA: Resource should use AWS KMS Customer Managed Keys (CMK) for encryption',
-          recommendation: 'Use AWS KMS CMK instead of AWS-managed keys for better audit capabilities and key rotation control.',
-          resource_arn: resource.resource_arn,
-        });
-      }
-    }
-
-    // HIPAA: Encryption in transit for data stores. S3 is not checked here: its
-    // HTTPS-only enforcement is a baseline check evaluated from the bucket policy
-    // (evaluateS3Security), not from tags, which S3 discovery does not collect.
-    if (['rds', 'elasticache'].includes(resource.resource_type)) {
-      const hasTransitEncryption = resource.tags?.['SSLEnabled'] ||
-                                   resource.tags?.['TLSEnabled'] ||
-                                   resource.tags?.['EncryptionInTransit'];
-      if (!hasTransitEncryption) {
-        let recommendation = '';
-        switch (resource.resource_type) {
-          case 'rds':
-            recommendation = 'Enable SSL/TLS connections and enforce with rds.force_ssl parameter. Tag with "SSLEnabled:true".';
-            break;
-          case 'elasticache':
-            recommendation = 'Enable in-transit encryption when creating the cluster. Recreate cluster if necessary.';
-            break;
-          default:
-            recommendation = 'Enable encryption in transit using TLS/SSL for all data communications.';
-        }
-
-        issues.push({
-          severity: 'critical',
-          category: 'encryption',
-          issue: `HIPAA: ${resource.resource_type.toUpperCase()} must have encryption in transit for PHI data`,
-          recommendation,
-          resource_arn: resource.resource_arn,
-        });
-      }
-    }
-
-    // HIPAA: Access Logging - Required for audit trails
-    if (['s3', 'rds', 'lambda', 'ec2'].includes(resource.resource_type)) {
-      const hasAccessLogging = resource.tags?.['AccessLogging'] ||
-                              resource.tags?.['AuditLogging'] ||
-                              resource.tags?.['CloudTrailEnabled'];
-
-      if (!hasAccessLogging) {
-        let recommendation = '';
-        switch (resource.resource_type) {
-          case 's3':
-            recommendation = 'Enable S3 server access logging and CloudTrail data events. Store logs in WORM-enabled bucket with MFA delete.';
-            break;
-          case 'rds':
-            recommendation = 'Enable audit logging, error logging, and slow query logs. Export logs to CloudWatch for long-term retention.';
-            break;
-          case 'lambda':
-            recommendation = 'Ensure CloudWatch Logs retention is set to at least 6 years (HIPAA requirement). Enable X-Ray tracing for detailed audit.';
-            break;
-          case 'ec2':
-            recommendation = 'Enable VPC Flow Logs, CloudTrail, and CloudWatch Logs agent. Configure log retention for 6+ years.';
-            break;
-          default:
-            recommendation = 'Enable comprehensive access logging with minimum 6-year retention for HIPAA compliance.';
-        }
-
-        issues.push({
-          severity: 'critical',
-          category: 'networking',
-          issue: `HIPAA: ${resource.resource_type.toUpperCase()} lacks required access logging for audit trails`,
-          recommendation,
-          resource_arn: resource.resource_arn,
-        });
-      }
-    }
-
-    // HIPAA: Backup Requirements - More stringent than generic. checkBackups() already
-    // covers the "no backup at all" case for rds/ec2, so only flag it here for ebs — the
-    // one type in this list that the generic check doesn't cover — to avoid double-counting
-    // the same missing-backup problem under two labels for rds/ec2.
-    if (['rds', 'ec2', 'ebs', 's3'].includes(resource.resource_type)) {
-      // Security Truthfulness #41: same principle -- verified false only, never null.
-      if (resource.has_backup === false && ['ebs'].includes(resource.resource_type)) {
-        issues.push({
-          severity: 'critical',
-          category: 'backups',
-          issue: `HIPAA: ${resource.resource_type.toUpperCase()} storing PHI must have automated backups`,
-          recommendation: 'Enable automated backups with minimum 30-day retention. Test backup restoration quarterly. Document backup procedures.',
-          resource_arn: resource.resource_arn,
-        });
-      }
-
-      // Check for backup retention tagging
-      const hasBackupRetention = resource.tags?.['BackupRetention'] ||
-                                 resource.tags?.['BackupPolicy'];
-      if (!hasBackupRetention) {
-        issues.push({
-          severity: 'high',
-          category: 'backups',
-          issue: 'HIPAA: Resource lacks documented backup retention policy',
-          recommendation: 'Tag resource with "BackupRetention" indicating retention period (minimum 6 years for HIPAA). Document in backup policy.',
-          resource_arn: resource.resource_arn,
-        });
-      }
-    }
-
-    // HIPAA: S3 versioning for data integrity
-    if (resource.resource_type === 's3') {
-      const hasVersioning = resource.tags?.['VersioningEnabled'];
-      if (!hasVersioning) {
-        issues.push({
-          severity: 'high',
-          category: 'backups',
-          issue: 'HIPAA: S3 bucket should have versioning enabled for PHI data integrity',
-          recommendation: 'Enable S3 versioning and MFA delete protection. Configure lifecycle policies for version retention.',
-          resource_arn: resource.resource_arn,
-        });
-      }
-    }
-
-    return issues;
-  }
-
-  /**
    * Scan multiple resources and return aggregate compliance data
    */
   async scanMultipleResources(
     resources: AWSResource[],
-    frameworks?: string[]
+    applicability: readonly FrameworkApplicability[] = []
   ): Promise<Map<string, ComplianceIssue[]>> {
     const results = new Map<string, ComplianceIssue[]>();
 
     for (const resource of resources) {
-      const issues = await this.scanResource(resource, frameworks);
+      const issues = await this.scanResource(resource, applicability);
       if (issues.length > 0) {
         results.set(resource.id, issues);
       }

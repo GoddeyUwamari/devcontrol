@@ -471,8 +471,8 @@ export class Soc2EvidenceService {
    * true that checkSecurityGroups() is the only producer of that category (confirmed:
    * fromComplianceIssues()'s one call site, awsResourceDiscovery.ts:583, passes only
    * [...networkingObservation.issues, ...iamObservation.issues] -- never the general
-   * compliance_issues array, so checkSOC2Compliance()'s/checkHIPAACompliance()'s own
-   * unrelated 'networking'-category ComplianceIssues, which exist but stay in
+   * compliance_issues array, so any other
+   * unrelated 'networking'-category ComplianceIssues, which stay in
    * aws_resources.compliance_issues, can never reach this table). But that is an
    * incidental, single-producer fact about the system TODAY, not a discriminator
    * enforced by the data itself -- a future second networking-category detector (e.g.

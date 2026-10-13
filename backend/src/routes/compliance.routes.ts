@@ -20,8 +20,7 @@ function isValidFramework(f: string): f is ControlFramework {
  * been removed from the application runtime entirely.
  *
  * This is unrelated to, and does not affect:
- *   - ComplianceScannerService.checkSOC2Compliance()/checkHIPAACompliance()
- *     (the live, tag-inferred infrastructure signals written into
+ *   - ComplianceScannerService's baseline and framework checks (written into
  *     aws_resources.compliance_issues during AWS resource discovery)
  *   - RiskTrackingService / Risk Score / risk history
  *   - the customer-facing Compliance Frameworks product (/compliance/frameworks)

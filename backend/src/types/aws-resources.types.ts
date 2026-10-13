@@ -130,6 +130,45 @@ export type ComplianceCategory =
  */
 export type ComplianceIssueProvenance = 'OBSERVED' | 'DERIVED' | 'SELF_ATTESTED';
 
+/**
+ * Whether a compliance framework applies to an organization. A framework is
+ * evaluated only when it is explicitly enabled; nothing else is read as enabled.
+ *
+ *   enabled        — a setting explicitly enables it.
+ *   disabled       — a setting explicitly disables it.
+ *   not_configured — no setting is recorded for it.
+ *   unavailable    — the settings could not be read.
+ *   invalid        — a setting exists but cannot be interpreted (a non-boolean value,
+ *                     conflicting settings, or a framework nothing evaluates).
+ *
+ * This is configuration, not an evaluation outcome and not a severity.
+ */
+export type FrameworkApplicabilityState = 'enabled' | 'disabled' | 'not_configured' | 'unavailable' | 'invalid';
+
+/**
+ * What happened when a check was run — a different axis from severity (how much a
+ * failure matters) and from provenance (where the evidence came from).
+ *
+ *   failed             — evaluated, and the evidence shows the control is not met.
+ *   passed             — evaluated, and the evidence shows the control is met.
+ *   unable_to_evaluate — the evidence needed is missing or is not evidence (a tag).
+ *   error              — the check itself could not complete.
+ *   not_evaluated      — the check was not run (its framework is not enabled, or
+ *                         its applicability could not be determined).
+ *   not_applicable     — the check does not apply to the resource (any more). Only
+ *                         ever a stored state: see compliance_check_evaluations.
+ */
+export type FindingEvaluationState =
+  | 'failed'
+  | 'passed'
+  | 'unable_to_evaluate'
+  | 'error'
+  | 'not_evaluated'
+  | 'not_applicable';
+
+/** What a check's outcome rests on: an AWS API observation, a resource tag, or nothing collected. */
+export type FindingEvidenceBasis = 'aws_api' | 'tag' | 'none';
+
 export interface ComplianceIssue {
   severity: ComplianceSeverity;
   category: ComplianceCategory;
@@ -153,6 +192,43 @@ export interface ComplianceIssue {
    * observation. Absent on findings this scan verified.
    */
   verification?: 'unverified';
+  /** The compliance framework this finding belongs to. Absent on baseline (non-framework) findings. */
+  framework?: string;
+  /** The framework's applicability when this entry was written. Absent on baseline findings. */
+  applicability?: FrameworkApplicabilityState;
+  /**
+   * Absent on baseline findings and on entries written before this field existed.
+   * When present, only 'failed' is a current finding: any other value marks an entry
+   * retained from an earlier scan that this scan could not re-evaluate.
+   */
+  evaluation_state?: FindingEvaluationState;
+  evidence_basis?: FindingEvidenceBasis;
+  /** Why the entry has its evaluation_state. Fixed wording; never raw error text. */
+  evaluation_reason?: string;
+}
+
+/**
+ * One framework check's outcome for one resource, or (check: null) the reason a
+ * framework was not evaluated at all. Returned by the scanner for every outcome,
+ * including the ones that are not findings, and stored in
+ * compliance_check_evaluations. Severity is set only on a 'failed' outcome.
+ */
+export interface FrameworkCheckEvaluation {
+  framework: string;
+  /** The check's stable key (the finding's findingKey); null = the framework as a whole. */
+  check: string | null;
+  applicability: FrameworkApplicabilityState;
+  evaluation_state: FindingEvaluationState;
+  severity: ComplianceSeverity | null;
+  evidence_basis: FindingEvidenceBasis;
+  provenance: ComplianceIssueProvenance | null;
+  /** Closed vocabulary (utils/frameworkApplicability.ts EvaluationReasonCode). */
+  reason_code: string;
+  /** The fixed wording for reason_code. */
+  reason: string;
+  /** Set only on 'error': a category, never the error's text. */
+  error_code: string | null;
+  resource_arn: string;
 }
 
 /**

@@ -132,6 +132,29 @@ export interface CreateRuleData {
   enabled?: boolean;
 }
 
+/**
+ * The organization's built-in framework settings, as recorded: one row per
+ * built-in framework entry, uninterpreted (see utils/frameworkApplicability.ts for
+ * what they mean). Runs on the caller's executor, which must already carry the
+ * organization's RLS context; the explicit predicate is a second, independent
+ * tenant scope. Throws when the read fails -- the caller decides what an
+ * unreadable setting means, and it is never "enabled".
+ */
+export async function readBuiltInFrameworkSettings(
+  executor: Queryable,
+  organizationId: string
+): Promise<Array<{ standard_name: unknown; enabled: unknown }>> {
+  const result = await executor.query(
+    `SELECT standard_name, enabled
+       FROM compliance_frameworks
+      WHERE organization_id = $1
+        AND framework_type = 'built_in'
+      ORDER BY created_at ASC, id ASC`,
+    [organizationId]
+  );
+  return result.rows;
+}
+
 export class ComplianceFrameworksRepository {
   constructor(private pool: Pool) {}
 
