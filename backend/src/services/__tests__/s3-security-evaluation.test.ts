@@ -30,6 +30,7 @@ import {
   formatS3EvaluationTally,
 } from '../s3-security-evaluation';
 import { ComplianceScannerService } from '../complianceScanner';
+import { isActiveComplianceFinding, resolveFrameworkApplicability } from '../../utils/frameworkApplicability';
 import { AWSResource, ComplianceIssue } from '../../types/aws-resources.types';
 
 const BUCKET = 'example-prod-backups';
@@ -483,6 +484,58 @@ describe('carry-forward of previous findings when a control is unknown', () => {
     severity: 'critical', category: 'public_access', issue: 'S3 bucket ACL allows public read access', recommendation: 'r', provenance: 'OBSERVED',
   };
 
+  // What a carried entry records about the scan that could not re-verify it.
+  const NOT_READ = {
+    verification: 'unverified',
+    evaluation_state: 'unable_to_evaluate',
+    evidence_basis: 'none',
+    evaluation_reason:
+      'The configuration this check reads could not be read on the latest scan; this finding is from an earlier scan and was not re-verified',
+  } as const;
+  const THREW = {
+    verification: 'unverified',
+    evaluation_state: 'error',
+    evidence_basis: 'none',
+    evaluation_reason: 'The check could not be completed on the latest scan; this finding is from an earlier scan and was not re-verified',
+  } as const;
+
+  it('a carried entry records unable_to_evaluate with fixed wording, and is not a current finding', () => {
+    const carried = carryForwardUnverifiedS3Findings([keyedPolicyFinding, keyedHttpsFinding], unknownS3Evaluation('AccessDenied: arn:aws:iam::111122223333:role/x'));
+    expect(carried).toEqual([{ ...keyedPolicyFinding, ...NOT_READ }, { ...keyedHttpsFinding, ...NOT_READ }]);
+    for (const issue of carried) {
+      expect(isActiveComplianceFinding(issue)).toBe(false);
+      // The AWS reason goes to the log; nothing of it is stored on the entry.
+      expect(JSON.stringify(issue)).not.toContain('AccessDenied');
+      expect(JSON.stringify(issue)).not.toContain('111122223333');
+    }
+    // The same findings, verified, are current: only the carry-forward changes that.
+    expect(isActiveComplianceFinding(keyedPolicyFinding)).toBe(true);
+    expect(isActiveComplianceFinding(keyedHttpsFinding)).toBe(true);
+  });
+
+  it('an evaluation that threw carries the entry as error, also not a current finding', () => {
+    const carried = carryForwardUnverifiedS3Findings([keyedPolicyFinding], unknownS3Evaluation('evaluation failed'), 'exception');
+    expect(carried).toEqual([{ ...keyedPolicyFinding, ...THREW }]);
+    expect(isActiveComplianceFinding(carried[0])).toBe(false);
+  });
+
+  it('the state is this scan\'s: an entry carried as error is carried as unable_to_evaluate when the next scan merely cannot read', () => {
+    const threw = carryForwardUnverifiedS3Findings([keyedPolicyFinding], unknownS3Evaluation('x'), 'exception');
+    expect(carryForwardUnverifiedS3Findings(threw, unknownS3Evaluation('x'))).toEqual([{ ...keyedPolicyFinding, ...NOT_READ }]);
+  });
+
+  it('a control that fails again is reported by a fresh, verified finding with no carried state', () => {
+    const failing = evaluateS3Security(evidence({ policy: { state: 'absent' } }));
+    expect(failing.httpsOnly.status).toBe('fail');
+    const carried = carryForwardUnverifiedS3Findings([{ ...keyedHttpsFinding, ...NOT_READ }], failing);
+    expect(carried).toEqual([]);
+    const fresh = s3FindingsFromEvaluation(BUCKET_ARN, failing).filter((i) => i.findingKey === S3_FINDING_KEYS.httpsOnly);
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]).not.toHaveProperty('verification');
+    expect(fresh[0]).not.toHaveProperty('evaluation_state');
+    expect(isActiveComplianceFinding(fresh[0])).toBe(true);
+  });
+
   it('keeps a keyed finding, marked unverified, when its control is unknown', () => {
     const carried = carryForwardUnverifiedS3Findings([keyedPolicyFinding, keyedHttpsFinding], unknownS3Evaluation('AccessDenied'));
     expect(carried).toHaveLength(2);
@@ -497,7 +550,7 @@ describe('carry-forward of previous findings when a control is unknown', () => {
 
   it('carries the legacy wildcard-policy finding under the policy key, unverified, when the policy control is unknown', () => {
     expect(carryForwardUnverifiedS3Findings([legacyWildcard], unknownS3Evaluation('AccessDenied'))).toEqual([
-      { ...legacyWildcard, findingKey: S3_FINDING_KEYS.publicPolicy, verification: 'unverified' },
+      { ...legacyWildcard, findingKey: S3_FINDING_KEYS.publicPolicy, ...NOT_READ },
     ]);
   });
 
@@ -512,13 +565,13 @@ describe('carry-forward of previous findings when a control is unknown', () => {
   it('skips null and non-object entries instead of throwing', () => {
     const previous = [null, undefined, 'text', 42, [keyedPolicyFinding], keyedPolicyFinding];
     expect(() => carryForwardUnverifiedS3Findings(previous, unknownS3Evaluation('x'))).not.toThrow();
-    expect(carryForwardUnverifiedS3Findings(previous, unknownS3Evaluation('x'))).toEqual([{ ...keyedPolicyFinding, verification: 'unverified' }]);
+    expect(carryForwardUnverifiedS3Findings(previous, unknownS3Evaluation('x'))).toEqual([{ ...keyedPolicyFinding, ...NOT_READ }]);
     expect(carryForwardUnverifiedS3Findings({ not: 'an array' }, unknownS3Evaluation('x'))).toEqual([]);
   });
 
   it('carries a legacy ACL finding under the ACL key when the ACL control is unknown', () => {
     const carried = carryForwardUnverifiedS3Findings([legacyAcl], unknownS3Evaluation('AccessDenied'));
-    expect(carried).toEqual([{ ...legacyAcl, findingKey: S3_FINDING_KEYS.publicAcl, verification: 'unverified' }]);
+    expect(carried).toEqual([{ ...legacyAcl, findingKey: S3_FINDING_KEYS.publicAcl, ...NOT_READ }]);
   });
 
   it('a carried finding stays unverified across repeated unknown scans, without duplicates', () => {
@@ -570,7 +623,15 @@ describe('scanner integration: ComplianceScannerService.evaluateS3Security', () 
     }];
     const deniedS3 = { send: jest.fn().mockRejectedValue(Object.assign(new Error('AccessDenied'), { name: 'AccessDenied' })) } as unknown as S3Client;
     const result = await service.evaluateS3Security(bucketResource(previous), deniedS3);
-    expect(result!.issues).toEqual([{ ...previous[0], verification: 'unverified' }]);
+    expect(result!.issues).toEqual([{
+      ...previous[0],
+      verification: 'unverified',
+      evaluation_state: 'unable_to_evaluate',
+      evidence_basis: 'none',
+      evaluation_reason:
+        'The configuration this check reads could not be read on the latest scan; this finding is from an earlier scan and was not re-verified',
+    }]);
+    expect(result!.issues.filter((issue) => isActiveComplianceFinding(issue))).toEqual([]);
   });
 
   describe('end to end through mocked AWS collection', () => {
@@ -682,9 +743,21 @@ describe('scanner integration: ComplianceScannerService.evaluateS3Security', () 
     expect(issues.find((i) => i.category === 'public_access')).toBeUndefined();
   });
 
-  it('scanResource still emits the tag-based HIPAA transit finding for RDS (out of scope, unchanged)', async () => {
-    const issues = await service.scanResource({ ...bucketResource([]), resource_type: 'rds' });
-    expect(issues.find((i) => i.issue === 'HIPAA: RDS must have encryption in transit for PHI data')).toBeDefined();
+  // Was: "still emits the tag-based HIPAA transit finding for RDS (out of scope,
+  // unchanged)". Framework checks now run only for an explicitly enabled framework,
+  // and a missing tag is not evidence of a failure even then.
+  it('scanResource emits no tag-based HIPAA transit finding for RDS: not without HIPAA enabled, and not from a missing tag with it', async () => {
+    const rds = { ...bucketResource([]), resource_type: 'rds' as const };
+    const enabled = resolveFrameworkApplicability({ status: 'ok', rows: [{ standard_name: 'HIPAA', enabled: true }] });
+    for (const issues of [await service.scanResource(rds), await service.scanResource(rds, enabled)]) {
+      expect(issues.find((i) => i.issue.includes('encryption in transit'))).toBeUndefined();
+      expect(issues.find((i) => i.issue.startsWith('HIPAA'))).toBeUndefined();
+    }
+    const { frameworkEvaluations } = await service.evaluateResource(rds, enabled);
+    expect(frameworkEvaluations.find((e) => e.check === 'hipaa.encryption_in_transit')).toMatchObject({
+      evaluation_state: 'unable_to_evaluate',
+      evidence_basis: 'none',
+    });
   });
 });
 

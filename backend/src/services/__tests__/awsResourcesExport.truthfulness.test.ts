@@ -33,3 +33,27 @@ describe('AWSResourcesExportService — Security Status column truthiness safety
     expect(result).toBe('⚠ Public');
   });
 });
+
+describe('AWSResourcesExportService — Compliance Issues column counts current findings only', () => {
+  const formatter = (AWSResourcesExportService as any).COLUMN_MAPPINGS.compliance.formatter;
+  const real = { severity: 'high', category: 'public_access', issue: 'EC2 instance has a public IP address', recommendation: 'r' };
+  const legacyHipaa = { severity: 'critical', category: 'backups', issue: 'HIPAA: Resource lacks documented backup retention policy', recommendation: 'r' };
+  const legacySoc2 = { severity: 'high', category: 'tagging', issue: 'Tagging: IAM role/owner not documented', recommendation: 'r' };
+  const unverified = { severity: 'critical', category: 'public_access', issue: 'S3 bucket policy allows public access', recommendation: 'r', findingKey: 's3.public_access.policy', verification: 'unverified' };
+  const failedFramework = { ...legacyHipaa, framework: 'HIPAA', findingKey: 'hipaa.automated_backups', applicability: 'enabled', evaluation_state: 'failed' };
+
+  it.each([
+    ['current findings are counted (unchanged)', [real, { ...real, issue: 'other' }], '2 issues'],
+    ['one current finding is singular (unchanged)', [real], '1 issue'],
+    ['a failed check of an enabled framework is counted', [failedFramework], '1 issue'],
+    ['legacy HIPAA and SOC 2 entries are not counted', [legacyHipaa, legacySoc2], 'No issues'],
+    ['an S3 finding carried forward unverified is not counted', [unverified], 'No issues'],
+    ['only the current finding among entries that are not', [legacyHipaa, real, legacySoc2, unverified], '1 issue'],
+    ['an empty array', [], 'No issues'],
+    ['a missing value', null, 'No issues'],
+    ['a value that is not an array', { severity: 'high' }, 'No issues'],
+  ])('%s', (_name, compliance_issues, expected) => {
+    expect(formatter({ compliance_issues })).toBe(expected);
+  });
+});
+

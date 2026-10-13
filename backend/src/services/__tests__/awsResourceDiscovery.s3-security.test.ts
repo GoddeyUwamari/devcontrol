@@ -225,7 +225,14 @@ describe('discovery compliance loop: S3 security evaluation', () => {
       const s3Findings = issues.filter((i: any) => String(i?.findingKey ?? '').startsWith('s3.'));
       if (name === failedBucket) {
         // Fallback: previous keyed finding kept, marked unverified.
-        expect(s3Findings).toEqual([{ ...keyedPolicyFinding, verification: 'unverified' }]);
+        // The evaluation threw, so the entry records `error` -- and is not a current finding.
+        expect(s3Findings).toEqual([{
+          ...keyedPolicyFinding,
+          verification: 'unverified',
+          evaluation_state: 'error',
+          evidence_basis: 'none',
+          evaluation_reason: 'The check could not be completed on the latest scan; this finding is from an earlier scan and was not re-verified',
+        }]);
       } else {
         // Evaluated after the failure and verified clean: the finding is gone.
         expect(s3Findings).toEqual([]);

@@ -8,6 +8,9 @@
  */
 import { ComplianceScannerService } from '../complianceScanner';
 import { AWSResource } from '../../types/aws-resources.types';
+import { resolveFrameworkApplicability } from '../../utils/frameworkApplicability';
+
+const HIPAA_ENABLED = resolveFrameworkApplicability({ status: 'ok', rows: [{ standard_name: 'HIPAA', enabled: true }] });
 
 function resource(overrides: Partial<AWSResource>): AWSResource {
   return {
@@ -85,13 +88,15 @@ describe('ComplianceScannerService — encryption/backup finding generation with
     expect(issuesNull).toHaveLength(0);
   });
 
-  it('HIPAA EBS backup check: has_backup === false generates the HIPAA finding (unchanged behavior)', () => {
-    const issues = (service as any).checkHIPAACompliance(resource({ resource_type: 'ebs', has_backup: false, is_encrypted: true }));
+  // HIPAA checks run only for an organization that has explicitly enabled the framework
+  // (complianceScanner.framework-applicability.test.ts), so these two enable it.
+  it('HIPAA EBS backup check: has_backup === false generates the HIPAA finding (unchanged behavior, once HIPAA is enabled)', async () => {
+    const issues = await service.scanResource(resource({ resource_type: 'ebs', has_backup: false, is_encrypted: true }), HIPAA_ENABLED);
     expect(issues.some((i: any) => /must have automated backups/i.test(i.issue))).toBe(true);
   });
 
-  it('HIPAA EBS backup check: has_backup === null generates no "must have automated backups" finding', () => {
-    const issues = (service as any).checkHIPAACompliance(resource({ resource_type: 'ebs', has_backup: null, is_encrypted: true }));
+  it('HIPAA EBS backup check: has_backup === null generates no "must have automated backups" finding', async () => {
+    const issues = await service.scanResource(resource({ resource_type: 'ebs', has_backup: null, is_encrypted: true }), HIPAA_ENABLED);
     expect(issues.some((i: any) => /must have automated backups/i.test(i.issue))).toBe(false);
   });
 
