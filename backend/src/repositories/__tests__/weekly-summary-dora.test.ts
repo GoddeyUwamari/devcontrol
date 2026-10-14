@@ -1,19 +1,17 @@
 /**
- * Live-DB coverage for the weekly-email DORA fix: getWeeklyDORAMetrics used to
- * compute Lead Time with `WHERE status = 'running'`, a deployment status this
- * codebase never actually writes (GitHub-webhook rows are only ever
- * 'success'/'failed' — see github-webhook.routes.ts), so it always matched
- * zero rows and always rendered "N/A" no matter how much real deploy history
- * existed. MTTR was a hardcoded 'N/A' string, never computed at all.
+ * Live-DB coverage for the weekly email's deployment metrics.
  *
- * These tests insert deployment rows shaped exactly like real GitHub-webhook
- * rows (status only ever 'success'/'failed', real deployed_at timestamps) and
- * assert the time between successful deployments (reported under that name,
- * never as DORA lead time -- there is no commit timestamp to measure lead
- * time for changes from) and MTTR are real, org-scoped, and correctly fall back
- * to 'N/A' (never a fabricated 0) when there isn't enough data to measure —
- * the same property-under-test rationale as the other __tests__ files in this
- * directory: real transaction/RLS behavior, not a mocked pg client.
+ * Policy under test -- the same definitions as the Deployments and DORA pages:
+ *   - Deployment frequency counts successful deployments only.
+ *   - Change failure rate is failed / (success + failed); null (never 0) when
+ *     nothing finished. Rows that never finished or have an unrecognised
+ *     status are in the recorded total and nothing else.
+ *   - Lead time for changes and time to restore are not tracked: no
+ *     deployment-gap or failed -> next-success time is derived, and nothing
+ *     is graded against their bands.
+ *   - Every figure is one organization's.
+ *
+ * Real transaction/RLS behavior, not a mocked pg client.
  */
 import { Pool, PoolClient } from 'pg';
 import { pool as appPool, requestContext } from '../../config/database';
@@ -75,7 +73,7 @@ async function insertService(client: PoolClient, organizationId: string): Promis
  * real deployed_at, metadata carrying a head_sha — never 'running'. */
 async function insertDeployment(
   client: PoolClient,
-  opts: { serviceId: string; organizationId: string; status: 'success' | 'failed'; deployedAt: Date }
+  opts: { serviceId: string; organizationId: string; status: string; deployedAt: Date }
 ): Promise<string> {
   const { rows } = await client.query(
     `INSERT INTO deployments (service_id, environment, aws_region, status, deployed_by, deployed_at, organization_id, metadata)
@@ -114,87 +112,7 @@ afterAll(async () => {
 });
 
 describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', () => {
-  it('computes a real time between successful deployments from GitHub-webhook-shaped rows (never status=running), without grading it as DORA lead time', async () => {
-    const orgId = await insertOrg();
-    const client = await openOrgClient(orgId);
-    try {
-      const serviceId = await insertService(client, orgId);
-      // Three successful deploys, 2 hours apart -> average gap = 2.0 hours.
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(6) });
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(4) });
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(2) });
-
-      const { startDate, endDate } = weekWindow();
-      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
-
-      expect(result.timeBetweenSuccessfulDeployments).toBe('2.0 hours');
-      expect(result.timeBetweenSuccessfulDeployments).not.toBe('N/A');
-      // Deployment gaps are not DORA lead time for changes: never graded against its bands.
-      expect(result.benchmarks).not.toHaveProperty('leadTime');
-      expect(result).not.toHaveProperty('leadTime');
-    } finally {
-      client.release();
-    }
-  });
-
-  it('reports time between successful deployments as N/A (never a fabricated 0) with fewer than two successful deployments', async () => {
-    const orgId = await insertOrg();
-    const client = await openOrgClient(orgId);
-    try {
-      const serviceId = await insertService(client, orgId);
-      // Only one successful deploy this week — no gap to measure.
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(1) });
-
-      const { startDate, endDate } = weekWindow();
-      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
-
-      expect(result.timeBetweenSuccessfulDeployments).toBe('N/A');
-      expect(result.benchmarks).not.toHaveProperty('leadTime');
-    } finally {
-      client.release();
-    }
-  });
-
-  it('computes a real MTTR from a failed -> success recovery pair', async () => {
-    const orgId = await insertOrg();
-    const client = await openOrgClient(orgId);
-    try {
-      const serviceId = await insertService(client, orgId);
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'failed', deployedAt: hoursAgo(5) });
-      // Recovered 45 minutes later.
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(4.25) });
-
-      const { startDate, endDate } = weekWindow();
-      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
-
-      expect(result.mttr).toBe('45 minutes');
-      expect(result.mttr).not.toBe('N/A');
-      expect(result.benchmarks.mttr).not.toBeNull();
-    } finally {
-      client.release();
-    }
-  });
-
-  it('reports MTTR as N/A (never a fabricated value) when there is no failed -> success recovery pair', async () => {
-    const orgId = await insertOrg();
-    const client = await openOrgClient(orgId);
-    try {
-      const serviceId = await insertService(client, orgId);
-      // A failure with nothing after it yet, plus an unrelated success — no recovery pair exists.
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(6) });
-      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'failed', deployedAt: hoursAgo(1) });
-
-      const { startDate, endDate } = weekWindow();
-      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
-
-      expect(result.mttr).toBe('N/A');
-      expect(result.benchmarks.mttr).toBeNull();
-    } finally {
-      client.release();
-    }
-  });
-
-  it('keeps deployment frequency and change failure rate correct and unaffected by the lead-time/MTTR fix', async () => {
+  it('frequency counts successes only; the failure rate is failed / (success + failed)', async () => {
     const orgId = await insertOrg();
     const client = await openOrgClient(orgId);
     try {
@@ -207,60 +125,144 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
       const { startDate, endDate } = weekWindow();
       const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
 
-      // 4 deployments over a 7-day window -> 4/7 per day.
       expect(result.deploymentCount).toBe(4);
+      expect(result.successfulDeployments).toBe(3);
       expect(result.failedDeployments).toBe(1);
-      expect(result.deploymentFrequency).toBe(`${(4 / 7).toFixed(1)} per day`);
+      // 3 successes over the 7-day window -- the failed one is not a delivery.
+      expect(result.deploymentFrequency).toBe('0.43 per day');
       expect(result.changeFailureRate).toBe(25);
-      expect(result.benchmarks.deploymentFrequency).not.toBeNull();
-      expect(result.benchmarks.changeFailureRate).not.toBeNull();
-    } finally {
-      client.release();
-    }
-  });
-
-  it('returns N/A and null benchmarks for every metric when the org has no deployments at all', async () => {
-    const orgId = await insertOrg();
-    const client = await openOrgClient(orgId);
-    try {
-      const { startDate, endDate } = weekWindow();
-      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
-
-      expect(result.deploymentCount).toBe(0);
-      expect(result.deploymentFrequency).toBe('0.0 per day');
-      expect(result.timeBetweenSuccessfulDeployments).toBe('N/A');
-      expect(result.mttr).toBe('N/A');
-      expect(result.changeFailureRate).toBe(0);
       expect(result.benchmarks).toEqual({
-        deploymentFrequency: null,
-        changeFailureRate: null,
-        mttr: null,
+        deploymentFrequency: { level: 'high', isCustom: false },
+        changeFailureRate: { level: 'high', isCustom: false },
       });
     } finally {
       client.release();
     }
   });
 
-  it('isolates DORA metrics per organization — org A deployments never leak into org B metrics', async () => {
+  it('unfinished and unrecognised rows are recorded but enter neither the frequency nor the rate', async () => {
+    const orgId = await insertOrg();
+    const client = await openOrgClient(orgId);
+    try {
+      const serviceId = await insertService(client, orgId);
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(9) });
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'failed', deployedAt: hoursAgo(7) });
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'deploying', deployedAt: hoursAgo(5) });
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'running', deployedAt: hoursAgo(3) });
+
+      const { startDate, endDate } = weekWindow();
+      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
+
+      expect(result.deploymentCount).toBe(4);
+      expect(result.successfulDeployments).toBe(1);
+      expect(result.failedDeployments).toBe(1);
+      expect(result.deploymentFrequency).toBe('0.14 per day');
+      // 1 of 2 finished -- not 1 of 4 recorded.
+      expect(result.changeFailureRate).toBe(50);
+    } finally {
+      client.release();
+    }
+  });
+
+  it('with nothing finished: the rate is null (never 0) and nothing is graded', async () => {
+    const orgId = await insertOrg();
+    const client = await openOrgClient(orgId);
+    try {
+      const serviceId = await insertService(client, orgId);
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'deploying', deployedAt: hoursAgo(2) });
+
+      const { startDate, endDate } = weekWindow();
+      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
+
+      expect(result.deploymentCount).toBe(1);
+      expect(result.successfulDeployments).toBe(0);
+      expect(result.changeFailureRate).toBeNull();
+      expect(result.benchmarks).toEqual({ deploymentFrequency: null, changeFailureRate: null });
+    } finally {
+      client.release();
+    }
+  });
+
+  it('reports a real 0% rate when deployments finished and none failed', async () => {
+    const orgId = await insertOrg();
+    const client = await openOrgClient(orgId);
+    try {
+      const serviceId = await insertService(client, orgId);
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(2) });
+
+      const { startDate, endDate } = weekWindow();
+      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
+
+      expect(result.changeFailureRate).toBe(0);
+      expect(result.benchmarks.changeFailureRate).toEqual({ level: 'elite', isCustom: false });
+    } finally {
+      client.release();
+    }
+  });
+
+  it('derives no lead time, deployment gap or time to restore, however much history exists', async () => {
+    const orgId = await insertOrg();
+    const client = await openOrgClient(orgId);
+    try {
+      const serviceId = await insertService(client, orgId);
+      // A failed -> success pair and several successes: everything the old
+      // gap and recovery calculations needed.
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(8) });
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'failed', deployedAt: hoursAgo(5) });
+      await insertDeployment(client, { serviceId, organizationId: orgId, status: 'success', deployedAt: hoursAgo(4.25) });
+
+      const { startDate, endDate } = weekWindow();
+      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
+
+      expect(Object.keys(result).sort()).toEqual([
+        'benchmarks', 'changeFailureRate', 'deploymentCount', 'deploymentFrequency',
+        'failedDeployments', 'successfulDeployments',
+      ]);
+      expect(Object.keys(result.benchmarks).sort()).toEqual(['changeFailureRate', 'deploymentFrequency']);
+    } finally {
+      client.release();
+    }
+  });
+
+  it('an organization with no deployments gets zero counts, a null rate and no tiers', async () => {
+    const orgId = await insertOrg();
+    const client = await openOrgClient(orgId);
+    try {
+      const { startDate, endDate } = weekWindow();
+      const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
+
+      expect(result).toEqual({
+        deploymentCount: 0,
+        successfulDeployments: 0,
+        failedDeployments: 0,
+        deploymentFrequency: '0 per day',
+        changeFailureRate: null,
+        benchmarks: { deploymentFrequency: null, changeFailureRate: null },
+      });
+    } finally {
+      client.release();
+    }
+  });
+
+  it('isolates the metrics per organization — org A deployments never leak into org B', async () => {
     const orgA = await insertOrg();
     const orgB = await insertOrg();
     const clientA = await openOrgClient(orgA);
     const clientB = await openOrgClient(orgB);
     try {
       const serviceA = await insertService(clientA, orgA);
-      // Org A gets a full, real DORA signal.
       await insertDeployment(clientA, { serviceId: serviceA, organizationId: orgA, status: 'success', deployedAt: hoursAgo(6) });
-      await insertDeployment(clientA, { serviceId: serviceA, organizationId: orgA, status: 'success', deployedAt: hoursAgo(2) });
+      await insertDeployment(clientA, { serviceId: serviceA, organizationId: orgA, status: 'failed', deployedAt: hoursAgo(2) });
 
       const { startDate, endDate } = weekWindow();
       const resultA = await repository.getWeeklyDORAMetrics({ organizationId: orgA, startDate, endDate }, clientA);
       const resultB = await repository.getWeeklyDORAMetrics({ organizationId: orgB, startDate, endDate }, clientB);
 
-      expect(resultA.timeBetweenSuccessfulDeployments).not.toBe('N/A');
+      expect(resultA.deploymentCount).toBe(2);
+      expect(resultA.changeFailureRate).toBe(50);
       expect(resultB.deploymentCount).toBe(0);
-      expect(resultB.deploymentFrequency).toBe('0.0 per day');
-      expect(resultB.timeBetweenSuccessfulDeployments).toBe('N/A');
-      expect(resultB.mttr).toBe('N/A');
+      expect(resultB.successfulDeployments).toBe(0);
+      expect(resultB.changeFailureRate).toBeNull();
     } finally {
       clientA.release();
       clientB.release();
@@ -284,7 +286,8 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
         repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate })
       );
 
-      expect(result.timeBetweenSuccessfulDeployments).toBe('4.0 hours');
+      expect(result.successfulDeployments).toBe(2);
+      expect(result.deploymentFrequency).toBe('0.29 per day');
     } finally {
       client.release();
     }

@@ -174,20 +174,19 @@ function deliverySummary(e: WeeklyEvidence): string {
   if (d.deploymentCount === 0) {
     return 'No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.';
   }
-  const parts = [
+  const finished = d.successfulDeployments + d.failedDeployments;
+  const unfinished = d.deploymentCount - finished;
+  return [
     `${plural(d.deploymentCount, 'deployment')} recorded in DevControl in the 7 days before this summary: ` +
-    `${d.deploymentFrequency}${benchmarkLabel(d.benchmarks.deploymentFrequency)}.`,
-    `Change failure rate: ${d.changeFailureRate}%${benchmarkLabel(d.benchmarks.changeFailureRate)}.`,
-    d.timeBetweenSuccessfulDeployments !== 'N/A'
-      ? `Average time between successful deployments of the same service: ${d.timeBetweenSuccessfulDeployments}.`
-      : 'Average time between successful deployments: not enough data (needs two or more successful deployments of the same service).',
-  ];
-  if (d.mttr !== 'N/A') {
-    parts.push(
-      `Average time from a failed deployment to the next successful deployment of that service: ${d.mttr}${benchmarkLabel(d.benchmarks.mttr)}.`
-    );
-  }
-  return parts.join(' ');
+    `${d.successfulDeployments} succeeded, ${d.failedDeployments} failed` +
+    `${unfinished > 0 ? `, ${unfinished} with no finished status` : ''}.`,
+    `Deployment frequency (successful deployments): ${d.deploymentFrequency}${benchmarkLabel(d.benchmarks.deploymentFrequency)}.`,
+    d.changeFailureRate === null
+      ? 'Change failure rate: — (no deployment finished).'
+      : `Change failure rate: ${d.changeFailureRate}% (${d.failedDeployments} of ${plural(finished, 'finished deployment')} failed)` +
+        `${benchmarkLabel(d.benchmarks.changeFailureRate)}.`,
+    'Lead time for changes and time to restore service: Not tracked.',
+  ].join(' ');
 }
 
 function savingsSummary(e: WeeklyEvidence): string | null {

@@ -10,7 +10,6 @@
 
 import { Pool, PoolClient } from 'pg';
 import awsCostService from '../services/aws-cost.service';
-import { requestContext } from '../config/database';
 import {
   collectSection,
   deriveSection,
@@ -19,8 +18,9 @@ import {
   type ContextSection,
   type CostExplorerScope,
 } from '../services/ai-context-contract';
-import { DORAMetricsRepository, DORAMetricsFilters } from './dora-metrics.repository';
+import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService, BenchmarkLevel } from '../services/dora-metrics.service';
+import { changeFailureRate } from '../services/deployment-status';
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { CostRecommendationsRepository } from './cost-recommendations.repository';
 import { AccountSecurityFindingsRepository } from './account-security-findings.repository';
@@ -102,22 +102,24 @@ export interface DORABenchmarkResult {
 }
 
 /**
- * Deployment metrics for the delivery window. timeBetweenSuccessfulDeployments
- * is the average gap between consecutive successful deployments of the same
- * service -- NOT DORA lead time for changes (there is no commit timestamp to
- * measure that from), so it is never graded against DORA lead-time bands.
+ * Deployment metrics for the delivery window, with the same definitions as
+ * the Deployments and DORA pages: frequency counts successful deployments
+ * only, and the change failure rate is failed / (success + failed) -- null
+ * when nothing finished. Lead time for changes and time to restore are not
+ * tracked (no commit or incident records), so they are never derived here.
  */
 export interface WeeklyDORAMetrics {
+  /** Every deployment recorded in the window, whatever its status. */
   deploymentCount: number;
+  successfulDeployments: number;
   failedDeployments: number;
+  /** Successful deployments per day over the window. */
   deploymentFrequency: string;
-  timeBetweenSuccessfulDeployments: string;
-  mttr: string;
-  changeFailureRate: number;
+  /** Null when no deployment finished in the window. */
+  changeFailureRate: number | null;
   benchmarks: {
     deploymentFrequency: DORABenchmarkResult | null;
     changeFailureRate: DORABenchmarkResult | null;
-    mttr: DORABenchmarkResult | null;
   };
 }
 
@@ -202,7 +204,6 @@ const WEEKLY_SUMMARY_RECIPIENT_PREDICATES = `om.role = 'owner'
 const EMPTY_DORA_BENCHMARKS: WeeklyDORAMetrics['benchmarks'] = {
   deploymentFrequency: null,
   changeFailureRate: null,
-  mttr: null,
 };
 
 export class WeeklySummaryRepository {
@@ -516,36 +517,22 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * Deployment metrics for the window (aggregated).
+   * Deployment metrics for the window (aggregated), one organization's.
    *
-   * Deployment frequency and change failure rate are computed directly here —
-   * simple per-org counts over the window. The average time between
-   * successful deployments and the failed-deployment recovery time reuse
-   * DORAMetricsRepository.calculateLeadTime() / calculateMTTR(), the same
-   * calculations the DORA dashboard uses (dora-metrics.controller.ts ->
-   * GET /api/metrics/dora), over its rolling '7d' window.
-   *
-   * calculateLeadTime() measures the average time between consecutive
-   * successful deployments of the same service. That is NOT DORA lead time
-   * for changes -- there is no commit timestamp column to measure
-   * commit-to-deploy from -- so it is reported under its real meaning and is
-   * never graded against DORA lead-time bands.
+   * Same definitions as GET /api/deployments/stats and GET /api/metrics/dora:
+   * only 'success' rows count towards frequency, and only finished rows
+   * ('success' + 'failed') enter the change failure rate, which is null when
+   * nothing finished. Rows that never finished or have an unrecognised status
+   * are in the recorded total and nothing else.
    *
    * A query failure throws (gatherWeeklyEvidence records it as an error
    * section) instead of returning placeholder values.
-   *
-   * DORAMetricsRepository's own pool.query() calls only pick up this org's RLS
-   * context via the AsyncLocalStorage-based `pool` proxy in config/database.ts
-   * (the same mechanism auth.middleware.ts's runWithOrgClient uses for every
-   * authenticated route). The weekly email job doesn't run inside that
-   * context — it threads its own `client` explicitly instead — so that scope
-   * is opened here around the reused calls specifically, tied to the same
-   * already org-tagged `client` the rest of this function uses.
    */
   async getWeeklyDORAMetrics(query: WeeklyDataQuery, client?: PoolClient): Promise<WeeklyDORAMetrics> {
     const countResult = await (client ?? this.pool).query(
       `SELECT
         COUNT(*) as total,
+        COUNT(*) FILTER (WHERE status = 'success') as success,
         COUNT(*) FILTER (WHERE status = 'failed') as failed
        FROM deployments
        WHERE organization_id = $1
@@ -554,55 +541,31 @@ export class WeeklySummaryRepository {
     );
 
     const total = parseInt(countResult.rows[0]?.total || '0');
+    const success = parseInt(countResult.rows[0]?.success || '0');
     const failed = parseInt(countResult.rows[0]?.failed || '0');
     const days = Math.ceil((query.endDate.getTime() - query.startDate.getTime()) / DAY_MS);
-    const deploymentsPerDay = days > 0 ? total / days : 0;
-    const changeFailureRate = total > 0 ? Math.round(((failed / total) * 100) * 10) / 10 : 0;
-
-    const doraFilters: DORAMetricsFilters = { organizationId: query.organizationId, dateRange: '7d' };
-    const [gapResult, mttrResult] = client
-      ? await requestContext.run(client, () => Promise.all([
-          this.doraMetricsRepository.calculateLeadTime(doraFilters),
-          this.doraMetricsRepository.calculateMTTR(doraFilters),
-        ]))
-      : await Promise.all([
-          this.doraMetricsRepository.calculateLeadTime(doraFilters),
-          this.doraMetricsRepository.calculateMTTR(doraFilters),
-        ]);
-
-    const timeBetweenSuccessfulDeployments = gapResult.averageLeadTimeHours > 0
-      ? `${gapResult.averageLeadTimeHours.toFixed(1)} hours`
-      : 'N/A';
-    const mttr = mttrResult.incidents > 0
-      ? mttrResult.averageMTTRMinutes < 60
-        ? `${mttrResult.averageMTTRMinutes.toFixed(0)} minutes`
-        : `${(mttrResult.averageMTTRMinutes / 60).toFixed(1)} hours`
-      : 'N/A';
+    const deploymentsPerDay = days > 0 ? parseFloat((success / days).toFixed(2)) : 0;
+    const failureRate = changeFailureRate(success, failed);
 
     // Benchmark tiers use only the documented, industry-standard DORA 2024
     // bands in DORAMetricsService (the same source the dashboard uses), and
-    // only when there's an actual value to grade. The time between
-    // deployments has no benchmark: it is not the DORA lead-time metric.
+    // only when something finished: no tier without a measurement.
     //
     // Per-org custom benchmarks (custom_dora_benchmarks) are intentionally
     // not applied here — that table isn't present in every environment's
     // schema today, so this matches the dashboard's own effective
     // (industry-default) behavior wherever it's absent.
-    const benchmarks: WeeklyDORAMetrics['benchmarks'] = total === 0 ? EMPTY_DORA_BENCHMARKS : {
+    const benchmarks: WeeklyDORAMetrics['benchmarks'] = failureRate === null ? EMPTY_DORA_BENCHMARKS : {
       deploymentFrequency: { level: this.doraMetricsService.resolveDeploymentFrequency(deploymentsPerDay).benchmark, isCustom: false },
-      changeFailureRate: { level: this.doraMetricsService.resolveChangeFailureRate(changeFailureRate).benchmark, isCustom: false },
-      mttr: mttrResult.incidents > 0
-        ? { level: this.doraMetricsService.resolveMTTR(mttrResult.averageMTTRMinutes).benchmark, isCustom: false }
-        : null,
+      changeFailureRate: { level: this.doraMetricsService.resolveChangeFailureRate(failureRate).benchmark, isCustom: false },
     };
 
     return {
       deploymentCount: total,
+      successfulDeployments: success,
       failedDeployments: failed,
-      deploymentFrequency: `${deploymentsPerDay.toFixed(1)} per day`,
-      timeBetweenSuccessfulDeployments,
-      mttr,
-      changeFailureRate,
+      deploymentFrequency: `${deploymentsPerDay} per day`,
+      changeFailureRate: failureRate,
       benchmarks,
     };
   }
