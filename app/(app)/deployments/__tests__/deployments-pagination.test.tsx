@@ -53,6 +53,8 @@ function row(n: number, over: Partial<Row> & { daysAgo?: number } = {}): Row {
 
 let rows: Row[] = []
 let listFails = false
+// When set, a list request matching it stays open until release() is called.
+let hold: { match: (url: string) => boolean; released: Promise<void>; release: () => void } | null = null
 const requests: InternalAxiosRequestConfig[] = []
 const originalAdapter = api.defaults.adapter
 
@@ -86,6 +88,7 @@ const adapter: AxiosAdapter = async (config) => {
     }
   } else if (path === '/api/deployments') {
     if (listFails) throw new Error('Network Error')
+    if (hold?.match(config.url ?? '')) await hold.released
     const selected = select(params)
     const limit = Number(params.get('limit'))
     const offset = Number(params.get('offset'))
@@ -106,6 +109,13 @@ function renderPage() {
       <DeploymentsPage />
     </QueryClientProvider>
   )
+}
+
+function holdRequests(match: (url: string) => boolean) {
+  let release!: () => void
+  const released = new Promise<void>(resolve => { release = resolve })
+  hold = { match, released, release }
+  return release
 }
 
 const listRequests = () => requests.filter(r => r.url?.startsWith('/api/deployments?')).map(r => r.url)
@@ -239,6 +249,97 @@ describe('Deployments page — paged log', () => {
     expect(screen.queryByTestId('deployment-log-empty')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-pagination')).not.toBeInTheDocument()
     expect(screen.getByTestId('deployment-log-count')).toHaveTextContent('count unavailable')
+  })
+})
+
+describe('Deployments page — nothing from the previous selection is shown as the new one', () => {
+  beforeEach(() => {
+    requests.length = 0
+    listFails = false
+    hold = null
+    localStorage.setItem('accessToken', 'test-access-token')
+    api.defaults.adapter = adapter
+  })
+
+  afterEach(() => {
+    hold?.release()
+    hold = null
+    api.defaults.adapter = originalAdapter
+    localStorage.clear()
+  })
+
+  it('while the next page loads: no rows, no range and no count from the previous page', async () => {
+    rows = Array.from({ length: 60 }, (_, i) => row(i + 1))
+    renderPage()
+    await waitFor(() => expect(range()).toHaveTextContent('1–25 of 60'))
+    expect(screen.getAllByText('service-001').length).toBeGreaterThan(0)
+
+    const release = holdRequests(url => url.includes('offset=25'))
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+
+    await waitFor(() => expect(screen.getByTestId('deployment-log-loading')).toBeInTheDocument())
+    expect(screen.queryAllByTestId('deployment-row')).toHaveLength(0)
+    expect(screen.queryByText('service-001')).not.toBeInTheDocument()
+    expect(range()).toHaveTextContent(/^Loading…$/)
+    expect(range()).not.toHaveTextContent(/\d/)
+    expect(screen.getByTestId('deployment-log-count')).toHaveTextContent(/^Last 30 days$/)
+    // The pager keeps its place but offers nothing until the page is known.
+    expect(screen.getByRole('button', { name: /Previous/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Next/ })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /^Page \d+$/ })).not.toBeInTheDocument()
+
+    release()
+    await waitFor(() => expect(range()).toHaveTextContent('26–50 of 60'))
+    expect(shownRows()).toHaveLength(25)
+    expect(screen.getAllByText('service-026').length).toBeGreaterThan(0)
+  })
+
+  it("while another environment loads: the previous environment's rows, total and range are gone", async () => {
+    rows = [
+      ...Array.from({ length: 40 }, (_, i) => row(i + 1)),
+      ...Array.from({ length: 3 }, (_, i) => row(500 + i, { environment: 'staging', cost_estimate: '9.00' })),
+    ]
+    renderPage()
+    await waitFor(() => expect(range()).toHaveTextContent('1–25 of 43'))
+
+    const release = holdRequests(url => url.includes('environment=staging') && !url.includes('/stats'))
+    fireEvent.click(screen.getByRole('button', { name: 'staging' }))
+
+    await waitFor(() => expect(screen.getByTestId('deployment-log-loading')).toBeInTheDocument())
+    expect(screen.queryAllByTestId('deployment-row')).toHaveLength(0)
+    expect(document.body).not.toHaveTextContent('of 43')
+    expect(document.body).not.toHaveTextContent('43 deployments')
+    expect(screen.getByTestId('deployment-log-count')).toHaveTextContent(/^Last 30 days$/)
+    // Not an empty state either: nothing is known about staging yet.
+    expect(screen.queryByTestId('deployment-log-empty')).not.toBeInTheDocument()
+
+    release()
+    await waitFor(() => expect(range()).toHaveTextContent('1–3 of 3'))
+    expect(screen.getByTestId('deployment-log-count')).toHaveTextContent('Last 30 days · 3 deployments in staging')
+  })
+
+  it('while another window or page size loads: the previous count is not shown under the new selection', async () => {
+    rows = [
+      ...Array.from({ length: 30 }, (_, i) => row(i + 1, { daysAgo: 3 })),
+      ...Array.from({ length: 30 }, (_, i) => row(100 + i, { daysAgo: 20 })),
+    ]
+    renderPage()
+    await waitFor(() => expect(range()).toHaveTextContent('1–25 of 60'))
+
+    let release = holdRequests(url => url.includes('date_range=7d') && !url.includes('/stats'))
+    fireEvent.click(screen.getByRole('button', { name: '7d' }))
+    await waitFor(() => expect(range()).toHaveTextContent(/^Loading…$/))
+    expect(screen.getByTestId('deployment-log-count')).toHaveTextContent(/^Last 7 days$/)
+    expect(document.body).not.toHaveTextContent('of 60')
+    release()
+    await waitFor(() => expect(range()).toHaveTextContent('1–25 of 30'))
+
+    release = holdRequests(url => url.includes('limit=50'))
+    fireEvent.change(screen.getByRole('combobox', { name: /Rows per page/ }), { target: { value: '50' } })
+    await waitFor(() => expect(range()).toHaveTextContent(/^Loading…$/))
+    expect(screen.queryAllByTestId('deployment-row')).toHaveLength(0)
+    release()
+    await waitFor(() => expect(range()).toHaveTextContent('1–30 of 30'))
   })
 })
 

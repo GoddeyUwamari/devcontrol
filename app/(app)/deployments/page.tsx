@@ -98,7 +98,7 @@ function DeploymentsContent() {
   // One page of the log: the environment filter, the window and the paging
   // are applied by the server, and the total is counted with the same filters
   // as the summary cards.
-  const { data: deploymentPage, isLoading, error, refetch } = useQuery({
+  const { data: deploymentPage, isLoading, isPlaceholderData, error, refetch } = useQuery({
     queryKey: ['deployments', 'page', environmentFilter, statsWindow, pageSize, page],
     queryFn: () => deploymentsService.getPage({
       environment: environmentFilter,
@@ -178,10 +178,15 @@ function DeploymentsContent() {
     (environmentFilter === 'all' || d.environment === environmentFilter) &&
     new Date(d.deployedAt).getTime() >= Date.now() - windowDays * 24 * 3_600_000
   )
+  // While another page, filter, window or size is being fetched, the query
+  // still holds the previous answer (so the pager keeps its place). Those rows
+  // and that count belong to the previous selection: none of them is shown as
+  // the new one's.
+  const pagePending = !isDemoActive && (isLoading || isPlaceholderData)
   const filteredDeployments: Deployment[] = isDemoActive
     ? demoDeployments.slice((page - 1) * pageSize, page * pageSize)
-    : deploymentPage?.deployments ?? []
-  const totalDeployments = isDemoActive ? demoDeployments.length : deploymentPage?.total ?? 0
+    : pagePending ? [] : deploymentPage?.deployments ?? []
+  const totalDeployments = isDemoActive ? demoDeployments.length : pagePending ? 0 : deploymentPage?.total ?? 0
   const pageCount = Math.max(1, Math.ceil(totalDeployments / pageSize))
   const firstRow = totalDeployments === 0 ? 0 : (page - 1) * pageSize + 1
   const lastRow = firstRow === 0 ? 0 : firstRow + filteredDeployments.length - 1
@@ -194,8 +199,8 @@ function DeploymentsContent() {
   // The log shrank under the current page (rows deleted, or a refresh): step
   // back to the last page that exists rather than showing an empty one.
   useEffect(() => {
-    if (!isLoading && page > pageCount) setPage(pageCount)
-  }, [isLoading, page, pageCount])
+    if (!pagePending && page > pageCount) setPage(pageCount)
+  }, [pagePending, page, pageCount])
 
   // Demo mode has no API: the same counts, from the demo fixtures.
   const stats = isDemoActive
@@ -418,7 +423,7 @@ function DeploymentsContent() {
           <div>
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Deployment Log</p>
             <p className="text-xs text-slate-400 m-0" data-testid="deployment-log-count">
-              {isLoading && !isDemoActive
+              {pagePending
                 ? windowLabel
                 : error && !isDemoActive
                   ? `${windowLabel} · count unavailable`
@@ -449,8 +454,8 @@ function DeploymentsContent() {
         </div>
 
         {/* Rows */}
-        {isLoading && !isDemoActive ? (
-          <div className="px-7 py-12 text-center">
+        {pagePending ? (
+          <div className="px-7 py-12 text-center" data-testid="deployment-log-loading">
             <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
             <p className="text-sm text-slate-500 m-0">Loading deployments...</p>
           </div>
@@ -567,11 +572,11 @@ function DeploymentsContent() {
         )}
 
         {/* Pagination */}
-        {totalDeployments > 0 && !(error && !isDemoActive) && (
+        {(totalDeployments > 0 || (pagePending && isPlaceholderData)) && !(error && !isDemoActive) && (
           <div className="px-5 sm:px-7 py-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="deployment-pagination">
             <div className="flex items-center gap-4">
               <p className="text-xs text-slate-500 m-0" data-testid="deployment-range">
-                {firstRow}–{lastRow} of {totalDeployments}
+                {pagePending ? 'Loading…' : `${firstRow}–${lastRow} of ${totalDeployments}`}
               </p>
               <label className="flex items-center gap-1.5 text-xs text-slate-500">
                 Rows per page
@@ -587,12 +592,12 @@ function DeploymentsContent() {
             <nav className="flex items-center gap-1" aria-label="Deployment log pages">
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page <= 1}
+                disabled={pagePending || page <= 1}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={12} /> Previous
               </button>
-              {pageNumbers(page, pageCount).map((p, i) => p === 'gap' ? (
+              {!pagePending && pageNumbers(page, pageCount).map((p, i) => p === 'gap' ? (
                 <span key={`gap-${i}`} className="px-1 text-xs text-slate-400" aria-hidden="true">…</span>
               ) : (
                 <button
@@ -609,7 +614,7 @@ function DeploymentsContent() {
               ))}
               <button
                 onClick={() => setPage(p => Math.min(pageCount, p + 1))}
-                disabled={page >= pageCount}
+                disabled={pagePending || page >= pageCount}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Next <ChevronRight size={12} />
