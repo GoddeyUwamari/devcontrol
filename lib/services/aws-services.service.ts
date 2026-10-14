@@ -28,6 +28,8 @@ export interface AWSServicesStats {
   avg_uptime: number | null
   // Current findings on those resources, by severity. Absent from an older backend.
   findings_by_severity?: { critical: number; high: number; medium: number; low: number }
+  // Why the needs_attention resources are counted. A resource can be in more than one.
+  attention_reasons?: { with_finding: number; with_cost_recommendation: number; stopped_or_degraded: number; failed: number }
 }
 
 export interface DiscoverResult {

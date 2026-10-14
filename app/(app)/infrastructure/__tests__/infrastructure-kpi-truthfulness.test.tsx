@@ -122,7 +122,7 @@ describe('/infrastructure KPI cards -- real mode', () => {
 
     await waitFor(() => expect(kpiCard('Needs Attention').textContent).toContain('1'))
     expect(document.body.textContent).not.toMatch(/1 cost inefficiency · 1 reliability risk/)
-    expect(kpiCard('Needs Attention').textContent).toMatch(/Stopped, failed, or with a high-severity finding/)
+    expect(kpiCard('Needs Attention').textContent).toMatch(/Stopped, failed, or flagged by a finding or cost recommendation/)
   })
 
   it('labels the count as "no flagged issues", not "Healthy · Running normally"', async () => {
@@ -144,46 +144,60 @@ describe('/infrastructure KPI cards -- real mode', () => {
   })
 })
 
-describe('/infrastructure red card -- titled by what it counts, with real severity counts', () => {
-  const stats = (needs_attention: number, findings_by_severity?: { critical: number; high: number; medium: number; low: number }) =>
-    ({ total: 9, healthy: 9 - needs_attention, needs_attention, ...(findings_by_severity ? { findings_by_severity } : {}) })
+describe('/infrastructure red card -- titled by what it counts, and says why', () => {
+  const stats = (
+    needs_attention: number,
+    findings_by_severity?: { critical: number; high: number; medium: number; low: number },
+    attention_reasons?: { with_finding: number; with_cost_recommendation: number; stopped_or_degraded: number; failed: number }
+  ) => ({ total: 9, healthy: 9 - needs_attention, needs_attention, ...(findings_by_severity ? { findings_by_severity } : {}), ...(attention_reasons ? { attention_reasons } : {}) })
+  const why = (with_finding: number, with_cost_recommendation = 0, stopped_or_degraded = 0, failed = 0) =>
+    ({ with_finding, with_cost_recommendation, stopped_or_degraded, failed })
   const card = () => screen.getByTestId('infrastructure-attention-label').parentElement as HTMLElement
+  const reasonLine = () => screen.getByTestId('infrastructure-attention-reasons').textContent
 
   it('with 0 Critical findings: the count is unchanged and the card never says "critical"', async () => {
-    mockServicesStats.mockResolvedValue(stats(2, { critical: 0, high: 2, medium: 3, low: 9 }))
+    mockServicesStats.mockResolvedValue(stats(2, { critical: 0, high: 2, medium: 3, low: 9 }, why(2)))
     renderPage()
 
     await waitFor(() => expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('2'))
     expect(screen.getByTestId('infrastructure-attention-label').textContent).toBe('Needs Attention')
-    expect(screen.getByTestId('infrastructure-attention-severity').textContent).toBe('2 high findings')
+    expect(reasonLine()).toBe('2 high findings')
     expect(card().textContent).not.toMatch(/critical/i)
     expect(screen.queryByText('Critical Issues')).not.toBeInTheDocument()
   })
 
-  it('with Critical findings: says how many, beside the High ones', async () => {
-    mockServicesStats.mockResolvedValue(stats(3, { critical: 1, high: 2, medium: 0, low: 0 }))
+  it('names every reason resources are counted: findings, status and cost recommendations', async () => {
+    mockServicesStats.mockResolvedValue(stats(4, { critical: 0, high: 2, medium: 3, low: 9 }, why(2, 1, 1)))
     renderPage()
 
-    await waitFor(() => expect(screen.getByTestId('infrastructure-attention-severity').textContent).toBe('1 critical · 2 high findings'))
-    expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('3')
-    expect(screen.getByTestId('infrastructure-attention-label').textContent).toBe('Needs Attention')
+    await waitFor(() => expect(reasonLine()).toBe('2 high findings · 1 stopped or degraded · 1 cost recommendation'))
+    expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('4')
   })
 
-  it('resources at risk on status alone, with no High or Critical finding: the count still shows', async () => {
-    mockServicesStats.mockResolvedValue(stats(1, { critical: 0, high: 0, medium: 4, low: 2 }))
+  it('with Critical findings: says how many, beside the High ones', async () => {
+    mockServicesStats.mockResolvedValue(stats(3, { critical: 1, high: 2, medium: 0, low: 0 }, why(3)))
+    renderPage()
+
+    await waitFor(() => expect(reasonLine()).toBe('1 critical finding · 2 high findings'))
+    expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('3')
+  })
+
+  it('a resource counted on status alone: the card says so, never "No high-severity findings" beside a non-zero count', async () => {
+    mockServicesStats.mockResolvedValue(stats(1, { critical: 0, high: 0, medium: 4, low: 2 }, why(0, 0, 1)))
     renderPage()
 
     await waitFor(() => expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('1'))
-    expect(screen.getByTestId('infrastructure-attention-severity').textContent).toBe('No high-severity findings')
+    expect(reasonLine()).toBe('1 stopped or degraded')
+    expect(card().textContent).not.toMatch(/No high-severity findings/)
     expect(card().textContent).not.toMatch(/critical/i)
   })
 
-  it('a backend that does not send the counts: no severity line, and still no "critical"', async () => {
+  it('a backend that does not send the breakdown: the generic description, and still no "critical"', async () => {
     mockServicesStats.mockResolvedValue(stats(4))
     renderPage()
 
     await waitFor(() => expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('4'))
-    expect(screen.queryByTestId('infrastructure-attention-severity')).not.toBeInTheDocument()
+    expect(reasonLine()).toBe('Stopped, failed, or flagged by a finding or cost recommendation')
     expect(card().textContent).not.toMatch(/critical/i)
   })
 })

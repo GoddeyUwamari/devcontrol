@@ -368,12 +368,11 @@ function InfrastructureContent() {
   const activeCount      = isDemoActive ? demoActive     : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.healthy         ?? 0))
   const warningCount     = isDemoActive ? demoWarning    : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.needs_attention ?? 0))
 
-  // The red card counts resources that need attention: stopped, failed, or carrying
-  // a High or Critical finding. It is titled by what those findings are, so it says
-  // "Critical" only when a Critical finding exists.
+  // The red card counts resources that need attention, and says why they are counted
+  // (see attentionCard.ts). It says "critical" only when a Critical finding exists.
   const attentionCard = isDemoActive
-    ? { label: 'Critical Issues', severityLine: null as string | null, action: 'Resolve now →' }
-    : describeAttentionCard(statsLoading || (statsError && !apiStats) ? undefined : apiStats?.findings_by_severity)
+    ? { label: 'Critical Issues', reasonLine: null as string | null, action: 'Resolve now →' }
+    : describeAttentionCard(warningCount, apiStats?.findings_by_severity, apiStats?.attention_reasons)
 
   const DEMO_INTELLIGENCE = {
     // 73 is 'Stable' under the canonical overall thresholds (scoreToStatus:
@@ -747,10 +746,9 @@ function InfrastructureContent() {
         >
           <p className="text-xs font-semibold text-red-600 uppercase tracking-widest mb-4" data-testid="infrastructure-attention-label">{attentionCard.label}</p>
           <div className="text-3xl sm:text-4xl font-bold text-red-600 tracking-tight leading-none mb-2" data-testid="infrastructure-attention-count">{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
-          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">{isDemoActive ? '1 cost inefficiency · 1 reliability risk' : 'Stopped, failed, or with a high-severity finding'}</p>
-          {attentionCard.severityLine && (
-            <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5" data-testid="infrastructure-attention-severity">{attentionCard.severityLine}</p>
-          )}
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5" data-testid="infrastructure-attention-reasons">
+            {isDemoActive ? '1 cost inefficiency · 1 reliability risk' : attentionCard.reasonLine ?? 'Stopped, failed, or flagged by a finding or cost recommendation'}
+          </p>
           <p className="text-xs text-red-600 font-medium">{attentionCard.action}</p>
         </div>
 
