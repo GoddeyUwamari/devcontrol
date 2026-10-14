@@ -60,6 +60,11 @@ export function mapStatus(resourceType: string, rawStatus: string | null): Opera
   const s = lifecycleState.toLowerCase();
 
   switch (resourceType) {
+    case 'cloudfront':
+      // Deployed, or a change still propagating: either way the distribution is serving.
+      if (s === 'active' || s === 'in-progress') return 'healthy';
+      return 'warning';
+
     case 'ebs':
       // 'in-use' (attached) and 'available' (unattached) are a volume's two normal states.
       if (s === 'in-use' || s === 'available') return 'healthy';
@@ -192,7 +197,32 @@ export function derivePrioritySeverity(
   complianceIssues: any[] | null,
   costRecommendations: any[] | null
 ): { priority_severity: PrioritySeverity | null; reason: string | null; needs_attention: boolean } {
-  const flagged = worstComplianceIssue(complianceIssues) ?? worstCostRecommendation(costRecommendations);
+  const { priority_severity, reason, needs_attention } = deriveAttention(status, complianceIssues, costRecommendations);
+  return { priority_severity, reason, needs_attention };
+}
+
+/** Why a resource needs attention. More than one can hold at once. */
+export interface AttentionCauses {
+  /** A current Critical or High compliance finding. */
+  finding: boolean;
+  /** A HIGH cost recommendation, on a resource with no current compliance finding. */
+  cost_recommendation: boolean;
+  /** Its operational status: 'warning' (stopped or degraded) or 'critical' (failed). */
+  status: 'warning' | 'critical' | null;
+}
+
+/**
+ * derivePrioritySeverity's result plus the causes behind needs_attention. One
+ * computation, so a count of resources needing attention and an account of why
+ * can never disagree.
+ */
+export function deriveAttention(
+  status: OperationalStatus,
+  complianceIssues: any[] | null,
+  costRecommendations: any[] | null
+): { priority_severity: PrioritySeverity | null; reason: string | null; needs_attention: boolean; causes: AttentionCauses } {
+  const complianceFinding = worstComplianceIssue(complianceIssues);
+  const flagged = complianceFinding ?? worstCostRecommendation(costRecommendations);
   const statusFinding = statusSeverity(status);
   const combined = worseSeverity(flagged, statusFinding);
 
@@ -203,6 +233,11 @@ export function derivePrioritySeverity(
     priority_severity: combined?.severity ?? null,
     reason: combined?.reason ?? null,
     needs_attention: needsAttention,
+    causes: {
+      finding: flaggedMeetsFloor && !!complianceFinding,
+      cost_recommendation: flaggedMeetsFloor && !complianceFinding,
+      status: statusFinding ? (status === 'critical' ? 'critical' : 'warning') : null,
+    },
   };
 }
 
@@ -346,22 +381,46 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     // are Critical instead of assuming so. Same rows as fetchServices (this
     // organization, not terminated) and the same currency rule as needs_attention
     // (isActiveComplianceFinding), so the two cannot disagree.
+    //
+    // attention_reasons says why the needs_attention resources are counted: how many
+    // carry a Critical or High finding, how many are there through a cost
+    // recommendation, and how many through their status. A resource can be in more
+    // than one. The cost recommendations are read the way fetchServices reads them.
     const { rows: findingRows } = await pool.query(
-      `SELECT compliance_issues FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
+      `SELECT r.resource_type, r.status, r.compliance_issues,
+              (SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
+                 FROM cost_recommendations cr
+                WHERE cr.organization_id = r.organization_id
+                  AND cr.resource_id = r.resource_id
+                  AND LOWER(cr.resource_type) = r.resource_type
+                  AND cr.status = 'ACTIVE'
+              ) AS cost_recommendations
+         FROM aws_resources r
+        WHERE r.organization_id = $1 AND r.status != 'terminated'`,
       [orgId]
     );
     const findingsBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    const attentionReasons = { with_finding: 0, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 };
     for (const row of findingRows) {
       for (const finding of activeComplianceFindings(row.compliance_issues)) {
         if (finding.severity in findingsBySeverity) findingsBySeverity[finding.severity]++;
       }
+      const { causes } = deriveAttention(mapStatus(row.resource_type, row.status), row.compliance_issues, row.cost_recommendations);
+      if (causes.finding) attentionReasons.with_finding++;
+      if (causes.cost_recommendation) attentionReasons.with_cost_recommendation++;
+      if (causes.status === 'warning') attentionReasons.stopped_or_degraded++;
+      if (causes.status === 'critical') attentionReasons.failed++;
     }
 
     // No real monitoring data source exists yet — avg_uptime is intentionally null
     // rather than a fabricated figure.
     res.json({
       success: true,
-      stats: { total, healthy, needs_attention: needsAttention, avg_uptime: null, findings_by_severity: findingsBySeverity },
+      stats: {
+        total, healthy, needs_attention: needsAttention, avg_uptime: null,
+        findings_by_severity: findingsBySeverity,
+        attention_reasons: attentionReasons,
+      },
     });
   } catch (err: any) {
     console.error('[Services/stats]', err);

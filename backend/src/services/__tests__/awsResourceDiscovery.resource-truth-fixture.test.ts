@@ -261,6 +261,8 @@ async function measure(orgId: string) {
       noFlaggedIssues: services.healthy,
       redCardCount: services.needs_attention,
       findingsBySeverity: services.findings_by_severity ?? null,
+      // Why the red card's resources are counted.
+      attentionReasons: services.attention_reasons ?? null,
     },
     perResource: Object.fromEntries(
       ACCOUNT.map((r) => {
@@ -290,6 +292,7 @@ afterAll(async () => {
   if (process.env.RT2B_MEASURE_OUT) fs.writeFileSync(process.env.RT2B_MEASURE_OUT, JSON.stringify(measurements, null, 2));
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM account_security_findings WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await pool.query('DELETE FROM cost_recommendations WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM framework_evaluation_runs WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM resource_discovery_jobs WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
@@ -314,7 +317,12 @@ describe('the nine-resource account, measured', () => {
     expect(m.findings).toEqual({ total: 17, critical: 0, high: 3, medium: 5, low: 9 });
     // Was 4 of 9: the attached volume counted through its 'in-use' status alone.
     expect(m.servicesAtRisk).toBe('3 of 9');
-    expect(m.infrastructureCards).toEqual({ noFlaggedIssues: 6, redCardCount: 3, findingsBySeverity: { critical: 0, high: 3, medium: 5, low: 9 } });
+    expect(m.infrastructureCards).toEqual({
+      noFlaggedIssues: 6, redCardCount: 3,
+      findingsBySeverity: { critical: 0, high: 3, medium: 5, low: 9 },
+      // The instance and two buckets, each through a High finding. Nothing through status.
+      attentionReasons: { with_finding: 3, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 },
+    });
     // By type, so the rows read correctly before discovery has rewritten them.
     for (const key of NO_LIFECYCLE) expect(m.perResource[key].shownStatus).toBeNull();
     expect(m.perResource.instance.shownStatus).toBe('running');
@@ -331,7 +339,11 @@ describe('the nine-resource account, measured', () => {
     expect(m.storedEntries).toBe(14);
     expect(m.servicesAtRisk).toBe('2 of 9');
     // The red card: 2 resources, and 0 Critical findings behind it.
-    expect(m.infrastructureCards).toEqual({ noFlaggedIssues: 7, redCardCount: 2, findingsBySeverity: { critical: 0, high: 2, medium: 3, low: 9 } });
+    expect(m.infrastructureCards).toEqual({
+      noFlaggedIssues: 7, redCardCount: 2,
+      findingsBySeverity: { critical: 0, high: 2, medium: 3, low: 9 },
+      attentionReasons: { with_finding: 2, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 },
+    });
 
     expect(findingsOf(m)).toEqual({
       'vol-unattached': [LOW_TAGS, 'medium: EBS resource is not encrypted'],
@@ -339,7 +351,7 @@ describe('the nine-resource account, measured', () => {
       instance: [
         LOW_TAGS,
         'medium: EC2 instance does not have regular snapshots',
-        'medium: EC2 instance has a public IP address; no attached security group opens an administrative or database port to the internet',
+        'medium: EC2 instance has a public IP address. No security-group rule allows an admin/database port from 0.0.0.0/0 or ::/0.',
       ],
       // NoSuchTagSet is evidence of zero tags: the tag finding stands, now on a real read.
       'app-prod-backups': [HTTPS, LOW_TAGS],
@@ -386,6 +398,29 @@ describe('the nine-resource account, measured', () => {
     );
   });
 
+  it('a stopped instance and a HIGH cost recommendation are counted, and the card is told why', async () => {
+    const orgId = await insertAccount();
+    await scan(orgId, CLOSED);
+    await pool.query(`UPDATE aws_resources SET status = 'stopped' WHERE organization_id = $1 AND resource_id = $2`, [orgId, INSTANCE_ID]);
+    await pool.query(
+      `INSERT INTO cost_recommendations (organization_id, resource_id, resource_type, issue, description, potential_savings, severity, status)
+       VALUES ($1, $2, 'EBS', 'Unattached EBS Volume', 'd', 10, 'HIGH', 'ACTIVE')`,
+      [orgId, VOL_ATTACHED]
+    );
+    // A cost recommendation is consulted only for a resource with no current compliance
+    // finding, so the volume's own (Low, tagging) finding is cleared for this case.
+    await pool.query(`UPDATE aws_resources SET compliance_issues = '[]' WHERE organization_id = $1 AND resource_id = $2`, [orgId, VOL_ATTACHED]);
+    const m = await measure(orgId);
+    measurements.afterScanStoppedAndCostRecommendation = m;
+
+    // Two buckets through a High finding, the instance through its status, the volume
+    // through its cost recommendation.
+    expect(m.servicesAtRisk).toBe('4 of 9');
+    expect(m.infrastructureCards.attentionReasons).toEqual({ with_finding: 2, with_cost_recommendation: 1, stopped_or_degraded: 1, failed: 0 });
+    expect(m.infrastructureCards.findingsBySeverity).toMatchObject({ critical: 0, high: 2 });
+    expect(m.perResource.instance.shownStatus).toBe('stopped');
+  });
+
   it('after a scan: security groups and bucket tags cannot be read -> Medium "exposure unknown", and no bucket tag finding', async () => {
     const orgId = await insertAccount();
     const errors = await scan(orgId, { securityGroup: 'denied', bucketTagging: 'denied' });
@@ -396,7 +431,7 @@ describe('the nine-resource account, measured', () => {
     expect(errors.filter((e) => !e.startsWith('Security group scan'))).toEqual([]);
     expect(m.findings).toEqual({ total: 11, critical: 0, high: 2, medium: 3, low: 6 });
     expect(m.servicesAtRisk).toBe('2 of 9');
-    expect(m.perResource.instance.findings).toContain('medium: EC2 instance has a public IP address; exposure unknown: its security groups could not be read');
+    expect(m.perResource.instance.findings).toContain('medium: EC2 instance has a public IP address. Exposure unknown: its security groups could not be read.');
     expect(m.perResource.instance.findings.some((f) => f.startsWith('high:'))).toBe(false);
     // The fabricated tag findings resolved through the scan itself: nothing was deleted by hand.
     expect(m.perResource['app-prod-backups'].findings).toEqual([HTTPS]);
