@@ -370,6 +370,11 @@ function expectPreviewAndSteps() {
 function expectUnconnectedPageWording() {
   expect(textOutsideSavingsTag()).not.toMatch(OLD_COPY)
   expect(wordsOutsideSavingsTag()).not.toMatch(FORBIDDEN)
+  // And block by block, unspaced: a forbidden word split across text nodes inside one element is still caught.
+  const BLOCKS = 'section, div, ul, ol, li, p, h1, h2, h3, h4, h5, h6'
+  for (const block of pageOutsideSavingsTag().querySelectorAll(BLOCKS)) {
+    if (!block.querySelector(BLOCKS)) expect(block.textContent).not.toMatch(FORBIDDEN)
+  }
   expect((document.body.textContent ?? '').match(/Setup takes/gi)).toHaveLength(1)
   expect(screen.queryByTestId('aws-connection-line')).not.toBeInTheDocument()
 }
