@@ -39,6 +39,8 @@ export type ResourceStatus =
   | 'failed'
   | 'unknown'
   | 'UNKNOWN'
+  // A CloudFront distribution whose latest change is still propagating.
+  | 'in-progress'
   // The resource type has no lifecycle status (S3, SNS, VPC): see utils/resourceLifecycle.ts.
   | 'not_applicable';
 
@@ -306,11 +308,15 @@ export interface IamAccessKeyEvidence {
  *   open_admin_port   `rules` lists the internet-open rules that cover an
  *                     administrative or database port.
  *   not_established   the groups were read and no such rule was found.
- *   unknown           the groups could not be read; nothing is claimed either way.
+ *   unknown           the groups could not be read, or a rule on such a port takes its
+ *                     sources from a prefix list that was not resolved; nothing is
+ *                     claimed either way.
+ *   not_checked       nothing is recorded for the instance yet: its groups have not
+ *                     been read (which is not the same as a read that failed).
  */
 export interface NetworkExposureEvidence {
   schema_version: 1;
-  state: 'open_admin_port' | 'not_established' | 'unknown';
+  state: 'open_admin_port' | 'not_established' | 'unknown' | 'not_checked';
   summary: string;
   rules: Array<{
     security_group_id: string;
@@ -479,7 +485,7 @@ export interface EC2InstanceMetadata {
   /** Read from those groups on each discovery: see utils/adminPortExposure.ts. */
   network_exposure?: {
     state: 'open_admin_port' | 'not_established' | 'unknown';
-    reason?: string;
+    reason?: 'security_groups_unreadable' | 'prefix_list_source';
     rules?: NetworkExposureEvidence['rules'];
   };
 }

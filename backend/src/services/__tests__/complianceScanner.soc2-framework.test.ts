@@ -187,7 +187,7 @@ describe('SOC 2 enabled: a tag is not evidence, present or absent', () => {
     const baseline = service.evaluateBaseline(exposed);
     expect(baseline.map((i) => [i.severity, i.issue, i.provenance])).toEqual([
       ['high', 'EC2 instance has unencrypted EBS volumes', 'OBSERVED'],
-      ['medium', 'EC2 instance has a public IP address; exposure unknown: its security groups could not be read', 'OBSERVED'],
+      ['medium', 'EC2 instance has a public IP address. Exposure not checked: its security groups have not been read yet.', 'OBSERVED'],
       ['medium', 'EC2 instance does not have regular snapshots', 'OBSERVED'],
       ['low', 'Resource is missing required tags: Owner, Environment, Team', 'SELF_ATTESTED'],
     ]);

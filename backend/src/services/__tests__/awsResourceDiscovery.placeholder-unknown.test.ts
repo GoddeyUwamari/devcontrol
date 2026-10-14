@@ -220,8 +220,8 @@ describe('EC2 instances', () => {
       DescribeSecurityGroupsCommand: opts.groups ?? (() => ({ SecurityGroups: [{ GroupId: 'sg-1234567890abcdef0', IpPermissions: [] }] })),
     });
   }
-  const discover = async (c: EC2Client, forRegion?: (region: string) => EC2Client) =>
-    service().discoverEC2Instances(ORG, c, 'us-east-1', '111122223333', noBackupEvidence, forRegion);
+  const discover = async (c: EC2Client, listedIn = 'us-east-1') =>
+    service().discoverEC2Instances(ORG, c, listedIn, '111122223333', noBackupEvidence);
   const openSsh = { GroupId: 'sg-1234567890abcdef0', IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }] };
 
   describe('volume encryption', () => {
@@ -283,36 +283,45 @@ describe('EC2 instances', () => {
       expect((await discover(c))[0].metadata.network_exposure.state).toBe('open_admin_port');
     });
 
-    it('reads the groups once per region, however many instances there are', async () => {
+    it('reads the groups once, however many instances there are', async () => {
       const c = ec2({ instances: [instance(), instance({ InstanceId: 'i-0123456789abcdef0' })] });
       await discover(c);
       expect(commandsSent(c).filter((name) => name === 'DescribeSecurityGroupsCommand')).toHaveLength(1);
     });
 
-    it('reads each instance\'s groups in the instance\'s own region', async () => {
-      const home = ec2({
-        instances: [instance(), instance({ InstanceId: 'i-0123456789abcdef0', Placement: { AvailabilityZone: 'eu-west-1b' }, SecurityGroups: [{ GroupId: 'sg-0123456789abcdef0' }] })],
-      });
-      const elsewhere = client(new EC2Client({ region: 'eu-west-1' }), {
-        DescribeSecurityGroupsCommand: () => ({ SecurityGroups: [{ ...openSsh, GroupId: 'sg-0123456789abcdef0' }] }),
-      });
-      const regionsAsked: string[] = [];
-      const resources = await discover(home, (region) => { regionsAsked.push(region); return elsewhere; });
-
-      expect(regionsAsked).toEqual(['eu-west-1']);
-      expect(commandsSent(home).filter((name) => name === 'DescribeSecurityGroupsCommand')).toHaveLength(1);
-      expect(resources[0].metadata.network_exposure.state).toBe('not_established');
-      expect(resources[1].metadata.network_exposure.state).toBe('open_admin_port');
+    it('makes no read at all when no instance has a security group', async () => {
+      const c = ec2({ instances: [instance({ SecurityGroups: [] })] });
+      const [resource] = await discover(c);
+      expect(commandsSent(c)).not.toContain('DescribeSecurityGroupsCommand');
+      expect(resource.metadata.network_exposure).toEqual({ state: 'not_established' });
     });
 
-    it('a region that cannot be read leaves only that region\'s instances unknown', async () => {
-      const home = ec2({
-        instances: [instance(), instance({ InstanceId: 'i-0123456789abcdef0', Placement: { AvailabilityZone: 'eu-west-1b' }, SecurityGroups: [{ GroupId: 'sg-0123456789abcdef0' }] })],
+    // An instance is in the region it was listed in. Its availability zone is not a
+    // reliable way to name that region: a Local Zone or Wavelength Zone name is not
+    // "region + one letter".
+    it.each([
+      ['a Local Zone', 'us-west-2-lax-1a'],
+      ['a Wavelength Zone', 'us-west-2-wl1-sea-wlz-1'],
+      ['an ordinary zone', 'us-west-2b'],
+      ['no reported zone', undefined],
+    ])('an instance in %s (%s) has its groups read in the region it was listed in, with the client that listed it', async (_name, zone) => {
+      const c = ec2({
+        instances: [instance({ Placement: zone ? { AvailabilityZone: zone } : undefined })],
+        groups: () => ({ SecurityGroups: [openSsh] }),
       });
-      const denied = client(new EC2Client({ region: 'eu-west-1' }), { DescribeSecurityGroupsCommand: () => { throw awsError('UnauthorizedOperation'); } });
-      const resources = await discover(home, () => denied);
-      expect(resources[0].metadata.network_exposure.state).toBe('not_established');
-      expect(resources[1].metadata.network_exposure).toEqual({ state: 'unknown', reason: 'security_groups_unreadable' });
+      const [resource] = await discover(c, 'us-west-2');
+
+      // One read, by the listing client: nothing was derived from the zone name.
+      expect(commandsSent(c).filter((name) => name === 'DescribeSecurityGroupsCommand')).toHaveLength(1);
+      expect(resource.metadata.network_exposure.state).toBe('open_admin_port');
+      expect(resource.region).toBe('us-west-2');
+      expect(resource.resource_arn).toBe('arn:aws:ec2:us-west-2:*:instance/i-1234567890abcdef0');
+    });
+
+    it('a prefix-list source on an admin port is recorded as unknown, not as not_established', async () => {
+      const viaList = { GroupId: 'sg-1234567890abcdef0', IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] }] };
+      const [resource] = await discover(ec2({ groups: () => ({ SecurityGroups: [viaList] }) }));
+      expect(resource.metadata.network_exposure).toEqual({ state: 'unknown', reason: 'prefix_list_source' });
     });
   });
 });
@@ -431,6 +440,31 @@ describe('tags of Lambda functions, load balancers and CloudFront distributions'
     expect(fn.metadata.tags_state).toBe('observed');
   });
 
+  it('Lambda: no State from ListFunctions is an unknown status, never "Active"; a reported State is kept', async () => {
+    const fn = (extra: Record<string, unknown>) => ({ FunctionArn: 'arn:aws:lambda:us-east-1:111122223333:function:app-fn', FunctionName: 'app-fn', ...extra });
+    const discover = async (extra: Record<string, unknown>) =>
+      (await service().discoverLambdaFunctions(ORG, client(new LambdaClient({ region: 'us-east-1' }), {
+        ListFunctionsCommand: () => ({ Functions: [fn(extra)] }),
+        ListTagsCommand: () => ({ Tags: {} }),
+      }), noUsage, 'us-east-1'))[0];
+
+    expect((await discover({})).status).toBe('unknown');
+    expect((await discover({ State: 'Active' })).status).toBe('Active');
+    expect((await discover({ State: 'Failed' })).status).toBe('Failed');
+  });
+
+  it('Lambda: is_encrypted is unknown, not a hardcoded true, with or without a KMS key or environment variables', async () => {
+    const lambda = client(new LambdaClient({ region: 'us-east-1' }), {
+      ListFunctionsCommand: () => ({ Functions: [
+        { FunctionArn: 'arn:aws:lambda:us-east-1:111122223333:function:plain', FunctionName: 'plain' },
+        { FunctionArn: 'arn:aws:lambda:us-east-1:111122223333:function:keyed', FunctionName: 'keyed', KMSKeyArn: 'arn:aws:kms:us-east-1:111122223333:key/k', Environment: { Variables: { A: 'b' } } },
+      ] }),
+      ListTagsCommand: () => ({ Tags: {} }),
+    });
+    const functions = await service().discoverLambdaFunctions(ORG, lambda, noUsage, 'us-east-1');
+    expect(functions.map((f: any) => f.is_encrypted)).toEqual([null, null]);
+  });
+
   it('Lambda: ListTags denied -> unavailable', async () => {
     const lambda = client(new LambdaClient({ region: 'us-east-1' }), {
       ListFunctionsCommand: () => ({ Functions: [{ FunctionArn: 'arn:aws:lambda:us-east-1:111122223333:function:app-fn', FunctionName: 'app-fn' }] }),
@@ -460,6 +494,30 @@ describe('tags of Lambda functions, load balancers and CloudFront distributions'
     const [lb] = await service().discoverLoadBalancers(ORG, elb, 'us-east-1');
     expect(lb.tags).toEqual({});
     expect(lb.metadata.tags_state).toBe('unavailable');
+  });
+
+  describe('CloudFront', () => {
+    const distributions = async (items: Array<Record<string, unknown>>) =>
+      service().discoverCloudFrontDistributions(ORG, client(new CloudFrontClient({ region: 'us-east-1' }), {
+        ListDistributionsCommand: () => ({ DistributionList: { Items: items.map((item, i) => ({ ARN: `arn:aws:cloudfront::111122223333:distribution/E${i}ABC`, Id: `E${i}ABC`, ...item })) } }),
+      }));
+
+    it.each([
+      ['Deployed', 'active'],
+      ['InProgress', 'in-progress'],
+      ['SomethingNew', 'unknown'],
+      [undefined, 'unknown'],
+    ])('Status %p is stored as %s -- never "inactive" by default', async (awsStatus, stored) => {
+      const [distribution] = await distributions([{ Status: awsStatus }]);
+      expect(distribution.status).toBe(stored);
+      expect(distribution.status).not.toBe('inactive');
+    });
+
+    it('is_public is not set (a distribution is public by design), so it is stored as NULL', async () => {
+      const [distribution] = await distributions([{ Status: 'Deployed' }]);
+      expect(distribution.is_public).toBeUndefined();
+      expect((await storedBy(distribution)).is_public).toBeNull();
+    });
   });
 
   it('CloudFront: tags are not read, so they are unavailable', async () => {

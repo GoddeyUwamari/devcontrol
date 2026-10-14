@@ -9,8 +9,10 @@
  *   - a call that keeps failing (or hangs past its time limit) costs that one resource
  *     that one answer -- recorded as unknown -- and nothing else.
  *
- * Every AWS call is answered here after a simulated 5 ms. The policy is the default
- * one (concurrency, attempts, real backoff) except for the per-call time limit, which
+ * Every AWS call is answered here after a simulated 5 ms. The mocked `send` stands in
+ * for the SDK, so the SDK's own retries are not in play: each count below is one
+ * policy attempt. The policy is the default one (concurrency 8, 2 attempts, real
+ * backoff) except for the per-call time limit, which
  * is shortened so the two hanging calls do not hold the test for 15 s each.
  * Set RT2B_SCALE_OUT to a file path to have the measured call counts and timings
  * written there as JSON.
@@ -185,7 +187,7 @@ describe('300 buckets across 4 regions', () => {
     expect(log.byCommand).toEqual({
       ListBucketsCommand: 1,
       GetBucketLocationCommand: COUNT + LOCATION_THROTTLED_ONCE.size, // 3 retried once
-      GetBucketEncryptionCommand: COUNT + ENCRYPTION_THROTTLED_ALWAYS.size * (POLICY.maxAttempts - 1), // 2 tried 4 times
+      GetBucketEncryptionCommand: COUNT + ENCRYPTION_THROTTLED_ALWAYS.size * (POLICY.maxAttempts - 1), // 2 tried maxAttempts times
       GetBucketAclCommand: COUNT, // the hanging one is aborted at its time limit and not retried
       GetBucketLifecycleConfigurationCommand: COUNT,
       GetBucketTaggingCommand: COUNT + TAGS_THROTTLED_ONCE.size + TAGS_THROTTLED_ALWAYS.size * (POLICY.maxAttempts - 1),
@@ -194,7 +196,7 @@ describe('300 buckets across 4 regions', () => {
     expect(Object.keys(log.byRegion).sort()).toEqual([...REGIONS].sort());
 
     measured.s3 = {
-      buckets: COUNT, regions: REGIONS.length, concurrency: POLICY.concurrency, simulatedLatencyMsPerCall: LATENCY_MS,
+      buckets: COUNT, regions: REGIONS.length, concurrency: POLICY.concurrency, maxAttempts: POLICY.maxAttempts, simulatedLatencyMsPerCall: LATENCY_MS,
       totalCalls: log.total, callsByCommand: log.byCommand, callsByRegion: log.byRegion, peakCallsInFlight: log.peakInFlight,
       elapsedMs, sequentialLatencyFloorMs: log.total * LATENCY_MS,
       unknown: { tags: TAGS_THROTTLED_ALWAYS.size + TAGS_DENIED.size, encryption: ENCRYPTION_THROTTLED_ALWAYS.size, publicAccess: ACL_HANGS.size },
@@ -205,37 +207,47 @@ describe('300 buckets across 4 regions', () => {
 });
 
 describe('200 instances across 4 regions', () => {
+  // Instance inventory is listed one region at a time (multi-region inventory is not
+  // built yet), so this runs discovery once per region, 50 instances each, the way a
+  // multi-region scan would. An instance's security groups are read in the region it
+  // was listed in, by the client that listed it.
   const COUNT = 200;
-  const id = (i: number) => `i-0abc${String(i).padStart(12, '0')}`;
-  const volumeId = (i: number) => `vol-0abc${String(i).padStart(12, '0')}`;
-  const groupId = (i: number) => `sg-0abc${String(i).padStart(12, '0')}`;
-  const indexOf = (resourceId: string) => Number(resourceId.slice(-12));
+  const PER_REGION = COUNT / REGIONS.length;
+  const pad = (i: number) => String(i).padStart(3, '0');
+  const id = (i: number) => `i-test-instance-${pad(i)}`;
+  const volumeId = (i: number) => `vol-test-volume-${pad(i)}`;
+  const groupId = (i: number) => `sg-test-group-${pad(i)}`;
+  const indexOf = (resourceId: string) => Number(resourceId.slice(-3));
   const regionOf = (i: number) => REGIONS[i % REGIONS.length];
+  const inRegion = (region: string) => Array.from({ length: COUNT }, (_, i) => i).filter((i) => regionOf(i) === region);
 
   // The faults.
-  const SG_REGION_THROTTLED_ONCE = 'eu-west-1'; // recovers on retry
+  const SG_REGION_THROTTLED_ONCE = 'eu-west-1'; // each page recovers on retry
   const SG_REGION_THROTTLED_ALWAYS = 'ap-southeast-2'; // its 50 instances: exposure unknown
   const BACKUP_THROTTLED_ALWAYS = new Set([11, 61, 111, 161]);
   const BACKUP_THROTTLED_ONCE = new Set(Array.from({ length: 10 }, (_, k) => k * 20 + 5));
-  // In every region, every tenth instance's group opens SSH to the internet.
+  // Every tenth instance's group opens SSH to the internet.
   const opensSsh = (i: number) => i % 10 === 0;
+  // Some instances sit in a Local Zone: still the region they were listed in.
+  const zoneOf = (i: number) => (i % 25 === 3 ? `${regionOf(i)}-lax-1a` : `${regionOf(i)}a`);
 
   function clients(log: CallLog) {
-    const instances = Array.from({ length: COUNT }, (_, i) => ({
+    const instancesOf = (region: string) => inRegion(region).map((i) => ({
       InstanceId: id(i), InstanceType: 't3.micro', State: { Name: 'running' }, PublicIpAddress: `203.0.113.${i % 250}`,
-      Placement: { AvailabilityZone: `${regionOf(i)}a` }, SecurityGroups: [{ GroupId: groupId(i) }],
+      Placement: { AvailabilityZone: zoneOf(i) }, SecurityGroups: [{ GroupId: groupId(i) }],
       BlockDeviceMappings: [{ Ebs: { VolumeId: volumeId(i) } }], Tags: [],
     }));
-    const groupsOf = (region: string) =>
-      Array.from({ length: COUNT }, (_, i) => i).filter((i) => regionOf(i) === region).map((i) => ({
-        GroupId: groupId(i),
-        IpPermissions: [{ IpProtocol: 'tcp', FromPort: opensSsh(i) ? 22 : 443, ToPort: opensSsh(i) ? 22 : 443, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }],
-      }));
+    const groupsOf = (region: string) => inRegion(region).map((i) => ({
+      GroupId: groupId(i),
+      IpPermissions: [{ IpProtocol: 'tcp', FromPort: opensSsh(i) ? 22 : 443, ToPort: opensSsh(i) ? 22 : 443, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }],
+    }));
     const answer = (region: string) => (command: string, input: any) => {
       switch (command) {
-        case 'DescribeInstancesCommand':
-          // Two pages.
-          return input.NextToken ? { Reservations: [{ Instances: instances.slice(100) }] } : { Reservations: [{ Instances: instances.slice(0, 100) }], NextToken: 'page-2' };
+        case 'DescribeInstancesCommand': {
+          const instances = instancesOf(region);
+          // Two pages per region.
+          return input.NextToken ? { Reservations: [{ Instances: instances.slice(25) }] } : { Reservations: [{ Instances: instances.slice(0, 25) }], NextToken: 'page-2' };
+        }
         case 'DescribeVolumesCommand':
           return { Volumes: (input.VolumeIds as string[]).map((VolumeId) => ({ VolumeId, Encrypted: true })) };
         case 'DescribeSecurityGroupsCommand': {
@@ -256,31 +268,36 @@ describe('200 instances across 4 regions', () => {
       if (BACKUP_THROTTLED_ONCE.has(i) && log.attempt(`backup:${i}`) === 1) throw awsError('ThrottlingException');
       return { RecoveryPoints: [] };
     });
-    return { ec2: ec2ByRegion.get(HOME)!, getEC2ClientForRegion: (region: string) => ec2ByRegion.get(region)!, backup };
+    return { ec2ByRegion, backup };
   }
 
   it('completes, bounded, and only the instances whose calls failed are unknown', async () => {
     const log = new CallLog();
     const service = discoveryService();
-    const wrapped = service.applyCallPolicy(clients(log));
+    const raw = clients(log);
+    const backup = service.applyCallPolicy({ backup: raw.backup }).backup;
 
     const started = Date.now();
-    const resources: any[] = await service.discoverEC2Instances(
-      ORG, wrapped.ec2, HOME, ACCOUNT_ID, createAwsBackupEvidenceCache(wrapped.backup), wrapped.getEC2ClientForRegion
-    );
+    const resources: any[] = [];
+    for (const region of REGIONS) {
+      const ec2 = service.applyCallPolicy({ ec2: raw.ec2ByRegion.get(region) }).ec2;
+      resources.push(...await service.discoverEC2Instances(ORG, ec2, region, ACCOUNT_ID, createAwsBackupEvidenceCache(backup)));
+    }
     const elapsedMs = Date.now() - started;
+    resources.sort((a, b) => indexOf(a.resource_id) - indexOf(b.resource_id));
 
     expect(resources.map((r) => r.resource_id)).toEqual(Array.from({ length: COUNT }, (_, i) => id(i)));
     const where = (predicate: (r: any) => boolean) => resources.filter(predicate).map((r) => indexOf(r.resource_id));
-    const inRegion = (region: string) => Array.from({ length: COUNT }, (_, i) => i).filter((i) => regionOf(i) === region);
 
     // Exposure: unknown for exactly the 50 instances of the region whose groups could not be read.
     expect(where((r) => r.metadata.network_exposure.state === 'unknown')).toEqual(inRegion(SG_REGION_THROTTLED_ALWAYS));
-    // Everywhere else it was established either way -- the once-throttled region included.
+    // Everywhere else it was established either way -- the once-throttled region and the Local Zone instances included.
     const readable = Array.from({ length: COUNT }, (_, i) => i).filter((i) => regionOf(i) !== SG_REGION_THROTTLED_ALWAYS);
     expect(where((r) => r.metadata.network_exposure.state === 'open_admin_port')).toEqual(readable.filter(opensSsh));
     expect(where((r) => r.metadata.network_exposure.state === 'not_established')).toEqual(readable.filter((i) => !opensSsh(i)));
-    expect(inRegion(SG_REGION_THROTTLED_ONCE).every((i) => resources[i].metadata.network_exposure.state !== 'unknown')).toBe(true);
+    // Each instance is recorded in the region it was listed in, Local Zone or not.
+    expect(resources.every((r) => r.region === regionOf(indexOf(r.resource_id)))).toBe(true);
+    expect(resources.filter((r) => r.metadata.availability_zone.includes('-lax-')).length).toBeGreaterThan(0);
 
     // Backups: unknown for exactly the four whose lookup kept being throttled; the ten throttled once recovered.
     expect(where((r) => r.has_backup === null)).toEqual([...BACKUP_THROTTLED_ALWAYS].sort((a, b) => a - b));
@@ -292,17 +309,19 @@ describe('200 instances across 4 regions', () => {
     expect(log.peakInFlight).toBeGreaterThan(1);
 
     expect(log.byCommand).toEqual({
-      DescribeInstancesCommand: 2, // 2 pages
-      DescribeVolumesCommand: 1, // one batch of 200 ids
-      // Per region: 2 pages. eu-west-1: each page retried once (4). ap-southeast-2: the first page tried 4 times, then given up.
+      DescribeInstancesCommand: REGIONS.length * 2, // 2 pages per region
+      DescribeVolumesCommand: REGIONS.length, // one batch per region
+      // 2 pages per region. eu-west-1: each page retried once (4). ap-southeast-2: the
+      // first page tried maxAttempts times, then given up.
       DescribeSecurityGroupsCommand: 2 + 2 + 4 + POLICY.maxAttempts,
       ListRecoveryPointsByResourceCommand: COUNT + BACKUP_THROTTLED_ONCE.size + BACKUP_THROTTLED_ALWAYS.size * (POLICY.maxAttempts - 1),
     });
-    // Each region's groups were read by that region's client.
-    for (const region of REGIONS.filter((r) => r !== HOME)) expect(log.byRegion[region]).toBeGreaterThan(0);
+    // Each region's calls went to that region's client, and to no other.
+    for (const region of REGIONS) expect(log.byRegion[region]).toBeGreaterThan(0);
 
     measured.ec2 = {
-      instances: COUNT, regions: REGIONS.length, concurrency: POLICY.concurrency, simulatedLatencyMsPerCall: LATENCY_MS,
+      instances: COUNT, regions: REGIONS.length, instancesPerRegion: PER_REGION, concurrency: POLICY.concurrency,
+      maxAttempts: POLICY.maxAttempts, simulatedLatencyMsPerCall: LATENCY_MS,
       totalCalls: log.total, callsByCommand: log.byCommand, callsByRegion: log.byRegion, peakCallsInFlight: log.peakInFlight,
       elapsedMs, sequentialLatencyFloorMs: log.total * LATENCY_MS,
       unknown: { exposure: inRegion(SG_REGION_THROTTLED_ALWAYS).length, backup: BACKUP_THROTTLED_ALWAYS.size },

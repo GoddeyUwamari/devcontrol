@@ -101,31 +101,76 @@ describe('EC2 public IP severity', () => {
       expect(findings).toHaveLength(1);
       expect(findings[0]).toMatchObject({
         severity: 'medium',
-        issue: 'EC2 instance has a public IP address; no attached security group opens an administrative or database port to the internet',
+        issue: 'EC2 instance has a public IP address. No security-group rule allows an admin/database port from 0.0.0.0/0 or ::/0.',
         network_exposure: { state: 'not_established', rules: [] },
       });
     });
   });
 
-  describe('Medium at most when the security groups could not be read', () => {
-    it.each([['the read was denied or failed', 'unreadable' as const], ['discovery recorded nothing for the instance', 'never-read' as const]])(
-      '%s: exposure unknown, never confirmed',
-      (_name, state) => {
-        const findings = publicAccess(publicInstance(state));
-        expect(findings).toHaveLength(1);
-        expect(findings[0]).toMatchObject({
-          severity: 'medium',
-          issue: 'EC2 instance has a public IP address; exposure unknown: its security groups could not be read',
-          network_exposure: { state: 'unknown', rules: [] },
-        });
-        expect(findings[0].recommendation).toContain('ec2:DescribeSecurityGroups');
-      }
-    );
+  describe('Medium at most when exposure could not be established', () => {
+    it('the security groups could not be read: exposure unknown, never confirmed', () => {
+      const findings = publicAccess(publicInstance('unreadable'));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        severity: 'medium',
+        issue: 'EC2 instance has a public IP address. Exposure unknown: its security groups could not be read.',
+        network_exposure: { state: 'unknown', rules: [] },
+      });
+      expect(findings[0].recommendation).toContain('ec2:DescribeSecurityGroups');
+    });
+
+    it('nothing is recorded for the row: "not checked", which is not "could not be read"', () => {
+      const findings = publicAccess(publicInstance('never-read'));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        severity: 'medium',
+        issue: 'EC2 instance has a public IP address. Exposure not checked: its security groups have not been read yet.',
+        network_exposure: { state: 'not_checked', rules: [] },
+      });
+      expect(findings[0].issue).not.toMatch(/could not be read/);
+      expect(findings[0].recommendation).not.toContain('ec2:DescribeSecurityGroups');
+    });
+
+    it.each([
+      ['an admin port from a prefix list', [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] }]],
+      ['every port from a prefix list', [{ IpProtocol: '-1', PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] }]],
+      ['a range covering a database port from a prefix list, beside 443 open to the internet', [
+        { IpProtocol: 'tcp', FromPort: 5000, ToPort: 6000, PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] },
+        open({ IpProtocol: 'tcp', FromPort: 443, ToPort: 443 }),
+      ]],
+    ])('%s: exposure unknown, not "not established" -- the list was not resolved and could include the internet', (_name, rules) => {
+      const findings = publicAccess(publicInstance(rules as IngressRule[]));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        severity: 'medium',
+        issue: 'EC2 instance has a public IP address. Exposure unknown: a security-group rule on an admin/database port takes its sources from a prefix list, which was not resolved.',
+        network_exposure: { state: 'unknown', rules: [] },
+      });
+    });
+
+    it('a prefix list on a port that is not an admin or database port changes nothing', () => {
+      const [finding] = publicAccess(publicInstance([{ IpProtocol: 'tcp', FromPort: 443, ToPort: 443, PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] }]));
+      expect(finding.network_exposure?.state).toBe('not_established');
+    });
+
+    it('a verified internet-open rule is High even when another rule uses a prefix list', () => {
+      const [finding] = publicAccess(publicInstance([
+        { IpProtocol: 'tcp', FromPort: 22, ToPort: 22, PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] },
+        open({ IpProtocol: 'tcp', FromPort: 3389, ToPort: 3389 }),
+      ]));
+      expect(finding.severity).toBe('high');
+    });
 
     it('a recorded open_admin_port with no rule behind it is not taken as confirmed', () => {
       const instance = resource({ is_public: true, metadata: { network_exposure: { state: 'open_admin_port', rules: [] } } });
-      expect(publicAccess(instance)[0].severity).toBe('medium');
+      expect(publicAccess(instance)[0]).toMatchObject({ severity: 'medium', network_exposure: { state: 'unknown' } });
     });
+  });
+
+  it('the Medium text says exactly which sources were checked', () => {
+    const [finding] = publicAccess(publicInstance([open({ IpProtocol: 'tcp', FromPort: 443, ToPort: 443 })]));
+    expect(finding.network_exposure?.summary).toBe('No security-group rule allows an admin/database port from 0.0.0.0/0 or ::/0.');
+    expect(finding.issue).not.toMatch(/to the internet|not exposed|is safe|is secure/i);
   });
 
   it('no finding text ever claims the instance was reached or compromised', () => {
@@ -133,6 +178,8 @@ describe('EC2 public IP severity', () => {
       publicInstance([open({ IpProtocol: '-1' })]),
       publicInstance([open({ IpProtocol: 'tcp', FromPort: 443, ToPort: 443 })]),
       publicInstance('unreadable'),
+      publicInstance('never-read'),
+      publicInstance([{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] }]),
     ].flatMap((r) => publicAccess(r)).flatMap((f) => [f.issue, f.recommendation, f.network_exposure?.summary ?? '']);
     for (const text of texts) {
       expect(text).not.toMatch(/compromis|breach|attack|exploit|hacked|was accessed|unauthorized access|confirmed exposure/i);
@@ -144,6 +191,12 @@ describe('EC2 public IP severity', () => {
     const exposure = evaluateNetworkExposure([SG], new Map([[SG, { GroupId: SG, IpPermissions: [open({ IpProtocol: '-1' })] }]]));
     expect(publicAccess(resource({ is_public: false, metadata: { network_exposure: exposure } }))).toEqual([]);
     expect(publicAccess(resource({ is_public: null, metadata: { network_exposure: exposure } }))).toEqual([]);
+  });
+
+  it.each([[true], [false], [null]])('a CloudFront distribution has no public-access finding (is_public=%p): it is public by design', (isPublic) => {
+    const distribution = resource({ resource_type: 'cloudfront', is_public: isPublic, metadata: { tags_state: 'unavailable' } });
+    expect(publicAccess(distribution)).toEqual([]);
+    expect(baseline(distribution)).toEqual([]);
   });
 
   it('other public resource types keep their own finding', () => {
@@ -203,6 +256,30 @@ describe('"missing required tags" needs tags that were read', () => {
 
   it('an S3 bucket whose observed tags are complete: no finding', () => {
     expect(tagFindings(resource({ resource_type: 's3', tags: TAGGED, metadata: { tags_state: 'observed' } }))).toEqual([]);
+  });
+
+  describe('a recorded "unavailable" is decisive, whatever the resource type', () => {
+    // A non-Aurora DB cluster found by Resource Explorer is reclassified from 'aurora' to
+    // 'rds' (enrichAuroraClusters). It keeps the metadata it was written with.
+    const reclassified = () => resource({
+      resource_type: 'rds', tags: {},
+      metadata: { source: 'resource-explorer', service: 'rds', tags_state: 'unavailable', reclassified_from: 'aurora' },
+    });
+
+    it('a reclassified RDS cluster whose tags were not reported has no tag finding', () => {
+      expect(tagsObserved(reclassified())).toBe(false);
+      expect(tagFindings(reclassified())).toEqual([]);
+    });
+
+    it.each([['ec2'], ['ebs'], ['rds']])('%s with tags_state unavailable is not observed, although its tags normally arrive inline', (type) => {
+      expect(tagsObserved(untagged(type, { tags_state: 'unavailable' }))).toBe(false);
+      expect(tagFindings(untagged(type, { tags_state: 'unavailable' }))).toEqual([]);
+    });
+
+    it('the same cluster with its tags reported and empty does have one', () => {
+      const observed = resource({ ...reclassified(), metadata: { ...reclassified().metadata, tags_state: 'observed' } });
+      expect(tagFindings(observed)).toHaveLength(1);
+    });
   });
 
   it.each([['ec2'], ['ebs'], ['rds']])('%s tags arrive with the resource, so an untagged one is a finding with no recorded state', (type) => {

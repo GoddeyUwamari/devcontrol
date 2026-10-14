@@ -193,7 +193,6 @@ export class AWSResourceDiscoveryService {
       s3: withCallPolicy(clients.s3, this.callPolicy),
       backup: withCallPolicy(clients.backup, this.callPolicy),
       getS3ClientForRegion: regional(clients.getS3ClientForRegion),
-      getEC2ClientForRegion: regional(clients.getEC2ClientForRegion),
     };
   }
 
@@ -499,10 +498,7 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EC2 instances...`);
         try {
-          const ec2Resources = await this.discoverEC2Instances(
-            organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence,
-            awsClients.getEC2ClientForRegion
-          );
+          const ec2Resources = await this.discoverEC2Instances(organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence);
           for (const resource of ec2Resources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -1155,8 +1151,7 @@ export class AWSResourceDiscoveryService {
     ec2Client: EC2Client,
     region: string,
     accountId: string | undefined,
-    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>,
-    ec2ClientForRegion?: (region: string) => EC2Client
+    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>
   ): Promise<CreateAWSResourceInput[]> {
     const instances: Instance[] = [];
     let pageCount = 0;
@@ -1169,9 +1164,10 @@ export class AWSResourceDiscoveryService {
     this.logIfPaginated('EC2 instances', pageCount, instances.length);
 
     const volumeEncryptionMap = await this.getVolumeEncryptionMap(ec2Client, instances);
-    const securityGroupsByRegion = await this.readSecurityGroupsByRegion(
-      instances, region, (target) => (target === region || !ec2ClientForRegion ? ec2Client : ec2ClientForRegion(target))
-    );
+    // One read for the region, and only when an instance has a group to look up.
+    const securityGroups = instances.some((instance) => (instance.SecurityGroups || []).length > 0)
+      ? await this.readSecurityGroups(ec2Client, region)
+      : new Map<string, SecurityGroupRules>();
 
     // One unit of work per instance, a bounded number at a time (utils/awsCallPolicy.ts).
     const resources = await mapWithConcurrency(instances, this.callPolicy.concurrency, async (instance): Promise<CreateAWSResourceInput | null> => {
@@ -1191,14 +1187,11 @@ export class AWSResourceDiscoveryService {
         launch_time: instance.LaunchTime?.toISOString(),
       };
 
-      // What the instance's security groups show, read from the instance's own region.
+      // What the instance's security groups show, read in the region it was listed in.
       // Recorded on every discovery, whether or not the instance has a public IP, and
       // graded by ComplianceScannerService.checkPublicAccess.
       const securityGroupIds = (instance.SecurityGroups || []).map((group) => group.GroupId).filter((id): id is string => !!id);
-      const exposure: NetworkExposure = evaluateNetworkExposure(
-        securityGroupIds,
-        securityGroupsByRegion.get(this.instanceRegion(instance, region)) ?? null
-      );
+      const exposure: NetworkExposure = evaluateNetworkExposure(securityGroupIds, securityGroups);
       metadata.security_group_ids = securityGroupIds;
       metadata.network_exposure = exposure;
 
@@ -1909,6 +1902,13 @@ export class AWSResourceDiscoveryService {
     return (status || 'unknown') as ResourceStatus;
   }
 
+  /** A CloudFront distribution's Status as a stored status. */
+  private mapCloudFrontStatus(status: string | undefined): ResourceStatus {
+    if (status === 'Deployed') return 'active';
+    if (status === 'InProgress') return 'in-progress';
+    return UNKNOWN_STATUS as ResourceStatus;
+  }
+
   /**
    * EBS volume State maps directly onto ResourceStatus's existing
    * 'available'/'unavailable' values -- no translation table needed, unlike
@@ -1988,42 +1988,31 @@ export class AWSResourceDiscoveryService {
     return states.every(state => state === true) ? true : null;
   }
 
-  /** The region an instance runs in: its availability zone without the zone letter. */
-  private instanceRegion(instance: Instance, fallbackRegion: string): string {
-    const zone = instance.Placement?.AvailabilityZone;
-    return zone && /[a-z]$/.test(zone) ? zone.slice(0, -1) : fallbackRegion;
-  }
-
   /**
-   * Every security group of each region the given instances are in, by region and
-   * group id. A region whose read fails (denied, throttled, any error) maps to null:
-   * its instances' exposure is then unknown, and what was read before the failure is
-   * not used, because a partial read cannot show that a rule is absent.
+   * Every security group of the region the instances were listed in, by group id,
+   * read with the client that listed them. null when the read fails (denied,
+   * throttled, any error): the instances' exposure is then unknown, and what was read
+   * before the failure is not used, because a partial read cannot show that a rule is
+   * absent.
+   *
+   * The region is the listing region, never one derived from an instance's
+   * availability zone: an instance in a Local Zone or Wavelength Zone (for example
+   * us-west-2-lax-1a) belongs to, and has its security groups in, the parent region
+   * it was listed in.
    */
-  private async readSecurityGroupsByRegion(
-    instances: Instance[],
-    fallbackRegion: string,
-    clientForRegion: (region: string) => EC2Client
-  ): Promise<Map<string, Map<string, SecurityGroupRules> | null>> {
-    const regions = new Set(
-      instances.filter(instance => (instance.SecurityGroups || []).length > 0).map(instance => this.instanceRegion(instance, fallbackRegion))
-    );
-    const byRegion = new Map<string, Map<string, SecurityGroupRules> | null>();
-    await mapWithConcurrency([...regions], this.callPolicy.concurrency, async (region) => {
-      try {
-        const groups = new Map<string, SecurityGroupRules>();
-        for await (const page of paginateDescribeSecurityGroups({ client: clientForRegion(region) }, {})) {
-          for (const group of page.SecurityGroups || []) {
-            if (group.GroupId) groups.set(group.GroupId, group);
-          }
+  private async readSecurityGroups(ec2Client: EC2Client, region: string): Promise<Map<string, SecurityGroupRules> | null> {
+    try {
+      const groups = new Map<string, SecurityGroupRules>();
+      for await (const page of paginateDescribeSecurityGroups({ client: ec2Client }, {})) {
+        for (const group of page.SecurityGroups || []) {
+          if (group.GroupId) groups.set(group.GroupId, group);
         }
-        byRegion.set(region, groups);
-      } catch (error: any) {
-        console.error(`[Discovery] DescribeSecurityGroups failed in ${region}; instance exposure recorded as unknown:`, error.message);
-        byRegion.set(region, null);
       }
-    });
-    return byRegion;
+      return groups;
+    } catch (error: any) {
+      console.error(`[Discovery] DescribeSecurityGroups failed in ${region}; instance exposure recorded as unknown:`, error.message);
+      return null;
+    }
   }
 
   /**
@@ -2164,17 +2153,20 @@ export class AWSResourceDiscoveryService {
                 }
               : { usage_state: 'unavailable' }),
           },
-          status: (func.State || 'Active') as ResourceStatus,
-          // Security Truthfulness #40: Lambda is always encrypted at rest -- with an
-          // AWS-owned/AWS-managed key by default, or a customer-managed key if
-          // func.KMSKeyArn is set (see FunctionConfiguration.KMSKeyArn in the AWS SDK:
-          // "If you don't provide a customer managed key, Lambda uses an Amazon Web
-          // Services owned key or an Amazon Web Services managed key"). The presence of
-          // environment variables has no relationship to encryption and previously
-          // produced a false "not encrypted" finding for any function without them.
-          // Always true -- never a new customer-managed-KMS field; nothing in this
-          // product currently consumes that distinction for Lambda (see #40 scoping).
-          is_encrypted: true,
+          // The function's State as AWS reported it. ListFunctions usually leaves State
+          // out (GetFunction returns it), and a function with no reported state is
+          // unknown: it used to be stored as 'Active'.
+          status: (func.State || UNKNOWN_STATUS) as ResourceStatus,
+          // Unknown, not `true`. Lambda does encrypt environment variables and the
+          // deployment packages uploaded to it at rest, always ("Data encryption at
+          // rest for AWS Lambda", Lambda Developer Guide). But the same page excepts
+          // functions that use self-managed S3 code storage: their code stays in the
+          // customer's bucket and "encryption at rest for your source code is managed
+          // by your S3 bucket configuration". Discovery does not read which kind a
+          // function is, so it cannot state `true` for every function. No finding
+          // depends on this: 'lambda' is not in ENCRYPTION_EVIDENCE_TYPES, and the
+          // presence or absence of environment variables says nothing either way.
+          is_encrypted: null,
           // null (never 0) when CloudWatch usage couldn't be determined -- see
           // doc comment above and upsertResource's COALESCE-based merge.
           estimated_monthly_cost: usage
@@ -2317,8 +2309,11 @@ export class AWSResourceDiscoveryService {
             http_version: dist.HttpVersion,
             last_modified: dist.LastModifiedTime?.toISOString(),
           },
-          status: (dist.Status === 'Deployed' ? 'active' : 'inactive') as ResourceStatus,
-          is_public: true,
+          // Deployed -> active; InProgress (a change is propagating) -> in-progress;
+          // anything else, or nothing, is unknown. Never 'inactive' by default.
+          status: this.mapCloudFrontStatus(dist.Status),
+          // is_public is not set: a distribution is an internet endpoint by design,
+          // which is not a public-access problem to report (see checkPublicAccess).
           estimated_monthly_cost: this.estimateCloudFrontCost(),
         });
       }

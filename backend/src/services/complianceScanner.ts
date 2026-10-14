@@ -58,6 +58,11 @@ export const INLINE_TAG_TYPES: readonly string[] = ['ec2', 'ebs', 'rds'];
  * 'observed'; a row with no recorded state has not had its tags read.
  */
 export function tagsObserved(resource: Pick<AWSResource, 'resource_type' | 'metadata'>): boolean {
+  // A recorded 'unavailable' is decisive, whatever the type: it says this row's tags
+  // were not read. A row can change type after it was written -- a non-Aurora DB
+  // cluster found by Resource Explorer is reclassified to 'rds' -- and must not gain
+  // "observed" tags from its new type.
+  if (resource.metadata?.tags_state === 'unavailable') return false;
   if (INLINE_TAG_TYPES.includes(resource.resource_type)) return true;
   return resource.metadata?.tags_state === 'observed';
 }
@@ -314,7 +319,9 @@ export class ComplianceScannerService {
     // S3 public access is evaluated by evaluateS3Security from the bucket policy, ACL,
     // Object Ownership and Block Public Access. is_public alone (a raw ACL grant) would
     // duplicate its ACL finding and ignore Block Public Access.
-    if (resource.is_public && resource.resource_type !== 's3') {
+    // A CloudFront distribution is an internet endpoint by design: that is not a
+    // finding, whatever an earlier release stored in is_public for it.
+    if (resource.is_public && resource.resource_type !== 's3' && resource.resource_type !== 'cloudfront') {
       let severity: ComplianceSeverity = 'high';
       let issue = '';
       let recommendation = '';
@@ -355,9 +362,11 @@ export class ComplianceScannerService {
    *
    *   High     an attached group has an internet-open rule covering an administrative
    *            or database port. The finding names the rule.
-   *   Medium   the groups were read and no such rule was found.
-   *   Medium   the groups could not be read: "exposure unknown". A row with nothing
-   *            recorded (discovery did not reach it this scan) is the same.
+   *   Medium   the groups were read and no rule allows such a port from 0.0.0.0/0 or
+   *            ::/0. The text says exactly that, and no more.
+   *   Medium   "exposure unknown": the groups could not be read, or a rule on such a
+   *            port takes its sources from a prefix list that was not resolved.
+   *   Medium   "exposure not checked": nothing is recorded for the row yet.
    *
    * The text describes the instance's configuration. It never says the instance was
    * reached or compromised.
@@ -383,23 +392,49 @@ export class ComplianceScannerService {
     }
 
     if (recorded?.state === 'not_established') {
-      const summary = 'no attached security group opens an administrative or database port to the internet';
+      const summary = 'No security-group rule allows an admin/database port from 0.0.0.0/0 or ::/0.';
       return {
         ...base,
         severity: 'medium',
-        issue: `EC2 instance has a public IP address; ${summary}`,
+        issue: `EC2 instance has a public IP address. ${summary}`,
         recommendation: 'Confirm the instance needs a public IP address. If it does not, place it in a private subnet behind a load balancer or NAT gateway.',
         network_exposure: { schema_version: 1, state: 'not_established', summary, rules: [] },
       };
     }
 
-    const summary = 'exposure unknown: its security groups could not be read';
+    if (recorded?.state === 'unknown' && recorded.reason === 'prefix_list_source') {
+      const summary = 'Exposure unknown: a security-group rule on an admin/database port takes its sources from a prefix list, which was not resolved.';
+      return {
+        ...base,
+        severity: 'medium',
+        issue: `EC2 instance has a public IP address. ${summary}`,
+        recommendation: 'Review the prefix list that rule refers to and confirm it does not include 0.0.0.0/0 or ::/0.',
+        network_exposure: { schema_version: 1, state: 'unknown', summary, rules: [] },
+      };
+    }
+
+    // Anything else recorded -- 'unknown', or an 'open_admin_port' with no rule behind
+    // it -- is a read that did not establish anything.
+    if (recorded?.state) {
+      const summary = 'Exposure unknown: its security groups could not be read.';
+      return {
+        ...base,
+        severity: 'medium',
+        issue: `EC2 instance has a public IP address. ${summary}`,
+        recommendation: 'Allow ec2:DescribeSecurityGroups on the connected role so the rules can be read, then run a scan again.',
+        network_exposure: { schema_version: 1, state: 'unknown', summary, rules: [] },
+      };
+    }
+
+    // Nothing recorded: no read was attempted for this row yet (it was stored before
+    // discovery read security groups, or discovery has not reached it since).
+    const summary = 'Exposure not checked: its security groups have not been read yet.';
     return {
       ...base,
       severity: 'medium',
-      issue: `EC2 instance has a public IP address; ${summary}`,
-      recommendation: 'Allow ec2:DescribeSecurityGroups on the connected role so the rules can be read, then run a scan again.',
-      network_exposure: { schema_version: 1, state: 'unknown', summary, rules: [] },
+      issue: `EC2 instance has a public IP address. ${summary}`,
+      recommendation: 'Run a scan so the security-group rules are read.',
+      network_exposure: { schema_version: 1, state: 'not_checked', summary, rules: [] },
     };
   }
 

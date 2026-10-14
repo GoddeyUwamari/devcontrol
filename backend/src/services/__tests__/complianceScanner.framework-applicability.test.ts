@@ -405,8 +405,8 @@ describe('baseline (non-framework) findings are unaffected by framework applicab
   });
   const EXPECTED = [
     ['high', 'encryption', 'EC2 instance has unencrypted EBS volumes', 'OBSERVED'],
-    // No security group data is recorded for this row, so the public IP is Medium, "exposure unknown".
-    ['medium', 'public_access', 'EC2 instance has a public IP address; exposure unknown: its security groups could not be read', 'OBSERVED'],
+    // No security group data is recorded for this row, so the public IP is Medium, "exposure not checked".
+    ['medium', 'public_access', 'EC2 instance has a public IP address. Exposure not checked: its security groups have not been read yet.', 'OBSERVED'],
     ['medium', 'backups', 'EC2 instance does not have regular snapshots', 'OBSERVED'],
     ['low', 'tagging', 'Resource is missing required tags: Owner, Environment, Team', 'SELF_ATTESTED'],
   ];

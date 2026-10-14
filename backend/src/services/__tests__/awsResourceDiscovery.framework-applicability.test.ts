@@ -97,8 +97,8 @@ async function issuesFor(orgId: string, resourceId: string): Promise<any[]> {
 
 
 // These scans cannot read any AWS API (mockAws), security groups included, so the
-// instance's public IP is Medium, "exposure unknown" (2B).
-const EC2_PUBLIC_UNKNOWN = 'EC2 instance has a public IP address; exposure unknown: its security groups could not be read';
+// instance's public IP is Medium, "exposure not checked" (2B).
+const EC2_PUBLIC_UNKNOWN = 'EC2 instance has a public IP address. Exposure not checked: its security groups have not been read yet.';
 const BASELINE_INSTANCE_FINDINGS = [
   ['medium', EC2_PUBLIC_UNKNOWN],
   ['low', 'Resource is missing required tags: Owner, Environment, Team'],
@@ -381,7 +381,7 @@ describe('discovery compliance scan: framework applicability', () => {
     const instanceRows = await storedFor(orgId, INSTANCE);
     expect(Object.values(instanceRows).filter(([state]) => state === 'failed' || state === 'passed')).toEqual([]);
 
-    // Score input: the baseline 1 Medium (public IP, exposure unknown) + 1 Low always (the
+    // Score input: the baseline 1 Medium (public IP, exposure not checked) + 1 Low always (the
     // two tag-only SOC 2 signals used to add 2 High here); the framework Critical only when
     // it is a stored failure.
     expect(await complianceSeverityCounts(orgId)).toEqual({ critical: criticalCounted, high: 0, medium: 1, low: 1 });
