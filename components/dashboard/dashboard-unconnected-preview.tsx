@@ -1,207 +1,249 @@
 import Link from 'next/link'
-import type { LucideIcon } from 'lucide-react'
-import { AlertTriangle, Check, DollarSign, Gauge, Lightbulb, ListChecks, Lock, Mail, MessageSquare, ShieldCheck } from 'lucide-react'
+import { CircleCheck, Lock } from 'lucide-react'
 import { INFRASTRUCTURE_POSTURE_LABEL } from '@/lib/infrastructure-posture'
 import { RESOURCE_CHECKS_TITLE } from './resource-checks-section'
 
 interface PreviewItem {
-  icon: LucideIcon
-  /** The connected card's own icon colours. */
-  iconColor: string
-  iconBackground: string
+  /** The category tag above the title. */
+  tag: string
   title: string
-  description: string
-  /** What the card or feature covers, in words: the check lines under the description. */
-  shows?: string[]
-  /** The plan a feature needs, shown beside its title. Only where the product enforces one. */
+  subtitle: string
+  /** What the card or feature covers, in words: the check lines under the subtitle. */
+  shows: string[]
+  /** The plan a feature needs, shown beside its tag. Only where the product enforces one. */
   planLabel?: string
 }
 
-/** The KPI row, by its real card titles and icon tiles. */
-const PRIMARY: PreviewItem[] = [
-  {
-    icon: DollarSign, iconColor: 'var(--text-success)', iconBackground: 'var(--bg-success)',
-    title: 'Month-to-Date Spend',
-    description: 'Actual spend from AWS Cost Explorer.',
-    shows: ['Compared with the same days last month', 'Daily cost trend by service'],
-  },
-  {
-    icon: ShieldCheck, iconColor: 'var(--text-accent)', iconBackground: 'var(--bg-accent)',
-    title: 'Security Posture',
-    description: 'Account findings and resource compliance checks.',
-    shows: ['Findings by severity', 'A score out of 100, with its reasons'],
-  },
-  {
-    icon: Gauge, iconColor: 'var(--text-accent)', iconBackground: 'var(--bg-accent)',
-    title: INFRASTRUCTURE_POSTURE_LABEL,
-    description: 'A composite of cost, security and alert coverage.',
-    shows: ['Each component scored separately', 'Clear notes where evidence is partial'],
-  },
-]
 /**
- * Features beyond the dashboard's own cards, described in words. Each claim is
+ * The eight cards, in page order (left to right, top to bottom). Each claim is
  * what the product does today: the cost checks named here exist, the assistant
  * is gated to Pro and above, and the weekly email goes to one organization owner.
  */
-const FEATURES: PreviewItem[] = [
+const CARDS: PreviewItem[] = [
   {
-    icon: Lightbulb, iconColor: 'var(--text-success)', iconBackground: 'var(--bg-success)',
+    tag: 'Cost',
+    title: 'Month-to-Date Spend',
+    subtitle: 'Your real AWS bill, straight from AWS.',
+    shows: [
+      'See exactly what you have spent so far this month',
+      'Know right away if you are spending more or less than last month',
+      'Spot which service is driving your bill, day by day',
+    ],
+  },
+  {
+    tag: 'Savings',
     title: 'Cost optimization',
-    description: 'Savings opportunities found in your AWS account.',
-    shows: ['Idle EC2 instances and unattached EBS volumes', 'gp2-to-gp3 volume upgrades', 'An estimated monthly saving for each'],
+    subtitle: 'Money you are paying for but not using.',
+    shows: [
+      'Find idle servers and unattached storage you are still paying for',
+      'Switch old storage to cheaper, faster volumes',
+      'See the estimated monthly saving for each recommendation',
+    ],
   },
   {
-    icon: MessageSquare, iconColor: 'var(--text-accent)', iconBackground: 'var(--bg-accent)',
-    title: 'AI assistant',
-    planLabel: 'Pro',
-    description: 'Ask questions about your spend and security.',
-    shows: ["Answers drawn from your account's data", "Says plainly when data isn't available"],
+    tag: 'Security',
+    title: 'Security Posture',
+    subtitle: 'Know where you are exposed before someone else does.',
+    shows: [
+      'See your security risks ranked from most to least serious',
+      'Get one score out of 100, with the reasons behind it',
+      'Check your resources against security best practices',
+    ],
   },
   {
-    icon: Mail, iconColor: 'var(--text-secondary)', iconBackground: 'var(--surface-1)',
-    title: 'Weekly summary',
-    description: 'A weekly email to your workspace owner.',
-    shows: ['Spend compared with the previous week', 'Security findings and deployments'],
-  },
-]
-const SECONDARY: PreviewItem[] = [
-  {
-    icon: AlertTriangle, iconColor: 'var(--text-danger)', iconBackground: 'var(--bg-danger)',
+    tag: 'Urgent',
     title: 'Top Risk',
-    description: 'The most serious security finding in your account, with a link to the finding.',
+    subtitle: 'The one problem to address first.',
+    shows: [
+      'Your most serious security finding, front and center',
+      'A direct link to the exact finding, so you can act on it',
+    ],
   },
   {
-    icon: ListChecks, iconColor: 'var(--text-secondary)', iconBackground: 'var(--surface-1)',
+    tag: 'Posture',
+    title: INFRASTRUCTURE_POSTURE_LABEL,
+    subtitle: 'One honest score for your connected account.',
+    shows: [
+      'A single score that combines cost, security and alert coverage',
+      'See which area is pulling your score down',
+      'Clear notes wherever the data is only partial',
+    ],
+  },
+  {
+    tag: 'Uptime',
     title: RESOURCE_CHECKS_TITLE,
-    description: 'AWS status checks and CloudWatch thresholds for your resources.',
+    subtitle: 'Catch trouble before your customers do.',
+    shows: [
+      'See which servers are failing their AWS status checks',
+      'Know when a resource crosses a CloudWatch alarm threshold',
+    ],
+  },
+  {
+    tag: 'Ask',
+    planLabel: 'Pro',
+    title: 'AI assistant',
+    subtitle: 'Ask questions about your spend and security.',
+    shows: [
+      'Ask in plain English, no dashboards to learn',
+      'Answers come from your own account data',
+      'It tells you plainly when the data is not available',
+    ],
+  },
+  {
+    tag: 'Weekly',
+    title: 'Weekly summary',
+    subtitle: 'Your AWS week in one email.',
+    shows: [
+      'Spend compared with the previous week',
+      'New security findings and deployments at a glance',
+      'Sent to your workspace owner every week',
+    ],
   },
 ]
 
 const STEPS = [
   'Create a read-only IAM role in your AWS account using the policy we provide.',
-  "Paste the role's ARN into DevControl. We verify access before saving.",
-  'The first scan runs automatically. Cost data can take a day or two to arrive from AWS.',
+  'Paste the role ARN into DevControl. We verify access before saving.',
+  'Your first scan runs automatically. Cost data can take a day or two to arrive from AWS.',
 ]
 
-/** The dashboard's card container: same surface, border, radius and padding as the connected cards. */
-const CARD = 'bg-[var(--surface-2)] rounded-2xl border border-border p-5'
+const CONNECT_HREF = '/connect-aws'
+const ASK_OWNER = 'Ask your organization owner to connect AWS.'
+
+/** Tags and the workspace label: 13px bold, uppercase, letter-spaced. */
+const LABEL = 'text-[13px] font-bold uppercase tracking-[0.08em] leading-none'
+const SURFACE = 'bg-[var(--surface-2)] rounded-2xl border border-border p-7'
+const PILL = 'inline-flex items-center rounded-full border border-border bg-[var(--surface-2)] px-3.5 py-2 text-[13px] font-semibold leading-none text-[var(--text-secondary)]'
+const BUTTON = 'inline-flex items-center justify-center rounded-xl px-6 min-h-[44px] text-base font-semibold no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
 
 /**
- * One card: the connected card's shell, icon tile and title, then what the
- * card shows, in words. It is a preview because it has no figure, score, bar
- * or chart, and sits under a heading that says so -- not because it is faded.
- * Not interactive: no link, no hover or focus styling.
+ * One card: tag, title, subtitle, then what the card shows, in words. It is a
+ * preview because it has no figure, score, bar or chart -- not because it is
+ * faded. Not interactive: no link, no hover or focus styling.
  */
-function PreviewCard({ icon: Icon, iconColor, iconBackground, title, description, shows, planLabel, className = '' }: PreviewItem & { className?: string }) {
+function PreviewCard({ tag, title, subtitle, shows, planLabel }: PreviewItem) {
   return (
-    <div className={`rounded-2xl border border-border p-5 h-full flex flex-col ${className}`} data-testid="preview-card">
-      <div className="flex items-center gap-2.5 min-w-0 mb-4">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: iconBackground }}>
-          <Icon size={16} style={{ color: iconColor }} aria-hidden="true" />
-        </div>
-        <h3 className="text-sm font-semibold text-foreground m-0" data-testid="preview-title">{title}</h3>
+    <li className={`${SURFACE} flex flex-col`} data-testid="preview-card">
+      <div className="flex items-center gap-2 mb-4">
+        <span
+          className={`${LABEL} rounded-full px-3 py-1.5`}
+          style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}
+          data-testid="preview-tag"
+        >
+          {tag}
+        </span>
         {planLabel && (
           <span
-            className="text-[11px] font-semibold leading-none rounded-md px-1.5 py-1 shrink-0"
-            style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}
+            className="text-[13px] font-bold leading-none rounded-full px-3 py-1.5 bg-foreground text-background"
             data-testid="preview-plan-label"
           >
             {planLabel}
           </span>
         )}
       </div>
-      <p className="text-xs text-[var(--text-secondary)] leading-snug m-0" data-testid="preview-description">{description}</p>
-      {shows && (
-        <ul className="list-none p-0 mt-2.5 mb-0 flex flex-col gap-1.5">
-          {shows.map((line) => (
-            <li key={line} className="flex items-start gap-1.5 text-xs text-muted-foreground leading-snug" data-testid="preview-shows">
-              <Check size={12} className="shrink-0 mt-0.5" aria-hidden="true" />
-              <span>{line}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+      <h2 className="text-2xl font-bold text-foreground tracking-tight leading-tight mt-0 mb-1.5" data-testid="preview-title">{title}</h2>
+      <p className="text-base text-[var(--text-secondary)] leading-normal m-0" data-testid="preview-subtitle">{subtitle}</p>
+      <ul className="list-none p-0 mt-5 mb-0 flex flex-col gap-3">
+        {shows.map((line) => (
+          <li key={line} className="flex items-start gap-2.5 text-base font-medium text-foreground leading-[1.4]" data-testid="preview-shows">
+            <CircleCheck size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--text-success)' }} aria-hidden="true" />
+            <span>{line}</span>
+          </li>
+        ))}
+      </ul>
+    </li>
   )
 }
 
 /**
- * The dashboard for an organization that has not connected AWS: what each
- * main card will show, three further features, and how connecting works.
- * Words only -- never a figure, score, count, bar or chart, real or sample. Only an owner can
- * connect, so only an owner gets the button; it is the page's one primary
- * control. Anyone else is told who to ask.
+ * The dashboard for an organization that has not connected AWS. It replaces
+ * the page hero in this state, so it owns the page's h1: the workspace name,
+ * the headline, the way to connect, what each card will show, and how
+ * connecting works. Words only -- never a figure, score, count, bar or chart,
+ * real or sample. Only an owner can connect, so only an owner gets the two
+ * buttons (both to the same route); anyone else gets no link at all and is
+ * told who to ask.
  */
-export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: boolean }) {
+export function DashboardUnconnectedPreview({ canConnectAws, orgName }: { canConnectAws: boolean; orgName: string }) {
   return (
     <>
-      <section className={`${CARD} mb-6`} aria-labelledby="dashboard-preview-title" data-testid="dashboard-preview">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-5">
+      <section className="mb-10" aria-labelledby="dashboard-preview-title" data-testid="dashboard-preview">
+        <p className={`${LABEL} mt-0 mb-4`} style={{ color: 'var(--text-accent)' }} data-testid="preview-workspace">{orgName}</p>
+        <h1 id="dashboard-preview-title" className="text-[30px] md:text-[44px] font-bold text-foreground tracking-tight leading-[1.1] mt-0 mb-4 max-w-3xl">
+          AI-Powered Cloud Operations &amp; Infrastructure Intelligence
+        </h1>
+        <p className="text-lg text-[var(--text-secondary)] leading-normal mt-0 mb-6 max-w-3xl">
+          Operational visibility across cloud costs, security, observability, and infrastructure efficiency, so you can reduce waste, mitigate risk, and scale with confidence.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3" data-testid="preview-action">
+          {canConnectAws ? (
+            <Link
+              href={CONNECT_HREF}
+              // The accent token lightens in dark mode, where white text on it would fall below AA.
+              className={`${BUTTON} bg-[var(--text-accent)] dark:bg-[#7C3AED] text-white w-full sm:w-auto focus-visible:ring-[var(--text-accent)]`}
+              data-testid="preview-connect"
+            >
+              Connect AWS
+            </Link>
+          ) : (
+            <span className={PILL} data-testid="preview-pill-aws" data-state="not-connected">AWS not connected</span>
+          )}
+          {['GCP', 'Azure'].map((name) => (
+            <span key={name} className={PILL} data-testid={`preview-pill-${name.toLowerCase()}`}>{name} soon</span>
+          ))}
+        </div>
+        {!canConnectAws && (
+          <p className="text-base text-[var(--text-secondary)] leading-normal mt-4 mb-0" data-testid="preview-ask-owner">{ASK_OWNER}</p>
+        )}
+        <p className="flex items-start gap-2 text-base text-[var(--text-secondary)] leading-normal mt-4 mb-8 max-w-3xl" data-testid="preview-trust">
+          <Lock size={16} className="shrink-0 mt-1" aria-hidden="true" />
+          <span>Read-only access through a role you create and control. Delete it anytime and our access ends. Setup takes a few minutes.</span>
+        </p>
+
+        <ul className="list-none p-0 mt-0 mb-5 grid grid-cols-1 md:grid-cols-2 gap-5" data-testid="preview-cards">
+          {CARDS.map((item) => <PreviewCard key={item.title} {...item} />)}
+        </ul>
+
+        {/* Dark in both themes, so its colours are fixed rather than taken from the theme tokens. */}
+        <div
+          className="rounded-2xl border border-white/10 bg-[#1A1730] p-7 flex flex-col gap-5 md:flex-row md:items-center md:justify-between"
+          data-testid="preview-band"
+        >
           <div className="min-w-0">
-            <h2 id="dashboard-preview-title" className="text-xl font-bold text-foreground tracking-tight leading-tight mt-0 mb-1">
-              {canConnectAws ? "What you'll see after connecting AWS" : 'What your team will see once AWS is connected'}
-            </h2>
-            <p className="text-sm text-[var(--text-secondary)] leading-relaxed m-0">
-              DevControl reads your account through a read-only IAM role you create and control.
-            </p>
+            <h2 className="text-2xl font-bold text-white tracking-tight leading-tight mt-0 mb-1.5">See where your AWS money is going</h2>
+            <p className="text-base text-[#D6D3E8] leading-normal m-0">Connect once. Your first scan runs automatically.</p>
           </div>
           {canConnectAws ? (
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 shrink-0" data-testid="preview-action">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">Takes a few minutes</span>
-              <Link
-                href="/connect-aws"
-                aria-label="Connect AWS"
-                className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap inline-flex items-center justify-center gap-1.5 min-h-[44px] w-full sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-accent)] focus-visible:ring-offset-2"
-                data-testid="preview-connect"
-              >
-                <span>Connect AWS</span>
-                <span aria-hidden="true">→</span>
-              </Link>
-            </div>
+            <Link
+              href={CONNECT_HREF}
+              className={`${BUTTON} bg-white text-[#1A1730] shrink-0 w-full md:w-auto focus-visible:ring-white focus-visible:ring-offset-[#1A1730]`}
+              data-testid="preview-band-connect"
+            >
+              Connect AWS
+            </Link>
           ) : (
-            <p className="text-[13px] text-[var(--text-secondary)] m-0 sm:max-w-[16rem] sm:text-right" data-testid="preview-action">
-              Ask your organization owner to connect AWS.
-            </p>
+            <p className="text-base font-medium text-white leading-normal m-0 md:max-w-xs md:text-right" data-testid="preview-band-ask-owner">{ASK_OWNER}</p>
           )}
-        </div>
-
-        {/* 640-1023px: two columns, the third card spanning both, so no cell is left empty. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-5" data-testid="preview-primary-row">
-          {PRIMARY.map((item, i) => (
-            <PreviewCard key={item.title} {...item} className={i === PRIMARY.length - 1 ? 'sm:col-span-2 lg:col-span-1' : ''} />
-          ))}
-        </div>
-        {/* Same grid as the KPI row above, so the two rows stack identically at every width. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-5" data-testid="preview-feature-row">
-          {FEATURES.map((item, i) => (
-            <PreviewCard key={item.title} {...item} className={i === FEATURES.length - 1 ? 'sm:col-span-2 lg:col-span-1' : ''} />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5" data-testid="preview-secondary-row">
-          {SECONDARY.map((item) => <PreviewCard key={item.title} {...item} />)}
         </div>
       </section>
 
-      <section className={`${CARD} mb-6`} aria-labelledby="connecting-steps-title" data-testid="connecting-steps">
-        <h2 id="connecting-steps-title" className="text-base font-bold text-foreground mt-0 mb-4">How connecting works</h2>
-        <ol className="list-none p-0 m-0 grid grid-cols-1 sm:grid-cols-3 gap-5">
+      <section className="mb-6" aria-labelledby="connecting-steps-title" data-testid="connecting-steps">
+        <h2 id="connecting-steps-title" className="text-2xl font-bold text-foreground tracking-tight leading-tight mt-0 mb-5">How connecting works</h2>
+        <ol className="list-none p-0 m-0 grid grid-cols-1 md:grid-cols-3 gap-5">
           {STEPS.map((step, i) => (
-            <li key={step} className="flex items-start gap-2.5" data-testid="connecting-step">
+            <li key={step} className={`${SURFACE} flex flex-col gap-4`} data-testid="connecting-step">
               <span
-                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold"
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold"
                 style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}
                 data-testid="connecting-step-number"
               >
                 {i + 1}
               </span>
-              <span className="text-xs text-[var(--text-secondary)] leading-snug pt-1.5">{step}</span>
+              <span className="text-base text-[var(--text-secondary)] leading-normal">{step}</span>
             </li>
           ))}
         </ol>
-        <p className="flex items-start gap-1.5 text-xs text-muted-foreground leading-snug mt-4 mb-0" data-testid="connecting-footer">
-          <Lock size={12} className="shrink-0 mt-0.5" aria-hidden="true" />
-          <span>You control the role: deleting it in AWS removes DevControl&apos;s access.</span>
-        </p>
       </section>
     </>
   )

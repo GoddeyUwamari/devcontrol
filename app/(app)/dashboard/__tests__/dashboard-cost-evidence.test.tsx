@@ -217,82 +217,147 @@ describe('connection gates and the connection state ignore the cost evidence', (
   })
 })
 
-/** Hero copy and the slim line this work removed: connecting is offered once, in the preview header. */
-const OLD_COPY = /Connect your AWS account|to get started|Setup takes|2 minutes|Set up →|ask your organization owner to connect it/i
-/** How many times the page says "not connected" in any casing: only ever the non-owner's hero pill. */
+/**
+ * Hero copy an earlier version removed. "Setup takes" is allowed in exactly one
+ * sentence, the trust line's "Setup takes a few minutes."
+ */
+const OLD_COPY = /Connect your AWS account|to get started|Setup takes(?! a few minutes\.)|2 minutes|Set up →|ask your organization owner to connect it/i
+/** How many times the page says "not connected" in any casing: only ever the non-owner's pill. */
 function notConnectedMentions(): number {
   return (document.body.textContent ?? '').match(/not connected/gi)?.length ?? 0
 }
 
-/** What the Cost optimization feature card says: the one sentence on this page allowed to use the word "savings". */
-const COST_OPTIMIZATION_COPY = 'Savings opportunities found in your AWS account.'
-/** The three feature cards, in order: title, description, check lines, and the plan label beside the title (if any). */
-const FEATURE_CARDS: Array<[string, string, string[], string | null]> = [
-  ['Cost optimization', COST_OPTIMIZATION_COPY, ['Idle EC2 instances and unattached EBS volumes', 'gp2-to-gp3 volume upgrades', 'An estimated monthly saving for each'], null],
-  ['AI assistant', 'Ask questions about your spend and security.', ["Answers drawn from your account's data", "Says plainly when data isn't available"], 'Pro'],
-  ['Weekly summary', 'A weekly email to your workspace owner.', ['Spend compared with the previous week', 'Security findings and deployments'], null],
-]
-/** The eight preview cards, exactly and in page order: title, description, and what the connected card adds. */
-const PREVIEW_CARDS: Array<[string, string, string[]]> = [
-  ['Month-to-Date Spend', 'Actual spend from AWS Cost Explorer.', ['Compared with the same days last month', 'Daily cost trend by service']],
-  ['Security Posture', 'Account findings and resource compliance checks.', ['Findings by severity', 'A score out of 100, with its reasons']],
-  ['Infrastructure Posture', 'A composite of cost, security and alert coverage.', ['Each component scored separately', 'Clear notes where evidence is partial']],
-  ...FEATURE_CARDS.map(([title, description, shows]): [string, string, string[]] => [title, description, shows]),
-  ['Top Risk', 'The most serious security finding in your account, with a link to the finding.', []],
-  ['Resource checks', 'AWS status checks and CloudWatch thresholds for your resources.', []],
+const HEADLINE = 'AI-Powered Cloud Operations & Infrastructure Intelligence'
+const SUBHEADLINE = 'Operational visibility across cloud costs, security, observability, and infrastructure efficiency, so you can reduce waste, mitigate risk, and scale with confidence.'
+const TRUST_LINE = 'Read-only access through a role you create and control. Delete it anytime and our access ends. Setup takes a few minutes.'
+const ASK_OWNER = 'Ask your organization owner to connect AWS.'
+const BAND_HEADLINE = 'See where your AWS money is going'
+const BAND_LINE = 'Connect once. Your first scan runs automatically.'
+/** The Cost optimization card's tag: the one place on this page allowed to use the word "savings". */
+const SAVINGS_TAG = 'Savings'
+/** The eight preview cards, exactly and in page order: tag, title, subtitle, check lines, and the plan label (if any). */
+const PREVIEW_CARDS: Array<[string, string, string, string[], string | null]> = [
+  ['Cost', 'Month-to-Date Spend', 'Your real AWS bill, straight from AWS.', ['See exactly what you have spent so far this month', 'Know right away if you are spending more or less than last month', 'Spot which service is driving your bill, day by day'], null],
+  [SAVINGS_TAG, 'Cost optimization', 'Money you are paying for but not using.', ['Find idle servers and unattached storage you are still paying for', 'Switch old storage to cheaper, faster volumes', 'See the estimated monthly saving for each recommendation'], null],
+  ['Security', 'Security Posture', 'Know where you are exposed before someone else does.', ['See your security risks ranked from most to least serious', 'Get one score out of 100, with the reasons behind it', 'Check your resources against security best practices'], null],
+  ['Urgent', 'Top Risk', 'The one problem to address first.', ['Your most serious security finding, front and center', 'A direct link to the exact finding, so you can act on it'], null],
+  ['Posture', 'Infrastructure Posture', 'One honest score for your connected account.', ['A single score that combines cost, security and alert coverage', 'See which area is pulling your score down', 'Clear notes wherever the data is only partial'], null],
+  ['Uptime', 'Resource checks', 'Catch trouble before your customers do.', ['See which servers are failing their AWS status checks', 'Know when a resource crosses a CloudWatch alarm threshold'], null],
+  ['Ask', 'AI assistant', 'Ask questions about your spend and security.', ['Ask in plain English, no dashboards to learn', 'Answers come from your own account data', 'It tells you plainly when the data is not available'], 'Pro'],
+  ['Weekly', 'Weekly summary', 'Your AWS week in one email.', ['Spend compared with the previous week', 'New security findings and deployments at a glance', 'Sent to your workspace owner every week'], null],
 ]
 const STEPS = [
   'Create a read-only IAM role in your AWS account using the policy we provide.',
-  "Paste the role's ARN into DevControl. We verify access before saving.",
-  'The first scan runs automatically. Cost data can take a day or two to arrive from AWS.',
+  'Paste the role ARN into DevControl. We verify access before saving.',
+  'Your first scan runs automatically. Cost data can take a day or two to arrive from AWS.',
 ]
-const STEPS_FOOTER = "You control the role: deleting it in AWS removes DevControl's access."
-const PREVIEW_SUBCOPY = 'DevControl reads your account through a read-only IAM role you create and control.'
 /** Anything that would read as a figure, amount, share or placeholder. */
 const FABRICATED_VALUE = /\d|\$|%|—|\bN\/A\b/
-/** The one place the spec's own wording names a number: the scale of the score, not a score. */
-const SCORE_SCALE = 'A score out of 100, with its reasons'
-/** The only product terms in the preview that contain a digit, each allowed once: an AWS service and a volume-type upgrade. */
-const NAMES_WITH_DIGITS = ['EC2', 'gp2-to-gp3']
+/** The one place the approved wording names a number: the scale of the score, not a score. */
+const SCORE_SCALE = 'Get one score out of 100, with the reasons behind it'
 /** Words this state must not use: it promises nothing the product does not measure or do. */
 const FORBIDDEN = /health|operational signals|recommendations|prioriti[sz]ed|\bfix|savings|sample|example/i
-/** The page text with the Cost optimization card's sentence removed, once: nowhere else may say "savings". */
-function textOutsideCostOptimizationCopy(): string {
-  return (document.body.textContent ?? '').replace(COST_OPTIMIZATION_COPY, '')
+/** The page with the Savings tag removed: nowhere else may say "savings". At most one such tag exists. */
+function pageOutsideSavingsTag(): HTMLElement {
+  const body = document.body.cloneNode(true) as HTMLElement
+  const tags = [...body.querySelectorAll('[data-testid="preview-tag"]')].filter((tag) => tag.textContent === SAVINGS_TAG)
+  expect(tags.length).toBeLessThanOrEqual(1)
+  tags.forEach((tag) => tag.remove())
+  return body
+}
+function textOutsideSavingsTag(): string {
+  return pageOutsideSavingsTag().textContent ?? ''
+}
+/**
+ * The same text with a space between elements, as a reader sees it. textContent
+ * runs adjacent elements together ("...each recommendation" + "Security"), which
+ * would both invent words and hide word boundaries from the word guards.
+ */
+function wordsOutsideSavingsTag(): string {
+  const root = pageOutsideSavingsTag()
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const parts: string[] = []
+  while (walker.nextNode()) parts.push(walker.currentNode.textContent ?? '')
+  return parts.join(' ').replace(/\s+/g, ' ')
 }
 
-/** The preview section and the "How connecting works" strip, word for word, with nothing interactive in them. */
+/** The preview (header, eight cards, band) and the "How connecting works" strip, word for word, in either role. */
 function expectPreviewAndSteps() {
   const preview = screen.getByTestId('dashboard-preview')
-  expect(within(preview).getByText(PREVIEW_SUBCOPY)).toBeInTheDocument()
+  // The preview is the page's hero in this state: the workspace name, then the one h1.
+  expect(within(preview).getByTestId('preview-workspace').textContent).toBe('Org Test')
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  expect(within(preview).getByRole('heading', { level: 1, name: HEADLINE })).toBeInTheDocument()
+  expect(within(preview).getByText(SUBHEADLINE)).toBeInTheDocument()
+  expect(within(preview).getByTestId('preview-trust').textContent).toBe(TRUST_LINE)
+  expect(screen.queryByTestId('provider-pills')).not.toBeInTheDocument()
+  expect(document.body.textContent).not.toMatch(/What you'll see|What your team will see/)
 
+  // GCP and Azure are plain text: not links, not buttons, not focusable.
+  for (const [id, text] of [['preview-pill-gcp', 'GCP soon'], ['preview-pill-azure', 'Azure soon']]) {
+    const pill = within(preview).getByTestId(id)
+    expect(pill.textContent).toBe(text)
+    expect(pill.tagName).toBe('SPAN')
+    expect(pill.closest('a, button, [role="button"], [role="link"]')).toBeNull()
+    expect(pill).not.toHaveAttribute('tabindex')
+    expect(pill.className).not.toMatch(/hover:|cursor-pointer|focus/)
+  }
+
+  // Eight cards in one grid: one column, then two. Never three.
+  const grid = within(preview).getByTestId('preview-cards')
   const cards = within(preview).getAllByTestId('preview-card')
+  expect([...grid.children]).toEqual(cards)
+  expect(grid.className).toMatch(/\bgrid-cols-1\b.*\bmd:grid-cols-2\b/)
+  expect(grid.className).not.toMatch(/grid-cols-3/)
   expect(cards.map((card) => [
+    within(card).getByTestId('preview-tag').textContent,
     within(card).getByTestId('preview-title').textContent,
-    within(card).getByTestId('preview-description').textContent,
+    within(card).getByTestId('preview-subtitle').textContent,
     within(card).queryAllByTestId('preview-shows').map((line) => line.textContent),
+    within(card).queryByTestId('preview-plan-label')?.textContent ?? null,
   ])).toEqual(PREVIEW_CARDS)
-  expect(within(within(preview).getByTestId('preview-primary-row')).getAllByTestId('preview-card')).toHaveLength(3)
-  expect(within(within(preview).getByTestId('preview-secondary-row')).getAllByTestId('preview-card')).toHaveLength(2)
-  expectFeatureRow(preview)
   for (const card of cards) {
     // Not a link, not a button, nothing focusable, and no bar or chart.
     expect(card.closest('a, button, [role="button"], [role="link"]')).toBeNull()
     expect(card.querySelector('a, button, [role="button"], [role="link"], [tabindex], [role="progressbar"], svg:not(.lucide)')).toBeNull()
     expect(card.className).not.toMatch(/hover:|cursor-pointer|focus|opacity/)
-    expect(within(card).getByRole('heading', { level: 3 })).toBe(within(card).getByTestId('preview-title'))
+    expect(within(card).getByRole('heading', { level: 2 })).toBe(within(card).getByTestId('preview-title'))
+    // Nothing sets a fixed or minimum width that could force horizontal scrolling on a phone.
+    for (const node of [card, ...card.querySelectorAll('*')]) {
+      expect(node.getAttribute('class') ?? '').not.toMatch(/(^|\s)(min-w-\[|w-\[|whitespace-nowrap|overflow-x)/)
+    }
   }
+
+  // "Pro" appears once in the whole preview: the badge on the AI assistant card.
+  const labels = within(preview).getAllByTestId('preview-plan-label')
+  expect(labels.map((label) => label.textContent)).toEqual(['Pro'])
+  expect(labels[0].closest('[data-testid="preview-card"]')).toBe(cards[6])
+  // No plan is named anywhere else in the preview: not in a tag, a title, a subtitle or a checklist line.
+  for (const node of preview.querySelectorAll('[data-testid="preview-tag"], [data-testid="preview-title"], [data-testid="preview-subtitle"], [data-testid="preview-shows"], h1, h2, p')) {
+    expect(node.textContent).not.toMatch(/\b(Free|Starter|Pro|Enterprise)\b/)
+  }
+
+  const band = within(preview).getByTestId('preview-band')
+  expect(within(band).getByRole('heading', { level: 2, name: BAND_HEADLINE })).toBeInTheDocument()
+  expect(within(band).getByText(BAND_LINE)).toBeInTheDocument()
 
   const steps = screen.getByTestId('connecting-steps')
   expect(within(steps).getByRole('heading', { level: 2, name: 'How connecting works' })).toBeInTheDocument()
   const items = within(steps).getAllByTestId('connecting-step')
   expect(items.map((item) => item.textContent)).toEqual(STEPS.map((step, i) => `${i + 1}${step}`))
-  expect(within(steps).getByTestId('connecting-footer').textContent).toBe(STEPS_FOOTER)
+  expect(items[0].parentElement?.className).toMatch(/\bgrid-cols-1\b.*\bmd:grid-cols-3\b/)
   expect(steps.querySelector('a, button, [role="button"], [role="link"], [tabindex], [role="progressbar"], svg:not(.lucide)')).toBeNull()
 
-  // No figure anywhere: only the step numbers, the named score scale and two product names contain a digit.
-  const previewText = NAMES_WITH_DIGITS.reduce((text, name) => text.replace(name, ''), (preview.textContent ?? '').replace(SCORE_SCALE, ''))
-  expect(previewText).not.toMatch(FABRICATED_VALUE)
+  // Heading order: the h1, then every card, the band and the strip as h2 -- no level skipped.
+  expect(screen.getAllByRole('heading').map((h) => [h.tagName, h.textContent])).toEqual([
+    ['H1', HEADLINE],
+    ...PREVIEW_CARDS.map(([, title]) => ['H2', title]),
+    ['H2', BAND_HEADLINE],
+    ['H2', 'How connecting works'],
+  ])
+
+  // No figure anywhere: only the step numbers and the named score scale contain a digit.
+  expect((preview.textContent ?? '').replace(SCORE_SCALE, '')).not.toMatch(FABRICATED_VALUE)
   const stepsClone = steps.cloneNode(true) as HTMLElement
   stepsClone.querySelectorAll('[data-testid="connecting-step-number"]').forEach((n) => n.remove())
   expect(stepsClone.textContent).not.toMatch(FABRICATED_VALUE)
@@ -301,84 +366,21 @@ function expectPreviewAndSteps() {
   // Decorative icons are hidden from assistive technology.
   for (const icon of [...preview.querySelectorAll('svg'), ...steps.querySelectorAll('svg')]) expect(icon).toHaveAttribute('aria-hidden', 'true')
 }
-/**
- * The middle row: exactly the three feature cards, between the KPI row and the
- * Top Risk / Resource checks row, on the KPI row's own grid, with a plan label
- * only where the product enforces a plan.
- */
-function expectFeatureRow(preview: HTMLElement) {
-  const rows = [...preview.children].map((child) => child.getAttribute('data-testid')).filter((id) => id?.endsWith('-row'))
-  expect(rows).toEqual(['preview-primary-row', 'preview-feature-row', 'preview-secondary-row'])
-
-  const kpiRow = within(preview).getByTestId('preview-primary-row')
-  const featureRow = within(preview).getByTestId('preview-feature-row')
-  const cards = within(featureRow).getAllByTestId('preview-card')
-  expect(cards.map((card) => [
-    within(card).getByTestId('preview-title').textContent,
-    within(card).getByTestId('preview-description').textContent,
-    within(card).queryAllByTestId('preview-shows').map((line) => line.textContent),
-    within(card).queryByTestId('preview-plan-label')?.textContent ?? null,
-  ])).toEqual(FEATURE_CARDS)
-  // Nothing in the row but the three cards: no heading, label or extra card.
-  expect(featureRow.children).toHaveLength(3)
-  expect(within(preview).getAllByRole('heading', { level: 2 })).toHaveLength(1)
-  expect(preview.textContent).not.toMatch(/Also included/i)
-
-  // "Pro" appears once in the whole preview: beside the AI assistant title, outside the heading.
-  const labels = within(preview).getAllByTestId('preview-plan-label')
-  expect(labels.map((label) => label.textContent)).toEqual(['Pro'])
-  expect(labels[0].closest('[data-testid="preview-card"]')).toBe(cards[1])
-  expect(labels[0].closest('h3')).toBeNull()
-  // No plan is named anywhere else in the preview: not in a title, a description or a checklist line.
-  for (const node of preview.querySelectorAll('[data-testid="preview-title"], [data-testid="preview-description"], [data-testid="preview-shows"], h2, p')) {
-    expect(node.textContent).not.toMatch(/\b(Free|Starter|Pro|Enterprise)\b/)
-  }
-
-  // Check lines are the KPI cards' own: the same list, the same line classes and the same check icon.
-  const kpiLine = within(kpiRow).getAllByTestId('preview-shows')[0]
-  for (const line of within(featureRow).getAllByTestId('preview-shows')) {
-    expect(line.tagName).toBe('LI')
-    expect(line.className).toBe(kpiLine.className)
-    expect(line.parentElement?.tagName).toBe('UL')
-    expect(line.parentElement?.className).toBe(kpiLine.parentElement?.className)
-    expect(line.querySelector('svg')?.getAttribute('class')).toBe(kpiLine.querySelector('svg')?.getAttribute('class'))
-    expect(line.querySelector('svg.lucide-check')).not.toBeNull()
-  }
-
-  // Same grid and same card classes as the KPI row, so both rows are three across on
-  // desktop and stack identically below it (two columns with the third card spanning, then one).
-  expect(featureRow.className).toBe(kpiRow.className)
-  const kpiCards = within(kpiRow).getAllByTestId('preview-card')
-  expect(cards.map((card) => card.className)).toEqual(kpiCards.map((card) => card.className))
-  expect(featureRow.className).toMatch(/\bgrid-cols-1\b.*\bsm:grid-cols-2\b.*\blg:grid-cols-3\b/)
-  // Nothing sets a fixed or minimum width that could force horizontal scrolling on a phone.
-  for (const node of [featureRow, ...featureRow.querySelectorAll('*')]) {
-    expect(node.getAttribute('class') ?? '').not.toMatch(/(^|\s)(min-w-\[|w-\[|whitespace-nowrap|overflow-x)/)
-  }
-}
 /** The whole unconnected page: nothing forbidden, nothing left over from the earlier versions. */
 function expectUnconnectedPageWording() {
-  const text = textOutsideCostOptimizationCopy()
-  expect(text).not.toMatch(OLD_COPY)
-  expect(text).not.toMatch(FORBIDDEN)
+  expect(textOutsideSavingsTag()).not.toMatch(OLD_COPY)
+  expect(wordsOutsideSavingsTag()).not.toMatch(FORBIDDEN)
+  expect((document.body.textContent ?? '').match(/Setup takes/gi)).toHaveLength(1)
   expect(screen.queryByTestId('aws-connection-line')).not.toBeInTheDocument()
-  // The hero is as designed; whether its AWS pill is a link depends on the role (asserted per role).
-  expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
-  expect(screen.getByTestId('provider-pill-aws')).toHaveAttribute('data-state', 'not-connected')
-  expect(screen.getByTestId('provider-pill-gcp')).toHaveTextContent('GCP soon')
-  expect(screen.getByTestId('provider-pill-azure')).toHaveTextContent('Azure soon')
-  expect(screen.getByText('Org Test')).toBeInTheDocument()
 }
 function expectNoPreview() {
-  expect(screen.queryByTestId('dashboard-preview')).not.toBeInTheDocument()
-  expect(screen.queryByTestId('preview-card')).not.toBeInTheDocument()
-  expect(screen.queryByTestId('preview-feature-row')).not.toBeInTheDocument()
-  expect(screen.queryByTestId('preview-plan-label')).not.toBeInTheDocument()
-  for (const [title, description, shows] of FEATURE_CARDS) {
-    expect(screen.queryByRole('heading', { level: 3, name: title })).not.toBeInTheDocument()
-    for (const text of [description, ...shows]) expect(document.body.textContent).not.toContain(text)
+  for (const id of ['dashboard-preview', 'preview-card', 'preview-cards', 'preview-band', 'preview-plan-label', 'preview-connect', 'preview-band-connect', 'connecting-steps']) {
+    expect(screen.queryByTestId(id)).not.toBeInTheDocument()
   }
-  expect(screen.queryByTestId('connecting-steps')).not.toBeInTheDocument()
+  for (const [, , subtitle, shows] of PREVIEW_CARDS) {
+    for (const text of [subtitle, ...shows]) expect(document.body.textContent).not.toContain(text)
+  }
+  expect(document.body.textContent).not.toContain(BAND_HEADLINE)
   expect(document.body.textContent).not.toMatch(/What you'll see|What your team will see|How connecting works/)
 }
 /** How many times /api/aws/accounts was requested. */
@@ -397,7 +399,7 @@ function expectNoConnectedContent() {
   for (const text of [SYNCING_BANNER, BILLING_SYNC_BANNER]) {
     expect(screen.queryByText(text)).not.toBeInTheDocument()
   }
-  expect(textOutsideCostOptimizationCopy()).not.toMatch(/\$\d|\/100|savings/i)
+  expect(textOutsideSavingsTag()).not.toMatch(/\$\d|\/100|savings/i)
 }
 function expectNoNavigation() {
   expect(router.replace).not.toHaveBeenCalled()
@@ -410,29 +412,36 @@ describe('an organization with no AWS account stays on the dashboard', () => {
     setup(LEGACY_STATS.zero, { spend: noSpend('unavailable'), monthOverMonth: noMom('unavailable') })
   })
 
-  it('owner: the preview with its heading and the one primary button to /connect-aws, the strip, and nothing else', async () => {
+  it('owner: the preview as the hero, with two Connect AWS buttons to /connect-aws, the strip, and nothing else', async () => {
     signInAs('owner')
     renderDashboard()
 
     const preview = await screen.findByTestId('dashboard-preview')
-    expect(within(preview).getByRole('heading', { level: 2, name: "What you'll see after connecting AWS" })).toBeInTheDocument()
     const action = within(preview).getByTestId('preview-action')
-    expect(action.textContent).toBe('Takes a few minutes' + 'Connect AWS' + '→')
-    const button = within(action).getByRole('link', { name: 'Connect AWS' })
-    expect(button).toHaveAttribute('href', '/connect-aws')
-    expect(screen.getByTestId('provider-pill-aws').tagName).toBe('A')
-    expect(screen.getByTestId('provider-pill-aws').textContent).toBe('Connect AWS')
+    expect(action.textContent).toBe('Connect AWS' + 'GCP soon' + 'Azure soon')
+    // Two ways to /connect-aws, both in the preview, both named "Connect AWS", and nothing else interactive.
+    const buttons = within(preview).getAllByRole('link', { name: 'Connect AWS' })
+    expect(buttons.map((b) => b.getAttribute('data-testid'))).toEqual(['preview-connect', 'preview-band-connect'])
+    expect(buttons[0].parentElement).toBe(action)
+    expect(buttons[1].closest('[data-testid="preview-band"]')).not.toBeNull()
+    for (const button of buttons) {
+      expect(button).toHaveAttribute('href', '/connect-aws')
+      expect(button.textContent).toBe('Connect AWS')
+      expect(button.className).toContain('min-h-[44px]')
+      expect(button.className).toContain('focus-visible:ring-2')
+    }
+    expect([...document.querySelectorAll('a[href="/connect-aws"]')]).toEqual(buttons)
+    expect([...preview.querySelectorAll('a, button, [role="button"]')]).toEqual(buttons)
+    // The primary button is the only accent-filled control, and keeps the brand purple in dark mode.
+    expect([...document.querySelectorAll('[class*="bg-[var(--text-accent)]"]')]).toEqual([buttons[0]])
+    expect(buttons[0].className).toContain('dark:bg-[#7C3AED]')
     expect(notConnectedMentions()).toBe(0)
-    expect(button.className).toContain('bg-[var(--text-accent)]')
-    expect(button.className).toContain('min-h-[44px]')
+    expect(document.body.textContent).not.toContain(ASK_OWNER)
     await gateInputsSettled()
     expectPreviewAndSteps()
     expectUnconnectedPageWording()
     expectNoNavigation()
     expectNoConnectedContent()
-    // The only ways to /connect-aws are the hero pill and the button; the button is the only filled control.
-    expect([...document.querySelectorAll('a[href="/connect-aws"]')].map((a) => a.getAttribute('data-testid'))).toEqual(['provider-pill-aws', 'preview-connect'])
-    expect([...document.querySelectorAll('[class*="bg-[var(--text-accent)]"]')]).toEqual([button])
   })
 
   it.each([
@@ -441,25 +450,25 @@ describe('an organization with no AWS account stays on the dashboard', () => {
     ['admin', 'admin'],
     ['no role available', null],
     ['an unrecognised role', 'superuser'],
-  ])('%s: the non-owner heading and text, with no button or link in the section', async (_name, role) => {
+  ])('%s: told to ask the owner, with no button or link anywhere', async (_name, role) => {
     signInAs(role)
     renderDashboard()
 
     const preview = await screen.findByTestId('dashboard-preview')
-    expect(within(preview).getByRole('heading', { level: 2, name: 'What your team will see once AWS is connected' })).toBeInTheDocument()
-    expect(within(preview).getByTestId('preview-action').textContent).toBe('Ask your organization owner to connect AWS.')
     expect(preview.querySelector('a, button, [role="button"]')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/What you'll see after connecting|Takes a few minutes/)
+    // The button row states the fact as plain text; the owner is named under it and in the band.
+    const pill = within(preview).getByTestId('preview-pill-aws')
+    expect(pill.tagName).toBe('SPAN')
+    expect(pill.textContent).toBe('AWS not connected')
+    expect(pill.closest('a, button')).toBeNull()
+    expect(within(preview).getByTestId('preview-action').textContent).toBe('AWS not connected' + 'GCP soon' + 'Azure soon')
+    expect(within(preview).getByTestId('preview-ask-owner').textContent).toBe(ASK_OWNER)
+    expect(within(within(preview).getByTestId('preview-band')).getByTestId('preview-band-ask-owner').textContent).toBe(ASK_OWNER)
     await gateInputsSettled()
     expectPreviewAndSteps()
     expectUnconnectedPageWording()
     expectNoNavigation()
     expectNoConnectedContent()
-    // Nothing on the page leads to /connect-aws: the hero pill is plain text too, and nothing is filled.
-    const pill = screen.getByTestId('provider-pill-aws')
-    expect(pill.tagName).toBe('SPAN')
-    expect(pill.textContent).toBe('AWS not connected')
-    expect(pill.closest('a, button')).toBeNull()
     // Said once, by the pill; "Connect AWS" appears only where the owner is named as the one to do it.
     expect(notConnectedMentions()).toBe(1)
     expect(screen.queryByText('Connect AWS')).not.toBeInTheDocument()
