@@ -1,14 +1,14 @@
 /**
- * Dashboard UI polish: provider pills, the card arrow button, the info
- * button's tooltip and panel heading, and the compact Engineering Health
- * empty state. Presentation only -- every state comes from props.
+ * Dashboard UI polish: provider pills, the card arrow button, and the info
+ * button's tooltip and panel heading. Presentation only -- every state comes
+ * from props. (The Engineering Health card is covered in
+ * engineering-health-card.test.tsx.)
  */
 import { describe, it, expect } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { DashboardHero } from '../dashboard-hero'
 import { CardArrowLink } from '../card-arrow-link'
 import { EvidenceInfo } from '../evidence-info'
-import { EngineeringHealthCard } from '../engineering-health-card'
 
 describe('provider pills', () => {
   it('connected: a green-tint "AWS" pill with a dot, not a link', () => {
@@ -163,23 +163,5 @@ describe('info button', () => {
     expect((await screen.findAllByText('How these checks work')).length).toBeGreaterThan(0)
     fireEvent.click(button)
     expect(screen.getByRole('dialog', { name: 'How these checks work' })).toHaveTextContent('Resource checks')
-  })
-})
-
-describe('Engineering Health empty state', () => {
-  it('is compact: one line plus its link, its own height (not stretched to Recent Activity)', () => {
-    render(<EngineeringHealthCard isDemoActive={false} doraRows={[]} />)
-    const card = screen.getByTestId('engineering-health-card')
-    expect(card.className).toContain('self-start')
-    expect(card.className).not.toContain('h-full')
-    expect(screen.getByTestId('engineering-health-empty')).toHaveTextContent(/^DORA metrics are not summarized on the dashboard yet\.$/)
-    expect(card.querySelectorAll('p')).toHaveLength(1)
-    expect(screen.getByText('View details →').closest('a')).toHaveAttribute('href', '/app/dora-metrics')
-    expect(card.innerHTML).not.toMatch(/\bpy-4\b/)
-  })
-
-  it('demo mode still fills the row', () => {
-    render(<EngineeringHealthCard isDemoActive doraRows={[{ label: 'Deploys', value: '3' }]} />)
-    expect(screen.getByTestId('engineering-health-card').className).toContain('h-full')
   })
 })
