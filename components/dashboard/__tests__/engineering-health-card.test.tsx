@@ -101,9 +101,9 @@ describe('Engineering Health card', () => {
     renderCard()
 
     await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
-    expect(within(cell('deploys-per-day')).getByText('1.5')).toBeInTheDocument()
+    expect(within(cell('deploys-per-day')).getByText('1.5/day')).toBeInTheDocument()
     expect(cell('deploys-per-day')).toHaveTextContent('45 successful · last 30 days')
-    expect(within(cell('change-failure-rate')).getByText('10%')).toBeInTheDocument()
+    expect(within(cell('change-failure-rate')).getByText('10.0%')).toBeInTheDocument()
     expect(cell('change-failure-rate')).toHaveTextContent('5 of 50 finished failed')
     expect(cell('last-deploy')).toHaveTextContent('about 3 hours ago')
     expect(cell('last-deploy')).toHaveTextContent('Succeeded')
@@ -114,12 +114,26 @@ describe('Engineering Health card', () => {
     ])
   })
 
+  it.each([
+    [0.07, 3.33, '0.1/day', '3.3%'],
+    [2, 0, '2.0/day', '0.0%'],
+    [12.46, 66.7, '12.5/day', '66.7%'],
+  ])('formats %s per day and %s%% as the DORA page does: one decimal, "/day" and "%%"', async (perDay, rate, shownFrequency, shownRate) => {
+    dora = doraBody(30, 1, perDay, rate)
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
+    expect(within(cell('deploys-per-day')).getByText(shownFrequency)).toBeInTheDocument()
+    expect(within(cell('change-failure-rate')).getByText(shownRate)).toBeInTheDocument()
+    expect(cell('deploys-per-day')).toHaveTextContent('Deployment frequency')
+  })
+
   it('says lead time and time to restore are not tracked, and never shows a value for them', async () => {
     renderCard()
 
     await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
     expect(screen.getByTestId('engineering-health-note')).toHaveTextContent(/^Lead time and time to restore: not tracked$/)
-    expect(cardText()).not.toMatch(/MTTR|Mean Time|hours$|\d+ min/i)
+    expect(cardText()).not.toMatch(/MTTR|Mean Time|\d+ hrs|\d+ min/i)
   })
 
   it('carries no "AI" label', async () => {
@@ -149,10 +163,10 @@ describe('Engineering Health card', () => {
 
     await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
     expect(screen.queryByTestId('engineering-health-empty')).not.toBeInTheDocument()
-    expect(within(cell('deploys-per-day')).getByText('0')).toBeInTheDocument()
+    expect(within(cell('deploys-per-day')).getByText('0.0/day')).toBeInTheDocument()
     expect(within(cell('change-failure-rate')).getByText('—')).toBeInTheDocument()
     expect(cell('change-failure-rate')).toHaveTextContent('No finished deployments in this window')
-    expect(cell('change-failure-rate')).not.toHaveTextContent('0%')
+    expect(cell('change-failure-rate')).not.toHaveTextContent('%')
     expect(cell('last-deploy')).toHaveTextContent('Failed')
   })
 

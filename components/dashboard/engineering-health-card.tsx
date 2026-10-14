@@ -4,7 +4,7 @@ import { Code2, TrendingUp, TrendingDown } from 'lucide-react'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import { doraMetricsService } from '@/lib/services/dora-metrics.service'
-import { deploymentStatusDisplay, formatChangeFailureRate } from '@/lib/deployments/status'
+import { deploymentStatusDisplay } from '@/lib/deployments/status'
 
 interface DoraRow {
   label: string
@@ -24,7 +24,7 @@ const WINDOW_LABEL = 'Last 30 days'
 /**
  * Real mode reads the organization's own deployment records through the same
  * two endpoints the Deployments and DORA pages use, over the last 30 days:
- * deploys per day and change failure rate from GET /api/metrics/dora, the
+ * deployment frequency and change failure rate from GET /api/metrics/dora, the
  * last finished deployment from GET /api/deployments/stats. Lead time and
  * time to restore are not tracked and are never estimated. A value that has
  * not loaded, or could not be, is a dash -- never a zero.
@@ -60,19 +60,21 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
   // Known to have no deployment at all -- only ever from a loaded answer.
   const noneRecorded = statsData?.organization_has_deployments === false
 
+  // Formatted exactly as the DORA page formats them: one decimal, "/day" and "%".
   const frequency = doraData?.deploymentFrequency.value
+  const failureRate = doraData?.changeFailureRate.value
   const lastDeployment = statsData?.last_deployment ?? null
   const realRows = [
     {
       key: 'deploys-per-day',
-      label: 'Deploys / day',
-      value: typeof frequency === 'number' ? String(frequency) : '—',
+      label: 'Deployment frequency',
+      value: typeof frequency === 'number' ? `${frequency.toFixed(1)}/day` : '—',
       sub: doraData ? `${doraData.deployments.successful} successful · ${WINDOW_LABEL.toLowerCase()}` : WINDOW_LABEL,
     },
     {
       key: 'change-failure-rate',
       label: 'Change failure rate',
-      value: doraData ? formatChangeFailureRate(doraData.changeFailureRate.value) : '—',
+      value: typeof failureRate === 'number' ? `${failureRate.toFixed(1)}%` : '—',
       sub: !doraData
         ? WINDOW_LABEL
         : doraData.deployments.finished > 0
