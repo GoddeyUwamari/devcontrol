@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { pool } from '../config/database';
 import { DeploymentsController } from '../controllers/deployments.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireMember } from '../middleware/rbac.middleware';
 import { checkResourceLimit } from '../middleware/subscription.middleware';
 import {
+  DEPLOYMENT_ENVIRONMENTS,
   IN_PROGRESS_MAX_AGE_HOURS,
   STATS_WINDOW_DAYS,
   changeFailureRate,
@@ -21,7 +23,10 @@ const controller = new DeploymentsController();
 // default 30d, by deployed_at). Statuses are counted as recorded -- see
 // services/deployment-status.ts -- and only finished deployments (success +
 // failed) enter the change failure rate. last_deployment is the most recent
-// finished deployment regardless of the window.
+// finished deployment regardless of the window. organization_has_deployments
+// is whether the organization has any deployment at all, in any environment
+// or window -- what separates "nothing matches these filters" from "nothing
+// has ever been recorded".
 export async function deploymentStatsHandler(req: Request, res: Response): Promise<void> {
   try {
     // Never run unscoped: no organization means no query at all.
@@ -50,7 +55,7 @@ export async function deploymentStatsHandler(req: Request, res: Response): Promi
     const sinceParam = `$${scopeValues.length + 1}`;
     const maxAgeParam = `$${scopeValues.length + 2}`;
 
-    const [counts, last] = await Promise.all([
+    const [counts, last, any] = await Promise.all([
       pool.query(
         `SELECT
            COUNT(*)                                     AS total,
@@ -60,8 +65,7 @@ export async function deploymentStatsHandler(req: Request, res: Response): Promi
              AND created_at >= NOW() - make_interval(hours => ${maxAgeParam})) AS in_progress,
            COUNT(*) FILTER (WHERE status = 'deploying'
              AND (created_at IS NULL OR created_at < NOW() - make_interval(hours => ${maxAgeParam}))) AS no_completion_recorded,
-           COUNT(*) FILTER (WHERE status NOT IN ('success', 'failed', 'deploying')) AS unknown,
-           COALESCE(SUM(cost_estimate), 0)              AS total_cost
+           COUNT(*) FILTER (WHERE status NOT IN ('success', 'failed', 'deploying')) AS unknown
          FROM deployments
          WHERE ${scopeSql}
            AND deployed_at >= NOW() - make_interval(days => ${sinceParam})`,
@@ -72,9 +76,13 @@ export async function deploymentStatsHandler(req: Request, res: Response): Promi
            FROM deployments
           WHERE ${scopeSql}
             AND status IN ('success', 'failed')
-          ORDER BY deployed_at DESC
+          ORDER BY deployed_at DESC NULLS LAST, id DESC
           LIMIT 1`,
         scopeValues
+      ),
+      pool.query(
+        'SELECT EXISTS (SELECT 1 FROM deployments WHERE organization_id = $1) AS has_deployments',
+        [orgId]
       ),
     ]);
 
@@ -94,8 +102,8 @@ export async function deploymentStatsHandler(req: Request, res: Response): Promi
         no_completion_recorded: parseInt(row.no_completion_recorded) || 0,
         unknown: parseInt(row.unknown) || 0,
         change_failure_rate: changeFailureRate(success, failed),
-        total_cost: parseFloat(row.total_cost) || 0,
-        last_deployment: lastRow
+        organization_has_deployments: any.rows[0]?.has_deployments === true,
+        last_deployment: lastRow && lastRow.deployed_at
           ? { status: lastRow.status, deployed_at: new Date(lastRow.deployed_at).toISOString() }
           : null,
       },
@@ -115,21 +123,45 @@ router.get('/:id', authenticateToken, (req, res) => controller.getById(req, res)
 
 // ─── POST / — resolve serviceName → service_id, then delegate ────────────────
 
+// The only body fields a caller may set. Everything else -- organization_id,
+// status, deployed_at, metadata and any unknown key -- is dropped: the
+// organization comes from the authenticated request, a deployment created
+// here is always 'deploying' as of now, and metadata is reserved for the CI
+// integration's own provenance.
+export const createDeploymentBodySchema = z.object({
+  service_id: z.string().uuid().optional(),
+  service_name: z.string().trim().min(1).max(255).optional(),
+  serviceName: z.string().trim().min(1).max(255).optional(),
+  environment: z.enum(DEPLOYMENT_ENVIRONMENTS),
+  aws_region: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/).optional(),
+  region: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/).optional(),
+  deployed_by: z.string().trim().min(1).max(255).optional(),
+  version: z.string().trim().min(1).max(100).optional(),
+  resources: z.record(z.string(), z.any()).optional(),
+  cost_estimate: z.number().min(0).max(99_999_999.99).optional(),
+});
+
 router.post('/', authenticateToken, requireMember, checkResourceLimit('deployments', 1), async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
-    let { service_id, service_name, serviceName, environment, aws_region, region, deployed_by, version } = req.body;
+    if (!orgId) {
+      res.status(401).json({ success: false, error: 'Unauthorized - organization context required' });
+      return;
+    }
 
-    const name = serviceName || service_name;
+    const parsed = createDeploymentBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      res.status(400).json({ success: false, error: `Invalid ${issue.path.join('.') || 'body'}: ${issue.message}` });
+      return;
+    }
+    const body = parsed.data;
+    let service_id = body.service_id;
+    const name = body.serviceName || body.service_name;
 
     // Resolve service name → service_id if not already provided. The name is
     // only ever matched against, or created in, the caller's organization.
     if (!service_id && name) {
-      if (!orgId) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
-        return;
-      }
-
       const { rows: existing } = await pool.query(
         `SELECT id FROM services
           WHERE LOWER(name) = LOWER($1) AND organization_id = $2
@@ -156,17 +188,19 @@ router.post('/', authenticateToken, requireMember, checkResourceLimit('deploymen
       return;
     }
 
-    // Patch req.body with resolved fields before delegating to controller
-    req.body.service_id   = service_id;
-    req.body.aws_region   = aws_region || region || 'us-east-1';
-    req.body.status       = 'deploying';
-    req.body.deployed_by  = deployed_by || 'platform-portal';
-    if (version) {
-      req.body.resources = { ...(req.body.resources || {}), version };
-    }
-    if (orgId) {
-      req.body.organization_id = orgId;
-    }
+    // The controller only ever sees the allowlisted fields.
+    req.body = {
+      service_id,
+      environment: body.environment,
+      aws_region: body.aws_region || body.region || 'us-east-1',
+      status: 'deploying',
+      deployed_by: body.deployed_by || 'platform-portal',
+      // Zero is not a recorded cost.
+      ...(body.cost_estimate ? { cost_estimate: body.cost_estimate } : {}),
+      ...(body.resources || body.version
+        ? { resources: { ...(body.resources || {}), ...(body.version ? { version: body.version } : {}) } }
+        : {}),
+    };
 
     controller.create(req, res);
   } catch (err: any) {

@@ -11,7 +11,16 @@ export class DORAMetricsController {
    */
   async getDORAMetrics(req: Request, res: Response): Promise<void> {
     try {
-      const filters: DORAMetricsFilters = {};
+      // Never run unscoped: no organization means no query at all.
+      const organizationId =
+        (req as any).organizationId ||
+        (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized - organization context required' });
+        return;
+      }
+
+      const filters: DORAMetricsFilters = { organizationId };
 
       // Validate and set date range
       if (req.query.date_range) {
@@ -40,11 +49,6 @@ export class DORAMetricsController {
       if (req.query.environment) {
         filters.environment = req.query.environment as string;
       }
-
-      // Forward organization ID so the service can resolve custom benchmarks
-      filters.organizationId =
-        (req as any).organizationId ||
-        (req as any).user?.organizationId;
 
       const metrics = await this.service.getComprehensiveMetrics(filters);
 

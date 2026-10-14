@@ -52,3 +52,10 @@ export type StatsWindow = keyof typeof STATS_WINDOW_DAYS;
 export function isStatsWindow(value: unknown): value is StatsWindow {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(STATS_WINDOW_DAYS, value);
 }
+
+/** Page sizes GET /api/deployments accepts. */
+export const PAGE_SIZES = [25, 50, 100] as const;
+export const DEFAULT_PAGE_SIZE = 25;
+
+export const DEPLOYMENT_ENVIRONMENTS = ['development', 'staging', 'production'] as const;
+export type DeploymentEnvironment = typeof DEPLOYMENT_ENVIRONMENTS[number];

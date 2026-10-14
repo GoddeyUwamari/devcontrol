@@ -168,8 +168,10 @@ describe('GET /api/deployments/stats — organization scope', () => {
       no_completion_recorded: 0,
       unknown: 0,
       change_failure_rate: 33.3,
-      total_cost: 10,
+      organization_has_deployments: true,
     });
+    // No cost is recorded by any writer, so no cost total is reported.
+    expect(a.body.stats).not.toHaveProperty('total_cost');
     expect(a.body.stats.last_deployment.status).toBe('success');
     expect(Date.now() - Date.parse(a.body.stats.last_deployment.deployed_at)).toBeGreaterThan(2 * HOUR);
 
@@ -194,9 +196,24 @@ describe('GET /api/deployments/stats — organization scope', () => {
       no_completion_recorded: 0,
       unknown: 0,
       change_failure_rate: null,
-      total_cost: 0,
+      organization_has_deployments: false,
       last_deployment: null,
     });
+  });
+
+  it("says whether the organization has any deployment at all, whatever the environment or window -- never from another organization's rows", async () => {
+    const org = await buildOrg();
+    const other = await buildOrg();
+    await insertDeployment(other, 'success', { environment: 'staging' });
+    // Only an old, unfinished production row: outside every window, not a
+    // "last deployment", and not in staging.
+    await insertDeployment(org, 'deploying', { environment: 'production', deployedAt: ago(200 * DAY) });
+
+    const staging = await statsFor(org, '?environment=staging&date_range=7d');
+    expect(staging.body.stats).toMatchObject({ total: 0, last_deployment: null, organization_has_deployments: true });
+
+    const none = await buildOrg();
+    expect((await statsFor(none, '?environment=staging')).body.stats.organization_has_deployments).toBe(false);
   });
 
   it('refuses a request with no organization without running any query', async () => {
@@ -289,6 +306,38 @@ describe('GET /api/deployments/stats — status mapping and rate', () => {
     const age = Date.now() - Date.parse(body.stats.last_deployment.deployed_at);
     expect(age).toBeGreaterThan(2 * DAY - HOUR);
     expect(age).toBeLessThan(2 * DAY + HOUR);
+  });
+});
+
+describe('GET /api/deployments/stats — last deployment ordering', () => {
+  it('a finished row with no deployed_at never outranks a dated one', async () => {
+    const org = await buildOrg();
+    await insertDeployment(org, 'success', { deployedAt: ago(3 * DAY) });
+    await pool.query(
+      `INSERT INTO deployments (service_id, environment, aws_region, status, deployed_by, deployed_at, organization_id)
+       VALUES ($1, 'production', 'us-east-1', 'failed', 'github-actions', NULL, $2)`,
+      [org.serviceId, org.orgId]
+    );
+
+    const { body } = await statsFor(org);
+    expect(body.stats.last_deployment.status).toBe('success');
+    const age = Date.now() - Date.parse(body.stats.last_deployment.deployed_at);
+    expect(age).toBeGreaterThan(3 * DAY - HOUR);
+    expect(age).toBeLessThan(3 * DAY + HOUR);
+  });
+
+  it('when the only finished row has no deployed_at, no last deployment is reported -- not an epoch date', async () => {
+    const org = await buildOrg();
+    await pool.query(
+      `INSERT INTO deployments (service_id, environment, aws_region, status, deployed_by, deployed_at, organization_id)
+       VALUES ($1, 'production', 'us-east-1', 'success', 'github-actions', NULL, $2)`,
+      [org.serviceId, org.orgId]
+    );
+
+    const { status, body } = await statsFor(org);
+    expect(status).toBe(200);
+    expect(body.stats.last_deployment).toBeNull();
+    expect(body.stats.organization_has_deployments).toBe(true);
   });
 });
 
