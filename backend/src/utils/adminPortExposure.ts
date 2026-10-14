@@ -34,6 +34,8 @@ export interface IngressRule {
   ToPort?: number;
   IpRanges?: Array<{ CidrIp?: string }>;
   Ipv6Ranges?: Array<{ CidrIpv6?: string }>;
+  /** Sources given as managed prefix lists. Their CIDRs are not read here. */
+  PrefixListIds?: Array<{ PrefixListId?: string }>;
 }
 
 export interface SecurityGroupRules {
@@ -58,14 +60,20 @@ export interface OpenAdminRule {
  * What is known about an instance's exposure through its security groups.
  *
  *   open_admin_port   an attached group has a rule in `rules`.
- *   not_established   every attached group was read and none has such a rule.
- *   unknown           the groups could not be read (denied, an error, or a group
- *                     that was not returned), so nothing is claimed either way.
+ *   not_established   every attached group was read, and no rule allows such a port
+ *                     from 0.0.0.0/0 or ::/0. That is all it says: the CIDRs checked
+ *                     are exactly those two.
+ *   unknown           nothing is claimed either way, because
+ *                       security_groups_unreadable  the groups could not be read
+ *                         (denied, an error, or a group that was not returned), or
+ *                       prefix_list_source  a rule on such a port takes its sources
+ *                         from a prefix list, whose CIDRs are not read here and
+ *                         could include the internet.
  */
 export type NetworkExposure =
   | { state: 'open_admin_port'; rules: OpenAdminRule[] }
   | { state: 'not_established' }
-  | { state: 'unknown'; reason: 'security_groups_unreadable' };
+  | { state: 'unknown'; reason: 'security_groups_unreadable' | 'prefix_list_source' };
 
 const ALL_PROTOCOLS = '-1';
 // AWS accepts and can return protocol numbers as well as names.
@@ -95,6 +103,11 @@ export function internetSources(rule: IngressRule): string[] {
     ...(rule.IpRanges ?? []).map((range) => range.CidrIp),
     ...(rule.Ipv6Ranges ?? []).map((range) => range.CidrIpv6),
   ].filter((cidr): cidr is string => !!cidr && INTERNET_CIDRS.includes(cidr));
+}
+
+/** Whether a rule takes any of its sources from a managed prefix list. */
+export function usesPrefixList(rule: IngressRule): boolean {
+  return (rule.PrefixListIds ?? []).some((entry) => !!entry.PrefixListId);
 }
 
 /** Every internet-open rule of a group that covers an administrative or database port. */
@@ -139,6 +152,10 @@ export function evaluateNetworkExposure(
   });
   if (rules.length > 0) return { state: 'open_admin_port', rules };
   if (attachedGroupIds.some((id) => !groups.has(id))) return { state: 'unknown', reason: 'security_groups_unreadable' };
+  const viaPrefixList = attachedGroupIds.some((id) =>
+    (groups.get(id)?.IpPermissions ?? []).some((rule) => adminPortsCovered(rule).length > 0 && usesPrefixList(rule))
+  );
+  if (viaPrefixList) return { state: 'unknown', reason: 'prefix_list_source' };
   return { state: 'not_established' };
 }
 

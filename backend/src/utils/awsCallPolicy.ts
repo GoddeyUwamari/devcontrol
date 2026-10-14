@@ -16,7 +16,11 @@ export interface AwsCallPolicy {
   concurrency: number;
   /** Time limit for one attempt of one call, in milliseconds. */
   timeoutMs: number;
-  /** Attempts per call, the first included. Only a throttled attempt is retried. */
+  /**
+   * Attempts per call, the first included. Only a throttled attempt is retried.
+   * The AWS SDK's own retries (3 attempts by default) run inside each attempt, so
+   * a call makes at most maxAttempts x 3 requests: 6 with the default below.
+   */
   maxAttempts: number;
   /** Backoff before retry n (1-based) is baseDelayMs * 2^(n-1), plus jitter, capped at maxDelayMs. */
   baseDelayMs: number;
@@ -29,7 +33,7 @@ export interface AwsCallPolicy {
 export const DEFAULT_AWS_CALL_POLICY: AwsCallPolicy = {
   concurrency: 8,
   timeoutMs: 15_000,
-  maxAttempts: 4,
+  maxAttempts: 2,
   baseDelayMs: 200,
   maxDelayMs: 5_000,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

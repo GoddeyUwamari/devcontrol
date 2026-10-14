@@ -143,6 +143,35 @@ describe('evaluateNetworkExposure', () => {
     expect(evaluateNetworkExposure(['sg-open', 'sg-missing'], groups).state).toBe('open_admin_port');
   });
 
+  describe('prefix-list sources', () => {
+    const viaList = (rule: IngressRule) => new Map([['sg-list', { GroupId: 'sg-list', IpPermissions: [{ ...rule, PrefixListIds: [{ PrefixListId: 'pl-0123456789abcdef0' }] }] }]]);
+
+    it.each([
+      ['tcp 22', { IpProtocol: 'tcp', FromPort: 22, ToPort: 22 }],
+      ['tcp 0-65535', { IpProtocol: 'tcp', FromPort: 0, ToPort: 65535 }],
+      ['all protocols', { IpProtocol: '-1' }],
+    ])('%s from a prefix list is unknown: the list could include the internet', (_name, rule) => {
+      expect(evaluateNetworkExposure(['sg-list'], viaList(rule))).toEqual({ state: 'unknown', reason: 'prefix_list_source' });
+    });
+
+    it.each([
+      ['tcp 443', { IpProtocol: 'tcp', FromPort: 443, ToPort: 443 }],
+      ['icmp', { IpProtocol: 'icmp', FromPort: -1, ToPort: -1 }],
+    ])('%s from a prefix list covers no admin or database port: not_established', (_name, rule) => {
+      expect(evaluateNetworkExposure(['sg-list'], viaList(rule))).toEqual({ state: 'not_established' });
+    });
+
+    it('an empty PrefixListIds is not a prefix-list source', () => {
+      const none = new Map([['sg-x', { GroupId: 'sg-x', IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '10.0.0.0/8' }], PrefixListIds: [] }] }]]);
+      expect(evaluateNetworkExposure(['sg-x'], none)).toEqual({ state: 'not_established' });
+    });
+
+    it('a verified open rule in another attached group still wins', () => {
+      const both = new Map([...viaList({ IpProtocol: 'tcp', FromPort: 22, ToPort: 22 }), ['sg-open', open]]);
+      expect(evaluateNetworkExposure(['sg-list', 'sg-open'], both).state).toBe('open_admin_port');
+    });
+  });
+
   it('an instance with no security group reported has nothing established', () => {
     expect(evaluateNetworkExposure([], groups)).toEqual({ state: 'not_established' });
   });

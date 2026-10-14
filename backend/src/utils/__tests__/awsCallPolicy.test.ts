@@ -19,11 +19,13 @@ function testPolicy(overrides: Partial<AwsCallPolicy> = {}) {
 }
 
 describe('the default policy', () => {
-  it('bounds concurrency to between 5 and 10, limits each call, and retries a few times', () => {
+  it('bounds concurrency to between 5 and 10, limits each call, and makes at most 2 attempts (6 requests with the SDK\'s own 3)', () => {
     expect(DEFAULT_AWS_CALL_POLICY.concurrency).toBeGreaterThanOrEqual(5);
     expect(DEFAULT_AWS_CALL_POLICY.concurrency).toBeLessThanOrEqual(10);
     expect(DEFAULT_AWS_CALL_POLICY.timeoutMs).toBe(15_000);
-    expect(DEFAULT_AWS_CALL_POLICY.maxAttempts).toBe(4);
+    expect(DEFAULT_AWS_CALL_POLICY.maxAttempts).toBe(2);
+    const SDK_DEFAULT_ATTEMPTS = 3;
+    expect(DEFAULT_AWS_CALL_POLICY.maxAttempts * SDK_DEFAULT_ATTEMPTS).toBeLessThanOrEqual(6);
   });
 });
 
@@ -70,7 +72,7 @@ describe('callWithPolicy', () => {
   });
 
   it('retries a throttled call with growing backoff, then returns its result', async () => {
-    const { policy, slept } = testPolicy();
+    const { policy, slept } = testPolicy({ maxAttempts: 4 });
     const call = jest.fn()
       .mockRejectedValueOnce(awsError('SlowDown'))
       .mockRejectedValueOnce(awsError('SlowDown'))
@@ -84,8 +86,9 @@ describe('callWithPolicy', () => {
     const { policy, slept } = testPolicy();
     const call = jest.fn().mockRejectedValue(awsError('RequestLimitExceeded'));
     await expect(callWithPolicy(call, policy)).rejects.toMatchObject({ name: 'RequestLimitExceeded' });
-    expect(call).toHaveBeenCalledTimes(4);
-    expect(slept).toEqual([200, 400, 800]);
+    // The default: one retry, after one backoff.
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(slept).toEqual([200]);
   });
 
   it.each([['AccessDenied'], ['NoSuchTagSet'], ['InternalError']])('does not retry %s', async (name) => {
