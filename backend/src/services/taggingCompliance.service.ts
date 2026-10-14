@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { AWSResource } from '../types/aws-resources.types';
+import { tagsObserved } from './complianceScanner';
 
 /**
  * Tagging Compliance Service
@@ -25,6 +26,13 @@ export interface TaggingComplianceReport {
   total_resources: number;
   compliant_resources: number;
   non_compliant_resources: number;
+  /**
+   * Resources whose tags could not be read (or are not read for their type). They
+   * are neither compliant nor non-compliant, raise no issue, and are left out of
+   * compliance_rate.
+   */
+  unknown_resources: number;
+  /** Compliant resources as a share of those whose tags were read. */
   compliance_rate: number;
   issues: TaggingComplianceIssue[];
   summary: {
@@ -115,9 +123,16 @@ export class TaggingComplianceService {
       let totalResources = resources.length;
       let compliantResources = 0;
       let nonCompliantResources = 0;
+      let unknownResources = 0;
       const issues: TaggingComplianceIssue[] = [];
 
       for (const resource of resources) {
+        // Tags that were not read are unknown, not empty: "Missing required tag"
+        // cannot be claimed for them.
+        if (!tagsObserved(resource)) {
+          unknownResources++;
+          continue;
+        }
         const resourceIssues = this.auditResource(resource);
 
         if (resourceIssues.length === 0) {
@@ -132,7 +147,11 @@ export class TaggingComplianceService {
         total_resources: totalResources,
         compliant_resources: compliantResources,
         non_compliant_resources: nonCompliantResources,
-        compliance_rate: totalResources > 0 ? (compliantResources / totalResources) * 100 : 0,
+        unknown_resources: unknownResources,
+        compliance_rate:
+          compliantResources + nonCompliantResources > 0
+            ? (compliantResources / (compliantResources + nonCompliantResources)) * 100
+            : 0,
         issues,
         summary: {
           missing_owner: issues.filter(i => i.issue.includes('Owner')).length,

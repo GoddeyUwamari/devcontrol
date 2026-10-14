@@ -10,6 +10,7 @@ import awsAccountsService from '@/lib/services/aws-accounts.service'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SeverityBadge } from '@/components/ui/severity-badge'
+import { statusNeedsAttention } from './statusAttention'
 
 const _now = Date.now()
 
@@ -239,7 +240,9 @@ export default function ServicesPage() {
 
   const totalServices = displayStats?.total          ?? allServices.length
   const healthyCount  = displayStats?.healthy         ?? allServices.filter((s: any) => s.status === 'healthy').length
-  const warningCount  = displayStats?.needs_attention ?? allServices.filter((s: any) => s.status !== 'healthy').length
+  // Fallback when the stats request has not answered: only a known warning or critical
+  // status counts. 'unknown' (no lifecycle state to judge) is not a reason for attention.
+  const warningCount  = displayStats?.needs_attention ?? allServices.filter(statusNeedsAttention).length
   const servicesWithUptime = allServices.filter((s: any) => s.uptime != null)
   const avgUptime     = displayStats?.avg_uptime
     ?? (servicesWithUptime.length > 0

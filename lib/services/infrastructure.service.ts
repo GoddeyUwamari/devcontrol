@@ -26,7 +26,8 @@ export const infrastructureService = {
       resourceType: r.resourceType || r.resource_type || 'unknown',
       awsId: r.awsId || r.aws_id || r.resource_id || '—',
       awsRegion: r.awsRegion || r.aws_region || r.region || '—',
-      status: r.status || 'running',
+      // null stays null: no lifecycle state (see InfrastructureResource.status), never 'running'.
+      status: r.status ?? null,
       // null (not 0) means the cost hasn't actually been calculated yet for
       // this resource -- see InfrastructureResource's costPerMonth doc comment.
       costPerMonth: (() => {

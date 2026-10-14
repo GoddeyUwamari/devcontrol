@@ -96,8 +96,11 @@ async function issuesFor(orgId: string, resourceId: string): Promise<any[]> {
 }
 
 
+// These scans cannot read any AWS API (mockAws), security groups included, so the
+// instance's public IP is Medium, "exposure not checked" (2B).
+const EC2_PUBLIC_UNKNOWN = 'EC2 instance has a public IP address. Exposure not checked: its security groups have not been read yet.';
 const BASELINE_INSTANCE_FINDINGS = [
-  ['high', 'EC2 instance has a public IP address'],
+  ['medium', EC2_PUBLIC_UNKNOWN],
   ['low', 'Resource is missing required tags: Owner, Environment, Team'],
 ];
 
@@ -378,9 +381,10 @@ describe('discovery compliance scan: framework applicability', () => {
     const instanceRows = await storedFor(orgId, INSTANCE);
     expect(Object.values(instanceRows).filter(([state]) => state === 'failed' || state === 'passed')).toEqual([]);
 
-    // Score input: the baseline 1 High + 1 Low always (the two tag-only SOC 2 signals used
-    // to add 2 more High here); the framework Critical only when it is a stored failure.
-    expect(await complianceSeverityCounts(orgId)).toEqual({ critical: criticalCounted, high: 1, medium: 0, low: 1 });
+    // Score input: the baseline 1 Medium (public IP, exposure not checked) + 1 Low always (the
+    // two tag-only SOC 2 signals used to add 2 High here); the framework Critical only when
+    // it is a stored failure.
+    expect(await complianceSeverityCounts(orgId)).toEqual({ critical: criticalCounted, high: 0, medium: 1, low: 1 });
 
     // An unreadable or uninterpretable setting does not abort the scan.
     expect(logged.some((line) => line.includes('Compliance scan complete (2 resources scanned)'))).toBe(true);
@@ -707,8 +711,15 @@ describe('entries stored before frameworks had to be enabled (no data migration 
     // Nothing was stored as an evaluation for either: no framework was evaluated.
     expect(await storedFor(orgId, VOLUME)).toEqual({});
     expect(await storedFor(orgId, INSTANCE)).toEqual({});
-    // The counts did not move: the read filter had already excluded exactly what the scan removed.
-    expect(await everyCount(orgId)).toEqual(before);
+    // The same two findings count as before the scan: the read filter had already excluded
+    // exactly what the scan removed. Only the public IP's grade moved, High to Medium,
+    // because this scan could not read the instance's security groups (2B).
+    const after = await everyCount(orgId);
+    expect(before.score).toEqual({ total: 2, critical: 0, high: 1, medium: 0, low: 1 });
+    expect(after.score).toEqual({ total: 2, critical: 0, high: 0, medium: 1, low: 1 });
+    expect(after.listing).toEqual({ [INSTANCE]: [EC2_PUBLIC_UNKNOWN, MISSING_TAGS.issue] });
+    expect(after.report.totalIssues).toBe(before.report.totalIssues);
+    expect(after.report.nonCompliant).toEqual(before.report.nonCompliant);
   });
 
   it('(b) the next scan drops them even when the evaluation tables do not exist', async () => {
@@ -750,7 +761,7 @@ describe('discovery compliance scan: SOC 2 follows the same rules as HIPAA', () 
     ]);
     expect(await storedFor(orgId, INSTANCE)).toEqual({});
     expect((await issuesFor(orgId, INSTANCE)).map((i) => [i.severity, i.issue])).toEqual(BASELINE_INSTANCE_FINDINGS);
-    expect(await complianceSeverityCounts(orgId)).toEqual({ critical: 0, high: 1, medium: 0, low: 1 });
+    expect(await complianceSeverityCounts(orgId)).toEqual({ critical: 0, high: 0, medium: 1, low: 1 });
   });
 
   it('explicitly enabled: both tag-only checks are stored as unable_to_evaluate -- no finding, no pass, no severity -- and the counts do not move', async () => {
@@ -779,7 +790,7 @@ describe('discovery compliance scan: SOC 2 follows the same rules as HIPAA', () 
     const instance = await issuesFor(orgId, INSTANCE);
     expect(instance.map((i) => [i.severity, i.issue])).toEqual(BASELINE_INSTANCE_FINDINGS);
     expect(instance.filter((i) => i.framework !== undefined)).toEqual([]);
-    expect(await complianceSeverityCounts(orgId)).toEqual({ critical: 0, high: 1, medium: 0, low: 1 });
+    expect(await complianceSeverityCounts(orgId)).toEqual({ critical: 0, high: 0, medium: 1, low: 1 });
   });
 
   it('explicitly enabled with the tags present: still unable_to_evaluate (a tag is self-attested), never passed', async () => {
@@ -1009,11 +1020,12 @@ describe('the supplied production account (audit 4.3): which findings remain', (
     };
   }
 
-  // What remains once only current findings count. EBS `in-use` stays at risk through
-  // its STATUS (mapStatus treats `in-use` as a warning); that mapping is PR 2B's.
+  // What remains once only current findings count, before any scan. Since 2B an
+  // attached volume (`in-use`) is no longer at risk through its status, and a bucket,
+  // topic or VPC has no status to be at risk through.
   const REMAINING = {
     'vol-unattached': { counted: ['medium: EBS resource is not encrypted', 'low: Resource is missing required tags: Owner, Environment, Team'], worst: 'medium', atRisk: false },
-    'vol-attached': { counted: ['low: Resource is missing required tags: Owner, Environment, Team'], worst: 'medium', atRisk: true },
+    'vol-attached': { counted: ['low: Resource is missing required tags: Owner, Environment, Team'], worst: 'low', atRisk: false },
     instance: { counted: ['high: EC2 instance has a public IP address', 'medium: EC2 instance does not have regular snapshots', 'low: Resource is missing required tags: Owner, Environment, Team'], worst: 'high', atRisk: true },
     'bucket-one': { counted: ['low: Resource is missing required tags: Owner, Environment, Team', 'high: S3 bucket does not enforce HTTPS-only access'], worst: 'high', atRisk: true },
     'bucket-two': { counted: ['low: Resource is missing required tags: Owner, Environment, Team', 'high: S3 bucket does not enforce HTTPS-only access'], worst: 'high', atRisk: true },
@@ -1021,6 +1033,23 @@ describe('the supplied production account (audit 4.3): which findings remain', (
     topic: { counted: ['medium: SNS resource is not encrypted', 'low: Resource is missing required tags: Owner, Environment, Team'], worst: 'medium', atRisk: false },
     'vpc-one': { counted: ['medium: VPC resource is not encrypted', 'low: Resource is missing required tags: Owner, Environment, Team'], worst: 'medium', atRisk: false },
     'vpc-two': { counted: ['medium: VPC resource is not encrypted', 'low: Resource is missing required tags: Owner, Environment, Team'], worst: 'medium', atRisk: false },
+  };
+  // What a scan leaves when it can read nothing from AWS (mockAws): only findings that
+  // rest on what is already recorded. With no security groups read the instance's
+  // public IP is Medium; with no tags read a bucket, topic or VPC has no tag finding;
+  // and a topic or VPC has no "not encrypted" finding, because nothing reads that.
+  // (awsResourceDiscovery.resource-truth-fixture.test.ts runs the same account with
+  // AWS answering.)
+  const NONE = { counted: [] as string[], worst: null as string | null, atRisk: false };
+  const REMAINING_AFTER_BLIND_SCAN = {
+    ...REMAINING,
+    instance: { counted: [`medium: ${EC2_PUBLIC_UNKNOWN}`, 'medium: EC2 instance does not have regular snapshots', 'low: Resource is missing required tags: Owner, Environment, Team'], worst: 'medium', atRisk: false },
+    'bucket-one': { counted: ['high: S3 bucket does not enforce HTTPS-only access'], worst: 'high', atRisk: true },
+    'bucket-two': { counted: ['high: S3 bucket does not enforce HTTPS-only access'], worst: 'high', atRisk: true },
+    'bucket-three': NONE,
+    topic: NONE,
+    'vpc-one': NONE,
+    'vpc-two': NONE,
   };
   const sorted = (per: Record<string, { counted: string[]; worst: string | null; atRisk: boolean }>) =>
     Object.fromEntries(Object.entries(per).map(([id, r]) => [id, { counted: [...r.counted].sort(), worst: r.worst, atRisk: r.atRisk }]));
@@ -1033,26 +1062,26 @@ describe('the supplied production account (audit 4.3): which findings remain', (
     expect(Object.values(before.perResource).map((r) => r.stored)).toEqual([3, 4, 8, 7, 7, 6, 2, 2, 2]);
   });
 
-  it('on deploy, before any scan: 17 of the 41 stored entries count, with no Critical; 4 of 9 are at risk', async () => {
+  it('on deploy, before any scan: 17 of the 41 stored entries count, with no Critical; 3 of 9 are at risk', async () => {
     const orgId = await insertAccount();
     const deployed = await snapshot(orgId);
 
     expect(deployed.storedEntries).toBe(41);
     expect(deployed.counted).toEqual({ total: 17, critical: 0, high: 3, medium: 5, low: 9 });
-    expect(deployed.atRisk).toBe(4);
+    expect(deployed.atRisk).toBe(3);
     expect(sorted(deployed.perResource)).toEqual(sorted(REMAINING));
   });
 
-  it('after the next scan, with no framework enabled: the same 17 findings are all that is stored', async () => {
+  it('after the next scan, with no framework enabled and AWS unreadable: 8 findings are all that is stored, 2 of 9 at risk', async () => {
     const orgId = await insertAccount();
     await scan(orgId);
     const scanned = await snapshot(orgId);
 
-    expect(scanned.storedEntries).toBe(17);
-    expect(scanned.storedBySeverity).toEqual({ critical: 0, high: 3, medium: 5, low: 9 });
-    expect(scanned.counted).toEqual({ total: 17, critical: 0, high: 3, medium: 5, low: 9 });
-    expect(scanned.atRisk).toBe(4);
-    expect(sorted(scanned.perResource)).toEqual(sorted(REMAINING));
+    expect(scanned.storedEntries).toBe(8);
+    expect(scanned.storedBySeverity).toEqual({ critical: 0, high: 2, medium: 3, low: 3 });
+    expect(scanned.counted).toEqual({ total: 8, critical: 0, high: 2, medium: 3, low: 3 });
+    expect(scanned.atRisk).toBe(2);
+    expect(sorted(scanned.perResource)).toEqual(sorted(REMAINING_AFTER_BLIND_SCAN));
     // Nothing was evaluated for a framework, so nothing is stored as an evaluation.
     const { rows } = await pool.query(`SELECT count(*)::int AS n FROM compliance_check_evaluations WHERE organization_id = $1`, [orgId]);
     expect(rows[0].n).toBe(0);
@@ -1065,16 +1094,16 @@ describe('the supplied production account (audit 4.3): which findings remain', (
     await scan(orgId);
     const enabled = await snapshot(orgId);
 
-    expect(enabled.counted).toEqual({ total: 18, critical: 1, high: 3, medium: 5, low: 9 });
-    expect(enabled.storedEntries).toBe(18);
-    expect(enabled.atRisk).toBe(4);
+    expect(enabled.counted).toEqual({ total: 9, critical: 1, high: 2, medium: 3, low: 3 });
+    expect(enabled.storedEntries).toBe(9);
+    expect(enabled.atRisk).toBe(3);
     expect(enabled.perResource['vol-attached']).toMatchObject({
       counted: expect.arrayContaining(['critical: HIPAA: EBS storing PHI must have automated backups']),
       worst: 'critical',
       atRisk: true,
     });
     const others = Object.fromEntries(Object.entries(sorted(enabled.perResource)).filter(([id]) => id !== 'vol-attached'));
-    const expectedOthers = Object.fromEntries(Object.entries(sorted(REMAINING)).filter(([id]) => id !== 'vol-attached'));
+    const expectedOthers = Object.fromEntries(Object.entries(sorted(REMAINING_AFTER_BLIND_SCAN)).filter(([id]) => id !== 'vol-attached'));
     expect(others).toEqual(expectedOthers);
 
     const { rows } = await pool.query(

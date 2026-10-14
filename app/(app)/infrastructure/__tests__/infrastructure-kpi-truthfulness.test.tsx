@@ -4,8 +4,11 @@
  * - The resource counts come from /api/services/stats, where "healthy" means
  *   "not stopped or failed and no high-severity finding" -- real mode says so
  *   instead of "Healthy · Running normally".
- * - The Critical Issues card's "1 cost inefficiency · 1 reliability risk"
- *   breakdown is demo copy and never appears for a real account.
+ * - The red card's "1 cost inefficiency · 1 reliability risk" breakdown is demo
+ *   copy and never appears for a real account.
+ * - The red card is titled "Needs Attention" and says "critical" only when a
+ *   Critical finding exists; it never hides a finding to get there.
+ * - A resource with no lifecycle state shows "—", never "running".
  * - A failed stats request is unknown, not 0.
  * - Infrastructure Posture (the cost/security/alert-coverage composite) is not
  *   presented as measured uptime, performance, or resource health.
@@ -117,9 +120,9 @@ describe('/infrastructure KPI cards -- real mode', () => {
     mockServicesStats.mockResolvedValue({ total: 3, healthy: 2, needs_attention: 1 })
     renderPage()
 
-    await waitFor(() => expect(kpiCard('Critical Issues').textContent).toContain('1'))
+    await waitFor(() => expect(kpiCard('Needs Attention').textContent).toContain('1'))
     expect(document.body.textContent).not.toMatch(/1 cost inefficiency · 1 reliability risk/)
-    expect(kpiCard('Critical Issues').textContent).toMatch(/Stopped, failed, or with a high-severity finding/)
+    expect(kpiCard('Needs Attention').textContent).toMatch(/Stopped, failed, or flagged by a finding or cost recommendation/)
   })
 
   it('labels the count as "no flagged issues", not "Healthy · Running normally"', async () => {
@@ -136,8 +139,66 @@ describe('/infrastructure KPI cards -- real mode', () => {
 
     await waitFor(() => expect(mockServicesStats).toHaveBeenCalled())
     await waitFor(() => expect(kpiCard('No Flagged Issues').textContent).toContain('—'))
-    expect(kpiCard('Critical Issues').textContent).toContain('—')
+    expect(kpiCard('Needs Attention').textContent).toContain('—')
     expect(kpiCard('No Flagged Issues').textContent).not.toMatch(/\b0\b/)
+  })
+})
+
+describe('/infrastructure red card -- titled by what it counts, and says why', () => {
+  const stats = (
+    needs_attention: number,
+    findings_by_severity?: { critical: number; high: number; medium: number; low: number },
+    attention_reasons?: { with_finding: number; with_cost_recommendation: number; stopped_or_degraded: number; failed: number }
+  ) => ({ total: 9, healthy: 9 - needs_attention, needs_attention, ...(findings_by_severity ? { findings_by_severity } : {}), ...(attention_reasons ? { attention_reasons } : {}) })
+  const why = (with_finding: number, with_cost_recommendation = 0, stopped_or_degraded = 0, failed = 0) =>
+    ({ with_finding, with_cost_recommendation, stopped_or_degraded, failed })
+  const card = () => screen.getByTestId('infrastructure-attention-label').parentElement as HTMLElement
+  const reasonLine = () => screen.getByTestId('infrastructure-attention-reasons').textContent
+
+  it('with 0 Critical findings: the count is unchanged and the card never says "critical"', async () => {
+    mockServicesStats.mockResolvedValue(stats(2, { critical: 0, high: 2, medium: 3, low: 9 }, why(2)))
+    renderPage()
+
+    await waitFor(() => expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('2'))
+    expect(screen.getByTestId('infrastructure-attention-label').textContent).toBe('Needs Attention')
+    expect(reasonLine()).toBe('2 high findings')
+    expect(card().textContent).not.toMatch(/critical/i)
+    expect(screen.queryByText('Critical Issues')).not.toBeInTheDocument()
+  })
+
+  it('names every reason resources are counted: findings, status and cost recommendations', async () => {
+    mockServicesStats.mockResolvedValue(stats(4, { critical: 0, high: 2, medium: 3, low: 9 }, why(2, 1, 1)))
+    renderPage()
+
+    await waitFor(() => expect(reasonLine()).toBe('2 high findings · 1 stopped or degraded · 1 cost recommendation'))
+    expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('4')
+  })
+
+  it('with Critical findings: says how many, beside the High ones', async () => {
+    mockServicesStats.mockResolvedValue(stats(3, { critical: 1, high: 2, medium: 0, low: 0 }, why(3)))
+    renderPage()
+
+    await waitFor(() => expect(reasonLine()).toBe('1 critical finding · 2 high findings'))
+    expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('3')
+  })
+
+  it('a resource counted on status alone: the card says so, never "No high-severity findings" beside a non-zero count', async () => {
+    mockServicesStats.mockResolvedValue(stats(1, { critical: 0, high: 0, medium: 4, low: 2 }, why(0, 0, 1)))
+    renderPage()
+
+    await waitFor(() => expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('1'))
+    expect(reasonLine()).toBe('1 stopped or degraded')
+    expect(card().textContent).not.toMatch(/No high-severity findings/)
+    expect(card().textContent).not.toMatch(/critical/i)
+  })
+
+  it('a backend that does not send the breakdown: the generic description, and still no "critical"', async () => {
+    mockServicesStats.mockResolvedValue(stats(4))
+    renderPage()
+
+    await waitFor(() => expect(screen.getByTestId('infrastructure-attention-count').textContent).toBe('4'))
+    expect(reasonLine()).toBe('Stopped, failed, or flagged by a finding or cost recommendation')
+    expect(card().textContent).not.toMatch(/critical/i)
   })
 })
 
@@ -233,6 +294,39 @@ describe('/infrastructure resource table -- lifecycle state, not invented health
     expect(screen.queryByText('Healthy', { selector: 'span' })).not.toBeInTheDocument()
     expect(screen.queryByText('Critical', { selector: 'span' })).not.toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/elevated error rate|potential downtime/)
+  })
+})
+
+describe('/infrastructure resource table -- no lifecycle status for a type that has none', () => {
+  const row = (id: string, resourceType: string, status: string | null) => ({
+    id, serviceId: `svc-${id}`, serviceName: `name-${id}`, resourceType, awsId: `aws-${id}`, awsRegion: 'us-east-1',
+    status, costPerMonth: 5, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  it('an S3 bucket, an SNS topic and a VPC show "—": never "running", and never a "Not running" warning', async () => {
+    vi.mocked(infrastructureService.getAll).mockResolvedValue(
+      [row('bucket', 's3', null), row('topic', 'sns', null), row('network', 'vpc', null)] as never
+    )
+    mockServicesStats.mockResolvedValue({ total: 3, healthy: 3, needs_attention: 0, findings_by_severity: { critical: 0, high: 0, medium: 0, low: 0 } })
+    renderPage()
+
+    await waitFor(() => expect(screen.getAllByText('name-bucket').length).toBeGreaterThan(0))
+    expect(screen.queryByText('running')).not.toBeInTheDocument()
+    expect(screen.queryByText('pending')).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Not running/)
+    for (const id of ['bucket', 'topic', 'network']) {
+      expect(document.getElementById(`resource-${id}`)?.textContent).toContain('—')
+    }
+  })
+
+  it('beside one, an EC2 instance still shows its own state', async () => {
+    vi.mocked(infrastructureService.getAll).mockResolvedValue([row('bucket', 's3', null), row('vm', 'ec2', 'running')] as never)
+    mockServicesStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0 })
+    renderPage()
+
+    await waitFor(() => expect(screen.getAllByText('running').length).toBeGreaterThan(0))
+    expect(document.getElementById('resource-vm')?.textContent).toContain('running')
+    expect(document.getElementById('resource-bucket')?.textContent).not.toContain('running')
   })
 })
 

@@ -155,12 +155,13 @@ describe('AWSResourceDiscoveryService.discoverLambdaFunctions', () => {
     expect(resources).toEqual([]);
   });
 
-  // Security Truthfulness #40: is_encrypted no longer infers encryption from environment
-  // variable presence -- Lambda is always encrypted at rest (AWS-owned/AWS-managed key by
-  // default, or a customer-managed key via KMSKeyArn), so it always resolves to true,
-  // regardless of environment variables or KMSKeyArn. All four cases below must produce
-  // the identical, correct result -- proving the fix is no longer reading either signal.
-  describe('is_encrypted always resolves to true (Security Truthfulness #40)', () => {
+  // Security Truthfulness #40: is_encrypted is never derived from environment variables
+  // or from KMSKeyArn -- all four cases below give the identical result, and it is never
+  // `false`. Since 2B that result is NULL (unknown) rather than a hardcoded `true`: AWS
+  // documents at-rest encryption for what is uploaded to Lambda, but excepts functions
+  // on self-managed S3 code storage, and discovery does not read which a function uses.
+  // 'lambda' is not in ENCRYPTION_EVIDENCE_TYPES, so no finding follows either way.
+  describe('is_encrypted is unknown for every function, whatever its variables or key (Security Truthfulness #40)', () => {
     async function discoverOneFunction(overrides: Record<string, any>) {
       const lambdaSend = jest.fn().mockResolvedValueOnce({
         Functions: [{ FunctionArn: 'arn:aws:lambda:us-east-1:1:function:f', FunctionName: 'f', MemorySize: 128, ...overrides }],
@@ -171,24 +172,24 @@ describe('AWSResourceDiscoveryService.discoverLambdaFunctions', () => {
       return resources[0];
     }
 
-    it('(1) with environment variables -> is_encrypted: true', async () => {
+    it('(1) with environment variables -> is_encrypted: null', async () => {
       const resource = await discoverOneFunction({ Environment: { Variables: { FOO: 'bar' } } });
-      expect(resource.is_encrypted).toBe(true);
+      expect(resource.is_encrypted).toBeNull();
     });
 
-    it('(2) without environment variables -> is_encrypted: true (previously false -- this was the exact bug)', async () => {
+    it('(2) without environment variables -> is_encrypted: null (once false -- that was the original bug)', async () => {
       const resource = await discoverOneFunction({});
-      expect(resource.is_encrypted).toBe(true);
+      expect(resource.is_encrypted).toBeNull();
     });
 
-    it('(3) with KMSKeyArn (customer-managed key) -> is_encrypted: true', async () => {
+    it('(3) with KMSKeyArn (customer-managed key) -> is_encrypted: null', async () => {
       const resource = await discoverOneFunction({ KMSKeyArn: 'arn:aws:kms:us-east-1:1:key/abc', Environment: { Variables: { FOO: 'bar' } } });
-      expect(resource.is_encrypted).toBe(true);
+      expect(resource.is_encrypted).toBeNull();
     });
 
-    it('(4) without KMSKeyArn (AWS-owned/AWS-managed key) -> is_encrypted: true', async () => {
+    it('(4) without KMSKeyArn (AWS-owned/AWS-managed key) -> is_encrypted: null', async () => {
       const resource = await discoverOneFunction({ Environment: { Variables: {} } });
-      expect(resource.is_encrypted).toBe(true);
+      expect(resource.is_encrypted).toBeNull();
     });
   });
 });

@@ -10,7 +10,8 @@ import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscript
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
-import { isActiveComplianceFinding } from '../utils/frameworkApplicability';
+import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/frameworkApplicability';
+import { lifecycleStateFor } from '../utils/resourceLifecycle';
 
 const router = Router();
 const controller = new ServicesController();
@@ -42,11 +43,34 @@ async function requireCurrentAdminOrOwner(req: Request, res: Response, next: Nex
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
 
-export function mapStatus(resourceType: string, rawStatus: string | null): 'healthy' | 'warning' | 'critical' {
-  if (!rawStatus) return 'warning';
-  const s = rawStatus.toLowerCase();
+/**
+ * The operational status a resource's stored lifecycle state stands for.
+ *
+ * 'unknown' is not a milder warning: it means there is no lifecycle state to judge.
+ * Either the resource type has none (S3, SNS, VPC: see utils/resourceLifecycle.ts)
+ * or it was not read ('unknown', as Resource Explorer-sourced rows are stored).
+ * Neither says the resource is stopped or degraded, so neither raises a status
+ * signal (see statusSeverity). Both used to map to 'warning'.
+ */
+export type OperationalStatus = 'healthy' | 'warning' | 'critical' | 'unknown';
+
+export function mapStatus(resourceType: string, rawStatus: string | null): OperationalStatus {
+  const lifecycleState = lifecycleStateFor(resourceType, rawStatus);
+  if (lifecycleState === null) return 'unknown';
+  const s = lifecycleState.toLowerCase();
 
   switch (resourceType) {
+    case 'cloudfront':
+      // Deployed, or a change still propagating: either way the distribution is serving.
+      if (s === 'active' || s === 'in-progress') return 'healthy';
+      return 'warning';
+
+    case 'ebs':
+      // 'in-use' (attached) and 'available' (unattached) are a volume's two normal states.
+      if (s === 'in-use' || s === 'available') return 'healthy';
+      if (s === 'error') return 'critical';
+      return 'warning';
+
     case 'ec2':
       if (s === 'running') return 'healthy';
       if (s === 'stopped') return 'warning';
@@ -140,7 +164,7 @@ function worstCostRecommendation(recs: any[] | null): SeverityFinding | null {
   return { severity: COST_SEVERITY_MAP[worst.severity], reason: worst.issue };
 }
 
-function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFinding | null {
+function statusSeverity(status: OperationalStatus): SeverityFinding | null {
   if (status === 'critical') return { severity: 'critical', reason: 'Resource in a failed or terminated state' };
   if (status === 'warning')  return { severity: 'medium',   reason: 'Resource is stopped or degraded' };
   return null;
@@ -169,11 +193,36 @@ function statusSeverity(status: 'healthy' | 'warning' | 'critical'): SeverityFin
 const NEEDS_ATTENTION_FLOOR: PrioritySeverity = 'high';
 
 export function derivePrioritySeverity(
-  status: 'healthy' | 'warning' | 'critical',
+  status: OperationalStatus,
   complianceIssues: any[] | null,
   costRecommendations: any[] | null
 ): { priority_severity: PrioritySeverity | null; reason: string | null; needs_attention: boolean } {
-  const flagged = worstComplianceIssue(complianceIssues) ?? worstCostRecommendation(costRecommendations);
+  const { priority_severity, reason, needs_attention } = deriveAttention(status, complianceIssues, costRecommendations);
+  return { priority_severity, reason, needs_attention };
+}
+
+/** Why a resource needs attention. More than one can hold at once. */
+export interface AttentionCauses {
+  /** A current Critical or High compliance finding. */
+  finding: boolean;
+  /** A HIGH cost recommendation, on a resource with no current compliance finding. */
+  cost_recommendation: boolean;
+  /** Its operational status: 'warning' (stopped or degraded) or 'critical' (failed). */
+  status: 'warning' | 'critical' | null;
+}
+
+/**
+ * derivePrioritySeverity's result plus the causes behind needs_attention. One
+ * computation, so a count of resources needing attention and an account of why
+ * can never disagree.
+ */
+export function deriveAttention(
+  status: OperationalStatus,
+  complianceIssues: any[] | null,
+  costRecommendations: any[] | null
+): { priority_severity: PrioritySeverity | null; reason: string | null; needs_attention: boolean; causes: AttentionCauses } {
+  const complianceFinding = worstComplianceIssue(complianceIssues);
+  const flagged = complianceFinding ?? worstCostRecommendation(costRecommendations);
   const statusFinding = statusSeverity(status);
   const combined = worseSeverity(flagged, statusFinding);
 
@@ -184,6 +233,11 @@ export function derivePrioritySeverity(
     priority_severity: combined?.severity ?? null,
     reason: combined?.reason ?? null,
     needs_attention: needsAttention,
+    causes: {
+      finding: flaggedMeetsFloor && !!complianceFinding,
+      cost_recommendation: flaggedMeetsFloor && !complianceFinding,
+      status: statusFinding ? (status === 'critical' ? 'critical' : 'warning') : null,
+    },
   };
 }
 
@@ -322,9 +376,52 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     const needsAttention = services.filter((s) => s.needs_attention).length;
     const healthy        = total - needsAttention;
 
+    // How many current findings of each severity the same resources carry. A page
+    // that labels the needs_attention count has to be able to say how many of them
+    // are Critical instead of assuming so. Same rows as fetchServices (this
+    // organization, not terminated) and the same currency rule as needs_attention
+    // (isActiveComplianceFinding), so the two cannot disagree.
+    //
+    // attention_reasons says why the needs_attention resources are counted: how many
+    // carry a Critical or High finding, how many are there through a cost
+    // recommendation, and how many through their status. A resource can be in more
+    // than one. The cost recommendations are read the way fetchServices reads them.
+    const { rows: findingRows } = await pool.query(
+      `SELECT r.resource_type, r.status, r.compliance_issues,
+              (SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
+                 FROM cost_recommendations cr
+                WHERE cr.organization_id = r.organization_id
+                  AND cr.resource_id = r.resource_id
+                  AND LOWER(cr.resource_type) = r.resource_type
+                  AND cr.status = 'ACTIVE'
+              ) AS cost_recommendations
+         FROM aws_resources r
+        WHERE r.organization_id = $1 AND r.status != 'terminated'`,
+      [orgId]
+    );
+    const findingsBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    const attentionReasons = { with_finding: 0, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 };
+    for (const row of findingRows) {
+      for (const finding of activeComplianceFindings(row.compliance_issues)) {
+        if (finding.severity in findingsBySeverity) findingsBySeverity[finding.severity]++;
+      }
+      const { causes } = deriveAttention(mapStatus(row.resource_type, row.status), row.compliance_issues, row.cost_recommendations);
+      if (causes.finding) attentionReasons.with_finding++;
+      if (causes.cost_recommendation) attentionReasons.with_cost_recommendation++;
+      if (causes.status === 'warning') attentionReasons.stopped_or_degraded++;
+      if (causes.status === 'critical') attentionReasons.failed++;
+    }
+
     // No real monitoring data source exists yet — avg_uptime is intentionally null
     // rather than a fabricated figure.
-    res.json({ success: true, stats: { total, healthy, needs_attention: needsAttention, avg_uptime: null } });
+    res.json({
+      success: true,
+      stats: {
+        total, healthy, needs_attention: needsAttention, avg_uptime: null,
+        findings_by_severity: findingsBySeverity,
+        attention_reasons: attentionReasons,
+      },
+    });
   } catch (err: any) {
     console.error('[Services/stats]', err);
     res.status(500).json({ success: false, error: err.message });

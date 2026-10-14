@@ -5,13 +5,23 @@ import {
   ComplianceScan,
 } from '../repositories/compliance-frameworks.repository';
 import { AWSResource } from '../types/aws-resources.types';
+import { tagsObserved } from './complianceScanner';
 
 interface RuleEvaluationResult {
   pass: boolean;
   issue?: string;
   recommendation?: string;
   error?: string;
+  /**
+   * Set when the rule could not be evaluated because what it tests is unknown for
+   * this resource (a property discovery did not read, or tags that were not read).
+   * Not a pass and not a failure: the finding is recorded as 'skip' with this text,
+   * and the rule does not count toward the resource's compliance either way.
+   */
+  notEvaluated?: string;
 }
+
+const notEvaluated = (reason: string): RuleEvaluationResult => ({ pass: false, notEvaluated: `Not evaluated: ${reason}` });
 
 /**
  * Distinct from cost-recommendations.repository.ts's RECONCILIATION_LOCK_SALT
@@ -283,14 +293,14 @@ export class CustomComplianceService {
             resource_arn: resource.resource_arn,
             resource_type: resource.resource_type,
             resource_name: resource.resource_name,
-            status: result.error ? 'error' : result.pass ? 'pass' : 'fail',
+            status: result.error ? 'error' : result.notEvaluated ? 'skip' : result.pass ? 'pass' : 'fail',
             severity: rule.severity,
             category: rule.category,
-            issue: result.issue || null,
-            recommendation: result.recommendation || null,
+            issue: result.notEvaluated || result.issue || null,
+            recommendation: result.notEvaluated ? null : result.recommendation || null,
           }, client);
 
-          if (!result.error) {
+          if (!result.error && !result.notEvaluated) {
             resourceResults.push({ ruleId: rule.id, passed: result.pass });
 
             if (!result.pass) {
@@ -420,6 +430,17 @@ export class CustomComplianceService {
 
     const resourceValue = (resource as any)[property];
 
+    // NULL is "discovery did not read this" (an unknown encryption, public-access or
+    // backup state, for instance), not a value. No operator can pass or fail on it:
+    // `equals false` must not fail, and `not_equals true` or `not_exists` must not
+    // pass, on something nobody observed.
+    // `exists` / `not_exists` are the two operators that ask exactly that question
+    // ("is this known?"), so they still answer it.
+    const asksWhetherKnown = operator === 'exists' || operator === 'not_exists';
+    if ((resourceValue === null || resourceValue === undefined) && !asksWhetherKnown) {
+      return notEvaluated(`"${property}" is unknown for this resource`);
+    }
+
     let pass = false;
 
     switch (operator) {
@@ -476,6 +497,9 @@ export class CustomComplianceService {
       return { pass: false, error: 'Invalid tag_required conditions - tag_key missing' };
     }
 
+    // Tags that were not read are unknown, not empty: a missing tag cannot be claimed.
+    if (!tagsObserved(resource)) return notEvaluated('the tags of this resource could not be read');
+
     const tagExists = resource.tags && tag_key in resource.tags;
 
     return {
@@ -498,6 +522,8 @@ export class CustomComplianceService {
     if (!tag_key || !pattern) {
       return { pass: false, error: 'Invalid tag_pattern conditions' };
     }
+
+    if (!tagsObserved(resource)) return notEvaluated('the tags of this resource could not be read');
 
     const tagValue = resource.tags?.[tag_key];
 

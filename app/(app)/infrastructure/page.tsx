@@ -20,6 +20,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { formatCalculatedAgo } from './calculatedAgo'
+import { describeAttentionCard } from './attentionCard'
 import { describeStatsSpend } from '../costs/cost-display'
 import { INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 
@@ -367,6 +368,12 @@ function InfrastructureContent() {
   const activeCount      = isDemoActive ? demoActive     : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.healthy         ?? 0))
   const warningCount     = isDemoActive ? demoWarning    : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.needs_attention ?? 0))
 
+  // The red card counts resources that need attention, and says why they are counted
+  // (see attentionCard.ts). It says "critical" only when a Critical finding exists.
+  const attentionCard = isDemoActive
+    ? { label: 'Critical Issues', reasonLine: null as string | null, action: 'Resolve now →' }
+    : describeAttentionCard(warningCount, apiStats?.findings_by_severity, apiStats?.attention_reasons)
+
   const DEMO_INTELLIGENCE = {
     // 73 is 'Stable' under the canonical overall thresholds (scoreToStatus:
     // >=85 Healthy, >=70 Stable, >=50 Degraded, else At Risk).
@@ -498,7 +505,7 @@ function InfrastructureContent() {
       return bScore - aScore
     })
     else if (sortOrder === 'cost-high') rows = rows.sort((a, b) => (b.costPerMonth ?? 0) - (a.costPerMonth ?? 0))
-    else if (sortOrder === 'status')    rows = rows.sort((a, b) => a.status.localeCompare(b.status))
+    else if (sortOrder === 'status')    rows = rows.sort((a, b) => (a.status ?? '').localeCompare(b.status ?? ''))
     return rows
   })()
 
@@ -737,10 +744,12 @@ function InfrastructureContent() {
           onMouseLeave={() => setHoveredCard(null)}
           onClick={() => setStatusFilter(statusFilter === 'warning' ? null : 'warning')}
         >
-          <p className="text-xs font-semibold text-red-600 uppercase tracking-widest mb-4">Critical Issues</p>
-          <div className="text-3xl sm:text-4xl font-bold text-red-600 tracking-tight leading-none mb-2">{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
-          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5">{isDemoActive ? '1 cost inefficiency · 1 reliability risk' : 'Stopped, failed, or with a high-severity finding'}</p>
-          <p className="text-xs text-red-600 font-medium">Resolve now →</p>
+          <p className="text-xs font-semibold text-red-600 uppercase tracking-widest mb-4" data-testid="infrastructure-attention-label">{attentionCard.label}</p>
+          <div className="text-3xl sm:text-4xl font-bold text-red-600 tracking-tight leading-none mb-2" data-testid="infrastructure-attention-count">{statsLoading && !isDemoActive ? '—' : (warningCount ?? '—')}</div>
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-0.5" data-testid="infrastructure-attention-reasons">
+            {isDemoActive ? '1 cost inefficiency · 1 reliability risk' : attentionCard.reasonLine ?? 'Stopped, failed, or flagged by a finding or cost recommendation'}
+          </p>
+          <p className="text-xs text-red-600 font-medium">{attentionCard.action}</p>
         </div>
 
         {/* Recoverable Savings */}
@@ -911,7 +920,9 @@ function InfrastructureContent() {
             // The row's status is the resource's discovered AWS lifecycle state
             // (running/stopped/pending...), shown as-is: this table has no
             // health, error-rate, or availability evidence, so it never says
-            // "Healthy" or "Critical".
+            // "Healthy" or "Critical". A resource with no lifecycle state (an S3
+            // bucket, an SNS topic, a VPC, or one whose state was not read) has a
+            // null status and shows "—", never "running".
             const statusLabel = isCostWaste && r.status === 'running' ? 'Cost Waste' : r.status ?? '—'
             const statusColor = isReliabilityRisk ? '#fff' : statusLabel === 'Cost Waste' ? '#fff' : '#475569'
             const statusBg    = isReliabilityRisk ? '#DC2626' : statusLabel === 'Cost Waste' ? '#D97706' : '#F1F5F9'

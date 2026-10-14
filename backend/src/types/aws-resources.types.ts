@@ -38,7 +38,11 @@ export type ResourceStatus =
   | 'pending'
   | 'failed'
   | 'unknown'
-  | 'UNKNOWN';
+  | 'UNKNOWN'
+  // A CloudFront distribution whose latest change is still propagating.
+  | 'in-progress'
+  // The resource type has no lifecycle status (S3, SNS, VPC): see utils/resourceLifecycle.ts.
+  | 'not_applicable';
 
 export interface AWSResource {
   id: string;
@@ -184,6 +188,11 @@ export interface ComplianceIssue {
   findingKey?: string;
   /** Optional narrow, versioned evidence — only set by detectors that define one. */
   evidence?: FindingEvidence;
+  /**
+   * Set on an EC2 public-IP finding: what the instance's security groups show.
+   * A description of rules, never of access that took place.
+   */
+  network_exposure?: NetworkExposureEvidence;
   /** Optional evidence-source classification — see ComplianceIssueProvenance. */
   provenance?: ComplianceIssueProvenance;
   /**
@@ -292,6 +301,40 @@ export interface IamAccessKeyEvidence {
   };
   detected_at: string;
 }
+
+/**
+ * What an EC2 public-IP finding rests on. `state` is the outcome of reading the
+ * instance's security groups (utils/adminPortExposure.ts):
+ *   open_admin_port   `rules` lists the internet-open rules that cover an
+ *                     administrative or database port.
+ *   not_established   the groups were read and no such rule was found.
+ *   unknown           the groups could not be read, or a rule on such a port takes its
+ *                     sources from a prefix list that was not resolved; nothing is
+ *                     claimed either way.
+ *   not_checked       nothing is recorded for the instance yet: its groups have not
+ *                     been read (which is not the same as a read that failed).
+ */
+export interface NetworkExposureEvidence {
+  schema_version: 1;
+  state: 'open_admin_port' | 'not_established' | 'unknown' | 'not_checked';
+  summary: string;
+  rules: Array<{
+    security_group_id: string;
+    protocol: string;
+    from_port: number | null;
+    to_port: number | null;
+    cidr: string;
+    admin_ports: number[];
+  }>;
+}
+
+/**
+ * Whether a resource's `tags` are what AWS reported.
+ *   observed      the tags were read; an empty set means the resource has none.
+ *   unavailable   they could not be read, or this resource type's tags are not
+ *                 read at all. `tags` is then empty and says nothing.
+ */
+export type TagsState = 'observed' | 'unavailable';
 
 /**
  * Union of every detector's evidence shape. Deliberately not a generic
@@ -437,6 +480,14 @@ export interface EC2InstanceMetadata {
   private_ip?: string;
   availability_zone?: string;
   launch_time?: string;
+  /** The security groups attached to the instance, as DescribeInstances reports them. */
+  security_group_ids?: string[];
+  /** Read from those groups on each discovery: see utils/adminPortExposure.ts. */
+  network_exposure?: {
+    state: 'open_admin_port' | 'not_established' | 'unknown';
+    reason?: 'security_groups_unreadable' | 'prefix_list_source';
+    rules?: NetworkExposureEvidence['rules'];
+  };
 }
 
 export interface RDSInstanceMetadata {
@@ -461,8 +512,9 @@ export interface EBSVolumeMetadata {
 
 export interface S3BucketMetadata {
   creation_date?: string;
-  versioning_enabled?: boolean;
-  logging_enabled?: boolean;
+  // Versioning and access logging are not read, so neither is recorded. They used
+  // to be stored as `false` without being queried.
+  tags_state?: TagsState;
   // Count of *enabled* rules from a real GetBucketLifecycleConfiguration
   // response (see s3-lifecycle.util.ts) -- 0 is a genuine "no rules" finding,
   // never a placeholder default. Absent entirely when lifecycle_status is

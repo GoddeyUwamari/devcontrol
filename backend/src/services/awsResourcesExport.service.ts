@@ -1,3 +1,4 @@
+import { NOT_APPLICABLE_STATUS, hasLifecycleStatus } from '../utils/resourceLifecycle';
 import { Pool, PoolClient } from 'pg';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -49,7 +50,10 @@ export class AWSResourcesExportService {
     status: {
       label: 'Status',
       field: 'status',
-      formatter: (r: any) => r.status || 'Unknown',
+      // A type with no lifecycle status (S3, SNS, VPC) is exported as such, by type, so a
+      // row an earlier release stored as 'active' reads the same as one stored since.
+      formatter: (r: any) =>
+        !hasLifecycleStatus(r.resource_type) || r.status === NOT_APPLICABLE_STATUS ? 'Not applicable' : r.status || 'Unknown',
     },
     cost: {
       label: 'Monthly Cost',

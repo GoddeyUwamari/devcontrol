@@ -19,6 +19,7 @@ import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { anomalyService } from '@/lib/services/anomaly.service'
 import type { InfrastructureResource, CostSummary } from '@/lib/types'
+import { isNotRunning } from './idle'
 import type { AnomalyDetection } from '@/types/anomaly.types'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { describeSpend, formatUsd, roundCents } from '../cost-display'
@@ -347,7 +348,7 @@ export default function EfficiencyPage() {
   // an average across discovered resources) and the scatter/wasteful/efficiency
   // sections below, none of which this fix is scoped to touch.
   const realTotalSpend = resources.reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
-  const realIdleCost   = resources.filter(r => r.status !== 'running').reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
+  const realIdleCost   = resources.filter(isNotRunning).reduce((s, r) => s + (r.costPerMonth ?? 0), 0)
   const realCostPerRes = resources.length > 0 ? realTotalSpend / resources.length : 0
   // Source A — the Total Spend KPI, with its provenance (see costSummary above).
   const realSpend = describeSpend(costSummary?.spend, { isLoading: costSummaryLoading, isError: costSummaryError })
@@ -407,7 +408,7 @@ export default function EfficiencyPage() {
           region:     r.awsRegion || '—',
           cost:       r.costPerMonth ?? 0,
           efficiency: deriveEfficiencyScore(r),
-          issue:      r.status !== 'running' ? 'Resource not running' : 'Efficiency analysis not available',
+          issue:      isNotRunning(r) ? 'Resource not running' : 'Efficiency analysis not available',
           // No per-resource cost_recommendations data is fetched on this page (only
           // aggregate stats via costRecommendationsService.getStats() below) — null
           // rather than a fabricated 40%-of-cost heuristic.
