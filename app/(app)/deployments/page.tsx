@@ -2,14 +2,21 @@
 
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import type { DeploymentEnvironment } from '@/lib/types'
 import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZES,
+  anyRecordedCost,
   deploymentStatusDisplay,
   deploymentSummaryText,
   formatChangeFailureRate,
+  formatRecordedCost,
+  pageNumbers,
+  recordedCost,
   summarizeDeployments,
+  type PageSize,
   type RecordedDeployment as Deployment,
   type StatsWindow,
 } from '@/lib/deployments/status'
@@ -17,7 +24,7 @@ import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
-import { Rocket, RefreshCw, ArrowRight, XCircle, X, AlertTriangle } from 'lucide-react'
+import { Rocket, RefreshCw, ArrowRight, XCircle, X, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
 
@@ -65,13 +72,22 @@ function DeploymentsContent() {
     (searchParams.get('environment') as EnvironmentFilter) || 'all'
   )
 
+  const [statsWindow, setStatsWindow] = useState<StatsWindow>('30d')
+  const windowDays = STATS_WINDOWS.find(w => w.value === statsWindow)!.days
+
+  // The log is paged by the server; `page` is 1-based. Changing what is
+  // selected (environment, window) or the page size starts again at page 1.
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE)
+  const [page, setPage] = useState(1)
+
   useEffect(() => {
     const urlEnv = searchParams.get('environment') as EnvironmentFilter
-    if (urlEnv && urlEnv !== environmentFilter) setEnvironmentFilter(urlEnv)
+    if (urlEnv && urlEnv !== environmentFilter) { setEnvironmentFilter(urlEnv); setPage(1) }
   }, [searchParams])
 
   const handleFilterChange = (filter: EnvironmentFilter) => {
     setEnvironmentFilter(filter)
+    setPage(1)
     const params = new URLSearchParams(searchParams.toString())
     if (filter === 'all') params.delete('environment')
     else params.set('environment', filter)
@@ -79,11 +95,18 @@ function DeploymentsContent() {
     router.push(`/deployments${queryString ? `?${queryString}` : ''}`)
   }
 
-  const { data: deployments = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['deployments', environmentFilter],
-    queryFn: () => deploymentsService.getAll(
-      environmentFilter !== 'all' ? { environment: environmentFilter } : undefined
-    ),
+  // One page of the log: the environment filter, the window and the paging
+  // are applied by the server, and the total is counted with the same filters
+  // as the summary cards.
+  const { data: deploymentPage, isLoading, error, refetch } = useQuery({
+    queryKey: ['deployments', 'page', environmentFilter, statsWindow, pageSize, page],
+    queryFn: () => deploymentsService.getPage({
+      environment: environmentFilter,
+      dateRange: statsWindow,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    }),
+    placeholderData: keepPreviousData,
   })
 
   useEffect(() => {
@@ -109,11 +132,8 @@ function DeploymentsContent() {
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
-  const [statsWindow, setStatsWindow] = useState<StatsWindow>('30d')
-  const windowDays = STATS_WINDOWS.find(w => w.value === statsWindow)!.days
-
   // Totals, change failure rate and last deployment come from the windowed
-  // counts for the whole organization -- never from the (capped) list below.
+  // counts for the whole organization -- never from the page of rows below.
   const { data: deploymentStats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery({
     queryKey: ['deployment-stats', environmentFilter, statsWindow],
     queryFn: () => deploymentsService.getStats({ environment: environmentFilter, dateRange: statsWindow }),
@@ -152,14 +172,34 @@ function DeploymentsContent() {
     } finally { setModalSubmitting(false) }
   }
 
-  const displayDeployments  = isDemoActive ? DEMO_DEPLOYMENTS : deployments
-  const filteredDeployments = displayDeployments.filter((d: Deployment) =>
-    !environmentFilter || environmentFilter === 'all' || d.environment === environmentFilter
+  // Demo mode has no API: the same filters, window and paging over the demo
+  // fixtures.
+  const demoDeployments = DEMO_DEPLOYMENTS.filter((d: Deployment) =>
+    (environmentFilter === 'all' || d.environment === environmentFilter) &&
+    new Date(d.deployedAt).getTime() >= Date.now() - windowDays * 24 * 3_600_000
   )
+  const filteredDeployments: Deployment[] = isDemoActive
+    ? demoDeployments.slice((page - 1) * pageSize, page * pageSize)
+    : deploymentPage?.deployments ?? []
+  const totalDeployments = isDemoActive ? demoDeployments.length : deploymentPage?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(totalDeployments / pageSize))
+  const firstRow = totalDeployments === 0 ? 0 : (page - 1) * pageSize + 1
+  const lastRow = firstRow === 0 ? 0 : firstRow + filteredDeployments.length - 1
+  // Nothing records a cost today: the column appears only when a row in view has one.
+  const showCost = anyRecordedCost(filteredDeployments)
+  const rowGrid = showCost
+    ? 'sm:grid-cols-[2fr_130px_130px_160px_120px_100px]'
+    : 'sm:grid-cols-[2fr_130px_130px_160px_120px]'
+
+  // The log shrank under the current page (rows deleted, or a refresh): step
+  // back to the last page that exists rather than showing an empty one.
+  useEffect(() => {
+    if (!isLoading && page > pageCount) setPage(pageCount)
+  }, [isLoading, page, pageCount])
 
   // Demo mode has no API: the same counts, from the demo fixtures.
   const stats = isDemoActive
-    ? summarizeDeployments(filteredDeployments, windowDays)
+    ? { ...summarizeDeployments(demoDeployments, windowDays), organization_has_deployments: DEMO_DEPLOYMENTS.length > 0 }
     : deploymentStats
   const finishedCount = stats ? stats.success + stats.failed : 0
   const unfinishedNote = stats
@@ -172,10 +212,11 @@ function DeploymentsContent() {
   const lastDeployment = stats?.last_deployment ?? null
   const lastDeploymentDisplay = lastDeployment ? deploymentStatusDisplay(lastDeployment.status, null) : null
   const windowLabel = `Last ${windowDays} days`
-  // Nothing has ever been recorded for this organization (in this
-  // environment): say that, instead of a row of zeros that reads like data.
-  const nothingRecorded = !!stats && stats.total === 0 && !stats.last_deployment
-    && !isLoading && !error && filteredDeployments.length === 0
+  const environmentLabel = environmentFilter === 'all' ? '' : ` in ${environmentFilter}`
+  // Nothing has ever been recorded for this organization, in any environment
+  // or window: say that, instead of a row of zeros that reads like data. An
+  // environment or window with nothing in it is a different, narrower fact.
+  const nothingRecorded = !!stats && !stats.organization_has_deployments
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
@@ -261,7 +302,7 @@ function DeploymentsContent() {
           {STATS_WINDOWS.map(w => (
             <button
               key={w.value}
-              onClick={() => setStatsWindow(w.value)}
+              onClick={() => { setStatsWindow(w.value); setPage(1) }}
               aria-pressed={statsWindow === w.value}
               className={`px-2.5 py-1 rounded-md text-xs font-semibold border-none cursor-pointer whitespace-nowrap transition-all ${
                 statsWindow === w.value ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'
@@ -283,9 +324,9 @@ function DeploymentsContent() {
             valueClass: 'text-slate-900',
           },
           {
-            label: 'Failed',
+            label: 'Failed deploys',
             value: stats ? stats.failed : '—',
-            sub: windowLabel,
+            sub: `${windowLabel} · pipeline runs stopped by tests before deploying aren't counted`,
             valueClass: stats && stats.failed > 0 ? 'text-red-600' : 'text-slate-900',
           },
           {
@@ -376,7 +417,13 @@ function DeploymentsContent() {
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Deployment Log</p>
-            <p className="text-xs text-slate-400 m-0">{filteredDeployments.length} most recent deployment{filteredDeployments.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-slate-400 m-0" data-testid="deployment-log-count">
+              {isLoading && !isDemoActive
+                ? windowLabel
+                : error && !isDemoActive
+                  ? `${windowLabel} · count unavailable`
+                  : `${windowLabel} · ${totalDeployments} deployment${totalDeployments !== 1 ? 's' : ''}${environmentLabel}`}
+            </p>
           </div>
           {/* Environment filter */}
           <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
@@ -395,8 +442,8 @@ function DeploymentsContent() {
         </div>
 
         {/* Desktop column headers */}
-        <div className="hidden sm:grid sm:grid-cols-[2fr_130px_130px_160px_120px_100px] px-7 py-2.5 bg-slate-50 border-b border-slate-100">
-          {['Service', 'Environment', 'Region', 'Deployed By', 'Status', 'Cost'].map(col => (
+        <div className={`hidden sm:grid ${rowGrid} px-7 py-2.5 bg-slate-50 border-b border-slate-100`} data-testid="deployment-log-columns">
+          {['Service', 'Environment', 'Region', 'Deployed By', 'Status', ...(showCost ? ['Cost'] : [])].map(col => (
             <span key={col} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{col}</span>
           ))}
         </div>
@@ -407,8 +454,12 @@ function DeploymentsContent() {
             <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
             <p className="text-sm text-slate-500 m-0">Loading deployments...</p>
           </div>
-        ) : filteredDeployments.length === 0 ? (
-          <div className="px-5 sm:px-16 py-16 text-center">
+        ) : error && !isDemoActive ? (
+          <div className="px-5 sm:px-16 py-12 text-center" data-testid="deployment-log-error">
+            <p className="text-sm text-slate-500 m-0">Deployments could not be loaded.</p>
+          </div>
+        ) : filteredDeployments.length === 0 && nothingRecorded ? (
+          <div className="px-5 sm:px-16 py-16 text-center" data-testid="deployment-log-empty" data-reason="none-recorded">
             <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
               <Rocket size={22} className="text-slate-400" />
             </div>
@@ -420,6 +471,18 @@ function DeploymentsContent() {
             >
               <Rocket size={14} /> Create First Deployment
             </button>
+          </div>
+        ) : filteredDeployments.length === 0 ? (
+          // The filters select nothing. Whether the organization has
+          // deployments elsewhere is the stats' to say; this never claims
+          // that nothing was recorded at all.
+          <div className="px-5 sm:px-16 py-12 text-center" data-testid="deployment-log-empty" data-reason="no-match">
+            <p className="text-base font-semibold text-slate-900 mb-1.5">
+              No deployments{environmentLabel} in the last {windowDays} days
+            </p>
+            <p className="text-sm text-slate-500 m-0 leading-relaxed max-w-sm mx-auto">
+              Try a longer window{environmentFilter === 'all' ? '' : ' or another environment'}.
+            </p>
           </div>
         ) : (
           filteredDeployments.map((d: Deployment, idx: number) => {
@@ -446,7 +509,7 @@ function DeploymentsContent() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>{d.environment}</span>
                     <span className="text-xs text-slate-400 font-mono">{d.awsRegion}</span>
-                    {d.costEstimate !== null && d.costEstimate !== undefined && <span className="text-xs font-semibold text-slate-700 ml-auto">${d.costEstimate.toFixed(2)}</span>}
+                    {recordedCost(d.costEstimate) !== null && <span className="text-xs font-semibold text-slate-700 ml-auto">{formatRecordedCost(d.costEstimate)}</span>}
                   </div>
                   {d.status === 'failed' && (
                     <div className="mt-2.5 px-3 py-2 bg-red-50 rounded-lg border border-red-100 flex items-center justify-between gap-2">
@@ -464,7 +527,8 @@ function DeploymentsContent() {
 
                 {/* Desktop row */}
                 <div
-                  className="hidden sm:grid sm:grid-cols-[2fr_130px_130px_160px_120px_100px] px-7 py-3.5 items-center transition-colors hover:bg-slate-50"
+                  className={`hidden sm:grid ${rowGrid} px-7 py-3.5 items-center transition-colors hover:bg-slate-50`}
+                  data-testid="deployment-row"
                 >
                   <div>
                     <p className="text-sm font-semibold text-slate-900 mb-0.5">{d.serviceName || d.serviceId.slice(0, 8)}</p>
@@ -477,7 +541,11 @@ function DeploymentsContent() {
                   <span className="text-xs text-slate-500 font-mono">{d.awsRegion || '—'}</span>
                   <span className="text-xs text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap">{d.deployedBy?.split('@')[0] || '—'}</span>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
-                  <span className="text-sm font-semibold text-slate-900">{d.costEstimate !== null && d.costEstimate !== undefined ? `$${d.costEstimate.toFixed(2)}` : '—'}</span>
+                  {showCost && (
+                    <span className="text-sm font-semibold text-slate-900" title={recordedCost(d.costEstimate) === null ? 'Not recorded' : undefined}>
+                      {formatRecordedCost(d.costEstimate)}
+                    </span>
+                  )}
                 </div>
 
                 {/* Failed banner — desktop only (mobile handled inline above) */}
@@ -496,6 +564,58 @@ function DeploymentsContent() {
               </div>
             )
           })
+        )}
+
+        {/* Pagination */}
+        {totalDeployments > 0 && !(error && !isDemoActive) && (
+          <div className="px-5 sm:px-7 py-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="deployment-pagination">
+            <div className="flex items-center gap-4">
+              <p className="text-xs text-slate-500 m-0" data-testid="deployment-range">
+                {firstRow}–{lastRow} of {totalDeployments}
+              </p>
+              <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                Rows per page
+                <select
+                  value={pageSize}
+                  onChange={e => { setPageSize(Number(e.target.value) as PageSize); setPage(1) }}
+                  className="text-xs text-slate-700 bg-white border border-slate-200 rounded-md px-1.5 py-1 cursor-pointer"
+                >
+                  {PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </label>
+            </div>
+            <nav className="flex items-center gap-1" aria-label="Deployment log pages">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={12} /> Previous
+              </button>
+              {pageNumbers(page, pageCount).map((p, i) => p === 'gap' ? (
+                <span key={`gap-${i}`} className="px-1 text-xs text-slate-400" aria-hidden="true">…</span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  aria-label={`Page ${p}`}
+                  aria-current={p === page ? 'page' : undefined}
+                  className={`min-w-7 px-2 py-1 rounded-md text-xs font-semibold border cursor-pointer ${
+                    p === page ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                disabled={page >= pageCount}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next <ChevronRight size={12} />
+              </button>
+            </nav>
+          </div>
         )}
       </div>
 

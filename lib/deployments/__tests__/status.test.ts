@@ -9,11 +9,15 @@
 import { describe, it, expect } from 'vitest'
 import {
   IN_PROGRESS_MAX_AGE_HOURS,
+  anyRecordedCost,
   changeFailureRate,
   classifyDeploymentStatus,
   deploymentStatusDisplay,
   deploymentSummaryText,
   formatChangeFailureRate,
+  formatRecordedCost,
+  pageNumbers,
+  recordedCost,
   summarizeDeployments,
   type DeploymentStats,
 } from '../status'
@@ -80,7 +84,7 @@ describe('changeFailureRate', () => {
 
 describe('summarizeDeployments', () => {
   const row = (status: string, hoursAgo: number) => ({
-    status, createdAt: hoursBefore(hoursAgo), deployedAt: hoursBefore(hoursAgo), costEstimate: 1,
+    status, createdAt: hoursBefore(hoursAgo), deployedAt: hoursBefore(hoursAgo),
   })
 
   it('keeps unfinished and unknown rows out of the rate, and windowed rows out of the counts', () => {
@@ -107,7 +111,7 @@ describe('summarizeDeployments', () => {
 describe('deploymentSummaryText', () => {
   const base: DeploymentStats = {
     window_days: 30, total: 0, success: 0, failed: 0, in_progress: 0, no_completion_recorded: 0, unknown: 0,
-    change_failure_rate: null, total_cost: 0, last_deployment: null,
+    change_failure_rate: null, organization_has_deployments: true, last_deployment: null,
   }
 
   it('is built from the real counts', () => {
@@ -150,5 +154,60 @@ describe('doraCsvRows', () => {
     expect(rows[2]).toEqual(['Lead Time for Changes', 'Not tracked', '', '', 'no change timestamp'])
     expect(rows[3]).toEqual(['Change Failure Rate', '', 'percentage', '', 'No finished deployments in this period'])
     expect(rows[4]).toEqual(['Mean Time to Recovery', 'Not tracked', '', '', 'no incident records'])
+  })
+})
+
+describe('recorded cost', () => {
+  it('NULL, the legacy default 0.00 and anything unparseable are "not recorded"', () => {
+    for (const value of [null, undefined, '', 0, '0', '0.00', 'abc', NaN, -5]) {
+      expect(recordedCost(value)).toBeNull()
+      expect(formatRecordedCost(value)).toBe('—')
+    }
+  })
+
+  it('a positive amount is a recorded cost, as a number or as the API\'s decimal string', () => {
+    expect(recordedCost(12.5)).toBe(12.5)
+    expect(recordedCost('245.50')).toBe(245.5)
+    expect(formatRecordedCost('245.50')).toBe('$245.50')
+    expect(formatRecordedCost(0.01)).toBe('$0.01')
+  })
+
+  it('never formats to "$0.00"', () => {
+    for (const value of [null, 0, '0.00', '0', undefined]) expect(formatRecordedCost(value)).not.toContain('$')
+  })
+
+  it('a column is worth showing only when a row in view has a recorded cost', () => {
+    expect(anyRecordedCost([])).toBe(false)
+    expect(anyRecordedCost([{ costEstimate: null }, { costEstimate: 0 }, {}])).toBe(false)
+    expect(anyRecordedCost([{ costEstimate: null }, { costEstimate: 3 }])).toBe(true)
+  })
+})
+
+describe('pageNumbers', () => {
+  it('lists every page when there are few', () => {
+    expect(pageNumbers(1, 1)).toEqual([1])
+    expect(pageNumbers(2, 3)).toEqual([1, 2, 3])
+    expect(pageNumbers(1, 3)).toEqual([1, 2, 3])
+  })
+
+  it('keeps the first, the last and the neighbours of the current page, with gaps between', () => {
+    expect(pageNumbers(1, 40)).toEqual([1, 2, 'gap', 40])
+    expect(pageNumbers(20, 40)).toEqual([1, 'gap', 19, 20, 21, 'gap', 40])
+    expect(pageNumbers(40, 40)).toEqual([1, 'gap', 39, 40])
+  })
+
+  it('fills a gap of exactly one page with that page', () => {
+    expect(pageNumbers(3, 40)).toEqual([1, 2, 3, 4, 'gap', 40])
+    expect(pageNumbers(4, 40)).toEqual([1, 2, 3, 4, 5, 'gap', 40])
+    expect(pageNumbers(1, 4)).toEqual([1, 2, 3, 4])
+  })
+})
+
+describe('summarizeDeployments — whether anything is recorded', () => {
+  it('reports no deployments only for an empty list', () => {
+    expect(summarizeDeployments([], 30, NOW).organization_has_deployments).toBe(false)
+    expect(summarizeDeployments([
+      { status: 'deploying', createdAt: hoursBefore(24 * 400), deployedAt: hoursBefore(24 * 400) },
+    ], 30, NOW).organization_has_deployments).toBe(true)
   })
 })

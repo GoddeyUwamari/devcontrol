@@ -74,12 +74,67 @@ export interface DeploymentStats {
   unknown: number
   /** failed / (success + failed) as a percentage; null when nothing finished. */
   change_failure_rate: number | null
-  total_cost: number
+  /**
+   * Whether the organization has any deployment at all, in any environment
+   * or window: what separates "nothing matches these filters" from "nothing
+   * has ever been recorded".
+   */
+  organization_has_deployments: boolean
   /** Most recent finished deployment, regardless of the window. */
   last_deployment: { status: string; deployed_at: string } | null
 }
 
 export type StatsWindow = '7d' | '30d' | '90d'
+
+/** Page sizes GET /api/deployments accepts. */
+export const PAGE_SIZES = [25, 50, 100] as const
+export type PageSize = typeof PAGE_SIZES[number]
+export const DEFAULT_PAGE_SIZE: PageSize = 25
+
+/** One page of the deployment log, with the total its filters select. */
+export interface DeploymentPage {
+  deployments: RecordedDeployment[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/**
+ * The cost recorded for a deployment, or null when none was. Nothing records
+ * a cost today: rows hold NULL, or the 0.00 older rows were given by default,
+ * and neither is a cost of $0.00.
+ */
+export function recordedCost(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const cost = typeof value === 'number' ? value : parseFloat(String(value))
+  return Number.isFinite(cost) && cost > 0 ? cost : null
+}
+
+/** "$12.50", or a dash when no cost was recorded -- never "$0.00". */
+export function formatRecordedCost(value: unknown): string {
+  const cost = recordedCost(value)
+  return cost === null ? '—' : `$${cost.toFixed(2)}`
+}
+
+/** Whether any of the rows in view has a recorded cost (else the column is hidden). */
+export function anyRecordedCost(deployments: { costEstimate?: unknown }[]): boolean {
+  return deployments.some(d => recordedCost(d.costEstimate) !== null)
+}
+
+/**
+ * Page numbers to offer: first, last, and those around the current one, with
+ * 'gap' where numbers are skipped. Pages are 1-based.
+ */
+export function pageNumbers(current: number, pageCount: number): (number | 'gap')[] {
+  const wanted = new Set<number>([1, pageCount, current - 1, current, current + 1])
+  const pages = [...wanted].filter(p => p >= 1 && p <= pageCount).sort((a, b) => a - b)
+  const out: (number | 'gap')[] = []
+  pages.forEach((p, i) => {
+    if (i > 0 && p - pages[i - 1] > 1) out.push(p - pages[i - 1] === 2 ? p - 1 : 'gap')
+    out.push(p)
+  })
+  return out
+}
 
 /**
  * Failed deployments as a percentage of finished (success + failed) ones, to
@@ -97,13 +152,14 @@ export function formatChangeFailureRate(rate: number | null | undefined): string
 
 /** The same counts the stats endpoint returns, from a list of deployments. */
 export function summarizeDeployments(
-  deployments: Pick<RecordedDeployment, 'status' | 'createdAt' | 'deployedAt' | 'costEstimate'>[],
+  deployments: Pick<RecordedDeployment, 'status' | 'createdAt' | 'deployedAt'>[],
   windowDays: number,
   now: Date = new Date()
 ): DeploymentStats {
   const stats: DeploymentStats = {
     window_days: windowDays, total: 0, success: 0, failed: 0, in_progress: 0,
-    no_completion_recorded: 0, unknown: 0, change_failure_rate: null, total_cost: 0, last_deployment: null,
+    no_completion_recorded: 0, unknown: 0, change_failure_rate: null,
+    organization_has_deployments: deployments.length > 0, last_deployment: null,
   }
   const since = now.getTime() - windowDays * 24 * 3_600_000
   for (const d of deployments) {
@@ -118,7 +174,6 @@ export function summarizeDeployments(
     if (!(deployedAt >= since)) continue
     stats.total += 1
     stats[outcome] += 1
-    stats.total_cost += d.costEstimate || 0
   }
   stats.change_failure_rate = changeFailureRate(stats.success, stats.failed)
   return stats
