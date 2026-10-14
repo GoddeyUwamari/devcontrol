@@ -32,7 +32,8 @@ export interface Deployment {
   environment: 'development' | 'staging' | 'production';
   aws_region: string;
   status: 'running' | 'stopped' | 'deploying' | 'failed' | 'success';
-  cost_estimate: number;
+  /** Null when no cost was recorded. */
+  cost_estimate: number | null;
   deployed_by: string;
   deployed_at: Date;
   resources?: Record<string, any>;
@@ -63,6 +64,7 @@ export interface ApiResponse<T = any> {
   message?: string;
   code?: string;
   total?: number;
+  pagination?: { limit: number; offset: number; total: number };
 }
 
 export interface PaginationQuery {
@@ -80,6 +82,8 @@ export interface DeploymentFilters extends PaginationQuery {
   service_id?: string;
   environment?: string;
   status?: string;
+  /** Window by deployed_at; no window when absent. */
+  date_range?: '7d' | '30d' | '90d';
 }
 
 export interface InfrastructureFilters extends PaginationQuery {

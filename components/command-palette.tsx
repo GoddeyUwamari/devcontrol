@@ -36,7 +36,8 @@ export function CommandPalette() {
 
   const { data: deployments = [] } = useQuery({
     queryKey: ['deployments'],
-    queryFn: () => deploymentsService.getAll(),
+    // The list endpoint's default page is 25; ask for 50, as before.
+    queryFn: () => deploymentsService.getAll({ limit: 50 }),
     enabled: open,
   })
 

@@ -4,20 +4,92 @@ import { CreateDeploymentRequest, DeploymentFilters, ApiResponse } from '../type
 import { DeploymentEvents } from '../services/deploymentEvents';
 import { WebSocketServer } from '../websocket/server';
 import { emitOnboardingEvent } from '../services/onboardingEvents';
+import {
+  DEFAULT_PAGE_SIZE,
+  DEPLOYMENT_ENVIRONMENTS,
+  PAGE_SIZES,
+  isStatsWindow,
+} from '../services/deployment-status';
 
 const repository = new DeploymentsRepository();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * GET /api/deployments query -> filters, or the reason it is invalid. Nothing
+ * is coerced or silently defaulted: a parameter that is present must be valid.
+ */
+export function parseDeploymentListQuery(
+  query: Record<string, unknown>
+): { filters: DeploymentFilters } | { error: string } {
+  const filters: DeploymentFilters = { limit: DEFAULT_PAGE_SIZE, offset: 0 };
+
+  for (const key of ['limit', 'offset', 'environment', 'date_range', 'status', 'service_id']) {
+    if (query[key] !== undefined && typeof query[key] !== 'string') {
+      return { error: `Invalid ${key}` };
+    }
+  }
+  const { limit, offset, environment, date_range, status, service_id } = query as Record<string, string | undefined>;
+
+  if (limit !== undefined) {
+    const parsed = /^\d+$/.test(limit) ? Number(limit) : NaN;
+    if (!(PAGE_SIZES as readonly number[]).includes(parsed)) {
+      return { error: `Invalid limit. Must be one of: ${PAGE_SIZES.join(', ')}` };
+    }
+    filters.limit = parsed;
+  }
+
+  if (offset !== undefined) {
+    const parsed = /^\d+$/.test(offset) ? Number(offset) : NaN;
+    if (!Number.isSafeInteger(parsed)) {
+      return { error: 'Invalid offset. Must be a non-negative integer' };
+    }
+    filters.offset = parsed;
+  }
+
+  if (environment !== undefined && environment !== 'all') {
+    if (!(DEPLOYMENT_ENVIRONMENTS as readonly string[]).includes(environment)) {
+      return { error: `Invalid environment. Must be one of: ${DEPLOYMENT_ENVIRONMENTS.join(', ')}` };
+    }
+    filters.environment = environment;
+  }
+
+  if (date_range !== undefined) {
+    if (!isStatsWindow(date_range)) {
+      return { error: 'Invalid date_range. Must be one of: 7d, 30d, 90d' };
+    }
+    filters.date_range = date_range;
+  }
+
+  if (status !== undefined) {
+    if (status.length === 0 || status.length > 50) return { error: 'Invalid status' };
+    filters.status = status;
+  }
+
+  if (service_id !== undefined) {
+    if (!UUID_RE.test(service_id)) return { error: 'Invalid service_id. Must be a UUID' };
+    filters.service_id = service_id;
+  }
+
+  return { filters };
+}
 
 export class DeploymentsController {
   async getAll(req: Request, res: Response): Promise<void> {
     try {
-      const filters: DeploymentFilters = {
-        service_id: req.query.service_id as string,
-        environment: req.query.environment as string,
-        status: req.query.status as string,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
-        offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
-      };
-      const organizationId = (req as any).user?.organizationId;
+      // Never run unscoped: no organization means no query at all.
+      const organizationId = (req as any).organizationId || (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized - organization context required' });
+        return;
+      }
+
+      const parsed = parseDeploymentListQuery(req.query as Record<string, unknown>);
+      if ('error' in parsed) {
+        res.status(400).json({ success: false, error: parsed.error });
+        return;
+      }
+      const { filters } = parsed;
 
       const { deployments, total } = await repository.findAll(filters, organizationId);
 
@@ -25,6 +97,7 @@ export class DeploymentsController {
         success: true,
         data: deployments,
         total,
+        pagination: { limit: filters.limit!, offset: filters.offset!, total },
       };
 
       res.json(response);

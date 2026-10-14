@@ -22,7 +22,7 @@
 
 import { CONTEXT_STATE_LABELS, EVIDENCE_CLAIM_RULES, hasEvidence, type ContextSection } from './ai-context-contract';
 import { formatSavingsCurrency } from '../utils/formatSavingsCurrency';
-import type { DayWindow, DORABenchmarkResult, WeeklyEvidence } from '../repositories/weekly-summary.repository';
+import type { DayWindow, WeeklyEvidence } from '../repositories/weekly-summary.repository';
 
 export interface WeeklySummaryContent {
   costSummary: string;
@@ -60,12 +60,6 @@ export function formatDayWindow(window: DayWindow): string {
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
-}
-
-function benchmarkLabel(benchmark: DORABenchmarkResult | null | undefined): string {
-  if (!benchmark) return '';
-  const level = benchmark.level.charAt(0).toUpperCase() + benchmark.level.slice(1);
-  return ` (${benchmark.isCustom ? 'org' : 'industry'} benchmark: ${level})`;
 }
 
 /** A section's missing-evidence reason, safe to show (collectSection/notSupported reasons are customer-safe). */
@@ -163,6 +157,12 @@ function alertSummary(e: WeeklyEvidence): string {
     : `Alert data was unavailable for this period: ${reasonOf(a)}.`;
 }
 
+/**
+ * Stated in the email so the reader knows these are not measured. It is not a
+ * fact about the organization, so it is left out of what the model is given.
+ */
+export const DELIVERY_NOT_TRACKED_LINE = 'Lead time for changes and time to restore service: Not tracked.';
+
 function deliverySummary(e: WeeklyEvidence): string {
   const s = e.delivery;
   if (!hasEvidence(s)) {
@@ -174,20 +174,18 @@ function deliverySummary(e: WeeklyEvidence): string {
   if (d.deploymentCount === 0) {
     return 'No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.';
   }
-  const parts = [
+  const finished = d.successfulDeployments + d.failedDeployments;
+  const unfinished = d.deploymentCount - finished;
+  return [
     `${plural(d.deploymentCount, 'deployment')} recorded in DevControl in the 7 days before this summary: ` +
-    `${d.deploymentFrequency}${benchmarkLabel(d.benchmarks.deploymentFrequency)}.`,
-    `Change failure rate: ${d.changeFailureRate}%${benchmarkLabel(d.benchmarks.changeFailureRate)}.`,
-    d.timeBetweenSuccessfulDeployments !== 'N/A'
-      ? `Average time between successful deployments of the same service: ${d.timeBetweenSuccessfulDeployments}.`
-      : 'Average time between successful deployments: not enough data (needs two or more successful deployments of the same service).',
-  ];
-  if (d.mttr !== 'N/A') {
-    parts.push(
-      `Average time from a failed deployment to the next successful deployment of that service: ${d.mttr}${benchmarkLabel(d.benchmarks.mttr)}.`
-    );
-  }
-  return parts.join(' ');
+    `${d.successfulDeployments} succeeded, ${d.failedDeployments} failed` +
+    `${unfinished > 0 ? `, ${unfinished} with no finished status` : ''}.`,
+    `Deployment frequency (successful deployments): ${d.deploymentFrequency}.`,
+    d.changeFailureRate === null
+      ? 'Change failure rate: — (no deployment finished).'
+      : `Change failure rate: ${d.changeFailureRate}% (${d.failedDeployments} of ${plural(finished, 'finished deployment')} failed).`,
+    DELIVERY_NOT_TRACKED_LINE,
+  ].join(' ');
 }
 
 function savingsSummary(e: WeeklyEvidence): string | null {
@@ -230,7 +228,7 @@ export function buildRecommendationPrompt(e: WeeklyEvidence, content: WeeklySumm
     `Cost: ${content.costSummary}`,
     `Security: ${content.securitySummary}`,
     `Alerts: ${content.alertSummary}`,
-    `Delivery: ${content.deliverySummary}`,
+    `Delivery: ${content.deliverySummary.replace(DELIVERY_NOT_TRACKED_LINE, '').trim()}`,
     content.savingsSummary ? `Recommendations: ${content.savingsSummary}` : null,
   ].filter((f): f is string => f !== null);
 

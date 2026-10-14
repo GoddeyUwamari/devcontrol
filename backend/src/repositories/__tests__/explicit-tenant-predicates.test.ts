@@ -336,7 +336,8 @@ describe('deployment creation requires the service to belong to the organization
         aws_region: 'us-east-1',
         status: 'deploying',
         deployed_by: 'platform-portal',
-        cost_estimate: '0.00',
+        // No cost was given: stored as not recorded, never as 0.00.
+        cost_estimate: null,
         metadata: { ref: 'abc' },
         resources: { version: '1.2.3' },
         deployed_at: expect.any(Date),

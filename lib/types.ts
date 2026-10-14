@@ -415,7 +415,8 @@ export interface Deployment {
   environment: DeploymentEnvironment;
   awsRegion: string;
   status: DeploymentStatus;
-  costEstimate: number;
+  /** Null when no cost was recorded for the deployment. */
+  costEstimate: number | null;
   deployedBy: string;
   deployedAt: string;
   resources?: Record<string, unknown>;

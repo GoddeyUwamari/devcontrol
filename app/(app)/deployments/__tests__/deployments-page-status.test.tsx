@@ -33,7 +33,7 @@ const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
 function deployment(id: string, status: string, createdMsAgo: number) {
   return {
     id, service_id: `svc-${id}`, service_name: `service-${id}`, environment: 'production', aws_region: 'us-east-1',
-    status, cost_estimate: '0.00', deployed_by: 'ci-bot', deployed_at: iso(createdMsAgo),
+    status, cost_estimate: null, deployed_by: 'ci-bot', deployed_at: iso(createdMsAgo),
     created_at: iso(createdMsAgo), updated_at: iso(createdMsAgo),
   }
 }
@@ -50,11 +50,11 @@ const LIST = [
 const STATS_BY_WINDOW: Record<string, unknown> = {
   '30d': {
     window_days: 30, total: 205, success: 196, failed: 4, in_progress: 1, no_completion_recorded: 3, unknown: 1,
-    change_failure_rate: 2, total_cost: 0, last_deployment: { status: 'success', deployed_at: iso(2 * HOUR) },
+    change_failure_rate: 2, organization_has_deployments: true, last_deployment: { status: 'success', deployed_at: iso(2 * HOUR) },
   },
   '7d': {
     window_days: 7, total: 0, success: 0, failed: 0, in_progress: 0, no_completion_recorded: 0, unknown: 0,
-    change_failure_rate: null, total_cost: 0, last_deployment: { status: 'failed', deployed_at: iso(9 * 24 * HOUR) },
+    change_failure_rate: null, organization_has_deployments: true, last_deployment: { status: 'failed', deployed_at: iso(9 * 24 * HOUR) },
   },
 }
 
@@ -119,7 +119,7 @@ describe('Deployments page', () => {
     renderPage()
 
     await waitFor(() => expect(within(card('succeeded')).getByText('196')).toBeInTheDocument())
-    expect(within(card('failed')).getByText('4')).toBeInTheDocument()
+    expect(within(card('failed-deploys')).getByText('4')).toBeInTheDocument()
     expect(within(card('change-failure-rate')).getByText('2%')).toBeInTheDocument()
     expect(within(card('change-failure-rate')).getByText('4 of 200 finished deployments failed')).toBeInTheDocument()
     expect(within(card('last-deployment')).getByText('Succeeded')).toBeInTheDocument()
@@ -161,7 +161,7 @@ describe('Deployments page', () => {
     listRows = []
     statsOverride = {
       window_days: 30, total: 0, success: 0, failed: 0, in_progress: 0, no_completion_recorded: 0, unknown: 0,
-      change_failure_rate: null, total_cost: 0, last_deployment: null,
+      change_failure_rate: null, organization_has_deployments: false, last_deployment: null,
     }
     renderPage()
 
@@ -169,7 +169,7 @@ describe('Deployments page', () => {
     expect(empty).toHaveTextContent('No deployments recorded')
     expect(empty).toHaveTextContent('Connect your CI')
     expect(screen.queryByTestId('deployment-card-succeeded')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('deployment-card-failed')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('deployment-card-failed-deploys')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-card-change-failure-rate')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-summary')).not.toBeInTheDocument()
     expect(document.body).not.toHaveTextContent(/0%/)
