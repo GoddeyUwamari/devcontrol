@@ -181,7 +181,8 @@ export function DashboardUnconnectedPreview({ canConnectAws, orgName }: { canCon
             <Link
               href={CONNECT_HREF}
               // The accent token lightens in dark mode, where white text on it would fall below AA.
-              className={`${BUTTON} bg-[var(--text-accent)] dark:bg-[#7C3AED] text-white w-full sm:w-auto focus-visible:ring-[var(--text-accent)]`}
+              // The focus ring's offset is the page background, so the gap is not a white halo in dark mode.
+              className={`${BUTTON} bg-[var(--text-accent)] dark:bg-[#7C3AED] text-white w-full sm:w-auto focus-visible:ring-[var(--text-accent)] focus-visible:ring-offset-[var(--surface-1)]`}
               data-testid="preview-connect"
             >
               Connect AWS
@@ -196,7 +197,7 @@ export function DashboardUnconnectedPreview({ canConnectAws, orgName }: { canCon
         {!canConnectAws && (
           <p className="text-base text-[var(--text-secondary)] leading-normal mt-4 mb-0" data-testid="preview-ask-owner">{ASK_OWNER}</p>
         )}
-        <p className="flex items-start gap-2 text-base text-[var(--text-secondary)] leading-normal mt-4 mb-8 max-w-3xl" data-testid="preview-trust">
+        <p className="flex items-start gap-2 text-base text-[var(--text-secondary)] leading-normal mt-4 mb-8 max-w-[540px]" data-testid="preview-trust">
           <Lock size={16} className="shrink-0 mt-1" aria-hidden="true" />
           <span>Read-only access through a role you create and control. Delete it anytime and our access ends. Setup takes a few minutes.</span>
         </p>

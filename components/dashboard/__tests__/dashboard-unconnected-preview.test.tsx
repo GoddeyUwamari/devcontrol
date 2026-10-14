@@ -34,6 +34,11 @@ function contrast(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
   return (hi + 0.05) / (lo + 0.05)
 }
+/** A translucent #RRGGBBAA colour as it appears over an opaque #RRGGBB one. */
+function over(top: string, bottom: string): string {
+  const alpha = parseInt(top.slice(7, 9), 16) / 255
+  return '#' + [1, 3, 5].map((i) => Math.round(parseInt(top.slice(i, i + 2), 16) * alpha + parseInt(bottom.slice(i, i + 2), 16) * (1 - alpha)).toString(16).padStart(2, '0')).join('')
+}
 /** The app's semantic colour tokens, read from the stylesheet: light (:root) and dark (.dark). */
 function tokens(): Record<'light' | 'dark', Record<string, string>> {
   const css = readFileSync(join(process.cwd(), 'app/globals.css'), 'utf8')
@@ -41,7 +46,7 @@ function tokens(): Record<'light' | 'dark', Record<string, string>> {
     const start = css.indexOf(`${selector} {\n  --surface-1`)
     expect(start).toBeGreaterThan(-1)
     const body = css.slice(start, css.indexOf('}', start))
-    return Object.fromEntries([...body.matchAll(/(--[\w-]+):\s*(#[0-9A-Fa-f]{6})\b/g)].map((m) => [m[1], m[2]]))
+    return Object.fromEntries([...body.matchAll(/(--[\w-]+):\s*(#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}))\b/g)].map((m) => [m[1], m[2]]))
   }
   return { light: block(':root'), dark: block('.dark') }
 }
@@ -204,6 +209,24 @@ describe('accessibility', () => {
     }
   })
 
+  it('the primary button has a visible focus ring in light and dark, offset by the page background', () => {
+    renderPreview()
+    const { light, dark } = tokens()
+    const [primary] = screen.getAllByRole('link', { name: 'Connect AWS' })
+    expect(primary.className).toContain('focus-visible:ring-[var(--text-accent)]')
+    expect(primary.className).toContain('focus-visible:ring-offset-2')
+    // The offset gap takes the page background (not the default white), and the ring stands out from it.
+    expect(primary.className).toContain('focus-visible:ring-offset-[var(--surface-1)]')
+    for (const theme of [light, dark]) expect(contrast(theme['--text-accent'], theme['--surface-1'])).toBeGreaterThanOrEqual(3)
+    // In dark mode the ring also differs from the button's own fill, so it reads as a ring.
+    expect(dark['--text-accent'].toLowerCase()).not.toBe(primary.className.match(/dark:bg-\[(#[0-9A-Fa-f]{6})\]/)![1].toLowerCase())
+  })
+
+  it('the trust line is held to a narrow measure, as in the design', () => {
+    renderPreview()
+    expect(screen.getByTestId('preview-trust').className).toMatch(/\bmax-w-\[540px\]/)
+  })
+
   it('every icon is decorative and hidden from assistive technology', () => {
     const { container } = renderPreview()
     const icons = [...container.querySelectorAll('svg')]
@@ -242,8 +265,12 @@ describe('accessibility', () => {
       expect(contrast(theme['--text-secondary'], theme['--surface-1'])).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(light['--text-accent'], light['--bg-accent'])).toBeGreaterThanOrEqual(4.5)
-    // Dark tags: the tint is translucent purple over the card surface, so the surface is the floor.
-    expect(contrast(dark['--text-accent'], dark['--surface-2'])).toBeGreaterThanOrEqual(4.5)
-    expect(contrast(dark['--text-accent'], dark['--surface-1'])).toBeGreaterThanOrEqual(4.5)
+    // Dark tags: the tint is translucent, so the real background is the tint over the card surface.
+    expect(dark['--bg-accent']).toMatch(/^#[0-9A-Fa-f]{8}$/)
+    const tag = screen.getAllByTestId('preview-tag')[0]
+    expect(tag.style.background).toBe('var(--bg-accent)')
+    expect(tag.style.color).toBe('var(--text-accent)')
+    expect(tag.closest('[data-testid="preview-card"]')!.className).toContain('bg-[var(--surface-2)]')
+    expect(contrast(dark['--text-accent'], over(dark['--bg-accent'], dark['--surface-2']))).toBeGreaterThanOrEqual(4.5)
   })
 })
