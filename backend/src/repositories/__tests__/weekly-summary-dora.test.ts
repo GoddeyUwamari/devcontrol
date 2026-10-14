@@ -9,6 +9,7 @@
  *   - Lead time for changes and time to restore are not tracked: no
  *     deployment-gap or failed -> next-success time is derived, and nothing
  *     is graded against their bands.
+ *   - No figure is graded: no benchmark tier is computed for the email.
  *   - Every figure is one organization's.
  *
  * Real transaction/RLS behavior, not a mocked pg client.
@@ -131,10 +132,9 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
       // 3 successes over the 7-day window -- the failed one is not a delivery.
       expect(result.deploymentFrequency).toBe('0.43 per day');
       expect(result.changeFailureRate).toBe(25);
-      expect(result.benchmarks).toEqual({
-        deploymentFrequency: { level: 'high', isCustom: false },
-        changeFailureRate: { level: 'high', isCustom: false },
-      });
+      // Measured, never graded: no benchmark tier of any kind.
+      expect(result).not.toHaveProperty('benchmarks');
+      expect(JSON.stringify(result)).not.toMatch(/elite|high|medium|low|benchmark|tier/i);
     } finally {
       client.release();
     }
@@ -164,7 +164,7 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
     }
   });
 
-  it('with nothing finished: the rate is null (never 0) and nothing is graded', async () => {
+  it('with nothing finished: the rate is null (never 0)', async () => {
     const orgId = await insertOrg();
     const client = await openOrgClient(orgId);
     try {
@@ -177,7 +177,6 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
       expect(result.deploymentCount).toBe(1);
       expect(result.successfulDeployments).toBe(0);
       expect(result.changeFailureRate).toBeNull();
-      expect(result.benchmarks).toEqual({ deploymentFrequency: null, changeFailureRate: null });
     } finally {
       client.release();
     }
@@ -194,13 +193,13 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
       const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
 
       expect(result.changeFailureRate).toBe(0);
-      expect(result.benchmarks.changeFailureRate).toEqual({ level: 'elite', isCustom: false });
+      expect(result).not.toHaveProperty('benchmarks');
     } finally {
       client.release();
     }
   });
 
-  it('derives no lead time, deployment gap or time to restore, however much history exists', async () => {
+  it('derives no lead time, deployment gap, time to restore or benchmark tier, however much history exists', async () => {
     const orgId = await insertOrg();
     const client = await openOrgClient(orgId);
     try {
@@ -215,16 +214,15 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
       const result = await repository.getWeeklyDORAMetrics({ organizationId: orgId, startDate, endDate }, client);
 
       expect(Object.keys(result).sort()).toEqual([
-        'benchmarks', 'changeFailureRate', 'deploymentCount', 'deploymentFrequency',
+        'changeFailureRate', 'deploymentCount', 'deploymentFrequency',
         'failedDeployments', 'successfulDeployments',
       ]);
-      expect(Object.keys(result.benchmarks).sort()).toEqual(['changeFailureRate', 'deploymentFrequency']);
     } finally {
       client.release();
     }
   });
 
-  it('an organization with no deployments gets zero counts, a null rate and no tiers', async () => {
+  it('an organization with no deployments gets zero counts and a null rate', async () => {
     const orgId = await insertOrg();
     const client = await openOrgClient(orgId);
     try {
@@ -237,7 +235,6 @@ describe('WeeklySummaryRepository.getWeeklyDORAMetrics — delivery metrics', ()
         failedDeployments: 0,
         deploymentFrequency: '0 per day',
         changeFailureRate: null,
-        benchmarks: { deploymentFrequency: null, changeFailureRate: null },
       });
     } finally {
       client.release();

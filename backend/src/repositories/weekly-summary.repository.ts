@@ -18,8 +18,6 @@ import {
   type ContextSection,
   type CostExplorerScope,
 } from '../services/ai-context-contract';
-import { DORAMetricsRepository } from './dora-metrics.repository';
-import { DORAMetricsService, BenchmarkLevel } from '../services/dora-metrics.service';
 import { changeFailureRate } from '../services/deployment-status';
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { CostRecommendationsRepository } from './cost-recommendations.repository';
@@ -96,17 +94,13 @@ export interface WeeklyRecommendationEvidence {
   totalEstimatedMonthlySavings: number;
 }
 
-export interface DORABenchmarkResult {
-  level: BenchmarkLevel;
-  isCustom: boolean;
-}
-
 /**
  * Deployment metrics for the delivery window, with the same definitions as
  * the Deployments and DORA pages: frequency counts successful deployments
  * only, and the change failure rate is failed / (success + failed) -- null
  * when nothing finished. Lead time for changes and time to restore are not
  * tracked (no commit or incident records), so they are never derived here.
+ * No figure is graded against a benchmark tier.
  */
 export interface WeeklyDORAMetrics {
   /** Every deployment recorded in the window, whatever its status. */
@@ -117,10 +111,6 @@ export interface WeeklyDORAMetrics {
   deploymentFrequency: string;
   /** Null when no deployment finished in the window. */
   changeFailureRate: number | null;
-  benchmarks: {
-    deploymentFrequency: DORABenchmarkResult | null;
-    changeFailureRate: DORABenchmarkResult | null;
-  };
 }
 
 export interface WeeklyEvidence {
@@ -201,21 +191,12 @@ const WEEKLY_SUMMARY_RECIPIENT_PREDICATES = `om.role = 'owner'
          AND u.email_weekly_summary = true
          AND u.is_email_verified = true`;
 
-const EMPTY_DORA_BENCHMARKS: WeeklyDORAMetrics['benchmarks'] = {
-  deploymentFrequency: null,
-  changeFailureRate: null,
-};
-
 export class WeeklySummaryRepository {
-  private doraMetricsRepository: DORAMetricsRepository;
-  private doraMetricsService: DORAMetricsService;
   private riskTrackingService: RiskTrackingService;
   private costRecommendationsRepository: CostRecommendationsRepository;
   private accountFindingsRepository: AccountSecurityFindingsRepository;
 
   constructor(private pool: Pool) {
-    this.doraMetricsRepository = new DORAMetricsRepository(pool);
-    this.doraMetricsService = new DORAMetricsService(this.doraMetricsRepository);
     this.riskTrackingService = new RiskTrackingService(pool);
     this.costRecommendationsRepository = new CostRecommendationsRepository();
     this.accountFindingsRepository = new AccountSecurityFindingsRepository();
@@ -547,26 +528,12 @@ export class WeeklySummaryRepository {
     const deploymentsPerDay = days > 0 ? parseFloat((success / days).toFixed(2)) : 0;
     const failureRate = changeFailureRate(success, failed);
 
-    // Benchmark tiers use only the documented, industry-standard DORA 2024
-    // bands in DORAMetricsService (the same source the dashboard uses), and
-    // only when something finished: no tier without a measurement.
-    //
-    // Per-org custom benchmarks (custom_dora_benchmarks) are intentionally
-    // not applied here — that table isn't present in every environment's
-    // schema today, so this matches the dashboard's own effective
-    // (industry-default) behavior wherever it's absent.
-    const benchmarks: WeeklyDORAMetrics['benchmarks'] = failureRate === null ? EMPTY_DORA_BENCHMARKS : {
-      deploymentFrequency: { level: this.doraMetricsService.resolveDeploymentFrequency(deploymentsPerDay).benchmark, isCustom: false },
-      changeFailureRate: { level: this.doraMetricsService.resolveChangeFailureRate(failureRate).benchmark, isCustom: false },
-    };
-
     return {
       deploymentCount: total,
       successfulDeployments: success,
       failedDeployments: failed,
       deploymentFrequency: `${deploymentsPerDay} per day`,
       changeFailureRate: failureRate,
-      benchmarks,
     };
   }
 }

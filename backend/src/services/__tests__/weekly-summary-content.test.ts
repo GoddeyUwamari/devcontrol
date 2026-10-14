@@ -87,10 +87,6 @@ const DELIVERY: WeeklyDORAMetrics = {
   failedDeployments: 1,
   deploymentFrequency: '0.71 per day',
   changeFailureRate: 16.7,
-  benchmarks: {
-    deploymentFrequency: { level: 'high', isCustom: false },
-    changeFailureRate: { level: 'high', isCustom: false },
-  },
 };
 
 interface Overrides {
@@ -271,8 +267,20 @@ describe('Weekly Summary email wording', () => {
   it('L: delivery uses the page definitions -- successes for frequency, failed / finished for the rate', async () => {
     const out = render(await evidence());
     expect(out).toContain('7 deployments recorded in DevControl in the 7 days before this summary: 5 succeeded, 1 failed, 1 with no finished status.');
-    expect(out).toContain('Deployment frequency (successful deployments): 0.71 per day (industry benchmark: High).');
-    expect(out).toContain('Change failure rate: 16.7% (1 of 6 finished deployments failed) (industry benchmark: High).');
+    expect(out).toContain('Deployment frequency (successful deployments): 0.71 per day.');
+    expect(out).toContain('Change failure rate: 16.7% (1 of 6 finished deployments failed).');
+  });
+
+  it('L1: nothing in the delivery section is graded -- no benchmark, tier or band, in the HTML or the text', async () => {
+    for (const delivery of [
+      DELIVERY,
+      { ...DELIVERY, deploymentCount: 40, successfulDeployments: 40, failedDeployments: 0, deploymentFrequency: '5.71 per day', changeFailureRate: 0 },
+      { ...DELIVERY, deploymentCount: 4, successfulDeployments: 1, failedDeployments: 3, deploymentFrequency: '0.14 per day', changeFailureRate: 75 },
+    ]) {
+      const e = await evidence({ delivery: await available<WeeklyDORAMetrics>('DevControl deployment records', delivery) });
+      expect(composeWeeklySummary(e).deliverySummary).not.toMatch(/benchmark|\btier\b|\b(elite|high|medium|low)\b|industry|performer/i);
+      expect(render(e)).not.toMatch(/benchmark/i);
+    }
   });
 
   it('L2: lead time and time to restore are "Not tracked" -- no deployment-gap or recovery time, no band', async () => {
@@ -282,10 +290,9 @@ describe('Weekly Summary email wording', () => {
     expect(out).not.toMatch(UNSUPPORTED.doraLeadTime);
   });
 
-  it('L3: with nothing finished the rate is a dash -- never 0% -- and nothing is graded', async () => {
+  it('L3: with nothing finished the rate is a dash -- never 0%', async () => {
     const out = render(await evidence({ delivery: await available<WeeklyDORAMetrics>('DevControl deployment records', {
       deploymentCount: 2, successfulDeployments: 0, failedDeployments: 0, deploymentFrequency: '0 per day', changeFailureRate: null,
-      benchmarks: { deploymentFrequency: null, changeFailureRate: null },
     }) }));
     expect(out).toContain('2 deployments recorded in DevControl in the 7 days before this summary: 0 succeeded, 0 failed, 2 with no finished status.');
     expect(out).toContain('Change failure rate: — (no deployment finished).');
@@ -293,16 +300,14 @@ describe('Weekly Summary email wording', () => {
 
     const clean = render(await evidence({ delivery: await available<WeeklyDORAMetrics>('DevControl deployment records', {
       deploymentCount: 1, successfulDeployments: 1, failedDeployments: 0, deploymentFrequency: '0.14 per day', changeFailureRate: 0,
-      benchmarks: { deploymentFrequency: { level: 'high', isCustom: false }, changeFailureRate: { level: 'elite', isCustom: false } },
     }) }));
     expect(clean).toContain('1 deployment recorded in DevControl in the 7 days before this summary: 1 succeeded, 0 failed.');
-    expect(clean).toContain('Change failure rate: 0% (0 of 1 finished deployment failed) (industry benchmark: Elite).');
+    expect(clean).toContain('Change failure rate: 0% (0 of 1 finished deployment failed).');
   });
 
   it('M: missing delivery data is stated -- no fabricated fallback values', async () => {
     const noData = render(await evidence({ delivery: await available<WeeklyDORAMetrics>('DevControl deployment records', {
       deploymentCount: 0, successfulDeployments: 0, failedDeployments: 0, deploymentFrequency: '0 per day', changeFailureRate: null,
-      benchmarks: { deploymentFrequency: null, changeFailureRate: null },
     }) }));
     expect(noData).toContain('No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.');
     expect(noData).not.toMatch(/per day|Change failure rate/);
@@ -378,6 +383,22 @@ describe('Weekly Summary model-written recommendation (disabled, PR #136 review 
 
     const grounded = 'Resolve the 2 account-level findings first, then review the 3 open cost recommendations (estimated $845/month opportunity).';
     expect(checkRecommendationText(grounded, prompt).text).toBe(grounded);
+  });
+
+  it('retained helper: the "Not tracked" line stays in the email but is not among the facts given to the model', async () => {
+    const e = await evidence();
+    const content = composeWeeklySummary(e);
+    const prompt = buildRecommendationPrompt(e, content)!;
+
+    expect(content.deliverySummary).toContain('Lead time for changes and time to restore service: Not tracked.');
+    expect(render(e)).toContain('Lead time for changes and time to restore service: Not tracked.');
+
+    const facts = prompt.slice(prompt.indexOf('Facts:'));
+    expect(facts).toContain('- Delivery: 7 deployments recorded in DevControl in the 7 days before this summary: 5 succeeded, 1 failed, 1 with no finished status. ' +
+      'Deployment frequency (successful deployments): 0.71 per day. Change failure rate: 16.7% (1 of 6 finished deployments failed).\n');
+    expect(facts).not.toMatch(/lead time|time to restore|not tracked/i);
+    // The model is still told not to bring lead time up, and is rejected if it does.
+    expect(checkRecommendationText('Shorten your lead time for changes.', prompt).text).toBeNull();
   });
 
   it('retained helper: the prompt carries every evidence state and the no-fabrication rules', async () => {
