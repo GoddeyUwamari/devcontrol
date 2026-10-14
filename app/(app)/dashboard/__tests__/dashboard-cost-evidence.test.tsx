@@ -29,6 +29,7 @@ import { systemIntelligenceService } from '@/lib/services/system-intelligence.se
 import { activityFeedService } from '@/lib/services/activity-feed.service'
 import { soc2Service } from '@/lib/services/soc2.service'
 import { complianceFrameworksService } from '@/lib/services/compliance-frameworks.service'
+import { HERO_FORBIDDEN, SAMPLE_PANEL_TITLE, expectApprovedSamplePanel, heroWords, withoutValidSamplePanel } from '@/components/dashboard/__tests__/sample-panel'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }))
 vi.mock('next/navigation', () => ({ useRouter: () => router, usePathname: () => '/dashboard', useSearchParams: () => new URLSearchParams() }))
@@ -257,9 +258,13 @@ const FABRICATED_VALUE = /\d|\$|%|—|\bN\/A\b/
 const SCORE_SCALE = 'Get one score out of 100, with the reasons behind it'
 /** Words this state must not use: it promises nothing the product does not measure or do. */
 const FORBIDDEN = /health|operational signals|recommendations|prioriti[sz]ed|\bfix|savings|sample|example/i
-/** The page with the Savings tag removed: nowhere else may say "savings". At most one such tag exists. */
+/**
+ * The page with the Savings tag removed: nowhere else may say "savings". At most one such tag exists.
+ * The hero's sample panel is removed too, but only while it is labelled as sample data (see
+ * components/dashboard/__tests__/sample-panel.ts); an unlabelled panel stays in and trips every guard.
+ */
 function pageOutsideSavingsTag(): HTMLElement {
-  const body = document.body.cloneNode(true) as HTMLElement
+  const body = withoutValidSamplePanel(document.body)
   const tags = [...body.querySelectorAll('[data-testid="preview-tag"]')].filter((tag) => tag.textContent === SAVINGS_TAG)
   expect(tags.length).toBeLessThanOrEqual(1)
   tags.forEach((tag) => tag.remove())
@@ -284,14 +289,22 @@ function wordsOutsideSavingsTag(): string {
 /** The preview (header, eight cards, band) and the "How connecting works" strip, word for word, in either role. */
 function expectPreviewAndSteps() {
   const preview = screen.getByTestId('dashboard-preview')
-  // The preview is the page's hero in this state: the workspace name, then the one h1.
-  expect(within(preview).getByTestId('preview-workspace').textContent).toBe('Org Test')
+  // The preview is the page's hero in this state: the one h1, and no workspace label above it.
+  expect(within(preview).queryByTestId('preview-workspace')).not.toBeInTheDocument()
+  expect(preview.textContent).not.toContain('Org Test')
   expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   expect(within(preview).getByRole('heading', { level: 1, name: HEADLINE })).toBeInTheDocument()
   expect(within(preview).getByText(SUBHEADLINE)).toBeInTheDocument()
   expect(within(preview).getByTestId('preview-trust').textContent).toBe(TRUST_LINE)
   expect(screen.queryByTestId('provider-pills')).not.toBeInTheDocument()
-  expect(document.body.textContent).not.toMatch(/What you'll see|What your team will see/)
+  expect(withoutValidSamplePanel(document.body).textContent).not.toMatch(/What you'll see|What your team will see/)
+
+  // The hero: the copy, then the sample panel (shown to every role), exactly as approved.
+  const hero = within(preview).getByTestId('preview-hero')
+  expect([...hero.children].map((child) => child.getAttribute('data-testid'))).toEqual(['preview-hero-copy', 'sample-panel'])
+  expect(hero.nextElementSibling).toBe(within(preview).getByTestId('preview-cards'))
+  expectApprovedSamplePanel(document.body)
+  expect(heroWords(hero)).not.toMatch(HERO_FORBIDDEN)
 
   // GCP and Azure are plain text: not links, not buttons, not focusable.
   for (const [id, text] of [['preview-pill-gcp', 'GCP soon'], ['preview-pill-azure', 'Azure soon']]) {
@@ -348,16 +361,17 @@ function expectPreviewAndSteps() {
   expect(items[0].parentElement?.className).toMatch(/\bgrid-cols-1\b.*\bmd:grid-cols-3\b/)
   expect(steps.querySelector('a, button, [role="button"], [role="link"], [tabindex], [role="progressbar"], svg:not(.lucide)')).toBeNull()
 
-  // Heading order: the h1, then every card, the band and the strip as h2 -- no level skipped.
+  // Heading order: the h1, then the sample panel, every card, the band and the strip as h2 -- no level skipped.
   expect(screen.getAllByRole('heading').map((h) => [h.tagName, h.textContent])).toEqual([
     ['H1', HEADLINE],
+    ['H2', SAMPLE_PANEL_TITLE],
     ...PREVIEW_CARDS.map(([, title]) => ['H2', title]),
     ['H2', BAND_HEADLINE],
     ['H2', 'How connecting works'],
   ])
 
-  // No figure anywhere: only the step numbers and the named score scale contain a digit.
-  expect((preview.textContent ?? '').replace(SCORE_SCALE, '')).not.toMatch(FABRICATED_VALUE)
+  // No figure anywhere outside the labelled sample panel: only the step numbers and the named score scale contain a digit.
+  expect((withoutValidSamplePanel(preview).textContent ?? '').replace(SCORE_SCALE, '')).not.toMatch(FABRICATED_VALUE)
   const stepsClone = steps.cloneNode(true) as HTMLElement
   stepsClone.querySelectorAll('[data-testid="connecting-step-number"]').forEach((n) => n.remove())
   expect(stepsClone.textContent).not.toMatch(FABRICATED_VALUE)
@@ -379,7 +393,7 @@ function expectUnconnectedPageWording() {
   expect(screen.queryByTestId('aws-connection-line')).not.toBeInTheDocument()
 }
 function expectNoPreview() {
-  for (const id of ['dashboard-preview', 'preview-card', 'preview-cards', 'preview-band', 'preview-plan-label', 'preview-connect', 'preview-band-connect', 'connecting-steps']) {
+  for (const id of ['dashboard-preview', 'sample-panel', 'preview-card', 'preview-cards', 'preview-band', 'preview-plan-label', 'preview-connect', 'preview-band-connect', 'connecting-steps']) {
     expect(screen.queryByTestId(id)).not.toBeInTheDocument()
   }
   for (const [, , subtitle, shows] of PREVIEW_CARDS) {

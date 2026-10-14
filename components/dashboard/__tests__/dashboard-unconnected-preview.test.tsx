@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { DashboardUnconnectedPreview } from '../dashboard-unconnected-preview'
+import { HERO_FORBIDDEN, SAMPLE_CAPTION, SAMPLE_PANEL_TITLE, SAMPLE_TAG, expectApprovedSamplePanel, heroWords, samplePanelProblems, withoutValidSamplePanel } from './sample-panel'
 
 const CARD_ORDER = [
   ['Cost', 'Month-to-Date Spend'],
@@ -21,8 +22,8 @@ const CARD_ORDER = [
   ['Weekly', 'Weekly summary'],
 ]
 
-function renderPreview(canConnectAws = true, orgName = 'Placeholder Org') {
-  return render(<DashboardUnconnectedPreview canConnectAws={canConnectAws} orgName={orgName} />)
+function renderPreview(canConnectAws = true) {
+  return render(<DashboardUnconnectedPreview canConnectAws={canConnectAws} />)
 }
 
 /** WCAG 2.x contrast ratio of two #RRGGBB colours. */
@@ -63,18 +64,19 @@ describe('layout', () => {
     }
   })
 
-  it('page order: workspace name, headline, button row, trust line, cards, band, then the steps', () => {
+  it('page order: headline, button row, trust line, sample panel, cards, band, then the steps', () => {
     renderPreview()
-    const order = ['preview-workspace', 'preview-action', 'preview-trust', 'preview-cards', 'preview-band', 'connecting-steps'].map((id) => screen.getByTestId(id))
+    const h1 = screen.getByRole('heading', { level: 1 })
+    const order = [h1, ...['preview-action', 'preview-trust', 'sample-panel', 'preview-cards', 'preview-band', 'connecting-steps'].map((id) => screen.getByTestId(id))]
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
-    const h1 = screen.getByRole('heading', { level: 1 })
-    expect(order[0].compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(h1.compareDocumentPosition(order[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The headline opens the preview: nothing (no workspace label) above it.
+    expect(screen.getByTestId('preview-hero-copy').firstElementChild).toBe(h1)
     // The trust line carries the lock icon and sits directly under the button row.
-    expect(order[1].nextElementSibling).toBe(order[2])
-    expect(order[2].querySelector('svg.lucide-lock')).not.toBeNull()
+    const [action, trust] = [screen.getByTestId('preview-action'), screen.getByTestId('preview-trust')]
+    expect(action.nextElementSibling).toBe(trust)
+    expect(trust.querySelector('svg.lucide-lock')).not.toBeNull()
     // The old boxed header and the old three-column rows are gone.
     expect(document.body.textContent).not.toMatch(/What you'll see after connecting AWS/)
     expect(document.querySelector('[class*="grid-cols-3"]:not(ol)')).toBeNull()
@@ -115,17 +117,18 @@ describe('layout', () => {
     expect(screen.getByTestId('preview-pill-azure').textContent).toBe('Azure soon')
   })
 
-  it.each(['Placeholder Org', 'Another Workspace'])('the workspace label is the organization name it is given (%s)', (orgName) => {
-    renderPreview(true, orgName)
-    const label = screen.getByTestId('preview-workspace')
-    expect(label.textContent).toBe(orgName)
-    // Uppercase is presentation only: the name itself is not rewritten.
-    expect(label.className).toMatch(/\buppercase\b/)
+  it.each([true, false])('there is no workspace label (owner: %s)', (owner) => {
+    renderPreview(owner)
+    expect(screen.queryByTestId('preview-workspace')).not.toBeInTheDocument()
+    // The only uppercase labels left are the card tags and the sample tag.
+    const uppercase = [...document.querySelectorAll('[class~="uppercase"]')].map((node) => node.getAttribute('data-testid'))
+    expect(uppercase).toEqual(['sample-panel-tag', ...Array(8).fill('preview-tag')])
   })
 
-  it.each([true, false])('renders no numbers: only the score scale and the three step numbers contain a digit (owner: %s)', (owner) => {
+  it.each([true, false])('renders no numbers outside the sample panel: only the score scale and the three step numbers contain a digit (owner: %s)', (owner) => {
     const { container } = renderPreview(owner)
-    const clone = container.cloneNode(true) as HTMLElement
+    const clone = withoutValidSamplePanel(container)
+    expect(clone.querySelector('[data-testid="sample-panel"]')).toBeNull()
     const numbers = [...clone.querySelectorAll('[data-testid="connecting-step-number"]')]
     expect(numbers.map((n) => n.textContent)).toEqual(['1', '2', '3'])
     numbers.forEach((n) => n.remove())
@@ -136,7 +139,79 @@ describe('layout', () => {
   })
 })
 
+describe('the sample panel', () => {
+  it.each([true, false])('shows the approved content exactly, with a total that is the sum of its three costs (owner: %s)', (owner) => {
+    const { container } = renderPreview(owner)
+    expectApprovedSamplePanel(container)
+    expect(screen.getByTestId('sample-panel-tag').className).toMatch(/\buppercase\b/)
+  })
+
+  it.each([true, false])('the hero says nothing live, connected, alarming or framework-specific (owner: %s)', (owner) => {
+    renderPreview(owner)
+    expect(heroWords(screen.getByTestId('preview-hero'))).not.toMatch(HERO_FORBIDDEN)
+  })
+
+  it('the exemption removes only a labelled panel, and only the panel', () => {
+    const { container } = renderPreview()
+    expect(samplePanelProblems(container)).toEqual([])
+    const without = withoutValidSamplePanel(container)
+    // Everything else is still there, word for word.
+    const panelText = screen.getByTestId('sample-panel').textContent ?? ''
+    expect(without.textContent).toBe((container.textContent ?? '').replace(panelText, ''))
+    expect(without.querySelectorAll('[data-testid="preview-card"]')).toHaveLength(8)
+  })
+
+  // Each change below makes the panel unlabelled (or misplaced), so it is no longer removed and its figures reach the guards.
+  it.each<[string, (panel: HTMLElement) => void]>([
+    ['the tag is removed', (panel) => panel.querySelector('[data-testid="sample-panel-tag"]')!.remove()],
+    ['the caption is removed', (panel) => panel.querySelector('[data-testid="sample-panel-caption"]')!.remove()],
+    ['the tag is reworded', (panel) => { panel.querySelector('[data-testid="sample-panel-tag"]')!.textContent = 'Preview' }],
+    ['the caption is reworded', (panel) => { panel.querySelector('[data-testid="sample-panel-caption"]')!.textContent = 'Your findings.' }],
+    ['the tag is visually hidden', (panel) => panel.querySelector('[data-testid="sample-panel-tag"]')!.classList.add('sr-only')],
+    ['the caption is hidden at a breakpoint', (panel) => panel.querySelector('[data-testid="sample-panel-caption"]')!.classList.add('md:hidden')],
+    ['the caption is hidden from assistive technology', (panel) => panel.querySelector('[data-testid="sample-panel-caption"]')!.setAttribute('aria-hidden', 'true')],
+    ['the panel is visually hidden', (panel) => panel.classList.add('hidden')],
+    ['the panel is transparent', (panel) => { panel.style.opacity = '0' }],
+    ['there is a second panel', (panel) => panel.after(panel.cloneNode(true))],
+    ['the panel is moved below the cards', (panel) => screen.getByTestId('preview-band').before(panel)],
+  ])('is not exempt when %s', (_name, mutate) => {
+    const { container } = renderPreview()
+    mutate(screen.getAllByTestId('sample-panel')[0])
+    expect(samplePanelProblems(container)).not.toEqual([])
+    expect(withoutValidSamplePanel(container).textContent).toMatch(/\$\d/)
+  })
+})
+
 describe('responsive behaviour', () => {
+  it('the hero stacks below 1024px (copy, then the panel) and is two columns from lg', () => {
+    renderPreview()
+    const hero = screen.getByTestId('preview-hero')
+    expect(hero.className).toMatch(/(^|\s)grid(\s|$)/)
+    expect(hero.className).toMatch(/(^|\s)grid-cols-1(\s|$)/)
+    expect(hero.className).toMatch(/(^|\s)lg:grid-cols-\[minmax\(0,11fr\)_minmax\(0,9fr\)\](\s|$)/)
+    // No other breakpoint splits it: below lg it is one column.
+    expect(hero.className.match(/(?:^|\s)(?:[\w-]+:)?grid-cols-\S+/g)?.map((c) => c.trim())).toEqual(['grid-cols-1', 'lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]'])
+    // Stacked order is DOM order: the copy column, then the panel. No reordering classes.
+    expect([...hero.children].map((child) => child.getAttribute('data-testid'))).toEqual(['preview-hero-copy', 'sample-panel'])
+    expect(hero.innerHTML).not.toMatch(/(^|[\s"])(?:[\w-]+:)?order-/)
+    expect([...screen.getByTestId('preview-hero-copy').children].map((child) => child.tagName + (child.getAttribute('data-testid') ? `#${child.getAttribute('data-testid')}` : ''))).toEqual(['H1', 'P', 'DIV#preview-action', 'P#preview-trust'])
+  })
+
+  it('a non-owner keeps the #176 hero: pill and who to ask in the copy column, and the panel beside it', () => {
+    renderPreview(false)
+    const copy = screen.getByTestId('preview-hero-copy')
+    expect([...copy.children].map((child) => child.getAttribute('data-testid'))).toEqual([null, null, 'preview-action', 'preview-ask-owner', 'preview-trust'])
+    expect(screen.getByTestId('preview-hero').lastElementChild).toBe(screen.getByTestId('sample-panel'))
+  })
+
+  it('nothing below the hero moved into it', () => {
+    renderPreview()
+    const hero = screen.getByTestId('preview-hero')
+    expect(hero.parentElement).toBe(screen.getByTestId('dashboard-preview'))
+    expect([...hero.parentElement!.children].map((child) => child.getAttribute('data-testid'))).toEqual(['preview-hero', 'preview-cards', 'preview-band'])
+    for (const id of ['preview-cards', 'preview-band', 'connecting-steps']) expect(hero.contains(screen.getByTestId(id))).toBe(false)
+  })
+
   it('cards are one per row, then two per row; steps are stacked, then three across', () => {
     renderPreview()
     const cards = screen.getByTestId('preview-cards')
@@ -179,19 +254,24 @@ describe('responsive behaviour', () => {
 })
 
 describe('accessibility', () => {
-  it('heading order: one h1, then every card, the band and the steps as h2 -- no level skipped', () => {
-    renderPreview()
+  it.each([true, false])('heading order: one h1, then the sample panel, every card, the band and the steps as h2 -- no level skipped (owner: %s)', (owner) => {
+    renderPreview(owner)
     expect(screen.getAllByRole('heading').map((h) => [h.tagName, h.textContent])).toEqual([
       ['H1', 'AI-Powered Cloud Operations & Infrastructure Intelligence'],
+      ['H2', SAMPLE_PANEL_TITLE],
       ...CARD_ORDER.map(([, title]) => ['H2', title]),
       ['H2', 'See where your AWS money is going'],
       ['H2', 'How connecting works'],
     ])
   })
 
-  it('both sections are named by their headings, and the lists are real lists', () => {
+  it('the sections are named by their headings (the panel as sample data), and the lists are real lists', () => {
     renderPreview()
     expect(screen.getByRole('region', { name: 'AI-Powered Cloud Operations & Infrastructure Intelligence' })).toBe(screen.getByTestId('dashboard-preview'))
+    const panel = screen.getByRole('region', { name: `${SAMPLE_PANEL_TITLE} ${SAMPLE_TAG}` })
+    expect(panel).toBe(screen.getByTestId('sample-panel'))
+    expect(panel).toHaveAccessibleDescription(SAMPLE_CAPTION)
+    expect(within(panel).getAllByTestId('sample-panel-row').every((row) => row.tagName === 'LI' && row.parentElement?.tagName === 'UL')).toBe(true)
     expect(screen.getByRole('region', { name: 'How connecting works' })).toBe(screen.getByTestId('connecting-steps'))
     expect(screen.getByTestId('preview-cards').tagName).toBe('UL')
     expect(screen.getAllByTestId('preview-card').every((card) => card.tagName === 'LI')).toBe(true)
@@ -272,5 +352,50 @@ describe('accessibility', () => {
     expect(tag.style.color).toBe('var(--text-accent)')
     expect(tag.closest('[data-testid="preview-card"]')!.className).toContain('bg-[var(--surface-2)]')
     expect(contrast(dark['--text-accent'], over(dark['--bg-accent'], dark['--surface-2']))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('contrast: the sample panel meets WCAG AA (4.5:1) in light and dark', () => {
+    renderPreview()
+    const { light, dark } = tokens()
+    const panel = screen.getByTestId('sample-panel')
+    expect(panel.className).toContain('bg-[var(--surface-2)]')
+    const fixed = (node: Element, prefix: '' | 'dark:') => node.className.match(new RegExp(`(?:^|\\s)${prefix}text-\\[(#[0-9A-Fa-f]{6})\\]`))?.[1]
+
+    // Green amounts: fixed colours (the light success token is too pale on white).
+    const amounts = within(panel).getAllByTestId('sample-panel-row-value').slice(0, 3)
+    for (const amount of amounts) {
+      expect(fixed(amount, '')).toBe('#047857')
+      expect(fixed(amount, 'dark:')).toBe('#34D399')
+    }
+    expect(contrast('#047857', light['--surface-2'])).toBeGreaterThanOrEqual(4.5)
+    expect(contrast('#34D399', dark['--surface-2'])).toBeGreaterThanOrEqual(4.5)
+    // The token it replaces would not pass in light mode.
+    expect(contrast(light['--text-success'], light['--surface-2'])).toBeLessThan(4.5)
+
+    // High badge: fixed text colours on the danger tint (translucent in dark, so over the surface).
+    const badge = within(panel).getAllByTestId('sample-panel-row-value')[3]
+    expect(badge.className).toContain('bg-[var(--bg-danger)]')
+    expect(fixed(badge, '')).toBe('#B91C1C')
+    expect(fixed(badge, 'dark:')).toBe('#F87171')
+    expect(contrast('#B91C1C', light['--bg-danger'])).toBeGreaterThanOrEqual(4.5)
+    expect(dark['--bg-danger']).toMatch(/^#[0-9A-Fa-f]{8}$/)
+    expect(contrast('#F87171', over(dark['--bg-danger'], dark['--surface-2']))).toBeGreaterThanOrEqual(4.5)
+
+    // The tag and the total amount: the accent on its tint.
+    const tag = screen.getByTestId('sample-panel-tag')
+    const total = screen.getByTestId('sample-panel-total')
+    const totalValue = screen.getByTestId('sample-panel-total-value')
+    expect(tag.style.background).toBe('var(--bg-accent)')
+    expect(tag.style.color).toBe('var(--text-accent)')
+    expect(total.style.background).toBe('var(--bg-accent)')
+    expect(totalValue.style.color).toBe('var(--text-accent)')
+    expect(contrast(light['--text-accent'], light['--bg-accent'])).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(dark['--text-accent'], over(dark['--bg-accent'], dark['--surface-2']))).toBeGreaterThanOrEqual(4.5)
+
+    // Subtitles and the caption: secondary text on the panel surface.
+    for (const node of [...within(panel).getAllByTestId('sample-panel-row-subtitle'), screen.getByTestId('sample-panel-caption')]) {
+      expect(node.className).toContain('text-[var(--text-secondary)]')
+    }
+    for (const theme of [light, dark]) expect(contrast(theme['--text-secondary'], theme['--surface-2'])).toBeGreaterThanOrEqual(4.5)
   })
 })

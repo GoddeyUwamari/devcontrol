@@ -107,10 +107,33 @@ const STEPS = [
   'Your first scan runs automatically. Cost data can take a day or two to arrive from AWS.',
 ]
 
+interface SampleRow {
+  title: string
+  subtitle: string
+  /** A sample monthly cost, in whole dollars. Rows without one carry a severity instead. */
+  monthly?: number
+  severity?: 'High'
+}
+
+/**
+ * The hero's sample panel: what a first scan can find, as an illustration.
+ * The amounts are made up, never read from an account, and the panel always
+ * says so (its "Sample data" tag and the caption under it).
+ */
+const SAMPLE_ROWS: SampleRow[] = [
+  { title: 'Server running but idle', subtitle: 'Idle EC2 instance', monthly: 142 },
+  { title: 'Storage attached to nothing', subtitle: 'Unattached EBS volume', monthly: 38 },
+  { title: 'Old storage type, cheaper one exists', subtitle: 'gp2 to gp3 upgrade', monthly: 21 },
+  { title: 'Bucket accepts non-HTTPS requests', subtitle: 'S3 bucket policy', severity: 'High' },
+]
+/** The sum of the sample costs above, so the total can never disagree with its rows. */
+const SAMPLE_TOTAL = SAMPLE_ROWS.reduce((sum, row) => sum + (row.monthly ?? 0), 0)
+const perMonth = (dollars: number) => `$${dollars}/mo`
+
 const CONNECT_HREF = '/connect-aws'
 const ASK_OWNER = 'Ask your organization owner to connect AWS.'
 
-/** Tags and the workspace label: 13px bold, uppercase, letter-spaced. */
+/** Tags: 13px bold, uppercase, letter-spaced. */
 const LABEL = 'text-[13px] font-bold uppercase tracking-[0.08em] leading-none'
 const SURFACE = 'bg-[var(--surface-2)] rounded-2xl border border-border p-7'
 const PILL = 'inline-flex items-center rounded-full border border-border bg-[var(--surface-2)] px-3.5 py-2 text-[13px] font-semibold leading-none text-[var(--text-secondary)]'
@@ -156,51 +179,119 @@ function PreviewCard({ tag, title, subtitle, shows, planLabel }: PreviewItem) {
 }
 
 /**
- * The dashboard for an organization that has not connected AWS. It replaces
- * the page hero in this state, so it owns the page's h1: the workspace name,
- * the headline, the way to connect, what each card will show, and how
- * connecting works. Words only -- never a figure, score, count, bar or chart,
- * real or sample. Only an owner can connect, so only an owner gets the two
- * buttons (both to the same route); anyone else gets no link at all and is
- * told who to ask.
+ * What a first scan can find, as labelled sample data: four findings and the
+ * total of their sample costs. Not interactive. The "Sample data" tag and the
+ * caption are always shown, and name the panel for assistive technology.
  */
-export function DashboardUnconnectedPreview({ canConnectAws, orgName }: { canConnectAws: boolean; orgName: string }) {
+function SamplePanel() {
+  return (
+    <section
+      className="bg-[var(--surface-2)] rounded-2xl border border-border"
+      aria-labelledby="sample-panel-title sample-panel-tag"
+      aria-describedby="sample-panel-caption"
+      data-testid="sample-panel"
+    >
+      <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-border">
+        <h2 id="sample-panel-title" className="text-lg font-bold text-foreground tracking-tight leading-tight m-0" data-testid="sample-panel-title">
+          What you&apos;ll see after connecting
+        </h2>
+        <span
+          id="sample-panel-tag"
+          className={`${LABEL} shrink-0 rounded-full px-3 py-1.5`}
+          style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}
+          data-testid="sample-panel-tag"
+        >
+          Sample data
+        </span>
+      </div>
+      <ul className="list-none p-0 m-0">
+        {SAMPLE_ROWS.map((row) => (
+          <li key={row.title} className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border" data-testid="sample-panel-row">
+            <div className="min-w-0">
+              <p className="text-base font-semibold text-foreground leading-snug m-0" data-testid="sample-panel-row-title">{row.title}</p>
+              <p className="text-base text-[var(--text-secondary)] leading-snug m-0" data-testid="sample-panel-row-subtitle">{row.subtitle}</p>
+            </div>
+            {row.monthly !== undefined ? (
+              // Fixed colours: the success token is too light for text on white (AA).
+              <span className="shrink-0 text-lg font-bold text-[#047857] dark:text-[#34D399]" data-testid="sample-panel-row-value">
+                {perMonth(row.monthly)}
+              </span>
+            ) : (
+              <span
+                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold leading-none bg-[var(--bg-danger)] text-[#B91C1C] dark:text-[#F87171]"
+                data-testid="sample-panel-row-value"
+                data-severity={row.severity?.toLowerCase()}
+              >
+                {row.severity}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="mx-6 mt-5 rounded-xl px-5 py-4 flex items-center justify-between gap-4" style={{ background: 'var(--bg-accent)' }} data-testid="sample-panel-total">
+        <p className="text-base font-medium text-foreground leading-snug m-0">Estimated monthly saving (sample)</p>
+        <span className="shrink-0 text-2xl font-bold leading-none" style={{ color: 'var(--text-accent)' }} data-testid="sample-panel-total-value">
+          {perMonth(SAMPLE_TOTAL)}
+        </span>
+      </div>
+      <p id="sample-panel-caption" className="text-base text-[var(--text-secondary)] leading-normal px-6 pt-4 pb-5 m-0" data-testid="sample-panel-caption">
+        Illustrative example. Your own findings appear after your first scan.
+      </p>
+    </section>
+  )
+}
+
+/**
+ * The dashboard for an organization that has not connected AWS. It replaces
+ * the page hero in this state, so it owns the page's h1: the headline, the way
+ * to connect, a labelled sample of what a scan finds, what each card will
+ * show, and how connecting works. Outside the sample panel it is words only --
+ * never a figure, score, count, bar or chart. Only an owner can connect, so
+ * only an owner gets the two buttons (both to the same route); anyone else
+ * gets no link at all and is told who to ask.
+ */
+export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: boolean }) {
   return (
     <>
       <section className="mb-10" aria-labelledby="dashboard-preview-title" data-testid="dashboard-preview">
-        <p className={`${LABEL} mt-0 mb-4`} style={{ color: 'var(--text-accent)' }} data-testid="preview-workspace">{orgName}</p>
-        <h1 id="dashboard-preview-title" className="text-[30px] md:text-[44px] font-bold text-foreground tracking-tight leading-[1.1] mt-0 mb-4 max-w-3xl">
-          AI-Powered Cloud Operations &amp; Infrastructure Intelligence
-        </h1>
-        <p className="text-lg text-[var(--text-secondary)] leading-normal mt-0 mb-6 max-w-3xl">
-          Operational visibility across cloud costs, security, observability, and infrastructure efficiency, so you can reduce waste, mitigate risk, and scale with confidence.
-        </p>
+        {/* Two columns from lg: the copy and the way to connect, then the sample panel. Stacked, in that order, below. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 lg:gap-12 items-center mb-8" data-testid="preview-hero">
+          <div className="min-w-0" data-testid="preview-hero-copy">
+            <h1 id="dashboard-preview-title" className="text-[30px] md:text-[44px] font-bold text-foreground tracking-tight leading-[1.1] mt-0 mb-4 max-w-3xl">
+              AI-Powered Cloud Operations &amp; Infrastructure Intelligence
+            </h1>
+            <p className="text-lg text-[var(--text-secondary)] leading-normal mt-0 mb-6 max-w-3xl">
+              Operational visibility across cloud costs, security, observability, and infrastructure efficiency, so you can reduce waste, mitigate risk, and scale with confidence.
+            </p>
 
-        <div className="flex flex-wrap items-center gap-3" data-testid="preview-action">
-          {canConnectAws ? (
-            <Link
-              href={CONNECT_HREF}
-              // The accent token lightens in dark mode, where white text on it would fall below AA.
-              // The focus ring's offset is the page background, so the gap is not a white halo in dark mode.
-              className={`${BUTTON} bg-[var(--text-accent)] dark:bg-[#7C3AED] text-white w-full sm:w-auto focus-visible:ring-[var(--text-accent)] focus-visible:ring-offset-[var(--surface-1)]`}
-              data-testid="preview-connect"
-            >
-              Connect AWS
-            </Link>
-          ) : (
-            <span className={PILL} data-testid="preview-pill-aws" data-state="not-connected">AWS not connected</span>
-          )}
-          {['GCP', 'Azure'].map((name) => (
-            <span key={name} className={PILL} data-testid={`preview-pill-${name.toLowerCase()}`}>{name} soon</span>
-          ))}
+            <div className="flex flex-wrap items-center gap-3" data-testid="preview-action">
+              {canConnectAws ? (
+                <Link
+                  href={CONNECT_HREF}
+                  // The accent token lightens in dark mode, where white text on it would fall below AA.
+                  // The focus ring's offset is the page background, so the gap is not a white halo in dark mode.
+                  className={`${BUTTON} bg-[var(--text-accent)] dark:bg-[#7C3AED] text-white w-full sm:w-auto focus-visible:ring-[var(--text-accent)] focus-visible:ring-offset-[var(--surface-1)]`}
+                  data-testid="preview-connect"
+                >
+                  Connect AWS
+                </Link>
+              ) : (
+                <span className={PILL} data-testid="preview-pill-aws" data-state="not-connected">AWS not connected</span>
+              )}
+              {['GCP', 'Azure'].map((name) => (
+                <span key={name} className={PILL} data-testid={`preview-pill-${name.toLowerCase()}`}>{name} soon</span>
+              ))}
+            </div>
+            {!canConnectAws && (
+              <p className="text-base text-[var(--text-secondary)] leading-normal mt-4 mb-0" data-testid="preview-ask-owner">{ASK_OWNER}</p>
+            )}
+            <p className="flex items-start gap-2 text-base text-[var(--text-secondary)] leading-normal mt-4 mb-0 max-w-[540px]" data-testid="preview-trust">
+              <Lock size={16} className="shrink-0 mt-1" aria-hidden="true" />
+              <span>Read-only access through a role you create and control. Delete it anytime and our access ends. Setup takes a few minutes.</span>
+            </p>
+          </div>
+          <SamplePanel />
         </div>
-        {!canConnectAws && (
-          <p className="text-base text-[var(--text-secondary)] leading-normal mt-4 mb-0" data-testid="preview-ask-owner">{ASK_OWNER}</p>
-        )}
-        <p className="flex items-start gap-2 text-base text-[var(--text-secondary)] leading-normal mt-4 mb-8 max-w-[540px]" data-testid="preview-trust">
-          <Lock size={16} className="shrink-0 mt-1" aria-hidden="true" />
-          <span>Read-only access through a role you create and control. Delete it anytime and our access ends. Setup takes a few minutes.</span>
-        </p>
 
         <ul className="list-none p-0 mt-0 mb-5 grid grid-cols-1 md:grid-cols-2 gap-5" data-testid="preview-cards">
           {CARDS.map((item) => <PreviewCard key={item.title} {...item} />)}
