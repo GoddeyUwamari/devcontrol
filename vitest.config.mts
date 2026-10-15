@@ -9,6 +9,12 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
+    // Half the cores, not the default cores - 1. These tests render whole
+    // pages in jsdom, and a CPU-starved worker ran a file's first (cold) test
+    // past the 5s test timeout or a 1s findBy*/waitFor budget: flaky failures
+    // under load with no ordering bug behind them. Fewer, unstarved workers
+    // keep each test's own timing honest.
+    maxWorkers: "50%",
     include: [
       "lib/**/__tests__/**/*.test.{ts,tsx}",
       "app/**/__tests__/**/*.test.{ts,tsx}",
