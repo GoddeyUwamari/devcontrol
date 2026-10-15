@@ -4,8 +4,10 @@
  * are cleared only after the test and its own hooks have run, and a throwing
  * callback names the test that scheduled it.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from "vitest";
 import { promisify } from "node:util";
+import { createServer, type Server } from "node:http";
+import { runInThisContext } from "node:vm";
 import { pendingTimerCount, realTimers } from "../../vitest.timer-hygiene";
 
 describe("fake timers replace the hygiene wrappers entirely", () => {
@@ -101,6 +103,56 @@ describe("leftover timers are cleared only after the test and its hooks", () => 
     expect(pendingTimerCount()).toBe(0);
     await new Promise((resolve) => realTimers.setTimeout(resolve, 60));
     expect(leftoverFired).toBe(false);
+  });
+});
+
+describe("timers scheduled by Node's own internals are library code, never cancelled", () => {
+  // A function whose stack frame reads node:internal/..., as undici's fast
+  // timers (behind fetch) do when they call setTimeout.
+  const scheduleFromNodeInternals = runInThisContext(
+    "(callback, ms) => setTimeout(callback, ms)",
+    { filename: "node:internal/deps/undici/undici" },
+  ) as (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  let internal: ReturnType<typeof setTimeout> | undefined;
+  let internalFired = 0;
+
+  it("a node:-internal timer is not tracked, so it outlives the test", () => {
+    internal = scheduleFromNodeInternals(() => { internalFired += 1; }, 40);
+    expect(pendingTimerCount()).toBe(0);
+  });
+
+  it("after the shared cleanup it still fires, and refresh() still restarts it", async () => {
+    await new Promise((resolve) => realTimers.setTimeout(resolve, 80));
+    expect(internalFired).toBe(1);
+    internal!.refresh();
+    await new Promise((resolve) => realTimers.setTimeout(resolve, 80));
+    expect(internalFired).toBe(2);
+  });
+
+  describe("real fetch (undici)", () => {
+    let server: Server;
+    let url: string;
+    beforeAll(async () => {
+      server = createServer((_req, res) => res.end("ok"));
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address() as { port: number };
+      url = `http://127.0.0.1:${address.port}/`;
+    });
+    afterAll(async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it("a fetch leaves no tracked timer behind", async () => {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      expect(await res.text()).toBe("ok");
+      expect(pendingTimerCount()).toBe(0);
+    });
+
+    it("fetch still works in the next test, after the shared cleanup ran", async () => {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      expect(await res.text()).toBe("ok");
+      expect(pendingTimerCount()).toBe(0);
+    });
   });
 });
 

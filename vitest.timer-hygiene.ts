@@ -10,9 +10,12 @@
  * - Every real setTimeout/setInterval scheduled from app or test code while a
  *   test is running is remembered until it fires or is cleared;
  *   cancelLeftoverTimers() (run after each test, once the test and its own
- *   hooks have finished) clears the ones still pending. Timers scheduled from
- *   node_modules (React's scheduler, TanStack Query, Testing Library) or
- *   outside a test (module scope, beforeAll) are left alone.
+ *   hooks have finished) clears the ones still pending and returns them, so
+ *   the setup can log each one's creation site. Timers scheduled by library
+ *   code -- node_modules (React's scheduler, TanStack Query, Testing Library)
+ *   or Node's own internals (node:..., e.g. undici's refreshed fast timers,
+ *   which a clear would kill for the rest of the worker) -- or outside a test
+ *   (module scope, beforeAll) are left alone.
  * - A callback that throws is rethrown with the test that scheduled it and
  *   where, so the unhandled error points at its source. Nothing is swallowed.
  *
@@ -22,7 +25,7 @@
 import { expect } from 'vitest'
 import { promisify } from 'node:util'
 
-type Owner = { test: string; file: string | undefined; scheduledAt: string; tracked: boolean }
+type Owner = { test: string; file: string | undefined; scheduledAt: string; site: string; tracked: boolean }
 type Handle = Parameters<typeof clearTimeout>[0]
 
 const ORIGINAL = Symbol.for('devcontrol.timerHygiene.original')
@@ -37,7 +40,8 @@ type Timers = {
 
 // One state per worker: the setup file is evaluated once per test file, and
 // must never wrap its own wrappers.
-const g = globalThis as typeof globalThis & { [STATE]?: { real: Timers; pending: Map<number, () => void> } }
+type Pending = { owner: Owner; clear: () => void }
+const g = globalThis as typeof globalThis & { [STATE]?: { real: Timers; pending: Map<number, Pending> } }
 const realOf = <T>(fn: T): T => ((fn as { [ORIGINAL]?: T })[ORIGINAL] ?? fn)
 const state = (g[STATE] ??= {
   real: {
@@ -54,12 +58,32 @@ export const realTimers: Timers = state.real
 
 const idOf = (handle: Handle): number => Number(handle)
 
+// A caller frame in a dependency or in Node itself (node:internal/..., e.g.
+// undici's fast timers behind fetch) is library code, not the test's.
+const LIBRARY_FRAME = /\/node_modules\/|node:/
+
+/** "path/to/file.ts:12" from a stack frame line, relative to the project root. */
+function siteOf(frame: string): string {
+  // Paths may contain parentheses (Next.js route groups such as app/(app)/...).
+  const location = frame.match(/\((.+):(\d+):\d+\)\s*$/) ?? frame.match(/at (.+):(\d+):\d+\s*$/)
+  if (!location) return frame.trim()
+  const path = location[1].replace(/^file:\/\//, '')
+  const root = process.cwd() + '/'
+  return `${path.startsWith(root) ? path.slice(root.length) : path}:${location[2]}`
+}
+
 function ownerOfNewTimer(): Owner | null {
   const { currentTestName, testPath } = expect.getState()
   if (!currentTestName) return null
   const frames = (new Error().stack ?? '').split('\n').slice(1).filter((line) => !line.includes('vitest.timer-hygiene'))
   const caller = frames[0] ?? ''
-  return { test: currentTestName, file: testPath, scheduledAt: frames.join('\n'), tracked: !caller.includes('/node_modules/') }
+  return {
+    test: currentTestName,
+    file: testPath,
+    scheduledAt: frames.join('\n'),
+    site: siteOf(caller),
+    tracked: !LIBRARY_FRAME.test(caller),
+  }
 }
 
 function withSource(error: unknown, owner: Owner | null): unknown {
@@ -86,7 +110,7 @@ function wrapSet(real: typeof setTimeout | typeof setInterval, clear: (h: Handle
     }
     const handle = (real as (...a: unknown[]) => Handle)(run, ms, ...args)
     id = idOf(handle)
-    if (owner?.tracked) state.pending.set(id, () => clear(handle))
+    if (owner?.tracked) state.pending.set(id, { owner, clear: () => clear(handle) })
     return handle
   }
   Object.defineProperty(wrapped, ORIGINAL, { value: real })
@@ -117,7 +141,12 @@ export function pendingTimerCount(): number {
   return state.pending.size
 }
 
-export function cancelLeftoverTimers(): void {
-  for (const clear of state.pending.values()) clear()
+/** Clears the pending app/test timers and returns who scheduled each one, where. */
+export function cancelLeftoverTimers(): Array<{ test: string; file: string | undefined; site: string }> {
+  const cancelled = [...state.pending.values()].map(({ owner, clear }) => {
+    clear()
+    return { test: owner.test, file: owner.file, site: owner.site }
+  })
   state.pending.clear()
+  return cancelled
 }
