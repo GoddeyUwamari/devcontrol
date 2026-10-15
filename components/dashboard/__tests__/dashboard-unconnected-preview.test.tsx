@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { DashboardUnconnectedPreview } from '../dashboard-unconnected-preview'
-import { HERO_FORBIDDEN, SAMPLE_CAPTION, SAMPLE_PANEL_TITLE, SAMPLE_TAG, expectApprovedSamplePanel, expectNoGeneratedContent, heroWords, samplePanelProblems, withoutValidSamplePanel } from './sample-panel'
+import { HERO_FORBIDDEN, SAMPLE_CAPTION, SAMPLE_PANEL_TITLE, SAMPLE_TAG, expectApprovedSamplePanel, expectNoGeneratedContent, expectNoStylesheets, heroWords, samplePanelProblems, withoutValidSamplePanel } from './sample-panel'
 
 const CARD_ORDER = [
   ['Cost', 'Month-to-Date Spend'],
@@ -154,6 +154,11 @@ describe('the sample panel', () => {
   it.each([true, false])('nothing in the preview uses ::before, ::after or CSS content (owner: %s)', (owner) => {
     renderPreview(owner)
     expectNoGeneratedContent(screen.getByTestId('dashboard-preview'))
+  })
+
+  it.each([true, false])('no <style> or stylesheet <link> anywhere in the rendered preview (owner: %s)', (owner) => {
+    const { container } = renderPreview(owner)
+    expectNoStylesheets(container)
   })
 
   it('looks as designed: the tag is a rounded rectangle and the panel has a soft shadow', () => {
