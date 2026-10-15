@@ -108,12 +108,12 @@ export function HeroSection() {
           data-testid="hero-columns"
         >
           <div data-testid="hero-copy">
-            <p className="m-0 text-sm font-medium text-violet-700">
+            <p className="m-0 text-sm font-medium text-[#7c3aed]">
               AI-powered cloud operations &amp; infrastructure intelligence
             </p>
 
             <h1 className="mt-4 text-4xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
-              Find the <span className="text-violet-700">AWS waste</span> hiding in your bill.
+              Find the <span className="text-[#7c3aed]">AWS waste</span> hiding in your bill.
             </h1>
 
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-700">
@@ -124,7 +124,7 @@ export function HeroSection() {
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
               <a
                 href="/register"
-                className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-7 py-4 font-semibold text-white shadow-lg shadow-violet-700/30 transition-colors hover:bg-violet-800 sm:w-auto"
+                className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#7c3aed] px-7 py-4 font-semibold text-white shadow-lg shadow-[#7c3aed]/30 transition-[opacity,transform] duration-150 hover:-translate-y-px hover:opacity-90 motion-reduce:transform-none motion-reduce:transition-none sm:w-auto"
               >
                 Find My AWS Waste
                 <ArrowRight
@@ -134,7 +134,7 @@ export function HeroSection() {
               </a>
               <a
                 href="/tour"
-                className="inline-flex min-h-11 items-center justify-center gap-2 font-semibold text-violet-700 hover:text-violet-800 hover:underline"
+                className="inline-flex min-h-11 items-center justify-center gap-2 font-semibold text-[#7c3aed] hover:text-violet-800 hover:underline"
               >
                 <Play aria-hidden="true" className="h-4 w-4" />
                 Take a product tour
@@ -152,7 +152,7 @@ export function HeroSection() {
                   className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm"
                   data-testid="hero-trust-badge"
                 >
-                  <Check aria-hidden="true" className="h-4 w-4 text-violet-700" />
+                  <Check aria-hidden="true" className="h-4 w-4 text-[#7c3aed]" />
                   {label}
                 </li>
               ))}
@@ -165,7 +165,7 @@ export function HeroSection() {
         <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="hero-cards">
           <div className="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-outcome-card">
             <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">Recent client outcome</p>
-            <p className="m-0 mt-2 text-4xl font-bold tracking-tight text-violet-700">$8,000/mo</p>
+            <p className="m-0 mt-2 text-4xl font-bold tracking-tight text-[#7c3aed]">$8,000/mo</p>
             <p className="m-0 mt-3 text-base leading-relaxed text-slate-700">
               in unnecessary AWS spend identified in under 60 seconds, with no agent and no code changes.
             </p>

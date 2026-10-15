@@ -31,7 +31,7 @@ describe('HeroSection copy', () => {
     render(<HeroSection />)
     const accent = within(screen.getByRole('heading', { level: 1 })).getByText('AWS waste')
     expect(accent.tagName).toBe('SPAN')
-    expect(accent.className).toContain('text-violet-700')
+    expect(accent.className).toContain('text-[#7c3aed]')
   })
 
   it('renders the sample panel rows exactly, in order, with green amounts', () => {
@@ -216,6 +216,23 @@ function linearRgb(color: string): [number, number, number] {
   ]
 }
 
+/** A colour as a hex string (gamma-encoded sRGB). */
+function toHex(color: string) {
+  return `#${linearRgb(color)
+    .map((c) => Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055) * 255))
+    .map((v) => v.toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
+/** `color` drawn at `alpha` opacity over `bg`, blended in sRGB as browsers composite. */
+function over(color: string, alpha: number, bg: string) {
+  const [f, b] = [toHex(color), toHex(bg)]
+  return `#${[1, 3, 5]
+    .map((i) => Math.round(alpha * parseInt(f.slice(i, i + 2), 16) + (1 - alpha) * parseInt(b.slice(i, i + 2), 16)))
+    .map((v) => v.toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
 function contrast(fg: string, bg: string) {
   const lum = (c: string) => {
     const [r, g, b] = linearRgb(c)
@@ -226,15 +243,23 @@ function contrast(fg: string, bg: string) {
 }
 
 describe('HeroSection contrast (light theme)', () => {
+  // The primary button's hover matches the nav's "Get Started Free" button
+  // (components/layout/MarketingNav.tsx:397-401): the whole button at opacity 0.9,
+  // over the hero's violet-50 background.
+  const HOVER_TEXT = over('white', 0.9, 'violet-50')
+  const HOVER_BG = over('#7c3aed', 0.9, 'violet-50')
+
   // [what, foreground, background]; every pair is a class combination used in HeroSection.tsx.
+  // #7c3aed is the marketing site's brand purple (MarketingNav.tsx:125, :386; CTASection.tsx:28).
   const PAIRS: [string, string, string][] = [
-    ['eyebrow', 'violet-700', 'violet-50'],
+    ['eyebrow', '#7c3aed', 'violet-50'],
     ['h1', 'slate-900', 'violet-50'],
-    ['h1 accent', 'violet-700', 'violet-50'],
+    ['h1 accent', '#7c3aed', 'violet-50'],
     ['subheadline', 'slate-700', 'violet-50'],
-    ['primary button', 'white', 'violet-700'],
-    ['primary button hover', 'white', 'violet-800'],
-    ['tour link', 'violet-700', 'violet-50'],
+    ['primary button', 'white', '#7c3aed'],
+    ['primary button hover', HOVER_TEXT, HOVER_BG],
+    ['tour link', '#7c3aed', 'violet-50'],
+    ['tour link hover', 'violet-800', 'violet-50'],
     ['microcopy', 'slate-600', 'violet-50'],
     ['badge text', 'slate-700', 'white'],
     ['panel title / row title', 'slate-900', 'white'],
@@ -245,7 +270,7 @@ describe('HeroSection contrast (light theme)', () => {
     ['total value', 'violet-800', 'violet-100'],
     ['caption', 'slate-600', 'violet-50'],
     ['outcome label', 'slate-600', 'white'],
-    ['outcome figure', 'violet-700', 'white'],
+    ['outcome figure', '#7c3aed', 'white'],
     ['outcome body', 'slate-700', 'white'],
     ['audit heading', 'white', 'slate-900'],
     ['audit body', 'slate-300', 'slate-900'],
@@ -270,5 +295,14 @@ describe('HeroSection contrast (light theme)', () => {
     const uncovered = used.filter((c) => !covered.has(c) && c !== 'slate-100')
     expect(uncovered).toEqual([])
     expect(contrast('slate-900', 'slate-100')).toBeGreaterThanOrEqual(4.5)
+    expect(used).not.toContain('violet-700')
+  })
+
+  it('hovers the primary button the way the nav button does (opacity 0.9, no colour change)', () => {
+    render(<HeroSection />)
+    const classes = screen.getByRole('link', { name: 'Find My AWS Waste' }).className.split(/\s+/)
+    expect(classes).toContain('bg-[#7c3aed]')
+    expect(classes).toContain('hover:opacity-90')
+    expect(classes.filter((c) => c.startsWith('hover:bg-'))).toEqual([])
   })
 })
