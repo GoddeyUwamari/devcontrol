@@ -573,7 +573,7 @@ export default function DashboardPage() {
   return (
     <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]">
 
-      {/* The unconnected preview is its own hero (workspace name, headline, the way to connect). */}
+      {/* The unconnected preview is its own hero (headline, the way to connect, a labelled sample). */}
       {awsConnection !== 'unconnected' && (
         <DashboardHero
           awsConnection={awsConnection}
@@ -584,7 +584,7 @@ export default function DashboardPage() {
       )}
 
       {/* Only when AWS is known to be unconnected -- never while loading or unknown. */}
-      {awsConnection === 'unconnected' && <DashboardUnconnectedPreview canConnectAws={isOwner} orgName={orgName} />}
+      {awsConnection === 'unconnected' && <DashboardUnconnectedPreview canConnectAws={isOwner} />}
       {awsConnection === 'unknown' && (
         <p className="text-[13px] text-[var(--text-secondary)] mb-6" data-testid="aws-connection-line" data-state="unknown">
           Couldn&apos;t check your AWS connection. Refresh to try again.
