@@ -159,7 +159,9 @@ describe("AcceptInvitationPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
 
     await waitFor(() => expect(mockRefreshOrganizations).toHaveBeenCalledTimes(1));
-    expect(screen.getByText(/invitation accepted/i)).toBeInTheDocument();
+    // Awaited: the success state is set after refreshOrganizations() resolves,
+    // a later step than the call the waitFor above observed.
+    expect(await screen.findByText(/invitation accepted/i)).toBeInTheDocument();
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/dashboard"), {
       timeout: 3000,

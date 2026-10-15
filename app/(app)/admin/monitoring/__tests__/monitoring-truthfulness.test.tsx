@@ -178,7 +178,9 @@ describe('Monitoring page — AWS Service Health never contains DevControl self-
     // ServiceHealthTable. That table's `services` array must be empty here -- it's fine
     // (and correct, per the new design) for the *separate* DevControl Platform Status
     // section to legitimately show "DevControl API" from its own independent fetch.
-    expect(screen.getByText('No services found')).toBeInTheDocument()
+    // Awaited: the empty table appears once `loading` clears, a later async step
+    // than the awsConnected update that rendered the CTA awaited above.
+    expect(await screen.findByText('No services found')).toBeInTheDocument()
   })
 
   it('AWS connected but CloudWatch fetch fails: shows the honest CloudWatch-unavailable message, not a Prometheus error', async () => {
