@@ -21,8 +21,11 @@ export function announceToScreenReader(
 
   document.body.appendChild(announcement);
 
-  // Remove after announcement is processed
+  // Remove after announcement is processed. The timer can outlive the page's
+  // document (a test environment torn down within the second), so it checks
+  // that there is still one before touching it.
   setTimeout(() => {
+    if (typeof document === 'undefined') return;
     if (document.body.contains(announcement)) {
       document.body.removeChild(announcement);
     }
