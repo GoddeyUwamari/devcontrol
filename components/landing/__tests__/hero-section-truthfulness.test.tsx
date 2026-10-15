@@ -5,10 +5,9 @@
  * Prior state: "SOC 2 In Progress" implied an active SOC 2 audit/attestation
  * that isn't underway, and "GDPR Ready" is a substantive compliance claim with
  * no supporting implementation (no DPA, no subprocessor list, no data-subject
- * tooling) — see the Phase 5 audit. "Read-only IAM" and "AES-256 Encryption"
- * remain because they're genuinely implemented (see app/(app)/connect-aws/page.tsx's
- * ReadOnlyAccess IAM instructions and backend/src/services/encryption.service.ts's
- * AES-256-GCM credential encryption).
+ * tooling) — see the Phase 5 audit. The marketing hero w1 redesign replaced the
+ * badge row with "Read-only access", "No agents" and "AES-256 encryption", and
+ * dropped the SOC 2 badge entirely (founder decision, Option A).
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -23,9 +22,9 @@ describe('HeroSection trust badges', () => {
     expect(screen.queryByText(/SOC 2 Type II/i)).not.toBeInTheDocument()
   })
 
-  it('uses truthful future-state SOC 2 wording', () => {
+  it('shows no SOC 2 badge at all', () => {
     render(<HeroSection />)
-    expect(screen.getByText('SOC 2 Readiness Planned')).toBeInTheDocument()
+    expect(screen.queryByText(/SOC 2/)).not.toBeInTheDocument()
   })
 
   it('never shows a "GDPR Ready" or other unsupported GDPR compliance claim', () => {
@@ -33,17 +32,18 @@ describe('HeroSection trust badges', () => {
     expect(screen.queryByText(/GDPR/)).not.toBeInTheDocument()
   })
 
-  it('keeps the genuinely-implemented badges unchanged', () => {
+  it('shows the approved badges and none of the old badge wording', () => {
     render(<HeroSection />)
-    expect(screen.getByText('Read-only IAM')).toBeInTheDocument()
-    expect(screen.getByText('AES-256 Encryption')).toBeInTheDocument()
+    expect(screen.getByText('Read-only access', { selector: '[data-testid="hero-trust-badge"]' })).toBeInTheDocument()
+    expect(screen.getByText('No agents', { selector: '[data-testid="hero-trust-badge"]' })).toBeInTheDocument()
+    expect(screen.getByText('AES-256 encryption', { selector: '[data-testid="hero-trust-badge"]' })).toBeInTheDocument()
+    expect(screen.queryByText('Read-only IAM')).not.toBeInTheDocument()
+    expect(screen.queryByText('AES-256 Encryption')).not.toBeInTheDocument()
   })
 
   it('renders exactly three trust badges', () => {
     render(<HeroSection />)
-    const badges = ['Read-only IAM', 'AES-256 Encryption', 'SOC 2 Readiness Planned']
-    for (const label of badges) {
-      expect(screen.getByText(label)).toBeInTheDocument()
-    }
+    const badges = screen.getAllByTestId('hero-trust-badge').map((el) => el.textContent)
+    expect(badges).toEqual(['Read-only access', 'No agents', 'AES-256 encryption'])
   })
 })
