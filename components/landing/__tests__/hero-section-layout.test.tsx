@@ -309,10 +309,12 @@ describe('HeroSection contrast (light theme)', () => {
   it('does not lift the primary button when reduced motion is requested', () => {
     render(<HeroSection />)
     const classes = screen.getByRole('link', { name: 'Find My AWS Waste' }).className.split(/\s+/)
-    // Tailwind v4's hover:-translate-y-px sets the CSS `translate` property, which
-    // motion-reduce:transform-none does not reset.
-    expect(classes).toContain('hover:-translate-y-px')
-    expect(classes).toContain('motion-reduce:translate-none')
+    // The lift only exists under motion-safe: an unconditional hover:-translate-y-px
+    // sets the CSS `translate` property, and its :hover rule outranks any
+    // motion-reduce reset (verified in headless Chromium with reducedMotion: 'reduce').
+    expect(classes).toContain('motion-safe:hover:-translate-y-px')
+    expect(classes).not.toContain('hover:-translate-y-px')
+    expect(classes.filter((c) => /(^|:)-?translate-/.test(c) && !c.startsWith('motion-safe:'))).toEqual([])
     expect(classes).toContain('motion-reduce:transition-none')
   })
 })
