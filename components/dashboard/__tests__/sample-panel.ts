@@ -7,9 +7,12 @@
  * say "sample" or "example", because it is labelled as sample data. The page's
  * word and figure guards therefore read the page through
  * withoutValidSamplePanel(), which removes the panel only while it is labelled:
- * one panel, in the hero (before the cards), with its "Sample data" tag and its
- * caption both present and visible. Otherwise nothing is removed, and the
- * panel's figures and words trip the guards like any other content.
+ * one panel, in the hero's second column (after the headline, before the
+ * cards), with its "Sample data" tag and its caption present, and the panel,
+ * tag, caption and every element up to dashboard-preview carrying exactly the
+ * pinned attributes (an allow-list, so no class or attribute can hide them).
+ * Otherwise nothing is removed, and the panel's figures and words trip the
+ * guards like any other content.
  *
  * Not a test file (no .test suffix): vitest does not collect it.
  */
@@ -35,25 +38,46 @@ export const SAMPLE_TOTAL_VALUE = '$201/mo'
 export const HERO_FORBIDDEN = /\bconnected\b|real-?time|\blive\b|\bcritical\b|action required|\bHIPAA\b|\bPHI\b|\bSOC ?2\b|\bISO ?27001\b|\bPCI\b|\bGDPR\b|\bNIST\b|\bCIS\b|\bFedRAMP\b|\bCCPA\b/i
 
 const PANEL = '[data-testid="sample-panel"]'
-/** Classes that hide an element visually or from everyone, with or without a breakpoint prefix. */
-const HIDING_CLASS = /(^|\s)(?:[\w-]+:)*(?:sr-only|hidden|invisible|opacity-0|text-transparent)(?=\s|$)/
 
-/** Whether `el` and every ancestor up to `root` are visible: no hiding class, attribute or inline style. */
-function isVisible(el: Element, root: Element): boolean {
-  for (let node: Element | null = el; node; node = node === root ? null : node.parentElement) {
-    if (HIDING_CLASS.test(node.getAttribute('class') ?? '')) return false
-    if (node.hasAttribute('hidden') || node.getAttribute('aria-hidden') === 'true') return false
-    if (node.tagName === 'DETAILS' && !node.hasAttribute('open') && node !== el) return false
-    const style = (node as HTMLElement).style
-    if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) return false
-  }
-  return true
+/**
+ * An allow-list, not a deny-list: the panel, its tag, its caption and every
+ * element between them and dashboard-preview must carry exactly these
+ * attributes (class and style included, word for word), nothing more. Any
+ * added class, style, `hidden`, `inert`, `aria-hidden` or other attribute
+ * means the panel is no longer exempt -- whatever it would do to visibility.
+ * Update these pins together with the component when its markup changes.
+ */
+const CHAIN_ATTRIBUTES: Record<'preview' | 'hero' | 'panel' | 'header' | 'tag' | 'caption', Record<string, string>> = {
+  preview: { class: 'mb-10', 'aria-labelledby': 'dashboard-preview-title', 'data-testid': 'dashboard-preview' },
+  hero: { class: 'grid grid-cols-1 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 lg:gap-12 items-center mb-8', 'data-testid': 'preview-hero' },
+  panel: {
+    class: 'bg-[var(--surface-2)] rounded-2xl border border-border shadow-[0_12px_32px_-12px_rgba(17,24,39,0.18)]',
+    'aria-labelledby': 'sample-panel-title sample-panel-tag',
+    'aria-describedby': 'sample-panel-caption',
+    'data-testid': 'sample-panel',
+  },
+  header: { class: 'flex items-start justify-between gap-4 px-6 py-5 border-b border-border' },
+  tag: {
+    id: 'sample-panel-tag',
+    class: 'text-[13px] font-bold uppercase tracking-[0.08em] leading-none shrink-0 rounded-md px-3 py-1.5',
+    style: 'background: var(--bg-accent); color: var(--text-accent);',
+    'data-testid': 'sample-panel-tag',
+  },
+  caption: { id: 'sample-panel-caption', class: 'text-base text-[var(--text-secondary)] leading-normal px-6 pt-4 pb-5 m-0', 'data-testid': 'sample-panel-caption' },
 }
 
-/** One element matching `selector` inside `panel`, with exactly `text`, visible up to `root`. */
-function hasVisible(panel: Element, root: Element, selector: string, text: string): boolean {
-  const found = panel.querySelectorAll(selector)
-  return found.length === 1 && found[0].textContent === text && isVisible(found[0], root)
+function attributesOf(el: Element): Record<string, string> {
+  return Object.fromEntries([...el.attributes].map((attr) => [attr.name, attr.value]))
+}
+function sameAttributes(el: Element | null | undefined, expected: Record<string, string>): boolean {
+  if (!el) return false
+  const actual = attributesOf(el)
+  const keys = Object.keys(expected)
+  return Object.keys(actual).length === keys.length && keys.every((key) => actual[key] === expected[key])
+}
+/** Exactly `text` as its only child: no wrapper element that could hide or replace it. */
+function onlyText(el: Element, text: string): boolean {
+  return el.childNodes.length === 1 && el.firstChild!.nodeType === Node.TEXT_NODE && el.textContent === text
 }
 
 /** Why the panel in `root` is not a valid, labelled sample panel (empty when it is). */
@@ -62,15 +86,43 @@ export function samplePanelProblems(root: Element): string[] {
   if (panels.length !== 1) return [`expected one sample panel, found ${panels.length}`]
   const panel = panels[0]
   const problems: string[] = []
-  const preview = panel.closest('[data-testid="dashboard-preview"]')
-  const cards = preview?.querySelector('[data-testid="preview-cards"]')
-  if (!preview || !cards) problems.push('not inside the preview, above its cards')
-  else if (!(panel.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING) || panel.contains(cards)) problems.push('not before the cards')
-  if (!isVisible(panel, root)) problems.push('panel hidden')
-  if (!hasVisible(panel, root, '[data-testid="sample-panel-tag"]', SAMPLE_TAG)) problems.push('tag missing or hidden')
-  else if (!/(^|\s)uppercase(\s|$)/.test(panel.querySelector('[data-testid="sample-panel-tag"]')!.getAttribute('class') ?? '')) problems.push('tag not uppercase')
-  if (!hasVisible(panel, root, '[data-testid="sample-panel-caption"]', SAMPLE_CAPTION)) problems.push('caption missing or hidden')
+
+  // Place: the hero's second column, after the copy column (and so after the h1), before the cards.
+  const hero = panel.parentElement
+  const preview = hero?.parentElement
+  const copy = panel.previousElementSibling
+  if (hero?.getAttribute('data-testid') !== 'preview-hero' || preview?.getAttribute('data-testid') !== 'dashboard-preview') problems.push('not in the hero')
+  if (copy?.getAttribute('data-testid') !== 'preview-hero-copy' || copy.firstElementChild?.tagName !== 'H1' || panel.nextElementSibling !== null) problems.push('not after the headline column')
+  if (hero?.nextElementSibling?.getAttribute('data-testid') !== 'preview-cards') problems.push('not before the cards')
+
+  // Every element from dashboard-preview down to the tag and the caption, exactly as pinned.
+  const tags = panel.querySelectorAll('[data-testid="sample-panel-tag"]')
+  const captions = panel.querySelectorAll('[data-testid="sample-panel-caption"]')
+  const tag = tags.length === 1 ? tags[0] : null
+  const caption = captions.length === 1 ? captions[0] : null
+  const header = tag?.parentElement
+  if (!sameAttributes(preview, CHAIN_ATTRIBUTES.preview)) problems.push('preview attributes changed')
+  if (!sameAttributes(hero, CHAIN_ATTRIBUTES.hero)) problems.push('hero attributes changed')
+  if (!sameAttributes(panel, CHAIN_ATTRIBUTES.panel)) problems.push('panel attributes changed')
+  if (!tag || !onlyText(tag, SAMPLE_TAG)) problems.push('tag missing or changed')
+  else if (!sameAttributes(tag, CHAIN_ATTRIBUTES.tag)) problems.push('tag attributes changed')
+  if (!header || header.parentElement !== panel || panel.firstElementChild !== header || !sameAttributes(header, CHAIN_ATTRIBUTES.header)) problems.push('tag header changed')
+  if (!caption || !onlyText(caption, SAMPLE_CAPTION)) problems.push('caption missing or changed')
+  else if (caption.parentElement !== panel || panel.lastElementChild !== caption || !sameAttributes(caption, CHAIN_ATTRIBUTES.caption)) problems.push('caption attributes or place changed')
+  // inert anywhere in the chain or the panel makes it unreadable to keyboard and assistive technology.
+  if (panel.closest('[inert]') || panel.querySelector('[inert]')) problems.push('inert')
   return problems
+}
+
+/**
+ * Generated content (::before / ::after, CSS content) could put text on screen
+ * that no textContent guard sees. Nothing in the preview may use it.
+ */
+export function expectNoGeneratedContent(preview: Element) {
+  for (const node of [preview, ...preview.querySelectorAll('*')]) {
+    expect(node.getAttribute('class') ?? '').not.toMatch(/(?:^|[\s:\]])(?:before|after):|content-\[/)
+    expect(node.getAttribute('style') ?? '').not.toMatch(/(?:^|[;\s])content\s*:/i)
+  }
 }
 
 /**

@@ -29,7 +29,7 @@ import { systemIntelligenceService } from '@/lib/services/system-intelligence.se
 import { activityFeedService } from '@/lib/services/activity-feed.service'
 import { soc2Service } from '@/lib/services/soc2.service'
 import { complianceFrameworksService } from '@/lib/services/compliance-frameworks.service'
-import { HERO_FORBIDDEN, SAMPLE_PANEL_TITLE, expectApprovedSamplePanel, heroWords, withoutValidSamplePanel } from '@/components/dashboard/__tests__/sample-panel'
+import { HERO_FORBIDDEN, SAMPLE_PANEL_TITLE, expectApprovedSamplePanel, expectNoGeneratedContent, heroWords, withoutValidSamplePanel } from '@/components/dashboard/__tests__/sample-panel'
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }))
 vi.mock('next/navigation', () => ({ useRouter: () => router, usePathname: () => '/dashboard', useSearchParams: () => new URLSearchParams() }))
@@ -305,6 +305,8 @@ function expectPreviewAndSteps() {
   expect(hero.nextElementSibling).toBe(within(preview).getByTestId('preview-cards'))
   expectApprovedSamplePanel(document.body)
   expect(heroWords(hero)).not.toMatch(HERO_FORBIDDEN)
+  // No ::before / ::after or CSS content anywhere in the preview: no text the word guards cannot see.
+  expectNoGeneratedContent(preview)
 
   // GCP and Azure are plain text: not links, not buttons, not focusable.
   for (const [id, text] of [['preview-pill-gcp', 'GCP soon'], ['preview-pill-azure', 'Azure soon']]) {

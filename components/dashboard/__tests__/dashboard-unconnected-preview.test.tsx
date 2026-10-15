@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { DashboardUnconnectedPreview } from '../dashboard-unconnected-preview'
-import { HERO_FORBIDDEN, SAMPLE_CAPTION, SAMPLE_PANEL_TITLE, SAMPLE_TAG, expectApprovedSamplePanel, heroWords, samplePanelProblems, withoutValidSamplePanel } from './sample-panel'
+import { HERO_FORBIDDEN, SAMPLE_CAPTION, SAMPLE_PANEL_TITLE, SAMPLE_TAG, expectApprovedSamplePanel, expectNoGeneratedContent, heroWords, samplePanelProblems, withoutValidSamplePanel } from './sample-panel'
 
 const CARD_ORDER = [
   ['Cost', 'Month-to-Date Spend'],
@@ -149,6 +149,20 @@ describe('the sample panel', () => {
   it.each([true, false])('the hero says nothing live, connected, alarming or framework-specific (owner: %s)', (owner) => {
     renderPreview(owner)
     expect(heroWords(screen.getByTestId('preview-hero'))).not.toMatch(HERO_FORBIDDEN)
+  })
+
+  it.each([true, false])('nothing in the preview uses ::before, ::after or CSS content (owner: %s)', (owner) => {
+    renderPreview(owner)
+    expectNoGeneratedContent(screen.getByTestId('dashboard-preview'))
+  })
+
+  it('looks as designed: the tag is a rounded rectangle and the panel has a soft shadow', () => {
+    renderPreview()
+    const tag = screen.getByTestId('sample-panel-tag')
+    expect(tag.className).toMatch(/(^|\s)rounded-md(\s|$)/)
+    expect(tag.className).not.toMatch(/rounded-full/)
+    expect(screen.getByTestId('sample-panel').className).toMatch(/(^|\s)shadow-\[0_12px_32px_-12px_rgba\(17,24,39,0\.18\)\](\s|$)/)
+    expect(screen.getByTestId('preview-trust').querySelector('svg.lucide-lock')).not.toBeNull()
   })
 
   it('the exemption removes only a labelled panel, and only the panel', () => {
