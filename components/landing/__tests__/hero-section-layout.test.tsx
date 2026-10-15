@@ -305,4 +305,14 @@ describe('HeroSection contrast (light theme)', () => {
     expect(classes).toContain('hover:opacity-90')
     expect(classes.filter((c) => c.startsWith('hover:bg-'))).toEqual([])
   })
+
+  it('does not lift the primary button when reduced motion is requested', () => {
+    render(<HeroSection />)
+    const classes = screen.getByRole('link', { name: 'Find My AWS Waste' }).className.split(/\s+/)
+    // Tailwind v4's hover:-translate-y-px sets the CSS `translate` property, which
+    // motion-reduce:transform-none does not reset.
+    expect(classes).toContain('hover:-translate-y-px')
+    expect(classes).toContain('motion-reduce:translate-none')
+    expect(classes).toContain('motion-reduce:transition-none')
+  })
 })

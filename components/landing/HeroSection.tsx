@@ -124,7 +124,7 @@ export function HeroSection() {
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
               <a
                 href="/register"
-                className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#7c3aed] px-7 py-4 font-semibold text-white shadow-lg shadow-[#7c3aed]/30 transition-[opacity,transform] duration-150 hover:-translate-y-px hover:opacity-90 motion-reduce:transform-none motion-reduce:transition-none sm:w-auto"
+                className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#7c3aed] px-7 py-4 font-semibold text-white shadow-lg shadow-[#7c3aed]/30 transition-[opacity,transform,translate] duration-150 hover:-translate-y-px hover:opacity-90 motion-reduce:transform-none motion-reduce:translate-none motion-reduce:transition-none sm:w-auto"
               >
                 Find My AWS Waste
                 <ArrowRight
