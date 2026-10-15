@@ -15,12 +15,17 @@
  * panel's figures and words trip the guards like any other content.
  *
  * Known limits. jsdom does not compute CSS: these checks read markup (elements,
- * attributes, class strings), not what is painted. A rule from outside the
- * preview can still hide the tag or caption without changing that markup --
- * global CSS (app/globals.css or any imported stylesheet), a descendant variant
- * on an ancestor above dashboard-preview (e.g. `[&_#id]:hidden` on the page
- * wrapper), or a structural selector that matches by position. Those are a
- * code-review responsibility, not something these tests can prove.
+ * attributes, class strings), not what is painted. So these remain code-review
+ * responsibilities:
+ *   (a) global CSS (app/globals.css or any imported stylesheet);
+ *   (b) arbitrary, :has() or descendant variants on ANY element, including
+ *       unpinned preview markup (the cards, the band, the copy column's
+ *       children) and ancestors above dashboard-preview;
+ *   (c) positioning or negative margins on any element that overlaps or covers
+ *       the panel.
+ * Examples that pass these tests while hiding the label: `lg:-mt-40` on the
+ * cards grid, pulling it up over the panel; `[body:has(&)_#sample-panel-caption]:hidden`
+ * on a card; an absolutely positioned child in the copy column laid over the panel.
  *
  * Not a test file (no .test suffix): vitest does not collect it.
  */
