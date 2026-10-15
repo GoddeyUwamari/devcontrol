@@ -82,7 +82,10 @@
   },
   "jest": {
     "preset": "ts-jest",
-    "testEnvironment": "node",
+    "testEnvironment": "<rootDir>/jest.environment.js",
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup-pools.js"
+    ],
     "testMatch": [
       "**/__tests__/**/*.test.ts"
     ],
