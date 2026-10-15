@@ -186,7 +186,7 @@ function PreviewCard({ tag, title, subtitle, shows, planLabel }: PreviewItem) {
 function SamplePanel() {
   return (
     <section
-      className="bg-[var(--surface-2)] rounded-2xl border border-border"
+      className="bg-[var(--surface-2)] rounded-2xl border border-border shadow-[0_12px_32px_-12px_rgba(17,24,39,0.18)]"
       aria-labelledby="sample-panel-title sample-panel-tag"
       aria-describedby="sample-panel-caption"
       data-testid="sample-panel"
@@ -197,7 +197,7 @@ function SamplePanel() {
         </h2>
         <span
           id="sample-panel-tag"
-          className={`${LABEL} shrink-0 rounded-full px-3 py-1.5`}
+          className={`${LABEL} shrink-0 rounded-md px-3 py-1.5`}
           style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}
           data-testid="sample-panel-tag"
         >
