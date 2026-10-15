@@ -172,6 +172,11 @@ describe('HeroSection accessibility', () => {
     for (const svg of svgs) expect(svg).toHaveAttribute('aria-hidden', 'true')
   })
 
+  it('gives the text-only tour link a 44px tap target (the other two CTAs are padded buttons)', () => {
+    render(<HeroSection />)
+    expect(screen.getByRole('link', { name: 'Take a product tour' }).className).toMatch(/(^| )min-h-11( |$)/)
+  })
+
   it('names the badge list', () => {
     render(<HeroSection />)
     expect(within(screen.getByRole('list', { name: 'Trust badges' })).getAllByRole('listitem')).toHaveLength(3)

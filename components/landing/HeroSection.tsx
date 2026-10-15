@@ -134,7 +134,7 @@ export function HeroSection() {
               </a>
               <a
                 href="/tour"
-                className="inline-flex items-center justify-center gap-2 font-semibold text-violet-700 hover:text-violet-800 hover:underline"
+                className="inline-flex min-h-11 items-center justify-center gap-2 font-semibold text-violet-700 hover:text-violet-800 hover:underline"
               >
                 <Play aria-hidden="true" className="h-4 w-4" />
                 Take a product tour
