@@ -35,12 +35,12 @@
     "@aws-sdk/client-sqs": "^3.958.0",
     "@aws-sdk/client-sts": "^3.1017.0",
     "@node-saml/node-saml": "^5.1.0",
-    "@xmldom/xmldom": "^0.8.11",
     "@slack/web-api": "^7.13.0",
     "@types/bcrypt": "^6.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "^7.0.5",
     "@types/socket.io": "^3.0.1",
+    "@xmldom/xmldom": "^0.8.11",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
@@ -76,13 +76,17 @@
     "@types/stripe": "^8.0.416",
     "@types/uuid": "^10.0.0",
     "jest": "^29.7.0",
+    "jest-environment-node": "29.7.0",
     "ts-jest": "^29.1.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3"
   },
   "jest": {
     "preset": "ts-jest",
-    "testEnvironment": "node",
+    "testEnvironment": "<rootDir>/jest.environment.js",
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup-pools.js"
+    ],
     "testMatch": [
       "**/__tests__/**/*.test.ts"
     ],

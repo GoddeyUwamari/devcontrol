@@ -43,8 +43,9 @@
  */
 import express from 'express';
 import http from 'http';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import activationFunnelRoutes from '../activation-funnel.routes';
+import { pool as appPool } from '../../config/database';
 import { authService } from '../../services/auth.service';
 
 function dbConfig() {
@@ -113,19 +114,6 @@ async function insertEvent(
   );
 }
 
-/**
- * Fast, single-round-trip ground truth for the CURRENT total row count in
- * `organizations` -- used ONLY as a same-instant baseline for Test 8's
- * organizationsTotal assertion (see that test for why). This intentionally
- * does not replace the endpoint under test: `after` below still comes from
- * a real GET request through activationFunnelRoutes -- this helper only
- * supplies a trustworthy "immediately before we inserted" reference point.
- */
-async function countAllOrganizations(): Promise<number> {
-  const { rows } = await pool.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM organizations');
-  return rows[0].count;
-}
-
 let server: http.Server;
 let baseUrl: string;
 
@@ -176,6 +164,61 @@ async function stubAuth(userId: string, orgId: string, role: string): Promise<vo
 
 function getFunnel(token = 'test-token') {
   return fetch(baseUrl, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+type FunnelEventRow = { event_name: string; properties: Record<string, unknown> | null };
+
+/**
+ * Records, without altering any result, what the endpoint reads from the app
+ * pool from now until the test's mocks are restored: the organization list
+ * getActivationFunnelSummary() enumerates, and the funnel events it reads for
+ * each organization. pool.connect() is passed through, and each client it
+ * hands out has its query() observed.
+ */
+function recordFunnelReads() {
+  const recorded = {
+    organizationIds: null as string[] | null,
+    rowsByOrg: new Map<string, FunnelEventRow[]>(),
+    readCount: 0,
+  };
+  const note = (text: string | undefined, params: unknown[] | undefined, result: { rows: any[] } | undefined) => {
+    if (!result || !text) return;
+    if (text === 'SELECT id FROM organizations') {
+      recorded.organizationIds = result.rows.map((r) => r.id);
+    } else if (/FROM analytics_events\s+WHERE organization_id = \$1/.test(text)) {
+      recorded.readCount += 1;
+      recorded.rowsByOrg.set(String(params?.[0]), result.rows);
+    }
+  };
+  const observed = new WeakSet<PoolClient>();
+  const observe = (client: PoolClient) => {
+    if (observed.has(client)) return;
+    observed.add(client);
+    const query = client.query as (...args: any[]) => any;
+    jest.spyOn(client, 'query').mockImplementation(function (...args: any[]) {
+      const text: string | undefined = typeof args[0] === 'string' ? args[0] : args[0]?.text;
+      const params: unknown[] | undefined = Array.isArray(args[1]) ? args[1] : args[0]?.values;
+      const last = args[args.length - 1];
+      if (typeof last === 'function') {
+        args[args.length - 1] = (err: unknown, res: { rows: any[] }) => { if (!err) note(text, params, res); last(err, res); };
+        return query.apply(client, args);
+      }
+      const out = query.apply(client, args);
+      return out && typeof out.then === 'function' ? out.then((res: { rows: any[] }) => { note(text, params, res); return res; }) : out;
+    } as any);
+  };
+  const connect = appPool.connect as (...args: any[]) => any;
+  jest.spyOn(appPool, 'connect').mockImplementation(function (...args: any[]) {
+    if (typeof args[0] === 'function') {
+      const callback = args[0];
+      return connect.call(appPool, (err: unknown, client: PoolClient, done: unknown) => {
+        if (client) observe(client);
+        callback(err, client, done);
+      });
+    }
+    return connect.call(appPool).then((client: PoolClient) => { observe(client); return client; });
+  } as any);
+  return recorded;
 }
 
 describe('GET /api/admin/activation-funnel', () => {
@@ -296,41 +339,20 @@ describe('GET /api/admin/activation-funnel', () => {
     await stubAuth(adminUserId, callerOrgId, 'viewer');
     await grantPlatformStaff(adminUserId, 'active');
 
-    const before = await (await getFunnel()).json() as any;
-    const stageCountBefore = (event: string) =>
-      before.data.stages.find((s: any) => s.event === event).organizations;
-    const activatedBefore = before.data.activated.organizations;
-    const subscribedBefore = before.data.subscribed.organizations;
-    const startedBefore = before.data.informational.awsConnectionStarted.organizations;
-    const stsBefore = before.data.awsConnectionSourceBreakdown.sts;
-    const legacyBefore = before.data.awsConnectionSourceBreakdown.legacyAccessKey;
-
     const now = Date.now();
     const t = (hoursAfterSignup: number) => new Date(now + hoursAfterSignup * 3600_000);
-
-    // Ground-truth baseline for the organizationsTotal assertion below, taken
-    // as a single fast round-trip immediately before we insert our fixtures --
-    // see that assertion's own comment for why this replaces
-    // `before.data.organizationsTotal` as the delta's floor.
-    const orgsCountJustBeforeInsert = await countAllOrganizations();
 
     // Org A: full funnel, STS connection (no `source` property), subscribes.
     // Org B: connects via legacy access-key path, reaches discovery, no
     // insight yet -- not activated.
     // Org C: just signed up.
-    //
-    // All three organizations and every one of their events are created
-    // concurrently (not as 18 sequential awaited round-trips) deliberately:
-    // this is a live, shared local Postgres database used by 40+ other test
-    // files that each create and bulk-delete their own organizations. Each
-    // `created_at` below is an explicit parameter, not derived from real
-    // insertion order, so concurrent inserts are safe -- and minimizing this
-    // block's own wall-clock duration is what actually narrows the window in
-    // which an unrelated file's cleanup could race with this test (the
-    // previously observed failures: organizationsTotal dropped from ~37-38 to
-    // 15 between the "before" and "after" snapshots, i.e. a concurrent bulk
-    // DELETE elsewhere, not a defect in this endpoint).
     const [orgA, orgB, orgC] = await Promise.all([insertOrg('org-a'), insertOrg('org-b'), insertOrg('org-c')]);
+    const fixtureEvents: Record<string, string[]> = {
+      [callerOrgId]: [],
+      [orgA]: ['signup_completed', 'aws_connection_started', 'aws_connection_completed', 'discovery_completed', 'first_insight_generated', 'first_value_viewed', 'subscription_activated'],
+      [orgB]: ['signup_completed', 'aws_connection_started', 'aws_connection_completed', 'discovery_completed'],
+      [orgC]: ['signup_completed'],
+    };
     await Promise.all([
       insertEvent(orgA, 'signup_completed', t(0)),
       insertEvent(orgA, 'aws_connection_started', t(0.5)),
@@ -348,50 +370,48 @@ describe('GET /api/admin/activation-funnel', () => {
       insertEvent(orgC, 'signup_completed', t(0)),
     ]);
 
+    // Other test files run concurrently against this same database and create
+    // and bulk-delete their own organizations, so platform-wide totals taken
+    // at two different moments cannot be compared. Instead, record (without
+    // altering) exactly what this one request enumerated and read, and check
+    // the response against that same snapshot.
+    const reads = recordFunnelReads();
     const after = await (await getFunnel()).json() as any;
-    const stageCountAfter = (event: string) =>
-      after.data.stages.find((s: any) => s.event === event).organizations;
+    expect(reads.organizationIds).not.toBeNull();
+    const enumerated = reads.organizationIds!;
 
-    // This is a live, shared local dev database -- other processes (a
-    // running dev server, another concurrent test run) can create
-    // organizations/events between the "before" and "after" snapshots. Exact
-    // equality would be flaky for reasons unrelated to this endpoint's
-    // correctness, so assert the fixtures this test just inserted are AT
-    // LEAST fully counted, rather than that nothing else in the world moved.
-    //
-    // The floor is `orgsCountJustBeforeInsert`, NOT `orgsTotalBefore`
-    // (the value the "before" GET response itself carried). Both describe
-    // the same real quantity, but `orgsTotalBefore` was produced by
-    // getActivationFunnelSummary() sequentially iterating every existing
-    // organization (a BEGIN/SET LOCAL/SELECT/ROLLBACK round-trip PER
-    // organization) before that response ever reached this test -- with
-    // dozens of organizations already present mid-suite, that response alone
-    // can take long enough for another concurrently-running test file's own
-    // cleanup (also creating/bulk-deleting organizations against this same
-    // database) to land in the gap, making `orgsTotalBefore` stale by the
-    // time we actually see it. `orgsCountJustBeforeInsert` is a single
-    // COUNT(*) round-trip taken immediately before we insert org A/B/C
-    // (a few lines above), which shrinks that exposure window to a minimum
-    // and is what caused the two prior CI failures here (organizationsTotal
-    // observed at 15 against a stale ~37-38 baseline -- a concurrent DELETE
-    // elsewhere, not a bug in this endpoint).
-    expect(after.data.organizationsTotal).toBeGreaterThanOrEqual(orgsCountJustBeforeInsert + 3);
+    // Cross-organization: the caller's org and all three fixture orgs were
+    // enumerated and each read with exactly the events inserted for it --
+    // not just the caller's own (empty) org.
+    for (const [orgId, events] of Object.entries(fixtureEvents)) {
+      expect(enumerated).toContain(orgId);
+      expect(reads.rowsByOrg.get(orgId)?.map((r) => r.event_name).sort()).toEqual([...events].sort());
+    }
+    // Every enumerated organization was read, once.
+    expect(reads.readCount).toBe(enumerated.length);
+    expect([...reads.rowsByOrg.keys()].sort()).toEqual([...enumerated].sort());
 
-    expect(stageCountAfter('signup_completed')).toBeGreaterThanOrEqual(stageCountBefore('signup_completed') + 3);
-    expect(stageCountAfter('aws_connection_completed')).toBeGreaterThanOrEqual(
-      stageCountBefore('aws_connection_completed') + 2
+    // Aggregation: every count in the response equals the count over the
+    // organizations this request read.
+    const has = (orgId: string, event: string) => reads.rowsByOrg.get(orgId)!.some((r) => r.event_name === event);
+    const orgsWith = (event: string) => enumerated.filter((orgId) => has(orgId, event)).length;
+    const firstConnection = (orgId: string) => reads.rowsByOrg.get(orgId)!.find((r) => r.event_name === 'aws_connection_completed');
+    const connected = enumerated.filter((orgId) => firstConnection(orgId));
+    const activationEvents = ['signup_completed', 'aws_connection_completed', 'discovery_completed', 'first_insight_generated', 'first_value_viewed'];
+
+    expect(after.data.organizationsTotal).toBe(enumerated.length);
+    for (const event of activationEvents) {
+      expect(after.data.stages.find((s: any) => s.event === event).organizations).toBe(orgsWith(event));
+    }
+    expect(after.data.activated.organizations).toBe(enumerated.filter((orgId) => activationEvents.every((e) => has(orgId, e))).length);
+    expect(after.data.subscribed.organizations).toBe(orgsWith('subscription_activated'));
+    expect(after.data.informational.awsConnectionStarted.organizations).toBe(orgsWith('aws_connection_started'));
+    expect(after.data.awsConnectionSourceBreakdown.legacyAccessKey).toBe(
+      connected.filter((orgId) => firstConnection(orgId)!.properties?.source === 'legacy_access_key').length
     );
-    expect(stageCountAfter('discovery_completed')).toBeGreaterThanOrEqual(stageCountBefore('discovery_completed') + 2);
-    expect(stageCountAfter('first_insight_generated')).toBeGreaterThanOrEqual(
-      stageCountBefore('first_insight_generated') + 1
+    expect(after.data.awsConnectionSourceBreakdown.sts).toBe(
+      connected.filter((orgId) => firstConnection(orgId)!.properties?.source !== 'legacy_access_key').length
     );
-    expect(stageCountAfter('first_value_viewed')).toBeGreaterThanOrEqual(stageCountBefore('first_value_viewed') + 1);
-
-    expect(after.data.activated.organizations).toBeGreaterThanOrEqual(activatedBefore + 1); // at least org A
-    expect(after.data.subscribed.organizations).toBeGreaterThanOrEqual(subscribedBefore + 1); // at least org A
-    expect(after.data.informational.awsConnectionStarted.organizations).toBeGreaterThanOrEqual(startedBefore + 2); // A + B
-    expect(after.data.awsConnectionSourceBreakdown.sts).toBeGreaterThanOrEqual(stsBefore + 1); // at least org A
-    expect(after.data.awsConnectionSourceBreakdown.legacyAccessKey).toBeGreaterThanOrEqual(legacyBefore + 1); // at least org B
 
     // aws_connection_started is informational only -- never a funnel stage.
     expect(after.data.stages.map((s: any) => s.event)).not.toContain('aws_connection_started');
