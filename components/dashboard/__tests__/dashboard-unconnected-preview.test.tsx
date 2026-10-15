@@ -207,13 +207,21 @@ describe('responsive behaviour', () => {
     const hero = screen.getByTestId('preview-hero')
     expect(hero.className).toMatch(/(^|\s)grid(\s|$)/)
     expect(hero.className).toMatch(/(^|\s)grid-cols-1(\s|$)/)
-    expect(hero.className).toMatch(/(^|\s)lg:grid-cols-\[minmax\(0,11fr\)_minmax\(0,9fr\)\](\s|$)/)
+    expect(hero.className).toMatch(/(^|\s)lg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)\](\s|$)/)
+    expect(hero.className).toMatch(/(^|\s)xl:grid-cols-\[minmax\(0,11fr\)_minmax\(0,9fr\)\](\s|$)/)
     // No other breakpoint splits it: below lg it is one column.
-    expect(hero.className.match(/(?:^|\s)(?:[\w-]+:)?grid-cols-\S+/g)?.map((c) => c.trim())).toEqual(['grid-cols-1', 'lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]'])
+    expect(hero.className.match(/(?:^|\s)(?:[\w-]+:)?grid-cols-\S+/g)?.map((c) => c.trim())).toEqual(['grid-cols-1', 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]', 'xl:grid-cols-[minmax(0,11fr)_minmax(0,9fr)]'])
     // Stacked order is DOM order: the copy column, then the panel. No reordering classes.
     expect([...hero.children].map((child) => child.getAttribute('data-testid'))).toEqual(['preview-hero-copy', 'sample-panel'])
     expect(hero.innerHTML).not.toMatch(/(^|[\s"])(?:[\w-]+:)?order-/)
     expect([...screen.getByTestId('preview-hero-copy').children].map((child) => child.tagName + (child.getAttribute('data-testid') ? `#${child.getAttribute('data-testid')}` : ''))).toEqual(['H1', 'P', 'DIV#preview-action', 'P#preview-trust'])
+  })
+
+  it('both columns are aligned to the top, not centred against the taller panel', () => {
+    renderPreview()
+    const hero = screen.getByTestId('preview-hero')
+    expect(hero.className).toMatch(/(^|\s)items-start(\s|$)/)
+    expect(hero.className).not.toMatch(/(^|\s)(?:[\w-]+:)?items-(?:center|end|baseline|stretch)(\s|$)/)
   })
 
   it('a non-owner keeps the #176 hero: pill and who to ask in the copy column, and the panel beside it', () => {
