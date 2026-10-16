@@ -87,3 +87,16 @@ describe('focus ring', () => {
     }
   })
 })
+
+describe('skip link', () => {
+  it('uses the primary tokens directly, not wrapped in hsl()', () => {
+    const body = rule('.skip-to-content')
+    expect(body).toMatch(/background-color:\s*var\(--primary\);/)
+    expect(body).toMatch(/color:\s*var\(--primary-foreground\);/)
+  })
+
+  it.each([':root', '.dark'] as const)('%s: skip-link text meets 4.5:1 on its background', (theme) => {
+    const t = tokens(theme)
+    expect(contrast(t['--primary-foreground'], t['--primary'])).toBeGreaterThanOrEqual(4.5)
+  })
+})
