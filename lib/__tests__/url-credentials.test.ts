@@ -127,7 +127,10 @@ describe("takeUrlCredentials", () => {
 
   it("blanks a query-string credential that appears in history state in some other form, without returning it", () => {
     const secret = "SECRET0123456789abcdef";
-    window.history.replaceState({ __NA: true, note: `full=http://x/reset-password?token=${secret}` }, "", `/reset-password?token=${secret}`);
+    // Shape Next.js stores for a page loaded with search params: the page
+    // segment key carries them as JSON, so the load URL is not there to match.
+    const tree = ["", { children: [`__PAGE__?${JSON.stringify({ token: secret })}`, {}, null, null] }];
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: tree }, "", `/reset-password?token=${secret}`);
 
     expect(takeUrlCredentials(["token"] as const)).toEqual({});
 
