@@ -191,7 +191,7 @@ function SamplePanel() {
       aria-describedby="sample-panel-caption"
       data-testid="sample-panel"
     >
-      <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-border">
+      <div className="flex items-start justify-between gap-4 px-6 py-3.5 border-b border-border">
         <h2 id="sample-panel-title" className="text-lg font-bold text-foreground tracking-tight leading-tight m-0" data-testid="sample-panel-title">
           What you&apos;ll see after connecting
         </h2>
@@ -206,7 +206,7 @@ function SamplePanel() {
       </div>
       <ul className="list-none p-0 m-0">
         {SAMPLE_ROWS.map((row) => (
-          <li key={row.title} className="flex items-center justify-between gap-4 px-6 py-4 border-b border-border" data-testid="sample-panel-row">
+          <li key={row.title} className="flex items-center justify-between gap-4 px-6 py-2 border-b border-border" data-testid="sample-panel-row">
             <div className="min-w-0">
               <p className="text-base font-semibold text-foreground leading-snug m-0" data-testid="sample-panel-row-title">{row.title}</p>
               <p className="text-base text-[var(--text-secondary)] leading-snug m-0" data-testid="sample-panel-row-subtitle">{row.subtitle}</p>
@@ -228,13 +228,13 @@ function SamplePanel() {
           </li>
         ))}
       </ul>
-      <div className="mx-6 mt-5 rounded-xl px-5 py-4 flex items-center justify-between gap-4" style={{ background: 'var(--bg-accent)' }} data-testid="sample-panel-total">
+      <div className="mx-6 mt-3 rounded-xl px-5 py-2.5 flex items-center justify-between gap-4" style={{ background: 'var(--bg-accent)' }} data-testid="sample-panel-total">
         <p className="text-base font-medium text-foreground leading-snug m-0">Estimated monthly saving (sample)</p>
         <span className="shrink-0 text-2xl font-bold leading-none" style={{ color: 'var(--text-accent)' }} data-testid="sample-panel-total-value">
           {perMonth(SAMPLE_TOTAL)}
         </span>
       </div>
-      <p id="sample-panel-caption" className="text-base text-[var(--text-secondary)] leading-normal px-6 pt-4 pb-5 m-0" data-testid="sample-panel-caption">
+      <p id="sample-panel-caption" className="text-base text-[var(--text-secondary)] leading-normal px-6 pt-2.5 pb-3.5 m-0" data-testid="sample-panel-caption">
         Illustrative example. Your own findings appear after your first scan.
       </p>
     </section>
@@ -254,8 +254,8 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
   return (
     <>
       <section className="mb-10" aria-labelledby="dashboard-preview-title" data-testid="dashboard-preview">
-        {/* Two columns from lg: the copy and the way to connect, then the sample panel. Stacked, in that order, below. */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 lg:gap-12 items-center mb-8" data-testid="preview-hero">
+        {/* Two columns from lg (equal until xl, so the panel does not wrap at 1024px), both aligned to the top: the copy and the way to connect, then the sample panel. Stacked, in that order, below. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 xl:gap-12 items-start mb-6" data-testid="preview-hero">
           <div className="min-w-0" data-testid="preview-hero-copy">
             <h1 id="dashboard-preview-title" className="text-[30px] md:text-[44px] font-bold text-foreground tracking-tight leading-[1.1] mt-0 mb-4 max-w-3xl">
               AI-Powered Cloud Operations &amp; Infrastructure Intelligence

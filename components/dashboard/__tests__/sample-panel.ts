@@ -59,14 +59,14 @@ const PANEL = '[data-testid="sample-panel"]'
  */
 const CHAIN_ATTRIBUTES: Record<'preview' | 'hero' | 'heroCopy', Record<string, string>> = {
   preview: { class: 'mb-10', 'aria-labelledby': 'dashboard-preview-title', 'data-testid': 'dashboard-preview' },
-  hero: { class: 'grid grid-cols-1 lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 lg:gap-12 items-center mb-8', 'data-testid': 'preview-hero' },
+  hero: { class: 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 xl:gap-12 items-start mb-6', 'data-testid': 'preview-hero' },
   heroCopy: { class: 'min-w-0', 'data-testid': 'preview-hero-copy' },
 }
 
 const TITLE_CLASS = 'text-base font-semibold text-foreground leading-snug m-0'
 const SUBTITLE_CLASS = 'text-base text-[var(--text-secondary)] leading-snug m-0'
 const ROW: Array<[number, string, Record<string, string>]> = [
-  [2, 'LI', { class: 'flex items-center justify-between gap-4 px-6 py-4 border-b border-border', 'data-testid': 'sample-panel-row' }],
+  [2, 'LI', { class: 'flex items-center justify-between gap-4 px-6 py-2 border-b border-border', 'data-testid': 'sample-panel-row' }],
   [3, 'DIV', { class: 'min-w-0' }],
   [4, 'P', { class: TITLE_CLASS, 'data-testid': 'sample-panel-row-title' }],
   [4, 'P', { class: SUBTITLE_CLASS, 'data-testid': 'sample-panel-row-subtitle' }],
@@ -86,7 +86,7 @@ const PANEL_ELEMENTS: Array<[number, string, Record<string, string>]> = [
     'aria-describedby': 'sample-panel-caption',
     'data-testid': 'sample-panel',
   }],
-  [1, 'DIV', { class: 'flex items-start justify-between gap-4 px-6 py-5 border-b border-border' }],
+  [1, 'DIV', { class: 'flex items-start justify-between gap-4 px-6 py-3.5 border-b border-border' }],
   [2, 'H2', { id: 'sample-panel-title', class: 'text-lg font-bold text-foreground tracking-tight leading-tight m-0', 'data-testid': 'sample-panel-title' }],
   [2, 'SPAN', {
     id: 'sample-panel-tag',
@@ -104,10 +104,10 @@ const PANEL_ELEMENTS: Array<[number, string, Record<string, string>]> = [
     'data-testid': 'sample-panel-row-value',
     'data-severity': 'high',
   }],
-  [1, 'DIV', { class: 'mx-6 mt-5 rounded-xl px-5 py-4 flex items-center justify-between gap-4', style: 'background: var(--bg-accent);', 'data-testid': 'sample-panel-total' }],
+  [1, 'DIV', { class: 'mx-6 mt-3 rounded-xl px-5 py-2.5 flex items-center justify-between gap-4', style: 'background: var(--bg-accent);', 'data-testid': 'sample-panel-total' }],
   [2, 'P', { class: 'text-base font-medium text-foreground leading-snug m-0' }],
   [2, 'SPAN', { class: 'shrink-0 text-2xl font-bold leading-none', style: 'color: var(--text-accent);', 'data-testid': 'sample-panel-total-value' }],
-  [1, 'P', { id: 'sample-panel-caption', class: 'text-base text-[var(--text-secondary)] leading-normal px-6 pt-4 pb-5 m-0', 'data-testid': 'sample-panel-caption' }],
+  [1, 'P', { id: 'sample-panel-caption', class: 'text-base text-[var(--text-secondary)] leading-normal px-6 pt-2.5 pb-3.5 m-0', 'data-testid': 'sample-panel-caption' }],
 ]
 
 /** Whether every element of `panel` (itself included) matches PANEL_ELEMENTS exactly. */

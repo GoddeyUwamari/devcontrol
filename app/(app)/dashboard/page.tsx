@@ -570,8 +570,9 @@ export default function DashboardPage() {
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
+  // The not-connected preview starts closer to the nav (lg:pt-4), so its cards show without scrolling.
   return (
-    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]">
+    <div className={`px-4 py-6 sm:px-6 sm:py-8 lg:px-14 ${awsConnection === 'unconnected' ? 'lg:pt-4 lg:pb-10' : 'lg:py-10'} max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]`}>
 
       {/* The unconnected preview is its own hero (headline, the way to connect, a labelled sample). */}
       {awsConnection !== 'unconnected' && (
