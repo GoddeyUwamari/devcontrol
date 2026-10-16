@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { alertConfigService } from '@/lib/services/alert-config.service';
+import { logError } from '@/lib/safe-log';
 
 // Alert type definitions
 interface AlertType {
@@ -131,7 +132,7 @@ export default function AlertSettingsPage() {
         }
       }
     } catch (err) {
-      console.error('Failed to fetch config:', err);
+      logError('Failed to fetch config', err);
     } finally {
       setIsLoading(false);
     }

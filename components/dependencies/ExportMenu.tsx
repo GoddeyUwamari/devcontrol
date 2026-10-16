@@ -16,6 +16,7 @@ import { exportGraphToPNG } from '@/lib/export/graph-export';
 import { exportDependencyReport } from '@/lib/export/pdf-export';
 import { getModifierSymbol } from '@/lib/hooks/use-keyboard-shortcuts';
 import type { DependencyExportData, ExportStats } from '@/types/export';
+import { logError } from '@/lib/safe-log';
 
 interface ServiceDependency {
   id: string;
@@ -92,7 +93,7 @@ export const ExportMenu = forwardRef<HTMLButtonElement, ExportMenuProps>(
 
       toast.success('Dependencies exported as CSV');
     } catch (error) {
-      console.error('CSV export error:', error);
+      logError('CSV export error', error);
       toast.error('CSV export failed. Please try again.');
     } finally {
       setExportingType(null);
@@ -113,7 +114,7 @@ export const ExportMenu = forwardRef<HTMLButtonElement, ExportMenuProps>(
 
       toast.success('Graph exported as PNG');
     } catch (error) {
-      console.error('PNG export error:', error);
+      logError('PNG export error', error);
       const errorMessage =
         error instanceof Error ? error.message : 'Graph export failed. Please try again.';
       toast.error(errorMessage);
@@ -132,7 +133,7 @@ export const ExportMenu = forwardRef<HTMLButtonElement, ExportMenuProps>(
 
       toast.success('Report exported as PDF');
     } catch (error) {
-      console.error('PDF export error:', error);
+      logError('PDF export error', error);
       const errorMessage =
         error instanceof Error ? error.message : 'Report export failed. Please try again.';
       toast.error(errorMessage);

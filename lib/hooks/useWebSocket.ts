@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { logError } from '@/lib/safe-log';
 
 export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
@@ -36,7 +37,7 @@ export function useWebSocket() {
     });
 
     socket.on('connect_error', (error) => {
-      console.error('WebSocket connection error:', error);
+      logError('WebSocket connection error', error);
       setIsConnected(false);
     });
 

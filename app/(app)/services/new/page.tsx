@@ -22,6 +22,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { servicesService } from '@/lib/services/services.service'
 import { teamsService } from '@/lib/services/teams.service'
+import { logError } from '@/lib/safe-log'
 
 // Validation schema using Zod (matches backend schema)
 const serviceSchema = z.object({
@@ -89,7 +90,7 @@ export default function NewServicePage() {
       await promise
       router.push('/services')
     } catch (error) {
-      console.error('Error creating service:', error)
+      logError('Error creating service', error)
       setIsSubmitting(false)
     }
   }

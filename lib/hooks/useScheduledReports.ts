@@ -8,6 +8,7 @@ import {
   ExecutionStats,
   ListSchedulesFilters,
 } from '../services/scheduled-reports.service';
+import { logError } from '@/lib/safe-log';
 
 export function useScheduledReports(filters?: ListSchedulesFilters) {
   const [schedules, setSchedules] = useState<ScheduledReport[]>([]);
@@ -22,7 +23,7 @@ export function useScheduledReports(filters?: ListSchedulesFilters) {
       setSchedules(data);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch schedules');
-      console.error('Error fetching schedules:', err);
+      logError('Error fetching schedules', err);
     } finally {
       setLoading(false);
     }
@@ -112,7 +113,7 @@ export function useReportExecutions(scheduleId: string | null) {
       setStats(data.stats);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch executions');
-      console.error('Error fetching executions:', err);
+      logError('Error fetching executions', err);
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { aiReportsService, GeneratedReport, ReportHistoryItem, GenerateReportRequest } from '@/lib/services/ai-reports.service';
+import { logError } from '@/lib/safe-log';
 
 export function useAIReports() {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -20,7 +21,7 @@ export function useAIReports() {
       if (err?.status === 402) throw err;
       const errorMessage = err.message || 'Failed to generate report';
       setError(errorMessage);
-      console.error('[useAIReports] Generate error:', err);
+      logError('[useAIReports] Generate error', err);
       return null;
     } finally {
       setIsGenerating(false);
@@ -44,7 +45,7 @@ export function useAIReports() {
       if (err?.status === 402) throw err;
       const errorMessage = err.message || 'Failed to fetch report history';
       setError(errorMessage);
-      console.error('[useAIReports] Fetch history error:', err);
+      logError('[useAIReports] Fetch history error', err);
       return [];
     } finally {
       setIsFetchingHistory(false);
@@ -63,7 +64,7 @@ export function useAIReports() {
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to fetch report';
       setError(errorMessage);
-      console.error('[useAIReports] Get report error:', err);
+      logError('[useAIReports] Get report error', err);
       return null;
     }
   }, []);
@@ -80,7 +81,7 @@ export function useAIReports() {
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to delete reports';
       setError(errorMessage);
-      console.error('[useAIReports] Bulk delete error:', err);
+      logError('[useAIReports] Bulk delete error', err);
       return 0;
     }
   }, []);
@@ -97,7 +98,7 @@ export function useAIReports() {
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to delete report';
       setError(errorMessage);
-      console.error('[useAIReports] Delete error:', err);
+      logError('[useAIReports] Delete error', err);
       return false;
     }
   }, []);

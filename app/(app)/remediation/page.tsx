@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { remediationService, RemediationWorkflow, WorkflowStatus } from '@/lib/services/remediation.service';
+import { logError } from '@/lib/safe-log';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -348,7 +349,7 @@ export default function RemediationPage() {
       qc.invalidateQueries({ queryKey: ['remediation-detail', updated.id] });
       setSelected(updated);
     } catch (err: any) {
-      console.error('[Remediation] action error:', err);
+      logError('[Remediation] action error', err);
     } finally {
       setActingId(null);
     }

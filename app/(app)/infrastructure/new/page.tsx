@@ -21,6 +21,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { servicesService } from '@/lib/services/services.service'
+import { logError } from '@/lib/safe-log'
 
 // AWS Regions
 const AWS_REGIONS = [
@@ -98,7 +99,7 @@ export default function NewInfrastructurePage() {
       await promise
       router.push('/infrastructure')
     } catch (error) {
-      console.error('Error creating infrastructure resource:', error)
+      logError('Error creating infrastructure resource', error)
       setIsSubmitting(false)
     }
   }

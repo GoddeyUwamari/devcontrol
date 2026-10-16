@@ -1,5 +1,6 @@
 import Fuse, { type IFuseOptions } from 'fuse.js';
 import type { DependencyExportData } from '@/types/export';
+import { logError } from '@/lib/safe-log';
 
 /**
  * Search result with relevance score and matched fields
@@ -106,7 +107,7 @@ export function searchDependencies(
       })),
     }));
   } catch (error) {
-    console.error('Search error:', error);
+    logError('Search error', error);
     // Fallback to basic filtering on error
     return dependencies
       .filter((dep) => {

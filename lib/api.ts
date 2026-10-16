@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { ApiResponse } from './types';
+import { logError } from '@/lib/safe-log';
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080',
@@ -26,7 +27,7 @@ api.interceptors.request.use(
           config.headers['X-Tenant-ID'] = user.tenantId;
         }
       } catch (error) {
-        console.error('Failed to parse user from localStorage:', error);
+        logError('Failed to parse user from localStorage', error);
       }
     }
 

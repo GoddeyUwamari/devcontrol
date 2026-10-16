@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
 import type { DependencyExportData, ExportStats } from '@/types/export';
+import { logError } from '@/lib/safe-log';
 
 // Extend jsPDF type to include autoTable
 declare module 'jspdf' {
@@ -199,7 +200,7 @@ export async function exportDependencyReport(
 
         yPosition += graphHeight + 0.3;
       } catch (error) {
-        console.error('Failed to embed graph:', error);
+        logError('Failed to embed graph', error);
         doc.setFontSize(11);
         doc.setTextColor(lightGray);
         doc.text('(Graph could not be embedded in this report)', margin, yPosition);
@@ -319,7 +320,7 @@ export async function exportDependencyReport(
 
     console.log(`PDF report exported successfully: ${filename}`);
   } catch (error) {
-    console.error('PDF export failed:', error);
+    logError('PDF export failed', error);
     throw new Error(
       `Failed to export dependency report: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

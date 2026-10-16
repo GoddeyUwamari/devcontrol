@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { logError } from "@/lib/safe-log";
 
 const generalSettingsSchema = z.object({
   name: z
@@ -71,7 +72,7 @@ export function GeneralSettingsTab({ organization }: GeneralSettingsTabProps) {
         description: "Organization settings have been updated successfully.",
       });
     } catch (error: any) {
-      console.error("Failed to update organization:", error);
+      logError("Failed to update organization", error);
       const message =
         error.response?.data?.error ||
         error.response?.data?.message ||
