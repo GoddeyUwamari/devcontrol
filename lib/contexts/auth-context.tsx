@@ -97,18 +97,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   /**
-   * Debug: Log auth state changes
-   */
-  useEffect(() => {
-    console.log("🔍 Auth Context State Changed:");
-    console.log("  User:", user);
-    console.log("  Organization:", organization);
-    console.log("  Organizations:", organizations);
-    console.log("  isAuthenticated:", !!user);
-    console.log("  isLoading:", isLoading);
-  }, [user, organization, organizations, isLoading]);
-
-  /**
    * Initialize authentication state from localStorage
    */
   const initializeAuth = useCallback(async () => {
@@ -118,7 +106,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const cachedUser = tokenManager.getUser();
 
       console.log("🔐 Token exists:", !!token);
-      console.log("🔐 Cached user:", cachedUser);
 
       if (token && cachedUser) {
         setUser(cachedUser);

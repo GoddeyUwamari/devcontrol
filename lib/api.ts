@@ -59,7 +59,7 @@ api.interceptors.response.use(
   },
   (error: AxiosError) => {
     if (error.response?.status === 500) {
-      console.error('Server error:', error.response.data);
+      logError('Server error', error);
     }
 
     if (

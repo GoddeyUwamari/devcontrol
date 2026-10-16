@@ -38,7 +38,6 @@ export function Sidebar() {
   const { user, isLoading } = useAuth()
 
   // Debug log
-  console.log('👤 Sidebar - Current user:', user)
 
   // Get user initials for avatar
   const getUserInitials = () => {
