@@ -1,5 +1,5 @@
 /**
- * errorHandler logs name, message, stack, type and status only -- never the
+ * errorHandler logs name, code, message, stack, type and status only -- never the
  * error object -- and answers a body that is not valid JSON with 400.
  */
 import express from 'express';
@@ -107,6 +107,6 @@ describe('other errors', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ success: false, error: 'Missing field', code: 'BAD_REQUEST' });
     const logged = (console.error as unknown as jest.SpyInstance).mock.calls[0][1];
-    expect(logged).toMatchObject({ name: 'Error', message: 'Missing field', status: 400 });
+    expect(logged).toMatchObject({ name: 'Error', code: 'BAD_REQUEST', message: 'Missing field', status: 400 });
   });
 });

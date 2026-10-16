@@ -9,6 +9,7 @@ function isJsonParseError(err: unknown): boolean {
 
 /**
  * The fields of an error that are logged -- never the error object itself.
+ * An AppError's code is a fixed identifier, so it is logged too.
  * A JSON parse error's message and stack quote the request body, so a fixed
  * message stands in for both.
  */
@@ -16,6 +17,7 @@ function loggableError(err: Error | AppError) {
   const { type, status, statusCode } = err as { type?: unknown; status?: unknown; statusCode?: unknown };
   const fields = {
     name: err.name,
+    ...(err instanceof AppError && { code: err.code }),
     type: typeof type === 'string' ? type : undefined,
     status: typeof status === 'number' ? status : typeof statusCode === 'number' ? statusCode : undefined,
   };
