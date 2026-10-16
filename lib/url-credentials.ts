@@ -4,10 +4,11 @@
  * that runs afterwards -- a network request, analytics, error reporting, a
  * later navigation -- can see them in `location` or in the history entry.
  *
- * Credentials are expected in the URL fragment (`#token=...`), which the
- * browser never sends to a server. The query string (`?token=...`) is also
- * read, for links issued before the fragment was used; it is removed the same
- * way. Remove the query-string fallback on or after 2026-10-17.
+ * Credentials are read only from the URL fragment (`#token=...`), which the
+ * browser never sends to a server. A credential in the query string
+ * (`?token=...`) is never returned, so a link of that form signs no one in and
+ * reaches no API, but it is removed from the URL and history the same way, so
+ * an old link cannot leave it behind.
  *
  * Next.js's App Router keeps its own copy of the current URL and writes it
  * back to the address bar on router updates. Its history patch, which keeps
@@ -29,18 +30,18 @@ export function takeUrlCredentials<K extends string>(
 
   const url = new URL(window.location.href);
   const fragment = new URLSearchParams(url.hash.replace(/^#/, ""));
+  // Query-string values: not returned, only removed (see above).
+  const ignored: string[] = [];
   let fragmentHadKey = false;
 
   for (const key of keys) {
-    const fromFragment = fragment.get(key);
-    // Query-string fallback: remove on or after 2026-10-17 (see above).
-    const fromQuery = url.searchParams.get(key);
-    const value = fromFragment || fromQuery;
+    const value = fragment.get(key);
     if (value) found[key] = value;
     if (fragment.has(key)) {
       fragmentHadKey = true;
       fragment.delete(key);
     }
+    ignored.push(...url.searchParams.getAll(key).filter(Boolean));
     url.searchParams.delete(key);
   }
 
@@ -52,7 +53,7 @@ export function takeUrlCredentials<K extends string>(
   const clean = url.pathname + url.search + url.hash;
   const current = window.location.pathname + window.location.search + window.location.hash;
   if (clean !== current) {
-    const secrets = Object.values(found) as string[];
+    const secrets = [...(Object.values(found) as string[]), ...ignored];
     window.history.replaceState(withoutCredentials(window.history.state, current, clean, secrets), "", clean);
     setTimeout(() => {
       if (window.location.pathname + window.location.search + window.location.hash === clean) {

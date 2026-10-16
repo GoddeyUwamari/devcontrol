@@ -1,8 +1,8 @@
 /**
- * Verify email: the token is taken from the link (in the fragment, as sent
- * by the backend, or in the legacy query string), removed from the URL
- * before the verification request is made, and the page reports what the
- * API answered.
+ * Verify email: the token is taken from the link fragment (as sent by the
+ * backend), removed from the URL before the verification request is made,
+ * and the page reports what the API answered. A token in the query string is
+ * not used.
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -38,11 +38,8 @@ afterEach(() => {
 });
 
 describe("verify email page", () => {
-  it.each([
-    ["legacy query string", `/verify-email?token=${TOKEN}`],
-    ["fragment (the link the backend sends)", `/verify-email#token=${TOKEN}`],
-  ])("%s: verifies with the token and shows success", async (_form, link) => {
-    visit(link);
+  it("verifies with the token from the fragment (the link the backend sends) and shows success", async () => {
+    visit(`/verify-email#token=${TOKEN}`);
 
     render(<VerifyEmailPage />);
 
@@ -52,11 +49,8 @@ describe("verify email page", () => {
     expect(screen.getByRole("link", { name: /continue to sign in/i })).toHaveAttribute("href", "/login");
   });
 
-  it.each([
-    ["legacy query string", `/verify-email?token=${TOKEN}`],
-    ["fragment", `/verify-email#token=${TOKEN}`],
-  ])("%s: the token is out of the URL before the request is made, and stays out", async (_form, link) => {
-    visit(link);
+  it("the token is out of the URL before the request is made, and stays out", async () => {
+    visit(`/verify-email#token=${TOKEN}`);
 
     render(<VerifyEmailPage />);
 
@@ -70,7 +64,7 @@ describe("verify email page", () => {
   });
 
   it("an invalid, used or expired token (API 400) shows the invalid-or-expired state", async () => {
-    visit(`/verify-email?token=${TOKEN}`);
+    visit(`/verify-email#token=${TOKEN}`);
     verifyEmail.mockRejectedValue(apiError(400, "Invalid or expired verification token"));
 
     render(<VerifyEmailPage />);
@@ -85,7 +79,7 @@ describe("verify email page", () => {
     ["a server error", apiError(500, "Internal server error")],
     ["rate limiting", apiError(429, "Too many requests")],
   ])("%s shows the try-again state, not success", async (_label, error) => {
-    visit(`/verify-email?token=${TOKEN}`);
+    visit(`/verify-email#token=${TOKEN}`);
     verifyEmail.mockRejectedValue(error);
 
     render(<VerifyEmailPage />);
@@ -103,8 +97,27 @@ describe("verify email page", () => {
     expect(verifyEmail).not.toHaveBeenCalled();
   });
 
+  it("a ?token= link shows the invalid-link state, makes no request, and is removed from the URL and history", async () => {
+    const link = `/verify-email?token=${TOKEN}`;
+    // Shape Next.js stores: the page segment keeps the URL it was loaded with.
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: ["", { children: ["__PAGE__", {}, link, "refresh"] }] }, "", link);
+
+    render(<VerifyEmailPage />);
+    // Before the deferred re-apply replaces the state: the router's copy is clean.
+    const stateAfterLoad = JSON.stringify(window.history.state);
+    expect(stateAfterLoad).toContain("__PAGE__");
+
+    expect(await screen.findByText("Invalid verification link")).toBeInTheDocument();
+    expect(verifyEmail).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/verify-email");
+    expect(window.location.search).toBe("");
+    expect(window.location.href).not.toContain(TOKEN);
+    expect(stateAfterLoad).not.toContain(TOKEN);
+    expect(JSON.stringify(window.history.state)).not.toContain(TOKEN);
+  });
+
   it("never renders the token or the API's error text", async () => {
-    visit(`/verify-email?token=${TOKEN}`);
+    visit(`/verify-email#token=${TOKEN}`);
     verifyEmail.mockRejectedValue(apiError(400, "Invalid or expired verification token"));
 
     const { container } = render(<VerifyEmailPage />);
@@ -115,7 +128,7 @@ describe("verify email page", () => {
   });
 
   it("verifies only once under React Strict Mode, without flashing the missing-token state", async () => {
-    visit(`/verify-email?token=${TOKEN}`);
+    visit(`/verify-email#token=${TOKEN}`);
     let finish!: () => void;
     verifyEmail.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
 

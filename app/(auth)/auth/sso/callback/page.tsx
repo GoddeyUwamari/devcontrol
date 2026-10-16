@@ -24,7 +24,6 @@ function SSOCallbackContent() {
     started.current = true;
 
     // First, before anything else runs: take the tokens and clean the URL.
-    // (The legacy query-string form has a removal date; see lib/url-credentials.ts.)
     const { token, refreshToken } = takeUrlCredentials(SSO_URL_PARAMS);
 
     if (!token || !refreshToken) {

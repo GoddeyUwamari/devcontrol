@@ -1,7 +1,7 @@
 /**
- * Reset password: the reset token is taken from the link (fragment, or the
- * legacy query string), removed from the URL straight away, kept only in the
- * page's state, and still sent with the reset request.
+ * Reset password: the reset token is taken from the link fragment, removed
+ * from the URL straight away, kept only in the page's state, and still sent
+ * with the reset request. A token in the query string is not used.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
@@ -43,11 +43,8 @@ afterEach(() => {
 });
 
 describe("reset password link", () => {
-  it.each([
-    ["fragment", `/reset-password#token=${RESET_TOKEN}`],
-    ["legacy query string", `/reset-password?token=${RESET_TOKEN}`],
-  ])("%s: the token is removed from the URL as soon as the page loads", async (_form, link) => {
-    visit(link);
+  it("the token is removed from the URL as soon as the page loads", async () => {
+    visit(`/reset-password#token=${RESET_TOKEN}`);
 
     render(<ResetPasswordPage />);
 
@@ -58,11 +55,8 @@ describe("reset password link", () => {
     expect(window.location.href).not.toContain(RESET_TOKEN);
   });
 
-  it.each([
-    ["fragment", `/reset-password#token=${RESET_TOKEN}`],
-    ["legacy query string", `/reset-password?token=${RESET_TOKEN}`],
-  ])("%s: the reset request still receives the token, from page state", async (_form, link) => {
-    visit(link);
+  it("the reset request still receives the token, from page state", async () => {
+    visit(`/reset-password#token=${RESET_TOKEN}`);
 
     render(<ResetPasswordPage />);
     await submitNewPassword();
@@ -81,5 +75,25 @@ describe("reset password link", () => {
     expect(await screen.findByText(/missing or invalid/i)).toBeInTheDocument();
     expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
     expect(resetPassword).not.toHaveBeenCalled();
+  });
+
+  it("a ?token= link shows the invalid-link state, never calls the API, and is removed from the URL and history", async () => {
+    const link = `/reset-password?token=${RESET_TOKEN}`;
+    // Shape Next.js stores: the page segment keeps the URL it was loaded with.
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: ["", { children: ["__PAGE__", {}, link, "refresh"] }] }, "", link);
+
+    render(<ResetPasswordPage />);
+    // Before the deferred re-apply replaces the state: the router's copy is clean.
+    const stateAfterLoad = JSON.stringify(window.history.state);
+    expect(stateAfterLoad).toContain("__PAGE__");
+
+    expect(await screen.findByText(/missing or invalid/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+    expect(resetPassword).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/reset-password");
+    expect(window.location.search).toBe("");
+    expect(window.location.href).not.toContain(RESET_TOKEN);
+    expect(stateAfterLoad).not.toContain(RESET_TOKEN);
+    expect(JSON.stringify(window.history.state)).not.toContain(RESET_TOKEN);
   });
 });

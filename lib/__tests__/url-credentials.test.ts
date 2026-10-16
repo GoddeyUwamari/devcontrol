@@ -1,7 +1,7 @@
 /**
- * takeUrlCredentials: credentials are read from the fragment (or, for links
- * issued before the fragment was used, the query string) and are gone from
- * the URL by the time it returns.
+ * takeUrlCredentials: credentials are read from the fragment only, and are
+ * gone from the URL by the time it returns. Credentials in the query string
+ * are never returned, but are removed from the URL and history all the same.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { takeUrlCredentials } from "../url-credentials";
@@ -36,12 +36,12 @@ describe("takeUrlCredentials", () => {
     expect(window.location.href).not.toContain("RRR");
   });
 
-  it("reads legacy query-string credentials and removes them before returning", () => {
-    visit("/reset-password?token=LEGACY");
+  it("does not return query-string credentials, but removes them before returning", () => {
+    visit("/reset-password?token=LEGACY&refreshToken=LEGACY_R");
 
-    const found = takeUrlCredentials(["token"] as const);
+    const found = takeUrlCredentials(["token", "refreshToken"] as const);
 
-    expect(found).toEqual({ token: "LEGACY" });
+    expect(found).toEqual({});
     expect(currentPath()).toBe("/reset-password");
   });
 
@@ -98,7 +98,7 @@ describe("takeUrlCredentials", () => {
 
   it.each([
     ["fragment", "/reset-password#token=SECRET123"],
-    ["legacy query string", "/reset-password?token=SECRET123"],
+    ["query string (not returned)", "/reset-password?token=SECRET123"],
   ])("%s: removes the load URL the router recorded in its route tree from history state", (_form, link) => {
     // Shape Next.js stores: the page segment keeps the URL it was loaded with.
     const tree = ["", { children: ["(auth)", { children: ["reset-password", { children: ["__PAGE__", {}, link, "refresh"] }] }] }, null, null, true];
@@ -123,6 +123,19 @@ describe("takeUrlCredentials", () => {
 
     expect(JSON.stringify(window.history.state)).not.toContain(secret);
     expect(window.history.state.__NA).toBe(true);
+  });
+
+  it("blanks a query-string credential that appears in history state in some other form, without returning it", () => {
+    const secret = "SECRET0123456789abcdef";
+    window.history.replaceState({ __NA: true, note: `full=http://x/reset-password?token=${secret}` }, "", `/reset-password?token=${secret}`);
+
+    expect(takeUrlCredentials(["token"] as const)).toEqual({});
+
+    expect(currentPath()).toBe("/reset-password");
+    expect(JSON.stringify(window.history.state)).not.toContain(secret);
+    expect(window.history.state.__NA).toBe(true);
+    vi.runAllTimers();
+    expect(JSON.stringify(window.history.state)).not.toContain(secret);
   });
 
   it("does not blank a value shorter than 16 characters elsewhere in history state, but still cleans the URL and the recorded load URL", () => {
