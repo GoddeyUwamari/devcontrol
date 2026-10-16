@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InviteMemberModal } from "@/components/modals/invite-member-modal";
 import { toast } from "sonner";
+import { logError } from "@/lib/safe-log";
 
 interface MembersTabProps {
   organization: Organization;
@@ -64,7 +65,7 @@ export function MembersTab({ organization }: MembersTabProps) {
       const data = await organizationsService.getMembers(organization.id);
       setMembers(data);
     } catch (error) {
-      console.error("Failed to fetch members:", error);
+      logError("Failed to fetch members", error);
       toast.error("Failed to load members");
     } finally {
       setIsLoading(false);
@@ -89,7 +90,7 @@ export function MembersTab({ organization }: MembersTabProps) {
 
       toast.success("Role updated successfully");
     } catch (error: any) {
-      console.error("Failed to update role:", error);
+      logError("Failed to update role", error);
       toast.error("Failed to update role", {
         description: error.response?.data?.error || "Please try again",
       });
@@ -111,7 +112,7 @@ export function MembersTab({ organization }: MembersTabProps) {
       toast.success("Member removed successfully");
       setMemberToRemove(null);
     } catch (error: any) {
-      console.error("Failed to remove member:", error);
+      logError("Failed to remove member", error);
       toast.error("Failed to remove member", {
         description: error.response?.data?.error || "Please try again",
       });

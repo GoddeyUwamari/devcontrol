@@ -76,9 +76,8 @@ function LoginContent() {
     try {
       await login(data.email, data.password);
       // Navigation handled by auth context
-    } catch (error) {
-      // Error toast handled by auth context
-      console.error("Login error:", error);
+    } catch {
+      // Error toast and logging handled by auth context
     } finally {
       setIsLoading(false);
     }

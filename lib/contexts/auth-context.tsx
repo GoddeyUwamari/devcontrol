@@ -21,6 +21,7 @@ import {
   organizationsService,
   type Organization,
 } from "../services/organizations.service";
+import { logError } from "@/lib/safe-log";
 
 /**
  * Auth Context Value Interface
@@ -127,13 +128,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Kick off background refreshes — do NOT await them here so that
         // isLoading drops immediately and the cached user is shown right away.
         // Errors in these background calls must not clear the user state.
-        refreshUser().catch(console.error);
-        refreshOrganizations().catch(console.error);
+        refreshUser().catch((error) => logError("Failed to refresh user", error));
+        refreshOrganizations().catch((error) => logError("Failed to fetch organizations", error));
       } else {
         console.log("🔐 No token or cached user, user not authenticated");
       }
     } catch (error) {
-      console.error("❌ Failed to initialize auth:", error);
+      logError("❌ Failed to initialize auth", error);
     } finally {
       setIsLoading(false);
       console.log("🔐 Auth initialization complete");
@@ -159,7 +160,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setOrganization(orgs[0]);
       }
     } catch (error) {
-      console.error("Failed to fetch organizations:", error);
+      logError("Failed to fetch organizations", error);
     }
   }, []);
 
@@ -198,7 +199,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         // Fetch all user's organizations in background
-        refreshOrganizations().catch(console.error);
+        refreshOrganizations().catch((error) => logError("Failed to fetch organizations", error));
 
         toast.success("Welcome back!", {
           description: `Logged in as ${user?.email ?? email}`,
@@ -218,11 +219,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
             }
           }, 100);
         } catch (error) {
-          console.error("❌ Router navigation failed, using window.location:", error);
+          logError("❌ Router navigation failed, using window.location", error);
           window.location.href = "/dashboard";
         }
       } catch (error: any) {
-        console.error("Login failed:", error);
+        logError("Login failed", error);
         const message =
           error.response?.data?.error ||
           error.response?.data?.message ||
@@ -286,7 +287,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
               }
             }, 100);
           } catch (error) {
-            console.error("❌ Router navigation failed, using window.location:", error);
+            logError("❌ Router navigation failed, using window.location", error);
             window.location.href = "/dashboard";
           }
         } else {
@@ -297,7 +298,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           router.push("/login");
         }
       } catch (error: any) {
-        console.error("Registration failed:", error);
+        logError("Registration failed", error);
         const message =
           error.response?.data?.error ||
           error.response?.data?.message ||
@@ -318,7 +319,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       await authService.logout();
     } catch (error) {
-      console.error("Logout API call failed:", error);
+      logError("Logout API call failed", error);
       // Continue with logout even if API call fails
     } finally {
       // Clear local state
@@ -422,7 +423,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } else {
         // Non-401 error (network down, 5xx, etc.) — don't clear the session,
         // the cached user state is still valid.
-        console.error("Failed to refresh user:", error);
+        logError("Failed to refresh user", error);
       }
     }
   }, [router, queryClient]);
@@ -445,7 +446,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (inFlight || !tokenManager.getAccessToken()) return;
       inFlight = true;
       refreshUserRef.current()
-        .catch(console.error)
+        .catch((error) => logError("Failed to refresh user", error))
         .finally(() => {
           inFlight = false;
         });
@@ -486,7 +487,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         return newOrg;
       } catch (error: any) {
-        console.error("Failed to create organization:", error);
+        logError("Failed to create organization", error);
         const message =
           error.response?.data?.error ||
           error.response?.data?.message ||
@@ -522,7 +523,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           router.refresh();
         }
       } catch (error: any) {
-        console.error("Failed to switch organization:", error);
+        logError("Failed to switch organization", error);
         toast.error("Failed to switch organization", {
           description:
             error.response?.data?.message || "Please try again later",

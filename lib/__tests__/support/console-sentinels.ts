@@ -6,8 +6,9 @@
 import { inspect } from "node:util";
 import { vi, expect } from "vitest";
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from "axios";
+import { api } from "@/lib/api";
 
-export const SENTINEL_PASSWORD = "Sentinel-Password-7f3a9c";
+export const SENTINEL_PASSWORD = "Sentinel-Passw0rd!7f3a9c";
 export const SENTINEL_TOKEN = "sentinel-token-4b8e2d61";
 export const SENTINEL_BEARER = "sentinel-bearer-9c1f5a07";
 export const SENTINEL_SECRET = "sentinel-secret-2e6d8b13";
@@ -50,6 +51,33 @@ export function axiosErrorWithSentinels(
   );
 }
 
+/**
+ * Makes every request through the shared api client fail at the adapter, so
+ * the caller sees a genuine AxiosError built from the request it really sent
+ * (body, Authorization header from localStorage, interceptors applied).
+ * Stores SENTINEL_BEARER as the access token. Returns a restore function.
+ */
+export function rejectEveryApiRequest(
+  status = 400,
+  responseData: Record<string, unknown> = { success: false, error: "Request rejected", code: "BAD_REQUEST" },
+): () => void {
+  const previous = api.defaults.adapter;
+  localStorage.setItem("accessToken", SENTINEL_BEARER);
+  api.defaults.adapter = async (config) => {
+    throw new AxiosError(
+      `Request failed with status code ${status}`,
+      status >= 500 ? AxiosError.ERR_BAD_RESPONSE : AxiosError.ERR_BAD_REQUEST,
+      config,
+      {},
+      { status, statusText: "", headers: {}, config, data: responseData },
+    );
+  };
+  return () => {
+    api.defaults.adapter = previous;
+    localStorage.removeItem("accessToken");
+  };
+}
+
 const CONSOLE_METHODS = ["log", "info", "warn", "error", "debug", "trace"] as const;
 
 /** Spies on every console method (output suppressed); returns the spies. */
@@ -67,13 +95,16 @@ function renderings(arg: unknown): string[] {
   return out;
 }
 
-/** Fails if any console call so far received an argument containing a sentinel. */
-export function expectNoSentinelInConsole(spies: ReturnType<typeof spyOnConsole>) {
+/**
+ * Fails if any console call so far received an argument containing a
+ * sentinel, or any of `alsoForbidden` (values a flow sent, e.g. an email).
+ */
+export function expectNoSentinelInConsole(spies: ReturnType<typeof spyOnConsole>, alsoForbidden: string[] = []) {
   for (const spy of spies) {
     for (const call of spy.mock.calls) {
       for (const arg of call) {
         for (const text of renderings(arg)) {
-          for (const sentinel of SENTINELS) {
+          for (const sentinel of [...SENTINELS, ...alsoForbidden]) {
             expect(text, `console argument contained a sentinel value`).not.toContain(sentinel);
           }
         }
