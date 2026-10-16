@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Bell, Mail, AlertTriangle, DollarSign, Rocket, Check, Loader2 } from 'lucide-react';
 import { userPreferencesService, type EmailPreferences } from '@/lib/services/user-preferences.service';
 import { toast } from 'sonner';
+import { logError } from '@/lib/safe-log';
 
 export default function NotificationsSettingsPage() {
   const [preferences, setPreferences] = useState<EmailPreferences>({
@@ -31,7 +32,7 @@ export default function NotificationsSettingsPage() {
       const data = await userPreferencesService.getEmailPreferences();
       setPreferences(data);
     } catch (error: any) {
-      console.error('Failed to load preferences:', error);
+      logError('Failed to load preferences', error);
       toast.error('Failed to load email preferences');
     } finally {
       setLoading(false);
@@ -50,7 +51,7 @@ export default function NotificationsSettingsPage() {
       setPreferences(updated);
       toast.success('Email preferences updated');
     } catch (error: any) {
-      console.error('Failed to update preference:', error);
+      logError('Failed to update preference', error);
       // Revert on error
       setPreferences(prev => ({ ...prev, [key]: previousValue }));
       toast.error('Failed to update preference');

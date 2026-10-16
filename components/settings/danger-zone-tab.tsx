@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { logError } from "@/lib/safe-log";
 
 interface DangerZoneTabProps {
   organization: Organization;
@@ -66,7 +67,7 @@ export function DangerZoneTab({ organization }: DangerZoneTabProps) {
       setShowDeleteDialog(false);
       setConfirmText("");
     } catch (error: any) {
-      console.error("Failed to delete organization:", error);
+      logError("Failed to delete organization", error);
       const message =
         error.response?.data?.error ||
         error.response?.data?.message ||

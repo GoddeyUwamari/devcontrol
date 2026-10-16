@@ -8,6 +8,7 @@ import { CheckCircle2, ArrowRight, Receipt } from 'lucide-react';
 import { getSubscription } from '@/lib/services/stripe.service';
 import { Subscription } from '@/types/billing';
 import { trackPurchase, trackLeadConverted } from '@/lib/gtag';
+import { logError } from '@/lib/safe-log';
 
 function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
@@ -45,7 +46,7 @@ function CheckoutSuccessContent() {
           trackLeadConverted()
         }
       } catch (error) {
-        console.error('Error fetching subscription:', error)
+        logError('Error fetching subscription', error)
       } finally {
         setLoading(false)
       }

@@ -1,4 +1,5 @@
 import { toPng } from 'html-to-image';
+import { logError } from '@/lib/safe-log';
 
 /**
  * Exports a ReactFlow dependency graph as a high-resolution PNG image
@@ -89,7 +90,7 @@ export async function exportGraphToPNG(graphElement: HTMLElement): Promise<void>
 
     console.log(`PNG export successful: ${filename}`);
   } catch (error) {
-    console.error('PNG export failed:', error);
+    logError('PNG export failed', error);
     throw new Error(
       `Failed to export graph as PNG: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

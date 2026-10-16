@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useIsBillingAdmin } from '@/lib/hooks/use-current-role';
+import { logError } from '@/lib/safe-log';
 
 export default function BillingPage() {
   // Cancel/Resume/Manage Billing (Customer Portal) are all owner/admin-only
@@ -64,7 +65,7 @@ export default function BillingPage() {
         setInvoices(invResult.data);
       }
     } catch (error) {
-      console.error('Error fetching billing data:', error);
+      logError('Error fetching billing data', error);
       toast.error('Error', {
         description: 'Failed to load billing information',
       });

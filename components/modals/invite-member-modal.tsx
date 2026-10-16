@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UpgradeModal } from "@/components/billing/upgrade-modal";
+import { logError } from "@/lib/safe-log";
 
 const inviteMemberSchema = z.object({
   email: z
@@ -97,7 +98,7 @@ export function InviteMemberModal({
       onOpenChange(false);
       onSuccess?.();
     } catch (error: any) {
-      console.error("Failed to invite member:", error);
+      logError("Failed to invite member", error);
 
       // Check if this is a resource limit error (402 Payment Required)
       if (error?.response?.status === 402 || error?.code === 'RESOURCE_LIMIT_REACHED') {

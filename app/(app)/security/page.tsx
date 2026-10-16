@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { logError } from '@/lib/safe-log'
 
 type FrameworkDisplay = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing' }
 
@@ -339,7 +340,7 @@ export default function SecurityPage() {
   const handleAcknowledge = async (id: string) => {
     setAcknowledging(id)
     try { await anomalyService.acknowledge(id); refetchAnomalies() }
-    catch (e) { console.error('Failed to acknowledge:', e) }
+    catch (e) { logError('Failed to acknowledge', e) }
     finally { setAcknowledging(null) }
   }
 

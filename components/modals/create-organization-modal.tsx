@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { logError } from "@/lib/safe-log";
 
 /**
  * Validation schema for creating an organization
@@ -110,7 +111,7 @@ export function CreateOrganizationModal({
       onOpenChange(false);
     } catch (error) {
       // Error handled by context
-      console.error("Failed to create organization:", error);
+      logError("Failed to create organization", error);
     } finally {
       setIsLoading(false);
     }

@@ -23,7 +23,6 @@ export function Header() {
   const { user, isLoading } = useAuth()
 
   // Debug log
-  console.log('👤 Header - Current user:', user)
 
   // Get the page title based on the current route
   const getPageTitle = () => {

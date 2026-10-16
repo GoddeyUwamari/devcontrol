@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { exportDependencyReport } from '@/lib/export/pdf-export';
 import type { DependencyExportData, ExportStats } from '@/types/export';
+import { logError } from '@/lib/safe-log';
 
 interface ServiceDependency {
   id: string;
@@ -78,7 +79,7 @@ export function ExportPDFButton({
 
       toast.success('Report exported successfully');
     } catch (error) {
-      console.error('PDF export error:', error);
+      logError('PDF export error', error);
       const errorMessage =
         error instanceof Error ? error.message : 'Report export failed. Please try again.';
       toast.error(errorMessage);

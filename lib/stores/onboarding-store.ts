@@ -11,6 +11,7 @@ import {
   dismissOnboarding,
   reEnableOnboarding,
 } from '../services/onboarding.service';
+import { logError } from '@/lib/safe-log';
 
 interface OnboardingStore {
   // State
@@ -53,7 +54,7 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
         });
       }
     } catch (error: any) {
-      console.error('Error fetching onboarding status:', error);
+      logError('Error fetching onboarding status', error);
       set({
         error: error.message || 'Failed to fetch onboarding status',
         loading: false,
@@ -72,7 +73,7 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
         set({ error: response.error || 'Failed to complete step' });
       }
     } catch (error: any) {
-      console.error(`Error completing step ${step}:`, error);
+      logError(`Error completing step ${step}`, error);
       set({ error: error.message || 'Failed to complete step' });
     }
   },
@@ -88,7 +89,7 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
         set({ error: response.error || 'Failed to dismiss onboarding' });
       }
     } catch (error: any) {
-      console.error('Error dismissing onboarding:', error);
+      logError('Error dismissing onboarding', error);
       set({ error: error.message || 'Failed to dismiss onboarding' });
     }
   },
@@ -104,7 +105,7 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
         set({ error: response.error || 'Failed to re-enable onboarding' });
       }
     } catch (error: any) {
-      console.error('Error re-enabling onboarding:', error);
+      logError('Error re-enabling onboarding', error);
       set({ error: error.message || 'Failed to re-enable onboarding' });
     }
   },

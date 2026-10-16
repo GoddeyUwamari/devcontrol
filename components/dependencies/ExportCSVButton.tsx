@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { exportDependenciesToCSV } from '@/lib/export/csv-export';
 import type { DependencyExportData, ExportStats } from '@/types/export';
+import { logError } from '@/lib/safe-log';
 
 interface ServiceDependency {
   id: string;
@@ -68,7 +69,7 @@ export function ExportCSVButton({ dependencies, cycles = [] }: ExportCSVButtonPr
 
       toast.success('Dependencies exported successfully');
     } catch (error) {
-      console.error('Export error:', error);
+      logError('Export error', error);
       toast.error('Export failed. Please try again.');
     } finally {
       setIsExporting(false);

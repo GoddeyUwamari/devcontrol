@@ -2,6 +2,7 @@
 
 import { useWebSocket } from '@/lib/hooks/useWebSocket';
 import { useEffect, useRef, useState } from 'react';
+import { logError } from '@/lib/safe-log';
 
 interface LogLine {
   timestamp: number;
@@ -83,7 +84,7 @@ export function LiveLogViewer({
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
         },
-      }).catch(console.error);
+      }).catch((error) => logError('Failed to stop log stream', error));
     };
   }, [socket, deploymentId, logGroupName, logStreamName]);
 

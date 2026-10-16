@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
+import { logError } from "@/lib/safe-log";
 
 export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -49,7 +50,7 @@ export default function ForgotPasswordPage() {
         description: `Check your inbox at ${data.email}`,
       });
     } catch (error: any) {
-      console.error("Forgot password error:", error);
+      logError("Forgot password error", error);
       const message =
         error.response?.data?.error ||
         error.response?.data?.message ||

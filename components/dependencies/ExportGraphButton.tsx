@@ -5,6 +5,7 @@ import { Image as ImageIcon, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { exportGraphToPNG } from '@/lib/export/graph-export';
+import { logError } from '@/lib/safe-log';
 
 interface ExportGraphButtonProps {
   graphRef: React.RefObject<HTMLDivElement> | null;
@@ -31,7 +32,7 @@ export function ExportGraphButton({ graphRef, disabled = false }: ExportGraphBut
 
       toast.success('Graph exported successfully');
     } catch (error) {
-      console.error('Graph export error:', error);
+      logError('Graph export error', error);
       const errorMessage =
         error instanceof Error ? error.message : 'Graph export failed. Please try again.';
       toast.error(errorMessage);

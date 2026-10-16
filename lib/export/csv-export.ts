@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
 import type { DependencyExportData, ExportStats } from '@/types/export';
+import { logError } from '@/lib/safe-log';
 
 /**
  * Exports dependency data to CSV format with metadata headers
@@ -70,7 +71,7 @@ export async function exportDependenciesToCSV(
 
     console.log(`CSV export successful: ${filename}`);
   } catch (error) {
-    console.error('CSV export failed:', error);
+    logError('CSV export failed', error);
     throw new Error(
       `Failed to export dependencies to CSV: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

@@ -161,8 +161,12 @@ export function AccessibilityChecker() {
     if (foundIssues.length > 0) {
       console.group('Accessibility Issues Found');
       foundIssues.forEach((issue) => {
-        const logFn = issue.type === 'error' ? console.error : console.warn;
-        logFn(`[${issue.type.toUpperCase()}] ${issue.message}`, issue.element || '');
+        const message = `[${issue.type.toUpperCase()}] ${issue.message}`;
+        if (issue.type === 'error') {
+          console.error(message, issue.element || '');
+        } else {
+          console.warn(message, issue.element || '');
+        }
       });
       console.groupEnd();
     }

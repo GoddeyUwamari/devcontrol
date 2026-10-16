@@ -15,6 +15,7 @@ import {
   SubscriptionTier,
   BillingInterval,
 } from '@/types/billing';
+import { logError } from '@/lib/safe-log';
 
 /**
  * Create a Stripe Checkout session and redirect to checkout
@@ -37,7 +38,7 @@ export async function createCheckoutSession(
 
     return response.data;
   } catch (error: any) {
-    console.error('Error creating checkout session:', error);
+    logError('Error creating checkout session', error);
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to create checkout session',
@@ -53,7 +54,7 @@ export async function getSubscription(): Promise<SubscriptionResponse> {
     const response = await api.get<SubscriptionResponse>('/api/stripe/subscription');
     return response.data;
   } catch (error: any) {
-    console.error('Error getting subscription:', error);
+    logError('Error getting subscription', error);
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to get subscription',
@@ -69,7 +70,7 @@ export async function getInvoices(): Promise<InvoicesResponse> {
     const response = await api.get<InvoicesResponse>('/api/stripe/invoices');
     return response.data;
   } catch (error: any) {
-    console.error('Error getting invoices:', error);
+    logError('Error getting invoices', error);
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to get invoices',
@@ -91,7 +92,7 @@ export async function openCustomerPortal(): Promise<CustomerPortalResponse> {
 
     return response.data;
   } catch (error: any) {
-    console.error('Error opening customer portal:', error);
+    logError('Error opening customer portal', error);
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to open customer portal',
@@ -113,7 +114,7 @@ export async function cancelSubscription(
 
     return response.data;
   } catch (error: any) {
-    console.error('Error canceling subscription:', error);
+    logError('Error canceling subscription', error);
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to cancel subscription',
@@ -133,7 +134,7 @@ export async function resumeSubscription(): Promise<SubscriptionResponse> {
 
     return response.data;
   } catch (error: any) {
-    console.error('Error resuming subscription:', error);
+    logError('Error resuming subscription', error);
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to resume subscription',
@@ -158,7 +159,7 @@ export async function changePlan(
 
     return response.data;
   } catch (error: any) {
-    console.error('Error changing subscription plan:', error);
+    logError('Error changing subscription plan', error);
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to change subscription plan',

@@ -4,6 +4,7 @@
  */
 
 import { ErrorType, createAppError } from '@/lib/errors/error-types';
+import { describeError } from '@/lib/safe-log';
 
 export interface RetryOptions {
   /** Maximum number of retry attempts */
@@ -163,8 +164,7 @@ export async function retryApiCall<T>(
     onRetry: (error, attempt, delay) => {
       if (process.env.NODE_ENV === 'development') {
         console.log(
-          `[Retry] ${context} - Attempt ${attempt} failed, retrying in ${Math.round(delay)}ms`,
-          error
+          describeError(`[Retry] ${context} - Attempt ${attempt} failed, retrying in ${Math.round(delay)}ms`, error)
         );
       }
     },
