@@ -30,9 +30,120 @@ env:
   # deploy-backend on the same filesystem.
   DEPLOY_MIN_FREE_MIB: '1024'
 
+# Superseded pull_request runs are cancelled: a new push to the same PR
+# cancels the run still in progress for that PR. Every other run (push to
+# main, workflow_dispatch) gets a group of its own (its run_id), so this
+# block never cancels or queues it -- a shared group would hold at most one
+# pending run and cancel the older one. Deploys stay one at a time through
+# the per-job production-* concurrency groups below, exactly as before.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  lint-and-build:
+  # The checks that used to run serially in one lint-and-build job now run as
+  # parallel jobs, joined by the lint-and-build gate job at the end. Every
+  # job keeps the same Node setup and npm cache as the old single job.
+  lint:
     runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run linter
+        run: npm run lint || true
+
+  release-compatibility:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history (not the default depth-1 shallow clone) -- required
+          # by validate-release-compatibility-declaration.js below, which
+          # verifies a declared migration's post-baseline claim against real
+          # git history (git rev-parse / git ls-tree against an arbitrary
+          # historical ref). No other job's checkout needs this.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Node built-ins and git only: no npm install needed.
+      - name: Validate release-compatibility declaration
+        run: node .github/scripts/validate-release-compatibility-declaration.js
+
+  # Frontend unit tests (vitest + jsdom): no database, network or secrets.
+  frontend-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run frontend tests
+        run: npm run test:frontend
+
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # build:backend runs backend/scripts/generate-version.js itself before
+      # tsc, so this job needs no separate version step.
+      - name: Build project
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.getdevcontrol.com
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: .next/
+          retention-days: 7
+
+  # The jest suite split across two runners with jest's --shard. Each shard
+  # has its own Postgres service, bootstrapped exactly as the old single job
+  # did. fail-fast: false lets the other shard finish, so one run reports
+  # every failing test; the gate fails if either shard fails.
+  backend-tests:
+    name: backend-tests (${{ matrix.shard }}/2)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     services:
       postgres:
         image: postgres:14
@@ -50,14 +161,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          # Full history (not the default depth-1 shallow clone) -- required
-          # by validate-release-compatibility-declaration.js below, which
-          # verifies a declared migration's post-baseline claim against real
-          # git history (git rev-parse / git ls-tree against an arbitrary
-          # historical ref). No other job's checkout needs this and none
-          # were changed.
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -65,18 +168,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Validate release-compatibility declaration
-        run: node .github/scripts/validate-release-compatibility-declaration.js
-
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
-
-      - name: Run linter
-        run: npm run lint || true
-
-      # Frontend unit tests (vitest + jsdom): no database, network or secrets.
-      - name: Run frontend tests
-        run: npm run test:frontend
 
       - name: Create devcontrol role for CI schema bootstrap
         run: PGPASSWORD=postgres psql -h localhost -U postgres -d platform_portal -c "CREATE ROLE devcontrol;"
@@ -94,7 +187,7 @@ jobs:
         run: node backend/scripts/generate-version.js
 
       - name: Run backend tests
-        run: npm test --workspace=backend
+        run: npm test --workspace=backend -- --shard=${{ matrix.shard }}/2
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -104,17 +197,39 @@ jobs:
           JWT_SECRET: ci-test-jwt-secret-not-a-real-secret-32c
           ENCRYPTION_KEY: ci-test-encryption-key-32-chars.
 
-      - name: Build project
-        run: npm run build
+  # The required status check and what every deploy job needs. It keeps the
+  # old job's name so neither the ruleset nor the deploy jobs change.
+  #
+  # A required check that is SKIPPED counts as passing, so this job must run
+  # whenever its needs finish, including when one of them failed or was
+  # skipped: hence !cancelled() rather than the default success(). It then
+  # fails unless every needed job's result is exactly 'success'. A cancelled
+  # run (a superseded PR push) skips it, and the newer run reports instead.
+  lint-and-build:
+    runs-on: ubuntu-24.04
+    needs: [lint, release-compatibility, frontend-tests, build, backend-tests]
+    if: ${{ !cancelled() }}
+    steps:
+      - name: Require every needed job to have succeeded
         env:
-          NEXT_PUBLIC_API_URL: https://api.getdevcontrol.com
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: .next/
-          retention-days: 7
+          LINT: ${{ needs.lint.result }}
+          RELEASE_COMPATIBILITY: ${{ needs.release-compatibility.result }}
+          FRONTEND_TESTS: ${{ needs.frontend-tests.result }}
+          BUILD: ${{ needs.build.result }}
+          BACKEND_TESTS: ${{ needs.backend-tests.result }}
+        run: |
+          failed=0
+          for job in LINT RELEASE_COMPATIBILITY FRONTEND_TESTS BUILD BACKEND_TESTS; do
+            result="${!job}"
+            echo "$job: ${result:-<empty>}"
+            if [ "$result" != "success" ]; then
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::lint-and-build failed: every needed job must succeed (see results above)"
+            exit 1
+          fi
 
   deploy-backend:
     runs-on: ubuntu-24.04

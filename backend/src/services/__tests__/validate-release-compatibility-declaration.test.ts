@@ -9,8 +9,9 @@
  *    git. No Postgres connection anywhere in this file.
  *  - CI wiring: .github/workflows/ci.yml parsed as text, same
  *    extractJobBlock approach already used by migrate-deploy.test.ts, to
- *    confirm fetch-depth: 0 landed only on lint-and-build and no other job's
- *    checkout was touched.
+ *    confirm fetch-depth: 0 landed only on the release-compatibility job,
+ *    no other job's checkout was touched, and the lint-and-build gate needs
+ *    that job.
  */
 
 import { execSync } from 'child_process';
@@ -195,16 +196,22 @@ describe('.github/scripts/validate-release-compatibility-declaration.js — vali
 describe('.github/workflows/ci.yml — release-compatibility validation wiring', () => {
   const ciYml = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
 
-  it('lint-and-build checkout uses fetch-depth: 0', () => {
-    const block = extractJobBlock(ciYml, 'lint-and-build');
+  it('release-compatibility checkout uses fetch-depth: 0', () => {
+    const block = extractJobBlock(ciYml, 'release-compatibility');
     const checkoutSection = block.match(/Checkout code[\s\S]*?(?=\n\s*- name:)/);
     expect(checkoutSection).toBeTruthy();
     expect(checkoutSection![0]).toMatch(/fetch-depth:\s*0/);
   });
 
-  it('lint-and-build runs the release-compatibility declaration validator', () => {
-    const block = extractJobBlock(ciYml, 'lint-and-build');
+  it('release-compatibility runs the release-compatibility declaration validator', () => {
+    const block = extractJobBlock(ciYml, 'release-compatibility');
     expect(block).toMatch(/validate-release-compatibility-declaration\.js/);
+  });
+
+  it('the lint-and-build gate (the required check) needs release-compatibility', () => {
+    const block = extractJobBlock(ciYml, 'lint-and-build');
+    expect(block).toMatch(/\n {4}needs: \[[^\]]*\brelease-compatibility\b[^\]]*\]/);
+    expect(block).toContain('RELEASE_COMPATIBILITY: ${{ needs.release-compatibility.result }}');
   });
 
   it('deploy-backend checkout is untouched -- no fetch-depth added', () => {
@@ -221,7 +228,7 @@ describe('.github/workflows/ci.yml — release-compatibility validation wiring',
     expect(checkoutSection![0]).not.toMatch(/fetch-depth/);
   });
 
-  it('no job other than lint-and-build references the validator script', () => {
+  it('no job other than release-compatibility references the validator script', () => {
     const jobNames = ['deploy-backend', 'deploy-migration-tooling'];
     for (const jobName of jobNames) {
       const block = extractJobBlock(ciYml, jobName);
