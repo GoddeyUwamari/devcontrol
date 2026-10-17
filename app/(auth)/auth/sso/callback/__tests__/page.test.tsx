@@ -3,8 +3,8 @@
  * page removes them from the URL before it stores them or calls /me, stores
  * them where the rest of the app reads them (tokenManager), sets the auth
  * cookie the same way as password login, and no longer writes the obsolete
- * localStorage keys. Links in the legacy query-string form still work and are
- * cleaned the same way.
+ * localStorage keys. Tokens in the query string are not used: such a link
+ * signs no one in, and is cleaned the same way.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -123,22 +123,31 @@ describe("SSO callback", () => {
     }
   });
 
-  it("accepts the legacy query-string form and removes it before calling /me", async () => {
-    visit(`/auth/sso/callback?${new URLSearchParams({ token: ACCESS, refreshToken: REFRESH, orgId: "org-1" })}`);
-    const hrefWhenMeCalled: string[] = [];
-    fetchMock.mockImplementation(async () => {
-      hrefWhenMeCalled.push(window.location.href);
-      return { json: async () => ({ success: true, data: USER }) };
-    });
+  it("a ?token= link shows the error, stores nothing, never calls /me, and is removed from the URL and history", async () => {
+    const link = `/auth/sso/callback?${new URLSearchParams({ token: ACCESS, refreshToken: REFRESH, orgId: "org-1" })}`;
+    // Shape Next.js stores: the page segment keeps the URL it was loaded with.
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: ["", { children: ["__PAGE__", {}, link, "refresh"] }] }, "", link);
+    const setCookie = vi.spyOn(tokenManager, "setAuthCookie");
 
     render(<SSOCallbackPage />);
+    // Before the deferred re-apply replaces the state: the router's copy is clean.
+    const stateAfterLoad = JSON.stringify(window.history.state);
+    expect(stateAfterLoad).toContain("__PAGE__");
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
-    expect(tokenManager.getAccessToken()).toBe(ACCESS);
-    expect(tokenManager.getRefreshToken()).toBe(REFRESH);
-    expect(hrefWhenMeCalled[0]).not.toContain(ACCESS);
+    expect(await screen.findByText(/missing tokens/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to sign in/i })).toHaveAttribute("href", "/login");
+    expect(tokenManager.getAccessToken()).toBeNull();
+    expect(tokenManager.getRefreshToken()).toBeNull();
+    expect(setCookie).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/auth/sso/callback");
     expect(window.location.search).toBe("");
     expectNoTokensInUrl();
+    expect(stateAfterLoad).not.toContain(ACCESS);
+    expect(JSON.stringify(window.history.state)).not.toContain(ACCESS);
+    expect(stateAfterLoad).not.toContain(REFRESH);
+    expect(JSON.stringify(window.history.state)).not.toContain(REFRESH);
   });
 
   it("no longer writes the obsolete auth-token, refresh-token or organization-id keys", async () => {

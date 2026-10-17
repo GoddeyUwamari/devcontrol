@@ -65,7 +65,6 @@ function ResetPasswordContent() {
     if (tokenTaken.current) return;
     tokenTaken.current = true;
 
-    // (The legacy query-string form has a removal date; see lib/url-credentials.ts.)
     const { token: tokenParam } = takeUrlCredentials(["token"] as const);
     if (!tokenParam) {
       toast.error("Invalid reset link", {
