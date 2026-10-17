@@ -34,7 +34,12 @@ export const RESOURCE_HEALTH_STATES: readonly ResourceHealthState[] = [
 export const RESOURCE_HEALTH_SOURCE = 'resource_checks_cache';
 /** The evaluator range that is read: the one the Dashboard and /admin/monitoring share. */
 export const RESOURCE_HEALTH_RANGE = '1h';
-/** An evaluation older than this is not reported; the resource is no_signal instead. */
+/**
+ * An evaluation older than this is not reported; the resource is no_signal instead.
+ * The same limit is the staleness rule for stored evaluations
+ * (resource_health_evaluation_runs.evaluated_at), defined in
+ * database/migrations-admin/README.md, "Showing stored resource health".
+ */
 export const RESOURCE_HEALTH_MAX_AGE_MS = 15 * 60 * 1000;
 
 export interface ResourceHealthCheck {
