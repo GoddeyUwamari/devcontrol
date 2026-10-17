@@ -2,7 +2,7 @@
  * Google Analytics must not run on pages whose URLs can carry credentials:
  * everything under app/(auth) (login, SSO callback, password reset,
  * invitations) and the not-found page, which renders inside the root layout
- * only. It is rendered by the marketing, application and /demo layouts.
+ * only. It is rendered by the marketing and application layouts.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -53,7 +53,6 @@ import RootLayout from "@/app/layout";
 import AuthLayout from "@/app/(auth)/layout";
 import MarketingLayout from "@/app/(marketing)/layout";
 import AppLayout from "@/app/(app)/layout";
-import DemoLayout from "@/app/demo/layout";
 
 const page = <p>page</p>;
 
@@ -92,7 +91,6 @@ describe("analytics route boundaries (rendered layouts)", () => {
   it.each([
     ["(marketing)", MarketingLayout],
     ["(app)", AppLayout],
-    ["/demo", DemoLayout],
   ])("the %s layout renders analytics exactly once", (_name, Layout) => {
     render(<Layout>{page}</Layout>);
     expect(screen.getByText("page")).toBeInTheDocument();
@@ -119,9 +117,9 @@ describe("analytics route boundaries (source guard)", () => {
       fs.readFileSync(f, "utf8")
     );
 
-  it("only the marketing, application and /demo layouts include analytics", () => {
+  it("only the marketing and application layouts include analytics", () => {
     const including = filesUnder(appDir).filter(importsAnalytics).map(rel).sort();
-    expect(including).toEqual(["app/(app)/layout.tsx", "app/(marketing)/layout.tsx", "app/demo/layout.tsx"]);
+    expect(including).toEqual(["app/(app)/layout.tsx", "app/(marketing)/layout.tsx"]);
   });
 
   it("nothing under app/(auth), and no root-level layout/not-found/error file, includes analytics", () => {

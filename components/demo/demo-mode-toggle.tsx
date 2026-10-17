@@ -6,39 +6,16 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
-
-const DEMO_MODE_KEY = 'devcontrol_demo_mode';
-
 export function DemoModeToggle() {
   return null;
 }
 
 /**
- * Hook to check if demo mode is enabled
+ * Demo mode is switched off for everyone. The 'devcontrol_demo_mode' flag is
+ * no longer read (lib/legacy-demo-cleanup.ts removes it on load), so this
+ * always reports real mode. The demo branches that call it are removed per
+ * area later.
  */
-export function useDemoMode() {
-  const [demoMode, setDemoMode] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('devcontrol_demo_mode') === 'true';
-  });
-
-  useEffect(() => {
-    // Check initial state
-    const stored = localStorage.getItem(DEMO_MODE_KEY);
-    setDemoMode(stored === 'true');
-
-    // Listen for changes
-    const handleDemoModeChange = (e: CustomEvent) => {
-      setDemoMode(e.detail.enabled);
-    };
-
-    window.addEventListener('demo-mode-changed', handleDemoModeChange as EventListener);
-
-    return () => {
-      window.removeEventListener('demo-mode-changed', handleDemoModeChange as EventListener);
-    };
-  }, []);
-
-  return demoMode;
+export function useDemoMode(): boolean {
+  return false;
 }

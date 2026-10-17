@@ -1,46 +1,20 @@
 import { DEMO_AWS_RESOURCES, DEMO_STATS } from '../demo-data/demo-generator';
 
+/**
+ * Demo mode is switched off for everyone: isEnabled() is always false and the
+ * setters do nothing, so the 'devcontrol_demo_mode' flag is never read or
+ * written here (lib/legacy-demo-cleanup.ts removes it on load).
+ */
 class DemoModeService {
-  private DEMO_MODE_KEY = 'devcontrol_demo_mode';
-
-  /**
-   * Check if demo mode is enabled
-   */
   isEnabled(): boolean {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem(this.DEMO_MODE_KEY) === 'true';
+    return false;
   }
 
-  /**
-   * Enable demo mode
-   */
-  enable() {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(this.DEMO_MODE_KEY, 'true');
-    // Dispatch event instead of reloading - React state handles the data swap
-    window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: true } }));
-  }
+  enable() {}
 
-  /**
-   * Disable demo mode
-   */
-  disable() {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(this.DEMO_MODE_KEY, 'false');
-    // Dispatch event instead of reloading - React state handles the data swap
-    window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled: false } }));
-  }
+  disable() {}
 
-  /**
-   * Toggle demo mode
-   */
-  toggle() {
-    if (this.isEnabled()) {
-      this.disable();
-    } else {
-      this.enable();
-    }
-  }
+  toggle() {}
 
   /**
    * Get demo AWS resources

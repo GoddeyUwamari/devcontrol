@@ -1,13 +1,13 @@
 /**
- * Integration coverage (G): proves sample AWS-Observed Evidence and sample
- * Customer-Provided Evidence actually render through the REAL Soc2ObservedEvidenceList
- * / Soc2CustomerEvidenceSection components (the exact components the SOC2 detail page
- * uses) when demo mode is active -- not just that the underlying hooks return the right
- * data in isolation (see useSoc2Readiness.demo.test.tsx / useCustomerEvidence.demo
- * .test.tsx for that). soc2Service is spied on to prove no real request is made.
+ * Integration guard (G): demo mode is switched off for everyone. With the legacy
+ * demo flag set, the REAL Soc2ObservedEvidenceList / Soc2CustomerEvidenceSection
+ * components (the exact components the SOC2 detail page uses) still call the real
+ * endpoints and render their real empty states -- never the sample evidence rows.
+ * The hook-level guards live in useSoc2Readiness.demo.test.tsx /
+ * useCustomerEvidence.demo.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { soc2Service } from '@/lib/services/soc2.service'
@@ -45,21 +45,20 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('SOC 2 demo mode — sample AWS-Observed Evidence renders through the real component', () => {
-  it('shows sample observation rows for CC6.1 and never calls the real evidence endpoint', () => {
+describe('SOC 2 with the demo flag set — AWS-Observed Evidence stays real', () => {
+  it('calls the real evidence endpoint for CC6.1 and shows the real empty state, not sample rows', async () => {
     const spy = vi.spyOn(soc2Service, 'getEvidence').mockResolvedValue([])
     setDemoMode(true)
 
     render(<Soc2ObservedEvidenceList criterionId="CC6.1" />, { wrapper })
 
-    expect(screen.queryByText('No AWS-observed evidence yet')).not.toBeInTheDocument()
-    expect(screen.getAllByText('AWS-Observed').length).toBeGreaterThan(0)
-    expect(spy).not.toHaveBeenCalled()
+    expect(await screen.findByText('No AWS-observed evidence yet')).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledWith('CC6.1')
   })
 })
 
-describe('SOC 2 demo mode — sample Customer-Provided Evidence renders through the real component', () => {
-  it('shows sample customer-evidence rows and never calls the real customer-evidence endpoint', () => {
+describe('SOC 2 with the demo flag set — Customer-Provided Evidence stays real', () => {
+  it('calls the real customer-evidence endpoint and shows the real empty state, not sample rows', async () => {
     const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue([])
     setDemoMode(true)
 
@@ -68,11 +67,10 @@ describe('SOC 2 demo mode — sample Customer-Provided Evidence renders through 
       { wrapper }
     )
 
-    expect(screen.queryByText('No customer-provided evidence yet')).not.toBeInTheDocument()
+    expect(await screen.findByText('No customer-provided evidence yet')).toBeInTheDocument()
+    await waitFor(() => expect(spy).toHaveBeenCalled())
     for (const sample of DEMO_SOC2_CUSTOMER_EVIDENCE) {
-      expect(screen.getByText(sample.title)).toBeInTheDocument()
+      expect(screen.queryByText(sample.title)).not.toBeInTheDocument()
     }
-    expect(screen.getAllByText('Self-Attested').length).toBeGreaterThanOrEqual(DEMO_SOC2_CUSTOMER_EVIDENCE.length)
-    expect(spy).not.toHaveBeenCalled()
   })
 })

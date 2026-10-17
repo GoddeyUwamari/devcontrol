@@ -112,15 +112,17 @@ describe('Infrastructure page — System Intelligence demo-data fallback safety'
     expect(screen.queryByText(DEMO_TOP_ACTION_TEXT)).not.toBeInTheDocument()
   })
 
-  it('still renders demo intelligence in demo mode (legitimate sales-demo functionality preserved)', async () => {
+  it('with both legacy demo flags set, a failing intelligence API still shows the honest placeholder, never demo intelligence', async () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
+    localStorage.setItem('sales-demo-mode', JSON.stringify({ state: { enabled: true }, version: 0 }))
     global.fetch = vi.fn().mockImplementation(() => Promise.resolve({ ok: false } as Response)) as unknown as typeof fetch
 
     renderPage()
 
     await waitFor(() => {
-      expect(screen.getByText(DEMO_TOP_ACTION_TEXT)).toBeInTheDocument()
+      expect(screen.getByText('Not yet available')).toBeInTheDocument()
     })
-    expect(screen.queryByTestId('intel-not-ready')).not.toBeInTheDocument()
+    expect(screen.getByTestId('intel-not-ready')).toBeInTheDocument()
+    expect(screen.queryByText(DEMO_TOP_ACTION_TEXT)).not.toBeInTheDocument()
   })
 })
