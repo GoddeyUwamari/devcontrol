@@ -31,7 +31,13 @@ import { GracePeriodEnforcementJob } from './jobs/grace-period-enforcement.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
 import { loadEnv } from './config/load-env';
-import { isLocalStack, localDatabaseRoleRefusal, refuseToStart } from './config/local-stack-guard';
+import {
+  isLocalStack,
+  localDatabaseRoleRefusal,
+  localListenHost,
+  refuseToStart,
+  startsBackgroundJobs,
+} from './config/local-stack-guard';
 import {
   RELEASE_SHA,
   BUILT_AT,
@@ -307,8 +313,9 @@ const startServer = async () => {
       console.log('='.repeat(50));
     };
     // The local stack listens on loopback only; elsewhere, all interfaces as before.
-    if (isLocalStack()) {
-      httpServer.listen(Number(PORT), '127.0.0.1', onListening);
+    const listenHost = localListenHost();
+    if (listenHost) {
+      httpServer.listen(Number(PORT), listenHost, onListening);
     } else {
       httpServer.listen(PORT, onListening);
     }
@@ -323,7 +330,7 @@ const startServer = async () => {
 
     // The local stack runs no background jobs: they reach AWS, Prometheus,
     // email or Anthropic, and an empty local organization has nothing to sync.
-    if (isLocalStack()) {
+    if (!startsBackgroundJobs()) {
       console.log('[local-stack] background jobs disabled');
     } else {
       // Start alert sync job (syncs alerts from Prometheus every minute)

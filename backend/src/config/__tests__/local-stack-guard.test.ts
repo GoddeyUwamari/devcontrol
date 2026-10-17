@@ -6,8 +6,10 @@ import {
   applyAwsBlackHole,
   isLocalStack,
   localDatabaseRoleRefusal,
+  localListenHost,
   localStackRefusal,
   LOCAL_STACK_FRONTEND_URL,
+  startsBackgroundJobs,
 } from '../local-stack-guard';
 
 const SECRET = 'sk_test_FAKE_value_that_must_never_be_printed';
@@ -116,5 +118,21 @@ describe('localDatabaseRoleRefusal', () => {
     await expect(localDatabaseRoleRefusal(role(true, false))).resolves.toBe('DB_USER is a superuser');
     await expect(localDatabaseRoleRefusal(role(false, true))).resolves.toBe('DB_USER has BYPASSRLS');
     await expect(localDatabaseRoleRefusal(async () => ({ rows: [] }))).resolves.toBe('database role could not be inspected');
+  });
+});
+
+describe("server.ts start-up decisions", () => {
+  it.each([[{}], [{ DEVCONTROL_LOCAL_STACK: '' }], [{ DEVCONTROL_LOCAL_STACK: '0' }], [{ DEVCONTROL_LOCAL_STACK: 'true' }]])(
+    'flag off (%j): listens on all interfaces and starts background jobs, as before',
+    (env) => {
+      expect(localListenHost(env)).toBeUndefined();
+      expect(startsBackgroundJobs(env)).toBe(true);
+    },
+  );
+
+  it('flag on: listens on loopback only and starts no background jobs', () => {
+    const env = { DEVCONTROL_LOCAL_STACK: '1' };
+    expect(localListenHost(env)).toBe('127.0.0.1');
+    expect(startsBackgroundJobs(env)).toBe(false);
   });
 });

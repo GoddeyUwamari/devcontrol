@@ -32,6 +32,16 @@ export function isLocalStack(env: Env = process.env): boolean {
   return env[LOCAL_STACK_FLAG] === '1';
 }
 
+/** server.ts's listen host: loopback only in local mode, else undefined (all interfaces). */
+export function localListenHost(env: Env = process.env): string | undefined {
+  return isLocalStack(env) ? '127.0.0.1' : undefined;
+}
+
+/** server.ts starts its background jobs everywhere but the local stack. */
+export function startsBackgroundJobs(env: Env = process.env): boolean {
+  return !isLocalStack(env);
+}
+
 function isLoopbackUrl(value: string): boolean {
   try {
     return LOOPBACK_HOSTS.has(new URL(value).hostname.replace(/^\[|\]$/g, ''));
