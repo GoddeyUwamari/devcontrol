@@ -1,0 +1,24 @@
+# Local development database for `npm run dev:local` (dev/local/run.js).
+# Bound to loopback only; the superuser password comes from
+# dev/local/.state/postgres.password, generated on first run.
+name: devcontrol-local
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: devcontrol_local
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEVCONTROL_LOCAL_PG_PASSWORD:?run npm run dev:local}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d devcontrol_local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

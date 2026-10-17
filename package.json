@@ -17,7 +17,8 @@
     "start:frontend": "next start -p 3010",
     "start:backend": "cd backend && npm start",
     "lint": "next lint",
-    "test:frontend": "vitest run"
+    "test:frontend": "vitest run",
+    "dev:local": "node dev/local/run.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
