@@ -382,7 +382,7 @@ function DeploymentsContent() {
                 <span className="text-[11px] font-semibold bg-green-50 text-green-600 px-2 py-0.5 rounded-full ml-2">Top 10%</span>
               </p>
             </div>
-            <a href="/dora-metrics" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
+            <a href="/app/dora-metrics" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
               Full report <ArrowRight size={12} />
             </a>
           </div>

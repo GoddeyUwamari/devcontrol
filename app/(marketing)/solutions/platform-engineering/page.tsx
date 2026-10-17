@@ -48,13 +48,13 @@ function PlatformHero() {
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-8">
             <Button asChild size="lg" className="gap-2 px-6 h-11 bg-purple-600 hover:bg-purple-700">
-              <Link href="/dashboard">
+              <Link href="/register">
                 Start Building
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-              <Link href="/platform/infrastructure">
+              <Link href="/tour">
                 View Demo
               </Link>
             </Button>
@@ -380,7 +380,7 @@ function FinalCTASection() {
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-6">
           <Button asChild size="lg" className="gap-2 px-6 h-11 bg-purple-600 hover:bg-purple-700">
-            <Link href="/dashboard">
+            <Link href="/register">
               Start Free Trial
               <ArrowRight className="w-4 h-4" />
             </Link>

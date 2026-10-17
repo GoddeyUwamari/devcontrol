@@ -6,9 +6,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   ChevronDown, Menu, X,
-  Server, TrendingDown, Shield, BarChart2, Search, Activity,
-  Rocket, TrendingUp, Building2, GitBranch, Layers, DollarSign,
-  BookOpen, Code2, FileText, Clock, Users,
+  BarChart2, BookOpen, Code2, Clock, Users,
 } from 'lucide-react'
 
 function useWindowWidth() {
@@ -22,35 +20,19 @@ function useWindowWidth() {
   return width
 }
 
-const platformItems = [
-  { icon: Server,       title: 'Infrastructure Management', desc: 'Unified view of all your cloud resources',    href: '/platform/infrastructure' },
-  { icon: TrendingDown, title: 'Cost Optimization',         desc: 'Cut cloud spend with AI recommendations',    href: '/platform/costs' },
-  { icon: Shield,       title: 'Security & Compliance',     desc: 'Automated security posture management',      href: '/solutions/security' },
-  { icon: BarChart2,    title: 'DORA Metrics',              desc: 'Track elite engineering performance',        href: '/dora-metrics' },
-  { icon: Search,       title: 'Resource Discovery',        desc: 'Find and tag every cloud asset',             href: '/aws-resources' },
-  { icon: Activity,     title: 'Service Health',            desc: 'Real-time uptime and incident tracking',     href: '/platform/service-health' },
-]
-
-const solutionsItems = [
-  { icon: Rocket,     title: 'For Startups',           desc: 'Move fast without breaking things',       href: '/solutions/startups' },
-  { icon: TrendingUp, title: 'For Scale-ups',          desc: 'Scale infrastructure confidently',        href: '/solutions/scaleups' },
-  { icon: Building2,  title: 'For Mid-Market', desc: 'Built for growing teams of 20–100 engineers', href: '/solutions/mid-market' },
-  { icon: GitBranch,  title: 'For DevOps Teams',       desc: 'Automate your entire delivery pipeline',  href: '/solutions/devops' },
-  { icon: Layers,     title: 'For Platform Engineers', desc: 'Build and manage internal platforms',     href: '/solutions/platform-engineers' },
-  { icon: DollarSign, title: 'For FinOps Teams',       desc: 'Optimize cloud costs across teams',       href: '/solutions/finops' },
-]
-
+// The Platform and Solutions menus linked only to marketing pages retired in
+// AUDIT-TRUTH-PR3 (fabricated outcomes and stats; next.config.ts redirects them).
+// The product tour is the one honest product walkthrough until those pages are rewritten.
 const resourcesItems = [
   { icon: BookOpen,  title: 'Documentation', desc: 'Guides, references, and tutorials',       href: '/docs' },
   { icon: Code2,     title: 'API Reference', desc: 'REST API reference',          href: '/docs/api' },
-  { icon: FileText,  title: 'Blog',          desc: 'Engineering insights and best practices', href: '/blog' },
   { icon: BarChart2, title: 'Case Studies',  desc: 'See how teams use DevControl',            href: '/case-studies' },
   { icon: Clock,     title: 'Changelog',     desc: 'Latest features and improvements',        href: '/changelog' },
   { icon: Users,     title: 'Community',     desc: 'Connect with other DevControl users',     href: '/community' },
 ]
 
 type NavItem = { icon: React.ElementType; title: string; desc: string; href: string | null }
-type DropdownKey = 'platform' | 'solutions' | 'resources'
+type DropdownKey = 'resources'
 
 
 function MegaMenu({ items, showFooter, onClose, align = 'left' }: { items: NavItem[]; showFooter?: boolean; onClose?: () => void; align?: 'left' | 'right' }) {
@@ -337,20 +319,14 @@ export function MarketingNav() {
 
             {/* Desktop Nav */}
             <div className="hidden lg:flex" style={{ alignItems: 'center', gap: '4px' }}>
-              <NavTrigger label="Platform" dropdownKey="platform" activeDropdown={activeDropdown} onOpen={openDropdown} onClose={closeDropdown}>
-                <MegaMenu items={platformItems} showFooter onClose={closeDropdown} />
-              </NavTrigger>
-
-              <NavTrigger label="Solutions" dropdownKey="solutions" activeDropdown={activeDropdown} onOpen={openDropdown} onClose={closeDropdown}>
-                <MegaMenu items={solutionsItems} showFooter onClose={closeDropdown} />
-              </NavTrigger>
+              <NavLink href="/tour">Product tour</NavLink>
 
               <NavTrigger label="Resources" dropdownKey="resources" activeDropdown={activeDropdown} onOpen={openDropdown} onClose={closeDropdown}>
                 <MegaMenu items={resourcesItems} onClose={closeDropdown} align="right" />
               </NavTrigger>
 
               <NavLink href="/pricing">Pricing</NavLink>
-              <NavLink href="/solutions/enterprise">Enterprise</NavLink>
+              <NavLink href="/contact">Contact</NavLink>
               <NavLink href="/docs">Developers</NavLink>
             </div>
           </div>
@@ -461,43 +437,9 @@ export function MarketingNav() {
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '8px' }}>
 
-              {/* Platform expandable */}
-              <button
-                onClick={() => toggleSection('platform')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-              >
-                Platform
-                <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'platform' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-              </button>
-              {expandedSection === 'platform' && (
-                <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
-                  {platformItems.map(item => (
-                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '15px', color: '#1f2937', textDecoration: 'none' }}>
-                      <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
-                      {item.title}
-                    </Link>
-                  ))}
-                </div>
-              )}
-
-              {/* Solutions expandable */}
-              <button
-                onClick={() => toggleSection('solutions')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-              >
-                Solutions
-                <ChevronDown style={{ width: '16px', height: '16px', transition: 'transform 0.2s ease', transform: expandedSection === 'solutions' ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-              </button>
-              {expandedSection === 'solutions' && (
-                <div style={{ backgroundColor: '#faf5ff', borderTop: '1px solid #f3f4f6', borderBottom: '1px solid #f3f4f6' }}>
-                  {solutionsItems.map(item => (
-                    <Link key={item.title} href={item.href ?? '#'} onClick={() => setMobileMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 32px', fontSize: '15px', color: '#1f2937', textDecoration: 'none' }}>
-                      <item.icon style={{ width: '14px', height: '14px', color: '#7c3aed', flexShrink: 0 }} />
-                      {item.title}
-                    </Link>
-                  ))}
-                </div>
-              )}
+              <Link href="/tour" onClick={() => setMobileMenuOpen(false)} style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
+                Product tour
+              </Link>
 
               {/* Resources expandable */}
               <button
@@ -521,8 +463,8 @@ export function MarketingNav() {
               <Link href="/pricing" style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
                 Pricing
               </Link>
-              <Link href="/solutions/enterprise" style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
-                Enterprise
+              <Link href="/contact" style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
+                Contact
               </Link>
               <Link href="/docs" style={{ display: 'block', padding: '10px 24px', fontSize: '16px', fontWeight: 500, color: '#1e1b4b', textDecoration: 'none' }}>
                 Developers

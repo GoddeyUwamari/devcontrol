@@ -48,13 +48,13 @@ function CostHero() {
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-8">
             <Button asChild size="lg" className="gap-2 px-6 h-11 bg-green-600 hover:bg-green-700">
-              <Link href="/dashboard">
+              <Link href="/register">
                 See Your Savings
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
-              <Link href="/cost-optimization">
+              <Link href="/tour">
                 View Demo
               </Link>
             </Button>
@@ -396,7 +396,7 @@ function FinalCTASection() {
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-6">
           <Button asChild size="lg" className="gap-2 px-6 h-11 bg-green-600 hover:bg-green-700">
-            <Link href="/dashboard">
+            <Link href="/register">
               Get Your Free Analysis
               <ArrowRight className="w-4 h-4" />
             </Link>

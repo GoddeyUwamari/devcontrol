@@ -79,20 +79,31 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: '/features/cost-optimization',      destination: '/platform/costs',                permanent: false },
-      { source: '/features/security',               destination: '/solutions/security',             permanent: false },
-      { source: '/features/infrastructure-health',  destination: '/platform/infrastructure',        permanent: false },
-      { source: '/features/resource-discovery',     destination: '/aws-resources',                  permanent: false },
-      { source: '/features/dora-metrics',           destination: '/dora-metrics',                   permanent: false },
-      { source: '/features/collaboration',          destination: '/solutions/platform-engineers',   permanent: false },
+      // Old feature URLs go straight to the final page, never through a retired one.
+      { source: '/features/cost-optimization',      destination: '/tour',                           permanent: false },
+      { source: '/features/security',               destination: '/tour',                           permanent: false },
+      { source: '/features/infrastructure-health',  destination: '/tour',                           permanent: false },
+      { source: '/features/resource-discovery',     destination: '/tour',                           permanent: false },
+      { source: '/features/dora-metrics',           destination: '/tour',                           permanent: false },
+      { source: '/features/collaboration',          destination: '/tour',                           permanent: false },
       { source: '/platform/integrations',           destination: '/docs/api',                       permanent: false },
-      { source: '/company/security',                destination: '/solutions/security',             permanent: false },
+      { source: '/company/security',                destination: '/#security',                      permanent: false },
       // Removed pages: static or fabricated content with no data behind it.
       { source: '/services/health',                 destination: '/services',                       permanent: false },
       { source: '/services/dependencies',           destination: '/services',                       permanent: false },
       { source: '/dependencies',                    destination: '/services',                       permanent: false },
       // Demo mode is off; /tour is the public walkthrough every other "demo" link uses.
       { source: '/demo',                            destination: '/tour',                           permanent: false },
+      // Retired marketing pages (AUDIT-TRUTH-PR3): fabricated customer outcomes, stats and
+      // capabilities. The files stay for an honest rewrite, but nothing links to them
+      // (app/__tests__/retired-marketing-pages.test.ts). Non-permanent on purpose.
+      { source: '/solutions/:path*',                destination: '/tour',                           permanent: false },
+      { source: '/platform/:path*',                 destination: '/tour',                           permanent: false },
+      { source: '/aws-resources',                   destination: '/tour',                           permanent: false },
+      { source: '/dora-metrics',                    destination: '/tour',                           permanent: false },
+      // The blog's posts never existed (every /blog/<id> link was a 404), so there is no tour equivalent.
+      { source: '/blog',                            destination: '/',                               permanent: false },
+      { source: '/blog/:path*',                     destination: '/',                               permanent: false },
     ];
   },
 };

@@ -36,36 +36,8 @@ const footerData: FooterColumn[] = [
       {
         title: '',
         links: [
-          { label: 'Infrastructure Management', href: '/platform/infrastructure' },
-          { label: 'Cost Optimization', href: '/platform/costs' },
-          { label: 'Security & Compliance', href: '/solutions/security' },
-          { label: 'DORA Metrics', href: '/dora-metrics' },
-          { label: 'Resource Discovery', href: '/aws-resources' },
-          { label: 'Service Health', href: '/platform/service-health' },
           { label: "What's New", href: '/changelog' },
           { label: 'Product Tour', href: '/tour' },
-        ],
-      },
-    ],
-  },
-  {
-    heading: 'Solutions',
-    sections: [
-      {
-        title: 'By Company Size',
-        links: [
-          { label: 'For Startups', href: '/solutions/startups' },
-          { label: 'For Mid-Market', href: '/solutions/mid-market' },
-          { label: 'For Scale-ups', href: '/solutions/scaleups' },
-          { label: 'For Enterprise', href: '/solutions/enterprise' },
-        ],
-      },
-      {
-        title: 'By Role',
-        links: [
-          { label: 'For Platform Engineers', href: '/solutions/platform-engineers' },
-          { label: 'For DevOps Teams', href: '/solutions/devops' },
-          { label: 'For FinOps Teams', href: '/solutions/finops' },
         ],
       },
     ],
@@ -91,7 +63,6 @@ const footerData: FooterColumn[] = [
       {
         title: '',
         links: [
-          { label: 'Blog', href: '/blog' },
           { label: 'Case Studies', href: '/case-studies' },
           { label: 'Pricing', href: '/pricing' },
           { label: 'Community', href: '/community' },
@@ -266,7 +237,7 @@ export function Footer() {
       {/* Main Footer Content */}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 lg:py-16">
         {/* Desktop Grid */}
-        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-8 lg:gap-12">
+        <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
           {footerData.map((column, idx) => (
             <FooterColumn key={idx} column={column} />
           ))}
@@ -317,7 +288,7 @@ export function Footer() {
               </Link>
               <span className="text-gray-600">·</span>
               <Link
-                href="/company/security"
+                href="/#security"
                 className="text-gray-400 hover:text-purple-400 transition-colors duration-200"
               >
                 Security

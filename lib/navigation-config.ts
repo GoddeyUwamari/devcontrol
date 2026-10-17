@@ -84,7 +84,7 @@ export const appNav: NavGroup = {
       items: [
         {
           label: 'AWS Resources',
-          href: '/aws-resources',
+          href: '/infrastructure',
           icon: Database,
           description: 'AWS resource discovery and tracking',
         },
@@ -102,7 +102,7 @@ export const appNav: NavGroup = {
         },
         {
           label: 'DORA Metrics',
-          href: '/dora-metrics',
+          href: '/app/dora-metrics',
           icon: TrendingUp,
           description: 'DevOps performance metrics',
         },
@@ -152,59 +152,6 @@ export const platformNav = appNav;
 // ============================================================
 
 // Solutions Navigation - marketing content
-export const solutionsNav: NavGroup = {
-  label: 'Solutions',
-  sections: [
-    {
-      label: 'By Team Size',
-      items: [
-        {
-          label: 'Startups',
-          href: '/solutions/startups',
-          icon: Zap,
-          description: 'For teams of 5-20 engineers',
-        },
-        {
-          label: 'Mid-Market',
-          href: '/solutions/mid-market',
-          icon: Building,
-          description: 'For teams of 20-100 engineers',
-        },
-        {
-          label: 'Enterprise',
-          href: '/solutions/enterprise',
-          icon: Building2,
-          description: 'For teams of 100+ engineers',
-        },
-      ],
-    },
-    {
-      label: 'By Use Case',
-      items: [
-        {
-          label: 'Cost Optimization',
-          href: '/solutions/cost-optimization',
-          icon: DollarSign,
-          description: 'Reduce AWS spend by 15-30%',
-        },
-        {
-          label: 'Security & Compliance',
-          href: '/solutions/security',
-          icon: Shield,
-          description: 'Automated compliance scanning',
-        },
-        {
-          label: 'Platform Engineering',
-          href: '/solutions/platform-engineering',
-          icon: Server,
-          description: 'Internal developer portals',
-        },
-      ],
-    },
-  ],
-};
-
-// Resources Navigation (new - placeholders)
 export const resourcesNav: NavGroup = {
   label: 'Resources',
   items: [
@@ -225,12 +172,6 @@ export const resourcesNav: NavGroup = {
       href: '/docs/api',
       icon: FileText,
       description: 'REST API documentation',
-    },
-    {
-      label: 'Blog',
-      href: '/blog',
-      icon: FileText,
-      description: 'Platform engineering insights',
     },
     {
       label: 'System Status',
