@@ -198,6 +198,45 @@ describe('GET /api/services -- environment, owner and team tags', () => {
   });
 });
 
+describe('GET /api/services -- repeated or bracketed query parameters', () => {
+  let orgId: string;
+  let viewer: string;
+
+  beforeAll(async () => {
+    orgId = await insertOrg('enterprise');
+    viewer = await member(orgId, 'viewer');
+    await insertResource(orgId, 'rq-prod', { tags: { Environment: 'production' } });
+    await insertResource(orgId, 'rq-staging', { tags: { Environment: 'staging' } });
+    await insertResource(orgId, 'rq-volume', { type: 'ebs', status: 'in-use' });
+  });
+
+  const names = (body: any) => body.services.map((s: any) => s.name).sort();
+
+  it('?env=a&env=b uses the first value', async () => {
+    const { status, body } = await get(viewer, orgId, '/services?env=production&env=staging');
+    expect(status).toBe(200);
+    expect(names(body)).toEqual(['rq-prod']);
+  });
+
+  it('?type=a&type=b uses the first value', async () => {
+    const { status, body } = await get(viewer, orgId, '/services?type=ebs&type=ec2');
+    expect(status).toBe(200);
+    expect(names(body)).toEqual(['rq-volume']);
+  });
+
+  it('?search=a&search=b uses the first value', async () => {
+    const { status, body } = await get(viewer, orgId, '/services?search=staging&search=prod');
+    expect(status).toBe(200);
+    expect(names(body)).toEqual(['rq-staging']);
+  });
+
+  it('a bracketed parameter is no filter, not an error', async () => {
+    const { status, body } = await get(viewer, orgId, '/services?env[x]=production&type[y]=ebs');
+    expect(status).toBe(200);
+    expect(names(body)).toEqual(['rq-prod', 'rq-staging', 'rq-volume']);
+  });
+});
+
 describe('GET /api/services -- not refused by the services plan limit', () => {
   it('answers a free organization whose registry is over its services limit', async () => {
     const orgId = await insertOrg('free');

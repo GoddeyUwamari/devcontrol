@@ -482,18 +482,30 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
 // Reading the list is never blocked by a plan limit: the services limit counts
 // the registry, not the resources this list returns.
 
+// A repeated parameter (?env=a&env=b) arrives as an array and a bracketed one
+// (?env[x]=y) as an object: the first string value is used, anything else is
+// no filter.
+function firstQueryValue(value: unknown): string | undefined {
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === 'string' ? first : undefined;
+}
+
 router.get('/', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const orgId = req.organizationId;
   if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
   try {
-    const { type, env, search } = req.query as Record<string, string>;
-    const services = await fetchServices(orgId, { type, env, search }, 500);
+    const services = await fetchServices(orgId, {
+      type:   firstQueryValue(req.query.type),
+      env:    firstQueryValue(req.query.env),
+      search: firstQueryValue(req.query.search),
+    }, 500);
 
     res.json({ success: true, services, total: services.length });
   } catch (err: any) {
     console.error('[Services/list]', err);
-    res.status(500).json({ success: false, error: err.message });
+    // The real error is logged above; the response carries only a fixed message.
+    res.status(500).json({ success: false, error: 'Failed to load services' });
   }
 });
 
