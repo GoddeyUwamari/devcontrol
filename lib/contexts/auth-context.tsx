@@ -23,7 +23,19 @@ import {
 } from "../services/organizations.service";
 import { logError } from "@/lib/safe-log";
 import { DEFAULT_RETURN_PATH, safeReturnPath } from "@/lib/safe-return-path";
-import { clearPendingInvitation } from "@/lib/pending-invitation";
+import { clearPendingInvitation, hasPendingInvitation } from "@/lib/pending-invitation";
+
+/**
+ * Where to go once signed in: a safe return path if one was given, else an
+ * invitation opened in this tab before signing in (as the SSO callback
+ * does), else the dashboard.
+ */
+function postSignInPath(redirectTo: string | undefined): string {
+  return (
+    safeReturnPath(redirectTo) ??
+    (hasPendingInvitation() ? "/accept-invitation" : DEFAULT_RETURN_PATH)
+  );
+}
 
 /**
  * Auth Context Value Interface
@@ -37,7 +49,7 @@ interface AuthContextValue {
   isLoading: boolean;
 
   // Auth Methods
-  /** redirectTo: where to go once signed in; ignored unless a same-origin path (see safeReturnPath). */
+  /** redirectTo: where to go once signed in; ignored unless a same-origin path (see postSignInPath). */
   login: (email: string, password: string, redirectTo?: string) => Promise<void>;
   register: (email: string, password: string, fullName: string, redirectTo?: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -159,7 +171,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const login = useCallback(
     async (email: string, password: string, redirectTo?: string) => {
-      const target = safeReturnPath(redirectTo) ?? DEFAULT_RETURN_PATH;
+      const target = postSignInPath(redirectTo);
       try {
         const response = await authService.login({ email, password });
 
@@ -196,7 +208,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           description: `Logged in as ${user?.email ?? email}`,
         });
 
-        // Redirect (dashboard unless a safe return path was given) with fallback
+        // Redirect (see postSignInPath) with fallback
         console.log("🚀 Redirecting after login...");
         try {
           // Use Next.js router for client-side navigation
@@ -233,7 +245,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const register = useCallback(
     async (email: string, password: string, fullName: string, redirectTo?: string) => {
-      const target = safeReturnPath(redirectTo) ?? DEFAULT_RETURN_PATH;
+      const target = postSignInPath(redirectTo);
       try {
         const response = await authService.register({
           email,
@@ -266,7 +278,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             description: "Welcome to DevControl",
           });
 
-          // Redirect (dashboard unless a safe return path was given) with fallback
+          // Redirect (see postSignInPath) with fallback
           console.log("🚀 Redirecting after registration...");
           try {
             await router.push(target);
@@ -412,6 +424,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setOrganization(null);
         setOrganizations([]);
         // Same identity-ended reset as logout() -- this path doesn't call it.
+        // Unlike logout(), a pending invitation is kept: an invitee whose
+        // stale session expires on /accept-invitation must get back to it.
         await resetCachesForIdentityChange(queryClient);
         router.push("/login");
       } else {

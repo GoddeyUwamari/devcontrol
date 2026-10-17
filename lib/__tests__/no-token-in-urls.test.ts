@@ -11,6 +11,8 @@
  * Flags, in app/, components/, lib/ and hooks/ (tests excluded), any string or
  * template literal containing `?token=` or `&token=`, or a `token=` parameter
  * whose value is an interpolation (`token=${...}`). Comments are not scanned.
+ * It sees literals only, so it cannot catch a token added through an API such
+ * as `url.searchParams.set("token", ...)` or `new URLSearchParams({ token })`.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";

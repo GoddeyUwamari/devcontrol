@@ -1,7 +1,9 @@
 /**
  * login() and register() go to a caller's return path once signed in, but
  * only a same-origin path (safeReturnPath); anything else falls back to
- * /dashboard. logout() forgets a pending invitation.
+ * /dashboard -- or /accept-invitation when an invitation is pending in this
+ * tab. logout() forgets a pending invitation; session expiry deliberately
+ * does not (see the test below).
  *
  * Runs the real AuthProvider; the auth service calls and navigation are faked.
  */
@@ -116,11 +118,72 @@ describe("register redirectTo", () => {
   });
 });
 
+describe.each([
+  ["login", (redirectTo?: string) => auth.login(USER.email, "placeholder-password", redirectTo)],
+  ["register", (redirectTo?: string) => auth.register(USER.email, "placeholder-password", USER.fullName, redirectTo)],
+] as const)("%s with a pending invitation", (_name, signIn) => {
+  beforeEach(() => {
+    savePendingInvitation("pending-invite-placeholder");
+  });
+
+  it("goes to /accept-invitation when no return path is given", async () => {
+    await mount();
+    await act(() => signIn());
+    expect(push).toHaveBeenCalledWith("/accept-invitation");
+    expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["//evil.example", "/..//evil.example"])("goes to /accept-invitation for the unsafe %j", async (redirectTo) => {
+    await mount();
+    await act(() => signIn(redirectTo));
+    expect(push).toHaveBeenCalledWith("/accept-invitation");
+    expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  it("a safe return path still wins", async () => {
+    await mount();
+    await act(() => signIn("/settings/sso"));
+    expect(push).toHaveBeenCalledWith("/settings/sso");
+  });
+
+  it("an expired pending invitation does not redirect", async () => {
+    sessionStorage.setItem(PENDING_INVITATION_KEY, JSON.stringify({ token: "old-placeholder", savedAt: 1 }));
+    await mount();
+    await act(() => signIn());
+    expect(push).toHaveBeenCalledWith("/dashboard");
+  });
+});
+
 describe("logout", () => {
   it("clears a pending invitation", async () => {
     savePendingInvitation("pending-invite-placeholder");
     await mount();
     await act(() => auth.logout());
     expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).toBeNull();
+  });
+});
+
+describe("session expiry (refreshUser 401, no refresh token)", () => {
+  it("keeps a pending invitation, so signing in again still returns to it", async () => {
+    // An invitee whose browser holds an expired session opens the invitation:
+    // the page saves it, then the background refresh is rejected and the
+    // provider sends them to /login with no ?from=. Clearing the invitation
+    // here would lose it, so this path leaves it for the next sign-in.
+    localStorage.setItem("accessToken", "expired-access-placeholder");
+    localStorage.setItem("user", JSON.stringify(USER));
+    savePendingInvitation("pending-invite-placeholder");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(authService, "getCurrentUser").mockRejectedValue({ response: { status: 401 } });
+
+    await mount();
+    await act(async () => {});
+
+    expect(push).toHaveBeenCalledWith("/login");
+    expect(localStorage.getItem("accessToken")).toBeNull();
+    expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).not.toBeNull();
+
+    push.mockClear();
+    await act(() => auth.login(USER.email, "placeholder-password"));
+    expect(push).toHaveBeenCalledWith("/accept-invitation");
   });
 });
