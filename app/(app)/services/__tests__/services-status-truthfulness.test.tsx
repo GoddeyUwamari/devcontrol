@@ -186,6 +186,9 @@ describe('/services -- resources present', () => {
 
     expect((await screen.findAllByText('1 of 2 at risk')).length).toBeGreaterThan(0)
     expect(screen.getByText('1 flagged for review')).toBeInTheDocument()
+    // The status strip renders a mobile and a desktop layout; both say the same.
+    expect(screen.getAllByText('Flagged for review')).toHaveLength(2)
+    expect(screen.queryByText(/Require/)).not.toBeInTheDocument()
     expectNoCutClaims()
   })
 

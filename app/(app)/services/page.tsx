@@ -365,7 +365,7 @@ export default function ServicesPage() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">At Risk</p>
             <p className="text-2xl font-bold text-red-600">{warningCount} <span className="text-sm text-slate-500 font-normal">of {totalServices}</span></p>
-            <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Require review' : serviceDataState === 'present' ? 'None flagged' : '—'}</p>
+            <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}</p>
           </div>
         </div>
 
@@ -411,7 +411,7 @@ export default function ServicesPage() {
               <p className="text-xs font-bold uppercase tracking-widest text-red-600 mb-1">At Risk</p>
               <p className="text-2xl font-bold text-red-600 mb-0.5">{warningCount} of {totalServices}</p>
               <p className="text-xs font-medium text-slate-500 m-0">
-                {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Require immediate review' : serviceDataState === 'present' ? 'None flagged' : '—'}
+                {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}
               </p>
             </div>
           </div>
