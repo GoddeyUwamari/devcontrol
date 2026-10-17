@@ -132,7 +132,7 @@ export function CreateOrganizationModal({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Organization Name */}
           <div className="space-y-2">
             <Label htmlFor="name">

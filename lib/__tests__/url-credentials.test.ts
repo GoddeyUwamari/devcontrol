@@ -155,6 +155,54 @@ describe("takeUrlCredentials", () => {
     expect(state.__PRIVATE_NEXTJS_INTERNALS_TREE[1].children).toEqual(["__PAGE__", {}, "/reset-password", "refresh"]);
   });
 
+  it("removes short form fields a pre-hydration GET submit left in the query, from the URL and the route tree, keeping other params", () => {
+    // Placeholder values; the password is far shorter than the blanking threshold.
+    const link = "/login?error=sso_failed&email=user%40example.test&password=pw1&rememberMe=on";
+    const search = { error: "sso_failed", email: "user@example.test", password: "pw1", rememberMe: "on" };
+    // Shape Next.js stores: the page segment key is __PAGE__?<JSON of the search params>.
+    const tree = ["", { children: ["(auth)", { children: ["login", { children: [`__PAGE__?${JSON.stringify(search)}`, {}, link, "refresh"] }] }] }, null, null, true];
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: tree }, "", link);
+
+    expect(takeUrlCredentials(["email", "password", "rememberMe"] as const)).toEqual({});
+
+    expect(currentPath()).toBe("/login?error=sso_failed");
+    const state = window.history.state;
+    const json = JSON.stringify(state);
+    expect(json).not.toContain("pw1");
+    expect(json).not.toContain("example.test");
+    expect(state.__NA).toBe(true);
+    // The key the router computes for the clean URL, and the clean load URL.
+    expect(state.__PRIVATE_NEXTJS_INTERNALS_TREE[1].children[1].children[1].children).toEqual([
+      `__PAGE__?${JSON.stringify({ error: "sso_failed" })}`,
+      {},
+      "/login?error=sso_failed",
+      "refresh",
+    ]);
+    vi.runAllTimers();
+    expect(JSON.stringify(window.history.state)).not.toContain("pw1");
+  });
+
+  it("drops the search params from the page segment key entirely when none are left", () => {
+    const tree = ["", { children: [`__PAGE__?${JSON.stringify({ password: "pw1" })}`, {}, null, null] }];
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: tree }, "", "/register?password=pw1");
+
+    takeUrlCredentials(["password"] as const);
+
+    expect(currentPath()).toBe("/register");
+    expect(window.history.state.__PRIVATE_NEXTJS_INTERNALS_TREE[1].children[0]).toBe("__PAGE__");
+  });
+
+  it("leaves a page segment key alone when none of its params are requested", () => {
+    const segment = `__PAGE__?${JSON.stringify({ error: "sso_failed" })}`;
+    const tree = ["", { children: [segment, {}, null, null] }];
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: tree }, "", "/login?error=sso_failed#token=AAA");
+
+    takeUrlCredentials(["token"] as const);
+
+    expect(currentPath()).toBe("/login?error=sso_failed");
+    expect(window.history.state.__PRIVATE_NEXTJS_INTERNALS_TREE[1].children[0]).toBe(segment);
+  });
+
   it("does not re-apply the clean URL once the page has navigated elsewhere", () => {
     visit("/auth/sso/callback#token=AAA&refreshToken=RRR");
     takeUrlCredentials(["token", "refreshToken"] as const);

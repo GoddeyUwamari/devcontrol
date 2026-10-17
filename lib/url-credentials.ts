@@ -8,7 +8,8 @@
  * browser never sends to a server. A credential in the query string
  * (`?token=...`) is never returned, so a link of that form signs no one in and
  * reaches no API, but it is removed from the URL and history the same way, so
- * an old link cannot leave it behind.
+ * an old link cannot leave it behind. Login and register use this to clear
+ * form fields a native GET submit (before hydration) left in the query.
  *
  * Next.js's App Router keeps its own copy of the current URL and writes it
  * back to the address bar on router updates. Its history patch, which keeps
@@ -54,7 +55,7 @@ export function takeUrlCredentials<K extends string>(
   const current = window.location.pathname + window.location.search + window.location.hash;
   if (clean !== current) {
     const secrets = [...(Object.values(found) as string[]), ...ignored];
-    window.history.replaceState(withoutCredentials(window.history.state, current, clean, secrets), "", clean);
+    window.history.replaceState(withoutCredentials(window.history.state, current, clean, keys, secrets), "", clean);
     setTimeout(() => {
       if (window.location.pathname + window.location.search + window.location.hash === clean) {
         // No router marker on the state object, so Next's patch treats this as
@@ -75,18 +76,50 @@ export function takeUrlCredentials<K extends string>(
  */
 const MIN_SCRUBBED_VALUE_LENGTH = 16;
 
+/** The router's key for a page segment; with search params it is `__PAGE__?<JSON of them>`. */
+const PAGE_SEGMENT_KEY = "__PAGE__";
+
 /**
- * A copy of a history state object with every occurrence of the old URL
- * replaced by the clean one, and any remaining occurrence of a credential
- * value of at least MIN_SCRUBBED_VALUE_LENGTH characters blanked. States that
- * cannot be copied this way are dropped.
+ * A page segment key with the given search params removed, matched by name
+ * whatever their value's length; other params keep their order, so the key
+ * is the one the router computes for the clean URL. Any other string is
+ * returned unchanged.
  */
-function withoutCredentials(state: unknown, oldPath: string, cleanPath: string, secrets: string[]): unknown {
+function withoutSegmentParams(segment: string, keys: readonly string[]): string {
+  if (!segment.startsWith(`${PAGE_SEGMENT_KEY}?`)) return segment;
+  let params: unknown;
+  try {
+    params = JSON.parse(segment.slice(PAGE_SEGMENT_KEY.length + 1));
+  } catch {
+    return segment;
+  }
+  if (params === null || typeof params !== "object" || Array.isArray(params)) return segment;
+  const kept = Object.fromEntries(Object.entries(params).filter(([key]) => !keys.includes(key)));
+  return Object.keys(kept).length > 0 ? `${PAGE_SEGMENT_KEY}?${JSON.stringify(kept)}` : PAGE_SEGMENT_KEY;
+}
+
+/**
+ * A copy of a history state object with the credential params removed from
+ * the router's page segment keys, every occurrence of the old URL replaced by
+ * the clean one, and any remaining occurrence of a credential value of at
+ * least MIN_SCRUBBED_VALUE_LENGTH characters blanked. States that cannot be
+ * copied this way are dropped.
+ */
+function withoutCredentials(
+  state: unknown,
+  oldPath: string,
+  cleanPath: string,
+  keys: readonly string[],
+  secrets: string[]
+): unknown {
   if (state == null) return state;
   try {
     // Operate on the JSON-escaped forms so replacements stay inside strings.
     const escaped = (s: string) => JSON.stringify(s).slice(1, -1);
-    let json = JSON.stringify(state).split(escaped(oldPath)).join(escaped(cleanPath));
+    const segmentsCleaned = JSON.stringify(state, (_key, value) =>
+      typeof value === "string" ? withoutSegmentParams(value, keys) : value
+    );
+    let json = segmentsCleaned.split(escaped(oldPath)).join(escaped(cleanPath));
     for (const secret of secrets) {
       if (secret.length < MIN_SCRUBBED_VALUE_LENGTH) continue;
       json = json.split(escaped(secret)).join("");

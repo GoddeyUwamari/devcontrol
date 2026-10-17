@@ -139,7 +139,7 @@ export default function NewDeploymentPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Service Selection */}
             <div className="space-y-2">
               <Label htmlFor="serviceId" className="text-sm font-medium">

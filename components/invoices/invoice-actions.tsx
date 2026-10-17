@@ -172,7 +172,7 @@ export function InvoiceActions({ invoice }: InvoiceActionsProps) {
             <DialogTitle>Record Payment</DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit(onPaymentSubmit)} className="space-y-4">
+          <form method="post" onSubmit={handleSubmit(onPaymentSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="paymentAmount">Payment Amount *</Label>
               <Input

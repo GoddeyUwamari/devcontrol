@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,6 +11,8 @@ import {
   calculatePasswordStrength,
 } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useHydrated } from "@/lib/hooks/useHydrated";
+import { takeUrlCredentials } from "@/lib/url-credentials";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,11 +27,23 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
+// The form's field names: what a native GET submit before hydration would
+// have put in the query string.
+const FORM_FIELDS = ["fullName", "email", "password", "confirmPassword", "termsAccepted"] as const;
+
 export default function RegisterPage() {
   const { register: registerUser } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Submit stays disabled until hydrated: see useHydrated.
+  const hydrated = useHydrated();
+
+  useEffect(() => {
+    // Clear any submitted fields from the URL and history; the values are
+    // discarded, never used or sent.
+    takeUrlCredentials(FORM_FIELDS);
+  }, []);
 
   const {
     register,
@@ -79,7 +93,7 @@ export default function RegisterPage() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Full Name Field */}
           <div className="space-y-2">
             <Label htmlFor="fullName">Full name</Label>
@@ -315,7 +329,7 @@ export default function RegisterPage() {
           </div>
 
           {/* Submit Button */}
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full" disabled={isLoading || !hydrated}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

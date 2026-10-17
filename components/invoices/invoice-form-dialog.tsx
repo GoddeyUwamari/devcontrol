@@ -122,7 +122,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
           <DialogTitle>Create New Invoice</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Basic Information */}
           <div className="space-y-4">
             <h3 className="font-semibold text-sm">Basic Information</h3>

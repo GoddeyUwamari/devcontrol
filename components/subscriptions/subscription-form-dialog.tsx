@@ -119,7 +119,7 @@ export function SubscriptionFormDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {mode === 'create' && (
             <>
               <div className="space-y-2">

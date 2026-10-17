@@ -13,6 +13,7 @@ import {
 } from "@/lib/validations/auth.schema";
 import { authService } from "@/lib/services/auth.service";
 import { takeUrlCredentials } from "@/lib/url-credentials";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +34,8 @@ function ResetPasswordContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Submit stays disabled until hydrated: see useHydrated.
+  const hydrated = useHydrated();
   const [isSuccess, setIsSuccess] = useState(false);
   // The reset token lives only in this component's state once it has been
   // taken from the link; it is not kept in the URL.
@@ -191,7 +194,7 @@ function ResetPasswordContent() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* New Password Field */}
           <div className="space-y-2">
             <Label htmlFor="password">New password</Label>
@@ -307,7 +310,7 @@ function ResetPasswordContent() {
           </Alert>
 
           {/* Submit Button */}
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full" disabled={isLoading || !hydrated}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

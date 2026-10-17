@@ -10,6 +10,7 @@ import {
   type ForgotPasswordFormData,
 } from "@/lib/validations/auth.schema";
 import { authService } from "@/lib/services/auth.service";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +27,8 @@ import { logError } from "@/lib/safe-log";
 
 export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
+  // Submit stays disabled until hydrated: see useHydrated.
+  const hydrated = useHydrated();
   const [isSuccess, setIsSuccess] = useState(false);
   const [emailSent, setEmailSent] = useState("");
 
@@ -156,7 +159,7 @@ export default function ForgotPasswordPage() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Email Field */}
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -185,7 +188,7 @@ export default function ForgotPasswordPage() {
           </Alert>
 
           {/* Submit Button */}
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full" disabled={isLoading || !hydrated}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

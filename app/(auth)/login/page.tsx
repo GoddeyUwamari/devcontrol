@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -8,6 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, Loader2, Building2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useHydrated } from "@/lib/hooks/useHydrated";
+import { takeUrlCredentials } from "@/lib/url-credentials";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,16 +18,28 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
+// The form's field names: what a native GET submit before hydration would
+// have put in the query string.
+const FORM_FIELDS = ["email", "password", "rememberMe"] as const;
+
 function LoginContent() {
   const { login } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Submit stays disabled until hydrated: see useHydrated.
+  const hydrated = useHydrated();
   const [ssoEmail, setSsoEmail] = useState("");
   const [ssoLoading, setSsoLoading] = useState(false);
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [showSsoInput, setShowSsoInput] = useState(false);
+
+  useEffect(() => {
+    // Clear any submitted fields from the URL and history; the values are
+    // discarded, never used or sent.
+    takeUrlCredentials(FORM_FIELDS);
+  }, []);
 
   const ssoErrorParam = searchParams?.get("error");
   const ssoErrorMessage = searchParams?.get("message");
@@ -94,7 +108,7 @@ function LoginContent() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Email Field */}
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -179,7 +193,7 @@ function LoginContent() {
           <Button
             type="submit"
             className="w-full"
-            disabled={isLoading}
+            disabled={isLoading || !hydrated}
           >
             {isLoading ? (
               <>

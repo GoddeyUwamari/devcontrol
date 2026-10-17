@@ -535,7 +535,7 @@ export default function CostsPage() {
               </a>
             </div>
           )}
-          <form onSubmit={handleNlQuery} className="mb-6">
+          <form method="post" onSubmit={handleNlQuery} className="mb-6">
             <div className="relative">
               <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input

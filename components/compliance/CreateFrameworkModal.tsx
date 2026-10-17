@@ -73,7 +73,7 @@ export function CreateFrameworkModal({ open, onClose, onSubmit, initialData, isE
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form method="post" onSubmit={handleSubmit} className="space-y-6">
           <div>
             <Label htmlFor="name">Framework Name *</Label>
             <Input

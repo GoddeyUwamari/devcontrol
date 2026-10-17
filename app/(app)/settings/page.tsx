@@ -221,7 +221,7 @@ export default function SettingsPage() {
                       Change Password
                     </Button>
                   ) : (
-                    <form onSubmit={handleChangePassword} className="space-y-3 mt-2 max-w-sm">
+                    <form method="post" onSubmit={handleChangePassword} className="space-y-3 mt-2 max-w-sm">
                       <div className="space-y-1">
                         <Label htmlFor="currentPassword">Current Password</Label>
                         <Input
