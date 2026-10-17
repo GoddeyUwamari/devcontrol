@@ -101,7 +101,7 @@ function mockSources(opts: {
   discovery?: 'available' | 'unavailable';
   issues?: Array<{ resource_type: string; issues: Array<{ severity: string; category: string }> }>;
   statsFails?: boolean;
-  recommendations?: Array<{ resource_id: string; resource_type: string; issue: string; potential_savings: number }>;
+  recommendations?: Array<{ resource_id: string; resource_type: string; issue: string; potential_savings: number; metadata?: Record<string, unknown> }>;
 } = {}) {
   jest.spyOn(AIChatContextRepository.prototype, 'gatherCostContext').mockImplementation(async () => ({
     ...(await basis(opts.discovery)),
@@ -236,8 +236,11 @@ describe('AI Reports evidence -- security, resources, alerts', () => {
   it('recommendation savings stay estimates', async () => {
     const { sections } = await evidence({
       recommendations: [
-        { resource_id: 'vol-1', resource_type: 'ebs', issue: 'Unused EBS volume', potential_savings: 42 },
+        { resource_id: 'vol-1', resource_type: 'ebs', issue: 'Unused EBS volume', potential_savings: 42, metadata: { savings_basis: 'estimated: list price' } },
         { resource_id: 'i-9', resource_type: 'ec2', issue: 'Oversized instance', potential_savings: 300 },
+        // Idle/unused, but no supported savings_basis: never an estimated saving.
+        { resource_id: 'i-legacy', resource_type: 'ec2', issue: 'Idle Instance', potential_savings: 70 },
+        { resource_id: 'eip-1', resource_type: 'eip', issue: 'Unused Elastic IP', potential_savings: 3.6, metadata: { savings_basis: 'ceiling: hypothetical' } },
       ],
     });
     expect(sections.idleResourceRecommendations).toMatchObject({
@@ -312,7 +315,7 @@ describe('AI Reports prompt grounding', () => {
         }),
       }],
     });
-    const data = await evidence({ recommendations: [{ resource_id: 'vol-1', resource_type: 'ebs', issue: 'Unused EBS volume', potential_savings: 42 }] });
+    const data = await evidence({ recommendations: [{ resource_id: 'vol-1', resource_type: 'ebs', issue: 'Unused EBS volume', potential_savings: 42, metadata: { savings_basis: 'estimated: list price' } }] });
 
     const { report, wasFallback } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
 
@@ -360,7 +363,7 @@ describe('AI Reports deterministic fallback', () => {
   });
 
   it('recommendation savings are described as estimates, and an empty list draws no "no savings" conclusion', async () => {
-    const withRecs = await evidence({ recommendations: [{ resource_id: 'vol-1', resource_type: 'ebs', issue: 'Unused EBS volume', potential_savings: 42 }] });
+    const withRecs = await evidence({ recommendations: [{ resource_id: 'vol-1', resource_type: 'ebs', issue: 'Unused EBS volume', potential_savings: 42, metadata: { savings_basis: 'estimated: list price' } }] });
     const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(withRecs);
     expect(report.executiveSummary).toContain('Estimated potential savings of $42.00/month from idle or unused resources (a DevControl estimate, not realized savings).');
     expect(report.topRecommendations.find(r => r.title === 'Review idle or unused resources')?.estimatedSavings).toBe(42);

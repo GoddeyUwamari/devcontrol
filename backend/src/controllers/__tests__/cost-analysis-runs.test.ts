@@ -70,7 +70,7 @@ function fakeStats(totalPotentialSavings: number, activeRecommendations = 1): Re
     total_recommendations: activeRecommendations,
     active_recommendations: activeRecommendations,
     total_potential_savings: totalPotentialSavings,
-    potential_savings_by_resource_type: {},
+    potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {},
     by_severity: { high: 0, medium: 0, low: activeRecommendations },
   };
 }
@@ -124,6 +124,32 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
     expect(parseFloat(runs[0].total_potential_savings)).toBe(42.5);
     expect(runs[0].completed_at).not.toBeNull();
     expect(runs[0].error_message).toBeNull();
+  });
+
+  it('1b. an S3 ceiling stays out of the run total and the message; it is reported separately as an upper bound', async () => {
+    const orgId = await insertOrg();
+    const controller = new CostRecommendationsController();
+
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [] });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 2 });
+    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue({
+      ...fakeStats(12.4, 2), potential_savings_ceiling: 41.27, potential_savings_ceiling_by_resource_type: { S3: 41.27 },
+    });
+
+    const { req, res } = mockReqRes(orgId);
+    await controller.analyze(req, res);
+
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.data.totalPotentialSavings).toBe(12.4);
+    expect(body.data.totalPotentialSavingsCeiling).toBe(41.27);
+    expect(body.message).toBe(
+      'Analysis complete. Found 2 optimization opportunities with estimated potential savings of $12.40/month. ' +
+      'Plus up to $41.27/month if S3 data qualifies for Standard-IA (upper bound, not included above).'
+    );
+    const [run] = await fetchRuns(orgId);
+    expect(parseFloat(run.total_potential_savings)).toBe(12.4);
   });
 
   it('2. persists correct failure state when analyzeAllResources() throws, without marking it completed', async () => {

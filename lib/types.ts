@@ -627,9 +627,13 @@ export interface CostRecommendation {
 export interface RecommendationStats {
   totalRecommendations: number;
   activeRecommendations: number;
+  /** Estimates only; never includes a ceiling. */
   totalPotentialSavings: number;
   /** Estimated potential savings per resource type, de-duplicated server-side like the total. */
   potentialSavingsByResourceType: Record<string, number>;
+  /** Upper bounds (savings_basis 'ceiling: ...', e.g. S3 lifecycle), kept out of the total above. */
+  potentialSavingsCeiling: number;
+  potentialSavingsCeilingByResourceType: Record<string, number>;
   bySeverity: {
     high: number;
     medium: number;

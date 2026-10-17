@@ -80,7 +80,7 @@ function fakeRecommendation(overrides: Partial<CostRecommendation> = {}): CostRe
     severity: 'LOW',
     status: 'ACTIVE',
     aws_region: 'us-east-1',
-    metadata: {},
+    metadata: { savings_basis: 'estimated: list price' },
     created_at: new Date(),
     updated_at: new Date(),
     ...overrides,
@@ -92,7 +92,7 @@ function fakeStats(totalPotentialSavings: number): RecommendationStats {
     total_recommendations: totalPotentialSavings > 0 ? 1 : 0,
     active_recommendations: totalPotentialSavings > 0 ? 1 : 0,
     total_potential_savings: totalPotentialSavings,
-    potential_savings_by_resource_type: {},
+    potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {},
     by_severity: { high: 0, medium: 0, low: totalPotentialSavings > 0 ? 1 : 0 },
   };
 }
@@ -205,6 +205,21 @@ describe('CostRecommendationsController.getAll -> first_value_viewed', () => {
 
     const rows = await fetchEvents(orgId, 'first_value_viewed');
     expect(rows).toHaveLength(0);
+  });
+
+  it('does not emit when the only figures are a ceiling or have no savings basis', async () => {
+    const orgId = await insertOrg();
+    const controller = new CostRecommendationsController();
+
+    jest.spyOn(CostRecommendationsRepository.prototype, 'findAll').mockResolvedValue([
+      fakeRecommendation({ resource_type: 'S3', potential_savings: 41.27, metadata: { savings_basis: 'ceiling: assumes 100% transitions' } }),
+      fakeRecommendation({ resource_type: 'RDS', potential_savings: 98, metadata: {} }),
+    ]);
+
+    const { req, res } = mockReqRes(orgId, await insertUser(), { status: 'ACTIVE' });
+    await controller.getAll(req, res);
+
+    expect(await fetchEvents(orgId, 'first_value_viewed')).toHaveLength(0);
   });
 
   it('does not emit on an unfiltered/non-ACTIVE read, even with historical savings present', async () => {

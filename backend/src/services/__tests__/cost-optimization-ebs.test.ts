@@ -47,6 +47,7 @@ describe('CostOptimizationService.detectUnattachedEBSVolumes (ebs_unattached)', 
       size_gb: 100,
       availability_zone: 'us-east-1a',
       encrypted: true,
+      savings_basis: expect.stringMatching(/^estimated: /),
     });
   });
 

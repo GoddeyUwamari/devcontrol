@@ -439,6 +439,8 @@ export class CostRecommendationsRepository {
         active_recommendations: parseInt(activeQuery.rows[0].count),
         total_potential_savings: savings.total,
         potential_savings_by_resource_type: savings.byResourceType,
+        potential_savings_ceiling: savings.ceilingTotal,
+        potential_savings_ceiling_by_resource_type: savings.ceilingByResourceType,
         by_severity: {
           high: parseInt(severityQuery.rows[0].high),
           medium: parseInt(severityQuery.rows[0].medium),

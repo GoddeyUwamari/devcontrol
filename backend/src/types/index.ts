@@ -217,9 +217,13 @@ export interface RecommendationFilters extends PaginationQuery {
 export interface RecommendationStats {
   total_recommendations: number;
   active_recommendations: number;
+  /** Estimates only (rows with an estimate savings_basis); never includes a ceiling. */
   total_potential_savings: number;
   /** Estimated potential savings per resource_type, de-duplicated like the total. */
   potential_savings_by_resource_type: Record<string, number>;
+  /** Upper bounds (savings_basis 'ceiling: ...'), kept out of the total above. */
+  potential_savings_ceiling: number;
+  potential_savings_ceiling_by_resource_type: Record<string, number>;
   by_severity: {
     high: number;
     medium: number;

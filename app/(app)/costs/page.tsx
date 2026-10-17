@@ -22,6 +22,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
 import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
+import { formatRecommendationSavings } from '@/lib/savings-basis'
 import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
@@ -260,12 +261,14 @@ export default function CostsPage() {
     : 'No cost analysis has run yet'
   const savingsValue = recsUnavailable ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`
 
-  const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive
-    ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savings: d.savings, severity: d.severity }))
+  // Each figure is labelled by its savings_basis: "$X/mo", "Up to $X/mo" (a
+  // ceiling), or "No dollar estimate" -- see lib/savings-basis.ts.
+  const topSavingsRows: { id: string; title: string; savingsLabel: string; severity: RecommendationSeverity }[] = isDemoActive
+    ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savingsLabel: `${formatSavingsCurrency(d.savings)}/mo`, severity: d.severity }))
     : [...activeRecs]
         .sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))
         .slice(0, 3)
-        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savings: r.potentialSavings || 0, severity: r.severity }))
+        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savingsLabel: formatRecommendationSavings(r, formatSavingsCurrency), severity: r.severity }))
 
   // Real per-service savings for the Cost by Service list, from the same activeRecs
   // (source C) already fetched above — no fabricated per-category dollar figure.
@@ -877,7 +880,7 @@ export default function CostsPage() {
               <div key={rec.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
-                  <span className="text-xs font-bold text-green-600 shrink-0">{formatSavingsCurrency(rec.savings)}/mo</span>
+                  <span className="text-xs font-bold text-green-600 shrink-0">{rec.savingsLabel}</span>
                 </div>
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${severityStyles[rec.severity]}`}>
                   {rec.severity}

@@ -7,6 +7,7 @@ import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILAB
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
+import { aggregateEstimatedSavings } from '../services/estimated-savings';
 import {
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   getOptimizationRules,
@@ -76,10 +77,9 @@ export class CostRecommendationsController {
       // doesn't count as "value seen." Guarded once-per-org by
       // trackFunnelEventOnce, so every refresh after the first is a no-op.
       if (filters.status === 'ACTIVE') {
-        const totalActiveSavings = recommendations.reduce(
-          (sum, r: any) => sum + (Number(r.potential_savings) || 0),
-          0
-        );
+        // Supported estimates only, like getStats(): a ceiling or a figure
+        // with no savings_basis is not "value seen".
+        const totalActiveSavings = aggregateEstimatedSavings(recommendations).total;
         if (totalActiveSavings > 0) {
           await trackFunnelEventOnce({
             organizationId,
@@ -456,10 +456,15 @@ export class CostRecommendationsController {
         data: {
           recommendationsFound: insertedCount,
           totalPotentialSavings: stats.total_potential_savings,
+          totalPotentialSavingsCeiling: stats.potential_savings_ceiling,
           bySeverity: stats.by_severity,
           timestamp: new Date().toISOString(),
         },
-        message: `Analysis complete. Found ${insertedCount} optimization opportunities with potential savings of $${stats.total_potential_savings.toFixed(2)}/month.`,
+        message:
+          `Analysis complete. Found ${insertedCount} optimization opportunities with estimated potential savings of $${stats.total_potential_savings.toFixed(2)}/month.` +
+          (stats.potential_savings_ceiling > 0
+            ? ` Plus up to $${stats.potential_savings_ceiling.toFixed(2)}/month if S3 data qualifies for Standard-IA (upper bound, not included above).`
+            : ''),
       };
 
       res.json(response);

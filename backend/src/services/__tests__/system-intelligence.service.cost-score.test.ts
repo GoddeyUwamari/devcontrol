@@ -102,12 +102,12 @@ async function insertOrgWithAwsAccount(): Promise<string> {
   return orgId;
 }
 
-async function insertActiveRecommendation(orgId: string, resourceId: string, savings: number) {
+async function insertActiveRecommendation(orgId: string, resourceId: string, savings: number, savingsBasis = 'estimated: list price') {
   await pool.query(
     `INSERT INTO cost_recommendations
-       (organization_id, resource_id, resource_type, issue, potential_savings, severity, status)
-     VALUES ($1, $2, 'EC2', 'Idle instance', $3, 'MEDIUM', 'ACTIVE')`,
-    [orgId, resourceId, savings]
+       (organization_id, resource_id, resource_type, issue, potential_savings, severity, status, metadata)
+     VALUES ($1, $2, 'EC2', 'Idle instance', $3, 'MEDIUM', 'ACTIVE', jsonb_build_object('savings_basis', $4::text))`,
+    [orgId, resourceId, savings, savingsBasis]
   );
 }
 
@@ -223,6 +223,27 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
     expect(statsFromRepository.active_recommendations).toBe(2);
     expect(result.components.cost.detail).toContain('$100/mo estimated savings identified');
     expect(result.components.cost.detail).toContain('2 opportunities');
+  });
+
+  it('an S3 lifecycle ceiling or a figure with no savings basis never enters the cost score\'s savings', async () => {
+    const orgId = await insertOrgWithAwsAccount();
+    await insertAwsResource(orgId, 'i-ceiling-rr', 1000);
+    await insertActiveRecommendation(orgId, 'i-estimate', 40);
+    await insertActiveRecommendation(orgId, 'example-bucket', 500, 'ceiling: assumes 100% of current Standard storage transitions to Standard-IA');
+    await pool.query(
+      `INSERT INTO cost_recommendations
+         (organization_id, resource_id, resource_type, issue, potential_savings, severity, status)
+       VALUES ($1, 'dev-db', 'RDS', 'Oversized Instance', 900, 'HIGH', 'ACTIVE')`,
+      [orgId]
+    );
+    mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '1000.00'));
+
+    const service = new SystemIntelligenceService();
+    stubSecurityAndObservability(service);
+
+    const result = await service.getSystemIntelligence(orgId);
+
+    expect(result.components.cost.detail).toContain('$40/mo estimated savings identified');
   });
 
   it('ACTIVE filtering is preserved: a RESOLVED recommendation is excluded from the cost score\'s savings detail, matching getStats() semantics', async () => {

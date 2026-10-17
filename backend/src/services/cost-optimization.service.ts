@@ -438,6 +438,7 @@ class CostOptimizationService {
             metadata: {
               public_ip: address.PublicIp,
               allocation_id: address.AllocationId,
+              savings_basis: 'estimated: AWS public IPv4 list price ($0.005/hour, 720 hours) for an address that is allocated but not associated; not billed cost',
             },
           });
         }
@@ -494,6 +495,7 @@ class CostOptimizationService {
             size_gb: sizeGB,
             availability_zone: volume.AvailabilityZone,
             encrypted: volume.Encrypted || false,
+            savings_basis: 'estimated: provisioned size x DevControl\'s EBS list-price table for the volume type (gp2 rate for unlisted types); excludes snapshots and any provisioned IOPS/throughput; not billed cost',
           },
         });
       }
@@ -796,6 +798,7 @@ class CostOptimizationService {
             avg_duration_ms: avgDurationMs,
             memory_mb: memoryMB,
             usage_state: invocations === 0 ? 'zero_usage' : 'low_usage',
+            savings_basis: `estimated: request and duration list price for this function's observed ${LAMBDA_USAGE_WINDOW_DAYS}-day invocations and average duration at its configured memory; excludes free tier; not billed cost`,
             configuration: {
               parameter: 'max_invocations',
               value: config.value,

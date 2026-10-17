@@ -40,6 +40,7 @@ import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
+import { NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
 import { deriveAnalysisStatus, pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { roundCents } from '../costs/cost-display'
 import type { OpportunityEvaluationState } from '@/components/dashboard/savings-opportunities'
@@ -427,11 +428,19 @@ export default function DashboardPage() {
         const matches = costRecsRaw.filter((r) => r.resourceType === cat.type)
         // The server's de-duplicated per-type total, not a client-side sum: two
         // recommendations can draw on the same instance's cost (e.g. idle + RI).
+        // Estimates and ceilings (S3 lifecycle's upper bound) are separate server
+        // totals and are shown apart, never added; a type whose active rows have
+        // no savings basis has no dollar figure at all.
         const total = costRecStats?.potentialSavingsByResourceType?.[cat.type]
+        const ceiling = costRecStats?.potentialSavingsCeilingByResourceType?.[cat.type]
+        const figures = [
+          ...(total != null ? [`${formatSavingsCents(roundCents(total))}/mo`] : []),
+          ...(ceiling != null ? [`Up to ${formatSavingsCents(roundCents(ceiling))}/mo`] : []),
+        ]
         return {
           ...cat,
           count: matches.length,
-          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : total != null ? `${formatSavingsCents(roundCents(total))}/mo` : '—',
+          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : !costRecStats ? '—' : figures.length > 0 ? figures.join(' + ') : NO_DOLLAR_ESTIMATE,
           priorityBadge: priorityBadgeFor(matches[0]?.severity),
         }
       })

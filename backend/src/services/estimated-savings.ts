@@ -22,7 +22,30 @@
  * summed unchanged -- nothing is known about their overlap, so none is
  * assumed. A new category that overlaps an existing one declares a claim;
  * nothing here names a specific detector.
+ *
+ * A figure only counts when metadata.savings_basis says what it is (see
+ * classifySavingsBasis()). An estimate goes into `total`; a ceiling (an
+ * upper bound, e.g. S3 lifecycle assuming all Standard data qualifies for
+ * Standard-IA) goes into `ceilingTotal` and is never added to `total`. A
+ * figure with a missing or unrecognised basis is no supported dollar amount
+ * and contributes to neither.
  */
+
+export type SavingsBasisKind = 'estimate' | 'ceiling';
+
+// The savings_basis prefixes cost-optimization.service.ts writes. 'scenario:'
+// (DynamoDB capacity) and 'comparison:' (DynamoDB capacity mode) are modelled
+// estimates from the resource's own observed usage; 'ceiling:' is an upper bound.
+const ESTIMATE_BASIS_PREFIXES = ['estimated:', 'scenario:', 'comparison:'];
+const CEILING_BASIS_PREFIX = 'ceiling:';
+
+/** What a recommendation's savings figure is, or null when it has no supported basis. */
+export function classifySavingsBasis(basis: unknown): SavingsBasisKind | null {
+  if (typeof basis !== 'string') return null;
+  if (basis.startsWith(CEILING_BASIS_PREFIX)) return 'ceiling';
+  if (ESTIMATE_BASIS_PREFIXES.some((prefix) => basis.startsWith(prefix))) return 'estimate';
+  return null;
+}
 
 export type SavingsClaim =
   | { kind: 'full_resource_cost'; resource_ids: string[] }
@@ -31,12 +54,16 @@ export type SavingsClaim =
 export interface SavingsRecommendation {
   resource_type: string;
   potential_savings: number | string | null;
-  metadata?: { savings_claim?: SavingsClaim } | null;
+  metadata?: { savings_claim?: SavingsClaim; savings_basis?: unknown } | null;
 }
 
 export interface EstimatedSavingsAggregate {
+  /** Estimates only -- never includes a ceiling. */
   total: number;
   byResourceType: Record<string, number>;
+  /** Upper bounds, kept apart from the estimates above. */
+  ceilingTotal: number;
+  ceilingByResourceType: Record<string, number>;
 }
 
 /** A finite dollar amount, or null -- never a coerced 0. */
@@ -66,15 +93,27 @@ function roundCents(amount: number): number {
 }
 
 export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): EstimatedSavingsAggregate {
+  const estimates = recs.filter((rec) => classifySavingsBasis(rec.metadata?.savings_basis) === 'estimate');
+
   const fullyClaimed = new Set<string>();
-  for (const rec of recs) {
+  for (const rec of estimates) {
     const claim = claimOf(rec);
     if (claim?.kind === 'full_resource_cost') claim.resource_ids.forEach((id) => fullyClaimed.add(id));
   }
 
+  let ceilingTotal = 0;
+  const ceilingByResourceType: Record<string, number> = {};
+  for (const rec of recs) {
+    if (classifySavingsBasis(rec.metadata?.savings_basis) !== 'ceiling') continue;
+    const amount = toAmount(rec.potential_savings);
+    if (amount === null) continue;
+    ceilingTotal += amount;
+    ceilingByResourceType[rec.resource_type] = (ceilingByResourceType[rec.resource_type] ?? 0) + amount;
+  }
+
   let total = 0;
   const byResourceType: Record<string, number> = {};
-  for (const rec of recs) {
+  for (const rec of estimates) {
     let amount = toAmount(rec.potential_savings);
     if (amount === null) continue; // no figure -- contributes nothing, not $0-as-fact
 
@@ -90,5 +129,6 @@ export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): Estima
   }
 
   for (const type of Object.keys(byResourceType)) byResourceType[type] = roundCents(byResourceType[type]);
-  return { total: roundCents(total), byResourceType };
+  for (const type of Object.keys(ceilingByResourceType)) ceilingByResourceType[type] = roundCents(ceilingByResourceType[type]);
+  return { total: roundCents(total), byResourceType, ceilingTotal: roundCents(ceilingTotal), ceilingByResourceType };
 }
