@@ -1,437 +1,97 @@
-'use client';
-
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import {
-  Rocket,
-  CheckCircle,
-  ArrowRight,
-  Shield,
-  Clock,
-  MessageCircle,
-  Calendar,
-  ExternalLink,
-  HelpCircle,
-  Sparkles,
-  Trophy,
-  Users,
-  AlertCircle,
-  BookOpen,
-  Play,
-  ChevronRight,
-  BarChart3,
-} from 'lucide-react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 
-function useWindowWidth() {
-  const [width, setWidth] = useState(0)
-  useEffect(() => {
-    const update = () => setWidth(window.innerWidth)
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
-  return width
-}
+/**
+ * A static guide for visitors, most of whom are not signed in. It used to
+ * render a progress tracker with a hard-coded "completed" first step, link
+ * to app settings pages and to docs pages that do not exist, and promise a
+ * reply "within 24 hours". Every link here goes to a public page.
+ */
+const steps = [
+  {
+    title: 'Create your account',
+    body: 'Sign up and create your organization.',
+  },
+  {
+    title: 'Connect your AWS account',
+    body:
+      'After signing in, open Connect AWS. Create an IAM role in your AWS account whose name starts with ' +
+      'DevControlRole, using the trust policy DevControl shows you (it includes your external ID). Attach the ' +
+      'AWS-managed ReadOnlyAccess policy, then paste the role ARN back into DevControl. No AWS access keys are needed.',
+  },
+  {
+    title: 'Review your first findings',
+    body:
+      'Cost and security findings appear after the first scan. DevControl then scans your account again every 6 hours.',
+  },
+  {
+    title: 'Optional: track deployments',
+    body: 'Send GitHub deployment events to DevControl to see DORA metrics for your services.',
+  },
+];
+
+const faqs = [
+  {
+    q: 'What AWS permissions does DevControl need?',
+    a:
+      'Standard onboarding attaches the AWS-managed ReadOnlyAccess policy, which grants read access across AWS ' +
+      'services and no write access. Optional remediation actions need separate, explicit permission and your approval.',
+  },
+  {
+    q: 'Can I remove access later?',
+    a: 'Yes. Delete the IAM role in your AWS account and DevControl can no longer read it.',
+  },
+];
 
 export default function GettingStartedPage() {
-
-  const width = useWindowWidth()
-  const isMobile = width > 0 && width < 640
-  const isTablet = width >= 640 && width < 1024
-
-  // TODO: Replace with actual API calls to check completion status
-  // This would integrate with your backend to check:
-  // - AWS connection status
-  // - Services registered count
-  // - Deployments tracked
-  const steps = [
-    {
-      step: 1,
-      title: 'Create your account',
-      description: 'Sign up for DevControl and create your organization.',
-      completed: true,
-      timeEstimate: '1 min',
-      value: 'Access to full platform features',
-      actionLabel: 'View Account',
-      actionUrl: '/settings/account',
-      helpUrl: '/docs/account-setup',
-    },
-    {
-      step: 2,
-      title: 'Connect your AWS account',
-      description: 'Grant DevControl read-only access to discover your resources.',
-      completed: false, // TODO: Check if AWS is connected via API
-      timeEstimate: '3 min',
-      value: 'Unlock cost optimization, security scanning, and resource inventory',
-      actionLabel: 'Connect AWS',
-      actionUrl: '/settings/integrations',
-      helpUrl: '/docs/aws-integration',
-    },
-    {
-      step: 3,
-      title: 'Register your services',
-      description: 'Add your services to the catalog with ownership and metadata.',
-      completed: false, // TODO: Check if services exist via API
-      timeEstimate: '2 min',
-      value: 'Enable service health monitoring and dependency tracking',
-      actionLabel: 'Add Service',
-      actionUrl: '/services',
-      helpUrl: '/docs/service-catalog',
-    },
-    {
-      step: 4,
-      title: 'Track deployments',
-      description: 'Connect your CI/CD pipeline to track deployment frequency.',
-      completed: false, // TODO: Check if deployments tracked via API
-      timeEstimate: '4 min',
-      value: 'Measure DORA metrics and deployment velocity',
-      actionLabel: 'Setup CI/CD',
-      actionUrl: '/deployments',
-      helpUrl: '/docs/cicd-integration',
-    },
-  ];
-
-  const completedCount = steps.filter((s) => s.completed).length;
-  const totalSteps = steps.length;
-  const completionPercentage = Math.round((completedCount / totalSteps) * 100);
-  const allCompleted = completedCount === totalSteps;
-
-
   return (
-    <div className="min-h-screen bg-background py-8 md:py-12">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 xl:px-12" style={{ paddingLeft: isMobile ? '16px' : isTablet ? '24px' : undefined, paddingRight: isMobile ? '16px' : isTablet ? '24px' : undefined }}>
-        {/* Hero Section */}
-        <div className="text-center mb-8 md:mb-12">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20">
-            <Rocket className="w-8 h-8 text-primary" />
-          </div>
+    <div className="min-h-screen bg-background py-12 md:py-16">
+      <div className="mx-auto max-w-2xl px-4 sm:px-6">
+        <h1 className="text-3xl font-bold text-foreground md:text-4xl">Getting started</h1>
+        <p className="mt-3 text-lg text-muted-foreground">Setup takes a few minutes.</p>
 
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4" style={{ fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : undefined }}>
-            Getting Started with DevControl
-          </h1>
-
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-6">
-            Get up and running in <strong className="text-foreground">a few minutes</strong>.
-            Follow these steps to unlock the full power of your infrastructure platform.
-          </p>
-
-          {/* Progress Bar */}
-          <div className="max-w-md mx-auto">
-            <div className="flex items-center justify-between mb-2 text-sm" style={{ flexWrap: 'wrap', gap: '4px' }}>
-              <span className="font-medium text-foreground">
-                {completedCount} of {totalSteps} completed
-              </span>
-              <span className="text-muted-foreground">{completionPercentage}%</span>
-            </div>
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-primary to-primary/80 transition-all duration-500"
-                style={{ width: `${completionPercentage}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Completion Celebration */}
-        {allCompleted && (
-          <Card className="mb-8 bg-gradient-to-r from-green-500/10 via-primary/10 to-blue-500/10 border-primary shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Trophy className="w-6 h-6 text-amber-500" />
-                Congratulations! You&apos;re All Set!
-              </CardTitle>
-              <CardDescription className="text-base">
-                Your DevControl workspace is fully configured and ready to go. Here&apos;s what you can do next:
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid sm:grid-cols-3 gap-3">
-                <Button asChild className="w-full">
-                  <Link href="/dashboard">
-                    <BarChart3 className="w-4 h-4 mr-2" />
-                    View Dashboard
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="w-full">
-                  <Link href="/settings/team">
-                    <Users className="w-4 h-4 mr-2" />
-                    Invite Team
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="w-full">
-                  <a href="mailto:hello@getdevcontrol.com?subject=Schedule Onboarding Call">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Book Call
-                  </a>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Security Trust Signals */}
-        <Card className="mb-8 border-green-500/30 bg-green-500/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2 text-green-700 dark:text-green-400">
-              <Shield className="w-5 h-5" />
-              Enterprise-Grade Security & Compliance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
-                <span>Read-only AWS access (no write permissions)</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
-                <span>SOC 2 readiness planning underway</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
-                <span>Stored credentials encrypted (AES-256-GCM)</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Onboarding Steps */}
-        <div className="space-y-4 mb-8">
-          {steps.map((step) => (
-            <Card
-              key={step.step}
-              className={`transition-all ${
-                step.completed
-                  ? 'border-primary/50 bg-primary/5 shadow-sm'
-                  : 'hover:shadow-md'
-              }`}
-            >
-              <CardHeader>
-                <div className="flex items-start gap-4">
-                  {/* Step Number/Check */}
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 ${
-                      step.completed
-                        ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/30'
-                        : 'bg-muted text-muted-foreground'
-                    }`}
-                  >
-                    {step.completed ? (
-                      <CheckCircle className="w-5 h-5" />
-                    ) : (
-                      step.step
-                    )}
+        <ol className="mt-8 space-y-4">
+          {steps.map((step, i) => (
+            <li key={step.title}>
+              <Card>
+                <CardContent className="flex gap-4 pt-6">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <h2 className="font-semibold text-foreground">{step.title}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">{step.body}</p>
                   </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex-1">
-                        <CardTitle className="text-lg md:text-xl flex items-center gap-2 flex-wrap">
-                          {step.title}
-                          <Badge variant="secondary" className="text-xs">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {step.timeEstimate}
-                          </Badge>
-                        </CardTitle>
-                        <CardDescription className="mt-1 text-sm md:text-base">
-                          {step.description}
-                        </CardDescription>
-                      </div>
-                    </div>
-
-                    {/* Value Proposition */}
-                    <div className="flex items-start gap-2 text-sm text-primary/80 dark:text-primary/70 bg-primary/5 rounded-lg p-3 mb-4">
-                      <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span className="font-medium">{step.value}</span>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-3">
-                      {!step.completed ? (
-                        <>
-                          <Button asChild size="sm" className="gap-2">
-                            <Link href={step.actionUrl}>
-                              <Play className="w-4 h-4" />
-                              {step.actionLabel}
-                              <ArrowRight className="w-4 h-4" />
-                            </Link>
-                          </Button>
-                          <Button asChild variant="ghost" size="sm" className="gap-2">
-                            <Link href={step.helpUrl}>
-                              <BookOpen className="w-4 h-4" />
-                              View Guide
-                            </Link>
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button asChild variant="outline" size="sm" className="gap-2">
-                            <Link href={step.actionUrl}>
-                              <ExternalLink className="w-4 h-4" />
-                              Review Settings
-                            </Link>
-                          </Button>
-                          <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-500 font-medium">
-                            <CheckCircle className="w-4 h-4" />
-                            Completed
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-            </Card>
+                </CardContent>
+              </Card>
+            </li>
           ))}
-        </div>
+        </ol>
 
-        {/* Two Column Layout */}
-        <div className="grid gap-6 mb-8">
-          {/* Common Issues */}
-          <Card className="bg-muted/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base md:text-lg">
-                <HelpCircle className="w-5 h-5 text-primary" />
-                Common Questions
-              </CardTitle>
-              <CardDescription>
-                Quick answers to help you get unstuck
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="item-1">
-                  <AccordionTrigger className="text-sm hover:no-underline">
-                    How long does AWS connection take?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm text-muted-foreground">
-                    Initial resource discovery usually takes a few minutes, depending on your
-                    infrastructure size. After that, DevControl rescans every 6 hours.
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="item-2">
-                  <AccordionTrigger className="text-sm hover:no-underline">
-                    What AWS permissions are needed?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm text-muted-foreground">
-                    We require read-only access (Describe*, List*, Get*). No write or
-                    modification permissions.{' '}
-                    <Link href="/docs" className="text-primary hover:underline">
-                      View IAM policy template
-                    </Link>
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="item-3">
-                  <AccordionTrigger className="text-sm hover:no-underline">
-                    Can I skip steps and come back later?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm text-muted-foreground">
-                    Yes! Your progress is automatically saved. You can complete steps in
-                    any order and return anytime.
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-
-              <Button asChild variant="link" className="mt-2 px-0 gap-1 text-sm" size="sm">
-                <Link href="/docs">
-                  View all FAQs
-                  <ChevronRight className="w-4 h-4" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Team Invitation Prompt */}
-        {!allCompleted && (
-          <Card className="mb-8 border-amber-500/30 bg-amber-500/5">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                Pro Tip: Collaborate with Your Team
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                DevControl works best when your whole team is involved. Invite teammates
-                to collaborate on services, view metrics, and manage infrastructure together.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Button asChild size="sm" variant="outline" className="gap-2">
-                  <Link href="/settings/team">
-                    <Users className="w-4 h-4" />
-                    Invite Team Members
-                  </Link>
-                </Button>
-                <Button asChild size="sm" variant="ghost" className="gap-2">
-                  <Link href="/docs">
-                    <BookOpen className="w-4 h-4" />
-                    Learn about roles
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Help & Support CTA */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-            <Link href="/docs">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2 group-hover:text-primary transition-colors">
-                  <BookOpen className="w-5 h-5" />
-                  Browse Documentation
-                  <ArrowRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-                </CardTitle>
-                <CardDescription>
-                  Comprehensive guides, API references, and tutorials
-                </CardDescription>
-              </CardHeader>
-            </Link>
-          </Card>
-
-          <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-            <a href="mailto:support@getdevcontrol.com">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2 group-hover:text-primary transition-colors">
-                  <MessageCircle className="w-5 h-5" />
-                  Contact Support
-                  <ArrowRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-                </CardTitle>
-                <CardDescription>
-                  Get help from our team within 24 hours
-                </CardDescription>
-              </CardHeader>
-            </a>
-          </Card>
-        </div>
-
-        {/* Floating Help Button - Mobile Only */}
-        <div className="fixed bottom-6 right-6 flex flex-col gap-2 lg:hidden">
-          <Button
-            asChild
-            size="sm"
-            className="shadow-lg gap-2 rounded-full px-4"
-          >
-            <a href="mailto:support@getdevcontrol.com">
-              <MessageCircle className="w-4 h-4" />
-              Get Help
-            </a>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <Button asChild>
+            <Link href="/register">Create your account</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/login">Sign in</Link>
           </Button>
         </div>
+
+        <h2 className="mt-12 text-xl font-bold text-foreground">Common questions</h2>
+        <dl className="mt-4 space-y-4">
+          {faqs.map((faq) => (
+            <div key={faq.q}>
+              <dt className="font-semibold text-foreground">{faq.q}</dt>
+              <dd className="mt-1 text-sm text-muted-foreground">{faq.a}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <p className="mt-12 text-sm text-muted-foreground">
+          Stuck? <Link href="/contact" className="text-primary hover:underline">Contact us</Link> or go back to the{' '}
+          <Link href="/docs" className="text-primary hover:underline">documentation</Link>.
+        </p>
       </div>
     </div>
   );
