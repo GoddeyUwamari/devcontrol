@@ -22,6 +22,8 @@ import {
   type Organization,
 } from "../services/organizations.service";
 import { logError } from "@/lib/safe-log";
+import { DEFAULT_RETURN_PATH, safeReturnPath } from "@/lib/safe-return-path";
+import { clearPendingInvitation } from "@/lib/pending-invitation";
 
 /**
  * Auth Context Value Interface
@@ -35,8 +37,9 @@ interface AuthContextValue {
   isLoading: boolean;
 
   // Auth Methods
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, fullName: string) => Promise<void>;
+  /** redirectTo: where to go once signed in; ignored unless a same-origin path (see safeReturnPath). */
+  login: (email: string, password: string, redirectTo?: string) => Promise<void>;
+  register: (email: string, password: string, fullName: string, redirectTo?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 
@@ -155,7 +158,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Login method
    */
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, redirectTo?: string) => {
+      const target = safeReturnPath(redirectTo) ?? DEFAULT_RETURN_PATH;
       try {
         const response = await authService.login({ email, password });
 
@@ -192,22 +196,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
           description: `Logged in as ${user?.email ?? email}`,
         });
 
-        // Redirect to dashboard with fallback
-        console.log("🚀 Redirecting to dashboard...");
+        // Redirect (dashboard unless a safe return path was given) with fallback
+        console.log("🚀 Redirecting after login...");
         try {
           // Use Next.js router for client-side navigation
-          await router.push("/dashboard");
+          await router.push(target);
 
           // Fallback: Force navigation if router.push doesn't work
           setTimeout(() => {
             if (window.location.pathname === "/login") {
               console.log("⚠️ Router redirect failed, using window.location");
-              window.location.href = "/dashboard";
+              window.location.href = target;
             }
           }, 100);
         } catch (error) {
           logError("❌ Router navigation failed, using window.location", error);
-          window.location.href = "/dashboard";
+          window.location.href = target;
         }
       } catch (error: any) {
         logError("Login failed", error);
@@ -228,7 +232,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Register method
    */
   const register = useCallback(
-    async (email: string, password: string, fullName: string) => {
+    async (email: string, password: string, fullName: string, redirectTo?: string) => {
+      const target = safeReturnPath(redirectTo) ?? DEFAULT_RETURN_PATH;
       try {
         const response = await authService.register({
           email,
@@ -261,21 +266,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
             description: "Welcome to DevControl",
           });
 
-          // Redirect to dashboard with fallback
-          console.log("🚀 Redirecting to dashboard...");
+          // Redirect (dashboard unless a safe return path was given) with fallback
+          console.log("🚀 Redirecting after registration...");
           try {
-            await router.push("/dashboard");
+            await router.push(target);
 
             // Fallback: Force navigation if router.push doesn't work
             setTimeout(() => {
-              if (window.location.pathname !== "/dashboard") {
+              if (window.location.pathname !== new URL(target, window.location.origin).pathname) {
                 console.log("⚠️  Router redirect failed, using window.location");
-                window.location.href = "/dashboard";
+                window.location.href = target;
               }
             }, 100);
           } catch (error) {
             logError("❌ Router navigation failed, using window.location", error);
-            window.location.href = "/dashboard";
+            window.location.href = target;
           }
         } else {
           // Older backend that doesn't return tokens on registration
@@ -312,6 +317,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Clear local state
       tokenManager.clearAll();
       tokenManager.clearAuthCookie();
+      // An invitation opened in this tab must not carry over to whoever signs in next.
+      clearPendingInvitation();
       setUser(null);
       setOrganization(null);
       setOrganizations([]);

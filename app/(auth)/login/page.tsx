@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -35,10 +35,17 @@ function LoginContent() {
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [showSsoInput, setShowSsoInput] = useState(false);
 
+  // Where to go once signed in (from ?from=, validated by the auth context);
+  // read once, so a second effect run (Strict Mode) cannot drop it.
+  const returnTo = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     // Clear any submitted fields from the URL and history; the values are
-    // discarded, never used or sent.
-    takeUrlCredentials(FORM_FIELDS);
+    // discarded, never used or sent. `from` is kept and removed the same way.
+    const { from } = takeUrlCredentials([...FORM_FIELDS, "from"] as const, {
+      legacyQuery: ["from"],
+    });
+    if (from) returnTo.current = from;
   }, []);
 
   const ssoErrorParam = searchParams?.get("error");
@@ -88,7 +95,7 @@ function LoginContent() {
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
     try {
-      await login(data.email, data.password);
+      await login(data.email, data.password, returnTo.current);
       // Navigation handled by auth context
     } catch {
       // Error toast and logging handled by auth context
