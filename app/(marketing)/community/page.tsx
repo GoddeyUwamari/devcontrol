@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Users, MessageCircle, Zap, BookOpen, ArrowRight, Star, Shield, Rocket } from 'lucide-react'
+import { Users, MessageCircle, Zap, BookOpen, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 
 function useWindowWidth() {
@@ -31,25 +31,9 @@ const benefits = [
     title: 'Share Best Practices',
     desc: 'Learn how other platform teams structure their AWS governance, cost allocation, and DORA metric tracking.',
   },
-  {
-    icon: Shield,
-    title: 'Security & Compliance Playbooks',
-    desc: 'Access community-contributed SOC 2, HIPAA, and CIS benchmark guides built by practitioners.',
-  },
-  {
-    icon: Star,
-    title: 'Real-World Case Studies',
-    desc: 'Members share real savings numbers, architecture decisions, and lessons learned from production environments.',
-  },
-  {
-    icon: Rocket,
-    title: 'Office Hours with the Team',
-    desc: 'Weekly live sessions with the DevControl engineering team. Ask questions, see demos, influence the product.',
-  },
 ]
 
 const stats = [
-  { value: 'Weekly', label: 'Office hours' },
   { value: 'Free', label: 'Always' },
 ]
 
@@ -243,7 +227,7 @@ export default function CommunityPage() {
           }}>
             {[
               { channel: '#aws-cost-optimization', desc: 'Share savings wins, ask for advice on rightsizing and Reserved Instances' },
-              { channel: '#security-compliance', desc: 'SOC 2, HIPAA, CIS benchmarks — real practitioner discussions' },
+              { channel: '#security-compliance', desc: 'Security and compliance questions' },
               { channel: '#dora-metrics', desc: 'Deployment frequency, lead time, MTTR — compare notes with other teams' },
               { channel: '#platform-engineering', desc: 'Internal developer platforms, service catalogs, drift detection' },
               { channel: '#devcontrol-feedback', desc: 'Direct line to the product team — bug reports, feature requests, roadmap discussion' },

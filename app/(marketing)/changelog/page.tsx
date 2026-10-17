@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import {
   Sparkles, Zap, Bug, Calendar, Search, Mail, ArrowRight,
-  ExternalLink, BookOpen, Star, Shield, Rocket, Filter,
+  BookOpen, Star, Shield, Filter,
   AlertCircle, Package, Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -55,19 +55,15 @@ export default function ChangelogPage() {
     {
       version: '3.2.0',
       date: '2026-03-28',
-      title: 'AI-Powered Cost Recommendations',
+      title: 'Cost Optimization Recommendations',
       featured: true,
       image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80',
-      summary: 'Introducing machine learning-based cost optimization recommendations that can save you up to 40% on AWS bills.',
-      blogPost: '/blog/ai-cost-recommendations',
+      summary: 'Cost optimization recommendations, each with the evidence behind its estimate.',
       changes: [
-        { type: 'feature' as ChangeType, text: 'AI-powered cost optimization recommendations based on usage patterns', category: 'Cost Management' },
-        { type: 'feature' as ChangeType, text: 'Automated rightsizing suggestions for EC2 and RDS instances', category: 'Cost Management' },
-        { type: 'feature' as ChangeType, text: 'Predictive cost forecasting with 95% accuracy', category: 'Cost Management' },
+        { type: 'feature' as ChangeType, text: 'Cost optimization recommendations for idle EC2 candidates, unattached EBS volumes and unused Elastic IPs', category: 'Cost Management' },
         { type: 'improvement' as ChangeType, text: 'Enhanced cost allocation tags support', category: 'Cost Management' },
-        { type: 'improvement' as ChangeType, text: '3x faster dashboard load times', category: 'Performance' },
       ],
-      stats: { newFeatures: 3, improvements: 2, bugFixes: 0 },
+      stats: { newFeatures: 1, improvements: 1, bugFixes: 0 },
     },
     {
       version: '3.1.0',
@@ -76,16 +72,14 @@ export default function ChangelogPage() {
       featured: true,
       image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=800&q=80',
       summary: 'Comprehensive DORA metrics tracking to measure and improve your software delivery performance.',
-      blogPost: '/blog/dora-metrics',
       changes: [
         { type: 'feature' as ChangeType, text: 'New DORA metrics dashboard with deployment frequency, lead time, change failure rate, and MTTR', category: 'Platform Engineering' },
-        { type: 'feature' as ChangeType, text: 'Team-level DORA metrics comparison and benchmarking', category: 'Platform Engineering' },
         { type: 'feature' as ChangeType, text: 'Historical trend analysis for DORA metrics', category: 'Platform Engineering' },
         { type: 'improvement' as ChangeType, text: 'Improved service dependency visualization with interactive graph', category: 'Services' },
         { type: 'fix' as ChangeType, text: 'Fixed timezone issues in deployment tracking', category: 'Deployments' },
-        { type: 'fix' as ChangeType, text: 'Resolved memory leak in real-time metrics updates', category: 'Performance' },
+        { type: 'fix' as ChangeType, text: 'Resolved memory leak in live metrics updates', category: 'Performance' },
       ],
-      stats: { newFeatures: 3, improvements: 1, bugFixes: 2 },
+      stats: { newFeatures: 2, improvements: 1, bugFixes: 2 },
     },
     {
       version: '3.0.0',
@@ -98,12 +92,11 @@ export default function ChangelogPage() {
         { type: 'feature' as ChangeType, text: 'Automatic discovery of RDS, ElastiCache, and Lambda resources', category: 'AWS Integration' },
         { type: 'feature' as ChangeType, text: 'Support for S3 bucket analysis and cost breakdown', category: 'AWS Integration' },
         { type: 'feature' as ChangeType, text: 'Cost allocation by resource tag with custom grouping', category: 'Cost Management' },
-        { type: 'improvement' as ChangeType, text: 'Faster initial sync for large AWS accounts (50% reduction)', category: 'Performance' },
         { type: 'improvement' as ChangeType, text: 'Better error handling for AWS API rate limits', category: 'AWS Integration' },
         { type: 'fix' as ChangeType, text: 'Fixed pagination in resource listing for accounts with 10,000+ resources', category: 'AWS Integration' },
         { type: 'security' as ChangeType, text: 'Enhanced IAM role validation and security checks', category: 'Security' },
       ],
-      stats: { newFeatures: 3, improvements: 2, bugFixes: 1 },
+      stats: { newFeatures: 3, improvements: 1, bugFixes: 1 },
     },
     {
       version: '2.9.0',
@@ -131,10 +124,9 @@ export default function ChangelogPage() {
         { type: 'security' as ChangeType, text: 'SOC 2 readiness planning initiated (not an independent audit or certification)', category: 'Security' },
         { type: 'feature' as ChangeType, text: 'Security scanning dashboard with vulnerability tracking', category: 'Security' },
         { type: 'feature' as ChangeType, text: 'Compliance framework templates (CIS, PCI-DSS)', category: 'Security' },
-        { type: 'improvement' as ChangeType, text: 'Audit log retention increased to 2 years', category: 'Security' },
         { type: 'fix' as ChangeType, text: 'Fixed false positives in security checks', category: 'Security' },
       ],
-      stats: { newFeatures: 2, improvements: 1, bugFixes: 1 },
+      stats: { newFeatures: 2, improvements: 0, bugFixes: 1 },
     },
     {
       version: '2.7.0',
@@ -142,14 +134,10 @@ export default function ChangelogPage() {
       title: 'Webhooks & API Enhancements',
       featured: false,
       changes: [
-        { type: 'feature' as ChangeType, text: 'Webhooks for real-time event notifications', category: 'API' },
-        { type: 'feature' as ChangeType, text: 'GraphQL API beta release', category: 'API' },
-        { type: 'improvement' as ChangeType, text: 'REST API rate limits increased to 10,000 requests/hour', category: 'API' },
-        { type: 'improvement' as ChangeType, text: 'API response times reduced by 40%', category: 'Performance' },
-        { type: 'breaking' as ChangeType, text: 'Deprecated v2 endpoints (use v3 by June 2026)', category: 'API' },
+        { type: 'feature' as ChangeType, text: 'Webhooks for event notifications', category: 'API' },
         { type: 'fix' as ChangeType, text: 'Fixed inconsistent API error responses', category: 'API' },
       ],
-      stats: { newFeatures: 2, improvements: 2, bugFixes: 1 },
+      stats: { newFeatures: 1, improvements: 0, bugFixes: 1 },
     },
   ];
 
@@ -234,15 +222,6 @@ export default function ChangelogPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
             flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row',
           }}>
-            <Link href="/blog" style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-              padding: '9px 18px', borderRadius: '8px', border: '1px solid #e5e7eb',
-              background: '#fff', color: '#374151', fontWeight: 500,
-              fontSize: '0.875rem', textDecoration: 'none',
-              width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
-            }}>
-              <BookOpen style={{ width: '15px', height: '15px' }} /> Read Blog
-            </Link>
             <a href="#subscribe" style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
               padding: '9px 18px', borderRadius: '8px',
@@ -356,14 +335,6 @@ export default function ChangelogPage() {
                           </span>
                         )}
                       </div>
-                      {release.blogPost && (
-                        <Link href={release.blogPost} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '4px',
-                          fontSize: '0.82rem', fontWeight: 600, color: '#7c3aed', textDecoration: 'none',
-                        }}>
-                          Read more <ArrowRight style={{ width: '12px', height: '12px' }} />
-                        </Link>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -431,18 +402,6 @@ export default function ChangelogPage() {
                           <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.6, margin: 0 }}>{release.summary}</p>
                         )}
                       </div>
-                      {release.blogPost && (
-                        <Link href={release.blogPost} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '6px',
-                          padding: '7px 14px', borderRadius: '8px', border: '1px solid #e5e7eb',
-                          background: '#fff', color: '#374151', fontSize: '0.82rem',
-                          fontWeight: 500, textDecoration: 'none', flexShrink: 0,
-                        }}>
-                          <BookOpen style={{ width: '13px', height: '13px' }} />
-                          Read more
-                          <ExternalLink style={{ width: '11px', height: '11px' }} />
-                        </Link>
-                      )}
                     </div>
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: '20px',
@@ -579,12 +538,11 @@ export default function ChangelogPage() {
         {/* Footer Links */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
           gap: '20px', paddingBottom: '64px',
         }}>
           {[
             { href: '/docs', icon: BookOpen, title: 'Documentation', desc: 'Learn how to use all the new features', external: false },
-            { href: '/blog', icon: Rocket, title: 'Blog', desc: 'Read in-depth articles about new releases', external: false },
             { href: 'mailto:hello@getdevcontrol.com', icon: Sparkles, title: 'Request a Feature', desc: "Have an idea? We'd love to hear it", external: true },
           ].map((item) => {
             const Icon = item.icon;

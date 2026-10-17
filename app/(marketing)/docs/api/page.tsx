@@ -298,9 +298,9 @@ export default function ApiReferencePage() {
                   <Zap className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-semibold mb-1">Fast & Reliable</h3>
+                  <h3 className="font-semibold mb-1">Predictable limits</h3>
                   <p className="text-sm text-muted-foreground">
-                    99.9% uptime SLA with response times under 100ms
+                    Hourly request limits per plan, reported in standard RateLimit headers
                   </p>
                 </div>
               </div>
@@ -471,19 +471,25 @@ export default function ApiReferencePage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid md:grid-cols-3 gap-4 mb-4">
+              {/* Must match backend/src/middleware/rateLimiter.ts getRateLimitByTier(). */}
+              <div className="grid md:grid-cols-4 gap-4 mb-4">
                 <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-primary mb-1">1,000</div>
+                  <div className="text-2xl font-bold text-primary mb-1">500</div>
                   <div className="text-sm text-muted-foreground">requests/hour</div>
                   <Badge variant="secondary" className="mt-2">Free Plan</Badge>
                 </div>
                 <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-primary mb-1">10,000</div>
+                  <div className="text-2xl font-bold text-primary mb-1">2,000</div>
+                  <div className="text-sm text-muted-foreground">requests/hour</div>
+                  <Badge variant="secondary" className="mt-2">Starter Plan</Badge>
+                </div>
+                <div className="text-center p-4 bg-muted rounded-lg">
+                  <div className="text-2xl font-bold text-primary mb-1">5,000</div>
                   <div className="text-sm text-muted-foreground">requests/hour</div>
                   <Badge variant="secondary" className="mt-2">Pro Plan</Badge>
                 </div>
                 <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-primary mb-1">100,000</div>
+                  <div className="text-2xl font-bold text-primary mb-1">20,000</div>
                   <div className="text-sm text-muted-foreground">requests/hour</div>
                   <Badge variant="secondary" className="mt-2">Enterprise</Badge>
                 </div>
@@ -993,9 +999,8 @@ export default function ApiReferencePage() {
                     Are there any API usage limits?
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    Rate limits vary by plan. Free tier: 500 requests/hour, Pro: 10,000
-                    requests/hour, Enterprise: 100,000 requests/hour. Contact us for custom
-                    limits.
+                    Rate limits vary by plan. Free: 500 requests/hour, Starter: 2,000,
+                    Pro: 5,000, Enterprise: 20,000. Contact us for custom limits.
                   </AccordionContent>
                 </AccordionItem>
 

@@ -72,7 +72,7 @@ function CostsMock() {
   const metrics = [
     { label: 'AWS Spend', value: '$1,247', sub: 'this month', color: '#0f172a' },
     { label: 'Projected', value: '$1,890', sub: 'end of month', color: '#f59e0b' },
-    { label: 'Waste Identified', value: '$800–$8K+', sub: 'per month', color: '#16a34a' },
+    { label: 'Waste Flagged', value: '$205', sub: 'per month', color: '#16a34a' },
     { label: 'Services', value: '23', sub: 'monitored', color: '#7c3aed' },
   ]
   const bars = [60, 80, 55, 90, 70, 85, 45]
@@ -115,11 +115,11 @@ function AIMock() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
         <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '10px', padding: '12px 14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#b45309', background: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cost Alert</span>
+            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#b45309', background: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cost Finding</span>
           </div>
-          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px' }}>EC2 spend up 34% this week</div>
+          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px' }}>3 EC2 instances look idle</div>
           <div style={{ fontSize: '0.75rem', color: '#1f2937', lineHeight: 1.5 }}>
-            3 new t3.large instances in us-east-1 were launched Tuesday and are running idle 80% of the time. Estimated waste: $340/month.
+            Average CPU under 5% over the last 7 days in us-east-1. Review them before stopping. Estimated compute cost: $340/month.
           </div>
         </div>
         <div style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '12px 14px' }}>
@@ -217,8 +217,8 @@ function DoraMock() {
 
 function ActionsMock() {
   const actions = [
-    { title: 'Terminate 3 idle EC2 instances', desc: 'Running at <5% CPU for 14+ days in us-east-1', savings: '$340/mo', severity: 'warn' },
-    { title: 'Right-size RDS db.r5.2xlarge', desc: 'Memory usage consistently under 20%', savings: '$180/mo', severity: 'info' },
+    { title: 'Review 3 idle EC2 instances', desc: 'Average CPU under 5% for 7 days in us-east-1', savings: '$340/mo', severity: 'warn' },
+    { title: 'Delete 2 unattached EBS volumes', desc: 'Not attached to any instance', savings: '$38/mo', severity: 'info' },
     { title: 'Block public S3 bucket access', desc: 'logs-prod has public read ACL enabled', savings: 'Security', severity: 'fail' },
   ]
   const severityColor = { warn: '#f59e0b', info: '#7c3aed', fail: '#ef4444' }
@@ -246,7 +246,7 @@ function ActionsMock() {
               fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer',
               whiteSpace: 'nowrap',
             }}>
-              Fix Now
+              Review
             </button>
           </div>
         </div>
@@ -288,6 +288,13 @@ function MockScreen({ type }: { type: string }) {
         }}>
           devcontrol.app/{urlMap[type] ?? type}
         </div>
+        {/* Every mock screen is illustrative: its numbers are not from a real account. */}
+        <span
+          data-testid="tour-sample-tag"
+          style={{ marginLeft: 'auto', fontSize: '0.65rem', fontWeight: 700, color: '#5b21b6', background: '#ede9fe', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}
+        >
+          Sample data
+        </span>
       </div>
       {/* Body */}
       <div style={{ padding: '20px' }}>
@@ -307,13 +314,12 @@ function MockScreen({ type }: { type: string }) {
 const steps = [
   {
     eyebrow: 'Step 1 — Setup',
-    title: 'Connect your AWS account in 2 minutes',
-    description: 'Deploy a read-only IAM role with one click. We never store credentials, and standard onboarding requests read-only access only — optional remediation actions require separate, explicit permission and your approval.',
+    title: 'Connect your AWS account',
+    description: 'Create a read-only IAM role by following our step-by-step guide. Standard onboarding uses a cross-account role, so no AWS access keys are needed — optional remediation actions require separate, explicit permission and your approval.',
     highlights: [
       'Read-only by default — no write access without your explicit approval',
-      'Works across all AWS accounts and regions',
       'No agents, no code changes required',
-      'AES-256 encrypted in transit and at rest',
+      'Stored credentials encrypted with AES-256-GCM',
     ],
     mockType: 'iam',
     navLabel: 'Connect AWS',
@@ -321,12 +327,11 @@ const steps = [
   {
     eyebrow: 'Step 2 — Cost Visibility',
     title: 'See exactly where your AWS money goes',
-    description: 'Get instant visibility into your AWS spend across all services, accounts, and regions. No more surprise bills.',
+    description: 'See your AWS spend by service, from your own Cost Explorer data.',
     highlights: [
-      'Real-time cost breakdown by service',
+      'Cost breakdown by service',
       'Month-over-month trend analysis',
       'Idle and unused resource detection',
-      'Teams identify $800–$8,000+/month in waste',
     ],
     mockType: 'costs',
     navLabel: 'Cost Overview',
@@ -334,11 +339,10 @@ const steps = [
   {
     eyebrow: 'Step 3 — AI Intelligence',
     title: 'AI that explains your infrastructure in plain English',
-    description: 'Get weekly AI summaries, cost anomaly alerts, and natural language answers about your AWS environment.',
+    description: 'Get weekly AI summaries and natural language answers about your AWS environment.',
     highlights: [
       'Weekly AI briefings delivered to your inbox',
       'Ask questions in plain English — no SQL',
-      'Anomaly detection with root cause analysis',
       'AI-generated cost optimization reports',
     ],
     mockType: 'ai',
@@ -346,12 +350,12 @@ const steps = [
   },
   {
     eyebrow: 'Step 4 — Security & Compliance',
-    title: 'Know your security posture instantly',
-    description: 'Automated security scanning across all AWS resources. Track PCI DSS compliance posture and SOC 2 readiness gaps without manual audits.',
+    title: 'Know your security posture',
+    description: 'Automated security checks across your AWS resources. Track PCI DSS compliance posture and SOC 2 readiness gaps without manual audits.',
     highlights: [
       'Continuous compliance monitoring',
       'PCI DSS frameworks, plus SOC 2 readiness planning',
-      'One-click remediation suggestions',
+      'Remediation guidance for each finding',
       'Exportable evidence for your auditor',
     ],
     mockType: 'security',
@@ -363,8 +367,7 @@ const steps = [
     description: 'See deployment frequency, lead time, change failure rate, and MTTR — without spreadsheets or manual tracking.',
     highlights: [
       'All 4 DORA metrics tracked automatically',
-      'Compare against industry benchmarks',
-      'Filter by team, service, environment',
+      'DORA performance tiers (Elite, High, Medium, Low)',
       'Export CSV and PDF reports',
     ],
     mockType: 'dora',
@@ -372,13 +375,13 @@ const steps = [
   },
   {
     eyebrow: 'Step 6 — Take Action',
-    title: 'Fix issues and optimize with one click',
+    title: 'Review findings and act on them safely',
     description: "DevControl doesn't just surface problems — it tells you exactly what to do and helps you do it safely.",
     highlights: [
-      'One-click cost optimization actions',
+      'Approval-based remediation workflows',
       'Guided remediation for security issues',
-      'All actions logged and reversible',
-      'Team notifications via Slack + PagerDuty',
+      'Every action logged',
+      'Team notifications via Slack',
     ],
     mockType: 'actions',
     navLabel: 'Take Action',
@@ -427,7 +430,7 @@ export default function TourPage() {
           maxWidth: '520px', margin: '0 auto',
         }}>
           Walk through 6 steps to see how engineering teams get complete
-          AWS visibility in under 15 minutes.
+          AWS visibility in a few minutes.
         </p>
       </section>
 

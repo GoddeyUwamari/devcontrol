@@ -1,3 +1,5 @@
+import { STARTER_MONTHLY_PRICE_LABEL } from '@/lib/constants/pricing'
+
 export const startupFAQs = [
   {
     question: 'How long does it take to set up DevControl?',
@@ -9,7 +11,7 @@ export const startupFAQs = [
   },
   {
     question: 'Is there a startup discount or free tier?',
-    answer: 'Yes! Our Starter plan at $79/month is designed specifically for early-stage startups. We also offer extended trials and special pricing for YC, Techstars, and other accelerator companies—just reach out.',
+    answer: `Yes! Our Starter plan at ${STARTER_MONTHLY_PRICE_LABEL} is designed specifically for early-stage startups. We also offer extended trials and special pricing for YC, Techstars, and other accelerator companies—just reach out.`,
   },
   {
     question: 'How does DevControl save us money?',

@@ -42,7 +42,7 @@ const solutionsItems = [
 
 const resourcesItems = [
   { icon: BookOpen,  title: 'Documentation', desc: 'Guides, references, and tutorials',       href: '/docs' },
-  { icon: Code2,     title: 'API Reference', desc: 'Complete REST and GraphQL docs',          href: '/docs/api' },
+  { icon: Code2,     title: 'API Reference', desc: 'REST API reference',          href: '/docs/api' },
   { icon: FileText,  title: 'Blog',          desc: 'Engineering insights and best practices', href: '/blog' },
   { icon: BarChart2, title: 'Case Studies',  desc: 'See how teams use DevControl',            href: '/case-studies' },
   { icon: Clock,     title: 'Changelog',     desc: 'Latest features and improvements',        href: '/changelog' },

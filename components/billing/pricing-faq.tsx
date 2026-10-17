@@ -37,12 +37,6 @@ const faqs: FAQItem[] = [
       "After your 14-day free trial, your account automatically converts to your chosen paid plan. You'll receive email reminders before the trial ends. If you don't want to continue, simply cancel before the trial ends - no charge.",
   },
   {
-    icon: RotateCcw,
-    question: 'Do you offer refunds?',
-    answer:
-      "Yes! We offer a 14-day money-back guarantee on all paid plans, no questions asked. If you're not satisfied within the first 14 days of your subscription, contact support for a full refund.",
-  },
-  {
     icon: CreditCard,
     question: 'What payment methods do you accept?',
     answer:
@@ -52,7 +46,7 @@ const faqs: FAQItem[] = [
     icon: Headphones,
     question: 'Is support included?',
     answer:
-      'Yes! All plans include support. Free tier gets community support. Starter includes email support (24hr response). Pro gets priority support (4hr response) plus Slack integration. Enterprise includes a dedicated account manager and 24/7 priority support.',
+      'Yes. All plans include support. Free tier gets community support, Starter includes email support, Pro gets priority support, and Enterprise includes a dedicated account manager.',
   },
   {
     icon: FileText,
@@ -64,7 +58,7 @@ const faqs: FAQItem[] = [
     icon: CalendarDays,
     question: 'How does annual billing work?',
     answer:
-      "Pay annually and save 20% compared to monthly billing. You'll receive a single invoice for the full year. Annual subscriptions can be cancelled anytime, with a prorated refund for unused months.",
+      "Pay annually for a lower price than monthly billing. You'll receive a single invoice for the full year.",
   },
   {
     icon: Download,
@@ -94,7 +88,7 @@ const faqs: FAQItem[] = [
     icon: Shield,
     question: 'How secure is my AWS data?',
     answer:
-      "DevControl uses read-only IAM roles - we never store your AWS credentials. All data is encrypted at rest (AES-256) and in transit (TLS 1.3). We have initiated SOC 2 readiness planning (not an independent audit or certification). Your infrastructure data never leaves our secure environment.",
+      "Standard onboarding uses a read-only, cross-account IAM role, so no AWS access keys are needed. AWS credentials and SSO certificates are encrypted with AES-256-GCM before they are stored, and data in transit is sent over TLS. We have initiated SOC 2 readiness planning (not an independent audit or certification).",
   },
 ];
 

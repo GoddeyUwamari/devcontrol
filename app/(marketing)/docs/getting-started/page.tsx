@@ -14,10 +14,7 @@ import {
   Rocket,
   CheckCircle,
   ArrowRight,
-  Terminal,
   Shield,
-  Copy,
-  Check,
   Clock,
   MessageCircle,
   Calendar,
@@ -46,7 +43,6 @@ function useWindowWidth() {
 }
 
 export default function GettingStartedPage() {
-  const [copiedCode, setCopiedCode] = useState(false);
 
   const width = useWindowWidth()
   const isMobile = width > 0 && width < 640
@@ -109,23 +105,6 @@ export default function GettingStartedPage() {
   const completionPercentage = Math.round((completedCount / totalSteps) * 100);
   const allCompleted = completedCount === totalSteps;
 
-  const cliCode = `# Install the DevControl CLI
-npm install -g @devcontrol/cli
-
-# Login to your account
-devcontrol login
-
-# Discover AWS resources
-devcontrol discover --aws
-
-# Register a service
-devcontrol service create --name my-service`;
-
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(cliCode);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
-  };
 
   return (
     <div className="min-h-screen bg-background py-8 md:py-12">
@@ -141,7 +120,7 @@ devcontrol service create --name my-service`;
           </h1>
 
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-6">
-            Get up and running in <strong className="text-foreground">under 10 minutes</strong>.
+            Get up and running in <strong className="text-foreground">a few minutes</strong>.
             Follow these steps to unlock the full power of your infrastructure platform.
           </p>
 
@@ -219,7 +198,7 @@ devcontrol service create --name my-service`;
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-500 shrink-0" />
-                <span>Data encrypted at rest and in transit</span>
+                <span>Stored credentials encrypted (AES-256-GCM)</span>
               </div>
             </div>
           </CardContent>
@@ -317,60 +296,7 @@ devcontrol service create --name my-service`;
         </div>
 
         {/* Two Column Layout */}
-        <div className="grid lg:grid-cols-2 gap-6 mb-8">
-          {/* CLI Quick Start */}
-          <Card className="bg-muted/50">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-base md:text-lg">
-                <span className="flex items-center gap-2">
-                  <Terminal className="w-5 h-5 text-primary" />
-                  Quick Start with CLI
-                </span>
-                <Badge variant="secondary">v2.1.0</Badge>
-              </CardTitle>
-              <CardDescription>
-                Install and configure the DevControl CLI in seconds
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="relative">
-                <pre className="bg-background p-4 rounded-lg overflow-x-auto text-xs md:text-sm border">
-                  <code className="text-muted-foreground">{cliCode}</code>
-                </pre>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleCopyCode}
-                  className="absolute top-2 right-2 gap-2"
-                >
-                  {copiedCode ? (
-                    <>
-                      <Check className="w-4 h-4 text-green-600" />
-                      <span className="text-xs">Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span className="text-xs">Copy</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                <p className="text-xs md:text-sm text-muted-foreground flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                  <span>
-                    Requires Node.js 18+ and npm 9+.{' '}
-                    <Link href="/docs" className="text-primary hover:underline">
-                      View full CLI docs
-                    </Link>
-                  </span>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
+        <div className="grid gap-6 mb-8">
           {/* Common Issues */}
           <Card className="bg-muted/50">
             <CardHeader>
@@ -389,8 +315,8 @@ devcontrol service create --name my-service`;
                     How long does AWS connection take?
                   </AccordionTrigger>
                   <AccordionContent className="text-sm text-muted-foreground">
-                    Initial resource discovery takes 2-5 minutes depending on your
-                    infrastructure size. Subsequent syncs are incremental and faster.
+                    Initial resource discovery usually takes a few minutes, depending on your
+                    infrastructure size. After that, DevControl rescans every 6 hours.
                   </AccordionContent>
                 </AccordionItem>
 

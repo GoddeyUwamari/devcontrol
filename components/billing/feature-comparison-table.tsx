@@ -22,18 +22,17 @@ const features: Feature[] = [
   { category: 'Resources & Discovery', name: 'Multi-Account Visibility', free: false, starter: false, pro: false, enterprise: true },
   { category: 'Resources & Discovery', name: 'AWS Resources', free: '20', starter: '60', pro: '500', enterprise: 'Unlimited', tooltip: 'Number of AWS resources you can track and manage' },
   { category: 'Resources & Discovery', name: 'Team Members', free: '1', starter: '3', pro: '10', enterprise: 'Unlimited' },
-  { category: 'Resources & Discovery', name: 'Cost History', free: 'Real-time only', starter: '30-day', pro: '90-day', enterprise: '90-day' },
+  { category: 'Resources & Discovery', name: 'Cost History', free: 'Current month', starter: '30-day', pro: '90-day', enterprise: '90-day' },
 
   // Cost Management
-  { category: 'Cost Management', name: 'Cost Overview (real-time spend tracking)', free: true, starter: true, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Cost Overview (AWS spend tracking)', free: true, starter: true, pro: true, enterprise: true },
   { category: 'Cost Management', name: 'Orphaned Resource Detection', free: false, starter: true, pro: true, enterprise: true, tooltip: 'Find and eliminate unused resources wasting money' },
   { category: 'Cost Management', name: 'Cost Optimization Opportunities', free: false, starter: true, pro: true, enterprise: true, highlight: true },
   { category: 'Cost Management', name: 'Cost Data Export', free: false, starter: true, pro: true, enterprise: true },
-  { category: 'Cost Management', name: 'Cost Optimization — EC2, EBS, RDS, S3, Lambda, DynamoDB', free: false, starter: false, pro: true, enterprise: true },
-  { category: 'Cost Management', name: 'Reserved Instance & Rightsizing Opportunities', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Cost Optimization — EC2, EBS, Elastic IP, S3, Lambda, DynamoDB', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Reserved Instance Coverage Gaps', free: false, starter: false, pro: true, enterprise: true },
   { category: 'Cost Management', name: 'Resource Efficiency Analysis', free: false, starter: false, pro: true, enterprise: true },
-  { category: 'Cost Management', name: 'Team Cost Attribution', free: false, starter: false, pro: true, enterprise: true, tooltip: 'See costs broken down by team, project, or service' },
-  { category: 'Cost Management', name: 'Predictive Budget Forecasting', free: false, starter: false, pro: true, enterprise: true },
+  { category: 'Cost Management', name: 'Trend-Based Spend Forecast', free: false, starter: false, pro: true, enterprise: true },
   { category: 'Cost Management', name: 'Enterprise Optimization Rules', free: false, starter: false, pro: false, enterprise: true },
   { category: 'Cost Management', name: 'Custom Optimization Policies', free: false, starter: false, pro: false, enterprise: true },
 
@@ -49,7 +48,6 @@ const features: Feature[] = [
   { category: 'Security & Compliance', name: 'Enterprise Security Command Center', free: false, starter: false, pro: false, enterprise: true, highlight: true },
   { category: 'Security & Compliance', name: 'Advanced Compliance Management', free: false, starter: false, pro: false, enterprise: true, highlight: true },
   { category: 'Security & Compliance', name: 'Full PDF Compliance Reports', free: false, starter: false, pro: false, enterprise: true },
-  { category: 'Security & Compliance', name: 'Custom Anomaly Rules', free: false, starter: false, pro: false, enterprise: true },
 
   // AI & Automation
   { category: 'AI & Automation', name: 'AI Chat Assistant', free: false, starter: false, pro: true, enterprise: true },
@@ -62,10 +60,9 @@ const features: Feature[] = [
   { category: 'Alerts & Monitoring', name: 'Alert History', free: false, starter: true, pro: true, enterprise: true },
   { category: 'Alerts & Monitoring', name: 'Advanced Alert Configuration', free: false, starter: false, pro: true, enterprise: true },
   { category: 'Alerts & Monitoring', name: 'DORA Metrics', free: false, starter: false, pro: true, enterprise: true },
-  { category: 'Alerts & Monitoring', name: 'SLO Dashboard & Management', free: false, starter: false, pro: false, enterprise: true },
 
   // Remediation & Governance
-  { category: 'Remediation & Governance', name: 'Approval-Based Remediation Workflows', free: false, starter: false, pro: false, enterprise: true, highlight: true, tooltip: 'Automatically fix issues based on your defined policies' },
+  { category: 'Remediation & Governance', name: 'Approval-Based Remediation Workflows', free: false, starter: false, pro: false, enterprise: true, highlight: true, tooltip: 'Remediation actions run only after an admin approves them' },
 
   // Team & Access
   { category: 'Team & Access', name: 'Team Management', free: false, starter: true, pro: true, enterprise: true },
@@ -88,7 +85,6 @@ const features: Feature[] = [
   // Support
   { category: 'Support', name: 'Priority Support', free: false, starter: false, pro: true, enterprise: true },
   { category: 'Support', name: 'Dedicated CSM', free: false, starter: false, pro: false, enterprise: true, highlight: true },
-  { category: 'Support', name: 'SLA', free: false, starter: false, pro: false, enterprise: true },
 
   // Enterprise Extras
   { category: 'Enterprise Extras', name: 'Implementation Rules', free: false, starter: false, pro: false, enterprise: true },

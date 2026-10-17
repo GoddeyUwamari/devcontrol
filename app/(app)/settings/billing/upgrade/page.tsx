@@ -8,12 +8,13 @@ import { trackLeadQualified } from '@/lib/gtag'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useIsBillingAdmin } from '@/lib/hooks/use-current-role'
+import { STARTER_MONTHLY_PRICE_USD } from '@/lib/constants/pricing'
 
 const plans = [
   {
     name: 'Cost Control',
     tier: 'starter',
-    price: 49,
+    price: STARTER_MONTHLY_PRICE_USD,
     annualPrice: 41,
     description: 'Identify and eliminate the most common sources of AWS waste.',
     features: [

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { CheckCircle2, Clock, Shield, Sparkles, Zap } from 'lucide-react'
 import { FeatureComparisonTable } from '@/components/billing/feature-comparison-table'
 import { PricingFAQ } from '@/components/billing/pricing-faq'
 import { PricingTier } from '@/types/billing'
+import { STARTER_MONTHLY_PRICE_USD } from '@/lib/constants/pricing'
 
 const pricingTiers: PricingTier[] = [
   {
@@ -17,7 +18,7 @@ const pricingTiers: PricingTier[] = [
     features: [
       'AWS Account Connection',
       'AWS Resource Discovery & Inventory',
-      'Cost Overview (real-time spend tracking)',
+      'Cost Overview (AWS spend tracking)',
       'Security Overview',
       'IAM & MFA Visibility',
       'Security Group Risk Detection',
@@ -33,7 +34,7 @@ const pricingTiers: PricingTier[] = [
     name: 'Cost Control',
     tagline: 'Identify and eliminate the most common sources of AWS waste.',
     tier: 'starter',
-    price: 49,
+    price: STARTER_MONTHLY_PRICE_USD,
     priceId: 'price_1TJBsAHTCYC33ElRTp9R4lMh',
     annualPrice: 41,
     annualPriceId: 'price_1TJBwMHTCYC33ElR9RdjFpGW',
@@ -72,11 +73,10 @@ const pricingTiers: PricingTier[] = [
     features: [
       '✨ AI Chat Assistant',
       '✨ Natural-Language Queries',
-      'Cost Optimization — EC2, EBS, RDS, S3, Lambda, DynamoDB',
-      'Reserved Instance & Rightsizing Opportunities',
+      'Cost Optimization — EC2, EBS, Elastic IP, S3, Lambda, DynamoDB',
+      'Reserved Instance Coverage Gaps',
       'Resource Efficiency Analysis',
-      'Team Cost Attribution',
-      'Predictive Budget Forecasting',
+      'Trend-Based Spend Forecast',
       '✨ AI-Generated Reports',
       '✨ Scheduled AI Reports',
       'DORA Metrics',
@@ -108,14 +108,11 @@ const pricingTiers: PricingTier[] = [
       'Enterprise Security Command Center',
       'Advanced Compliance Management',
       'Full PDF Compliance Reports',
-      'Custom Anomaly Rules',
-      'SLO Dashboard & Management',
       'Approval-Based Remediation Workflows',
       'SAML/SSO',
       'Scheduled Reports',
       'Custom Integrations',
       'Dedicated CSM',
-      'SLA',
       'Implementation Rules',
     ],
     limits: { resources: 'unlimited', resourceTypes: 'all', apiRequests: 20000, teamMembers: 'Unlimited' },
@@ -133,85 +130,17 @@ const includesPrevious: Record<string, string> = {
   enterprise: 'Pro',
 }
 
-function ROICalculator() {
-  const [spend, setSpend] = useState(10000)
-  const wasteLow  = Math.round(spend * 0.20)
-  const wasteHigh = Math.round(spend * 0.40)
-  const savings   = Math.round(spend * 0.24)
-  const annual    = savings * 12
-  const roi       = Math.round(savings / 199)
-  const barPct    = Math.min(99, Math.round((savings / (savings + 199)) * 100))
-  const fmt       = (n: number) => '$' + n.toLocaleString()
-
+function CostExplorerComparison() {
   return (
     <section className="w-full bg-white px-4 py-12 sm:px-6 sm:py-16 lg:px-12 lg:py-20">
       <div className="max-w-[1400px] mx-auto">
-        <div className="text-center mb-12">
-          <div className="text-[11px] font-bold text-violet-700 uppercase tracking-widest mb-3">ROI Calculator</div>
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-indigo-950 tracking-tight mb-3">
-            How Much Could Typical AWS Waste Cost You?
-          </h2>
-          <p className="text-base text-gray-700 max-w-lg mx-auto leading-relaxed">
-            Move the slider to your monthly AWS spend. This is an industry-average illustration, not an analysis of your AWS account — connect AWS to get your own numbers.
-          </p>
-        </div>
-
-        <div className="bg-white border-2 border-gray-200 rounded-2xl p-6 sm:p-12 shadow-sm">
-          <div className="mb-10">
-            <div className="flex items-baseline justify-between mb-3">
-              <span className="text-sm text-gray-700 font-medium">Monthly AWS spend</span>
-              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">{fmt(spend)}</span>
-            </div>
-            <input
-              type="range" min="1000" max="100000" step="1000"
-              value={spend}
-              onChange={e => setSpend(Number(e.target.value))}
-              className="w-full cursor-pointer accent-violet-700"
-            />
-            <div className="flex justify-between mt-1.5 text-xs text-gray-400">
-              <span>$1K</span><span>$25K</span><span>$50K</span><span>$100K</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-            {[
-              { label: 'Typical waste range', value: `${fmt(wasteLow)}–${fmt(wasteHigh)}`, sub: 'Industry avg., 20–40% of spend', color: 'text-red-600'    },
-              { label: 'Illustrative savings', value: `${fmt(savings)}/mo`,                sub: `${fmt(annual)}/year, industry avg.`, color: 'text-emerald-600' },
-              { label: 'Hypothetical ROI',     value: `${roi}x`,                           sub: 'vs. $199/mo Pro plan',   color: 'text-violet-700'  },
-            ].map(({ label, value, sub, color }) => (
-              <div key={label} className="bg-gray-50 rounded-xl p-4 sm:p-5 border border-gray-100">
-                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">{label}</p>
-                <p className={`text-xl sm:text-2xl font-extrabold leading-none mb-1 ${color}`}>{value}</p>
-                <p className="text-xs text-gray-400">{sub}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mb-8">
-            <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-              <span>Illustrative savings vs DevControl cost</span>
-              <span>{fmt(savings)} vs $199 cost</span>
-            </div>
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${barPct}%`, background: 'linear-gradient(90deg, #7c3aed, #059669)' }} />
-            </div>
-          </div>
-
-          <a href="/register" className="block text-center bg-violet-700 hover:bg-violet-800 text-white py-4 px-8 rounded-xl font-bold text-base no-underline shadow-lg shadow-violet-200 mb-3 transition-colors">
-            Connect your AWS account — free
-          </a>
-          <p className="text-center text-xs text-gray-400">
-            Figures above are an industry-average illustration, not a DevControl-specific estimate of your account · 2-minute setup · Read-only AWS access · No credit card required
-          </p>
-        </div>
-
         {/* Competitive comparison */}
-        <div className="mt-12 border-2 border-gray-200 rounded-2xl overflow-hidden">
+        <div className="border-2 border-gray-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-7 sm:px-8 border-b border-gray-100">
             <p className="text-[11px] font-bold text-violet-700 uppercase tracking-widest mb-2.5">Competitive positioning</p>
             <h3 className="text-xl font-extrabold text-slate-900 mb-1.5">Why not just use AWS Cost Explorer?</h3>
             <p className="text-sm text-gray-700 leading-relaxed">
-              Cost Explorer shows what you spent. DevControl shows exactly what to fix — and how much you will save doing it.
+              Cost Explorer shows what you spent. DevControl adds resource-level waste checks and security findings, each with the evidence behind it.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2">
@@ -222,11 +151,10 @@ function ROICalculator() {
               </div>
               <div className="flex flex-col gap-3">
                 {[
-                  'Shows historical spend — no context on what caused it',
-                  'No idle resource detection or rightsizing',
-                  'Requires hours of manual engineering analysis',
+                  'No list of unattached EBS volumes or unused Elastic IPs',
+                  'No gp2-to-gp3 or S3 lifecycle checks',
                   'No security posture or compliance scanning',
-                  'No proactive anomaly detection or spike alerts',
+                  'No DORA metrics',
                 ].map(text => (
                   <div key={text} className="flex gap-2 items-start">
                     <span className="text-red-600 font-bold shrink-0 mt-0.5">✗</span>
@@ -238,15 +166,14 @@ function ROICalculator() {
             <div className="p-5 sm:p-7 bg-violet-50 border-t sm:border-t-0 sm:border-l border-gray-100">
               <div className="flex items-center gap-2 mb-5">
                 <span className="text-sm font-bold text-slate-900">DevControl</span>
-                <span className="text-[11px] font-semibold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">From $199/mo</span>
+                <span className="text-[11px] font-semibold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">From ${STARTER_MONTHLY_PRICE_USD}/mo</span>
               </div>
               <div className="flex flex-col gap-3">
                 {[
-                  'Shows exactly which resources waste money — with fix instructions',
-                  'AI-powered rightsizing and idle detection across EC2, RDS, EBS, S3, Lambda, and DynamoDB',
-                  'Fully automated — first insights in 15 minutes',
+                  'Flags idle-EC2 candidates, unattached EBS volumes and unused Elastic IPs',
+                  'gp2-to-gp3, S3 lifecycle, Lambda and DynamoDB checks',
+                  'Scans every 6 hours',
                   'Security posture, DORA metrics, and compliance in one view',
-                  'Real-time anomaly detection before month-end surprises',
                 ].map(text => (
                   <div key={text} className="flex gap-2 items-start">
                     <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
@@ -259,7 +186,7 @@ function ROICalculator() {
           <div className="px-5 py-4 sm:px-8 bg-slate-50 border-t border-gray-100 flex items-start gap-2.5">
             <span className="text-violet-700 shrink-0">ℹ</span>
             <p className="text-sm text-gray-700 leading-relaxed">
-              <strong>Cost Explorer is a good starting point.</strong> DevControl is what you use when you are serious about eliminating waste — and do not have time to build a FinOps team from scratch.
+              <strong>Use both.</strong> Cost Explorer for billing detail and its own rightsizing advice; DevControl for resource-level checks and security findings.
             </p>
           </div>
         </div>
@@ -270,14 +197,6 @@ function ROICalculator() {
 
 export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
-  const [foundingCount, setFoundingCount] = useState(5)
-
-  useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/organizations/founding-count`)
-      .then(res => res.json())
-      .then(data => setFoundingCount(data.count ?? 5))
-      .catch(() => {})
-  }, [])
 
   return (
     <div className="min-h-screen bg-white">
@@ -298,7 +217,7 @@ export default function PricingPage() {
           </p>
           <div className="flex flex-wrap justify-center items-center gap-3 sm:gap-6 text-xs sm:text-sm font-medium text-gray-700 mb-8">
             {[
-              { icon: Clock,        text: 'First leak found in 15 min' },
+              { icon: Clock,        text: 'Takes a few minutes'        },
               { icon: Shield,       text: 'Read-only AWS access'        },
               { icon: Sparkles,     text: 'No credit card required'     },
               { icon: Zap,          text: '14-day free trial'           },
@@ -308,30 +227,6 @@ export default function PricingPage() {
                 <Icon size={14} className="text-violet-700" />{text}
               </div>
             ))}
-          </div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-violet-50 border border-violet-200 rounded-2xl px-4 py-4 sm:px-6 max-w-2xl mx-auto">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-violet-700 flex items-center justify-center shrink-0">
-                <Sparkles size={14} className="text-white" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-bold text-slate-900">Founding Member Pricing — your rate is locked in forever</p>
-                <p className="text-xs text-violet-700 mt-0.5">Price increases after the first 50 customers. Founding members never pay more.</p>
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-              <div>
-                <div className="flex gap-1 items-center">
-                  {[...Array(10)].map((_, i) => (
-                    <div key={i} className="w-2 h-2 rounded-full" style={{ background: i < 5 ? '#7c3aed' : 'rgba(124,58,237,0.2)' }} />
-                  ))}
-                </div>
-                <p className="text-[10px] text-violet-700 font-semibold mt-1 text-center">{foundingCount} of 50 spots claimed</p>
-              </div>
-              <a href="/register" className="bg-violet-700 text-white px-4 py-2 rounded-lg font-bold text-xs no-underline whitespace-nowrap">
-                Claim founding rate
-              </a>
-            </div>
           </div>
         </div>
       </section>
@@ -347,7 +242,7 @@ export default function PricingPage() {
                 className={`px-6 py-2 rounded-lg text-sm font-semibold border-none cursor-pointer transition-all ${billing === period ? 'bg-violet-700 text-white' : 'bg-transparent text-gray-700'}`}>
                 {period === 'monthly' ? 'Monthly' : 'Annual'}
                 {period === 'annual' && (
-                  <span className="ml-1.5 bg-emerald-600 text-white rounded-full px-1.5 py-0.5 text-[10px] font-bold">Save 20%</span>
+                  <span className="ml-1.5 bg-emerald-600 text-white rounded-full px-1.5 py-0.5 text-[10px] font-bold">Save on annual</span>
                 )}
               </button>
             ))}
@@ -445,9 +340,6 @@ export default function PricingPage() {
           })}
         </div>
         <div className="max-w-[1400px] mx-auto mt-8 text-center">
-          <p className="text-sm text-gray-700 font-medium mb-3">
-            All paid plans include a <strong>14-day money-back guarantee</strong>
-          </p>
           <div className="flex flex-wrap justify-center gap-3 sm:gap-5 text-xs text-gray-500">
             {['Cancel anytime', 'No hidden fees', 'Instant access', 'SOC 2 Readiness Planned'].map(item => (
               <span key={item} className="flex items-center gap-1">
@@ -458,8 +350,8 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* ROI CALCULATOR */}
-      <ROICalculator />
+      {/* COST EXPLORER COMPARISON */}
+      <CostExplorerComparison />
 
       {/* FEATURE COMPARISON */}
       <section className="px-4 py-8 sm:px-6 sm:py-10 lg:px-12 lg:py-16 w-full bg-gray-50">

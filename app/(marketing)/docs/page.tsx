@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Book, Rocket, FileCode, HelpCircle, ArrowRight, Search,
-  Terminal, Cloud, Shield, BarChart3, Layers, GitBranch,
+  Cloud, Shield, BarChart3, Layers, GitBranch,
   Bell, Users, Settings, ExternalLink, MessageCircle, FileText, Zap,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -79,7 +79,7 @@ function DocsHero({ isMobile, isTablet }: ResponsiveProps) {
 // ============================================
 function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
   const quickStart = [
-    { title: 'Getting Started', description: 'Set up DevControl in under 5 minutes with our quickstart guide', icon: Rocket, href: '/docs/getting-started', badge: 'Start here' },
+    { title: 'Getting Started', description: 'Set up DevControl with our quickstart guide — it takes a few minutes', icon: Rocket, href: '/docs/getting-started', badge: 'Start here' },
     { title: 'API Reference',   description: 'Complete REST API documentation with examples',               icon: FileCode, href: '/docs/api', badge: null },
     { title: 'Integrations',    description: 'Connect with AWS, GitHub, Slack, and more',                  icon: Zap,      href: '/docs', badge: null },
     { title: 'FAQ',             description: 'Answers to frequently asked questions',                       icon: HelpCircle, href: '/docs', badge: null },
@@ -313,11 +313,6 @@ function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
 function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
   const codeBlocks = [
     {
-      title: 'CLI Quick Start',
-      icon: Terminal,
-      code: `# Install CLI\nnpm install -g @devcontrol/cli\n\n# Authenticate\ndevcontrol login\n\n# Discover resources\ndevcontrol discover --aws`,
-    },
-    {
       title: 'API Request',
       icon: FileCode,
       code: `curl -X GET \\\n  https://api.getdevcontrol.com/v1/services \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -H "Content-Type: application/json"`,
@@ -325,12 +320,7 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
     {
       title: 'AWS IAM Policy',
       icon: Cloud,
-      code: `{\n  "Version": "2012-10-17",\n  "Statement": [{\n    "Effect": "Allow",\n    "Action": ["ec2:Describe*"],\n    "Resource": "*"\n  }]\n}`,
-    },
-    {
-      title: 'GitHub Action',
-      icon: GitBranch,
-      code: `- name: Record Deployment\n  uses: devcontrol/deploy-action@v1\n  with:\n    api-key: \${{ secrets.DEVCONTROL_KEY }}\n    service: my-service`,
+      code: `# Onboarding attaches the AWS-managed read-only policy\naws iam attach-role-policy \\\n  --role-name DevControlReadOnly \\\n  --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess`,
     },
   ];
 
