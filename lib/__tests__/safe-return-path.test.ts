@@ -1,9 +1,11 @@
 /**
  * safeReturnPath: only a path on this site is accepted as a post-login
- * destination; every open-redirect shape is rejected.
+ * destination; every open-redirect shape is rejected, and what is returned
+ * is the resolved path, not the raw input.
  */
 import { describe, it, expect } from "vitest";
 import { safeReturnPath } from "../safe-return-path";
+import { DOT_SEGMENT_ESCAPES } from "./support/open-redirect-cases";
 
 describe("safeReturnPath", () => {
   it.each([
@@ -69,5 +71,19 @@ describe("safeReturnPath", () => {
     ["/%E0%A4%A"],
   ])("rejects %j", (value) => {
     expect(safeReturnPath(value)).toBeNull();
+  });
+
+  it.each(DOT_SEGMENT_ESCAPES)("rejects %j, which resolves to a protocol-relative path", (value) => {
+    expect(safeReturnPath(value)).toBeNull();
+  });
+
+  it.each([
+    ["/a/../dashboard", "/dashboard"],
+    ["/./accept-invitation", "/accept-invitation"],
+    ["/settings/./sso/", "/settings/sso/"],
+    ["/..", "/"],
+    ["/../dashboard?tab=1#x", "/dashboard?tab=1#x"],
+  ])("returns %j resolved, as %j", (value, resolved) => {
+    expect(safeReturnPath(value)).toBe(resolved);
   });
 });

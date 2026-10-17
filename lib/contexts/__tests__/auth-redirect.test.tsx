@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from "@/lib/contexts/auth-context";
 import { authService } from "@/lib/services/auth.service";
 import { organizationsService } from "@/lib/services/organizations.service";
 import { PENDING_INVITATION_KEY, savePendingInvitation } from "@/lib/pending-invitation";
+import { DOT_SEGMENT_ESCAPES } from "@/lib/__tests__/support/open-redirect-cases";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -69,6 +70,7 @@ const UNSAFE = [
   "/%2F%2Fevil.example",
   "dashboard",
   "",
+  ...DOT_SEGMENT_ESCAPES,
 ];
 
 describe("login redirectTo", () => {
