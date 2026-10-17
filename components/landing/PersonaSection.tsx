@@ -33,7 +33,7 @@ const personas = [
     bullets: [
       'Detect idle and unattached resources',
       'Security findings across your AWS account',
-      'Slack and Jira integrations',
+      'Every check scans again every 6 hours',
     ],
   },
   {
@@ -50,8 +50,8 @@ const personas = [
   {
     id: 'finance-teams',
     label: 'Finance Teams',
-    headline: 'Cost Allocation, Solved',
-    hook: 'Get chargeback-ready numbers without spreadsheets.',
+    headline: 'See Where the Money Goes',
+    hook: 'AWS spend by service, without spreadsheets.',
     bullets: [
       'Spend broken down by AWS service',
       'Exportable reports in CSV and PDF',
@@ -65,7 +65,7 @@ const personas = [
     hook: 'Self-serve answers without the AWS console.',
     bullets: [
       'AI chat assistant and natural language search',
-      'Alerts sent to Slack or Jira',
+      'Answers drawn from your own account data',
     ],
   },
 ]

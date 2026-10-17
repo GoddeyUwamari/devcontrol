@@ -42,7 +42,6 @@ const tiers = [
       '60 AWS resources',
       'AI cost insights',
       '30-day history',
-      'Slack alerts',
       '3 team members',
     ],
     cta: 'Start Free Trial',

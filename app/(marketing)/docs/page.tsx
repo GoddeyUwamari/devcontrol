@@ -81,7 +81,7 @@ function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
   const quickStart = [
     { title: 'Getting Started', description: 'Set up DevControl with our quickstart guide — it takes a few minutes', icon: Rocket, href: '/docs/getting-started', badge: 'Start here' },
     { title: 'API Reference',   description: 'Complete REST API documentation with examples',               icon: FileCode, href: '/docs/api', badge: null },
-    { title: 'Integrations',    description: 'Connect with AWS, GitHub, Slack, and more',                  icon: Zap,      href: '/docs', badge: null },
+    { title: 'Integrations',    description: 'Connect AWS and GitHub',                  icon: Zap,      href: '/docs', badge: null },
     { title: 'FAQ',             description: 'Answers to frequently asked questions',                       icon: HelpCircle, href: '/docs', badge: null },
   ];
 

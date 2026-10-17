@@ -70,8 +70,6 @@ const features: Feature[] = [
 
   // Integrations & Notifications
   { category: 'Integrations & Notifications', name: 'Email Notifications', free: false, starter: true, pro: true, enterprise: true },
-  { category: 'Integrations & Notifications', name: 'Slack Notifications', free: false, starter: true, pro: true, enterprise: true },
-  { category: 'Integrations & Notifications', name: 'Webhook Integrations', free: false, starter: false, pro: true, enterprise: true },
   { category: 'Integrations & Notifications', name: 'Custom Integrations', free: false, starter: false, pro: false, enterprise: true },
 
   // Reporting & Records

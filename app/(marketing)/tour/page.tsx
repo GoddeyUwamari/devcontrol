@@ -381,7 +381,6 @@ const steps = [
       'Approval-based remediation workflows',
       'Guided remediation for security issues',
       'Every action logged',
-      'Team notifications via Slack',
     ],
     mockType: 'actions',
     navLabel: 'Take Action',

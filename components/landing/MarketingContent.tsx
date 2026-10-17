@@ -11,8 +11,6 @@ import { CTASection } from '@/components/landing/CTASection';
 import {
   Cloud,
   GitBranch,
-  MessageSquare,
-  Database,
   ShieldCheck,
   Lock,
   Eye,
@@ -30,14 +28,14 @@ function useWindowWidth() {
   return width
 }
 
-// Only integrations with real code behind them: AWS (the data source), GitHub
-// (deployment webhooks for DORA metrics), Slack and Jira (alert-notification.service.ts).
-// Do not re-add Kubernetes, Terraform, Datadog or PagerDuty without an integration.
+// Only integrations that work end to end: AWS (the data source) and GitHub (deployment
+// webhooks for DORA metrics, backend server.ts). Slack and Jira are NOT listed: alert
+// configuration is held in memory only and just the test-alert path sends, so no
+// customer alert reliably reaches either. Do not add an integration here until it
+// persists its configuration and delivers.
 const integrations = [
   { name: 'AWS',    desc: 'Cost, resource and security data, read-only',  icon: Cloud,         color: '#f97316' },
   { name: 'GitHub', desc: 'Deployment events for DORA metrics',           icon: GitBranch,     color: '#1f2937' },
-  { name: 'Slack',  desc: 'Alert notifications and scheduled reports',    icon: MessageSquare, color: '#7c3aed' },
-  { name: 'Jira',   desc: 'Tickets created from alerts',                  icon: Database,      color: '#7c3aed' },
 ];
 
 const securityItems = [
@@ -53,8 +51,8 @@ const securityItems = [
   },
   {
     icon: Eye,
-    title: 'Zero Data Selling',
-    description: "Your infrastructure data is yours. We never sell, share, or use it to train models beyond your own account's AI features.",
+    title: 'No Data Selling',
+    description: "We don't sell customer data. AI features (summaries, reports and chat) send the relevant account data to Anthropic to generate their answers.",
   },
   {
     icon: FileCheck,
@@ -107,11 +105,11 @@ export function MarketingContent() {
               Your Infrastructure Data, Unified in One Place
             </h2>
             <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
-              DevControl reads your AWS account and sends alerts and reports to the tools your team already uses.
+              DevControl reads your AWS account read-only and your GitHub deployment events. Nothing to install.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5" style={{ marginBottom: '32px' }}>
+          <div className="mx-auto grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-5" style={{ marginBottom: '32px' }}>
             {integrations.map((integration) => {
               const Icon = integration.icon;
               return (

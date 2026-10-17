@@ -75,11 +75,10 @@ export default function ChangelogPage() {
       changes: [
         { type: 'feature' as ChangeType, text: 'New DORA metrics dashboard with deployment frequency, lead time, change failure rate, and MTTR', category: 'Platform Engineering' },
         { type: 'feature' as ChangeType, text: 'Historical trend analysis for DORA metrics', category: 'Platform Engineering' },
-        { type: 'improvement' as ChangeType, text: 'Improved service dependency visualization with interactive graph', category: 'Services' },
         { type: 'fix' as ChangeType, text: 'Fixed timezone issues in deployment tracking', category: 'Deployments' },
         { type: 'fix' as ChangeType, text: 'Resolved memory leak in live metrics updates', category: 'Performance' },
       ],
-      stats: { newFeatures: 2, improvements: 1, bugFixes: 2 },
+      stats: { newFeatures: 2, improvements: 0, bugFixes: 2 },
     },
     {
       version: '3.0.0',
@@ -111,9 +110,8 @@ export default function ChangelogPage() {
         { type: 'feature' as ChangeType, text: 'Team-based access control with granular permissions', category: 'Security' },
         { type: 'feature' as ChangeType, text: 'Team dashboards with aggregated metrics', category: 'Teams' },
         { type: 'improvement' as ChangeType, text: 'Improved onboarding flow for new users', category: 'Onboarding' },
-        { type: 'improvement' as ChangeType, text: 'Bulk user import via CSV', category: 'Teams' },
       ],
-      stats: { newFeatures: 4, improvements: 2, bugFixes: 0 },
+      stats: { newFeatures: 4, improvements: 1, bugFixes: 0 },
     },
     {
       version: '2.8.0',
@@ -127,17 +125,6 @@ export default function ChangelogPage() {
         { type: 'fix' as ChangeType, text: 'Fixed false positives in security checks', category: 'Security' },
       ],
       stats: { newFeatures: 2, improvements: 0, bugFixes: 1 },
-    },
-    {
-      version: '2.7.0',
-      date: '2026-01-17',
-      title: 'Webhooks & API Enhancements',
-      featured: false,
-      changes: [
-        { type: 'feature' as ChangeType, text: 'Webhooks for event notifications', category: 'API' },
-        { type: 'fix' as ChangeType, text: 'Fixed inconsistent API error responses', category: 'API' },
-      ],
-      stats: { newFeatures: 1, improvements: 0, bugFixes: 1 },
     },
   ];
 
