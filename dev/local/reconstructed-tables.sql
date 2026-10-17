@@ -6,8 +6,8 @@
 -- fixtures in backend/src/routes/__tests__/shared-fixture-tables.ts; they are
 -- not production's DDL and must never be copied into database/.
 --
--- Only tables that logging in and loading an empty organization's dashboard
--- actually need are listed, each with the error that required it. Applied
+-- Only tables that logging in, loading the dashboard and the Connect AWS
+-- flow actually need are listed, each with the error that required it. Applied
 -- by dev/local/bootstrap.js as postgres; idempotent.
 
 -- aws_accounts -- required by GET /api/onboarding/status and
@@ -28,4 +28,18 @@ CREATE TABLE IF NOT EXISTS aws_accounts (
   status VARCHAR(32),
   CONSTRAINT aws_accounts_org_id_key UNIQUE (org_id),
   CONSTRAINT aws_accounts_account_id_key UNIQUE (account_id)
+);
+
+-- aws_connect_sessions -- read by POST /api/aws/accounts (aws.routes.ts)
+-- before it validates a role; without it the request fails with
+-- `relation "aws_connect_sessions" does not exist` and the local backend is
+-- left half-alive. Same shape as the aws_connect_sessions test fixture
+-- (shared-fixture-tables.ts), from backend/migrations/020. Stays empty: a row
+-- is a one-hour ExternalId handshake for a real AWS connection, which the
+-- local stack never makes, so a seeded one would only ever be expired.
+CREATE TABLE IF NOT EXISTS aws_connect_sessions (
+  org_id UUID PRIMARY KEY,
+  external_id VARCHAR(64) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '1 hour'
 );
