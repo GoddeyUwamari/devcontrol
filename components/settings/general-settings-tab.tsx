@@ -94,7 +94,7 @@ export function GeneralSettingsTab({ organization }: GeneralSettingsTabProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
           {/* Organization Name */}
           <div className="space-y-2">
             <Label htmlFor="name">

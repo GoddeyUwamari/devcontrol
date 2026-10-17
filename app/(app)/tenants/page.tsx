@@ -597,7 +597,7 @@ export default function TenantsPage() {
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px' }}>Add Tenant</h2>
             <p style={{ fontSize: '1rem', color: '#475569', margin: '0 0 24px' }}>Register a new tenant account on this platform.</p>
 
-            <form onSubmit={handleAddTenant}>
+            <form method="post" onSubmit={handleAddTenant}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>Company Name *</label>
                 <input

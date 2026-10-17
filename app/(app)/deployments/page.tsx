@@ -647,7 +647,7 @@ function DeploymentsContent() {
                 <p className="text-sm font-semibold text-green-600 m-0">{modalSuccess}</p>
               </div>
             ) : (
-              <form onSubmit={handleNewDeploymentSubmit} className="flex flex-col gap-4">
+              <form method="post" onSubmit={handleNewDeploymentSubmit} className="flex flex-col gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">Service Name</label>
                   <input

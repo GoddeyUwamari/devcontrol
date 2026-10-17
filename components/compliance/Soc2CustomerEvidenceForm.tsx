@@ -125,7 +125,7 @@ export function Soc2CustomerEvidenceForm({ open, onClose, criteria, defaultCrite
               : 'Supporting evidence you provide for a SOC 2 Readiness criterion. This is self-attested by your organization, not verified or audited by DevControl.'}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="ce-criterion">Criterion</Label>
             {isEditing ? (

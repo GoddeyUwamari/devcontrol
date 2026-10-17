@@ -140,7 +140,7 @@ export default function ProfilePage() {
         </CardHeader>
         <CardContent>
           {isEditingProfile ? (
-            <form onSubmit={handleSubmitProfile(onSubmitProfile)} className="space-y-4">
+            <form method="post" onSubmit={handleSubmitProfile(onSubmitProfile)} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First Name</Label>
@@ -270,7 +270,7 @@ export default function ProfilePage() {
         </CardHeader>
         {isChangingPassword && (
           <CardContent>
-            <form onSubmit={handleSubmitPassword(onSubmitPassword)} className="space-y-4">
+            <form method="post" onSubmit={handleSubmitPassword(onSubmitPassword)} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="currentPassword">Current Password</Label>
                 <Input

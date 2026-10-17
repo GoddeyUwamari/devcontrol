@@ -112,7 +112,7 @@ export function IssueRefundDialog({ open, onOpenChange, payment }: IssueRefundDi
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit} className="space-y-4">
           {/* Payment Info */}
           <div className="rounded-lg border p-4 space-y-2 bg-muted/50">
             <div className="flex justify-between">

@@ -79,7 +79,7 @@ export default function RegisterPage() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Full Name Field */}
           <div className="space-y-2">
             <Label htmlFor="fullName">Full name</Label>

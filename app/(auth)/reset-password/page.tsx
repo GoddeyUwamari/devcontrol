@@ -191,7 +191,7 @@ function ResetPasswordContent() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* New Password Field */}
           <div className="space-y-2">
             <Label htmlFor="password">New password</Label>

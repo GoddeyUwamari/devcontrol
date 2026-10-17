@@ -125,7 +125,7 @@ export default function NewServicePage() {
           </div>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Service Name */}
             <div className="space-y-2">
               <Label htmlFor="name" className="text-sm font-medium">
