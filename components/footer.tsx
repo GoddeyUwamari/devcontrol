@@ -49,7 +49,7 @@ const footerData: FooterColumn[] = [
         title: '',
         links: [
           { label: 'Documentation', href: '/docs' },
-          { label: 'API Reference', href: '/docs/api' },
+          { label: 'API Status', href: '/docs/api' },
           { label: 'Changelog', href: '/changelog' },
           { label: 'GitHub', href: 'https://github.com/GoddeyUwamari', external: true },
           { label: 'Community', href: '/community' },

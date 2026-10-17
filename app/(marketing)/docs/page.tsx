@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Book, Rocket, FileCode, HelpCircle, ArrowRight, Search,
-  Cloud, Shield, BarChart3, Layers, GitBranch,
-  Bell, Users, Settings, ExternalLink, MessageCircle, FileText, Zap,
+  Book, Rocket, FileCode, HelpCircle, ArrowRight,
+  Cloud, ExternalLink, MessageCircle, FileText,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -49,26 +48,14 @@ function DocsHero({ isMobile, isTablet }: ResponsiveProps) {
           fontSize: isMobile ? 'clamp(1.8rem,5vw,2.4rem)' : 'clamp(2rem, 4vw, 2.8rem)',
           marginBottom: '16px', letterSpacing: '-0.02em', lineHeight: 1.2,
         }}>
-          Everything You Need to Build with DevControl
+          DevControl Documentation
         </h1>
         <p style={{
           color: '#1f2937', fontSize: isMobile ? '1.05rem' : '1.1rem',
           maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6,
         }}>
-          Guides, tutorials, API references, and best practices — everything to get you started and keep you moving.
+          How to connect DevControl to your AWS account, and where to get help.
         </p>
-        <div style={{ position: 'relative', maxWidth: '480px', margin: '0 auto' }}>
-          <Search style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#9ca3af' }} />
-          <input
-            type="text"
-            placeholder="Search documentation..."
-            style={{
-              width: '100%', height: '48px', paddingLeft: '44px', paddingRight: '16px',
-              borderRadius: '10px', border: '1px solid #e5e7eb', background: '#fff',
-              fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' as const, color: '#0f172a',
-            }}
-          />
-        </div>
       </div>
     </section>
   );
@@ -80,9 +67,7 @@ function DocsHero({ isMobile, isTablet }: ResponsiveProps) {
 function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
   const quickStart = [
     { title: 'Getting Started', description: 'Set up DevControl with our quickstart guide — it takes a few minutes', icon: Rocket, href: '/docs/getting-started', badge: 'Start here' },
-    { title: 'API Reference',   description: 'Complete REST API documentation with examples',               icon: FileCode, href: '/docs/api', badge: null },
-    { title: 'Integrations',    description: 'Connect AWS and GitHub',                  icon: Zap,      href: '/docs', badge: null },
-    { title: 'FAQ',             description: 'Answers to frequently asked questions',                       icon: HelpCircle, href: '/docs', badge: null },
+    { title: 'API',             description: 'Public API status: not available yet',                         icon: FileCode, href: '/docs/api', badge: null },
   ];
 
   return (
@@ -90,8 +75,8 @@ function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-          gap: '16px',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+          gap: '16px', maxWidth: '900px', margin: '0 auto',
         }}>
           {quickStart.map((item) => (
             <Link key={item.title} href={item.href} style={{ textDecoration: 'none' }}>
@@ -132,190 +117,10 @@ function QuickStartSection({ isMobile, isTablet }: ResponsiveProps) {
 }
 
 // ============================================
-// POPULAR TOPICS
-// ============================================
-function PopularTopicsSection({ isMobile, isTablet }: ResponsiveProps) {
-  const topics = [
-    { title: 'Connect AWS Account',  href: '/docs/getting-started', icon: Cloud },
-    { title: 'Set Up Cost Alerts',   href: '/docs',                  icon: Bell },
-    { title: 'Configure RBAC',       href: '/docs',                  icon: Users },
-    { title: 'Security Scanning',    href: '/docs',                  icon: Shield },
-    { title: 'DORA Metrics Setup',   href: '/app/dora-metrics',      icon: BarChart3 },
-    { title: 'Service Catalog',      href: '/services',              icon: Layers },
-    { title: 'CI/CD Integration',    href: '/docs',                  icon: GitBranch },
-    { title: 'API Authentication',   href: '/docs/api',              icon: FileCode },
-  ];
-
-  return (
-    <section style={{ background: '#fafafa', padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
-            Popular Topics
-          </h2>
-          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>Most frequently accessed documentation</p>
-        </div>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-          gap: '12px', maxWidth: '900px', margin: '0 auto',
-        }}>
-          {topics.map((topic) => (
-            <Link key={topic.title} href={topic.href} style={{ textDecoration: 'none' }}>
-              <div style={{
-                border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '14px 16px',
-                background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-              }}>
-                <topic.icon style={{ width: '17px', height: '17px', color: '#7c3aed', flexShrink: 0 }} />
-                <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#0f172a' }}>{topic.title}</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
-// DOCUMENTATION CATEGORIES
-// ============================================
-function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
-  const categories = [
-    {
-      title: 'Core Concepts',
-      description: 'Understand the fundamentals of DevControl',
-      icon: Book,
-      links: [
-        { title: 'What is DevControl?', href: '/docs' },
-        { title: 'Architecture Overview', href: '/docs' },
-        { title: 'Key Features', href: '/docs' },
-        { title: 'Glossary', href: '/docs' },
-      ],
-    },
-    {
-      title: 'AWS Integration',
-      description: 'Connect and manage your AWS infrastructure',
-      icon: Cloud,
-      links: [
-        { title: 'IAM Role Setup', href: '/docs' },
-        { title: 'Resource Discovery', href: '/docs' },
-        { title: 'Multi-Account Setup', href: '/docs' },
-        { title: 'Supported Services', href: '/docs' },
-      ],
-    },
-    {
-      title: 'Security & Compliance',
-      description: 'Configure security scanning and compliance',
-      icon: Shield,
-      links: [
-        { title: 'Security Checks', href: '/docs' },
-        { title: 'Compliance Frameworks', href: '/docs' },
-        { title: 'Custom Policies', href: '/docs' },
-        { title: 'Remediation Guides', href: '/docs' },
-      ],
-    },
-    {
-      title: 'Cost Management',
-      description: 'Optimize and track cloud spending',
-      icon: BarChart3,
-      links: [
-        { title: 'Cost Analysis', href: '/docs' },
-        { title: 'Budget Alerts', href: '/docs' },
-            { title: 'Reserved Instances', href: '/docs' },
-      ],
-    },
-    {
-      title: 'Platform Engineering',
-      description: 'Build your internal developer platform',
-      icon: Layers,
-      links: [
-        { title: 'Service Catalog', href: '/docs' },
-        { title: 'Golden Paths', href: '/docs' },
-        { title: 'Self-Service Workflows', href: '/docs' },
-        { title: 'DORA Metrics', href: '/docs' },
-      ],
-    },
-    {
-      title: 'Administration',
-      description: 'Manage users, teams, and settings',
-      icon: Settings,
-      links: [
-        { title: 'User Management', href: '/docs' },
-        { title: 'Team Setup', href: '/docs' },
-        { title: 'SSO Configuration', href: '/docs' },
-        { title: 'Audit Logs', href: '/audit-logs' },
-      ],
-    },
-  ];
-
-  return (
-    <section style={{ padding: isMobile ? '40px 16px' : isTablet ? '48px 24px' : '64px 48px' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
-            Documentation by Category
-          </h2>
-          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>Browse documentation organized by topic</p>
-        </div>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-          gap: '16px',
-        }}>
-          {categories.map((category) => (
-            <div
-              key={category.title}
-              style={{
-                border: '1.5px solid #e5e7eb', borderRadius: '14px', padding: isMobile ? '20px' : '24px',
-                background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                <div style={{
-                  width: '40px', height: '40px', borderRadius: '10px',
-                  background: 'rgba(124,58,237,0.15)', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}>
-                  <category.icon style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>{category.title}</div>
-                  <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>{category.description}</div>
-                </div>
-              </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {category.links.map((link) => (
-                  <li key={link.title}>
-                    <Link href={link.href} style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      fontSize: '0.875rem', color: '#374151', textDecoration: 'none',
-                    }}>
-                      <ArrowRight style={{ width: '12px', height: '12px', color: '#7c3aed', flexShrink: 0 }} />
-                      {link.title}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ============================================
 // CODE EXAMPLES
 // ============================================
 function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
   const codeBlocks = [
-    {
-      title: 'API Request',
-      icon: FileCode,
-      code: `curl -X GET \\\n  https://api.getdevcontrol.com/v1/services \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -H "Content-Type: application/json"`,
-    },
     {
       title: 'AWS IAM Policy',
       icon: Cloud,
@@ -330,11 +135,11 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
           <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.8rem)', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
             Quick Reference
           </h2>
-          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>Common commands and code snippets</p>
+          <p style={{ color: '#1f2937', fontSize: '1.05rem' }}>The read-only policy DevControl onboarding uses</p>
         </div>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+          gridTemplateColumns: '1fr',
           gap: '16px', maxWidth: '900px', margin: '0 auto',
         }}>
           {codeBlocks.map((block) => (
@@ -375,9 +180,8 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
 // ============================================
 function ResourcesSection({ isMobile, isTablet }: ResponsiveProps) {
   const resources = [
-    { title: 'Community Slack', description: 'Connect with the DevControl community', icon: MessageCircle, href: '#',          external: true },
+    { title: 'Community',       description: 'Connect with the DevControl community', icon: MessageCircle, href: '/community', external: false },
     { title: 'Changelog',       description: "See what's new in DevControl", icon: FileText,    href: '/changelog', external: false },
-    { title: 'Status Page',     description: 'Check system status',           icon: BarChart3,   href: '#',          external: true },
     { title: 'Contact Support', description: 'Get help from our team',        icon: HelpCircle,  href: '/contact',   external: false },
   ];
 
@@ -487,8 +291,6 @@ export default function DocsPage() {
     <div style={{ minHeight: '100vh', background: '#fff' }}>
       <DocsHero isMobile={isMobile} isTablet={isTablet} />
       <QuickStartSection isMobile={isMobile} isTablet={isTablet} />
-      <PopularTopicsSection isMobile={isMobile} isTablet={isTablet} />
-      <CategoriesSection isMobile={isMobile} isTablet={isTablet} />
       <CodeExamplesSection isMobile={isMobile} isTablet={isTablet} />
       <ResourcesSection isMobile={isMobile} isTablet={isTablet} />
       <CTASection isMobile={isMobile} isTablet={isTablet} />
