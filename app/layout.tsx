@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { GaPageViews } from "@/components/analytics/ga-page-views";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -34,6 +35,7 @@ export default function RootLayout({
           {children}
         </Providers>
         <Toaster />
+        <GaPageViews />
       </body>
     </html>
   );
