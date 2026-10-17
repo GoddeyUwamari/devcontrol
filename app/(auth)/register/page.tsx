@@ -11,6 +11,7 @@ import {
   calculatePasswordStrength,
 } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { useHydrated } from "@/lib/hooks/useHydrated";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,8 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Submit stays disabled until hydrated: see useHydrated.
+  const hydrated = useHydrated();
 
   const {
     register,
@@ -315,7 +318,7 @@ export default function RegisterPage() {
           </div>
 
           {/* Submit Button */}
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button type="submit" className="w-full" disabled={isLoading || !hydrated}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
