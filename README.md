@@ -137,8 +137,10 @@ Based on Google Cloud's DevOps Research and Assessment (DORA) research.
 ### Quick Start: local stack (recommended)
 
 Runs the whole app on your machine against a throwaway Postgres in Docker,
-logged in as the owner of an empty organization. Nothing leaves your machine:
-no AWS, Stripe, email, Anthropic, Slack or Google Analytics.
+logged in as the owner of an empty organization. The app makes no calls to
+AWS, AI (Anthropic), billing (Stripe), email, Slack or analytics (Google
+Analytics). Next.js's dev server itself checks the npm registry for its own
+version; that request carries no app data.
 
 ```bash
 git clone https://github.com/GoddeyUwamari/devcontrol.git
