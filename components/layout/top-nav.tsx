@@ -43,7 +43,6 @@ export const navItems: NavItem[] = [
       { label: 'Services Overview', href: '/services', icon: Layers, desc: 'All services and health status' },
       { label: 'Add Service', href: '/services/new', icon: Plus, desc: 'Register a new service' },
       { label: 'Deployments', href: '/deployments', icon: Rocket, desc: 'Deployment history and tracking' },
-      { label: 'Dependencies', href: '/dependencies', icon: GitBranch, desc: 'Service dependency map' },
     ],
   },
   {
@@ -112,7 +111,6 @@ export const mobileSections = [
     items: [
       { label: 'Services Overview', href: '/services' },
       { label: 'Deployments', href: '/deployments' },
-      { label: 'Dependencies', href: '/dependencies' },
     ],
   },
   {
