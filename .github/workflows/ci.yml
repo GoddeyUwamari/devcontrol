@@ -1043,19 +1043,26 @@ jobs:
           fi
           echo "✅ database/migrate.js and database/migrations-admin/*.sql present in source tree"
 
-      - name: Package self-contained admin migration artifact (migrate.js + migrations-admin/*.sql, staged as migrations/, + a fresh node_modules/pg)
+      - name: Package self-contained admin migration artifact (migrate.js + migrations-admin/*.sql, staged as migrations/, + node_modules/pg pinned by package-lock.json)
         run: |
           set -e
           STAGE=$(mktemp -d)
           mkdir -p "$STAGE/migrations"
           cp database/migrate.js "$STAGE/migrate.js"
           cp database/migrations-admin/*.sql "$STAGE/migrations/"
-          npm install pg --no-save --no-audit --no-fund --prefix "$STAGE"
-          # npm installs into $STAGE/node_modules with an npm-managed $STAGE/package.json
-          # and $STAGE/package-lock.json alongside it — neither is needed by migrate.js
-          # (which requires('pg') by name, resolved via node_modules/ regardless of any
-          # package.json existing beside it) and both are excluded from the shipped
-          # artifact, same principle as excluding seeds/ from the ordinary package.
+          # pg and everything pg needs, at the exact versions and integrity
+          # hashes in the repo's package-lock.json (see the script). npm ci
+          # runs inside $STAGE, outside the repo, so neither the workspace
+          # nor the repo's .npmrc applies; it refuses a package.json/lockfile
+          # mismatch and verifies every tarball against the lockfile.
+          node .github/scripts/admin-pg-lockfile.js write package-lock.json "$STAGE"
+          (cd "$STAGE" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+          node .github/scripts/admin-pg-lockfile.js verify package-lock.json "$STAGE"
+          # The derived $STAGE/package.json and $STAGE/package-lock.json are
+          # not needed by migrate.js (which requires('pg') by name, resolved via
+          # node_modules/ regardless of any package.json existing beside it) and
+          # both are excluded from the shipped artifact, same principle as
+          # excluding seeds/ from the ordinary package.
           rm -f "$STAGE/package.json" "$STAGE/package-lock.json"
           tar czf migrations-admin.tar.gz -C "$STAGE" .
 
@@ -1066,7 +1073,10 @@ jobs:
           echo "$LISTING" | grep -qE '^\./migrate\.js$' || { echo "::error::packaged admin artifact is missing migrate.js at its root"; exit 1; }
           echo "$LISTING" | grep -qE '^\./migrations/.*\.sql$' || { echo "::error::packaged admin artifact is missing migrations/*.sql"; exit 1; }
           echo "$LISTING" | grep -qE '^\./node_modules/pg/' || { echo "::error::packaged admin artifact is missing its self-contained node_modules/pg"; exit 1; }
-          echo "✅ packaged admin artifact validated: migrate.js + migrations/*.sql + node_modules/pg present"
+          LOCKED_PG=$(node -p "require('./package-lock.json').packages['node_modules/pg'].version")
+          SHIPPED_PG=$(tar xzf migrations-admin.tar.gz -O ./node_modules/pg/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")
+          [ "$SHIPPED_PG" = "$LOCKED_PG" ] || { echo "::error::packaged admin artifact ships pg $SHIPPED_PG, but package-lock.json locks pg $LOCKED_PG"; exit 1; }
+          echo "✅ packaged admin artifact validated: migrate.js + migrations/*.sql + node_modules/pg $SHIPPED_PG (matches package-lock.json) present"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
