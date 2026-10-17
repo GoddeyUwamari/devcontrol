@@ -6,10 +6,14 @@
  *    real lockfile and small, deliberately broken ones), and the
  *    deploy-migration-tooling-admin job installs it with npm ci.
  *  - deploy-backend builds with npm ci, never npm install.
+ *  - "Verify deployed release SHA": the real step is executed with stubbed
+ *    curl and sleep; it sits between the smoke test and the last-known-good
+ *    record, whose if: stays as it was.
  *
  * ci.yml is parsed as text, like the other ci.yml tests in this directory.
  */
 
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -224,5 +228,125 @@ describe('deploy-backend builds from the lockfile', () => {
     expect('        run: cd backend && npm install --legacy-peer-deps').toMatch(
       /^\s*(?:run:\s*)?(?:cd [^&\n]+&&\s*)?npm install\b/m
     );
+  });
+});
+
+describe('deploy-backend "Verify deployed release SHA" (executes the real step with stubbed curl and sleep)', () => {
+  const STEP = 'Verify deployed release SHA';
+  const EXPECTED = 'a'.repeat(40);
+  const OLD = 'b'.repeat(40);
+  const step = extractStep('deploy-backend', STEP);
+  const script = (() => {
+    const m = step.match(/\n {8}run: \|\n((?: {10}.*\n|\n)+)/);
+    if (!m) throw new Error(`No run: | block on step ${STEP}`);
+    return m[1].replace(/^ {10}/gm, '');
+  })();
+
+  /**
+   * Each response is one curl call: a string is printed with exit 0, a
+   * number is a curl failure with that exit code. The last response repeats.
+   */
+  function run(responses: Array<string | number>) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-release-'));
+    try {
+      const bin = path.join(dir, 'bin');
+      fs.mkdirSync(bin);
+      responses.forEach((r, i) => fs.writeFileSync(path.join(dir, `response-${i}`), String(r)));
+      fs.writeFileSync(
+        path.join(bin, 'curl'),
+        [
+          '#!/bin/bash',
+          `echo "$*" >> "${dir}/curl.log"`,
+          `n=$(wc -l < "${dir}/curl.log" | tr -d ' ')`,
+          `i=$((n - 1)); [ $i -ge ${responses.length} ] && i=${responses.length - 1}`,
+          ...responses.map((r, i) =>
+            typeof r === 'number'
+              ? `[ $i -eq ${i} ] && exit ${r}`
+              : `[ $i -eq ${i} ] && { cat "${dir}/response-${i}"; exit 0; }`
+          ),
+          'exit 99',
+        ].join('\n')
+      );
+      fs.writeFileSync(path.join(bin, 'sleep'), `#!/bin/bash\necho "$*" >> "${dir}/sleep.log"\n`);
+      fs.chmodSync(path.join(bin, 'curl'), 0o755);
+      fs.chmodSync(path.join(bin, 'sleep'), 0o755);
+      // GitHub Actions runs `shell: bash` steps as bash --noprofile --norc -eo pipefail.
+      const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {
+        encoding: 'utf8',
+        env: { PATH: `${bin}:${process.env.PATH}`, EXPECTED_SHA: EXPECTED },
+      });
+      const read = (f: string) => (fs.existsSync(path.join(dir, f)) ? fs.readFileSync(path.join(dir, f), 'utf8') : '');
+      return {
+        status: result.status,
+        output: result.stdout + result.stderr,
+        curlCalls: read('curl.log').split('\n').filter(Boolean),
+        sleeps: read('sleep.log').split('\n').filter(Boolean),
+      };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const body = (sha: string) => JSON.stringify({ release_sha: sha, built_at: '2026-10-17T00:00:00.000Z' });
+
+  it('passes on the first attempt when production reports the deployed commit', () => {
+    const r = run([body(EXPECTED)]);
+    expect(r.status).toBe(0);
+    expect(r.curlCalls).toHaveLength(1);
+    expect(r.sleeps).toHaveLength(0);
+    expect(r.output).toContain(`production reports release_sha=${EXPECTED}`);
+  });
+
+  it('requests the public /version endpoint with a timeout, failing on HTTP errors, bypassing caches', () => {
+    expect(run([body(EXPECTED)]).curlCalls[0]).toBe(
+      '-sS -f --max-time 10 -H Cache-Control: no-cache https://api.getdevcontrol.com/version'
+    );
+  });
+
+  it('fails after 6 attempts, 10 s apart, when production keeps serving another commit', () => {
+    const r = run([body(OLD)]);
+    expect(r.status).toBe(1);
+    expect(r.curlCalls).toHaveLength(6);
+    expect(r.sleeps).toEqual(['10', '10', '10', '10', '10']);
+    expect(r.output).toContain(`::error::Release check failed after 6 attempts — version endpoint reports release_sha=${OLD}, expected ${EXPECTED}`);
+    expect(r.output).toContain('No automatic rollback was performed and the last-known-good marker was NOT updated');
+  });
+
+  it('retries through request failures and an old release, then passes', () => {
+    const r = run([7, 28, body(OLD), body(EXPECTED)]);
+    expect(r.status).toBe(0);
+    expect(r.curlCalls).toHaveLength(4);
+    expect(r.output).toContain('curl exit 7');
+    expect(r.output).toContain('curl exit 28');
+  });
+
+  it.each([
+    ['a non-JSON body', 'CANARY-not-json <html>'],
+    ['JSON without release_sha', JSON.stringify({ status: 'CANARY-ok' })],
+    ['a release_sha that is not 40 hex chars', JSON.stringify({ release_sha: 'CANARY-unknown' })],
+  ])('fails on %s and never prints the response body', (_label, response) => {
+    const r = run([response]);
+    expect(r.status).toBe(1);
+    expect(r.curlCalls).toHaveLength(6);
+    expect(r.output).toContain('version endpoint returned no valid release_sha (response body not logged)');
+    expect(r.output).not.toContain('CANARY');
+  });
+
+  it('passes the expected SHA through env, never by templating it into the script', () => {
+    expect(step).toContain('EXPECTED_SHA: ${{ github.sha }}');
+    expect(script).not.toContain('${{');
+    expect(step).toContain("if: steps.smoke_test.outcome == 'success'");
+    expect(step).toContain('timeout-minutes: 3');
+    expect(step).not.toMatch(/continue-on-error/);
+  });
+
+  it('runs after the smoke test and before the last-known-good record, whose if: is unchanged', () => {
+    const job = extractJobBlock('deploy-backend');
+    const smoke = job.indexOf('- name: Smoke test new deploy');
+    const verify = job.indexOf(`- name: ${STEP}`);
+    const record = job.indexOf("- name: Record successful deploy\n        if: steps.smoke_test.outcome == 'success'\n");
+    expect(smoke).toBeGreaterThan(-1);
+    expect(verify).toBeGreaterThan(smoke);
+    expect(record).toBeGreaterThan(verify);
   });
 });

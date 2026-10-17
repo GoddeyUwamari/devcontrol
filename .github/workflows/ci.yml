@@ -555,6 +555,57 @@ jobs:
           echo "::error::Smoke test failed after $MAX_ATTEMPTS attempts — $LAST_ERROR"
           exit 1
 
+      # /health proves a process is up, not WHICH release it is. This proves
+      # the host serves the commit this job built: /version reports the
+      # RELEASE_SHA baked in at build time (backend/scripts/generate-version.js
+      # from GITHUB_SHA). On a mismatch the job fails and nothing else
+      # happens: no automatic rollback (the rollback steps key only on the
+      # deploy and smoke-test outcomes), and "Record successful deploy" is
+      # skipped (its if: has no status function, so success() is implied),
+      # so the last-known-good marker keeps pointing at the last release
+      # that passed both checks. The response body is never printed.
+      - name: Verify deployed release SHA
+        id: verify_release
+        if: steps.smoke_test.outcome == 'success'
+        timeout-minutes: 3
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set +e
+          MAX_ATTEMPTS=6
+          ATTEMPT=1
+          LAST_ERROR=""
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Release check attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            RESPONSE=$(curl -sS -f --max-time 10 -H 'Cache-Control: no-cache' https://api.getdevcontrol.com/version)
+            CURL_EXIT=$?
+
+            if [ $CURL_EXIT -ne 0 ]; then
+              LAST_ERROR="version request failed or timed out (curl exit $CURL_EXIT)"
+            else
+              ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.release_sha // empty' 2>/dev/null)
+              if ! [[ "$ACTUAL_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+                LAST_ERROR="version endpoint returned no valid release_sha (response body not logged)"
+              elif [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+                LAST_ERROR="version endpoint reports release_sha=$ACTUAL_SHA, expected $EXPECTED_SHA"
+              else
+                echo "Release check passed on attempt $ATTEMPT — production reports release_sha=$ACTUAL_SHA"
+                exit 0
+              fi
+            fi
+
+            echo "Attempt $ATTEMPT failed: $LAST_ERROR"
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              sleep 10
+            fi
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "::error::Release check failed after $MAX_ATTEMPTS attempts — $LAST_ERROR"
+          echo "::error::/health passed, so production is up, but it is not confirmed to be serving $EXPECTED_SHA. No automatic rollback was performed and the last-known-good marker was NOT updated. Check the deploy step log and https://api.getdevcontrol.com/version."
+          exit 1
+
       - name: Record successful deploy
         if: steps.smoke_test.outcome == 'success'
         run: |
