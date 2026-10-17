@@ -138,13 +138,14 @@ describe('Infrastructure Posture section on the real Dashboard page', () => {
     expect(intelligenceSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('demo mode: the section is absent from the page entirely', async () => {
+  it('with both legacy demo flags set, the real section still renders from the real System Intelligence request', async () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
+    localStorage.setItem('sales-demo-mode', JSON.stringify({ state: { enabled: true }, version: 0 }))
     renderDashboard()
-    await screen.findByText('Top Risk')
-    expect(screen.queryByRole('heading', { name: 'Infrastructure Posture' })).not.toBeInTheDocument()
-    expect(screen.queryByTestId('posture-section')).not.toBeInTheDocument()
-    expect(intelligenceSpy).not.toHaveBeenCalled()
+    const section = await postureSection()
+    expect(section).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Cost score' })).toBeInTheDocument())
+    expect(intelligenceSpy).toHaveBeenCalledTimes(1)
   })
 })
 

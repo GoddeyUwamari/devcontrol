@@ -518,8 +518,6 @@ export default function MonitoringPage() {
           <p className="text-xs text-slate-400 mb-6">Takes less than 2 minutes · Zero risk to your infrastructure · Read-only access</p>
           <div className="flex flex-wrap gap-3 justify-center mb-8">
             <a href={awsConnected ? "https://console.aws.amazon.com/cloudwatch/" : "/connect-aws"} target={awsConnected ? "_blank" : undefined} rel={awsConnected ? "noopener noreferrer" : undefined} className="bg-violet-600 hover:bg-violet-700 text-white px-7 py-3 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2 transition-colors">☁️ Enable CloudWatch Monitoring →</a>
-            <button onClick={() => { const event = new CustomEvent('demo-mode-changed', { detail: { enabled: true } }); window.dispatchEvent(event) }}
-              className="bg-white text-violet-600 border border-violet-200 px-7 py-3 rounded-lg text-sm font-semibold cursor-pointer hover:bg-violet-50 transition-colors">Explore Demo Data</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto">
             {[{ icon: '📊', label: 'Continuous visibility', desc: 'Identify issues before they impact users' }, { icon: '🔔', label: 'Proactive alerts', desc: 'Get notified before incidents escalate' }, { icon: '💰', label: 'Cost leak detection', desc: 'Find wasted spend across all services' }].map(({ icon, label, desc }) => (

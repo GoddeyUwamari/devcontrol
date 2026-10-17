@@ -152,18 +152,19 @@ describe('custom frameworks follow useComplianceFrameworks\' actual error semant
   })
 })
 
-describe('demo mode is unchanged', () => {
-  it('demo values render and no failure can surface as "Unavailable"', async () => {
+describe('demo mode is off', () => {
+  it('with both legacy demo flags set, real requests run and their failures still read "Unavailable", never demo values', async () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
+    localStorage.setItem('sales-demo-mode', JSON.stringify({ state: { enabled: true }, version: 0 }))
     for (const spy of Object.values(spies)) spy.mockRejectedValue(httpError(500))
     renderDashboard()
     const c = await card()
-    expect(c.getByText('1 critical finding')).toBeInTheDocument()
-    expect(subOf(c, 'Custom frameworks')).toBe('CIS AWS · PCI-DSS · NIST 800-53 · Security Hub-backed')
-    await waitFor(() => expect(spies.frameworks).toHaveBeenCalled())
-    expect(c.queryByText(/Unavailable/)).not.toBeInTheDocument()
-    expect(spies.findings).not.toHaveBeenCalled()
-    expect(spies.resources).not.toHaveBeenCalled()
-    expect(spies.soc2).not.toHaveBeenCalled()
+    await waitFor(() => expect(c.getByText('Account-level findings: Unavailable')).toBeInTheDocument())
+    await waitFor(() => expect(subOf(c, 'Custom frameworks')).toBe('Unavailable'))
+    expect(subOf(c, 'Resource compliance')).toBe('Unavailable')
+    expect(subOf(c, 'SOC 2 readiness')).toBe('Unavailable')
+    expect(c.queryByText('1 critical finding')).not.toBeInTheDocument()
+    expect(c.queryByText('CIS AWS · PCI-DSS · NIST 800-53 · Security Hub-backed')).not.toBeInTheDocument()
+    for (const spy of Object.values(spies)) expect(spy).toHaveBeenCalled()
   })
 })

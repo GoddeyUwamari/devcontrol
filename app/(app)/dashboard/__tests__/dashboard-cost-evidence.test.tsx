@@ -600,16 +600,19 @@ describe('a failed accounts request is unknown, never "not connected"', () => {
   })
 })
 
-describe('demo mode is unchanged', () => {
-  it('with no AWS account it still shows the demo dashboard, never the preview or its feature cards', async () => {
+describe('demo mode is off', () => {
+  it('with both legacy demo flags set and no AWS account, the owner gets the real preview, never a demo dashboard', async () => {
     signInAs('owner')
     localStorage.setItem('devcontrol_demo_mode', 'true')
+    localStorage.setItem('sales-demo-mode', JSON.stringify({ state: { enabled: true }, version: 0 }))
     awsAccounts = []
     setup(LEGACY_STATS.zero, { spend: noSpend('unavailable'), monthOverMonth: noMom('unavailable') })
     renderDashboard()
 
-    expect(await screen.findByTestId('kpi-row')).toBeInTheDocument()
-    expectNoPreview()
+    expect(await screen.findByTestId('dashboard-preview')).toBeInTheDocument()
+    await gateInputsSettled()
+    expectPreviewAndSteps()
+    expectNoConnectedContent()
     expectNoNavigation()
   })
 })

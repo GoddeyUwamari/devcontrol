@@ -91,6 +91,8 @@ const nextConfig: NextConfig = {
       { source: '/services/health',                 destination: '/services',                       permanent: false },
       { source: '/services/dependencies',           destination: '/services',                       permanent: false },
       { source: '/dependencies',                    destination: '/services',                       permanent: false },
+      // Demo mode is off; /tour is the public walkthrough every other "demo" link uses.
+      { source: '/demo',                            destination: '/tour',                           permanent: false },
     ];
   },
 };

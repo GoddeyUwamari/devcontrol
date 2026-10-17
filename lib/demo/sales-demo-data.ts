@@ -301,11 +301,12 @@ export const SALES_DEMO_DATA: SalesDemoData = {
 };
 
 /**
- * Hook to toggle sales demo mode
+ * Sales demo mode is switched off for everyone. This used to be a Zustand
+ * store persisted under 'sales-demo-mode'; it no longer reads or writes that
+ * key (lib/legacy-demo-cleanup.ts removes it on load), always reports
+ * enabled: false, and its setters do nothing. Supports both call shapes:
+ * useSalesDemo() and useSalesDemo((state) => state.enabled).
  */
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
 interface SalesDemoStore {
   enabled: boolean;
   toggle: () => void;
@@ -313,16 +314,15 @@ interface SalesDemoStore {
   disable: () => void;
 }
 
-export const useSalesDemo = create<SalesDemoStore>()(
-  persist(
-    (set) => ({
-      enabled: false,
-      toggle: () => set((state) => ({ enabled: !state.enabled })),
-      enable: () => set({ enabled: true }),
-      disable: () => set({ enabled: false }),
-    }),
-    {
-      name: 'sales-demo-mode',
-    }
-  )
-);
+const SALES_DEMO_OFF: SalesDemoStore = Object.freeze({
+  enabled: false,
+  toggle: () => {},
+  enable: () => {},
+  disable: () => {},
+});
+
+export function useSalesDemo(): SalesDemoStore;
+export function useSalesDemo<T>(selector: (state: SalesDemoStore) => T): T;
+export function useSalesDemo<T>(selector?: (state: SalesDemoStore) => T) {
+  return selector ? selector(SALES_DEMO_OFF) : SALES_DEMO_OFF;
+}
