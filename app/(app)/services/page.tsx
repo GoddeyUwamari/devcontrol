@@ -442,7 +442,7 @@ export default function ServicesPage() {
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">AWS resources</p>
           <div className="text-4xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalServices}</div>
-          <p className="text-slate-500 text-xs font-medium m-0">One account: its configured region, plus S3 and CloudFront</p>
+          <p className="text-slate-500 text-xs font-medium m-0">One connected account; not every region is scanned</p>
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>

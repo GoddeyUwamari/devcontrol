@@ -51,6 +51,8 @@ const CUT_CLAIMS = new RegExp([
   'Status Page', 'Live system status', 'Full report', 'Resolve now', 'Resolve before impact',
   'Resolve At-Risk', 'Registered across all environments', 'Add Manually',
   "What's Costing You Money", 'instantly',
+  // Free-tier discovery never scans CloudFront, so the caption makes no claim about it.
+  'plus S3 and CloudFront', 'S3 and CloudFront',
 ].join('|'), 'i')
 
 // Links that went to pages with nothing about these resources, or to no page.
@@ -108,7 +110,7 @@ describe('/services -- title and the resource count', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Services$/)
     expect(screen.getByText('Until services are mapped, this page lists the AWS resources discovered in your connected account and any flagged issues.')).toBeInTheDocument()
     expect(screen.getByText('AWS resources')).toBeInTheDocument()
-    expect(screen.getByText('One account: its configured region, plus S3 and CloudFront')).toBeInTheDocument()
+    expect(screen.getByText('One connected account; not every region is scanned')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search 1 resource…')).toBeInTheDocument()
     expectNoCutClaims()
   })
