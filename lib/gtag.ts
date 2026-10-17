@@ -1,10 +1,17 @@
 export const GA_TRACKING_ID = 'G-Q799EVB9BT'
 
+/**
+ * On unless NEXT_PUBLIC_GA_ENABLED is exactly 'false', so production builds,
+ * which never set it, keep reporting. `npm run dev:local` sets it to 'false'
+ * so local runs never reach Google Analytics.
+ */
+export const isGaEnabled = () => process.env.NEXT_PUBLIC_GA_ENABLED !== 'false'
+
 export const trackEvent = (
   eventName: string,
   parameters?: Record<string, unknown>
 ) => {
-  if (typeof window !== 'undefined' && (window as any).gtag) {
+  if (isGaEnabled() && typeof window !== 'undefined' && (window as any).gtag) {
     ;(window as any).gtag('event', eventName, parameters)
   }
 }
