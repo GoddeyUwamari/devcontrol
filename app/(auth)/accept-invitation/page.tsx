@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2, AlertCircle, Mail } from "lucide-react";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { organizationsService } from "@/lib/services/organizations.service";
@@ -16,14 +16,48 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { logError } from "@/lib/safe-log";
+import { takeUrlCredentials } from "@/lib/url-credentials";
+import {
+  clearPendingInvitation,
+  readPendingInvitation,
+  savePendingInvitation,
+} from "@/lib/pending-invitation";
+
+/**
+ * Where a signed-out invitee is sent back to after signing in or registering.
+ * The token is not part of it: it waits in the pending invitation instead.
+ */
+const RETURN_PATH = "/accept-invitation";
+
+/**
+ * Whether a failed acceptance means this invitation can never be accepted as
+ * it stands (invalid, expired, sent to another address...), so it should be
+ * forgotten. Network errors, rate limits and server errors can be retried.
+ */
+function isTerminalAcceptError(error: unknown): boolean {
+  const status = (error as { response?: { status?: unknown } } | null)?.response?.status;
+  return (
+    typeof status === "number" &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 401 &&
+    status !== 408 &&
+    status !== 429
+  );
+}
 
 function AcceptInvitationContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { user, isAuthenticated, isLoading: isAuthLoading, refreshOrganizations } =
     useAuth();
 
-  const token = searchParams.get("token");
+  // The invitation token lives only in this component's state and the pending
+  // invitation once it has been taken from the link; it is not kept in the URL.
+  const [token, setToken] = useState<string | null>(null);
+  // False until the link (or a pending invitation) has been read, so the
+  // invalid-link state is not shown before there was a chance to find a token.
+  const [linkRead, setLinkRead] = useState(false);
+  const tokenTaken = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<
     | { status: "idle" }
@@ -31,9 +65,26 @@ function AcceptInvitationContent() {
     | { status: "error"; message: string }
   >({ status: "idle" });
 
-  const returnTo = token
-    ? `/accept-invitation?token=${encodeURIComponent(token)}`
-    : "/accept-invitation";
+  useEffect(() => {
+    // The link is cleaned on the first run, so a second run (React Strict
+    // Mode) would find no token there; keep what the first run took.
+    if (tokenTaken.current) return;
+    tokenTaken.current = true;
+
+    // #token= is the link's form; ?token= is accepted for invitation emails
+    // sent before the link moved to the fragment, until they expire.
+    const { token: linkToken } = takeUrlCredentials(["token"] as const, {
+      legacyQuery: ["token"],
+    });
+    if (linkToken) {
+      // Kept for this tab, so it survives a sign-in, registration or reload.
+      savePendingInvitation(linkToken);
+      setToken(linkToken);
+    } else {
+      setToken(readPendingInvitation());
+    }
+    setLinkRead(true);
+  }, []);
 
   const handleAccept = async () => {
     if (!token || isSubmitting) {
@@ -43,6 +94,7 @@ function AcceptInvitationContent() {
     setIsSubmitting(true);
     try {
       await organizationsService.acceptInvitation(token);
+      clearPendingInvitation();
 
       // Best-effort: bring the newly joined organization into context before
       // navigating. Failures here are already toast-reported by the auth
@@ -60,6 +112,7 @@ function AcceptInvitationContent() {
         "Failed to accept invitation";
 
       if (message === "User is already a member of this organization") {
+        clearPendingInvitation();
         setResult({ status: "success", alreadyMember: true });
         setTimeout(() => {
           router.push("/dashboard");
@@ -68,13 +121,28 @@ function AcceptInvitationContent() {
       }
 
       logError("Accept invitation error", error);
+      if (isTerminalAcceptError(error)) {
+        clearPendingInvitation();
+      }
       setResult({ status: "error", message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // No token in the link at all
+  // Link not read yet (first render, before the effect)
+  if (!linkRead) {
+    return (
+      <Card className="border-border/40 shadow-xl">
+        <CardContent className="flex flex-col items-center gap-3 py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Reading invitation link...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // No token in the link at all, and no pending invitation
   if (!token) {
     return (
       <Card className="border-border/40 shadow-xl">
@@ -123,8 +191,8 @@ function AcceptInvitationContent() {
 
   // Must be signed in to accept -- follow the existing app convention
   // (ProtectedRoute's /login?from=) rather than inventing a new mechanism.
-  // The token is preserved in the return path so it is not lost across the
-  // login/register redirect.
+  // The return path carries no token: the pending invitation keeps it across
+  // the login/register redirect.
   if (!isAuthenticated || !user) {
     return (
       <Card className="border-border/40 shadow-xl">
@@ -142,12 +210,12 @@ function AcceptInvitationContent() {
         <CardContent>
           <div className="flex flex-col gap-3">
             <Button asChild className="w-full">
-              <Link href={`/login?from=${encodeURIComponent(returnTo)}`}>
+              <Link href={`/login?from=${encodeURIComponent(RETURN_PATH)}`}>
                 Sign in
               </Link>
             </Button>
             <Button asChild variant="outline" className="w-full">
-              <Link href={`/register?from=${encodeURIComponent(returnTo)}`}>
+              <Link href={`/register?from=${encodeURIComponent(RETURN_PATH)}`}>
                 Create an account
               </Link>
             </Button>
