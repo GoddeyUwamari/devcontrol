@@ -253,11 +253,12 @@ type ServiceListFilters = { type?: string; env?: string; search?: string };
 
 // Tags keep the key case they have in AWS, and AWS convention is capitalised
 // (Environment, Owner, Team), so a tag is read whatever the case of its key.
-// A blank value counts as no tag.
+// A blank value counts as no tag, and never hides a non-blank one under
+// another case of the same key.
 function tagValue(key: 'environment' | 'owner' | 'team'): string {
   return `(SELECT NULLIF(BTRIM(t.value), '')
              FROM jsonb_each_text(CASE WHEN jsonb_typeof(r.tags) = 'object' THEN r.tags ELSE '{}'::jsonb END) t
-            WHERE LOWER(t.key) = '${key}'
+            WHERE LOWER(t.key) = '${key}' AND BTRIM(t.value) <> ''
             ORDER BY t.key
             LIMIT 1)`;
 }

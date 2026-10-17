@@ -150,6 +150,7 @@ describe('GET /api/services -- environment, owner and team tags', () => {
     await insertResource(orgId, 'lt-lowercase', { tags: { environment: 'staging', owner: 'owner-b', team: 'team-b' } });
     await insertResource(orgId, 'lt-uppercase', { tags: { ENVIRONMENT: 'production', OWNER: 'owner-c', TEAM: 'team-c' } });
     await insertResource(orgId, 'lt-metadata-env', { metadata: { environment: 'dev' } });
+    await insertResource(orgId, 'lt-blank-duplicate', { tags: { Environment: 'staging', environment: ' ' } });
     await insertResource(orgId, 'lt-volume', { type: 'ebs', status: 'in-use' });
   });
 
@@ -169,6 +170,8 @@ describe('GET /api/services -- environment, owner and team tags', () => {
     expect(rows['lt-lowercase'].environment).toBe('staging');
     expect(rows['lt-uppercase'].environment).toBe('production');
     expect(rows['lt-metadata-env'].environment).toBe('dev');
+    // A blank tag under another case of the key does not hide the real one.
+    expect(rows['lt-blank-duplicate'].environment).toBe('staging');
   });
 
   it('reads owner and team whatever the case of the key', async () => {
