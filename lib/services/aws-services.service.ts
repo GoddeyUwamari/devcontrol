@@ -4,7 +4,7 @@ export interface AWSService {
   id: string
   name: string
   type: string          // resource_type: 'ec2' | 'ecs' | 'lambda' | 'rds' | 'eks' etc.
-  environment: string
+  environment: string | null  // null: no environment tag (shown as "Untagged")
   region: string
   // 'unknown': no lifecycle state to judge -- the type has none (S3, SNS, VPC) or it was not read.
   status: 'healthy' | 'warning' | 'critical' | 'unknown'
