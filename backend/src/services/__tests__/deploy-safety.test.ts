@@ -1290,9 +1290,15 @@ describe('N2. production deploy concurrency groups', () => {
     );
   });
 
-  it('the groups are distinct (a shared group would cancel pending sibling jobs of the same run) and there is no workflow-level group', () => {
+  it('the groups are distinct (a shared group would cancel pending sibling jobs of the same run)', () => {
     const groups = JOBS.map((job) => extractJobBlock(job).match(/\n {6}group: (.*)\n/)![1]);
     expect(new Set(groups).size).toBe(JOBS.length);
-    expect(ciYml).not.toMatch(/^concurrency:/m);
+  });
+
+  it('the workflow-level group cancels only pull_request runs; every other run gets a group of its own', () => {
+    expect(ciYml.match(/^concurrency:/gm)).toHaveLength(1);
+    expect(ciYml).toContain(
+      "\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
+    );
   });
 });
