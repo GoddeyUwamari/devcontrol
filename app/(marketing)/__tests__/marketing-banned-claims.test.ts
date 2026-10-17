@@ -40,6 +40,9 @@ const HOMEPAGE_FILES = [
 /** Rendered on every marketing page. */
 const CHROME_FILES = ['components/layout/MarketingNav.tsx', 'components/footer.tsx']
 
+/** The site-wide meta description: on every page, and the snippet search results show. */
+const SITE_FILES = ['app/layout.tsx']
+
 /** Rendered by /pricing. */
 const PRICING_COMPONENTS = ['components/billing/pricing-faq.tsx', 'components/billing/feature-comparison-table.tsx']
 
@@ -75,7 +78,7 @@ function pageFileFor(route: string): string {
 
 const reachableRoutes = navAndFooterRoutes().filter((r) => !NOT_SCANNED_ROUTES.has(r))
 const SCANNED_FILES = [
-  ...new Set([...HOMEPAGE_FILES, ...CHROME_FILES, ...PRICING_COMPONENTS, ...reachableRoutes.map(pageFileFor)]),
+  ...new Set([...SITE_FILES, ...HOMEPAGE_FILES, ...CHROME_FILES, ...PRICING_COMPONENTS, ...reachableRoutes.map(pageFileFor)]),
 ]
 
 const BANNED: Array<[RegExp, string]> = [
@@ -112,7 +115,7 @@ const BANNED: Array<[RegExp, string]> = [
   [/real[- ]time/i, '"real-time" (scans run every 6 hours)'],
   [/TLS\s*1\.3/i, 'TLS 1.3 claim'],
   [/AES-256(?!-GCM)/, 'blanket AES-256 claim (only stored secrets use AES-256-GCM)'],
-  [/never\s+store\s+(your\s+)?(AWS\s+)?credentials/i, '"never store credentials"'],
+  [/never\s+store\s+(your\s+)?(AWS\s+)?credentials|no\s+credential\s+storage/i, '"never store credentials" (an endpoint stores encrypted keys)'],
   [/@devcontrol\/(cli|sdk)|pip\s+install\s+devcontrol|deploy-action/i, 'CLI / SDK / GitHub Action that does not exist'],
   [/graphql/i, 'GraphQL API (none exists)'],
   [/(under|in|within)\s+\d+\s+(seconds|mins?|minutes|hours)\b/i, 'timed speed claim (use "Takes a few minutes")'],

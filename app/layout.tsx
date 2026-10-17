@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "DevControl — AWS Cost, Security & Infrastructure Intelligence",
-  description: "Cut AWS waste, strengthen security posture, and get real-time infrastructure visibility — all through secure, read-only access. No agents, no credential storage.",
+  description: "Find AWS waste and security risks with read-only access. No agents, no code changes.",
 };
 
 export default function RootLayout({
