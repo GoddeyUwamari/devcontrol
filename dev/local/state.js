@@ -9,6 +9,7 @@
  * volume that is -- lives in .state/db/, so it is replaced as a unit when the
  * volume is (dev/local/volume-credentials.js).
  */
+/* eslint-disable @typescript-eslint/no-require-imports -- a CommonJS script run by plain node */
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');

@@ -14,6 +14,7 @@
  * (never backend/.env) and refuses to start if anything points outside this
  * machine (backend/src/config/local-stack-guard.ts).
  */
+/* eslint-disable @typescript-eslint/no-require-imports -- a CommonJS script run by plain node */
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');

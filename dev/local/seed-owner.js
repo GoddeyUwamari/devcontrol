@@ -4,6 +4,7 @@
  * generated here and written only to dev/local/.state/db/owner-login.txt; if
  * that file is lost, the next run issues a new password.
  */
+/* eslint-disable @typescript-eslint/no-require-imports -- a CommonJS script run by plain node */
 const crypto = require('crypto');
 const fs = require('fs');
 const bcrypt = require('bcrypt');

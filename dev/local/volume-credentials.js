@@ -20,6 +20,7 @@
  * 127.0.0.1 still requires the password. The password reaches psql on stdin,
  * never on a command line.
  */
+/* eslint-disable @typescript-eslint/no-require-imports -- a CommonJS script run by plain node */
 const crypto = require('crypto');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
