@@ -29,11 +29,12 @@ vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro', isPro: t
 
 const mockGetServices = vi.fn()
 const mockGetStats = vi.fn()
+const mockDiscover = vi.fn()
 vi.mock('@/lib/services/aws-services.service', () => ({
   default: {
     getServices: (...args: unknown[]) => mockGetServices(...args),
     getStats: () => mockGetStats(),
-    discoverServices: vi.fn(),
+    discoverServices: () => mockDiscover(),
   },
 }))
 
@@ -243,6 +244,23 @@ describe('/services -- resources present', () => {
     const alpha = await screen.findByText('alpha')
     const zeta = screen.getByText('zeta')
     expect(alpha.compareDocumentPosition(zeta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('/services -- discovery refused by the plan limit', () => {
+  it('names the AWS resource limit and links to the upgrade page, nothing more', async () => {
+    mockGetServices.mockResolvedValue([resource('1')])
+    mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
+    mockDiscover.mockRejectedValue(Object.assign(new Error('402'), { response: { status: 402 } }))
+    renderPage()
+    await settled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Auto Discover/ }))
+    const link = await screen.findByRole('link', { name: 'Upgrade plan' })
+    const banner = link.parentElement!
+    expectNoCutClaims()
+    expect(link).toHaveAttribute('href', '/settings/billing/upgrade')
+    expect(banner.textContent).toBe("⚠️You've reached the AWS resource limit on the pro plan. Upgrade to discover more resources.Upgrade plan")
   })
 })
 
