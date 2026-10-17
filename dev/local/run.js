@@ -7,6 +7,8 @@
  *   node dev/local/run.js --setup-only set up (database, schema, owner) and exit
  *   node dev/local/run.js --reset ...  first delete the database volume and
  *                                      everything in .state/db/
+ *   node dev/local/run.js --seed ...   after setup, write the demo workspace
+ *                                      (dev/local/seed-icp.js)
  *
  * Both servers get an allowlisted environment built here -- never the
  * inherited shell, which may hold real keys or AWS profiles. The backend runs
@@ -164,6 +166,19 @@ async function setUp() {
 }
 
 /**
+ * Runs dev/local/seed-icp.js with the environment the backend gets -- the
+ * allowlist plus the local-stack flag -- so its guard judges exactly what the
+ * backend would run with.
+ */
+function seedDemo() {
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'seed-icp.js')], {
+    stdio: 'inherit',
+    env: { ...baseEnv(), DEVCONTROL_LOCAL_STACK: '1', NODE_ENV: 'development' },
+  });
+  if (result.status !== 0) fail('seeding the demo workspace failed');
+}
+
+/**
  * Signals a server's whole process group. `npm run dev` runs a shell that runs
  * ts-node-dev, which runs node: signalling only the npm process can leave the
  * node process that holds the port running.
@@ -224,6 +239,7 @@ function startServers() {
 
 setUp()
   .then(() => {
+    if (process.argv.includes('--seed')) seedDemo();
     if (process.argv.includes('--setup-only')) {
       console.log('[dev:local] setup complete');
       return;
