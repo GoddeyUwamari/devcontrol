@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useOnboarding } from '@/lib/stores/onboarding-store';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
+import { logError } from '@/lib/safe-log';
 
 export function WelcomeModal() {
   const { status, currentStage, completedStages, completeStep, dismiss } = useOnboarding();
@@ -54,9 +55,15 @@ export function WelcomeModal() {
       (window as any).analytics.track('onboarding_welcome_completed');
     }
 
-    await completeStep('welcome');
-    setOpen(false);
-    router.push('/connect-aws');
+    try {
+      await completeStep('welcome');
+    } catch (error) {
+      // Still go to the connect flow: it does not depend on this step being recorded.
+      logError('Error completing welcome step', error);
+    } finally {
+      setOpen(false);
+      router.push('/connect-aws');
+    }
   };
 
   const handleSkip = async () => {
@@ -83,17 +90,17 @@ export function WelcomeModal() {
             DevControl reads your AWS account through a read-only IAM role and lists what it finds.
             Cost findings (idle EC2 instances, unattached EBS volumes, unused Elastic IPs, and EBS and S3
             storage settings that cost more than needed) show estimated monthly savings. Security findings
-            are listed alongside.
+            appear on the Security page.
           </p>
 
           <div className="bg-purple-50 dark:bg-purple-950 p-4 rounded-lg">
             <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-2 ml-4 list-decimal">
-              <li data-testid="welcome-step"><strong>Connect AWS</strong>: create a read-only IAM role. DevControl makes no changes to your account.</li>
+              <li data-testid="welcome-step"><strong>Connect AWS</strong>: create a read-only IAM role, so DevControl can view your account but not change it.</li>
               <li data-testid="welcome-step"><strong>DevControl scans</strong>: right after you connect, then on a regular schedule.</li>
-              <li data-testid="welcome-step"><strong>Review findings</strong>: cost findings show estimated monthly savings; security findings are listed alongside.</li>
+              <li data-testid="welcome-step"><strong>Review findings</strong>: cost findings show estimated monthly savings; security findings appear on the Security page.</li>
             </ol>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 flex items-center gap-1">
-              <Lock className="h-3 w-3" aria-hidden="true" /> Read-only · No infrastructure changes
+              <Lock className="h-3 w-3" aria-hidden="true" /> Read-only access
             </p>
           </div>
         </div>

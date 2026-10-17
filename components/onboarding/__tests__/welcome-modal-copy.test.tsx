@@ -1,8 +1,8 @@
 /**
  * The welcome modal may only claim what the product does today: a read-only
  * connect, a scan after connecting and on a schedule, cost findings with
- * estimated savings, and security findings alongside. Its primary button
- * takes the user to the real connect flow.
+ * estimated savings, and security findings on the Security page. Its primary
+ * button always takes the user to the real connect flow.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -46,12 +46,14 @@ const BANNED_TERMS = [
   'AI',
   'insight',
   'every 6 hours',
+  'no changes',
+  'no infrastructure changes',
 ]
 
 const ALLOWED_STEPS = [
-  'Connect AWS: create a read-only IAM role. DevControl makes no changes to your account.',
+  'Connect AWS: create a read-only IAM role, so DevControl can view your account but not change it.',
   'DevControl scans: right after you connect, then on a regular schedule.',
-  'Review findings: cost findings show estimated monthly savings; security findings are listed alongside.',
+  'Review findings: cost findings show estimated monthly savings; security findings appear on the Security page.',
 ]
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -72,6 +74,9 @@ describe('WelcomeModal copy', () => {
     const ai = new RegExp(`\\b${escapeRegExp('AI')}\\b`, 'i')
     expect(ai.test('maintain')).toBe(false)
     expect(ai.test('AI Analysis')).toBe(true)
+    const noChanges = new RegExp(`\\b${escapeRegExp('no changes')}\\b`, 'i')
+    expect(noChanges.test('makes No Changes to')).toBe(true)
+    expect(noChanges.test('piano changes')).toBe(false)
   })
 
   it('contains none of the banned claims', async () => {
@@ -99,5 +104,22 @@ describe('WelcomeModal copy', () => {
     expect(completeStep).toHaveBeenCalledWith('welcome')
     expect(completeStep.mock.invocationCallOrder[0]).toBeLessThan(push.mock.invocationCallOrder[0])
     expect(dismiss).not.toHaveBeenCalled()
+  })
+
+  it('still closes and opens /connect-aws when completeStep rejects', async () => {
+    completeStep.mockRejectedValueOnce(new Error('network down'))
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      await openModal()
+      fireEvent.click(screen.getByRole('button', { name: 'Connect AWS →' }))
+      await waitFor(() => expect(push).toHaveBeenCalledWith('/connect-aws'))
+      expect(completeStep).toHaveBeenCalledWith('welcome')
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
   })
 })
