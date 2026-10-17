@@ -21,7 +21,9 @@ function setDemoMode(enabled: boolean) {
 }
 
 // useSalesDemo used to be a Zustand store persisted under 'sales-demo-mode'; this
-// writes that persisted shape, which is all the old /demo page did to turn it on.
+// writes that persisted shape after the module has loaded, so the Sales Demo cases
+// below check only that the flag is ignored at render time. The real leak, a flag
+// already stored when the page loads, is guarded in app/__tests__/demo-kill-switch.test.tsx.
 function setSalesDemo(enabled: boolean) {
   localStorage.setItem(SALES_DEMO_KEY, JSON.stringify({ state: { enabled }, version: 0 }))
 }
@@ -138,8 +140,8 @@ describe('useCustomerEvidenceList — demo flag toggled mid-session (D: ignored)
   })
 })
 
-describe('useCustomerEvidenceList — Sales Demo flag set (A: ignored)', () => {
-  it('calls the real endpoint and returns real customer evidence, with and without a criterionId', async () => {
+describe('useCustomerEvidenceList — Sales Demo flag set after load (A: ignored at render time)', () => {
+  it('the flag is ignored at render time: calls the real endpoint and returns real customer evidence, with and without a criterionId', async () => {
     const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(false)
     setSalesDemo(true)
@@ -157,8 +159,8 @@ describe('useCustomerEvidenceList — Sales Demo flag set (A: ignored)', () => {
   })
 })
 
-describe('useCustomerEvidenceList — Sales Demo flag toggled mid-session (D: ignored)', () => {
-  it('turning the Sales Demo flag on and off never swaps the real rows for sample rows', async () => {
+describe('useCustomerEvidenceList — Sales Demo flag toggled mid-session (D: ignored at render time)', () => {
+  it('the flag is ignored at render time: turning it on and off never swaps the real rows for sample rows', async () => {
     const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(false)
     setSalesDemo(false)

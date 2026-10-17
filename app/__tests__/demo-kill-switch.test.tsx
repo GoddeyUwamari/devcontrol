@@ -54,6 +54,8 @@ function setBothDemoFlags() {
   localStorage.setItem(SALES_DEMO_KEY, JSON.stringify({ state: { enabled: true }, version: 0 }))
 }
 
+const originalFetch = global.fetch
+
 beforeEach(() => {
   localStorage.clear()
   setBothDemoFlags()
@@ -61,6 +63,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  global.fetch = originalFetch
 })
 
 describe('every demo check reports real mode with both flags set', () => {
@@ -92,6 +95,30 @@ describe('every demo check reports real mode with both flags set', () => {
     const after = renderHook(() => useSalesDemo((state) => state.enabled))
     expect(after.result.current).toBe(false)
     expect(localStorage.getItem(SALES_DEMO_KEY)).toBe(JSON.stringify({ state: { enabled: true }, version: 0 }))
+  })
+})
+
+// The real leak: a flag already in storage when the page loads. The old persisted
+// store read 'sales-demo-mode' once, when its module was first imported, so this
+// re-imports the demo modules after writing both flags.
+describe('flags already stored when the page loads are ignored', () => {
+  it('freshly imported demo modules report real mode in every call shape', async () => {
+    localStorage.setItem(SALES_DEMO_KEY, JSON.stringify({ state: { enabled: true } }))
+    localStorage.setItem(DEMO_KEY, 'true')
+    vi.resetModules()
+    const { useSalesDemo: freshUseSalesDemo } = await import('@/lib/demo/sales-demo-data')
+    const { demoModeService: freshDemoModeService } = await import('@/lib/services/demo-mode.service')
+    const { useDemoMode: freshUseDemoMode } = await import('@/components/demo/demo-mode-toggle')
+
+    const { result } = renderHook(() => ({
+      store: freshUseSalesDemo(),
+      selected: freshUseSalesDemo((state) => state.enabled),
+      demoMode: freshUseDemoMode(),
+    }))
+    expect(result.current.store.enabled).toBe(false)
+    expect(result.current.selected).toBe(false)
+    expect(result.current.demoMode).toBe(false)
+    expect(freshDemoModeService.isEnabled()).toBe(false)
   })
 })
 

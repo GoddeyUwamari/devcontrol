@@ -30,7 +30,9 @@ function setDemoMode(enabled: boolean) {
 }
 
 // useSalesDemo used to be a Zustand store persisted under 'sales-demo-mode'; this
-// writes that persisted shape, which is all the old /demo page did to turn it on.
+// writes that persisted shape after the module has loaded, so the Sales Demo cases
+// below check only that the flag is ignored at render time. The real leak, a flag
+// already stored when the page loads, is guarded in app/__tests__/demo-kill-switch.test.tsx.
 function setSalesDemo(enabled: boolean) {
   localStorage.setItem(SALES_DEMO_KEY, JSON.stringify({ state: { enabled }, version: 0 }))
 }
@@ -129,8 +131,8 @@ describe('useSoc2Readiness — demo flag toggled mid-session (D: ignored)', () =
   })
 })
 
-describe('useSoc2Readiness / useSoc2Evidence — Sales Demo flag set (A: ignored)', () => {
-  it('useSoc2Readiness calls the real endpoint and returns real criteria', async () => {
+describe('useSoc2Readiness / useSoc2Evidence — Sales Demo flag set after load (A: ignored at render time)', () => {
+  it('the flag is ignored at render time: useSoc2Readiness calls the real endpoint and returns real criteria', async () => {
     const spy = vi.spyOn(soc2Service, 'getReadiness').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(false)
     setSalesDemo(true)
@@ -143,7 +145,7 @@ describe('useSoc2Readiness / useSoc2Evidence — Sales Demo flag set (A: ignored
     expect(result.current.data).not.toEqual(DEMO_SOC2_READINESS)
   })
 
-  it('useSoc2Evidence calls the real evidence endpoint for the criterion', async () => {
+  it('the flag is ignored at render time: useSoc2Evidence calls the real evidence endpoint for the criterion', async () => {
     const spy = vi.spyOn(soc2Service, 'getEvidence').mockResolvedValue([])
     setDemoMode(false)
     setSalesDemo(true)
@@ -156,8 +158,8 @@ describe('useSoc2Readiness / useSoc2Evidence — Sales Demo flag set (A: ignored
   })
 })
 
-describe('useSoc2Readiness — Sales Demo flag toggled mid-session (D: ignored)', () => {
-  it('turning the Sales Demo flag on and off never swaps the real rows for sample rows', async () => {
+describe('useSoc2Readiness — Sales Demo flag toggled mid-session (D: ignored at render time)', () => {
+  it('the flag is ignored at render time: turning it on and off never swaps the real rows for sample rows', async () => {
     const spy = vi.spyOn(soc2Service, 'getReadiness').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(false)
     setSalesDemo(false)
