@@ -87,9 +87,10 @@ const nextConfig: NextConfig = {
       { source: '/features/collaboration',          destination: '/solutions/platform-engineers',   permanent: false },
       { source: '/platform/integrations',           destination: '/docs/api',                       permanent: false },
       { source: '/company/security',                destination: '/solutions/security',             permanent: false },
-      // Removed pages: static copy with no data behind it.
+      // Removed pages: static or fabricated content with no data behind it.
       { source: '/services/health',                 destination: '/services',                       permanent: false },
       { source: '/services/dependencies',           destination: '/services',                       permanent: false },
+      { source: '/dependencies',                    destination: '/services',                       permanent: false },
     ];
   },
 };
