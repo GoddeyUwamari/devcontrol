@@ -1,6 +1,8 @@
 /**
  * CI supply-chain hardening in .github/workflows/*.yml.
  *
+ *  - Every action is pinned to a full commit SHA with a version comment,
+ *    and nothing uploads or downloads workflow artifacts.
  *  - admin-pg-lockfile.js: the admin migration artifact's node_modules/pg
  *    is derived from the repo's package-lock.json (exercised against the
  *    real lockfile and small, deliberately broken ones), and the
@@ -24,6 +26,7 @@ const { buildAdminPgManifest, verifyStage } = require('../../../../.github/scrip
 const REPO_ROOT = path.join(__dirname, '../../../../');
 const CI_WORKFLOW_PATH = path.join(REPO_ROOT, '.github', 'workflows', 'ci.yml');
 const LOCK_PATH = path.join(REPO_ROOT, 'package-lock.json');
+const WORKFLOWS_DIR = path.join(REPO_ROOT, '.github', 'workflows');
 const ciYml = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
 const rootLock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
 
@@ -69,6 +72,49 @@ function fixtureLock(): any {
     },
   };
 }
+
+describe('.github/workflows/*.yml — action pinning', () => {
+  const workflows = fs
+    .readdirSync(WORKFLOWS_DIR)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .map((f) => ({ file: f, text: fs.readFileSync(path.join(WORKFLOWS_DIR, f), 'utf8') }));
+  const usesLines = workflows.flatMap(({ file, text }) =>
+    text
+      .split('\n')
+      .filter((line) => /^\s*(?:-\s+)?uses:/.test(line))
+      .map((line) => ({ file, line: line.trim() }))
+  );
+
+  it('finds the workflows and their uses: lines', () => {
+    expect(workflows.map((w) => w.file)).toEqual(expect.arrayContaining(['ci.yml', 'milestone-tracker.yml']));
+    expect(usesLines.length).toBeGreaterThan(0);
+  });
+
+  it('pins every action to a full commit SHA with a trailing # vX.Y.Z comment', () => {
+    const pinned = /^(?:-\s+)?uses: [A-Za-z0-9_.-]+\/[A-Za-z0-9_.\/-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/;
+    for (const u of usesLines) expect({ ...u, pinned: pinned.test(u.line) }).toEqual({ ...u, pinned: true });
+  });
+
+  it('pins each action to one SHA everywhere it is used', () => {
+    const byAction = new Map<string, Set<string>>();
+    for (const { line } of usesLines) {
+      const [action, ref] = line.replace(/^(?:-\s+)?uses: /, '').split('@');
+      byAction.set(action, (byAction.get(action) || new Set()).add(ref));
+    }
+    for (const [action, refs] of byAction) expect({ action, refs: refs.size }).toEqual({ action, refs: 1 });
+  });
+
+  it('uses only the actions this PR verified (no new third-party actions)', () => {
+    const actions = new Set(usesLines.map(({ line }) => line.replace(/^(?:-\s+)?uses: /, '').split('@')[0]));
+    expect([...actions].sort()).toEqual(['actions/checkout', 'actions/setup-node', 'aws-actions/configure-aws-credentials']);
+  });
+
+  it('nothing uploads or downloads workflow artifacts', () => {
+    for (const { file, text } of workflows) {
+      expect({ file, uploads: /upload-artifact|download-artifact/.test(text) }).toEqual({ file, uploads: false });
+    }
+  });
+});
 
 describe('admin-pg-lockfile.js — derived from the real package-lock.json', () => {
   const { packageJson, packageLock, packages } = buildAdminPgManifest(rootLock);

@@ -126,13 +126,6 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: https://api.getdevcontrol.com
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: .next/
-          retention-days: 7
-
   # The jest suite split across two runners with jest's --shard. Each shard
   # has its own Postgres service, bootstrapped exactly as the old single job
   # did. fail-fast: false lets the other shard finish, so one run reports
