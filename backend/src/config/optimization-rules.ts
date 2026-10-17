@@ -162,9 +162,12 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
     id: 'rds_rightsizing',
     service: 'RDS',
     name: 'Oversized RDS instances',
-    detail: 'Non-production databases on production-sized instance classes',
-    status: 'implemented',
-    issue: ISSUE_RDS_OVERSIZED_INSTANCE,
+    // Retired: the former detector guessed from instance names and classes,
+    // with no utilisation data. ISSUE_RDS_OVERSIZED_INSTANCE stays exported only
+    // so a scan's empty observation clears legacy ACTIVE rows -- see
+    // analyzeAllResources() in cost-optimization.service.ts.
+    detail: 'Needs utilisation data (CPU, connections, memory); not evaluated',
+    status: 'planned',
   },
   {
     id: 'rds_storage',

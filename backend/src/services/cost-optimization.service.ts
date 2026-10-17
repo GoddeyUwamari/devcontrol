@@ -11,11 +11,6 @@ import {
   DescribeVolumesCommand,
   Instance,
 } from '@aws-sdk/client-ec2';
-import {
-  RDSClient,
-  DescribeDBInstancesCommand,
-  DBInstance,
-} from '@aws-sdk/client-rds';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
 import { PoolClient } from 'pg';
@@ -248,11 +243,10 @@ class CostOptimizationService {
     }
 
     try {
-      const [idleEC2, oversizedRDS, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities] = await Promise.all([
+      const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities] = await Promise.all([
         ec2IdleConfigResult.status === 'fulfilled'
           ? this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch, ec2IdleConfigResult.value)
           : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
-        this.detectOversizedRDSInstances(clients.rds),
         this.detectUnusedElasticIPs(clients.ec2),
         this.detectUnattachedEBSVolumes(clients.ec2),
         this.detectGp2ToGp3Migrations(clients.ec2),
@@ -279,7 +273,14 @@ class CostOptimizationService {
 
       const observations: DetectorObservation[] = [
         { issue: ISSUE_EC2_IDLE_INSTANCE, success: idleEC2.success, recommendations: idleEC2.issues.map(toRequest) },
-        { issue: ISSUE_RDS_OVERSIZED_INSTANCE, success: oversizedRDS.success, recommendations: oversizedRDS.issues.map(toRequest) },
+        // Retired detector (rds_rightsizing is 'planned'): it matched dev/staging/
+        // test in the name plus "large" in the class, with no utilisation data,
+        // and priced unlisted classes at a flat default. A successful, empty
+        // observation makes reconcileActiveRecommendations() delete the
+        // category's existing ACTIVE rows on every scan, while RESOLVED/
+        // DISMISSED rows stay as history. Never success: false -- that would
+        // keep stale ACTIVE rows alive indefinitely.
+        { issue: ISSUE_RDS_OVERSIZED_INSTANCE, success: true, recommendations: [] },
         { issue: ISSUE_EC2_UNUSED_ELASTIC_IP, success: unusedEIPs.success, recommendations: unusedEIPs.issues.map(toRequest) },
         { issue: ISSUE_EBS_UNATTACHED_VOLUME, success: unattachedEBS.success, recommendations: unattachedEBS.issues.map(toRequest) },
         { issue: ISSUE_EBS_GP2_TO_GP3, success: gp2ToGp3.success, recommendations: gp2ToGp3.issues.map(toRequest) },
@@ -407,65 +408,6 @@ class CostOptimizationService {
       return { success: true, issues };
     } catch (error) {
       console.error('Error detecting idle EC2 instances:', error);
-      return { success: false, issues: [] };
-    }
-  }
-
-  /**
-   * Detect oversized RDS instances (dev/staging using production-sized instances)
-   */
-  private async detectOversizedRDSInstances(rdsClient: RDSClient): Promise<DetectorResult> {
-    try {
-      const command = new DescribeDBInstancesCommand({});
-      const response = await rdsClient.send(command);
-      const issues: OptimizationIssue[] = [];
-
-      for (const instance of response.DBInstances || []) {
-        if (!instance.DBInstanceIdentifier) continue;
-
-        // Check if it's a dev/staging environment (common naming patterns)
-        const identifier = instance.DBInstanceIdentifier.toLowerCase();
-        const isNonProd =
-          identifier.includes('dev') ||
-          identifier.includes('staging') ||
-          identifier.includes('test');
-
-        // Check if using large instance types
-        const instanceClass = instance.DBInstanceClass || '';
-        const isOversized =
-          instanceClass.includes('large') ||
-          instanceClass.includes('xlarge') ||
-          instanceClass.includes('2xlarge');
-
-        if (isNonProd && isOversized) {
-          const currentCost = this.estimateRDSCost(instanceClass);
-          const recommendedClass = this.recommendSmallerRDSInstance(instanceClass);
-          const recommendedCost = this.estimateRDSCost(recommendedClass);
-          const savings = currentCost - recommendedCost;
-
-          if (savings > 0) {
-            issues.push({
-              resourceId: instance.DBInstanceIdentifier,
-              resourceName: instance.DBInstanceIdentifier,
-              resourceType: 'RDS',
-              issue: ISSUE_RDS_OVERSIZED_INSTANCE,
-              description: `Non-production RDS instance using ${instanceClass}. Consider downsizing to ${recommendedClass} to save $${savings.toFixed(2)}/month.`,
-              potentialSavings: savings,
-              severity: this.calculateSeverity(savings),
-              awsRegion: instance.AvailabilityZone?.slice(0, -1) || process.env.AWS_REGION || 'us-east-1',
-              metadata: {
-                current_instance_class: instanceClass,
-                recommended_instance_class: recommendedClass,
-                environment: isNonProd ? 'non-production' : 'production',
-              },
-            });
-          }
-        }
-      }
-
-      return { success: true, issues };
-    } catch (error) {
-      console.error('Error detecting oversized RDS instances:', error);
       return { success: false, issues: [] };
     }
   }
@@ -2015,43 +1957,6 @@ class CostOptimizationService {
     };
 
     return costs[instanceType] || 50;
-  }
-
-  /**
-   * Estimate RDS monthly cost
-   */
-  private estimateRDSCost(instanceClass: string): number {
-    const costs: Record<string, number> = {
-      'db.t3.micro': 12,
-      'db.t3.small': 24,
-      'db.t3.medium': 48,
-      'db.t3.large': 96,
-      'db.m5.large': 122,
-      'db.m5.xlarge': 244,
-      'db.m5.2xlarge': 488,
-      'db.r5.large': 175,
-      'db.r5.xlarge': 350,
-      'db.r5.2xlarge': 700,
-    };
-
-    return costs[instanceClass] || 75;
-  }
-
-  /**
-   * Recommend smaller RDS instance
-   */
-  private recommendSmallerRDSInstance(currentClass: string): string {
-    const downsizeMap: Record<string, string> = {
-      'db.m5.2xlarge': 'db.t3.medium',
-      'db.m5.xlarge': 'db.t3.small',
-      'db.m5.large': 'db.t3.small',
-      'db.r5.2xlarge': 'db.t3.medium',
-      'db.r5.xlarge': 'db.t3.small',
-      'db.r5.large': 'db.t3.small',
-      'db.t3.large': 'db.t3.medium',
-    };
-
-    return downsizeMap[currentClass] || 'db.t3.micro';
   }
 }
 

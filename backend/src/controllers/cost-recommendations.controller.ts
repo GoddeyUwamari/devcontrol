@@ -400,7 +400,8 @@ export class CostRecommendationsController {
       const { observations, riRecommendations } = await costOptimizationService.analyzeAllResources(organizationId);
 
       // Occurrence-lifecycle reconciliation for the 3 resource-level detectors
-      // (idle EC2, oversized RDS, unused EIPs): suppresses an unchanged
+      // (idle EC2, unused EIPs, EBS, S3, Lambda, DynamoDB; the retired oversized-RDS
+      // category always reports an empty observation): suppresses an unchanged
       // Resolve/Dismiss'd finding instead of resurrecting it every scan, and
       // only ends that suppression once a detector successfully, completely
       // observes the condition is genuinely gone.

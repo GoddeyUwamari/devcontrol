@@ -400,9 +400,11 @@ export default function DashboardPage() {
   // Cost-saving opportunities, grouped by resource type from the already-fetched cost
   // recommendations — no new fetch. Structured as a list (not one variable per type)
   // so a newly-supported resource type only ever needs one new entry here, never a
-  // UI restructure. All four types below ARE real, wired, currently-running detectors
+  // UI restructure. All three types below ARE real, wired, currently-running detectors
   // in cost-optimization.service.ts (verified directly against the backend source,
-  // not assumed) — none is hardcoded as unsupported.
+  // not assumed) — none is hardcoded as unsupported. RDS has no card: its only
+  // detector (oversized instances) was retired for having no utilisation data, and a
+  // card for a check that never runs would read as a truthful "0 detected".
   const priorityBadgeFor = (severity?: 'LOW' | 'MEDIUM' | 'HIGH') =>
     severity === 'HIGH' ? { label: 'High priority', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
     : severity === 'MEDIUM' ? { label: 'Medium priority', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
@@ -413,14 +415,12 @@ export default function DashboardPage() {
     // coverage estimates -- not rightsizing, which DevControl does not do yet.
     { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates' },
     { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities' },
-    { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load' },
     { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities' },
   ]
   const opportunityCategories = isDemoActive
     ? [
         { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
         { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', priorityBadge: priorityBadgeFor('LOW') },
-        { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load', count: 1, savingsLabel: '$0.16/mo', priorityBadge: priorityBadgeFor('MEDIUM') },
         { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: '$0/mo', priorityBadge: undefined },
       ]
     : OPPORTUNITY_CATEGORIES.map((cat) => {

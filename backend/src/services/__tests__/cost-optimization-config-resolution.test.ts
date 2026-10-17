@@ -44,7 +44,6 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
     jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(mockClients() as any);
     // Neutralize every non-configurable detector -- their own behavior is
     // covered by their dedicated test files, not this one.
-    jest.spyOn(costOptimizationService as any, 'detectOversizedRDSInstances').mockResolvedValue({ success: true, issues: [] });
     jest.spyOn(costOptimizationService as any, 'detectUnusedElasticIPs').mockResolvedValue({ success: true, issues: [] });
     jest.spyOn(costOptimizationService as any, 'detectUnattachedEBSVolumes').mockResolvedValue({ success: true, issues: [] });
     jest.spyOn(costOptimizationService as any, 'detectGp2ToGp3Migrations').mockResolvedValue({ success: true, issues: [] });

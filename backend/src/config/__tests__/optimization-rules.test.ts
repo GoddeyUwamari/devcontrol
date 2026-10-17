@@ -20,7 +20,6 @@ import {
   getImplementedOptimizationRules,
   getOptimizationRuleSummary,
   ISSUE_EC2_IDLE_INSTANCE,
-  ISSUE_RDS_OVERSIZED_INSTANCE,
   ISSUE_EC2_UNUSED_ELASTIC_IP,
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   ISSUE_EBS_UNATTACHED_VOLUME,
@@ -67,7 +66,6 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     'ec2_idle',
     'ec2_unused_elastic_ip',
     'ec2_reserved_instances',
-    'rds_rightsizing',
     'ebs_unattached',
     'ebs_gp2_to_gp3',
     's3_lifecycle',
@@ -86,13 +84,19 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     expect(byId['ec2_idle'].issue).toBe(ISSUE_EC2_IDLE_INSTANCE);
     expect(byId['ec2_unused_elastic_ip'].issue).toBe(ISSUE_EC2_UNUSED_ELASTIC_IP);
     expect(byId['ec2_reserved_instances'].issue).toBe(ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
-    expect(byId['rds_rightsizing'].issue).toBe(ISSUE_RDS_OVERSIZED_INSTANCE);
     expect(byId['ebs_unattached'].issue).toBe(ISSUE_EBS_UNATTACHED_VOLUME);
     expect(byId['ebs_gp2_to_gp3'].issue).toBe(ISSUE_EBS_GP2_TO_GP3);
     expect(byId['s3_lifecycle'].issue).toBe(ISSUE_S3_LIFECYCLE_OPTIMIZATION);
     expect(byId['lambda_low_usage'].issue).toBe(ISSUE_LAMBDA_LOW_USAGE);
     expect(byId['dynamodb_capacity'].issue).toBe(ISSUE_DYNAMODB_CAPACITY);
     expect(byId['dynamodb_capacity_mode'].issue).toBe(ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED);
+  });
+
+  it('rds_rightsizing is retired to planned: no issue identity, and the detail says what evidence is missing', () => {
+    const rule = OPTIMIZATION_RULES.find((r) => r.id === 'rds_rightsizing')!;
+    expect(rule.status).toBe('planned');
+    expect(rule.issue).toBeUndefined();
+    expect(rule.detail).toBe('Needs utilisation data (CPU, connections, memory); not evaluated');
   });
 
   it('no planned rule fabricates an issue identity', () => {

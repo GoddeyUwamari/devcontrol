@@ -30,9 +30,16 @@ describe('Cost-saving opportunity reconciliation', () => {
     expect(pageSource).toMatch(/<SavingsOpportunities[^]*?totalActiveCount=\{activeOpportunityCount\}/)
   })
 
-  it('supports EC2, EBS, RDS, and S3 as real categories, all derived from costRecsRaw filtering (none hardcoded as permanently unsupported)', () => {
-    expect(pageSource).toMatch(/OPPORTUNITY_CATEGORIES[^]*?type: 'EC2'[^]*?type: 'EBS'[^]*?type: 'RDS'[^]*?type: 'S3'/)
+  it('supports EC2, EBS, and S3 as real categories, all derived from costRecsRaw filtering (none hardcoded as permanently unsupported)', () => {
+    expect(pageSource).toMatch(/OPPORTUNITY_CATEGORIES[^]*?type: 'EC2'[^]*?type: 'EBS'[^]*?type: 'S3'/)
     expect(pageSource).toMatch(/OPPORTUNITY_CATEGORIES\.map\(\(cat\) => \{[^]*?costRecsRaw\.filter\(\(r\) => r\.resourceType === cat\.type\)/)
+  })
+
+  it('has no RDS card: the oversized-RDS detector is retired, so a card would claim a check that never runs', () => {
+    const categories = pageSource.match(/const OPPORTUNITY_CATEGORIES[^]*?\n  \]/)![0]
+    expect(categories).not.toMatch(/type: 'RDS'/)
+    const demoCategories = pageSource.match(/const opportunityCategories = isDemoActive[^]*?\n      \]/)![0]
+    expect(demoCategories).not.toMatch(/type: 'RDS'/)
   })
 
   it('the category list is structured as data (not one hand-written variable per type), so a new supported type is a one-line addition', () => {
