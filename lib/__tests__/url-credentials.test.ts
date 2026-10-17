@@ -1,7 +1,9 @@
 /**
  * takeUrlCredentials: credentials are read from the fragment only, and are
  * gone from the URL by the time it returns. Credentials in the query string
- * are never returned, but are removed from the URL and history all the same.
+ * are never returned, but are removed from the URL and history all the same --
+ * except for keys a caller lists in legacyQuery, which are returned from the
+ * query string when the fragment does not carry them.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { takeUrlCredentials } from "../url-credentials";
@@ -213,5 +215,72 @@ describe("takeUrlCredentials", () => {
 
     expect(replaceState).not.toHaveBeenCalled();
     expect(currentPath()).toBe("/dashboard");
+  });
+});
+
+describe("takeUrlCredentials legacyQuery", () => {
+  const secret = "LEGACYINVITE0123456789";
+
+  it("returns a listed key from the query string and removes it before returning", () => {
+    visit(`/accept-invitation?token=${secret}`);
+
+    expect(takeUrlCredentials(["token"] as const, { legacyQuery: ["token"] })).toEqual({ token: secret });
+    expect(currentPath()).toBe("/accept-invitation");
+    expect(window.location.href).not.toContain(secret);
+  });
+
+  it("scrubs a returned query value from the route tree and history state", () => {
+    const link = `/accept-invitation?token=${secret}`;
+    const tree = ["", { children: ["(auth)", { children: ["accept-invitation", { children: [`__PAGE__?${JSON.stringify({ token: secret })}`, {}, link, "refresh"] }] }] }, null, null, true];
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: tree, note: `seen ${secret}` }, "", link);
+
+    expect(takeUrlCredentials(["token"] as const, { legacyQuery: ["token"] })).toEqual({ token: secret });
+
+    const state = window.history.state;
+    expect(JSON.stringify(state)).not.toContain(secret);
+    expect(state.__NA).toBe(true);
+    expect(state.__PRIVATE_NEXTJS_INTERNALS_TREE[1].children[1].children[1].children).toEqual([
+      "__PAGE__",
+      {},
+      "/accept-invitation",
+      "refresh",
+    ]);
+    vi.runAllTimers();
+    expect(JSON.stringify(window.history.state)).not.toContain(secret);
+    expect(currentPath()).toBe("/accept-invitation");
+  });
+
+  it("prefers the fragment over the query string and clears both", () => {
+    visit(`/accept-invitation?token=${secret}#token=FRAGMENTVALUE`);
+
+    expect(takeUrlCredentials(["token"] as const, { legacyQuery: ["token"] })).toEqual({ token: "FRAGMENTVALUE" });
+    expect(currentPath()).toBe("/accept-invitation");
+  });
+
+  it("falls back to the query string when the fragment carries the key empty", () => {
+    visit(`/accept-invitation?token=${secret}#token=`);
+
+    expect(takeUrlCredentials(["token"] as const, { legacyQuery: ["token"] })).toEqual({ token: secret });
+    expect(currentPath()).toBe("/accept-invitation");
+  });
+
+  it("returns only the listed keys from the query string; others are removed, not returned", () => {
+    visit(`/x?token=${secret}&refreshToken=REFRESHVALUE&keep=1`);
+
+    expect(
+      takeUrlCredentials(["token", "refreshToken"] as const, { legacyQuery: ["token"] })
+    ).toEqual({ token: secret });
+    expect(currentPath()).toBe("/x?keep=1");
+  });
+
+  it("without the option, still ignores the query string (the default is fragment-only)", () => {
+    visit(`/accept-invitation?token=${secret}`);
+
+    expect(takeUrlCredentials(["token"] as const)).toEqual({});
+    expect(currentPath()).toBe("/accept-invitation");
+
+    visit(`/accept-invitation?token=${secret}`);
+    expect(takeUrlCredentials(["token"] as const, {})).toEqual({});
+    expect(currentPath()).toBe("/accept-invitation");
   });
 });
