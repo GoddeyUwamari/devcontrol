@@ -157,7 +157,7 @@ npm run dev:local # Docker must be running
 - runs the backend as `devcontrol_local`, a non-superuser, NOBYPASSRLS, DML-only
   role, so row-level security applies as in production;
 - creates `owner@example.test` in an empty organization, with a password
-  generated on first run and written only to `dev/local/.state/owner-login.txt`;
+  generated on first run and written only to `dev/local/.state/db/owner-login.txt`;
 - starts the backend (http://localhost:8080) and frontend (http://localhost:3010)
   on loopback with an allowlisted environment, not your shell's.
 
@@ -172,6 +172,11 @@ there; use a checkout without them (e.g. a `git worktree`).
 
 Ctrl-C stops the servers; Postgres keeps running. Stop it with
 `docker compose -f dev/local/docker-compose.yml down` (add `-v` to delete the data).
+
+`npm run dev:local -- --seed` adds an invented demo workspace (Example SaaS Inc.,
+login `founder@example.com`), and `--reset` starts from an empty database. All
+worktrees share one local database, so run `dev:local` from one worktree at a
+time. See [dev/local/README.md](dev/local/README.md).
 
 ### Running against your own Postgres
 
