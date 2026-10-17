@@ -5,6 +5,7 @@
  *    is derived from the repo's package-lock.json (exercised against the
  *    real lockfile and small, deliberately broken ones), and the
  *    deploy-migration-tooling-admin job installs it with npm ci.
+ *  - deploy-backend builds with npm ci, never npm install.
  *
  * ci.yml is parsed as text, like the other ci.yml tests in this directory.
  */
@@ -204,5 +205,24 @@ describe('deploy-migration-tooling-admin packages pg from the lockfile', () => {
     expect(validateStep).toContain(`require('./package-lock.json').packages['node_modules/pg'].version`);
     expect(validateStep).toContain('tar xzf migrations-admin.tar.gz -O ./node_modules/pg/package.json');
     expect(validateStep).toContain('[ "$SHIPPED_PG" = "$LOCKED_PG" ] || {');
+  });
+});
+
+describe('deploy-backend builds from the lockfile', () => {
+  it('installs with npm ci from the root lockfile, limited to the backend workspace', () => {
+    expect(extractStep('deploy-backend', 'Install backend dependencies')).toContain(
+      'run: npm ci --workspace=backend --include-workspace-root=false --legacy-peer-deps'
+    );
+  });
+
+  it('never invokes npm install on the runner', () => {
+    // A runner-side invocation starts a run: value or a script line. The
+    // host-side legacy rollback fallback is a quoted SSM command string, and
+    // comments/echo lines only mention npm install, so neither matches.
+    const job = extractJobBlock('deploy-backend');
+    expect(job).not.toMatch(/^\s*(?:run:\s*)?(?:cd [^&\n]+&&\s*)?npm install\b/m);
+    expect('        run: cd backend && npm install --legacy-peer-deps').toMatch(
+      /^\s*(?:run:\s*)?(?:cd [^&\n]+&&\s*)?npm install\b/m
+    );
   });
 });

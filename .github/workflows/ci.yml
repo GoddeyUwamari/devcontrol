@@ -273,8 +273,13 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      # npm ci from the root lockfile (backend/ has no lockfile of its own),
+      # limited to the backend workspace like the host install in the deploy
+      # step, but with devDependencies, which tsc needs. Unlike npm install,
+      # npm ci never rewrites package-lock.json, so the lockfile copied into
+      # the deploy below is exactly the committed one.
       - name: Install backend dependencies
-        run: cd backend && npm install --legacy-peer-deps
+        run: npm ci --workspace=backend --include-workspace-root=false --legacy-peer-deps
 
       - name: Build backend
         run: cd backend && npm run build
