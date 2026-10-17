@@ -509,7 +509,7 @@ export default function ServicesPage() {
                 </SelectContent>
               </Select>
               <Select value={envFilter} onValueChange={setEnvFilter}>
-                <SelectTrigger className="h-8 text-xs w-[128px]"><SelectValue placeholder="Environment" /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs w-[152px]"><SelectValue placeholder="Environment" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all" className="text-xs">All environments</SelectItem>
                   <SelectItem value="production" className="text-xs">Production</SelectItem>
