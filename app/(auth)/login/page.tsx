@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -9,6 +9,7 @@ import { Eye, EyeOff, Loader2, Building2 } from "lucide-react";
 import { loginSchema, type LoginFormData } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useHydrated } from "@/lib/hooks/useHydrated";
+import { takeUrlCredentials } from "@/lib/url-credentials";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Checkbox } from "@/components/ui/checkbox";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+// The form's field names: what a native GET submit before hydration would
+// have put in the query string.
+const FORM_FIELDS = ["email", "password", "rememberMe"] as const;
 
 function LoginContent() {
   const { login } = useAuth();
@@ -29,6 +34,12 @@ function LoginContent() {
   const [ssoLoading, setSsoLoading] = useState(false);
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [showSsoInput, setShowSsoInput] = useState(false);
+
+  useEffect(() => {
+    // Clear any submitted fields from the URL and history; the values are
+    // discarded, never used or sent.
+    takeUrlCredentials(FORM_FIELDS);
+  }, []);
 
   const ssoErrorParam = searchParams?.get("error");
   const ssoErrorMessage = searchParams?.get("message");

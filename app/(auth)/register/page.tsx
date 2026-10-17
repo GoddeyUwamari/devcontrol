@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useHydrated } from "@/lib/hooks/useHydrated";
+import { takeUrlCredentials } from "@/lib/url-credentials";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +27,10 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
+// The form's field names: what a native GET submit before hydration would
+// have put in the query string.
+const FORM_FIELDS = ["fullName", "email", "password", "confirmPassword", "termsAccepted"] as const;
+
 export default function RegisterPage() {
   const { register: registerUser } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
@@ -33,6 +38,12 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   // Submit stays disabled until hydrated: see useHydrated.
   const hydrated = useHydrated();
+
+  useEffect(() => {
+    // Clear any submitted fields from the URL and history; the values are
+    // discarded, never used or sent.
+    takeUrlCredentials(FORM_FIELDS);
+  }, []);
 
   const {
     register,
