@@ -48,10 +48,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -66,7 +66,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history (not the default depth-1 shallow clone) -- required
           # by validate-release-compatibility-declaration.js below, which
@@ -76,7 +76,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -90,10 +90,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -108,10 +108,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -125,13 +125,6 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: https://api.getdevcontrol.com
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: .next/
-          retention-days: 7
 
   # The jest suite split across two runners with jest's --shard. Each shard
   # has its own Postgres service, bootstrapped exactly as the old single job
@@ -160,10 +153,10 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -265,16 +258,21 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: 'npm'
 
+      # npm ci from the root lockfile (backend/ has no lockfile of its own),
+      # limited to the backend workspace like the host install in the deploy
+      # step, but with devDependencies, which tsc needs. Unlike npm install,
+      # npm ci never rewrites package-lock.json, so the lockfile copied into
+      # the deploy below is exactly the committed one.
       - name: Install backend dependencies
-        run: cd backend && npm install --legacy-peer-deps
+        run: npm ci --workspace=backend --include-workspace-root=false --legacy-peer-deps
 
       - name: Build backend
         run: cd backend && npm run build
@@ -292,7 +290,7 @@ jobs:
           cp package-lock.json package-lock.json.deploy
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
@@ -548,6 +546,57 @@ jobs:
           done
 
           echo "::error::Smoke test failed after $MAX_ATTEMPTS attempts — $LAST_ERROR"
+          exit 1
+
+      # /health proves a process is up, not WHICH release it is. This proves
+      # the host serves the commit this job built: /version reports the
+      # RELEASE_SHA baked in at build time (backend/scripts/generate-version.js
+      # from GITHUB_SHA). On a mismatch the job fails and nothing else
+      # happens: no automatic rollback (the rollback steps key only on the
+      # deploy and smoke-test outcomes), and "Record successful deploy" is
+      # skipped (its if: has no status function, so success() is implied),
+      # so the last-known-good marker keeps pointing at the last release
+      # that passed both checks. The response body is never printed.
+      - name: Verify deployed release SHA
+        id: verify_release
+        if: steps.smoke_test.outcome == 'success'
+        timeout-minutes: 3
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set +e
+          MAX_ATTEMPTS=6
+          ATTEMPT=1
+          LAST_ERROR=""
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Release check attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            RESPONSE=$(curl -sS -f --max-time 10 -H 'Cache-Control: no-cache' https://api.getdevcontrol.com/version)
+            CURL_EXIT=$?
+
+            if [ $CURL_EXIT -ne 0 ]; then
+              LAST_ERROR="version request failed or timed out (curl exit $CURL_EXIT)"
+            else
+              ACTUAL_SHA=$(printf '%s' "$RESPONSE" | jq -r '.release_sha // empty' 2>/dev/null)
+              if ! [[ "$ACTUAL_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+                LAST_ERROR="version endpoint returned no valid release_sha (response body not logged)"
+              elif [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+                LAST_ERROR="version endpoint reports release_sha=$ACTUAL_SHA, expected $EXPECTED_SHA"
+              else
+                echo "Release check passed on attempt $ATTEMPT — production reports release_sha=$ACTUAL_SHA"
+                exit 0
+              fi
+            fi
+
+            echo "Attempt $ATTEMPT failed: $LAST_ERROR"
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              sleep 10
+            fi
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "::error::Release check failed after $MAX_ATTEMPTS attempts — $LAST_ERROR"
+          echo "::error::/health passed, so production is up, but it is not confirmed to be serving $EXPECTED_SHA. No automatic rollback was performed and the last-known-good marker was NOT updated. Check the deploy step log and https://api.getdevcontrol.com/version."
           exit 1
 
       - name: Record successful deploy
@@ -828,7 +877,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate source migration directory before packaging
         run: |
@@ -867,7 +916,7 @@ jobs:
           echo "✅ packaged artifact validated: migrate.js + migrations/*.sql present, seeds/ and backend/migrations/ absent, no unexpected entries"
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
@@ -1025,10 +1074,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
 
@@ -1043,19 +1092,26 @@ jobs:
           fi
           echo "✅ database/migrate.js and database/migrations-admin/*.sql present in source tree"
 
-      - name: Package self-contained admin migration artifact (migrate.js + migrations-admin/*.sql, staged as migrations/, + a fresh node_modules/pg)
+      - name: Package self-contained admin migration artifact (migrate.js + migrations-admin/*.sql, staged as migrations/, + node_modules/pg pinned by package-lock.json)
         run: |
           set -e
           STAGE=$(mktemp -d)
           mkdir -p "$STAGE/migrations"
           cp database/migrate.js "$STAGE/migrate.js"
           cp database/migrations-admin/*.sql "$STAGE/migrations/"
-          npm install pg --no-save --no-audit --no-fund --prefix "$STAGE"
-          # npm installs into $STAGE/node_modules with an npm-managed $STAGE/package.json
-          # and $STAGE/package-lock.json alongside it — neither is needed by migrate.js
-          # (which requires('pg') by name, resolved via node_modules/ regardless of any
-          # package.json existing beside it) and both are excluded from the shipped
-          # artifact, same principle as excluding seeds/ from the ordinary package.
+          # pg and everything pg needs, at the exact versions and integrity
+          # hashes in the repo's package-lock.json (see the script). npm ci
+          # runs inside $STAGE, outside the repo, so neither the workspace
+          # nor the repo's .npmrc applies; it refuses a package.json/lockfile
+          # mismatch and verifies every tarball against the lockfile.
+          node .github/scripts/admin-pg-lockfile.js write package-lock.json "$STAGE"
+          (cd "$STAGE" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+          node .github/scripts/admin-pg-lockfile.js verify package-lock.json "$STAGE"
+          # The derived $STAGE/package.json and $STAGE/package-lock.json are
+          # not needed by migrate.js (which requires('pg') by name, resolved via
+          # node_modules/ regardless of any package.json existing beside it) and
+          # both are excluded from the shipped artifact, same principle as
+          # excluding seeds/ from the ordinary package.
           rm -f "$STAGE/package.json" "$STAGE/package-lock.json"
           tar czf migrations-admin.tar.gz -C "$STAGE" .
 
@@ -1066,10 +1122,13 @@ jobs:
           echo "$LISTING" | grep -qE '^\./migrate\.js$' || { echo "::error::packaged admin artifact is missing migrate.js at its root"; exit 1; }
           echo "$LISTING" | grep -qE '^\./migrations/.*\.sql$' || { echo "::error::packaged admin artifact is missing migrations/*.sql"; exit 1; }
           echo "$LISTING" | grep -qE '^\./node_modules/pg/' || { echo "::error::packaged admin artifact is missing its self-contained node_modules/pg"; exit 1; }
-          echo "✅ packaged admin artifact validated: migrate.js + migrations/*.sql + node_modules/pg present"
+          LOCKED_PG=$(node -p "require('./package-lock.json').packages['node_modules/pg'].version")
+          SHIPPED_PG=$(tar xzf migrations-admin.tar.gz -O ./node_modules/pg/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")
+          [ "$SHIPPED_PG" = "$LOCKED_PG" ] || { echo "::error::packaged admin artifact ships pg $SHIPPED_PG, but package-lock.json locks pg $LOCKED_PG"; exit 1; }
+          echo "✅ packaged admin artifact validated: migrate.js + migrations/*.sql + node_modules/pg $SHIPPED_PG (matches package-lock.json) present"
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
