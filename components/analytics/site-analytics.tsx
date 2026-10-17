@@ -1,13 +1,15 @@
 import { GoogleAnalytics } from "@next/third-parties/google";
-import { GA_TRACKING_ID } from "@/lib/gtag";
+import { GA_TRACKING_ID, isGaEnabled } from "@/lib/gtag";
 
 /**
  * Google Analytics for the marketing site, the application and the demo
  * entry point. Rendered by those layouts only -- never by the root layout --
  * so it does not run on authentication pages (app/(auth): login, SSO
  * callback, password reset, invitations) or on the not-found page, whose
- * URLs can carry credentials.
+ * URLs can carry credentials. Off when NEXT_PUBLIC_GA_ENABLED=false (the
+ * local stack); on otherwise.
  */
 export function SiteAnalytics() {
+  if (!isGaEnabled()) return null;
   return <GoogleAnalytics gaId={GA_TRACKING_ID} />;
 }

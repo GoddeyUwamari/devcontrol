@@ -1,8 +1,8 @@
 import { Pool, PoolClient } from 'pg';
 import { AsyncLocalStorage } from 'async_hooks';
-import dotenv from 'dotenv';
+import { loadEnv } from './load-env';
 
-dotenv.config();
+loadEnv();
 
 /**
  * Clears app.current_organization_id on a connection that actually carries a

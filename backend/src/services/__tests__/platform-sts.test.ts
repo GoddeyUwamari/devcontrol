@@ -179,6 +179,20 @@ describe('assumeRoleAsPlatform', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it('in the local stack (DEVCONTROL_LOCAL_STACK=1), refuses before any STS request, as a platform credential failure', async () => {
+    const send = jest.spyOn(STSClient.prototype, 'send').mockImplementation(async () => ({}));
+    process.env.DEVCONTROL_LOCAL_STACK = '1';
+    try {
+      const err = await assumeRoleAsPlatform('us-east-1', INPUT, 'test').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(PlatformAwsCredentialsUnavailableError);
+      expect(isPlatformAwsCredentialsUnavailable(err)).toBe(true);
+      expect(send).not.toHaveBeenCalled();
+      expect(consoleError.mock.calls[0][0]).toContain(`[${PLATFORM_AWS_CREDENTIALS_UNAVAILABLE}] test: AWS is disabled in the local stack`);
+    } finally {
+      delete process.env.DEVCONTROL_LOCAL_STACK;
+    }
+  });
+
   it('with every credential source switched off, the real default chain fails in a shape classified as a platform credential failure', () => {
     // Run in a plain Node process: under Jest the chain's dynamic imports fail
     // with a TypeError of Jest's own. No keys, no readable profile or config

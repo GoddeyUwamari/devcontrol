@@ -86,6 +86,14 @@ export function isPlatformIamDenial(err: unknown): boolean {
  * names the caller in the log line; it must carry no secret.
  */
 export async function assumeRoleAsPlatform(region: string, input: AssumeRoleCommandInput, context: string): Promise<AssumeRoleCommandOutput> {
+  // The local stack (DEVCONTROL_LOCAL_STACK=1, config/local-stack-guard.ts)
+  // has no platform AWS identity by design: refuse before any client is
+  // built, as the same error a missing identity produces. Read inline so this
+  // module keeps no local imports.
+  if (process.env.DEVCONTROL_LOCAL_STACK === '1') {
+    console.error(`[${PLATFORM_AWS_CREDENTIALS_UNAVAILABLE}] ${context}: AWS is disabled in the local stack`);
+    throw new PlatformAwsCredentialsUnavailableError(new Error('AWS is disabled in the local stack'));
+  }
   try {
     return await new STSClient({ region }).send(new AssumeRoleCommand(input));
   } catch (err: unknown) {

@@ -134,49 +134,64 @@ Based on Google Cloud's DevOps Research and Assessment (DORA) research.
 - Docker
 - AWS account (optional, for cost tracking)
 
-### Quick Start
+### Quick Start: local stack (recommended)
+
+Runs the whole app on your machine against a throwaway Postgres in Docker,
+logged in as the owner of an empty organization. The app makes no calls to
+AWS, AI (Anthropic), billing (Stripe), email, Slack or analytics (Google
+Analytics). Next.js's dev server itself checks the npm registry for its own
+version; that request carries no app data.
+
 ```bash
-# Clone and install
 git clone https://github.com/GoddeyUwamari/devcontrol.git
 cd devcontrol
-npm install
+npm ci            # from the repository root (npm workspaces)
+npm run dev:local # Docker must be running
+```
 
-# Start PostgreSQL
-docker run -d --name platform-postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=platform_portal \
-  -p 5432:5432 postgres:14
+`npm run dev:local`:
+- starts `postgres:14` on `127.0.0.1:55432` (database `devcontrol_local`,
+  `dev/local/docker-compose.yml`);
+- builds the schema exactly as CI does (`.github/scripts/ci-bootstrap-schema.js`),
+  plus `dev/local/reconstructed-tables.sql` for the few tables no migration creates;
+- runs the backend as `devcontrol_local`, a non-superuser, NOBYPASSRLS, DML-only
+  role, so row-level security applies as in production;
+- creates `owner@example.test` in an empty organization, with a password
+  generated on first run and written only to `dev/local/.state/owner-login.txt`;
+- starts the backend (http://localhost:8080) and frontend (http://localhost:3010)
+  on loopback with an allowlisted environment, not your shell's.
 
-# Run database migrations
-psql -h localhost -U postgres -d platform_portal -f database/migrations/001_initial_schema.sql
-psql -h localhost -U postgres -d platform_portal -f database/migrations/002_create_cost_recommendations.sql
-psql -h localhost -U postgres -d platform_portal -f database/migrations/003_create_alert_history.sql
-psql -h localhost -U postgres -d platform_portal -f database/migrations/004_add_multi_tenancy.sql
-psql -h localhost -U postgres -d platform_portal -f database/migrations/005_migrate_existing_data.sql
+Everything it generates lives in `dev/local/.state/`, which is git-ignored.
+The backend runs with `DEVCONTROL_LOCAL_STACK=1`: it reads only
+`dev/local/.state/backend.env` (never `backend/.env`), runs no background jobs,
+refuses every AWS call, and refuses to start if anything points outside this
+machine (a production `NODE_ENV`, a non-loopback database, any Stripe, SMTP,
+Anthropic, Resend, Slack or AWS credential). Next.js loads `.env*` files from the
+repository root by itself, so `dev:local` also refuses to run if one exists
+there; use a checkout without them (e.g. a `git worktree`).
 
-# Start monitoring stack
-cd monitoring && docker-compose -f docker-compose.monitoring.yml up -d && cd ..
+Ctrl-C stops the servers; Postgres keeps running. Stop it with
+`docker compose -f dev/local/docker-compose.yml down` (add `-v` to delete the data).
 
-# Configure environment
-cp backend/.env.example backend/.env
-# Add required secrets:
-# - JWT_SECRET (generate: openssl rand -hex 32)
-# - ENCRYPTION_KEY (generate: openssl rand -hex 32)
-# - AWS credentials (optional)
+### Running against your own Postgres
 
-# Start everything
+```bash
+cp backend/.env.example backend/.env   # fake local values; integrations empty = disabled
+psql -h localhost -U postgres -d platform_portal -c "CREATE ROLE devcontrol;"
+DB_NAME=platform_portal node .github/scripts/ci-bootstrap-schema.js
 npm run dev
 ```
 
 **Access:**
 - Frontend: http://localhost:3010
 - API: http://localhost:8080
-- Prometheus: http://localhost:9090
+- Prometheus: http://localhost:9090 (optional monitoring stack:
+  `cd monitoring && docker-compose -f docker-compose.monitoring.yml up -d`)
 - Grafana: http://localhost:3000 (admin/devcontrol2024)
 
-**Default admin account (CHANGE PASSWORD!):**
-- Email: admin@devcontrol.local
-- Password: ChangeMe123!
+Migration `database/migrations-admin/005_migrate_existing_data.sql` creates a
+default admin whose password is published in that file. Never leave it active:
+`npm run dev:local` deactivates it, and any other database must do the same.
 
 ### First-Time Setup
 

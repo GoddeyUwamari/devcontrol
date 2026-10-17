@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# The one tracked env example (backend/.env stays ignored).
+!backend/.env.example
