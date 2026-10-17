@@ -57,7 +57,7 @@ const CUT_CLAIMS = new RegExp([
 ].join('|'), 'i')
 
 // Links that went to pages with nothing about these resources, or to no page.
-// /dependencies shows generated numbers in real mode, so this page does not link to it.
+// /dependencies now redirects to /services, so this page does not link to it.
 const CUT_LINKS = /^\/(anomalies|ai-reports|status|dependencies)\b|^\/services\/(?!new$)/
 
 function resource(id: string, opts: { needsAttention?: boolean; environment?: string | null; type?: string; name?: string } = {}) {

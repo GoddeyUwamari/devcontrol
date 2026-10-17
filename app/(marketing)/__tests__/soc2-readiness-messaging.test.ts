@@ -45,7 +45,6 @@ const CORRECTED_FILES = [
   'app/(marketing)/solutions/mid-market/data/midMarketQuickWins.ts',
   'app/(marketing)/docs/getting-started/page.tsx',
   'app/(marketing)/tour/page.tsx',
-  'components/ui/security-badge.tsx',
   'components/landing/MarketingContent.tsx',
   'components/landing/PricingPreview.tsx',
   'components/dashboard/risk-score-trend-chart.tsx',
@@ -61,6 +60,9 @@ const CORRECTED_FILES = [
   'components/billing/upgrade-modal.tsx',
   'lib/demo/sales-demo-data.ts',
 ]
+
+/** Customer-facing files from that fix that have since been deleted; they must stay deleted. */
+const RETIRED_FILES = ['components/ui/security-badge.tsx']
 
 /** Strip block/line comments so historical/explanatory comments never trip a prohibited-phrase assertion. */
 function readCode(relPath: string): string {
@@ -92,6 +94,10 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
     for (const [pattern, label] of PROHIBITED_PATTERNS) {
       expect(code, `${relPath} still contains a ${label}`).not.toMatch(pattern)
     }
+  })
+
+  it.each(RETIRED_FILES)('%s stays removed', (relPath) => {
+    expect(fs.existsSync(path.join(ROOT, relPath)), `${relPath} was retired and must not return`).toBe(false)
   })
 
   it('the billing upgrade page no longer sells "SOC 2 & HIPAA named-control audit reports"', () => {
