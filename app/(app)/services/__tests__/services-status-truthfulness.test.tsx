@@ -210,6 +210,27 @@ describe('/services -- resources present', () => {
     expectNoCutClaims()
   })
 
+  it('styles the environment badge by meaning, whatever the case of the tag value', async () => {
+    mockGetServices.mockResolvedValue([
+      resource('1', { name: 'a', environment: 'production' }),
+      resource('2', { name: 'b', environment: 'Production' }),
+      resource('3', { name: 'c', environment: 'PRODUCTION' }),
+      resource('4', { name: 'd', environment: 'Staging' }),
+      resource('5', { name: 'e', environment: null }),
+    ])
+    mockGetStats.mockResolvedValue({ total: 5, healthy: 5, needs_attention: 0, avg_uptime: null })
+    renderPage()
+    await settled()
+    fireEvent.click(await screen.findByRole('button', { name: /5 resources with no flagged issues/ }))
+
+    const badge = (text: string) => screen.getAllByText(text).find((el) => el.tagName === 'SPAN')!
+    for (const text of ['production', 'Production', 'PRODUCTION']) {
+      expect(badge(text)).toHaveStyle({ color: '#059669', background: '#F0FDF4' })
+    }
+    expect(badge('Staging')).toHaveStyle({ color: '#D97706' })
+    expect(badge('Untagged')).toHaveStyle({ color: '#64748B' })
+  })
+
   it('needs-attention rows tied on severity sort by name, not cost', async () => {
     mockGetServices.mockResolvedValue([
       { ...resource('1', { name: 'zeta', needsAttention: true }), monthly_cost: 900 },

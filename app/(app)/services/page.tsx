@@ -74,8 +74,10 @@ function typeStyle(t: string) {
 // as stored; a resource with no environment tag is "Untagged".
 function ServiceRow({ svc }: { svc: any }) {
   const tc         = typeStyle(svc.type)
-  const envColor   = svc.environment === 'production' ? '#059669' : svc.environment === 'staging' ? '#D97706' : '#64748B'
-  const envBg      = svc.environment === 'production' ? '#F0FDF4' : svc.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
+  // Tag values keep their case ("Production", "PRODUCTION"); style by meaning.
+  const env        = svc.environment?.toLowerCase()
+  const envColor   = env === 'production' ? '#059669' : env === 'staging' ? '#D97706' : '#64748B'
+  const envBg      = env === 'production' ? '#F0FDF4' : env === 'staging' ? '#FFFBEB' : '#F8FAFC'
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-50 last:border-b-0 transition-colors hover:bg-slate-50">
