@@ -200,15 +200,17 @@ jobs:
   # The required status check and what every deploy job needs. It keeps the
   # old job's name so neither the ruleset nor the deploy jobs change.
   #
-  # A required check that is SKIPPED counts as passing, so this job must run
-  # whenever its needs finish, including when one of them failed or was
-  # skipped: hence !cancelled() rather than the default success(). It then
-  # fails unless every needed job's result is exactly 'success'. A cancelled
-  # run (a superseded PR push) skips it, and the newer run reports instead.
+  # A required check that is SKIPPED counts as passing, so this job must
+  # never be skipped: hence always() rather than the default success() or
+  # !cancelled(). It runs even when a needed job failed or was skipped, and
+  # even when the run was cancelled (manual cancel, a superseded PR push,
+  # re-running an older attempt), and then fails unless every needed job's
+  # result is exactly 'success' -- so a cancelled run reports a failed
+  # lint-and-build, never a skipped one.
   lint-and-build:
     runs-on: ubuntu-24.04
     needs: [lint, release-compatibility, frontend-tests, build, backend-tests]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     steps:
       - name: Require every needed job to have succeeded
         env:
