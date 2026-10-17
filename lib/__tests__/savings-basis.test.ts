@@ -35,4 +35,10 @@ describe('formatRecommendationSavings', () => {
     expect(formatRecommendationSavings(rec(0), formatSavingsCents)).toBe(NO_DOLLAR_ESTIMATE)
     expect(formatRecommendationSavings(rec(98, 'made up'), formatSavingsCents)).toBe('No dollar estimate')
   })
+
+  it('a Reserved Instance coverage gap (potential_savings 0, no basis) reads "No dollar estimate"', () => {
+    const ri = { potentialSavings: 0, metadata: { instance_type: 'm5.large', uncovered_count: 2, coverage_basis: 'Reserved Instances of the same instance type only; Savings Plans are not accounted for' } }
+    expect(formatRecommendationSavings(ri, formatSavingsCents)).toBe('No dollar estimate')
+    expect(formatRecommendationSavings(ri, formatSavingsCurrency)).not.toMatch(/\$/)
+  })
 })

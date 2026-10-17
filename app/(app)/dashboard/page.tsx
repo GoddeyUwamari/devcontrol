@@ -413,14 +413,15 @@ export default function DashboardPage() {
     : undefined
   const OPPORTUNITY_CATEGORIES: { type: string; title: string; description: string }[] = [
     // Idle-instance candidates (low 7-day average CPU) and Reserved Instance
-    // coverage estimates -- not rightsizing, which DevControl does not do yet.
-    { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates' },
+    // coverage gaps (no dollar estimate -- Savings Plans are not read) -- not
+    // rightsizing, which DevControl does not do yet.
+    { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage gaps' },
     { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities' },
     { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities' },
   ]
   const opportunityCategories = isDemoActive
     ? [
-        { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
+        { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage gaps', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
         { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', priorityBadge: priorityBadgeFor('LOW') },
         { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: '$0/mo', priorityBadge: undefined },
       ]

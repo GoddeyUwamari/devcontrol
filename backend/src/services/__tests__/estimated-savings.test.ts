@@ -156,27 +156,61 @@ describe('aggregateEstimatedSavings: savings provenance', () => {
   });
 });
 
-describe('detectReservedInstanceOpportunities declares the instance pool its estimate draws on', () => {
-  it('names every running instance of the type and the uncovered count', async () => {
+describe('detectReservedInstanceOpportunities: a coverage gap with no dollar figure', () => {
+  async function detect(instances: Array<{ InstanceId: string; InstanceType: string }>, reserved: Array<{ InstanceType: string; InstanceCount: number }>) {
     const send = jest.fn()
-      .mockResolvedValueOnce({
-        Reservations: [{ Instances: [
-          { InstanceId: 'i-a', InstanceType: 'm5.large' },
-          { InstanceId: 'i-b', InstanceType: 'm5.large' },
-          { InstanceId: 'i-c', InstanceType: 'm5.large' },
-        ] }],
-      })
-      .mockResolvedValueOnce({ ReservedInstances: [{ InstanceType: 'm5.large', InstanceCount: 1 }] });
+      .mockResolvedValueOnce({ Reservations: [{ Instances: instances }] })
+      .mockResolvedValueOnce({ ReservedInstances: reserved });
     const ec2Client = new EC2Client({ region: 'us-east-1' });
     (ec2Client as any).send = send;
+    return (costOptimizationService as any).detectReservedInstanceOpportunities(ec2Client);
+  }
 
-    const issues = await (costOptimizationService as any).detectReservedInstanceOpportunities(ec2Client);
+  it('reports "N uncovered × type" with no potential savings, no savings basis and no savings claim', async () => {
+    const issues = await detect(
+      [
+        { InstanceId: 'i-a', InstanceType: 'm5.large' },
+        { InstanceId: 'i-b', InstanceType: 'm5.large' },
+        { InstanceId: 'i-c', InstanceType: 'm5.large' },
+      ],
+      [{ InstanceType: 'm5.large', InstanceCount: 1 }]
+    );
 
     expect(issues).toHaveLength(1);
-    const claim = issues[0].metadata.savings_claim;
-    expect(claim.kind).toBe('fleet_discount');
-    expect(claim.resource_ids).toEqual(['i-a', 'i-b', 'i-c']);
-    expect(claim.counted_resources).toBe(2);
-    expect(claim.per_resource_savings * claim.counted_resources).toBeCloseTo(issues[0].potentialSavings);
+    const [issue] = issues;
+    expect(issue.resourceName).toBe('2 uncovered × m5.large');
+    expect(issue.potentialSavings).toBe(0);
+    expect(issue.severity).toBe('LOW');
+    expect(issue.metadata.savings_basis).toBeUndefined();
+    expect(issue.metadata.savings_claim).toBeUndefined();
+    expect(issue.metadata.estimated_discount).toBeUndefined();
+    expect(issue.metadata).toMatchObject({ instance_type: 'm5.large', running_count: 3, reserved_count: 1, uncovered_count: 2, instance_ids: ['i-a', 'i-b', 'i-c'] });
+    expect(issue.description).toMatch(/does not account for Savings Plans/);
+    expect(issue.description).not.toMatch(/\$|%|save/i);
+  });
+
+  it('an unlisted instance type gets no default price either', async () => {
+    const issues = await detect(
+      [{ InstanceId: 'i-a', InstanceType: 'x9.mega' }, { InstanceId: 'i-b', InstanceType: 'x9.mega' }],
+      []
+    );
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].potentialSavings).toBe(0);
+    expect(issues[0].resourceName).toBe('2 uncovered × x9.mega');
+  });
+
+  it('contributes nothing to the estimated savings total, even next to an idle finding on the same instances', async () => {
+    const [issue] = await detect(
+      [{ InstanceId: 'i-a', InstanceType: 'm5.large' }, { InstanceId: 'i-b', InstanceType: 'm5.large' }],
+      []
+    );
+    const result = aggregateEstimatedSavings([
+      idle('i-a', 70),
+      { resource_type: 'EC2', potential_savings: issue.potentialSavings, metadata: issue.metadata },
+    ]);
+
+    expect(result.total).toBe(70);
+    expect(result.ceilingTotal).toBe(0);
   });
 });

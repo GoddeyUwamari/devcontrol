@@ -4,9 +4,11 @@
  * Each recommendation's potential_savings is a standalone estimate. Two
  * recommendations can draw on the same underlying estimated cost -- e.g. an
  * idle EC2 instance's figure is that instance's whole estimated compute cost,
- * while a Reserved Instance opportunity for its instance type counts the same
- * instance as an uncovered on-demand instance to discount. Both are drawn
- * from one instance's estimated cost, so a plain SUM counts it twice.
+ * while a fleet-wide discount for its instance type (e.g. commitment pricing
+ * across a type's uncovered instances) would count the same instance again.
+ * Both are drawn from one instance's estimated cost, so a plain SUM counts it
+ * twice. (Reserved Instance findings carry no dollar figure today -- see
+ * detectReservedInstanceOpportunities() -- so they draw on nothing.)
  *
  * A detector declares what its figure draws on in metadata.savings_claim:
  *

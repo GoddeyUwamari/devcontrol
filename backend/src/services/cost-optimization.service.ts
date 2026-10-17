@@ -1759,7 +1759,14 @@ class CostOptimizationService {
   }
 
   /**
-   * Detect Reserved Instance opportunities
+   * Reserved Instance coverage gaps: instance types with at least two running
+   * instances not matched by an active Reserved Instance of the same type.
+   *
+   * No dollar figure (potentialSavings 0, no savings_basis): the discount
+   * depends on term, payment option and instance-level pricing DevControl does
+   * not model, and Savings Plans -- which may already cover these instances --
+   * are not read at all. "Uncovered" means only "no matching RI", so the
+   * finding says that and nothing more.
    */
   private async detectReservedInstanceOpportunities(
     ec2Client: EC2Client
@@ -1787,8 +1794,8 @@ class CostOptimizationService {
       });
       const riResponse = await ec2Client.send(riCommand);
 
-      // Count instances by type, keeping their IDs so the savings claim below
-      // names the pool it draws on (see estimated-savings.ts).
+      // Count instances by type, keeping their IDs so the finding names the
+      // instances it is about.
       const instanceCounts: Record<string, number> = {};
       const instanceIdsByType: Record<string, string[]> = {};
       for (const reservation of instancesResponse.Reservations || []) {
@@ -1808,38 +1815,27 @@ class CostOptimizationService {
 
       const issues: OptimizationIssue[] = [];
 
-      // Find instances running for 3+ months without RI (simplified: if count > 2, suggest RI)
       for (const [instanceType, count] of Object.entries(instanceCounts)) {
         const reservedCount = riCounts[instanceType] || 0;
-        const unconveredCount = count - reservedCount;
+        const uncoveredCount = count - reservedCount;
 
-        if (unconveredCount >= 2) {
-          // RI typically saves 30-40% vs on-demand
-          const onDemandCost = this.estimateEC2Cost(instanceType);
-          const riCost = onDemandCost * 0.65; // 35% savings
-          const monthlySavings = (onDemandCost - riCost) * unconveredCount;
-
+        if (uncoveredCount >= 2) {
           issues.push({
             resourceId: `ri-opportunity-${instanceType}`,
-            resourceName: `${unconveredCount}x ${instanceType}`,
+            resourceName: `${uncoveredCount} uncovered × ${instanceType}`,
             resourceType: 'EC2',
             issue: ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
-            description: `You have ${unconveredCount} ${instanceType} instance(s) running without Reserved Instance coverage. Purchasing RIs could save approximately $${monthlySavings.toFixed(2)}/month (35% discount).`,
-            potentialSavings: monthlySavings,
-            severity: this.calculateSeverity(monthlySavings),
+            description: `${uncoveredCount} uncovered × ${instanceType}: ${count} running, ${reservedCount} covered by an active Reserved Instance of the same type. This does not account for Savings Plans, which may already cover these instances, so no dollar estimate is given.`,
+            potentialSavings: 0,
+            severity: 'LOW',
             awsRegion: process.env.AWS_REGION || 'us-east-1',
             metadata: {
               instance_type: instanceType,
-              uncovered_count: unconveredCount,
-              estimated_discount: '35%',
-              // Which of the type's instances are uncovered is undefined (RIs
-              // float across a type), so the claim is on the whole pool.
-              savings_claim: {
-                kind: 'fleet_discount',
-                resource_ids: instanceIdsByType[instanceType] ?? [],
-                per_resource_savings: onDemandCost - riCost,
-                counted_resources: unconveredCount,
-              },
+              running_count: count,
+              reserved_count: reservedCount,
+              uncovered_count: uncoveredCount,
+              instance_ids: instanceIdsByType[instanceType] ?? [],
+              coverage_basis: 'Reserved Instances of the same instance type only; Savings Plans are not accounted for',
             },
           });
         }
