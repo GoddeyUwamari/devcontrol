@@ -1,7 +1,7 @@
 /**
  * One owner in one empty organization, created the way registration creates
  * them (auth.service.ts register) but already email-verified. The password is
- * generated here and written only to dev/local/.state/owner-login.txt; if
+ * generated here and written only to dev/local/.state/db/owner-login.txt; if
  * that file is lost, the next run issues a new password.
  */
 const crypto = require('crypto');
@@ -13,7 +13,7 @@ const OWNER_EMAIL = 'owner@example.test';
 const OWNER_NAME = 'Local Owner';
 const ORG_NAME = 'Example Local Org';
 const ORG_SLUG = 'example-local-org';
-const LOGIN_FILE = 'owner-login.txt';
+const LOGIN_FILE = 'db/owner-login.txt';
 // Same as auth.service.ts.
 const BCRYPT_ROUNDS = 10;
 // TIER_LIMITS.free in backend/src/middleware/subscription.middleware.ts.

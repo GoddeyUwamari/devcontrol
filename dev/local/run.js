@@ -5,6 +5,8 @@
  *
  *   node dev/local/run.js              set up, then start backend + frontend
  *   node dev/local/run.js --setup-only set up (database, schema, owner) and exit
+ *   node dev/local/run.js --reset ...  first delete the database volume and
+ *                                      everything in .state/db/
  *
  * Both servers get an allowlisted environment built here -- never the
  * inherited shell, which may hold real keys or AWS profiles. The backend runs
@@ -16,9 +18,10 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { Client } = require('pg');
-const { ensureStateDir, readOrCreateSecret, randomHex, writeStateFile, statePath } = require('./state');
+const { ensureStateDir, readOrCreateSecret, randomHex, writeStateFile, statePath, resetDbState } = require('./state');
+const volume = require('./volume-credentials');
 const { bootstrap, APP_ROLE } = require('./bootstrap');
-const { seedOwner, OWNER_EMAIL } = require('./seed-owner');
+const { seedOwner, OWNER_EMAIL, LOGIN_FILE } = require('./seed-owner');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const COMPOSE_FILE = path.join(__dirname, 'docker-compose.yml');
@@ -54,13 +57,65 @@ function checkPrerequisites() {
   if (docker.status !== 0) fail('Docker is not running. Start Docker Desktop and try again.');
 }
 
+// What docker compose needs to interpolate the compose file.
+function composeEnv(superuserPassword) {
+  return { ...baseEnv(), DEVCONTROL_LOCAL_PG_PASSWORD: superuserPassword };
+}
+
 function startDatabase(superuserPassword) {
   console.log('[dev:local] starting Postgres (127.0.0.1:55432) ...');
   const result = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, 'up', '-d', '--wait'], {
     stdio: 'inherit',
-    env: { ...baseEnv(), DEVCONTROL_LOCAL_PG_PASSWORD: superuserPassword },
+    env: composeEnv(superuserPassword),
   });
   if (result.status !== 0) fail('docker compose up failed');
+}
+
+function deleteDatabase() {
+  console.log('[dev:local] --reset: deleting the database volume and .state/db/ ...');
+  const result = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, 'down', '-v'], {
+    stdio: 'inherit',
+    env: composeEnv(randomHex(24)()),
+  });
+  if (result.status !== 0) fail('docker compose down -v failed');
+  resetDbState();
+}
+
+// Where .state/ kept the volume's files before .state/db/ existed.
+const LEGACY_DB_FILES = ['postgres.password', 'app.password', 'encryption.key', 'owner-login.txt'];
+
+function readDbSecrets() {
+  return {
+    superuserPassword: readOrCreateSecret('db/postgres.password', randomHex(24)),
+    appPassword: readOrCreateSecret('db/app.password', randomHex(24)),
+    // ENCRYPTION_KEY must be exactly 32 characters: 16 bytes as hex.
+    encryptionKey: readOrCreateSecret('db/encryption.key', randomHex(16)),
+  };
+}
+
+/**
+ * Starts Postgres with .state/db/ belonging to its volume
+ * (volume-credentials.js) and returns that volume's secrets.
+ */
+function startDatabaseForState() {
+  for (const name of LEGACY_DB_FILES) fs.rmSync(statePath(name), { force: true });
+  const volumeExisted = volume.volumeExists();
+  if (!volumeExisted) resetDbState();
+  let db = readDbSecrets();
+  startDatabase(db.superuserPassword);
+
+  const inContainer = (sql) => volume.psqlInContainer({ composeFile: COMPOSE_FILE, composeEnv: composeEnv(db.superuserPassword), sql });
+  const databaseMarker = volume.parseMarkerComment(inContainer(volume.MARKER_QUERY));
+  const plan = volume.credentialPlan({ volumeExisted, databaseMarker, recordedMarker: volume.readRecordedMarker() });
+  if (plan === 'adopt') {
+    resetDbState();
+    db = readDbSecrets();
+  }
+  const marker = plan === 'reuse' ? databaseMarker : volume.newMarker();
+  inContainer(volume.superuserSql(db.superuserPassword, marker));
+  volume.writeRecordedMarker(marker);
+  console.log(`[dev:local] database volume: ${plan}`);
+  return db;
 }
 
 function writeBackendEnv(secrets) {
@@ -85,14 +140,11 @@ function writeBackendEnv(secrets) {
 async function setUp() {
   checkPrerequisites();
   ensureStateDir();
+  if (process.argv.includes('--reset')) deleteDatabase();
   const secrets = {
-    superuserPassword: readOrCreateSecret('postgres.password', randomHex(24)),
-    appPassword: readOrCreateSecret('app.password', randomHex(24)),
+    ...startDatabaseForState(),
     jwtSecret: readOrCreateSecret('jwt.secret', randomHex(32)),
-    // ENCRYPTION_KEY must be exactly 32 characters: 16 bytes as hex.
-    encryptionKey: readOrCreateSecret('encryption.key', randomHex(16)),
   };
-  startDatabase(secrets.superuserPassword);
 
   const client = new Client({ ...DB, user: 'postgres', password: secrets.superuserPassword });
   await client.connect();
@@ -165,7 +217,7 @@ function startServers() {
   });
 
   console.log(`[dev:local] frontend ${FRONTEND_URL}  backend ${BACKEND_URL}`);
-  console.log(`[dev:local] log in as ${OWNER_EMAIL}; password in ${path.relative(REPO_ROOT, statePath('owner-login.txt'))}`);
+  console.log(`[dev:local] log in as ${OWNER_EMAIL}; password in ${path.relative(REPO_ROOT, statePath(LOGIN_FILE))}`);
   console.log('[dev:local] Postgres keeps running after Ctrl-C; stop it with: docker compose -f dev/local/docker-compose.yml down');
 }
 

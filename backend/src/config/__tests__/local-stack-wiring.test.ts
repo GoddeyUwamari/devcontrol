@@ -40,11 +40,13 @@ it('dotenv is called only by config/load-env.ts', () => {
 
 it.each([
   'dev/local/.state/backend.env',
-  'dev/local/.state/owner-login.txt',
-  'dev/local/.state/postgres.password',
-  'dev/local/.state/app.password',
   'dev/local/.state/jwt.secret',
-  'dev/local/.state/encryption.key',
+  'dev/local/.state/db/owner-login.txt',
+  'dev/local/.state/db/demo-login.txt',
+  'dev/local/.state/db/postgres.password',
+  'dev/local/.state/db/app.password',
+  'dev/local/.state/db/encryption.key',
+  'dev/local/.state/db/volume.json',
   'dev/local/.state/anything-added-later',
   'backend/.env',
   '.env.local',
