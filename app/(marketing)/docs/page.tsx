@@ -223,8 +223,7 @@ function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
       links: [
         { title: 'Cost Analysis', href: '/docs' },
         { title: 'Budget Alerts', href: '/docs' },
-        { title: 'Rightsizing', href: '/docs' },
-        { title: 'Reserved Instances', href: '/docs' },
+            { title: 'Reserved Instances', href: '/docs' },
       ],
     },
     {

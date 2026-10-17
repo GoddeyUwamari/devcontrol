@@ -226,10 +226,10 @@ export default function CommunityPage() {
             gap: '16px', maxWidth: '900px', margin: '0 auto',
           }}>
             {[
-              { channel: '#aws-cost-optimization', desc: 'Share savings wins, ask for advice on rightsizing and Reserved Instances' },
+              { channel: '#aws-cost-optimization', desc: 'Share savings wins, ask for advice on cost optimization and Reserved Instances' },
               { channel: '#security-compliance', desc: 'Security and compliance questions' },
               { channel: '#dora-metrics', desc: 'Deployment frequency, lead time, MTTR — compare notes with other teams' },
-              { channel: '#platform-engineering', desc: 'Internal developer platforms, service catalogs, drift detection' },
+              { channel: '#platform-engineering', desc: 'Internal developer platforms and service catalogs' },
               { channel: '#devcontrol-feedback', desc: 'Direct line to the product team — bug reports, feature requests, roadmap discussion' },
               { channel: '#show-and-tell', desc: 'Share dashboards, architecture decisions, and AWS wins with the community' },
             ].map(({ channel, desc }) => (

@@ -186,7 +186,7 @@ function CostExplorerComparison() {
           <div className="px-5 py-4 sm:px-8 bg-slate-50 border-t border-gray-100 flex items-start gap-2.5">
             <span className="text-violet-700 shrink-0">ℹ</span>
             <p className="text-sm text-gray-700 leading-relaxed">
-              <strong>Use both.</strong> Cost Explorer for billing detail and its own rightsizing advice; DevControl for resource-level checks and security findings.
+              <strong>Use both.</strong> Cost Explorer for billing detail and AWS&apos;s own recommendations; DevControl for resource-level checks and security findings.
             </p>
           </div>
         </div>

@@ -27,7 +27,6 @@ import {
   Globe,
   AlertCircle,
   CheckCircle2,
-  ExternalLink,
   Terminal,
   FileJson,
   Activity,
@@ -807,7 +806,7 @@ export default function ApiReferencePage() {
             <CardHeader>
               <CardTitle className="text-lg">Event Notifications</CardTitle>
               <CardDescription>
-                Receive real-time notifications when events occur in your DevControl account
+                Receive notifications when events occur in your DevControl account
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -864,89 +863,6 @@ export default function ApiReferencePage() {
               </Button>
             </CardContent>
           </Card>
-        </div>
-
-        {/* SDKs & Tools */}
-        <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
-            <Code2 className="w-7 h-7 text-primary" />
-            SDKs & Libraries
-          </h2>
-
-          <div className="grid md:grid-cols-3 gap-4 mb-6">
-            <Card className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileCode className="w-5 h-5 text-primary" />
-                  Node.js SDK
-                </CardTitle>
-                <CardDescription>
-                  Official JavaScript/TypeScript library
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <code className="text-xs bg-muted px-2 py-1 rounded block mb-3">
-                  npm install @devcontrol/sdk
-                </code>
-                <Button asChild size="sm" variant="outline" className="w-full gap-2">
-                  <a href="/docs" target="_blank" rel="noopener noreferrer">
-                    <BookOpen className="w-4 h-4" />
-                    View Docs
-                    <ExternalLink className="w-3 h-3" />
-                    <span style={{ fontSize: '10px', color: '#94A3B8' }}>(coming soon)</span>
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileCode className="w-5 h-5 text-primary" />
-                  Python SDK
-                </CardTitle>
-                <CardDescription>
-                  Official Python client library
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <code className="text-xs bg-muted px-2 py-1 rounded block mb-3">
-                  pip install devcontrol
-                </code>
-                <Button asChild size="sm" variant="outline" className="w-full gap-2">
-                  <a href="/docs" target="_blank" rel="noopener noreferrer">
-                    <BookOpen className="w-4 h-4" />
-                    View Docs
-                    <ExternalLink className="w-3 h-3" />
-                    <span style={{ fontSize: '10px', color: '#94A3B8' }}>(coming soon)</span>
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Terminal className="w-5 h-5 text-primary" />
-                  CLI Tool
-                </CardTitle>
-                <CardDescription>
-                  Command-line interface for DevControl
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <code className="text-xs bg-muted px-2 py-1 rounded block mb-3">
-                  npm install -g @devcontrol/cli
-                </code>
-                <Button asChild size="sm" variant="outline" className="w-full gap-2">
-                  <Link href="/docs">
-                    <BookOpen className="w-4 h-4" />
-                    View Docs
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
         </div>
 
         {/* FAQs */}

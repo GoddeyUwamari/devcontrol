@@ -53,10 +53,10 @@ export function FounderSection() {
                 After 16 years building production systems for SaaS companies, I kept seeing the same pattern — engineering teams with no idea where their AWS money was actually going.
               </p>
               <p>
-                Bills that looked normal until you dug in and found idle RDS instances, forgotten staging environments, snapshots piling up for months, EC2 instances running 24/7 for deprecated features. Nobody was being negligent — they were just busy shipping. AWS doesn&apos;t tell you when something becomes wasteful. It just keeps charging.
+                Bills that looked normal until you dug in and found idle servers, forgotten staging environments, storage attached to nothing, EC2 instances running 24/7 for deprecated features. Nobody was being negligent — they were just busy shipping. AWS doesn&apos;t tell you when something becomes wasteful. It just keeps charging.
               </p>
               <p>
-                I built DevControl because I wanted to give SaaS teams the visibility layer that AWS never provides — real-time, tenant-level, no code changes, no agents, just clarity.
+                I built DevControl because I wanted to give SaaS teams the visibility layer that AWS never provides — read-only, no code changes, no agents, just clarity.
               </p>
             </div>
 

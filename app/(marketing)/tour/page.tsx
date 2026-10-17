@@ -128,7 +128,7 @@ function AIMock() {
           </div>
           <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px' }}>2 S3 buckets are publicly accessible</div>
           <div style={{ fontSize: '0.75rem', color: '#1f2937', lineHeight: 1.5 }}>
-            Buckets <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7rem' }}>logs-prod</code> and <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7rem' }}>assets-staging</code> have public ACLs. Fix in one click.
+            Buckets <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7rem' }}>logs-prod</code> and <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7rem' }}>assets-staging</code> have public ACLs..
           </div>
         </div>
       </div>
@@ -429,8 +429,8 @@ export default function TourPage() {
           fontSize: isMobile ? '1.05rem' : '1.1rem', color: '#1f2937', lineHeight: 1.7,
           maxWidth: '520px', margin: '0 auto',
         }}>
-          Walk through 6 steps to see how engineering teams get complete
-          AWS visibility in a few minutes.
+          Walk through 6 steps to see what DevControl shows you about your AWS
+          account. Setup takes a few minutes.
         </p>
       </section>
 
