@@ -51,14 +51,37 @@
 --   lifecycle_state        aws_resources.status when evaluated.
 --   telemetry_observed_at  when the newest datapoint or observation the check
 --                          used was taken (NULL when there was none).
---   evidence_basis         what kind of evidence decided the state.
+--   evidence_basis         what kind of evidence decided the state, from an
+--                          allowlist (below).
 --   evidence               small, versioned, structured detail (an object
---                          with schema_version, at most 4 KiB) -- the evidence
---                          contract of 202610112300.
--- NO FREE TEXT: every explanatory column is a code checked against a format;
--- wording is rendered by the application. A passing or failing state needs
--- evidence (basis not 'none' or 'tag'); passing additionally needs a
--- monitored resource whose check reported healthy.
+--                          with schema_version, at most 4096 bytes as text) --
+--                          the evidence contract of 202610112300.
+--
+-- evidence_basis allowlist, the bases the evaluator produces:
+--   aws_status_check, cloudwatch_metric, control_plane
+--       the check kinds (HealthCheckKind, SUPPORTED_CHECKS in
+--       backend/src/services/resource-health.ts);
+--   lifecycle_state
+--       a 'down' row decided by the recorded lifecycle state
+--       (FAILED_LIFECYCLE_STATES -> check_failing, otherwise not_running);
+--   none
+--       no evidence (no telemetry, evaluation unavailable), as 'none' in
+--       202610112300's evidence contract.
+-- 'tag' is not allowed: 202610112300's contract does not count a tag as
+-- evidence, and the health evaluator never reads tags. The first four are
+-- the conclusive subset.
+--
+-- Columns: explanatory columns are codes checked against an allowlist or a
+-- format. The free-form ones are the JSONB columns evidence (an object with
+-- schema_version, size-capped) and runs.type_outcomes (unchecked);
+-- resource_type has a format CHECK only. The application renders wording;
+-- no column is meant to hold an exception message, ARN or AWS response.
+--
+-- A conclusive state (checks_passing, check_failing) needs a basis from the
+-- conclusive subset, non-NULL evidence and a recorded lifecycle_state.
+-- checks_passing needs an evaluated, monitored resource whose check reported
+-- healthy; check_failing needs an evaluated resource whose check reported
+-- degraded, critical or down.
 --
 -- Staleness, and how stale, failed, partial and abandoned evaluations are
 -- shown, are defined in database/migrations-admin/README.md ("Showing stored
@@ -147,8 +170,10 @@ CREATE TABLE resource_health_evaluation_runs (
                       CHECK (evaluator_version ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'),
   evaluation_range  VARCHAR(8) NOT NULL CHECK (evaluation_range IN ('1h')),
   started_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  -- The end of the metric window the evaluation used. Set when the run
-  -- finishes; staleness is measured from it.
+  -- The end of the metric window the evaluation used. The evaluator takes it
+  -- during the run (the time it queries metrics), so it lies within
+  -- [started_at, finished_at]. Set when the run finishes; staleness is
+  -- measured from it.
   evaluated_at      TIMESTAMPTZ,
   finished_at       TIMESTAMPTZ,
   inventory_count   INTEGER CHECK (inventory_count >= 0),
@@ -173,7 +198,12 @@ CREATE TABLE resource_health_evaluation_runs (
   CONSTRAINT resource_health_evaluation_runs_partial_has_failures
     CHECK (status <> 'partial' OR failed_count > 0),
   CONSTRAINT resource_health_evaluation_runs_time_order
-    CHECK (finished_at IS NULL OR finished_at >= started_at)
+    CHECK (finished_at IS NULL OR finished_at >= started_at),
+  -- The window end is taken during the run, so a value outside the run
+  -- (in particular a future one, which would never become stale) is rejected.
+  CONSTRAINT resource_health_evaluation_runs_evaluated_at_within_run
+    CHECK (evaluated_at IS NULL
+           OR (finished_at IS NOT NULL AND evaluated_at >= started_at AND evaluated_at <= finished_at))
 );
 
 -- At most one run in progress per organization, whichever process claims it.
@@ -194,7 +224,7 @@ CREATE TABLE resource_health_evaluation_results (
   organization_id       UUID NOT NULL,
   -- aws_resources.id
   resource_id           UUID NOT NULL,
-  resource_type         VARCHAR(50) NOT NULL,
+  resource_type         VARCHAR(50) NOT NULL CHECK (resource_type ~ '^[a-z][a-z0-9_-]{0,49}$'),
   outcome               VARCHAR(20) NOT NULL CHECK (outcome IN ('evaluated', 'evaluation_failed')),
   evaluator_status      VARCHAR(16)
                           CHECK (evaluator_status IN ('healthy', 'degraded', 'critical', 'down', 'unknown')),
@@ -206,7 +236,9 @@ CREATE TABLE resource_health_evaluation_results (
   -- aws_resources.status at evaluation time. AWS state names only.
   lifecycle_state       VARCHAR(64) CHECK (lifecycle_state ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'),
   telemetry_observed_at TIMESTAMPTZ,
-  evidence_basis        VARCHAR(32) NOT NULL CHECK (evidence_basis ~ '^[a-z][a-z0-9_]{0,31}$'),
+  evidence_basis        VARCHAR(32) NOT NULL
+                          CHECK (evidence_basis IN
+                            ('aws_status_check', 'cloudwatch_metric', 'control_plane', 'lifecycle_state', 'none')),
   evidence              JSONB,
   -- Equal to the run's evaluated_at; kept here so the reader's index covers it.
   evaluated_at          TIMESTAMPTZ NOT NULL,
@@ -234,13 +266,22 @@ CREATE TABLE resource_health_evaluation_results (
   CONSTRAINT resource_health_evaluation_results_passing_needs_healthy_check
     CHECK (health_state <> 'checks_passing'
            OR (outcome = 'evaluated' AND monitored IS TRUE AND evaluator_status = 'healthy')),
-  -- A pass or a fail needs evidence. A tag, or nothing, is not evidence.
+  -- Failing needs an evaluated resource whose check reported a failure.
+  CONSTRAINT resource_health_evaluation_results_failing_needs_failing_check
+    CHECK (health_state <> 'check_failing'
+           OR (outcome = 'evaluated' AND evaluator_status IN ('degraded', 'critical', 'down'))),
+  -- A pass or a fail needs conclusive evidence, stored, and the lifecycle
+  -- state it was decided against.
   CONSTRAINT resource_health_evaluation_results_conclusive_needs_evidence
-    CHECK (health_state NOT IN ('checks_passing', 'check_failing') OR evidence_basis NOT IN ('tag', 'none')),
+    CHECK (health_state NOT IN ('checks_passing', 'check_failing')
+           OR (evidence_basis IN ('aws_status_check', 'cloudwatch_metric', 'control_plane', 'lifecycle_state')
+               AND evidence IS NOT NULL AND lifecycle_state IS NOT NULL)),
   -- Small, versioned, structured evidence only -- never a raw AWS response.
+  -- The size is measured on the text form: pg_column_size would measure a
+  -- value that arrives already compressed by its compressed size.
   CONSTRAINT resource_health_evaluation_results_evidence_shape CHECK (
     evidence IS NULL
-    OR (jsonb_typeof(evidence) = 'object' AND evidence ? 'schema_version' AND pg_column_size(evidence) <= 4096)
+    OR (jsonb_typeof(evidence) = 'object' AND evidence ? 'schema_version' AND octet_length(evidence::text) <= 4096)
   )
 );
 

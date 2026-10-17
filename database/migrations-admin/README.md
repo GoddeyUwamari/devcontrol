@@ -761,12 +761,32 @@ applied and is not edited.)
 rows that may have changed since: `health_state` (`checks_passing`,
 `check_failing`, `no_signal`), `reason_code` (set exactly when `no_signal`),
 `lifecycle_state` (`aws_resources.status` at evaluation time),
-`telemetry_observed_at`, `evidence_basis` and `evidence` (an object with a
-`schema_version` key, at most 4 KiB). Runs record `source` and
-`evaluator_version`. Every one of these is a code checked against a format;
-there is no free-text column. Passing needs an evaluated, monitored resource
-whose check reported `healthy`; passing or failing needs an evidence basis
-other than `none` or `tag`.
+`telemetry_observed_at`, `evidence_basis` and `evidence`. Runs record `source`
+and `evaluator_version`, and their `evaluated_at` (the metric window's end,
+taken during the run) must lie within `[started_at, finished_at]`.
+
+- **Codes and free-form columns.** `source`, `evaluator_version`,
+  `check_name`, `reason_code` and `lifecycle_state` are checked against a
+  format, and `status`, `outcome`, `evaluator_status`, `health_state`,
+  `failure_code`, `evaluation_range` and `evidence_basis` against allowlists.
+  `resource_type` has a format CHECK only (lowercase type names such as `ec2`
+  or `load-balancer`), not a list of types. Two columns are free-form JSONB:
+  `evidence`, which must be an object with a `schema_version` key and at most
+  4096 bytes as text, and `resource_health_evaluation_runs.type_outcomes`,
+  which is unchecked. Wording is rendered by the application; no column is
+  meant to hold an exception message, an ARN or an AWS response.
+- **`evidence_basis` allowlist.** `aws_status_check`, `cloudwatch_metric`
+  and `control_plane` are the evaluator's check kinds (`HealthCheckKind` and
+  `SUPPORTED_CHECKS` in `backend/src/services/resource-health.ts`);
+  `lifecycle_state` is a `down` row decided by the recorded lifecycle state
+  (`FAILED_LIFECYCLE_STATES`); `none` is no evidence, as in `202610112300`'s
+  evidence contract. `tag` is not allowed: that contract does not count a tag
+  as evidence, and the health evaluator never reads tags.
+- **Conclusive states.** `checks_passing` and `check_failing` need a basis
+  other than `none`, non-NULL `evidence` and a recorded `lifecycle_state`.
+  Passing needs an evaluated, monitored resource whose check reported
+  `healthy`; failing needs an evaluated resource whose check reported
+  `degraded`, `critical` or `down`.
 
 ### Showing stored resource health
 
@@ -778,6 +798,13 @@ Health is shown only from a stored, finished evaluation. The staleness rule is
   (`resource_health_evaluation_runs_org_finished`). A `running` run is never
   read; until it finishes, the previous finished run is used, subject to the
   staleness rule.
+- **Per-resource reads join to the run.** A result is read only together
+  with its run (`run_id`), and only when that run is `complete` or
+  `partial`. A query on `resource_health_evaluation_results` alone (for
+  example through `resource_health_evaluation_results_org_resource_time`)
+  can return a row whose run is not the one being shown, so it must join
+  `resource_health_evaluation_runs` and filter on `status`. Staleness uses the
+  run's `evaluated_at`, not the copy on the result row.
 - **Stale.** If that run's `evaluated_at` is older than the limit, every
   resource is shown as **Stale** (`no_signal`), never with its stored state.
 - **Failed run.** A `failed` run (including `failure_code = 'abandoned'`, a

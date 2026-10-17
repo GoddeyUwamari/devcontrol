@@ -229,6 +229,7 @@ const INSERT_RESULT = `
 /** Every column a result can set; `values` overrides the passing defaults by column name. */
 function resultInsert(values: Record<string, unknown>): { sql: string; params: unknown[] } {
   const row: Record<string, unknown> = {
+    resource_type: 'ec2',
     outcome: 'evaluated',
     evaluator_status: 'healthy',
     monitored: true,
@@ -238,13 +239,13 @@ function resultInsert(values: Record<string, unknown>): { sql: string; params: u
     lifecycle_state: 'running',
     telemetry_observed_at: null,
     evidence_basis: 'aws_status_check',
-    evidence: null,
+    evidence: JSON.stringify({ schema_version: 1 }),
     ...values,
   };
   const columns = Object.keys(row);
   return {
-    sql: `INSERT INTO ${RESULTS} (run_id, organization_id, resource_id, resource_type, evaluated_at, ${columns.join(', ')})
-          VALUES ($1, $2, $3, 'ec2', NOW(), ${columns.map((_, i) => `$${i + 4}`).join(', ')})`,
+    sql: `INSERT INTO ${RESULTS} (run_id, organization_id, resource_id, evaluated_at, ${columns.join(', ')})
+          VALUES ($1, $2, $3, NOW(), ${columns.map((_, i) => `$${i + 4}`).join(', ')})`,
     params: columns.map((c) => row[c]),
   };
 }
@@ -449,6 +450,7 @@ describe(`${MIGRATION_FILE}: catalog`, () => {
         `${RESULTS}.${RESULTS}_evaluator_status_check`,
         `${RESULTS}.${RESULTS}_evidence_basis_check`,
         `${RESULTS}.${RESULTS}_evidence_shape`,
+        `${RESULTS}.${RESULTS}_failing_needs_failing_check`,
         `${RESULTS}.${RESULTS}_health_state_check`,
         `${RESULTS}.${RESULTS}_lifecycle_state_check`,
         `${RESULTS}.${RESULTS}_outcome_check`,
@@ -456,7 +458,9 @@ describe(`${MIGRATION_FILE}: catalog`, () => {
         `${RESULTS}.${RESULTS}_passing_needs_healthy_check`,
         `${RESULTS}.${RESULTS}_reason_code_check`,
         `${RESULTS}.${RESULTS}_reason_only_on_no_signal`,
+        `${RESULTS}.${RESULTS}_resource_type_check`,
         `${RUNS}.${RUNS}_complete_no_failures`,
+        `${RUNS}.${RUNS}_evaluated_at_within_run`,
         `${RUNS}.${RUNS}_evaluated_count_check`,
         `${RUNS}.${RUNS}_evaluation_range_check`,
         `${RUNS}.${RUNS}_evaluator_version_check`,
@@ -740,7 +744,7 @@ describe(`${MIGRATION_FILE}: tenant integrity and CHECKs, as devcontrol`, () => 
         [{ check_name: null }, `${RESULTS}_outcome_shape`],
         [{ ...failed, evaluator_status: 'unknown' }, `${RESULTS}_outcome_shape`],
         [{ ...failed, monitored: false }, `${RESULTS}_outcome_shape`],
-        [{ ...failed, health_state: 'check_failing', reason_code: null, evidence_basis: 'aws_status_check' }, `${RESULTS}_outcome_shape`],
+        [{ ...failed, health_state: 'checks_passing', reason_code: null, evidence_basis: 'aws_status_check' }, `${RESULTS}_outcome_shape`],
         [{ ...failed, telemetry_observed_at: new Date() }, `${RESULTS}_outcome_shape`],
         [{ outcome: 'skipped' }, `${RESULTS}_outcome_check`],
         [{ evaluator_status: 'fine' }, `${RESULTS}_evaluator_status_check`],
@@ -766,7 +770,8 @@ describe(`${MIGRATION_FILE}: tenant integrity and CHECKs, as devcontrol`, () => 
         [{ health_state: 'no_signal', evaluator_status: 'unknown', reason_code: 'No data for this instance' }, `${RESULTS}_reason_code_check`],
         [{ check_name: 'EC2 status check' }, `${RESULTS}_check_name_check`],
         [{ lifecycle_state: 'running (since Monday)' }, `${RESULTS}_lifecycle_state_check`],
-        [{ evidence_basis: 'AWS Status Check' }, `${RESULTS}_evidence_basis_check`],
+        [{ health_state: 'no_signal', evaluator_status: 'unknown', reason_code: 'undetermined', evidence_basis: 'AWS Status Check' },
+          `${RESULTS}_evidence_basis_check`],
       ];
       for (const [values, constraint] of rejected) {
         const { sql, params } = resultInsert(values);
@@ -823,6 +828,200 @@ describe(`${MIGRATION_FILE}: tenant integrity and CHECKs, as devcontrol`, () => 
       expect(await count(client, RESULTS, 'organization_id = $1', [a.org])).toBe(0);
       expect(await count(client, RUNS, 'organization_id = $1', [b.org])).toBe(1);
       expect(await count(client, RESULTS, 'organization_id = $1', [b.org])).toBe(1);
+    });
+  });
+});
+
+describe(`${MIGRATION_FILE}: review fixes (each fails without its CHECK)`, () => {
+  const noSignal = { health_state: 'no_signal', evaluator_status: 'unknown', reason_code: 'undetermined' };
+
+  /** Each `values` is rejected by `constraint`; each `accepted` row is stored, under its own run. */
+  async function expectResults(
+    client: Client,
+    org: string,
+    resource: string,
+    rejected: Array<[Record<string, unknown>, string]>,
+    accepted: Array<Record<string, unknown>>
+  ) {
+    const run = (await client.query(INSERT_FINISHED_RUN, [org])).rows[0].id;
+    for (const [values, constraint] of rejected) {
+      const { sql, params } = resultInsert(values);
+      const err = await failureOf(client, sql, [run, org, resource, ...params]);
+      expect({ values, code: err.code, constraint: err.constraint }).toEqual({ values, code: '23514', constraint });
+    }
+    for (const values of accepted) {
+      const acceptedRun = (await client.query(INSERT_FINISHED_RUN, [org])).rows[0].id;
+      const { sql, params } = resultInsert(values);
+      await client.query(sql, [acceptedRun, org, resource, ...params]);
+    }
+  }
+
+  it('1. a run\'s evaluated_at lies within [started_at, finished_at]', async () => {
+    await inIsolatedSchema(async (client, schema) => {
+      const { a } = await seedTwoTenants(client);
+      await asApp(client, schema, a.org);
+      const run = (startedAt: string, evaluatedAt: string, finishedAt: string) =>
+        `INSERT INTO ${RUNS} (organization_id, status, source, evaluator_version, evaluation_range,
+                              started_at, evaluated_at, finished_at, inventory_count, evaluated_count, failed_count)
+         VALUES ($1, 'complete', 'scheduled_evaluator', 'resource-checks.1', '1h', ${startedAt}, ${evaluatedAt}, ${finishedAt}, 1, 1, 0)`;
+      const rejected = [
+        // In the future: would never become stale.
+        run("NOW() - interval '1 minute'", "NOW() + interval '1 day'", 'NOW()'),
+        // After the run finished.
+        run("NOW() - interval '2 minutes'", 'NOW()', "NOW() - interval '1 minute'"),
+        // Before the run started.
+        run("NOW() - interval '1 minute'", "NOW() - interval '2 minutes'", 'NOW()'),
+      ];
+      for (const sql of rejected) {
+        const err = await failureOf(client, sql, [a.org]);
+        expect({ sql, code: err.code, constraint: err.constraint }).toEqual({ sql, code: '23514', constraint: `${RUNS}_evaluated_at_within_run` });
+      }
+      const failedWithFutureWindow = await failureOf(
+        client,
+        `INSERT INTO ${RUNS} (organization_id, status, source, evaluator_version, evaluation_range, evaluated_at, finished_at, failure_code)
+         VALUES ($1, 'failed', 'scheduled_evaluator', 'resource-checks.1', '1h', NOW() + interval '1 hour', NOW(), 'timeout')`,
+        [a.org]
+      );
+      expect(failedWithFutureWindow.constraint).toBe(`${RUNS}_evaluated_at_within_run`);
+      // Inside the run, at either end or between them.
+      await client.query(run("NOW() - interval '2 minutes'", "NOW() - interval '1 minute'", 'NOW()'), [a.org]);
+      await client.query(run("NOW() - interval '2 minutes'", "NOW() - interval '2 minutes'", "NOW() - interval '2 minutes'"), [a.org]);
+    });
+  });
+
+  it('2. a conclusive state needs stored evidence and a recorded lifecycle state', async () => {
+    await inIsolatedSchema(async (client, schema) => {
+      const { a } = await seedTwoTenants(client);
+      await asApp(client, schema, a.org);
+      const failing = { health_state: 'check_failing', evaluator_status: 'critical', evidence_basis: 'cloudwatch_metric' };
+      await expectResults(client, a.org, a.resource, [
+        [{ evidence: null }, `${RESULTS}_conclusive_needs_evidence`],
+        [{ lifecycle_state: null }, `${RESULTS}_conclusive_needs_evidence`],
+        [{ ...failing, evidence: null }, `${RESULTS}_conclusive_needs_evidence`],
+        [{ ...failing, lifecycle_state: null }, `${RESULTS}_conclusive_needs_evidence`],
+      ], [
+        // Without a conclusive state, neither is required.
+        { ...noSignal, evidence: null, lifecycle_state: null, evidence_basis: 'none' },
+      ]);
+    });
+  });
+
+  it('3. evidence_basis comes from the allowlist; conclusive states need its conclusive subset', async () => {
+    await inIsolatedSchema(async (client, schema) => {
+      const { a } = await seedTwoTenants(client);
+      await asApp(client, schema, a.org);
+      await expectResults(client, a.org, a.resource, [
+        // Well-formed codes that are not on the allowlist.
+        [{ ...noSignal, evidence_basis: 'tag' }, `${RESULTS}_evidence_basis_check`],
+        [{ ...noSignal, evidence_basis: 'aws_api' }, `${RESULTS}_evidence_basis_check`],
+        [{ ...noSignal, evidence_basis: 'some_new_basis' }, `${RESULTS}_evidence_basis_check`],
+        // 'none' is allowed, but is not conclusive.
+        [{ evidence_basis: 'none' }, `${RESULTS}_conclusive_needs_evidence`],
+        [{ health_state: 'check_failing', evaluator_status: 'down', evidence_basis: 'none' }, `${RESULTS}_conclusive_needs_evidence`],
+      ], [
+        ...['aws_status_check', 'cloudwatch_metric', 'control_plane', 'lifecycle_state', 'none'].map((basis) => ({ ...noSignal, evidence_basis: basis })),
+        ...['aws_status_check', 'cloudwatch_metric', 'control_plane', 'lifecycle_state'].map((basis) => ({ evidence_basis: basis })),
+      ]);
+    });
+  });
+
+  it('4. check_failing needs an evaluated resource whose check reported degraded, critical or down', async () => {
+    await inIsolatedSchema(async (client, schema) => {
+      const { a } = await seedTwoTenants(client);
+      await asApp(client, schema, a.org);
+      const failing = { health_state: 'check_failing', evidence_basis: 'cloudwatch_metric' };
+      await expectResults(client, a.org, a.resource, [
+        [{ ...failing, evaluator_status: 'healthy' }, `${RESULTS}_failing_needs_failing_check`],
+        [{ ...failing, evaluator_status: 'unknown' }, `${RESULTS}_failing_needs_failing_check`],
+        [{ ...failing, outcome: 'evaluation_failed', evaluator_status: null, monitored: null, check_name: null },
+          `${RESULTS}_failing_needs_failing_check`],
+      ], ['degraded', 'critical', 'down'].map((status) => ({ ...failing, evaluator_status: status })));
+    });
+  });
+
+  it('5. the evidence size limit is on the real size, so compressible or already-compressed values cannot pass it', async () => {
+    await inIsolatedSchema(async (client) => {
+      const { a } = await seedTwoTenants(client);
+      const run = (await client.query(INSERT_FINISHED_RUN, [a.org])).rows[0].id;
+      const large = JSON.stringify({ schema_version: 1, padding: 'x'.repeat(5000) });
+
+      // A literal that compresses well.
+      const literal = resultInsert({ evidence: large });
+      const err = await failureOf(client, literal.sql, [run, a.org, a.resource, ...literal.params]);
+      expect({ code: err.code, constraint: err.constraint }).toEqual({ code: '23514', constraint: `${RESULTS}_evidence_shape` });
+
+      // A value that arrives already compressed, copied from another table.
+      await client.query('CREATE TABLE evidence_source (e JSONB)');
+      await client.query('INSERT INTO evidence_source VALUES ($1)', [large]);
+      const { rows } = await client.query('SELECT pg_column_size(e) AS stored, octet_length(e::text) AS text FROM evidence_source');
+      // Precondition: this is the value a pg_column_size limit would let through.
+      expect(rows[0].stored).toBeLessThanOrEqual(4096);
+      expect(rows[0].text).toBeGreaterThan(4096);
+      const copied = await failureOf(
+        client,
+        `INSERT INTO ${RESULTS} (run_id, organization_id, resource_id, resource_type, outcome, evaluator_status, monitored,
+                                 check_name, health_state, lifecycle_state, evidence_basis, evidence, evaluated_at)
+         SELECT $1, $2, $3, 'ec2', 'evaluated', 'healthy', true, 'ec2_status_check', 'checks_passing', 'running',
+                'aws_status_check', e, NOW()
+           FROM evidence_source`,
+        [run, a.org, a.resource]
+      );
+      expect({ code: copied.code, constraint: copied.constraint }).toEqual({ code: '23514', constraint: `${RESULTS}_evidence_shape` });
+
+      // Exactly at the limit is accepted.
+      // jsonb's text form adds spaces and orders keys, so measure the base in SQL.
+      const { rows: [base] } = await client.query(`SELECT octet_length('{"schema_version": 1, "padding": ""}'::jsonb::text) AS n`);
+      const atLimit = JSON.stringify({ schema_version: 1, padding: 'y'.repeat(4096 - base.n) });
+      const { rows: [size] } = await client.query('SELECT octet_length($1::jsonb::text) AS n', [atLimit]);
+      expect(size.n).toBe(4096);
+      const ok = resultInsert({ evidence: atLimit });
+      await client.query(ok.sql, [run, a.org, a.resource, ...ok.params]);
+    });
+  });
+
+  it('6. resource_type is a type-name code; the README names the free-form columns and the run-joined read path', async () => {
+    await inIsolatedSchema(async (client, schema) => {
+      const { a } = await seedTwoTenants(client);
+      await asApp(client, schema, a.org);
+      await expectResults(client, a.org, a.resource, [
+        [{ resource_type: 'EC2 Instance' }, `${RESULTS}_resource_type_check`],
+        [{ resource_type: 'arn:aws:ec2' }, `${RESULTS}_resource_type_check`],
+      ], [{ resource_type: 'load-balancer' }, { resource_type: 'dynamodb' }]);
+    });
+
+    const readme = fs.readFileSync(path.join(ADMIN_DIR, 'README.md'), 'utf8');
+    const section = readme.slice(readme.indexOf(`## Classification -- \`${MIGRATION_FILE}\``));
+    expect(section).not.toMatch(/there is no free-text column/);
+    expect(section).toMatch(/Two columns are free-form JSONB/);
+    expect(section).toMatch(/`resource_health_evaluation_runs\.type_outcomes`,\s+which is unchecked/);
+    expect(section).toMatch(/Per-resource reads join to the run/);
+  });
+
+  it('6. a results-only read can return a row from a run that is not finished; the run-joined read does not', async () => {
+    await inIsolatedSchema(async (client, schema) => {
+      const { a } = await seedTwoTenants(client);
+      await asApp(client, schema, a.org);
+      // A newer run, still running, with a result already written.
+      const running = (await client.query(
+        `INSERT INTO ${RUNS} (organization_id, status, source, evaluator_version, evaluation_range, started_at)
+         VALUES ($1, 'running', 'scheduled_evaluator', 'resource-checks.1', '1h', NOW() + interval '1 second') RETURNING id`,
+        [a.org]
+      )).rows[0].id;
+      const inProgress = resultInsert({ health_state: 'check_failing', evaluator_status: 'critical', evidence_basis: 'cloudwatch_metric' });
+      await client.query(inProgress.sql.replace('NOW()', "NOW() + interval '1 second'"), [running, a.org, a.resource, ...inProgress.params]);
+
+      const resultsOnly = await client.query(
+        `SELECT run_id FROM ${RESULTS} WHERE organization_id = $1 AND resource_id = $2 ORDER BY evaluated_at DESC LIMIT 1`,
+        [a.org, a.resource]
+      );
+      expect(resultsOnly.rows).toEqual([{ run_id: running }]);
+      const joined = await client.query(
+        `SELECT r.run_id FROM ${RESULTS} r JOIN ${RUNS} run ON run.id = r.run_id AND run.organization_id = r.organization_id
+          WHERE r.organization_id = $1 AND r.resource_id = $2 AND run.status IN ('complete', 'partial')
+          ORDER BY run.evaluated_at DESC LIMIT 1`,
+        [a.org, a.resource]
+      );
+      expect(joined.rows).toEqual([{ run_id: a.run }]);
     });
   });
 });
