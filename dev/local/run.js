@@ -110,13 +110,28 @@ async function setUp() {
   writeBackendEnv(secrets);
 }
 
+/**
+ * Signals a server's whole process group. `npm run dev` runs a shell that runs
+ * ts-node-dev, which runs node: signalling only the npm process can leave the
+ * node process that holds the port running.
+ */
+function signalGroup(child, signal) {
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // The group has already exited.
+  }
+}
+
 function startServers() {
   const children = [];
   const launch = (name, command, args, cwd, env) => {
-    const child = spawn(command, args, { cwd, env, stdio: 'inherit' });
+    // detached: each server leads its own process group, so it can be stopped
+    // as a whole. stdin is ignored so a background group never blocks on the tty.
+    const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'inherit', 'inherit'], detached: true });
     child.on('exit', (code, signal) => {
       console.log(`[dev:local] ${name} exited (${signal || code})`);
-      for (const other of children) if (other !== child && other.exitCode === null) other.kill('SIGTERM');
+      for (const each of children) signalGroup(each, 'SIGTERM');
       process.exitCode = code || 0;
     });
     children.push(child);
@@ -135,11 +150,19 @@ function startServers() {
     NEXT_TELEMETRY_DISABLED: '1',
   });
 
+  // SIGINT (Ctrl-C), SIGTERM (`kill <pid>`, an IDE's stop) and any exit of
+  // this process stop both servers; a second signal kills them outright.
+  let stopping = false;
   const stop = () => {
-    for (const child of children) if (child.exitCode === null) child.kill('SIGTERM');
+    const signal = stopping ? 'SIGKILL' : 'SIGTERM';
+    stopping = true;
+    for (const child of children) signalGroup(child, signal);
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+  process.on('exit', () => {
+    for (const child of children) signalGroup(child, 'SIGTERM');
+  });
 
   console.log(`[dev:local] frontend ${FRONTEND_URL}  backend ${BACKEND_URL}`);
   console.log(`[dev:local] log in as ${OWNER_EMAIL}; password in ${path.relative(REPO_ROOT, statePath('owner-login.txt'))}`);
