@@ -2,6 +2,30 @@ import { Request, Response, NextFunction } from 'express';
 import { ApiResponse } from '../types';
 import { AppError } from '../utils/errors';
 
+/** Body-parser's error for a request body that is not valid JSON. */
+function isJsonParseError(err: unknown): boolean {
+  return (err as { type?: unknown } | null)?.type === 'entity.parse.failed';
+}
+
+/**
+ * The fields of an error that are logged -- never the error object itself.
+ * An AppError's code is a fixed identifier, so it is logged too.
+ * A JSON parse error's message and stack quote the request body, so a fixed
+ * message stands in for both.
+ */
+function loggableError(err: Error | AppError) {
+  const { type, status, statusCode } = err as { type?: unknown; status?: unknown; statusCode?: unknown };
+  const fields = {
+    name: err.name,
+    ...(err instanceof AppError && { code: err.code }),
+    type: typeof type === 'string' ? type : undefined,
+    status: typeof status === 'number' ? status : typeof statusCode === 'number' ? statusCode : undefined,
+  };
+  return isJsonParseError(err)
+    ? { ...fields, message: 'Invalid JSON body' }
+    : { ...fields, message: err.message, stack: err.stack };
+}
+
 export const errorHandler = (
   err: Error | AppError,
   req: Request,
@@ -10,11 +34,7 @@ export const errorHandler = (
 ): void => {
   // Log error with timestamp
   const timestamp = new Date().toISOString();
-  console.error(`[${timestamp}] Error on ${req.method} ${req.path}:`, {
-    message: err.message,
-    stack: err.stack,
-    ...(err instanceof AppError && { code: err.code, statusCode: err.statusCode }),
-  });
+  console.error(`[${timestamp}] Error on ${req.method} ${req.path}:`, loggableError(err));
 
   // Determine status code and error code
   let statusCode = 500;
@@ -25,9 +45,11 @@ export const errorHandler = (
     statusCode = err.statusCode;
     errorCode = err.code;
     errorMessage = err.message;
+  } else if (isJsonParseError(err)) {
+    statusCode = 400;
+    errorCode = 'INVALID_JSON';
+    errorMessage = 'Invalid JSON body';
   } else {
-    // Log unexpected errors with full stack trace
-    console.error('Unexpected error:', err);
     errorMessage = process.env.NODE_ENV === 'production'
       ? 'Internal server error'
       : err.message;

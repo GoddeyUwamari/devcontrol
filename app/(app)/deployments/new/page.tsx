@@ -22,6 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Breadcrumb } from '@/components/navigation/breadcrumb'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import { servicesService } from '@/lib/services/services.service'
+import { logError } from '@/lib/safe-log'
 
 // AWS Regions
 const AWS_REGIONS = [
@@ -95,7 +96,7 @@ export default function NewDeploymentPage() {
       await promise
       router.push('/deployments')
     } catch (error) {
-      console.error('Error creating deployment:', error)
+      logError('Error creating deployment', error)
       setIsSubmitting(false)
     }
   }

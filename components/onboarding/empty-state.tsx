@@ -9,6 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useOnboarding } from '@/lib/stores/onboarding-store';
+import { logError } from '@/lib/safe-log';
 
 export interface EmptyStateProps {
   // Content
@@ -120,7 +121,7 @@ export function EmptyState({
         }, 1000);
       }
     } catch (error) {
-      console.error('Error handling CTA:', error);
+      logError('Error handling CTA', error);
     } finally {
       setLoading(false);
     }

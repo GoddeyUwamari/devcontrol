@@ -28,6 +28,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ScheduledReport, CreateScheduleRequest } from '@/lib/services/scheduled-reports.service';
+import { logError } from '@/lib/safe-log';
 
 interface CreateScheduleModalProps {
   open: boolean;
@@ -183,7 +184,7 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
       await onSubmit(data);
       resetForm();
     } catch (error) {
-      console.error('Submit error:', error);
+      logError('Submit error', error);
     } finally {
       setSubmitting(false);
     }

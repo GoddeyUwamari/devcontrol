@@ -1,8 +1,8 @@
 /**
- * Demo-mode coverage for useCustomerEvidenceList() (SOC 2 demo mode implementation).
- * Same conventions as useSoc2Readiness.demo.test.tsx: exercises the real useDemoMode()
- * hook (real localStorage + 'demo-mode-changed' event), spies on the real soc2Service
- * method to prove it is never called while demo mode is active.
+ * Demo mode is switched off for everyone. Same conventions as
+ * useSoc2Readiness.demo.test.tsx: both legacy demo flags are set exactly as the old
+ * /demo page and avatar menu did, and useCustomerEvidenceList() must ignore them --
+ * real endpoint, real rows and the caller's real `enabled` gate, never sample data.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
@@ -10,20 +10,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { soc2Service, Soc2CustomerEvidence } from '@/lib/services/soc2.service'
 import { useCustomerEvidenceList } from '../useCustomerEvidence'
-import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DEMO_SOC2_CUSTOMER_EVIDENCE } from '@/lib/demo-data/soc2-demo-data'
 
 const DEMO_MODE_KEY = 'devcontrol_demo_mode'
+const SALES_DEMO_KEY = 'sales-demo-mode'
 
 function setDemoMode(enabled: boolean) {
   localStorage.setItem(DEMO_MODE_KEY, enabled ? 'true' : 'false')
   window.dispatchEvent(new CustomEvent('demo-mode-changed', { detail: { enabled } }))
 }
 
-// Real, persisted Zustand store (lib/demo/sales-demo-data.ts) -- independent of
-// devcontrol_demo_mode/useDemoMode() entirely. Manipulated via its own public setState.
+// useSalesDemo used to be a Zustand store persisted under 'sales-demo-mode'; this
+// writes that persisted shape after the module has loaded, so the Sales Demo cases
+// below check only that the flag is ignored at render time. The real leak, a flag
+// already stored when the page loads, is guarded in app/__tests__/demo-kill-switch.test.tsx.
 function setSalesDemo(enabled: boolean) {
-  useSalesDemo.setState({ enabled })
+  localStorage.setItem(SALES_DEMO_KEY, JSON.stringify({ state: { enabled }, version: 0 }))
 }
 
 let queryClient: QueryClient
@@ -56,45 +58,45 @@ const REAL_FIXTURE: Soc2CustomerEvidence[] = [
   },
 ]
 
-describe('useCustomerEvidenceList — demo mode (C: demo customer evidence)', () => {
-  it('returns sample customer evidence, SELF_ATTESTED provenance, never calling the real endpoint', () => {
-    const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue([])
+describe('useCustomerEvidenceList — demo flag set (C: ignored)', () => {
+  it('calls the real endpoint and returns real customer evidence, never the samples', async () => {
+    const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(true)
 
     const { result } = renderHook(() => useCustomerEvidenceList(undefined, true), { wrapper })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
 
-    expect(result.current.data).toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE)
-    expect(result.current.data!.length).toBeGreaterThanOrEqual(1)
-    expect(result.current.data!.length).toBeLessThanOrEqual(2)
-    expect(result.current.data!.every((e) => e.provenance === 'SELF_ATTESTED')).toBe(true)
-    expect(result.current.isLoading).toBe(false)
-    expect(result.current.error).toBeNull()
-    expect(spy).not.toHaveBeenCalled()
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(result.current.data).toEqual(REAL_FIXTURE)
+    expect(result.current.data).not.toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE)
   })
 
-  it('filters sample customer evidence by criterionId exactly as the real implementation expects', () => {
+  it('passes the criterionId to the real endpoint instead of filtering sample evidence', async () => {
+    const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(true)
     const targetCriterionId = DEMO_SOC2_CUSTOMER_EVIDENCE[0].criterionId
     const { result } = renderHook(() => useCustomerEvidenceList(targetCriterionId, true), { wrapper })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
 
-    const expected = DEMO_SOC2_CUSTOMER_EVIDENCE.filter((e) => e.criterionId === targetCriterionId)
-    expect(result.current.data).toEqual(expected)
-    expect(result.current.data!.every((e) => e.criterionId === targetCriterionId)).toBe(true)
+    expect(spy).toHaveBeenCalledWith(targetCriterionId)
+    expect(result.current.data).toEqual(REAL_FIXTURE)
   })
 
-  it('demo data is never written into the real ["soc2-customer-evidence", ...] query cache entry', async () => {
+  it('the real ["soc2-customer-evidence", ...] cache entry holds real rows, never sample rows', async () => {
+    vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(true)
     renderHook(() => useCustomerEvidenceList(undefined, true), { wrapper })
     await waitFor(() => {
-      expect(queryClient.getQueryData(['soc2-customer-evidence', null])).toBeUndefined()
+      expect(queryClient.getQueryData(['soc2-customer-evidence', null])).toEqual(REAL_FIXTURE)
     })
   })
 
-  it('does not call the real endpoint even when the caller-supplied `enabled` (real-mode Enterprise gate) is true', () => {
-    const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue([])
+  it('the caller-supplied `enabled` gate (real-mode Enterprise gate) still holds: enabled=false makes no call and returns no sample data', () => {
+    const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(true)
-    renderHook(() => useCustomerEvidenceList(undefined, true), { wrapper })
+    const { result } = renderHook(() => useCustomerEvidenceList(undefined, false), { wrapper })
     expect(spy).not.toHaveBeenCalled()
+    expect(result.current.data).toBeUndefined()
   })
 })
 
@@ -120,8 +122,8 @@ describe('useCustomerEvidenceList — real mode (E: real mode regression, unchan
   })
 })
 
-describe('useCustomerEvidenceList — demo ↔ real transition (D)', () => {
-  it('DEMO ON shows demo data, DEMO OFF returns to real data, with no stale rows leaking either way', async () => {
+describe('useCustomerEvidenceList — demo flag toggled mid-session (D: ignored)', () => {
+  it('turning the demo flag on and off never swaps the real rows for sample rows', async () => {
     const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(false)
 
@@ -129,40 +131,36 @@ describe('useCustomerEvidenceList — demo ↔ real transition (D)', () => {
     await waitFor(() => expect(result.current.data).toEqual(REAL_FIXTURE))
 
     act(() => setDemoMode(true))
-    await waitFor(() => expect(result.current.data).toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE))
-    expect(result.current.data).not.toEqual(REAL_FIXTURE)
+    expect(result.current.data).toEqual(REAL_FIXTURE)
+    expect(result.current.data).not.toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE)
 
     act(() => setDemoMode(false))
-    await waitFor(() => expect(result.current.data).toEqual(REAL_FIXTURE))
-    expect(result.current.data).not.toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE)
+    expect(result.current.data).toEqual(REAL_FIXTURE)
     expect(spy).toHaveBeenCalled()
   })
 })
 
-describe('useCustomerEvidenceList — Sales Demo mode alone (A: demoMode=false, salesDemoMode=true)', () => {
-  it('returns sample customer evidence, SELF_ATTESTED provenance, filtered by criterionId, never calling the real endpoint', () => {
-    const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue([])
+describe('useCustomerEvidenceList — Sales Demo flag set after load (A: ignored at render time)', () => {
+  it('the flag is ignored at render time: calls the real endpoint and returns real customer evidence, with and without a criterionId', async () => {
+    const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(false)
     setSalesDemo(true)
 
     const { result } = renderHook(() => useCustomerEvidenceList(undefined, true), { wrapper })
-
-    expect(result.current.data).toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE)
-    expect(result.current.data!.every((e) => e.provenance === 'SELF_ATTESTED')).toBe(true)
-    expect(result.current.isLoading).toBe(false)
-    expect(result.current.error).toBeNull()
-    expect(spy).not.toHaveBeenCalled()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.data).toEqual(REAL_FIXTURE)
+    expect(result.current.data).not.toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE)
 
     const targetCriterionId = DEMO_SOC2_CUSTOMER_EVIDENCE[0].criterionId
     const filtered = renderHook(() => useCustomerEvidenceList(targetCriterionId, true), { wrapper })
-    expect(filtered.result.current.data).toEqual(
-      DEMO_SOC2_CUSTOMER_EVIDENCE.filter((e) => e.criterionId === targetCriterionId)
-    )
+    await waitFor(() => expect(filtered.result.current.isLoading).toBe(false))
+    expect(spy).toHaveBeenCalledWith(targetCriterionId)
+    expect(filtered.result.current.data).toEqual(REAL_FIXTURE)
   })
 })
 
-describe('useCustomerEvidenceList — Sales Demo mode ↔ real transition (D)', () => {
-  it('Sales Demo ON shows sample data, Sales Demo OFF returns to real data, with no stale rows either way', async () => {
+describe('useCustomerEvidenceList — Sales Demo flag toggled mid-session (D: ignored at render time)', () => {
+  it('the flag is ignored at render time: turning it on and off never swaps the real rows for sample rows', async () => {
     const spy = vi.spyOn(soc2Service, 'getCustomerEvidence').mockResolvedValue(REAL_FIXTURE)
     setDemoMode(false)
     setSalesDemo(false)
@@ -171,12 +169,10 @@ describe('useCustomerEvidenceList — Sales Demo mode ↔ real transition (D)', 
     await waitFor(() => expect(result.current.data).toEqual(REAL_FIXTURE))
 
     act(() => setSalesDemo(true))
-    await waitFor(() => expect(result.current.data).toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE))
-    expect(result.current.data).not.toEqual(REAL_FIXTURE)
+    expect(result.current.data).toEqual(REAL_FIXTURE)
 
     act(() => setSalesDemo(false))
-    await waitFor(() => expect(result.current.data).toEqual(REAL_FIXTURE))
-    expect(result.current.data).not.toEqual(DEMO_SOC2_CUSTOMER_EVIDENCE)
+    expect(result.current.data).toEqual(REAL_FIXTURE)
     expect(spy).toHaveBeenCalled()
   })
 })

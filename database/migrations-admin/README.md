@@ -84,8 +84,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202609010800_add_payment_failed_notification_tracking.sql`**,
 **`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**,
 **`202609040035_add_account_security_findings_disposition.sql`**,
-**`202610102024_drop_auto_detect_resource_ownership.sql`**, and
-**`202610112300_create_framework_evaluation_persistence.sql`**.
+**`202610102024_drop_auto_detect_resource_ownership.sql`**,
+**`202610112300_create_framework_evaluation_persistence.sql`**, and
+**`202610161210_create_resource_health_evaluations.sql`**.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
@@ -676,9 +677,10 @@ It is a plain create: it refuses to run if any of the three tables, or
 keys need a unique constraint over exactly `(id, organization_id)`. The
 migration reuses one if any exists, whatever its name, and otherwise adds its
 own as `aws_resources_compliance_evaluation_ref_key`. It never creates or drops
-`aws_resources_id_org_unique`, the name another pending migration adds and
-refuses to run over, so the two can be applied in either order without editing
-either.
+`aws_resources_id_org_unique`, the name
+`202610161210_create_resource_health_evaluations.sql` adds when no such
+constraint exists; that migration reuses this one instead (see its section
+below).
 
 **Nothing applies it automatically.** Like every file in this directory it is
 run with `--execute-only` as `postgres`, after explicit authorization (see
@@ -731,3 +733,113 @@ application:
 A resource that is no longer scanned (soft-terminated, or in an organization
 with no AWS connection) keeps its old entries in the column; the read rule
 above still applies to them.
+
+## Classification -- `202610161210_create_resource_health_evaluations.sql`
+
+Placed here from the start: it creates two tables that the `postgres` role
+must own (`resource_health_evaluation_runs`,
+`resource_health_evaluation_results`), enables and forces row-level security
+on them with one tenant policy each, and may add a unique constraint to
+`aws_resources` (`postgres`-owned). `devcontrol` receives `SELECT`, `INSERT`,
+`UPDATE` and `DELETE` on both, and not `TRUNCATE`, which row-level security
+does not apply to. Schema only: nothing reads or writes these tables yet.
+
+It is a plain create: it refuses to run if either table already exists.
+
+**`aws_resources (id, organization_id)` uniqueness.** Same rule as
+`202610112300_create_framework_evaluation_persistence.sql` above: the
+migration reuses any unique constraint over exactly `(id, organization_id)`,
+whatever its name, and adds its own (`aws_resources_id_org_unique`) only when
+there is none. `202610112300` sorts first everywhere and is applied in
+production, so on every database this migration reuses
+`aws_resources_compliance_evaluation_ref_key` and adds nothing. (The comments
+in `202610112300` still describe this migration's earlier, pending form,
+which added `aws_resources_id_org_unique` unconditionally; that file is
+applied and is not edited.)
+
+**Stored evidence.** A result row is read as written, never re-derived from
+rows that may have changed since: `health_state` (`checks_passing`,
+`check_failing`, `no_signal`), `reason_code` (set exactly when `no_signal`),
+`lifecycle_state` (`aws_resources.status` at evaluation time),
+`telemetry_observed_at`, `evidence_basis` and `evidence`. Runs record `source`
+and `evaluator_version`, and their `evaluated_at` (the metric window's end,
+taken during the run) must lie within `[started_at, finished_at]`.
+
+- **Codes and free-form columns.** `source`, `evaluator_version`,
+  `check_name`, `reason_code` and `lifecycle_state` are checked against a
+  format, and `status`, `outcome`, `evaluator_status`, `health_state`,
+  `failure_code`, `evaluation_range` and `evidence_basis` against allowlists.
+  `resource_type` has a format CHECK only (lowercase type names such as `ec2`
+  or `load-balancer`), not a list of types. Two columns are free-form JSONB:
+  `evidence`, which must be an object with a `schema_version` key and at most
+  4096 bytes as text, and `resource_health_evaluation_runs.type_outcomes`,
+  which is unchecked. Wording is rendered by the application; no column is
+  meant to hold an exception message, an ARN or an AWS response.
+- **`evidence_basis` allowlist.** `aws_status_check`, `cloudwatch_metric`
+  and `control_plane` are the evaluator's check kinds (`HealthCheckKind` and
+  `SUPPORTED_CHECKS` in `backend/src/services/resource-health.ts`);
+  `lifecycle_state` is a `down` row decided by the recorded lifecycle state
+  (`FAILED_LIFECYCLE_STATES`); `none` is no evidence, as in `202610112300`'s
+  evidence contract. `tag` is not allowed: that contract does not count a tag
+  as evidence, and the health evaluator never reads tags.
+- **Conclusive states.** `checks_passing` and `check_failing` need a basis
+  other than `none`, non-NULL `evidence` and a recorded `lifecycle_state`.
+  Passing needs an evaluated, monitored resource whose check reported
+  `healthy`; failing needs an evaluated resource whose check reported
+  `degraded`, `critical` or `down`.
+
+### Showing stored resource health
+
+Health is shown only from a stored, finished evaluation. The staleness rule is
+`RESOURCE_HEALTH_MAX_AGE_MS` in `backend/src/services/resource-health.ts`
+(15 minutes), measured from the run's `evaluated_at`.
+
+- **Which run.** The latest run with `status` `complete` or `partial`
+  (`resource_health_evaluation_runs_org_finished`). A `running` run is never
+  read; until it finishes, the previous finished run is used, subject to the
+  staleness rule.
+- **Per-resource reads join to the run.** A result is read only together
+  with its run (`run_id`), and only when that run is `complete` or
+  `partial`. A query on `resource_health_evaluation_results` alone (for
+  example through `resource_health_evaluation_results_org_resource_time`)
+  can return a row whose run is not the one being shown, so it must join
+  `resource_health_evaluation_runs` and filter on `status`. Staleness uses the
+  run's `evaluated_at`, not the copy on the result row.
+- **Stale.** If that run's `evaluated_at` is older than the limit, every
+  resource is shown as **Stale** (`no_signal`), never with its stored state.
+- **Failed run.** A `failed` run (including `failure_code = 'abandoned'`, a
+  `running` run that outlived its time limit) has no results to show. It does
+  not replace the previous finished run, which is still subject to the
+  staleness rule; with none usable, resources are **Not evaluated**.
+- **Partial run.** Resources with an `evaluated` result show their stored
+  `health_state`. Resources with an `evaluation_failed` result are **Not
+  evaluated**.
+- **No row.** A resource with no result in the run (added after the run, or
+  outside its inventory) is **Not evaluated**. A resource whose type has no
+  check is `not_supported` and is never stored.
+- **Never Healthy by default.** Only a stored `checks_passing` result from a
+  non-stale run is shown as passing. A service or summary that is passing says
+  how many of its resources were evaluated (the run's `inventory_count`,
+  `evaluated_count`, `failed_count`); a passing evaluation never implies that
+  every resource is healthy.
+
+### Rollback
+
+`202610161210_create_resource_health_evaluations_rollback.sql` ships in the
+admin artifact with the other `*.sql` files, but `migrate.js` never executes
+it: `getMigrationFiles()` excludes every file whose name contains `rollback`,
+so neither a sweep nor `--execute-only` can select it, and
+`ci-bootstrap-schema.js` skips it the same way. Running it is a separate,
+manually authorized operation, as the `postgres` role, in one transaction:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202610161210_create_resource_health_evaluations_rollback.sql
+```
+
+It drops the two tables and this migration's `schema_migrations` row. It
+drops `aws_resources_id_org_unique` only if this migration added it and no
+foreign key uses it; a reused constraint
+(`aws_resources_compliance_evaluation_ref_key` in production) is never
+dropped. It never cascades: it refuses if anything else references the two
+tables. Roll back the application release that uses these tables first.

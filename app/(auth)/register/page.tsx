@@ -61,9 +61,8 @@ export default function RegisterPage() {
     try {
       await registerUser(data.email, data.password, data.fullName);
       // Navigation handled by auth context
-    } catch (error) {
-      // Error toast handled by auth context
-      console.error("Registration error:", error);
+    } catch {
+      // Error toast and logging handled by auth context
     } finally {
       setIsLoading(false);
     }

@@ -26,6 +26,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { logError } from "@/lib/safe-log";
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -96,7 +97,7 @@ function ResetPasswordContent() {
         router.push("/login");
       }, 2000);
     } catch (error: any) {
-      console.error("Reset password error:", error);
+      logError("Reset password error", error);
       const message =
         error.response?.data?.error ||
         error.response?.data?.message ||

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { anomalyService } from '@/lib/services/anomaly.service';
+import { logError } from '@/lib/safe-log';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
 import {
@@ -70,9 +71,9 @@ export default function AnomaliesPage() {
     finally { setIsScanning(false); }
   };
 
-  const handleAcknowledge = async (id: string) => { setActionLoading(id + '-ack'); try { await anomalyService.acknowledge(id); await loadAnomalies(); } catch (e) { console.error(e); } finally { setActionLoading(null); } };
-  const handleResolve = async (id: string) => { setActionLoading(id + '-res'); try { await anomalyService.resolve(id); await loadAnomalies(); } catch (e) { console.error(e); } finally { setActionLoading(null); } };
-  const handleFalsePositive = async (id: string) => { setActionLoading(id + '-fp'); try { await anomalyService.markFalsePositive(id); await loadAnomalies(); } catch (e) { console.error(e); } finally { setActionLoading(null); } };
+  const handleAcknowledge = async (id: string) => { setActionLoading(id + '-ack'); try { await anomalyService.acknowledge(id); await loadAnomalies(); } catch (e) { logError('Failed to acknowledge anomaly', e); } finally { setActionLoading(null); } };
+  const handleResolve = async (id: string) => { setActionLoading(id + '-res'); try { await anomalyService.resolve(id); await loadAnomalies(); } catch (e) { logError('Failed to resolve anomaly', e); } finally { setActionLoading(null); } };
+  const handleFalsePositive = async (id: string) => { setActionLoading(id + '-fp'); try { await anomalyService.markFalsePositive(id); await loadAnomalies(); } catch (e) { logError('Failed to mark anomaly as false positive', e); } finally { setActionLoading(null); } };
 
   const handleCreateRule = async () => {
     if (!newRule.name.trim()) { toast.error('Rule name is required'); return; }

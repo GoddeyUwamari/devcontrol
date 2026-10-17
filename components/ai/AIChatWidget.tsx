@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Sparkles, Minimize2, Maximize2, X, MessageSquare } from 'lucide-react';
 import { aiChatService, type ChatMessage } from '@/lib/services/ai-chat.service';
+import { logError } from '@/lib/safe-log';
 
 export function AIChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -65,7 +66,7 @@ export function AIChatWidget() {
         });
       }
     } catch (error) {
-      console.error('Chat error:', error);
+      logError('Chat error', error);
       setMessages(prev => [
         ...prev.slice(0, -1), // Remove the empty assistant message
         {

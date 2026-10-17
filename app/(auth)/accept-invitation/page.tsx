@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { logError } from "@/lib/safe-log";
 
 function AcceptInvitationContent() {
   const router = useRouter();
@@ -66,7 +67,7 @@ function AcceptInvitationContent() {
         return;
       }
 
-      console.error("Accept invitation error:", error);
+      logError("Accept invitation error", error);
       setResult({ status: "error", message });
     } finally {
       setIsSubmitting(false);

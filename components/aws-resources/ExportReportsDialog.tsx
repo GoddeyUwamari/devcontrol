@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { FileText, Download, FileSpreadsheet } from 'lucide-react';
 import { api } from '@/lib/api';
+import { logError } from '@/lib/safe-log';
 
 interface ExportReportsDialogProps {
   open: boolean;
@@ -102,7 +103,7 @@ export function ExportReportsDialog({
 
       onOpenChange(false);
     } catch (error: any) {
-      console.error('Export failed:', error);
+      logError('Export failed', error);
 
       // Handle blob error responses
       let errorMessage = 'Failed to generate export';

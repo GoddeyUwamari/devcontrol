@@ -12,9 +12,8 @@ import { BreadcrumbItem } from '@/components/ui/breadcrumb';
 // Map of route segments to readable labels
 const routeLabels: Record<string, string> = {
   dashboard: 'Dashboard',
-  services: 'Services Overview',
+  services: 'Services',
   deployments: 'Deployments',
-  dependencies: 'Dependencies',
   infrastructure: 'Infrastructure',
   'aws-resources': 'AWS Resources',
   teams: 'Teams',
@@ -61,7 +60,6 @@ const routeLabels: Record<string, string> = {
 
 export const parentPaths: Record<string, { label: string; href?: string }[]> = {
   '/deployments':      [{ label: 'Services', href: '/services' }],
-  '/dependencies':     [{ label: 'Services', href: '/services' }],
   '/services/new':     [],
   '/recommendations':  [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/tenants':          [{ label: 'Infrastructure', href: '/infrastructure' }],

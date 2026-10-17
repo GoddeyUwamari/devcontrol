@@ -26,7 +26,6 @@ export function UserMenu() {
   const { user, logout, isLoading } = useAuth();
 
   // Debug log
-  console.log('👤 UserMenu - Current user:', user);
 
   const handleLogout = async () => {
     await logout();

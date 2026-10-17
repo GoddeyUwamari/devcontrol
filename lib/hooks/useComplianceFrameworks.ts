@@ -8,6 +8,7 @@ import {
   CreateFrameworkRequest,
   CreateRuleRequest,
 } from '../services/compliance-frameworks.service';
+import { logError } from '@/lib/safe-log';
 
 export function useComplianceFrameworks() {
   const [frameworks, setFrameworks] = useState<ComplianceFramework[]>([]);
@@ -26,7 +27,7 @@ export function useComplianceFrameworks() {
       if (status !== 404 && status !== 0) {
         setError(err.message || 'Failed to fetch frameworks')
       }
-      console.error('Error fetching frameworks:', err);
+      logError('Error fetching frameworks', err);
     } finally {
       setLoading(false);
     }
@@ -106,7 +107,7 @@ export function useFrameworkDetails(frameworkId: string | null) {
       setRules(data.rules);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch framework details');
-      console.error('Error fetching framework details:', err);
+      logError('Error fetching framework details', err);
     } finally {
       setLoading(false);
     }
@@ -175,7 +176,7 @@ export function useComplianceScans(autoRefresh = false) {
       if (status !== 404 && status !== 0) {
         setError(err.message || 'Failed to fetch scans')
       }
-      console.error('Error fetching scans:', err);
+      logError('Error fetching scans', err);
     } finally {
       setLoading(false);
     }
@@ -219,7 +220,7 @@ export function useScanResults(scanId: string | null) {
       setFindings(data.findings);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch scan results');
-      console.error('Error fetching scan results:', err);
+      logError('Error fetching scan results', err);
     } finally {
       setLoading(false);
     }

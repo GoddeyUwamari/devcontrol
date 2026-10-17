@@ -10,6 +10,7 @@ import type {
   OnboardingFunnel,
   ApiResponse,
 } from '../types/onboarding';
+import { logError } from '@/lib/safe-log';
 
 /**
  * Get current onboarding status for the organization
@@ -19,7 +20,7 @@ export async function getOnboardingStatus(): Promise<ApiResponse<OnboardingStatu
     const response = await api.get('/api/onboarding/status');
     return response.data;
   } catch (error: any) {
-    console.error('Error fetching onboarding status:', error);
+    logError('Error fetching onboarding status', error);
     throw error;
   }
 }
@@ -33,7 +34,7 @@ export async function markStepComplete(step: string): Promise<ApiResponse<Onboar
     const response = await api.post(`/api/onboarding/complete/${step}`);
     return response.data;
   } catch (error: any) {
-    console.error(`Error completing step ${step}:`, error);
+    logError(`Error completing step ${step}`, error);
     throw error;
   }
 }
@@ -46,7 +47,7 @@ export async function dismissOnboarding(): Promise<ApiResponse<OnboardingStatus>
     const response = await api.post('/api/onboarding/dismiss');
     return response.data;
   } catch (error: any) {
-    console.error('Error dismissing onboarding:', error);
+    logError('Error dismissing onboarding', error);
     throw error;
   }
 }
@@ -59,7 +60,7 @@ export async function reEnableOnboarding(): Promise<ApiResponse<OnboardingStatus
     const response = await api.post('/api/onboarding/re-enable');
     return response.data;
   } catch (error: any) {
-    console.error('Error re-enabling onboarding:', error);
+    logError('Error re-enabling onboarding', error);
     throw error;
   }
 }
@@ -72,7 +73,7 @@ export async function getOnboardingMetrics(): Promise<ApiResponse<OnboardingMetr
     const response = await api.get('/api/onboarding/metrics');
     return response.data;
   } catch (error: any) {
-    console.error('Error fetching onboarding metrics:', error);
+    logError('Error fetching onboarding metrics', error);
     throw error;
   }
 }
@@ -85,7 +86,7 @@ export async function getOnboardingFunnel(): Promise<ApiResponse<OnboardingFunne
     const response = await api.get('/api/onboarding/funnel');
     return response.data;
   } catch (error: any) {
-    console.error('Error fetching onboarding funnel:', error);
+    logError('Error fetching onboarding funnel', error);
     throw error;
   }
 }

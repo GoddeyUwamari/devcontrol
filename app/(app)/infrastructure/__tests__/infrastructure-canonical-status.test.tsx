@@ -134,14 +134,16 @@ describe('Infrastructure page -- canonical System Intelligence status', () => {
     expect(screen.queryByText('Primary Issue')).not.toBeInTheDocument()
   })
 
-  it('demo mode: the demo score of 73 is shown as "Stable" (canonical thresholds), not "Partially Optimized"', async () => {
+  it('with both legacy demo flags set, the real score and canonical status render, never the demo score of 73', async () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
-    global.fetch = vi.fn().mockImplementation(() => Promise.resolve({ ok: false } as Response)) as unknown as typeof fetch
+    localStorage.setItem('sales-demo-mode', JSON.stringify({ state: { enabled: true }, version: 0 }))
+    mockIntelligence(92, 'Healthy')
     renderPage()
 
     await waitFor(() => expect(screen.queryByTestId('intel-not-ready')).not.toBeInTheDocument())
-    expect(statusLine()).toBe('Stable')
-    expect(screen.queryByText('Partially Optimized')).not.toBeInTheDocument()
+    expect(statusLine()).toBe('Strong')
+    expect(screen.getByText('92')).toBeInTheDocument()
+    expect(screen.queryByText('73')).not.toBeInTheDocument()
   })
 
   it('the obsolete good/warning/critical comparisons for the overall status are gone', () => {
@@ -300,15 +302,15 @@ describe('Infrastructure page -- Score Impact is the canonical top driver impact
     expect(screen.queryByTestId('score-impact')).not.toBeInTheDocument()
   })
 
-  it('demo mode shows neither a fabricated impact nor a calculated-at line (the demo object has neither)', async () => {
+  it('with both legacy demo flags set, the real calculated-at line renders, never the demo object\'s missing provenance', async () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
-    global.fetch = vi.fn().mockImplementation(() => Promise.resolve({ ok: false } as Response)) as unknown as typeof fetch
+    localStorage.setItem('sales-demo-mode', JSON.stringify({ state: { enabled: true }, version: 0 }))
+    mockIntelligence(68, 'Degraded', { top_drivers: [SECURITY_DRIVER], computed_at: minutesAgo(3) })
     renderPage()
 
     await waitFor(() => expect(screen.queryByTestId('intel-not-ready')).not.toBeInTheDocument())
-    expect(statusLine()).toBe('Stable')
-    expect(screen.queryByTestId('score-impact')).not.toBeInTheDocument()
-    expect(screen.queryByText(/^Calculated /)).not.toBeInTheDocument()
+    expect(statusLine()).toBe('Needs attention')
+    expect(screen.getByText('Calculated 3 minutes ago')).toBeInTheDocument()
     expect(screen.queryByText(/High confidence|resources analyzed/)).not.toBeInTheDocument()
   })
 

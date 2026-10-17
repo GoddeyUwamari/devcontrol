@@ -34,9 +34,8 @@
 ✅ `005_migrate_existing_data.sql` - Migrate existing data
 ✅ Default organization and admin user created
 
-**Default Admin:**
-- Email: admin@devcontrol.local
-- Password: ChangeMe123!
+**Default Admin:** its password is published in the migration, so it must be
+deactivated on every database (`npm run dev:local` does this locally).
 
 ## ⏳ Phase 3: Frontend (PENDING)
 
@@ -62,10 +61,11 @@ node scripts/run-migrations.js
 # 3. Start backend
 npm run dev
 
-# 4. Test login
+# 4. Test login (with an account you registered, or the local stack's owner
+#    from dev/local/.state/owner-login.txt)
 curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@devcontrol.local","password":"ChangeMe123!"}'
+  -d '{"email":"owner@example.test","password":"<your password>"}'
 ```
 
 ## 📊 Summary

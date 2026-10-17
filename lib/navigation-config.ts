@@ -66,12 +66,6 @@ export const appNav: NavGroup = {
           description: 'Service catalog and management',
         },
         {
-          label: 'Dependencies',
-          href: '/dependencies',
-          icon: Network,
-          description: 'Service dependencies and relationships',
-        },
-        {
           label: 'Deployments',
           href: '/deployments',
           icon: Rocket,

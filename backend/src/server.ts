@@ -1,3 +1,6 @@
+// Must stay first: local-stack mode loads and checks its environment before
+// any other module reads it (a no-op unless DEVCONTROL_LOCAL_STACK is set).
+import './config/local-stack-preload';
 import express from 'express';
 import { createServer } from 'http';
 import https from 'https';
@@ -5,7 +8,6 @@ import fs from 'fs';
 import path from 'path';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import routes from './routes';
 import apiKeysRouter from './routes/api-keys.routes'
 import webhooksRouter from './routes/webhooks.routes'
@@ -28,6 +30,14 @@ import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { GracePeriodEnforcementJob } from './jobs/grace-period-enforcement.job';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
+import { loadEnv } from './config/load-env';
+import {
+  isLocalStack,
+  localDatabaseRoleRefusal,
+  localListenHost,
+  refuseToStart,
+  startsBackgroundJobs,
+} from './config/local-stack-guard';
 import {
   RELEASE_SHA,
   BUILT_AT,
@@ -45,7 +55,7 @@ import { createRemediationRoutes } from './routes/remediation.routes';
 import { createComplianceRoutes } from './routes/compliance.routes'
 import observabilityRoutes from './routes/observability.routes';
 
-dotenv.config();
+loadEnv();
 
 // Validate environment variables before starting
 validateEnv();
@@ -234,6 +244,11 @@ const startServer = async () => {
     // Test database connection
     await testConnection();
 
+    if (isLocalStack()) {
+      const roleRefusal = await localDatabaseRoleRefusal((sql) => pool.query(sql));
+      if (roleRefusal) refuseToStart(roleRefusal);
+    }
+
     // Check for SSL certificates
     const certPath = path.join(__dirname, '../certs/cert.pem');
     const keyPath = path.join(__dirname, '../certs/key.pem');
@@ -274,7 +289,7 @@ const startServer = async () => {
     // Make wsServer available to all routes
     app.set('wsServer', wsServer);
 
-    httpServer.listen(PORT, () => {
+    const onListening = () => {
       console.log('='.repeat(50));
       console.log(`🚀 Platform Portal API Server`);
       console.log('='.repeat(50));
@@ -296,7 +311,14 @@ const startServer = async () => {
       console.log(`  - GET    /api/teams`);
       console.log(`  - GET    /api/platform/stats/dashboard`);
       console.log('='.repeat(50));
-    });
+    };
+    // The local stack listens on loopback only; elsewhere, all interfaces as before.
+    const listenHost = localListenHost();
+    if (listenHost) {
+      httpServer.listen(Number(PORT), listenHost, onListening);
+    } else {
+      httpServer.listen(PORT, onListening);
+    }
 
     // Update business metrics every 30s
     setInterval(async () => {
@@ -306,36 +328,42 @@ const startServer = async () => {
     // Initial metrics update
     await updateBusinessMetrics(pool, wsServer);
 
-    // Start alert sync job (syncs alerts from Prometheus every minute)
-    const alertSyncJob = new AlertSyncJob(pool);
-    alertSyncJob.start();
+    // The local stack runs no background jobs: they reach AWS, Prometheus,
+    // email or Anthropic, and an empty local organization has nothing to sync.
+    if (!startsBackgroundJobs()) {
+      console.log('[local-stack] background jobs disabled');
+    } else {
+      // Start alert sync job (syncs alerts from Prometheus every minute)
+      const alertSyncJob = new AlertSyncJob(pool);
+      alertSyncJob.start();
 
-    // Start resource discovery job (discovers AWS resources every 6 hours)
-    const resourceDiscoveryJob = new ResourceDiscoveryJob(pool);
-    resourceDiscoveryJob.start();
+      // Start resource discovery job (discovers AWS resources every 6 hours)
+      const resourceDiscoveryJob = new ResourceDiscoveryJob(pool);
+      resourceDiscoveryJob.start();
 
-    // Start risk score snapshot job (captures daily risk snapshots at 2 AM UTC)
-    const riskSnapshotJob = new RiskScoreSnapshotJob(pool);
-    riskSnapshotJob.start();
+      // Start risk score snapshot job (captures daily risk snapshots at 2 AM UTC)
+      const riskSnapshotJob = new RiskScoreSnapshotJob(pool);
+      riskSnapshotJob.start();
 
-    // Start scheduled reports job (checks for due reports every 15 minutes)
-    const scheduledReportsJob = new ScheduledReportsJob(pool);
-    scheduledReportsJob.start();
+      // Start scheduled reports job (checks for due reports every 15 minutes)
+      const scheduledReportsJob = new ScheduledReportsJob(pool);
+      scheduledReportsJob.start();
 
-    // Start weekly AI summary job (runs every Monday at 9 AM)
-    const weeklyAISummaryJob = new WeeklyAISummaryJob(pool);
-    weeklyAISummaryJob.start();
+      // Start weekly AI summary job (runs every Monday at 9 AM)
+      const weeklyAISummaryJob = new WeeklyAISummaryJob(pool);
+      weeklyAISummaryJob.start();
 
-    // Start anomaly detection job (runs every 5 minutes)
-    const anomalyDetectionJob = new AnomalyDetectionJob(pool);
-    anomalyDetectionJob.start();
-    console.log('[Anomaly Detection] Job started');
+      // Start anomaly detection job (runs every 5 minutes)
+      const anomalyDetectionJob = new AnomalyDetectionJob(pool);
+      anomalyDetectionJob.start();
+      console.log('[Anomaly Detection] Job started');
 
-    // Start grace period enforcement job (reconciles expired payment-failure
-    // grace periods every hour -- see subscription.middleware.ts's
-    // isOrgRestricted for the lazy, primary enforcement path this backs up)
-    const gracePeriodEnforcementJob = new GracePeriodEnforcementJob(pool);
-    gracePeriodEnforcementJob.start();
+      // Start grace period enforcement job (reconciles expired payment-failure
+      // grace periods every hour -- see subscription.middleware.ts's
+      // isOrgRestricted for the lazy, primary enforcement path this backs up)
+      const gracePeriodEnforcementJob = new GracePeriodEnforcementJob(pool);
+      gracePeriodEnforcementJob.start();
+    }
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
