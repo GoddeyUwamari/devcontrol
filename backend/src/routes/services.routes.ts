@@ -6,7 +6,7 @@ import { createServiceSchema, updateServiceSchema, uuidParamSchema } from '../va
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireMember } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
-import { checkDiscoveryLimit, checkResourceLimit } from '../middleware/subscription.middleware';
+import { checkDiscoveryLimit } from '../middleware/subscription.middleware';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
@@ -251,6 +251,21 @@ export function deriveAttention(
 
 type ServiceListFilters = { type?: string; env?: string; search?: string };
 
+// Tags keep the key case they have in AWS, and AWS convention is capitalised
+// (Environment, Owner, Team), so a tag is read whatever the case of its key.
+// A blank value counts as no tag.
+function tagValue(key: 'environment' | 'owner' | 'team'): string {
+  return `(SELECT NULLIF(BTRIM(t.value), '')
+             FROM jsonb_each_text(CASE WHEN jsonb_typeof(r.tags) = 'object' THEN r.tags ELSE '{}'::jsonb END) t
+            WHERE LOWER(t.key) = '${key}'
+            ORDER BY t.key
+            LIMIT 1)`;
+}
+
+// No environment tag means the environment is unknown: null, shown as
+// "Untagged", never assumed to be production.
+const ENVIRONMENT_SQL = `COALESCE(${tagValue('environment')}, NULLIF(BTRIM(r.metadata->>'environment'), ''))`;
+
 async function fetchServices(orgId: string, filters: ServiceListFilters, limit?: number) {
   // Services list/stats represent current infrastructure — a soft-terminated
   // resource (see resourceReconciliation.service.ts) is no longer a "service" and
@@ -271,10 +286,10 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
     values.push(dbTypes);
   }
 
-  if (filters.env && filters.env !== 'all') {
-    conditions.push(
-      `(LOWER(COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production')) = LOWER($${p++}))`
-    );
+  if (filters.env && filters.env.toLowerCase() === 'untagged') {
+    conditions.push(`(${ENVIRONMENT_SQL} IS NULL OR LOWER(${ENVIRONMENT_SQL}) = 'untagged')`);
+  } else if (filters.env && filters.env !== 'all') {
+    conditions.push(`(LOWER(${ENVIRONMENT_SQL}) = LOWER($${p++}))`);
     values.push(filters.env);
   }
 
@@ -293,12 +308,12 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
        COALESCE(r.resource_name, r.resource_id)           AS name,
        r.resource_id,
        r.resource_type                                     AS type,
-       COALESCE(r.tags->>'environment', r.metadata->>'environment', 'production') AS environment,
+       ${ENVIRONMENT_SQL}                                  AS environment,
        COALESCE(r.tags->>'region', r.metadata->>'region')  AS region,
        r.status                                            AS raw_status,
        r.estimated_monthly_cost                            AS monthly_cost,
-       r.tags->>'owner'                                    AS owner,
-       r.tags->>'team'                                     AS team,
+       ${tagValue('owner')}                                AS owner,
+       ${tagValue('team')}                                 AS team,
        r.metadata->>'last_deployed'                        AS last_deployed,
        r.last_synced_at,
        r.metadata,
@@ -324,7 +339,7 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
       id:           row.id,
       name:         row.name,
       type:         row.type,
-      environment:  row.environment,
+      environment:  row.environment ?? null,
       region:       row.region,
       status,
       // No real monitoring data source exists yet — null rather than a fabricated figure.
@@ -463,8 +478,10 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
 });
 
 // ─── GET /api/services — aws_resources-backed list ───────────────────────────
+// Reading the list is never blocked by a plan limit: the services limit counts
+// the registry, not the resources this list returns.
 
-router.get('/', authenticateToken, checkResourceLimit('services', 0), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const orgId = req.organizationId;
   if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
