@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Rocket, GitBranch, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
+import Link from 'next/link'
+import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import awsServicesService, { AWSService, AWSServicesStats } from '@/lib/services/aws-services.service'
@@ -460,26 +461,19 @@ export default function ServicesPage() {
         </div>
       </div>
 
-      {/* ── QUICK NAV ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-8">
-        {[
-          { icon: Rocket,    label: 'Deployments',  desc: 'Deployment history and tracking', href: '/deployments',  color: '#7C3AED', bg: '#F5F3FF' },
-          { icon: GitBranch, label: 'Dependencies', desc: 'Service dependency map',          href: '/dependencies', color: '#059669', bg: '#F0FDF4' },
-        ].map(({ icon: Icon, label, desc, href, color, bg }) => (
-          <a key={href} href={href} className="no-underline group">
-            <div className="bg-white rounded-xl px-5 py-4 border border-slate-100 flex items-center gap-3.5 transition-all group-hover:border-violet-300 group-hover:shadow-md">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: bg }}>
-                <Icon size={16} style={{ color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900 mb-0.5">{label}</p>
-                <p className="text-xs text-slate-500 m-0">{desc}</p>
-              </div>
-              <ArrowRight size={14} className="text-slate-400 shrink-0" />
-            </div>
-          </a>
-        ))}
-      </div>
+      {/* ── DEPLOYMENTS LINK ── */}
+      <Link href="/deployments" className="block no-underline group mb-8 sm:max-w-md">
+        <div className="bg-white rounded-xl px-5 py-4 border border-slate-100 flex items-center gap-3.5 transition-all group-hover:border-violet-300 group-hover:shadow-md">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#F5F3FF' }}>
+            <Rocket size={16} style={{ color: '#7C3AED' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-900 mb-0.5">Deployments</p>
+            <p className="text-xs text-slate-500 m-0">Deployment history and tracking</p>
+          </div>
+          <ArrowRight size={14} className="text-slate-400 shrink-0" />
+        </div>
+      </Link>
 
       {/* ── SERVICES LIST ── */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">

@@ -56,7 +56,8 @@ const CUT_CLAIMS = new RegExp([
 ].join('|'), 'i')
 
 // Links that went to pages with nothing about these resources, or to no page.
-const CUT_LINKS = /^\/(anomalies|ai-reports|status)\b|^\/services\/(?!new$)/
+// /dependencies shows generated numbers in real mode, so this page does not link to it.
+const CUT_LINKS = /^\/(anomalies|ai-reports|status|dependencies)\b|^\/services\/(?!new$)/
 
 function resource(id: string, opts: { needsAttention?: boolean; environment?: string | null; type?: string; name?: string } = {}) {
   const needsAttention = opts.needsAttention ?? false
@@ -112,6 +113,8 @@ describe('/services -- title and the resource count', () => {
     expect(screen.getByText('AWS resources')).toBeInTheDocument()
     expect(screen.getByText('One connected account; not every region is scanned')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search 1 resource…')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Deployments/ })).toHaveAttribute('href', '/deployments')
+    expect(screen.queryByText('Dependencies')).not.toBeInTheDocument()
     expectNoCutClaims()
   })
 })
