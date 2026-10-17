@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Rocket, GitBranch, Activity, ArrowRight, Layers, RefreshCw, Sparkles, Check, Scan, AlertTriangle, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
+import Link from 'next/link'
+import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import awsServicesService, { AWSService, AWSServicesStats } from '@/lib/services/aws-services.service'
@@ -31,13 +32,13 @@ const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'Hi
 
 const RESOURCE_TYPE_CHIPS = [
   'all',
-  'ec2', 'ecs', 'lambda', 'rds', 's3', 'eks', 'dynamodb',
+  'ec2', 'ebs', 'ecs', 'lambda', 'rds', 's3', 'eks', 'dynamodb',
   'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
   'load-balancer', 'vpc',
 ]
 
 const TYPE_DISPLAY: Record<string, string> = {
-  'all': 'All Types', 'ec2': 'EC2', 'ecs': 'ECS', 'lambda': 'Lambda',
+  'all': 'All Types', 'ec2': 'EC2', 'ebs': 'EBS', 'ecs': 'ECS', 'lambda': 'Lambda',
   'rds': 'RDS', 's3': 'S3', 'eks': 'EKS', 'dynamodb': 'DynamoDB',
   'cloudfront': 'CloudFront', 'api-gateway': 'API Gateway',
   'elasticache': 'ElastiCache', 'aurora': 'Aurora', 'sqs': 'SQS',
@@ -69,12 +70,14 @@ function typeStyle(t: string) {
 
 // Shared row used by both the Needs Attention list and the expanded Healthy
 // group — same shape either way: severity badge (when flagged), name +
-// reason/last-synced, type badge, environment badge, cost, view link.
+// reason/last-synced, type badge, environment badge. The name is shown exactly
+// as stored; a resource with no environment tag is "Untagged".
 function ServiceRow({ svc }: { svc: any }) {
   const tc         = typeStyle(svc.type)
-  const svcName    = svc.name.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-  const envColor   = svc.environment === 'production' ? '#059669' : svc.environment === 'staging' ? '#D97706' : '#64748B'
-  const envBg      = svc.environment === 'production' ? '#F0FDF4' : svc.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
+  // Tag values keep their case ("Production", "PRODUCTION"); style by meaning.
+  const env        = svc.environment?.toLowerCase()
+  const envColor   = env === 'production' ? '#059669' : env === 'staging' ? '#D97706' : '#64748B'
+  const envBg      = env === 'production' ? '#F0FDF4' : env === 'staging' ? '#FFFBEB' : '#F8FAFC'
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-50 last:border-b-0 transition-colors hover:bg-slate-50">
@@ -84,7 +87,7 @@ function ServiceRow({ svc }: { svc: any }) {
         </div>
       )}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-slate-900 mb-0.5 truncate">{svcName}</p>
+        <p className="text-sm font-semibold text-slate-900 mb-0.5 truncate">{svc.name}</p>
         {svc.needs_attention && svc.reason ? (
           <p className="text-xs font-medium m-0 truncate text-slate-500">{svc.reason}</p>
         ) : svc.last_deployed ? (
@@ -98,17 +101,8 @@ function ServiceRow({ svc }: { svc: any }) {
           {TYPE_DISPLAY[svc.type] ?? svc.type?.toUpperCase() ?? '—'}
         </span>
         <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>
-          {svc.environment}
+          {svc.environment ?? 'Untagged'}
         </span>
-        <span className="text-xs text-slate-500 w-16 text-right tabular-nums">
-          {svc.monthly_cost !== null && svc.monthly_cost !== undefined ? `$${svc.monthly_cost.toLocaleString()}` : '—'}
-        </span>
-        <a
-          href={svc.needs_attention ? `/anomalies?service=${svc.name}` : `/services/${svc.id}`}
-          className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap"
-        >
-          View <ArrowRight size={11} />
-        </a>
       </div>
     </div>
   )
@@ -122,7 +116,6 @@ export default function ServicesPage() {
   const [debouncedSearch, setDebouncedSearch] = useState<string>('')
   const [onlyNeedsAttention, setOnlyNeedsAttention] = useState(false)
   const [healthyExpanded,    setHealthyExpanded]    = useState(false)
-  const [costSort,           setCostSort]           = useState<'asc' | 'desc' | null>(null)
   const [isDiscovering,     setIsDiscovering]     = useState(false)
   const [discoveryComplete, setDiscoveryComplete] = useState(false)
   const [discoveryMsg,      setDiscoveryMsg]      = useState<string | null>(null)
@@ -187,11 +180,10 @@ export default function ServicesPage() {
       // solely by checkAwsConnection() (an explicit aws_accounts lookup) and by
       // totalServices > 0 (see isAwsConnected below), never by this fetch alone.
     } catch (err: any) {
-      if (err.response?.status === 402) { setShowUpgradePrompt(true); return }
       try {
         const accounts = await awsAccountsService.getAccounts()
         if (accounts.length === 0) { setNoAwsAccount(true); setError(null) }
-        else { setNoAwsAccount(false); setError(err.message || 'Failed to load services') }
+        else { setNoAwsAccount(false); setError(err.message || 'Failed to load resources') }
       } catch { setNoAwsAccount(true); setError(null) }
     } finally { setIsLoading(false) }
   }, [isDemoActive, templateFilter, envFilter, debouncedSearch])
@@ -243,14 +235,6 @@ export default function ServicesPage() {
   // Fallback when the stats request has not answered: only a known warning or critical
   // status counts. 'unknown' (no lifecycle state to judge) is not a reason for attention.
   const warningCount  = displayStats?.needs_attention ?? allServices.filter(statusNeedsAttention).length
-  const servicesWithUptime = allServices.filter((s: any) => s.uptime != null)
-  const avgUptime     = displayStats?.avg_uptime
-    ?? (servicesWithUptime.length > 0
-      ? parseFloat((servicesWithUptime.reduce((sum: number, s: any) => sum + s.uptime, 0) / servicesWithUptime.length).toFixed(1))
-      : null)
-  const avgUptimeDisplay  = avgUptime != null ? `${avgUptime}%` : '—'
-  const totalMonthlyCost  = allServices.reduce((sum: number, s: any) => sum + (s.monthly_cost || 0), 0)
-  const costDisplay       = '$' + totalMonthlyCost.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
   // "Needs attention" quick-filter chip narrows the already type/env/search-
   // filtered set further — a separate dimension, not folded into fetchServices.
@@ -258,25 +242,19 @@ export default function ServicesPage() {
     ? filteredServices.filter((s: any) => s.needs_attention)
     : filteredServices
 
-  // Priority-sorted: critical first, then cost descending as tiebreaker —
-  // fixed order, not user-sortable (unlike the healthy group below).
+  // Priority-sorted: critical first, then by name — fixed order.
   const needsAttentionSorted = visibleFilteredServices
     .filter((s: any) => s.needs_attention)
     .sort((a: any, b: any) => {
       const ra = SEVERITY_SORT_RANK[a.priority_severity as string] ?? 4
       const rb = SEVERITY_SORT_RANK[b.priority_severity as string] ?? 4
       if (ra !== rb) return ra - rb
-      return (b.monthly_cost ?? 0) - (a.monthly_cost ?? 0)
+      return a.name.localeCompare(b.name)
     })
 
-  const healthyFiltered = visibleFilteredServices.filter((s: any) => !s.needs_attention)
-  const healthySorted   = costSort
-    ? [...healthyFiltered].sort((a: any, b: any) =>
-        costSort === 'asc' ? (a.monthly_cost ?? 0) - (b.monthly_cost ?? 0) : (b.monthly_cost ?? 0) - (a.monthly_cost ?? 0)
-      )
-    : [...healthyFiltered].sort((a: any, b: any) => a.name.localeCompare(b.name))
-
-  const toggleCostSort = () => setCostSort(prev => prev === 'desc' ? 'asc' : prev === 'asc' ? null : 'desc')
+  const healthySorted = visibleFilteredServices
+    .filter((s: any) => !s.needs_attention)
+    .sort((a: any, b: any) => a.name.localeCompare(b.name))
 
   // Connection status — deliberately independent of the current type/env/search
   // filter, so filtering to zero matches can never be mistaken for "AWS not
@@ -285,17 +263,17 @@ export default function ServicesPage() {
   const isAwsConnected    = isDemoActive || !noAwsAccount || totalServices > 0
   // What the counts below can support. "Healthy" in /services/stats means "not
   // stopped/failed and no high-severity finding" -- no monitoring source exists
-  // (avg_uptime is always null) -- so real mode says "no flagged issues", and
-  // zero services or a failed request is never read as all-healthy.
+  // -- so real mode says "no flagged issues", and zero resources or a failed
+  // request is never read as all-healthy.
   const serviceDataState: 'loading' | 'unavailable' | 'none' | 'present' = isDemoActive ? 'present'
     : isLoading ? 'loading'
     : error && !noAwsAccount ? 'unavailable'
     : totalServices === 0 ? 'none'
     : 'present'
   const serviceStatusHeadline = serviceDataState === 'loading' ? 'Loading…'
-    : serviceDataState === 'unavailable' ? 'Service data unavailable'
-    : serviceDataState === 'none' ? 'No services discovered'
-    : warningCount === 0 ? 'No services flagged'
+    : serviceDataState === 'unavailable' ? 'Resource data unavailable'
+    : serviceDataState === 'none' ? 'No resources discovered'
+    : warningCount === 0 ? 'No resources flagged'
     : `${warningCount} of ${totalServices} at risk`
   const activeFilterLabel = templateFilter !== 'all' ? TYPE_DISPLAY[templateFilter] : null
   // A "needs attention" filter turning up zero results is good news, not a
@@ -303,15 +281,17 @@ export default function ServicesPage() {
   const isPositiveEmptyState = onlyNeedsAttention && !activeFilterLabel && !search.trim() && envFilter === 'all'
     && visibleFilteredServices.length === 0 && isAwsConnected
   const noMatchTitle      = onlyNeedsAttention && !isPositiveEmptyState
-    ? 'No at-risk services match these filters'
+    ? 'No at-risk resources match these filters'
     : activeFilterLabel
       ? `No ${activeFilterLabel} resources found`
       : search.trim()
-        ? `No services match "${search.trim()}"`
+        ? `No resources match "${search.trim()}"`
         : envFilter !== 'all'
-          ? `No ${envFilter} services found`
-          : 'No services match these filters'
+          ? `No ${envFilter} resources found`
+          : 'No resources match these filters'
   const hasActiveFilter   = templateFilter !== 'all' || envFilter !== 'all' || !!search.trim() || onlyNeedsAttention
+  // Connected, but discovery has not found anything yet — not a filter miss.
+  const nothingDiscovered = !isDemoActive && isAwsConnected && serviceDataState === 'none' && !hasActiveFilter
   const clearFilters = () => { setTemplateFilter('all'); setEnvFilter('all'); setSearch(''); setOnlyNeedsAttention(false) }
 
   useEffect(() => { setHealthyExpanded(false) }, [envFilter, templateFilter, search, onlyNeedsAttention])
@@ -323,9 +303,8 @@ export default function ServicesPage() {
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-violet-600 mb-1">Services</p>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Services Intelligence</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Your discovered AWS services, their cost, and any flagged issues.</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Services</h1>
+          <p className="text-xs text-slate-500 font-medium leading-relaxed">Until services are mapped, this page lists the AWS resources discovered in your connected account and any flagged issues.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -344,17 +323,10 @@ export default function ServicesPage() {
                 : <><Scan size={13} /> Auto Discover</>
             }
           </button>
-          <a
-            href="/anomalies"
-            className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition-colors no-underline whitespace-nowrap"
-          >
-            <AlertTriangle size={13} />
-            {warningCount > 0 ? 'Resolve At-Risk Services' : 'Add Service'}
-          </a>
         </div>
       </div>
 
-      {/* ── SYSTEM INTELLIGENCE STRIP ── */}
+      {/* ── RESOURCE STATUS STRIP ── */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 mb-4">
         {/* Mobile: stacked layout */}
         <div className="flex flex-col gap-4 sm:hidden">
@@ -377,7 +349,7 @@ export default function ServicesPage() {
             )}
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">
-                {isDemoActive ? 'Service Health Score' : 'Service Status'}
+                {isDemoActive ? 'Service Health Score' : 'Resource status'}
               </p>
               <p className="text-base font-bold text-slate-900 leading-tight">
                 {isDemoActive
@@ -389,26 +361,12 @@ export default function ServicesPage() {
               )}
             </div>
           </div>
-          {/* Stats row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">At Risk</p>
-              <p className="text-2xl font-bold text-red-600">{warningCount} <span className="text-sm text-slate-500 font-normal">of {totalServices}</span></p>
-              <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Require review' : serviceDataState === 'present' ? 'None flagged' : '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
-              <p className="text-sm font-bold text-slate-900 leading-tight">
-                {isDemoActive ? 'Transaction flow at risk' : warningCount > 0 ? `${warningCount} at risk` : serviceDataState === 'present' ? 'None flagged' : '—'}
-              </p>
-              <p className={`text-xs font-semibold ${warningCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                {isDemoActive ? 'Payment degradation' : warningCount > 0 ? 'Review below' : 'All nominal'}
-              </p>
-            </div>
+          {/* At risk */}
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">At Risk</p>
+            <p className="text-2xl font-bold text-red-600">{warningCount} <span className="text-sm text-slate-500 font-normal">of {totalServices}</span></p>
+            <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}</p>
           </div>
-          <a href="/ai-reports" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1">
-            Full report <ArrowRight size={11} />
-          </a>
         </div>
 
         {/* Desktop: horizontal layout */}
@@ -433,7 +391,7 @@ export default function ServicesPage() {
               )}
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">
-                  {isDemoActive ? 'Service Health Score' : 'Service Status'}
+                  {isDemoActive ? 'Service Health Score' : 'Resource status'}
                 </p>
                 <p className="text-base font-bold text-slate-900">
                   {isDemoActive
@@ -448,59 +406,15 @@ export default function ServicesPage() {
 
             <div className="w-px h-11 bg-slate-200 shrink-0" />
 
-            {/* Drivers */}
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1.5">Driven by</p>
-              <div className="flex flex-col gap-0.5">
-                {isDemoActive ? (
-                  <>
-                    <p className="text-sm text-red-600 font-semibold m-0">● Payment processor invocation spike (+178%)</p>
-                    <p className="text-sm text-slate-700 font-medium m-0">● Analytics worker cost inefficiency detected</p>
-                    <p className="text-sm text-slate-700 font-medium m-0">● {healthyCount} services operating within thresholds</p>
-                  </>
-                ) : serviceDataState !== 'present' ? (
-                  <p className="text-sm text-slate-500 font-medium m-0">● {serviceStatusHeadline}</p>
-                ) : warningCount > 0 ? (
-                  <>
-                    <p className="text-sm text-red-600 font-semibold m-0">● {warningCount} service{warningCount !== 1 ? 's' : ''} requiring attention</p>
-                    <p className="text-sm text-slate-700 font-medium m-0">● {healthyCount} with no flagged issues</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm text-slate-700 font-semibold m-0">● {totalServices} service{totalServices !== 1 ? 's' : ''} with no flagged issues</p>
-                    <p className="text-sm text-slate-700 font-medium m-0">● Average uptime {avgUptimeDisplay}</p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="w-px h-11 bg-slate-200 shrink-0" />
-
-            {/* Business impact */}
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">Business Impact</p>
-              <p className="text-sm font-bold text-slate-900 mb-0.5">
-                {isDemoActive ? 'Transaction flow at risk · $864 cost increase' : warningCount > 0 ? `${warningCount} service${warningCount !== 1 ? 's' : ''} at risk` : serviceDataState === 'present' ? 'None flagged' : '—'}
-              </p>
-              <p className={`text-xs font-semibold m-0 ${warningCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                {isDemoActive ? 'Payment processing degradation — user-facing' : warningCount > 0 ? 'Review highlighted services below' : serviceDataState === 'present' ? 'No flagged issues' : serviceStatusHeadline}
-              </p>
-            </div>
-
-            <div className="w-px h-11 bg-slate-200 shrink-0" />
-
             {/* At risk */}
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-red-600 mb-1">At Risk</p>
               <p className="text-2xl font-bold text-red-600 mb-0.5">{warningCount} of {totalServices}</p>
               <p className="text-xs font-medium text-slate-500 m-0">
-                {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Require immediate review' : serviceDataState === 'present' ? 'None flagged' : '—'}
+                {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}
               </p>
             </div>
           </div>
-          <a href="/ai-reports" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
-            Full report <ArrowRight size={11} />
-          </a>
         </div>
       </div>
 
@@ -510,7 +424,7 @@ export default function ServicesPage() {
           <div className="flex items-center gap-2.5">
             <span className="text-lg">⚠️</span>
             <span className="text-sm font-medium text-amber-900">
-              You've reached your service limit on the <strong>{tier}</strong> plan. Upgrade to monitor more services.
+              You've reached the AWS resource limit on the <strong>{tier}</strong> plan. Upgrade to discover more resources.
             </span>
           </div>
           <a href="/settings/billing/upgrade" className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
@@ -522,22 +436,22 @@ export default function ServicesPage() {
       {/* ── ERROR BANNER ── */}
       {error && !noAwsAccount && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
-          <p className="text-sm text-red-600 m-0">Failed to load services — check your AWS connection</p>
+          <p className="text-sm text-red-600 m-0">Failed to load resources.</p>
         </div>
       )}
 
-      {/* ── 4 KPI CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mb-8">
+      {/* ── KPI CARDS ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-8">
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">Total Services</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">AWS resources</p>
           <div className="text-4xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalServices}</div>
-          <p className="text-slate-500 text-xs font-medium m-0">Registered across all environments</p>
+          <p className="text-slate-500 text-xs font-medium m-0">One connected account; not every region is scanned</p>
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">{isDemoActive ? 'Healthy' : 'No Flagged Issues'}</p>
           <div className="text-4xl font-bold text-green-600 leading-none mb-1">{isLoading && !isDemoActive ? '…' : healthyCount}</div>
-          <p className="text-slate-500 text-xs font-medium m-0">{isDemoActive ? 'Operating within thresholds' : 'No flagged issues'}</p>
+          <p className="text-slate-500 text-xs font-medium m-0">{isDemoActive ? 'Operating within thresholds' : 'Resources with no flagged issues'}</p>
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
@@ -546,77 +460,22 @@ export default function ServicesPage() {
           <p className="text-slate-500 text-xs font-medium m-0">
             {isDemoActive ? '1 reliability · 1 cost inefficiency · both in production' : warningCount > 0 ? `${warningCount} flagged for review` : serviceDataState === 'present' ? 'None flagged' : '—'}
           </p>
-          {warningCount > 0 && <p className="text-xs font-semibold text-red-600 mt-1 m-0">Resolve now →</p>}
         </div>
+      </div>
 
-        <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold uppercase tracking-widest text-slate-700 m-0">Monthly Cost</p>
-            <span className="text-xs font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide">Estimated</span>
+      {/* ── DEPLOYMENTS LINK ── */}
+      <Link href="/deployments" className="block no-underline group mb-8 sm:max-w-md">
+        <div className="bg-white rounded-xl px-5 py-4 border border-slate-100 flex items-center gap-3.5 transition-all group-hover:border-violet-300 group-hover:shadow-md">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#F5F3FF' }}>
+            <Rocket size={16} style={{ color: '#7C3AED' }} />
           </div>
-          <div className="text-3xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalMonthlyCost > 0 ? costDisplay : '—'}</div>
-          <p className="text-slate-500 text-xs font-medium m-0">Based on instance type pricing · not live billing data</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-900 mb-0.5">Deployments</p>
+            <p className="text-xs text-slate-500 m-0">Deployment history and tracking</p>
+          </div>
+          <ArrowRight size={14} className="text-slate-400 shrink-0" />
         </div>
-      </div>
-
-      {/* ── AI INSIGHT ── */}
-      <div className="bg-violet-50 rounded-xl p-4 sm:p-5 border border-violet-200 mb-5 flex items-start gap-3.5">
-        <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0 mt-0.5">
-          <Sparkles size={12} className="text-white" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-violet-600 text-xs font-bold tracking-widest uppercase mb-1">AI Insight</p>
-          <p className="text-sm text-slate-900 font-semibold leading-relaxed mb-1">
-            {isDemoActive
-              ? <><strong className="text-red-600">Payment Processor</strong> showing Lambda invocation spike (+178%) — likely retry loop driving <strong className="text-red-600">$864 cost increase</strong> this month.</>
-              : serviceDataState === 'loading'
-                ? 'Loading services…'
-                : serviceDataState === 'unavailable'
-                  ? 'Service data could not be retrieved.'
-                  : serviceDataState === 'none'
-                    ? 'No services have been discovered for this organization yet.'
-                    : warningCount > 0
-                      ? <>{warningCount} service{warningCount > 1 ? 's' : ''} flagged for review: stopped, failed, or with a high-severity finding.</>
-                      : <>No flagged issues across {totalServices} service{totalServices !== 1 ? 's' : ''}.</>
-            }
-          </p>
-          <p className="text-xs text-slate-500 font-medium m-0">
-            {isDemoActive
-              ? '17 of 19 services operating within thresholds · no new issues in last 24h.'
-              : serviceDataState === 'present' && warningCount > 0
-                ? `Review highlighted services below — ${healthyCount} of ${totalServices} have no flagged issues.`
-                : serviceDataState === 'present' ? 'Based on resource state and DevControl findings; DevControl does not monitor service uptime.' : ''
-            }
-          </p>
-        </div>
-        {warningCount > 0 && (
-          <a href="/anomalies" className="text-xs font-semibold text-violet-600 no-underline shrink-0 flex items-center gap-1 whitespace-nowrap hidden sm:flex">
-            Resolve before impact occurs →
-          </a>
-        )}
-      </div>
-
-      {/* ── QUICK NAV ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-8">
-        {[
-          { icon: Rocket,    label: 'Deployments',  desc: 'Deployment history and tracking', href: '/deployments',  color: '#7C3AED', bg: '#F5F3FF' },
-          { icon: GitBranch, label: 'Dependencies', desc: 'Service dependency map',          href: '/dependencies', color: '#059669', bg: '#F0FDF4' },
-          { icon: Activity,  label: 'Status Page',  desc: 'Live system status',              href: '/status',       color: '#0EA5E9', bg: '#F0F9FF' },
-        ].map(({ icon: Icon, label, desc, href, color, bg }) => (
-          <a key={href} href={href} className="no-underline group">
-            <div className="bg-white rounded-xl px-5 py-4 border border-slate-100 flex items-center gap-3.5 transition-all group-hover:border-violet-300 group-hover:shadow-md">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: bg }}>
-                <Icon size={16} style={{ color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900 mb-0.5">{label}</p>
-                <p className="text-xs text-slate-500 m-0">{desc}</p>
-              </div>
-              <ArrowRight size={14} className="text-slate-400 shrink-0" />
-            </div>
-          </a>
-        ))}
-      </div>
+      </Link>
 
       {/* ── SERVICES LIST ── */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
@@ -627,7 +486,7 @@ export default function ServicesPage() {
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder={`Search ${totalServices} service${totalServices !== 1 ? 's' : ''}…`}
+              placeholder={`Search ${totalServices} resource${totalServices !== 1 ? 's' : ''}…`}
               value={search}
               onChange={e => handleSearchChange(e.target.value)}
               className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 bg-slate-50 outline-none focus:border-violet-300 focus:bg-white transition-colors"
@@ -646,11 +505,12 @@ export default function ServicesPage() {
                 </SelectContent>
               </Select>
               <Select value={envFilter} onValueChange={setEnvFilter}>
-                <SelectTrigger className="h-8 text-xs w-[128px]"><SelectValue placeholder="Environment" /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs w-[152px]"><SelectValue placeholder="Environment" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">All Envs</SelectItem>
+                  <SelectItem value="all" className="text-xs">All environments</SelectItem>
                   <SelectItem value="production" className="text-xs">Production</SelectItem>
                   <SelectItem value="staging" className="text-xs">Staging</SelectItem>
+                  <SelectItem value="untagged" className="text-xs">Untagged</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -679,7 +539,7 @@ export default function ServicesPage() {
         {isLoading && !isDemoActive ? (
           <div className="px-7 py-12 text-center">
             <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
-            <p className="text-sm text-slate-500 m-0">Loading services...</p>
+            <p className="text-sm text-slate-500 m-0">Loading resources…</p>
           </div>
         ) : visibleFilteredServices.length === 0 ? (
           !isAwsConnected ? (
@@ -688,37 +548,23 @@ export default function ServicesPage() {
               <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
                 <Layers size={22} className="text-slate-400" />
               </div>
-              <p className="text-sm font-semibold text-slate-900 mb-1.5">Connect AWS to See What's Costing You Money</p>
-              <p className="text-sm text-slate-500 mb-7 leading-relaxed max-w-md mx-auto">Secure read-only access — no changes made to your infrastructure.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-lg mx-auto mb-7 text-left">
-                {[
-                  { step: '1', title: 'Connect AWS',       desc: 'Secure read-only access — no changes made to your infrastructure', color: '#7C3AED' },
-                  { step: '2', title: 'Discover Services', desc: 'Automatically map your infrastructure, costs, and dependencies',    color: '#059669' },
-                  { step: '3', title: 'Monitor & Act',     desc: 'Uncover cost waste, security gaps, and performance risks instantly', color: '#0EA5E9' },
-                ].map(({ step, title, desc, color }) => (
-                  <div key={step} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center mb-2.5" style={{ background: color }}>
-                      <span className="text-xs font-bold text-white">{step}</span>
-                    </div>
-                    <p className="text-xs font-semibold text-slate-900 mb-1">{title}</p>
-                    <p className="text-xs text-slate-500 m-0 leading-relaxed">{desc}</p>
-                  </div>
-                ))}
+              <p className="text-sm font-semibold text-slate-900 mb-1.5">No AWS account connected</p>
+              <p className="text-sm text-slate-500 mb-6 leading-relaxed max-w-md mx-auto">Connect an AWS account with read-only access. DevControl lists the resources it discovers here.</p>
+              <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2 transition-colors">
+                Connect AWS account
+              </a>
+            </div>
+          ) : nothingDiscovered ? (
+            // ── STATE D — connected, discovery has found nothing yet ──
+            <div className="px-5 py-10 text-center">
+              <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-3">
+                <Layers size={18} className="text-slate-400" />
               </div>
-              <div className="flex gap-3 justify-center flex-wrap">
-                {noAwsAccount ? (
-                  <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2 transition-colors">
-                    Connect AWS Account →
-                  </a>
-                ) : (
-                  <button onClick={handleAutoDiscover} className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors">
-                    <Scan size={14} /> Auto Discover
-                  </button>
-                )}
-                <a href="/services/new" className="bg-white hover:bg-slate-50 text-slate-600 px-6 py-2.5 rounded-lg text-sm font-medium border border-slate-200 no-underline inline-flex items-center gap-2 transition-colors">
-                  + Add Manually
-                </a>
-              </div>
+              <p className="text-sm font-semibold text-slate-900 mb-1">No resources discovered yet</p>
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed">Run Auto Discover to scan your connected account.</p>
+              <button onClick={handleAutoDiscover} disabled={isDiscovering} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold border-none cursor-pointer inline-flex items-center gap-1.5 transition-colors">
+                <Scan size={13} /> Auto Discover
+              </button>
             </div>
           ) : isPositiveEmptyState ? (
             // ── STATE C — "needs attention" filter, nothing flagged (good news, not an error) ──
@@ -728,24 +574,24 @@ export default function ServicesPage() {
               </div>
               <p className="text-sm font-semibold text-slate-900 mb-1">Nothing needs attention right now</p>
               <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                None of the {totalServices} service{totalServices !== 1 ? 's have' : ' has'} a flagged issue.
+                None of the {totalServices} resource{totalServices !== 1 ? 's have' : ' has'} a flagged issue.
               </p>
               <button
                 onClick={clearFilters}
                 className="bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-colors"
               >
-                Show all services
+                Show all resources
               </button>
             </div>
           ) : (
-            // ── STATE B — AWS connected, current filter matches zero services ──
+            // ── STATE B — AWS connected, current filter matches zero resources ──
             <div className="px-5 py-8 text-center">
               <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-3">
                 <SearchX size={18} className="text-slate-400" />
               </div>
               <p className="text-sm font-semibold text-slate-900 mb-1">{noMatchTitle}</p>
               <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                Try a different resource type, or clear filters to see all {totalServices} service{totalServices !== 1 ? 's' : ''}.
+                Try a different resource type, or clear filters to see all {totalServices} resource{totalServices !== 1 ? 's' : ''}.
               </p>
               {hasActiveFilter && (
                 <button
@@ -759,7 +605,7 @@ export default function ServicesPage() {
           )
         ) : (
           <>
-            {/* Needs attention — expanded by default, restrained styling, fixed severity+cost sort */}
+            {/* Needs attention — expanded by default, restrained styling, fixed severity+name sort */}
             {needsAttentionSorted.length > 0 && (
               <div>
                 <div className="px-5 sm:px-7 py-2.5 bg-slate-50/70 border-b border-slate-100">
@@ -771,7 +617,7 @@ export default function ServicesPage() {
               </div>
             )}
 
-            {/* Collapsed no-flagged-issues group — expands into the same row format, sortable by cost */}
+            {/* Collapsed no-flagged-issues group — expands into the same row format, sorted by name */}
             {healthySorted.length > 0 && (
               <div>
                 <button
@@ -781,25 +627,12 @@ export default function ServicesPage() {
                   <span className="flex items-center gap-2">
                     <CheckCircle2 size={15} className="text-green-600 shrink-0" />
                     <span className="text-sm font-semibold text-slate-700">
-                      {healthySorted.length} service{healthySorted.length !== 1 ? 's' : ''} with no flagged issues
+                      {healthySorted.length} resource{healthySorted.length !== 1 ? 's' : ''} with no flagged issues
                     </span>
                   </span>
                   {healthyExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
                 </button>
-                {healthyExpanded && (
-                  <>
-                    <div className="hidden sm:flex items-center justify-end px-7 py-2 bg-slate-50 border-b border-slate-100">
-                      <button
-                        onClick={toggleCostSort}
-                        className="flex items-center gap-1 text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer bg-transparent border-none hover:text-slate-700"
-                      >
-                        Monthly Cost
-                        {costSort === 'asc' ? <ChevronUp size={12} /> : costSort === 'desc' ? <ChevronDown size={12} /> : null}
-                      </button>
-                    </div>
-                    {healthySorted.map((svc: any) => <ServiceRow key={svc.id} svc={svc} />)}
-                  </>
-                )}
+                {healthyExpanded && healthySorted.map((svc: any) => <ServiceRow key={svc.id} svc={svc} />)}
               </div>
             )}
           </>

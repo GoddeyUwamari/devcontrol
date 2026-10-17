@@ -12,7 +12,7 @@ import { BreadcrumbItem } from '@/components/ui/breadcrumb';
 // Map of route segments to readable labels
 const routeLabels: Record<string, string> = {
   dashboard: 'Dashboard',
-  services: 'Services Overview',
+  services: 'Services',
   deployments: 'Deployments',
   dependencies: 'Dependencies',
   infrastructure: 'Infrastructure',
