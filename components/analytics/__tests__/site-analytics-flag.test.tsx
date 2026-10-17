@@ -4,15 +4,19 @@
  * sets -- turns it off.
  */
 import React from "react";
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
-vi.mock("@next/third-parties/google", () => ({
-  GoogleAnalytics: ({ gaId }: { gaId: string }) => <div data-testid="google-analytics" data-ga-id={gaId} />,
+vi.mock("next/script", () => ({
+  default: ({ src }: { src: string }) => <div data-testid="ga-script" data-src={src} />,
 }));
 
 import { SiteAnalytics } from "@/components/analytics/site-analytics";
 import { GA_TRACKING_ID, isGaEnabled, trackEvent } from "@/lib/gtag";
+
+beforeEach(() => {
+  vi.stubGlobal("gtag", vi.fn());
+});
 
 afterEach(() => {
   cleanup();
@@ -21,23 +25,25 @@ afterEach(() => {
 });
 
 describe("SiteAnalytics GA flag", () => {
-  it("renders GA when NEXT_PUBLIC_GA_ENABLED is unset (production default)", () => {
+  it("loads GA when NEXT_PUBLIC_GA_ENABLED is unset (production default)", () => {
     vi.stubEnv("NEXT_PUBLIC_GA_ENABLED", undefined);
     expect(process.env.NEXT_PUBLIC_GA_ENABLED).toBeUndefined();
     render(<SiteAnalytics />);
-    expect(screen.getByTestId("google-analytics").getAttribute("data-ga-id")).toBe(GA_TRACKING_ID);
+    expect(screen.getByTestId("ga-script").getAttribute("data-src")).toBe(
+      `https://www.googletagmanager.com/gtag/js?id=${GA_TRACKING_ID}`
+    );
   });
 
-  it.each(["true", "1", "", "FALSE"])("renders GA when NEXT_PUBLIC_GA_ENABLED=%j", (value) => {
+  it.each(["true", "1", "", "FALSE"])("loads GA when NEXT_PUBLIC_GA_ENABLED=%j", (value) => {
     vi.stubEnv("NEXT_PUBLIC_GA_ENABLED", value);
     render(<SiteAnalytics />);
-    expect(screen.getByTestId("google-analytics")).toBeTruthy();
+    expect(screen.getByTestId("ga-script")).toBeTruthy();
   });
 
   it("renders nothing when NEXT_PUBLIC_GA_ENABLED=false", () => {
     vi.stubEnv("NEXT_PUBLIC_GA_ENABLED", "false");
     const { container } = render(<SiteAnalytics />);
-    expect(screen.queryByTestId("google-analytics")).toBeNull();
+    expect(screen.queryByTestId("ga-script")).toBeNull();
     expect(container.innerHTML).toBe("");
   });
 
@@ -53,6 +59,8 @@ describe("SiteAnalytics GA flag", () => {
     vi.stubEnv("NEXT_PUBLIC_GA_ENABLED", undefined);
     expect(isGaEnabled()).toBe(true);
     trackEvent("qualify_lead");
-    expect(gtag).toHaveBeenCalledWith("event", "qualify_lead", undefined);
+    expect(gtag).toHaveBeenCalledWith("event", "qualify_lead", {
+      page_location: `${window.location.origin}/`,
+    });
   });
 });

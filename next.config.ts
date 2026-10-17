@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
+  // No "X-Powered-By: Next.js" response header.
+  poweredByHeader: false,
   webpack(config, { nextRuntime }) {
     // Vercel's Edge Middleware runtime does not expose `node:async_hooks`.
     // Next.js's test-proxy module calls `new AsyncLocalStorage()` at
@@ -93,6 +95,24 @@ const nextConfig: NextConfig = {
       { source: '/dependencies',                    destination: '/services',                       permanent: false },
       // Demo mode is off; /tour is the public walkthrough every other "demo" link uses.
       { source: '/demo',                            destination: '/tour',                           permanent: false },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          // Origin only, also on same-origin requests (RSC prefetches, /_next
+          // assets), whose Referer would otherwise carry the full page URL,
+          // query string included, into request logs. Cross-origin requests
+          // already got only the origin under the browser default.
+          { key: 'Referrer-Policy',        value: 'strict-origin' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          // No page of ours is meant to be framed: Stripe and SSO are
+          // top-level navigations, invoices open in new tabs.
+          { key: 'X-Frame-Options',        value: 'DENY' },
+        ],
+      },
     ];
   },
 };

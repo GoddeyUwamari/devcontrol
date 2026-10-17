@@ -132,11 +132,12 @@ describe("analytics route boundaries (source guard)", () => {
     expect([...authFiles, ...rootLevel].filter(importsAnalytics).map(rel)).toEqual([]);
   });
 
-  it("GoogleAnalytics itself is used only by SiteAnalytics", () => {
+  it("GA is loaded only by SiteAnalytics; @next/third-parties' GoogleAnalytics is not used", () => {
     const sources = ["app", "components", "lib"].flatMap((d) => filesUnder(path.join(root, d)));
-    const direct = sources
-      .filter((f) => /from\s+["']@next\/third-parties\/google["']/.test(fs.readFileSync(f, "utf8")))
-      .map(rel);
-    expect(direct).toEqual(["components/analytics/site-analytics.tsx"]);
+    const read = (f: string) => fs.readFileSync(f, "utf8");
+    expect(sources.filter((f) => /from\s+["']@next\/third-parties\/google["']/.test(read(f))).map(rel)).toEqual([]);
+    expect(sources.filter((f) => read(f).includes("googletagmanager.com/gtag/js")).map(rel)).toEqual([
+      "components/analytics/site-analytics.tsx",
+    ]);
   });
 });
