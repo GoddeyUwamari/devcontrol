@@ -6,7 +6,9 @@ import { ArrowRight, Check, Play } from 'lucide-react'
 // tooling) exists to substantiate it — see the Phase 5 product-truthfulness audit. Do not
 // re-add a GDPR badge here without real, traceable implementation evidence behind it.
 // No SOC 2 badge either: SOC 2 is readiness planning only, not an audit or certification.
-const trustBadges = ['Read-only access', 'No agents', 'AES-256 encryption']
+// AES-256-GCM covers stored AWS credentials and SSO certificates (backend encryption.service.ts),
+// not every byte DevControl holds, so the badge names exactly that.
+const trustBadges = ['Read-only access', 'No agents', 'Credentials encrypted (AES-256-GCM)']
 
 interface SampleRow {
   title: string
@@ -18,13 +20,15 @@ interface SampleRow {
 /**
  * The hero's sample panel: what a first scan can find, as an illustration.
  * Not a customer's data, and the panel says so (its "Sample data" tag and the
- * caption under it).
+ * caption under it). Every row is a finding a real, implemented detector
+ * produces (backend optimization-rules.ts, status 'implemented'); a test
+ * enforces that, so no row may illustrate a check DevControl does not run.
  */
 const SAMPLE_ROWS: SampleRow[] = [
-  { title: 'Server running but idle', subtitle: 'Idle EC2 instance', monthly: 142 },
+  { title: 'Server with very low CPU all week', subtitle: 'Idle EC2 instance', monthly: 142 },
   { title: 'Storage attached to nothing', subtitle: 'Unattached EBS volume', monthly: 38 },
   { title: 'Old storage type, cheaper one exists', subtitle: 'gp2 to gp3 upgrade', monthly: 21 },
-  { title: 'Old database backup nobody uses', subtitle: 'Idle RDS snapshot', monthly: 64 },
+  { title: 'Elastic IP attached to nothing', subtitle: 'Unused Elastic IP', monthly: 4 },
 ]
 
 /** The sum of the sample costs above, so the total can never disagree with its rows. */
@@ -162,15 +166,7 @@ export function HeroSection() {
           <SamplePanel />
         </div>
 
-        <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="hero-cards">
-          <div className="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-outcome-card">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">Recent client outcome</p>
-            <p className="m-0 mt-2 text-4xl font-bold tracking-tight text-[#7c3aed]">$8,000/mo</p>
-            <p className="m-0 mt-3 text-base leading-relaxed text-slate-700">
-              in unnecessary AWS spend identified in under 60 seconds, with no agent and no code changes.
-            </p>
-          </div>
-
+        <div className="mt-12" data-testid="hero-cards">
           <div className="rounded-2xl bg-slate-900 p-7" data-testid="hero-audit-card">
             <h2 className="m-0 text-2xl font-bold tracking-tight text-white">Rather talk it through?</h2>
             <p className="m-0 mt-3 text-base leading-relaxed text-slate-300">

@@ -282,12 +282,13 @@ export function MarketingNav() {
       >
         <p style={{ color: '#ffffff', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 500, letterSpacing: '0.01em', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           <span style={{ marginRight: '8px' }}>🚀</span>
-          ⚡ New: Auto-detection for idle RDS, EBS, and snapshot waste!{' '}
+          {/* Name only implemented detectors (backend optimization-rules.ts). */}
+          New: detection for unattached EBS volumes, gp2→gp3 upgrades and idle EC2 candidates.{' '}
           <a
-            href="/platform/infrastructure"
+            href="/tour"
             style={{ color: '#ffffff', fontSize: isMobile ? '0.75rem' : '0.875rem', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: '2px', marginLeft: '4px' }}
           >
-        See what&apos;s new →
+        Take the tour →
           </a>
         </p>
       </div>

@@ -85,7 +85,7 @@ export default function TeamsPage() {
             <span className="text-lg shrink-0">✦</span>
             <div>
               <div className="text-sm font-semibold text-violet-900 mb-0.5">Teams unlock cost attribution and ownership clarity</div>
-              <div className="text-xs text-violet-700 leading-relaxed">Platforms without team ownership spend 3× longer resolving incidents and have 40% higher unattributed cloud spend. Create teams to map services, costs, and alerts to the right groups.</div>
+              <div className="text-xs text-violet-700 leading-relaxed">Teams let you map services, costs and alerts to the people who own them.</div>
             </div>
           </div>
           <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-14 text-center max-w-lg mx-auto">

@@ -6,8 +6,10 @@
  * that isn't underway, and "GDPR Ready" is a substantive compliance claim with
  * no supporting implementation (no DPA, no subprocessor list, no data-subject
  * tooling) — see the Phase 5 audit. The marketing hero w1 redesign replaced the
- * badge row with "Read-only access", "No agents" and "AES-256 encryption", and
- * dropped the SOC 2 badge entirely (founder decision, Option A).
+ * badge row with "Read-only access", "No agents" and an encryption badge, and
+ * dropped the SOC 2 badge entirely (founder decision, Option A). AUDIT-TRUTH-PR3
+ * narrowed "AES-256 encryption" to what is actually encrypted: stored
+ * credentials, with AES-256-GCM.
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -36,7 +38,8 @@ describe('HeroSection trust badges', () => {
     render(<HeroSection />)
     expect(screen.getByText('Read-only access', { selector: '[data-testid="hero-trust-badge"]' })).toBeInTheDocument()
     expect(screen.getByText('No agents', { selector: '[data-testid="hero-trust-badge"]' })).toBeInTheDocument()
-    expect(screen.getByText('AES-256 encryption', { selector: '[data-testid="hero-trust-badge"]' })).toBeInTheDocument()
+    expect(screen.getByText('Credentials encrypted (AES-256-GCM)', { selector: '[data-testid="hero-trust-badge"]' })).toBeInTheDocument()
+    expect(screen.queryByText('AES-256 encryption')).not.toBeInTheDocument()
     expect(screen.queryByText('Read-only IAM')).not.toBeInTheDocument()
     expect(screen.queryByText('AES-256 Encryption')).not.toBeInTheDocument()
   })
@@ -44,6 +47,6 @@ describe('HeroSection trust badges', () => {
   it('renders exactly three trust badges', () => {
     render(<HeroSection />)
     const badges = screen.getAllByTestId('hero-trust-badge').map((el) => el.textContent)
-    expect(badges).toEqual(['Read-only access', 'No agents', 'AES-256 encryption'])
+    expect(badges).toEqual(['Read-only access', 'No agents', 'Credentials encrypted (AES-256-GCM)'])
   })
 })

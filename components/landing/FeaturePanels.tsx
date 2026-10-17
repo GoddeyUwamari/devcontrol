@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 
@@ -20,31 +19,18 @@ export function FeaturePanels() {
   </h2>
 </div>
 
-        {/* Two-column panel */}
-         <div className="grid lg:grid-cols-[65%_35%] gap-8 lg:gap-16 items-center">
-          {/* Left — Image */}
-          <div>
-            <Image
-              src="/landing/ai-analyst-preview.png"
-              alt="DevControl AI Weekly Summary and Cost Analysis Dashboard"
-              width={1200}
-              height={675}
-              className="w-full h-auto rounded-2xl shadow-2xl"
-            />
-          </div>
-
-          {/* Right — Text */}
+        {/* Text panel. The former screenshot showed detectors DevControl does not have (idle RDS, oversized EC2). */}
+        <div className="mx-auto max-w-2xl">
            <div className="pr-4">
             <p className="text-slate-600 text-lg leading-relaxed">
-              DevControl continuously monitors your AWS environment, surfaces cost anomalies before they become budget surprises, and delivers plain-English explanations of what&apos;s happening — without dashboards, spreadsheets, or manual investigation.
+              DevControl scans your AWS account every 6 hours, flags waste and security findings, and explains what it found in plain English.
             </p>
 
             <ul className="space-y-4 mt-6">
               {[
-                'Weekly AI cost and risk summaries auto-delivered every Monday',
-                'Anomaly detection before incidents impact customers or revenue',
-                'Natural language answers about your infrastructure in seconds',
-                'Executive reports generated automatically — no manual work',
+                'Weekly AI cost and risk summary, delivered every Monday',
+                'Ask questions about your AWS account in plain English',
+                'Executive reports you can generate or schedule',
               ].map((point) => (
                 <li key={point} className="flex items-start gap-3">
                   <span className="rounded-full bg-violet-600 h-2 w-2 mt-2 flex-shrink-0" />

@@ -23,7 +23,7 @@ describe('HeroSection copy', () => {
       'Connect read-only and see idle resources, security risks and cost drivers across your AWS account. No agents. No code changes.',
       'Find My AWS WasteTake a product tour',
       'Read-only access · Takes a few minutes · Delete the role anytime',
-      'Read-only accessNo agentsAES-256 encryption',
+      'Read-only accessNo agentsCredentials encrypted (AES-256-GCM)',
     ])
   })
 
@@ -40,10 +40,10 @@ describe('HeroSection copy', () => {
       Array.from(row.querySelectorAll('p, [data-testid="hero-sample-panel-row-value"]')).map(text),
     )
     expect(rows).toEqual([
-      ['Server running but idle', 'Idle EC2 instance', '$142/mo'],
+      ['Server with very low CPU all week', 'Idle EC2 instance', '$142/mo'],
       ['Storage attached to nothing', 'Unattached EBS volume', '$38/mo'],
       ['Old storage type, cheaper one exists', 'gp2 to gp3 upgrade', '$21/mo'],
-      ['Old database backup nobody uses', 'Idle RDS snapshot', '$64/mo'],
+      ['Elastic IP attached to nothing', 'Unused Elastic IP', '$4/mo'],
     ])
     for (const value of screen.getAllByTestId('hero-sample-panel-row-value')) {
       expect(value.className).toContain('text-[#047857]')
@@ -55,7 +55,7 @@ describe('HeroSection copy', () => {
     const sum = screen
       .getAllByTestId('hero-sample-panel-row-value')
       .reduce((acc, el) => acc + Number(text(el).replace(/[$,]|\/mo/g, '')), 0)
-    expect(sum).toBe(265)
+    expect(sum).toBe(205)
     const total = screen.getByTestId('hero-sample-panel-total')
     expect(within(total).getByText('Estimated monthly saving')).toBeInTheDocument()
     expect(text(screen.getByTestId('hero-sample-panel-total-value'))).toBe(`$${sum}/mo`)
@@ -73,15 +73,13 @@ describe('HeroSection copy', () => {
     expect(screen.getByTestId('hero-sample-panel-caption').previousElementSibling).toBe(panel)
   })
 
-  it('renders both cards exactly', () => {
+  it('renders the audit card exactly, and no unsourced client-outcome card', () => {
     render(<HeroSection />)
-    const outcome = screen.getByTestId('hero-outcome-card')
-    expect(Array.from(outcome.children).map(text)).toEqual([
-      'Recent client outcome',
-      '$8,000/mo',
-      'in unnecessary AWS spend identified in under 60 seconds, with no agent and no code changes.',
-    ])
-    expect(outcome.firstElementChild?.className).toContain('uppercase')
+    // "Recent client outcome $8,000/mo" was removed: DevControl has no customer
+    // outcome to cite (the case-studies page says so).
+    expect(screen.queryByTestId('hero-outcome-card')).not.toBeInTheDocument()
+    expect(screen.queryByText(/client outcome/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\$8,000/)).not.toBeInTheDocument()
     const audit = screen.getByTestId('hero-audit-card')
     expect(Array.from(audit.children).map(text)).toEqual([
       'Rather talk it through?',
@@ -132,16 +130,10 @@ describe('HeroSection layout', () => {
     expect(Array.from(columns.children).map((el) => el.getAttribute('data-testid'))).toEqual(['hero-copy', 'hero-sample'])
   })
 
-  it('puts the two cards side by side from lg, stacked below, after the columns', () => {
+  it('puts the audit card after the columns', () => {
     render(<HeroSection />)
     const cards = screen.getByTestId('hero-cards')
-    expect(cards.className).toMatch(/(^| )grid-cols-1( |$)/)
-    expect(cards.className).toMatch(/(^| )lg:grid-cols-2( |$)/)
-    expect(cards.className).not.toMatch(/(^| )(sm|md):grid-cols-/)
-    expect(Array.from(cards.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'hero-outcome-card',
-      'hero-audit-card',
-    ])
+    expect(Array.from(cards.children).map((el) => el.getAttribute('data-testid'))).toEqual(['hero-audit-card'])
     expect(screen.getByTestId('hero-columns').nextElementSibling).toBe(cards)
   })
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { HeroSection } from '@/components/landing/HeroSection'
-import { DashboardPreview } from '@/components/landing/DashboardPreview';
 import { AIFeaturesSection } from '@/components/landing/AIFeaturesSection';
 import { PersonaSection } from '@/components/landing/PersonaSection';
 import { FounderSection } from './FounderSection';
@@ -13,18 +12,12 @@ import {
   Cloud,
   GitBranch,
   MessageSquare,
-  Layers,
-  AlertCircle,
-  Container,
   Database,
-  BarChart2,
   ShieldCheck,
   Lock,
   Eye,
   FileCheck,
-  ArrowRight,
 } from 'lucide-react';
-import Link from 'next/link';
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -37,15 +30,14 @@ function useWindowWidth() {
   return width
 }
 
+// Only integrations with real code behind them: AWS (the data source), GitHub
+// (deployment webhooks for DORA metrics), Slack and Jira (alert-notification.service.ts).
+// Do not re-add Kubernetes, Terraform, Datadog or PagerDuty without an integration.
 const integrations = [
-  { name: 'AWS',        desc: 'Cloud cost, resources, and infrastructure intelligence',  icon: Cloud,        color: '#f97316' },
-  { name: 'Kubernetes', desc: 'Cluster visibility and workload efficiency',               icon: Container,    color: '#7c3aed' },
-  { name: 'Terraform',  desc: 'Infrastructure changes and resource tracking',             icon: Layers,       color: '#6d28d9' },
-  { name: 'GitHub',     desc: 'Code ownership and deployment context',                   icon: GitBranch,    color: '#1f2937' },
-  { name: 'Datadog',    desc: 'Observability signals and system health',                  icon: BarChart2,    color: '#a855f7' },
-  { name: 'PagerDuty',  desc: 'Incident context and operational risk',                   icon: AlertCircle,  color: '#16a34a' },
-  { name: 'Slack',      desc: 'Alerts and insights where your team works',               icon: MessageSquare, color: '#7c3aed' },
-  { name: 'Jira',       desc: 'Engineering priorities and ownership',                    icon: Database,     color: '#7c3aed' },
+  { name: 'AWS',    desc: 'Cost, resource and security data, read-only',  icon: Cloud,         color: '#f97316' },
+  { name: 'GitHub', desc: 'Deployment events for DORA metrics',           icon: GitBranch,     color: '#1f2937' },
+  { name: 'Slack',  desc: 'Alert notifications and scheduled reports',    icon: MessageSquare, color: '#7c3aed' },
+  { name: 'Jira',   desc: 'Tickets created from alerts',                  icon: Database,      color: '#7c3aed' },
 ];
 
 const securityItems = [
@@ -56,8 +48,8 @@ const securityItems = [
   },
   {
     icon: Lock,
-    title: 'End-to-End Encryption',
-    description: 'All data is encrypted in transit with TLS 1.3 and at rest with AES-256. Your cloud metadata never leaves our secure environment unencrypted.',
+    title: 'Encrypted Secrets',
+    description: 'AWS credentials and SSO certificates are encrypted with AES-256-GCM before they are stored. Data in transit is sent over TLS.',
   },
   {
     icon: Eye,
@@ -80,9 +72,6 @@ export function MarketingContent() {
     <>
       {/* Hero */}
       <HeroSection />
-
-      {/* Dashboard + Ticker */}
-      <DashboardPreview />
 
       {/* AI Features */}
       <FeaturePanels />
@@ -118,7 +107,7 @@ export function MarketingContent() {
               Your Infrastructure Data, Unified in One Place
             </h2>
             <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
-              DevControl connects with the tools your engineering teams already use — bringing cloud costs, reliability signals, and operational insights together without replacing your workflow.
+              DevControl reads your AWS account and sends alerts and reports to the tools your team already uses.
             </p>
           </div>
 
@@ -159,26 +148,6 @@ export function MarketingContent() {
             })}
           </div>
 
-          <div style={{ textAlign: 'center' }}>
-            <Link
-              href="/platform/infrastructure"
-              className="inline-flex items-center gap-2 font-semibold"
-              style={{ color: '#7c3aed', fontSize: '15px', textDecoration: 'none', transition: 'all 0.15s ease' }}
-              onMouseEnter={(e) => {
-                const el = e.currentTarget as HTMLAnchorElement;
-                el.style.color = '#6b21a8';
-                el.style.textDecoration = 'underline';
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget as HTMLAnchorElement;
-                el.style.color = '#7c3aed';
-                el.style.textDecoration = 'none';
-              }}
-            >
-              View All Integrations
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
         </div>
       </section>
 
@@ -211,10 +180,10 @@ export function MarketingContent() {
               Your data is safe with us
             </h2>
             <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75, marginBottom: '12px' }}>
-              We built DevControl with a security-first mindset. Enterprise-grade protections out of the box — no add-ons required.
+              Here is exactly how DevControl handles your data.
             </p>
             <p style={{ fontSize: '15px', fontWeight: 600, color: '#7c3aed' }}>
-              We never store your AWS credentials. Ever.
+              Standard onboarding uses a cross-account IAM role, so no AWS access keys are needed.
             </p>
           </div>
 

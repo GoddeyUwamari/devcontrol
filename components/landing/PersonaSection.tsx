@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import { CheckCircle2 } from 'lucide-react'
 
 const personas = [
@@ -11,18 +10,10 @@ const personas = [
     headline: 'Ship Faster Without Losing Control',
     hook: 'Understand infrastructure health and cost impact.',
     bullets: [
-      'Executive AI Reports auto-delivered monthly',
+      'Executive AI reports, on demand or scheduled',
       'Risk score and trends at a glance',
       'Make confident scaling decisions',
     ],
-    image: '/landing/personas/eng-leaders.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'DevControl gives me the numbers I need for every board update without bugging my engineers or digging through AWS myself.',
-      name: 'Jordan Ellis',
-      title: 'VP Engineering, SaaS Co.',
-      initials: 'JE',
-    },
   },
   {
     id: 'eng-managers',
@@ -30,18 +21,9 @@ const personas = [
     headline: "Know Your Team's Numbers Without Asking",
     hook: 'Get team-level accountability without micromanaging.',
     bullets: [
-      'Cost attribution by team',
-      'SLO dashboard for owned services',
+      'Services and their owners in one view',
       'Weekly AI email summaries',
     ],
-    image: '/landing/personas/eng-managers.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'I used to spend hours pulling AWS cost data. Now the numbers just show up every Monday, ready for leadership review.',
-      name: 'Sam Rivera',
-      title: ' Engineering Manager, Platform Team',
-      initials: 'SR',
-    },
   },
   {
     id: 'platform-engineers',
@@ -49,18 +31,10 @@ const personas = [
     headline: 'Optimize Infrastructure at Scale',
     hook: 'Operational tools for the people doing the work every day.',
     bullets: [
-      'Detect idle and over-provisioned resources',
-      'Anomaly detection with auto-remediation workflows',
+      'Detect idle and unattached resources',
+      'Security findings across your AWS account',
       'Slack and Jira integrations',
     ],
-    image: '/landing/personas/platform-engineers.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: "The anomaly alerts caught a misconfigured Lambda we’d been paying for for three months and helped us shut it down fast.",
-      name: ' Alex Kim',
-      title: ' Senior Platform Engineer',
-      initials: 'AK',
-    },
   },
   {
     id: 'product-leaders',
@@ -70,16 +44,8 @@ const personas = [
     bullets: [
       'DORA metrics and engineering performance',
       'Deployment frequency and lead time trends',
-      'Monthly exec reports without engineering asks',
+      'Exec reports without engineering asks',
     ],
-    image: '/landing/personas/product-leaders.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'It finally connects infrastructure health to shipping velocity, so my PMs can see what’s slowing delivery down',
-      name: ' Taylor Morgan',
-      title: 'Head of Product, B2B SaaS',
-      initials: 'TM',
-    },
   },
   {
     id: 'finance-teams',
@@ -87,18 +53,10 @@ const personas = [
     headline: 'Cost Allocation, Solved',
     hook: 'Get chargeback-ready numbers without spreadsheets.',
     bullets: [
-      'Cost attribution by team or tenant',
+      'Spend broken down by AWS service',
       'Exportable reports in CSV and PDF',
-      'Executive AI Reports for forecasting',
+      'Trend-based spend forecast',
     ],
-    image: '/landing/personas/finance-teams.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'We cut our cloud cost reconciliation process from two days to thirty minutes.',
-      name: ' Dana Okafor',
-      title: ' Director of Finance, Tech Startup',
-      initials: 'DO',
-    },
   },
   {
     id: 'developers',
@@ -107,17 +65,8 @@ const personas = [
     hook: 'Self-serve answers without the AWS console.',
     bullets: [
       'AI chat assistant and natural language search',
-      'Alerts scoped to their service',
-      'Slack-native, no context switching',
+      'Alerts sent to Slack or Jira',
     ],
-    image: '/landing/personas/developers.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'I can ask "what did my service cost last week?" in Slack and get a real answer in seconds.',
-      name: ' Chris Nakamura',
-      title: ' Senior Software Engineer',
-      initials: 'CN',
-    },
   },
 ]
 
@@ -161,9 +110,8 @@ export function PersonaSection() {
           ))}
         </div>
 
-        {/* Two-panel showcase */}
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:grid lg:grid-cols-2">
-          {/* Left panel */}
+        {/* Persona panel */}
+        <div className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col justify-center gap-6 bg-gradient-to-br from-violet-700 to-violet-500 p-8 sm:p-10 lg:p-12">
             <div>
               <h3 className="mb-3 text-2xl font-extrabold leading-tight text-white sm:text-3xl">
@@ -180,41 +128,6 @@ export function PersonaSection() {
                   </li>
                 ))}
               </ul>
-            </div>
-          </div>
-
-          {/* Right panel */}
-          <div className="flex flex-col gap-6 bg-violet-50/40 p-6 sm:p-8 lg:p-10">
-            {/* Screenshot */}
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <Image
-                src={active.image}
-                alt={`${active.label} dashboard view`}
-                width={1024}
-                height={576}
-                className="h-auto w-full object-cover"
-                priority={active.id === personas[0].id}
-              />
-            </div>
-
-            {/* PLACEHOLDER testimonial — replace with real customer before launch */}
-            <div className="rounded-2xl border-2 border-dashed border-violet-200 bg-white/60 p-5">
-              <div className="mb-3 flex items-center gap-3">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
-                  {active.testimonial.initials}
-                </div>
-                <div>
-                  {/* replace with real customer before launch */}
-                  <p className="text-sm font-semibold text-slate-800">{active.testimonial.name}</p>
-                  <p className="text-xs text-slate-500">{active.testimonial.title}</p>
-                </div>
-              </div>
-              <p className="text-sm italic leading-relaxed text-slate-600">
-                &ldquo;{active.testimonial.quote}&rdquo;
-              </p>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-violet-400">
-                {/* Placeholder — replace before launch */}
-              </p>
             </div>
           </div>
         </div>

@@ -29,21 +29,21 @@ const features = [
     icon: DollarSign,
     title: "Find Hidden AWS Waste Before It Becomes a Budget Problem",
     description:
-      'Understand what caused cost spikes and uncover hidden waste — with clear actions to reduce spend immediately.',
+      'See where your AWS spend goes and which idle or unattached resources are costing you money.',
     highlight: true,
   },
   {
     icon: AlertTriangle,
-    title: 'Detect Infrastructure Risk Before Customers Feel It',
+    title: 'Find Security Misconfigurations',
     description:
-      'Automatically surface anomalies, misconfigurations, and unusual activity before they impact customers or revenue.',
+      'Surface security findings across your AWS account, such as public S3 buckets and missing encryption.',
     highlight: false,
   },
   {
     icon: TrendingUp,
     title: 'Forecast Cloud Spend Before Surprises Hit',
     description:
-      'Forecast your AWS spend and prevent budget surprises with accurate forward-looking insights.',
+      'See a trend-based forecast of your AWS spend, built from your own billing history.',
     highlight: false,
   },
   {
@@ -55,16 +55,16 @@ const features = [
   },
   {
     icon: FileText,
-    title: 'Generate Executive-Ready Cloud Reports Instantly',
+    title: 'Generate Executive-Ready Cloud Reports',
     description:
-      'Create clear, decision-ready reports for engineering leaders, finance teams, audits, and cost reviews in seconds.',
+      'Create clear reports for engineering leaders, finance teams and cost reviews, on demand or on a schedule.',
     highlight: false,
   },
   {
     icon: Search,
     title: 'Find Anything Across Your AWS Environment',
     description:
-      'Instantly locate resources, costs, or risks using natural language — no filters or manual digging.',
+      'Locate resources, costs, or risks using natural language — no filters or manual digging.',
     highlight: false,
   },
 ]
@@ -216,7 +216,7 @@ export function AIFeaturesSection() {
               color: '#1f2937',
             }}
           >
-            No setup. No risk. First insights in 15 minutes.
+            Read-only access. Takes a few minutes.
           </p>
         </div>
 
