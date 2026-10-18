@@ -63,7 +63,7 @@ export const appNav: NavGroup = {
           label: 'Services',
           href: '/services',
           icon: Layers,
-          description: 'Service catalog and management',
+          description: 'Discovered AWS resources and their findings',
         },
         {
           label: 'Deployments',
@@ -334,11 +334,6 @@ export const userNavSections: NavSection[] = [
 
 // Quick Actions for the "+ New" dropdown
 export const quickActions: NavItem[] = [
-  {
-    label: 'Create Service',
-    href: '/services/new',
-    icon: Layers,
-  },
   {
     label: 'Record Deployment',
     href: '/deployments/new',

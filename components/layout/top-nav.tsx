@@ -41,7 +41,6 @@ export const navItems: NavItem[] = [
     icon: Layers,
     children: [
       { label: 'Services Overview', href: '/services', icon: Layers, desc: 'All services and health status' },
-      { label: 'Add Service', href: '/services/new', icon: Plus, desc: 'Register a new service' },
       { label: 'Deployments', href: '/deployments', icon: Rocket, desc: 'Deployment history and tracking' },
     ],
   },
@@ -103,7 +102,7 @@ export const navItems: NavItem[] = [
   },
 ];
 
-// Mobile drawer sections (excludes Add Service / Add Resource)
+// Mobile drawer sections (excludes Add Resource)
 export const mobileSections = [
   {
     key: 'services',

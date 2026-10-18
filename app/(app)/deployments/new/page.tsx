@@ -166,7 +166,7 @@ export default function NewDeploymentPage() {
               )}
               {services.length === 0 && !servicesLoading && (
                 <p className="text-xs text-amber-600">
-                  No services found. Please create a service first.
+                  No registered services found.
                 </p>
               )}
             </div>

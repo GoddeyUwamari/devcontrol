@@ -55,7 +55,6 @@ export default function GettingStartedPage() {
   // TODO: Replace with actual API calls to check completion status
   // This would integrate with your backend to check:
   // - AWS connection status
-  // - Services registered count
   // - Deployments tracked
   const steps = [
     {
@@ -82,17 +81,6 @@ export default function GettingStartedPage() {
     },
     {
       step: 3,
-      title: 'Register your services',
-      description: 'Add your services to the catalog with ownership and metadata.',
-      completed: false, // TODO: Check if services exist via API
-      timeEstimate: '2 min',
-      value: 'Enable service health monitoring and dependency tracking',
-      actionLabel: 'Add Service',
-      actionUrl: '/services',
-      helpUrl: '/docs/service-catalog',
-    },
-    {
-      step: 4,
       title: 'Track deployments',
       description: 'Connect your CI/CD pipeline to track deployment frequency.',
       completed: false, // TODO: Check if deployments tracked via API
@@ -116,10 +104,7 @@ npm install -g @devcontrol/cli
 devcontrol login
 
 # Discover AWS resources
-devcontrol discover --aws
-
-# Register a service
-devcontrol service create --name my-service`;
+devcontrol discover --aws`;
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(cliCode);
