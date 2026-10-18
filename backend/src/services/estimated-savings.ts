@@ -35,16 +35,18 @@
 
 export type SavingsBasisKind = 'estimate' | 'ceiling';
 
-// The savings_basis prefixes cost-optimization.service.ts writes. 'scenario:'
-// (DynamoDB capacity) and 'comparison:' (DynamoDB capacity mode) are modelled
-// estimates from the resource's own observed usage; 'ceiling:' is an upper bound.
-const ESTIMATE_BASIS_PREFIXES = ['estimated:', 'scenario:', 'comparison:'];
-const CEILING_BASIS_PREFIX = 'ceiling:';
+// The savings_basis prefixes cost-optimization.service.ts writes. 'comparison:'
+// (DynamoDB capacity mode) is a modelled estimate from the table's own observed
+// workload; 'ceiling:' is an upper bound (S3 lifecycle, DynamoDB capacity).
+// 'scenario:' is what DynamoDB capacity wrote before it was relabelled a
+// ceiling -- the same figure, so rows stored under it are ceilings too.
+const ESTIMATE_BASIS_PREFIXES = ['estimated:', 'comparison:'];
+const CEILING_BASIS_PREFIXES = ['ceiling:', 'scenario:'];
 
 /** What a recommendation's savings figure is, or null when it has no supported basis. */
 export function classifySavingsBasis(basis: unknown): SavingsBasisKind | null {
   if (typeof basis !== 'string') return null;
-  if (basis.startsWith(CEILING_BASIS_PREFIX)) return 'ceiling';
+  if (CEILING_BASIS_PREFIXES.some((prefix) => basis.startsWith(prefix))) return 'ceiling';
   if (ESTIMATE_BASIS_PREFIXES.some((prefix) => basis.startsWith(prefix))) return 'estimate';
   return null;
 }
@@ -133,4 +135,26 @@ export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): Estima
   for (const type of Object.keys(byResourceType)) byResourceType[type] = roundCents(byResourceType[type]);
   for (const type of Object.keys(ceilingByResourceType)) ceilingByResourceType[type] = roundCents(ceilingByResourceType[type]);
   return { total: roundCents(total), byResourceType, ceilingTotal: roundCents(ceilingTotal), ceilingByResourceType };
+}
+
+// What each resource type's ceiling assumes, for the "Plus up to $X" lines next
+// to an estimated total. A type not listed gets a generic upper-bound phrase.
+const CEILING_CONDITIONS: Record<string, string> = {
+  S3: 'if S3 data qualifies for Standard-IA',
+  DynamoDB: 'if DynamoDB provisioned capacity were cut to its observed peak',
+};
+
+/**
+ * One "Plus up to $X/<period> ..." line per resource type with a positive
+ * ceiling (S3, then DynamoDB, then any other type alphabetically). Never
+ * folds ceilings into one unexplained figure. Mirrored in lib/savings-basis.ts.
+ */
+export function describeCeilings(ceilingByResourceType: Record<string, number>, format: (amount: number) => string, period: string): string[] {
+  const order = (type: string) => { const i = Object.keys(CEILING_CONDITIONS).indexOf(type); return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
+  return Object.entries(ceilingByResourceType)
+    .filter(([, amount]) => amount > 0)
+    .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
+    .map(([type, amount]) => CEILING_CONDITIONS[type]
+      ? `Plus up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound, not included above)`
+      : `Plus up to ${format(amount)}/${period} from ${type} upper-bound figures (not included above)`);
 }

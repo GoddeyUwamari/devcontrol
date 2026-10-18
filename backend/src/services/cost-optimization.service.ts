@@ -847,9 +847,12 @@ class CostOptimizationService {
    * - No exact recommended RCU/WCU is ever produced (Model B, evidence-only).
    *   The cost figure is an explicitly-labeled illustrative scenario --
    *   "modeled monthly savings if provisioned capacity matched the highest
-   *   hourly-average demand observed" -- never "recommended," "safe,"
-   *   "ceiling," or "maximum required" capacity. `savings_basis` always
-   *   starts with `scenario:`, never `ceiling:`.
+   *   hourly-average demand observed" -- never "recommended," "safe," or
+   *   "maximum required" capacity. That capacity has no safety margin, so any
+   *   safe setting is at or above it and the real saving at or below the
+   *   figure: `savings_basis` starts with `ceiling:` (an upper bound on the
+   *   saving, never a statement about capacity), and the figure is kept out
+   *   of estimated totals.
    *
    * Architecture: reads already-enriched `aws_resources` metadata (written
    * by awsResourceDiscovery.ts's enrichDynamoDBTables(), which already runs
@@ -988,10 +991,11 @@ class CostOptimizationService {
         });
 
         const savingsBasis =
-          'scenario:highest_observed_hourly_average — modeled monthly cost if provisioned capacity matched the single ' +
-          'highest hourly-average RCU/WCU observed in the 30-day analysis window; not a recommended or safe capacity ' +
-          'setting, no safety margin applied; does not account for sub-hour spikes hidden by hourly averaging, traffic ' +
-          'growth, or burst capacity';
+          'ceiling: highest_observed_hourly_average — upper bound on the monthly saving: modeled cost difference if ' +
+          'provisioned capacity were cut to the single highest hourly-average RCU/WCU observed in the 30-day analysis ' +
+          'window, with no safety margin; any safe setting is at or above that capacity, so the real saving is at or ' +
+          'below this figure. Not a recommended capacity setting; does not account for sub-hour spikes hidden by hourly ' +
+          'averaging, traffic growth, or burst capacity';
 
         issues.push({
           resourceId: tableName,
@@ -1175,7 +1179,7 @@ class CostOptimizationService {
       `Potential cost scenario\n` +
       `- Current modeled monthly cost: $${input.currentMonthlyCost.toFixed(2)}/month\n` +
       `- Modeled monthly savings if provisioned capacity matched the highest hourly-average demand observed during the analysis window: ` +
-      `$${input.modeledMonthlySavings.toFixed(2)}/month\n\n` +
+      `up to $${input.modeledMonthlySavings.toFixed(2)}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)\n\n` +
       `This is an illustrative cost scenario, not a recommended capacity setting. Short-lived spikes narrower than one hour, workload ` +
       `growth, burst capacity, and other DynamoDB capacity considerations are not fully modeled. Table-level throttle metrics confirm no ` +
       `provisioned-throughput throttling at the table level; they do not by themselves rule out partition-level or account-level throttling.`

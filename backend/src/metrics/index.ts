@@ -188,7 +188,6 @@ export async function updateBusinessMetrics(dbPool: any, wsServer?: WebSocketSer
       SELECT
         COALESCE(SUM(potential_savings) FILTER (
           WHERE metadata->>'savings_basis' LIKE 'estimated:%'
-             OR metadata->>'savings_basis' LIKE 'scenario:%'
              OR metadata->>'savings_basis' LIKE 'comparison:%'
         ), 0) as total_savings,
         COALESCE(SUM(CASE WHEN severity = 'HIGH' THEN 1 ELSE 0 END), 0) as high,

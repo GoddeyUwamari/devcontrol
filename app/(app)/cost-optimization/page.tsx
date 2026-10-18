@@ -23,7 +23,7 @@ import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendation
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { annualizeMonthly, cn, formatSavingsCurrency } from '@/lib/utils';
-import { formatRecommendationSavings, savingsBasisKind } from '@/lib/savings-basis';
+import { describeCeilings, formatRecommendationSavings, savingsBasisKind } from '@/lib/savings-basis';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -284,7 +284,8 @@ export default function CostOptimizationPage() {
   const activeCount = stats?.activeRecommendations ?? recommendations.length;
   const totalEverCount = stats?.totalRecommendations ?? 0;
   const monthlySavings = stats?.totalPotentialSavings ?? 0;
-  const monthlySavingsCeiling = stats?.potentialSavingsCeiling ?? 0;
+  // Upper bounds (S3 lifecycle, DynamoDB capacity), one line per type, never added to the total.
+  const ceilingLines = describeCeilings(stats?.potentialSavingsCeilingByResourceType ?? {}, formatWholeDollars);
   const annualSavings = annualizeMonthly(monthlySavings);
   const bySeverity = stats?.bySeverity ?? { high: 0, medium: 0, low: 0 };
 
@@ -337,11 +338,9 @@ export default function CostOptimizationPage() {
                 {statsLoading ? <Skeleton className="h-8 w-24" /> : (
                   <>
                     <p className="text-3xl font-bold text-green-600">{formatWholeDollars(monthlySavings)}<span className="text-sm font-semibold text-slate-400">/mo</span></p>
-                    {monthlySavingsCeiling > 0 && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        Plus up to {formatWholeDollars(monthlySavingsCeiling)}/mo if S3 data qualifies for Standard-IA (upper bound, not included above)
-                      </p>
-                    )}
+                    {ceilingLines.map((line) => (
+                      <p key={line} className="text-xs text-slate-500 mt-1">{line}</p>
+                    ))}
                   </>
                 )}
               </CardContent>

@@ -7,7 +7,7 @@ import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILAB
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
-import { aggregateEstimatedSavings } from '../services/estimated-savings';
+import { aggregateEstimatedSavings, describeCeilings } from '../services/estimated-savings';
 import {
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   getOptimizationRules,
@@ -462,9 +462,9 @@ export class CostRecommendationsController {
         },
         message:
           `Analysis complete. Found ${insertedCount} optimization opportunities with estimated potential savings of $${stats.total_potential_savings.toFixed(2)}/month.` +
-          (stats.potential_savings_ceiling > 0
-            ? ` Plus up to $${stats.potential_savings_ceiling.toFixed(2)}/month if S3 data qualifies for Standard-IA (upper bound, not included above).`
-            : ''),
+          describeCeilings(stats.potential_savings_ceiling_by_resource_type, (amount) => `$${amount.toFixed(2)}`, 'month')
+            .map((line) => ` ${line}.`)
+            .join(''),
       };
 
       res.json(response);

@@ -147,7 +147,7 @@ describe('aggregateEstimatedSavings: savings provenance', () => {
 
   it('classifySavingsBasis recognises exactly the prefixes the detectors write', () => {
     expect(classifySavingsBasis('estimated: x')).toBe('estimate');
-    expect(classifySavingsBasis('scenario:highest_observed_hourly_average — x')).toBe('estimate');
+    expect(classifySavingsBasis('scenario:highest_observed_hourly_average — x')).toBe('ceiling'); // legacy DynamoDB capacity rows
     expect(classifySavingsBasis('comparison:on_demand_vs_provisioned_observed_workload — x')).toBe('estimate');
     expect(classifySavingsBasis(CEILING)).toBe('ceiling');
     for (const unsupported of [undefined, null, '', 'ceiling', 'estimated', 'guess: x', 7, {}]) {

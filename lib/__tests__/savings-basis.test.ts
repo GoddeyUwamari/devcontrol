@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatRecommendationSavings, NO_DOLLAR_ESTIMATE, savingsBasisKind } from '../savings-basis'
+import { describeCeilings, formatRecommendationSavings, NO_DOLLAR_ESTIMATE, savingsBasisKind } from '../savings-basis'
 import { formatSavingsCents, formatSavingsCurrency } from '../utils'
 
 const rec = (potentialSavings: number, savings_basis?: unknown) => ({ potentialSavings, metadata: savings_basis === undefined ? {} : { savings_basis } })
@@ -7,7 +7,7 @@ const rec = (potentialSavings: number, savings_basis?: unknown) => ({ potentialS
 describe('savingsBasisKind', () => {
   it('recognises exactly the prefixes the backend detectors write', () => {
     expect(savingsBasisKind(rec(1, 'estimated: list price'))).toBe('estimate')
-    expect(savingsBasisKind(rec(1, 'scenario:highest_observed_hourly_average — x'))).toBe('estimate')
+    expect(savingsBasisKind(rec(1, 'scenario:highest_observed_hourly_average — x'))).toBe('ceiling')
     expect(savingsBasisKind(rec(1, 'comparison:on_demand_vs_provisioned_observed_workload — x'))).toBe('estimate')
     expect(savingsBasisKind(rec(1, 'ceiling: assumes 100% transitions'))).toBe('ceiling')
   })
@@ -40,5 +40,16 @@ describe('formatRecommendationSavings', () => {
     const ri = { potentialSavings: 0, metadata: { instance_type: 'm5.large', uncovered_count: 2, coverage_basis: 'Reserved Instances of the same instance type only; Savings Plans are not accounted for' } }
     expect(formatRecommendationSavings(ri, formatSavingsCents)).toBe('No dollar estimate')
     expect(formatRecommendationSavings(ri, formatSavingsCurrency)).not.toMatch(/\$/)
+  })
+})
+
+describe('describeCeilings', () => {
+  it('one line per type, S3 then DynamoDB then others, each saying what it assumes; zero amounts are skipped', () => {
+    expect(describeCeilings({ Other: 5, DynamoDB: 20, S3: 41.27, EBS: 0 }, formatSavingsCurrency)).toEqual([
+      'Plus up to $41/mo if S3 data qualifies for Standard-IA (upper bound, not included above)',
+      'Plus up to $20/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)',
+      'Plus up to $5/mo from Other upper-bound figures (not included above)',
+    ])
+    expect(describeCeilings({}, formatSavingsCurrency)).toEqual([])
   })
 })

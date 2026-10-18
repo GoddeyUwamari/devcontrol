@@ -10,7 +10,8 @@
  * throttling (confirmed OR simply unproven) disqualifies; the regional
  * client getters are used with the table's own persisted region, never a
  * default; no exact recommended RCU/WCU is ever produced; savings_basis
- * always starts with `scenario:`, never `ceiling:`; the generic $3
+ * starts with `ceiling:` (the figure is an upper bound on the saving, kept
+ * out of estimated totals); the generic $3
  * aws_resources.estimated_monthly_cost placeholder is never read.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -18,6 +19,7 @@ import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-scaling';
 import costOptimizationService from '../cost-optimization.service';
 import { ISSUE_DYNAMODB_CAPACITY } from '../../config/optimization-rules';
+import { classifySavingsBasis } from '../estimated-savings';
 import { estimateDynamoDBProvisionedMonthlyCost } from '../../config/aws-pricing';
 import * as dynamoTableUtil from '../dynamodb-table.util';
 import * as dynamoAutoscalingUtil from '../dynamodb-autoscaling.util';
@@ -450,7 +452,7 @@ describe('CostOptimizationService.detectDynamoDBCapacityOptimization', () => {
   });
 
   describe('scenario / savings semantics', () => {
-    it("savings_basis begins with 'scenario:' and never 'ceiling:'", async () => {
+    it("savings_basis begins with 'ceiling:' -- an upper bound on the saving, never counted as an estimate", async () => {
       mockAwsResourcesRows([{ resource_id: 'table-1', region: 'us-east-1', metadata: eligibleMetadata() }]);
       mockLiveDescribeTable({
         billing_mode: 'PROVISIONED',
@@ -463,8 +465,9 @@ describe('CostOptimizationService.detectDynamoDBCapacityOptimization', () => {
 
       const result = await (costOptimizationService as any).detectDynamoDBCapacityOptimization('org-1', makeAwsClients());
 
-      expect(result.issues[0].metadata.savings_basis).toMatch(/^scenario:/);
-      expect(result.issues[0].metadata.savings_basis).not.toMatch(/^ceiling:/);
+      expect(result.issues[0].metadata.savings_basis).toMatch(/^ceiling: highest_observed_hourly_average — upper bound on the monthly saving/);
+      expect(classifySavingsBasis(result.issues[0].metadata.savings_basis)).toBe('ceiling');
+      expect(result.issues[0].description).toMatch(/up to \$[0-9.]+\/month \(an upper bound/);
     });
 
     it('description explicitly states this is a scenario, not a recommended capacity setting, and invents no recommended_rcu/wcu fields', async () => {
