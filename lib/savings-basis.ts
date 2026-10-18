@@ -57,3 +57,16 @@ export function describeCeilings(ceilingByResourceType: Record<string, number>, 
       ? `Plus up to ${format(amount)}/mo ${CEILING_CONDITIONS[type]} (upper bound, not included above)`
       : `Plus up to ${format(amount)}/mo from ${type} upper-bound figures (not included above)`)
 }
+
+const RANK: Record<SavingsBasisKind | 'none', number> = { estimate: 0, ceiling: 1, none: 2 }
+
+/**
+ * A copy of `recs` ranked for a "top savings" list: estimates first (the
+ * figures that are counted in totals), then ceilings, then figures with no
+ * savings basis -- each group by its figure, largest first. An upper bound
+ * never outranks an estimate just because it is bigger.
+ */
+export function rankBySavings<T extends { potentialSavings: number; metadata?: Record<string, unknown> | null }>(recs: readonly T[]): T[] {
+  const rank = (rec: T) => RANK[savingsBasisKind(rec) ?? 'none']
+  return [...recs].sort((a, b) => rank(a) - rank(b) || (b.potentialSavings || 0) - (a.potentialSavings || 0))
+}

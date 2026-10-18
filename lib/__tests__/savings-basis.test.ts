@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeCeilings, formatRecommendationSavings, NO_DOLLAR_ESTIMATE, savingsBasisKind } from '../savings-basis'
+import { describeCeilings, formatRecommendationSavings, NO_DOLLAR_ESTIMATE, rankBySavings, savingsBasisKind } from '../savings-basis'
 import { formatSavingsCents, formatSavingsCurrency } from '../utils'
 
 const rec = (potentialSavings: number, savings_basis?: unknown) => ({ potentialSavings, metadata: savings_basis === undefined ? {} : { savings_basis } })
@@ -51,5 +51,20 @@ describe('describeCeilings', () => {
       'Plus up to $5/mo from Other upper-bound figures (not included above)',
     ])
     expect(describeCeilings({}, formatSavingsCurrency)).toEqual([])
+  })
+})
+
+describe('rankBySavings', () => {
+  it('estimates first, then ceilings, then no basis -- each largest first; a bigger ceiling never outranks an estimate', () => {
+    const recs = [
+      { id: 'ceiling-big', ...rec(500, 'ceiling: x') },
+      { id: 'none-big', ...rec(900) },
+      { id: 'estimate-small', ...rec(3.6, 'estimated: x') },
+      { id: 'estimate-big', ...rec(70, 'estimated: x') },
+      { id: 'ceiling-small', ...rec(41, 'ceiling: x') },
+      { id: 'comparison', ...rec(20, 'comparison: x') },
+    ]
+    expect(rankBySavings(recs).map((r) => r.id)).toEqual(['estimate-big', 'comparison', 'estimate-small', 'ceiling-big', 'ceiling-small', 'none-big'])
+    expect(recs[0].id).toBe('ceiling-big') // input not mutated
   })
 })

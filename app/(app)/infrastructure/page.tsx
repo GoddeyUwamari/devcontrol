@@ -19,7 +19,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
-import { savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
+import { rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
 import { formatCalculatedAgo } from './calculatedAgo'
 import { describeAttentionCard } from './attentionCard'
 import { describeStatsSpend } from '../costs/cost-display'
@@ -142,8 +142,7 @@ async function fetchTopActions(): Promise<any[] | null> {
       fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/anomalies`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }),
     ])
     const anomalyData = anomalyRes.ok ? await anomalyRes.json() : { anomalies: [] }
-    const costActions = [...recs]
-      .sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))
+    const costActions = rankBySavings(recs)
       .slice(0, 3)
       .map((r, i) => ({
         id: r.id, title: r.issue || 'Cost optimization available',

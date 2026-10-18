@@ -22,7 +22,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
 import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
-import { formatRecommendationSavings } from '@/lib/savings-basis'
+import { formatRecommendationSavings, rankBySavings } from '@/lib/savings-basis'
 import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
@@ -265,8 +265,7 @@ export default function CostsPage() {
   // ceiling), or "No dollar estimate" -- see lib/savings-basis.ts.
   const topSavingsRows: { id: string; title: string; savingsLabel: string; severity: RecommendationSeverity }[] = isDemoActive
     ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savingsLabel: `${formatSavingsCurrency(d.savings)}/mo`, severity: d.severity }))
-    : [...activeRecs]
-        .sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))
+    : rankBySavings(activeRecs)
         .slice(0, 3)
         .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savingsLabel: formatRecommendationSavings(r, formatSavingsCurrency), severity: r.severity }))
 
@@ -276,15 +275,15 @@ export default function CostsPage() {
     if (isDemoActive) return null
     // The total is the server's de-duplicated per-type figure (two
     // recommendations can draw on the same instance's cost), not a client sum.
+    // No database entry: the only RDS detector (oversized instances) is retired.
     const summarize = (type: string) => {
       const recs = activeRecs.filter(r => r.resourceType === type)
       const total = recStats?.potentialSavingsByResourceType?.[type] ?? 0
-      const top = [...recs].sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))[0]
+      const top = rankBySavings(recs)[0]
       return { total, issue: top?.issue ?? null }
     }
     return {
       compute: summarize('EC2'),
-      database: summarize('RDS'),
     }
   }, [isDemoActive, activeRecs, recStats])
 
@@ -804,9 +803,7 @@ export default function CostsPage() {
                   ? (isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null)
                   : (isCompute && categorySavings!.compute.total > 0
                       ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo estimated savings available · ${categorySavings!.compute.issue}`
-                      : isDatabase && categorySavings!.database.total > 0
-                        ? `⚠ ${formatSavingsCurrency(categorySavings!.database.total)}/mo estimated savings available · ${categorySavings!.database.issue}`
-                        : null)
+                      : null)
                 return (
                   <div key={name}>
                     <div className="flex items-center justify-between mb-1.5">
