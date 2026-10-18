@@ -17,7 +17,7 @@
  *
  * Mock-only: no network calls to AWS.
  */
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { S3Client } from '@aws-sdk/client-s3';
@@ -88,11 +88,29 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
   },
 };
 
-// Implemented rules not driven above, and where their basis is proven instead.
-const COVERED_ELSEWHERE: Record<string, string> = {
-  ec2_reserved_instances: 'carries no dollar figure at all -- estimated-savings.test.ts asserts potentialSavings 0 and no basis',
-  dynamodb_capacity: 'needs aws_resources + regional clients; cost-optimization-dynamodb-capacity.test.ts asserts its scenario: basis',
-  dynamodb_capacity_mode: 'needs aws_resources + regional clients; the static check below covers its comparison: basis literals',
+// Implemented rules not driven above. Each names the test file (in this
+// directory) that runs its detector and the assertion there that proves its
+// basis -- the coverage test below fails if the file is missing, does not call
+// the detector, or no longer contains the assertion.
+const COVERED_ELSEWHERE: Record<string, { file: string; detector: string; assertion: RegExp; why: string }> = {
+  ec2_reserved_instances: {
+    file: 'estimated-savings.test.ts',
+    detector: 'detectReservedInstanceOpportunities',
+    assertion: /expect\(issue\.potentialSavings\)\.toBe\(0\);[^]*expect\(issue\.metadata\.savings_basis\)\.toBeUndefined\(\)/,
+    why: 'carries no dollar figure at all',
+  },
+  dynamodb_capacity: {
+    file: 'cost-optimization-dynamodb-capacity.test.ts',
+    detector: 'detectDynamoDBCapacityOptimization',
+    assertion: /expect\(classifySavingsBasis\(result\.issues\[0\]\.metadata\.savings_basis\)\)\.toBe\('ceiling'\)/,
+    why: 'needs aws_resources + regional clients',
+  },
+  dynamodb_capacity_mode: {
+    file: 'cost-optimization-dynamodb-mode-comparison.test.ts',
+    detector: 'detectDynamoDBOnDemandVsProvisionedOptimization',
+    assertion: /expect\(classifySavingsBasis\(result\.issues\[0\]\.metadata\.savings_basis\)\)\.toBe\('estimate'\)/,
+    why: 'needs aws_resources + regional clients',
+  },
 };
 
 beforeEach(() => {
@@ -122,6 +140,14 @@ describe('savings basis guard: coverage', () => {
   it('every implemented registry rule is either driven by this guard or explicitly covered elsewhere', () => {
     const accountedFor = [...Object.keys(DRIVEN), ...Object.keys(COVERED_ELSEWHERE)].sort();
     expect(getImplementedOptimizationRules().map((r) => r.id).sort()).toEqual(accountedFor);
+  });
+
+  it.each(Object.entries(COVERED_ELSEWHERE))('%s: the named test file exists, runs the detector, and asserts its basis', (_ruleId, cover) => {
+    const path = join(__dirname, cover.file);
+    expect(existsSync(path)).toBe(true);
+    const testSource = readFileSync(path, 'utf-8');
+    expect(testSource).toContain(cover.detector);
+    expect(testSource).toMatch(cover.assertion);
   });
 });
 

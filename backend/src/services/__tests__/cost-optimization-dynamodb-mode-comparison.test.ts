@@ -21,6 +21,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-scaling';
 import costOptimizationService from '../cost-optimization.service';
+import { classifySavingsBasis } from '../estimated-savings';
 import * as dynamoTableUtil from '../dynamodb-table.util';
 import * as dynamoAutoscalingUtil from '../dynamodb-autoscaling.util';
 import * as capacityAnalysisUtil from '../dynamodb-capacity-analysis.util';
@@ -319,6 +320,10 @@ describe('CostOptimizationService.detectDynamoDBOnDemandVsProvisionedOptimizatio
       expect(result.issues[0].potentialSavings).toBeGreaterThan(0);
       expect(result.issues[0].metadata.modeled_cost_difference).toBeCloseTo(result.issues[0].potentialSavings, 5);
       expect(result.issues[0].metadata.modeled_percentage_difference).toBeGreaterThanOrEqual(20);
+      // The figure is a modelled cost difference on the table's own observed
+      // workload at list price: an estimate, counted in estimated totals.
+      expect(result.issues[0].metadata.savings_basis).toMatch(/^comparison:on_demand_vs_provisioned_observed_workload — estimated potential saving/);
+      expect(classifySavingsBasis(result.issues[0].metadata.savings_basis)).toBe('estimate');
     });
   });
 
