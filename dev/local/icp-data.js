@@ -691,6 +691,11 @@ function severityForSavings(monthly) {
 // metadata.savings_basis as cost-optimization.service.ts writes it: without
 // one, a figure counts in no total and the UI shows "No dollar estimate". The
 // S3 row is a ceiling, kept out of the estimated total.
+// Mirrors S3_STANDARD_PER_GB_MONTH_USD / S3_STANDARD_IA_PER_GB_MONTH_USD in
+// backend/src/config/aws-pricing.ts (local-stack-icp-data.test.ts checks they agree).
+const S3_STANDARD_PER_GB_MONTH_USD = 0.023;
+const S3_STANDARD_IA_PER_GB_MONTH_USD = 0.0125;
+
 const BASIS = {
   ebs: 'estimated: example seed data; provisioned size x EBS list price',
   gp2: 'estimated: example seed data; gp2-to-gp3 storage-rate difference',
@@ -746,11 +751,16 @@ function buildRecommendations({ rng, id, at, organization, resources }) {
   // No RDS rows: the oversized-RDS detector is retired (rds_rightsizing is
   // 'planned' in optimization-rules.ts), so the product never produces one.
 
+  // detectS3LifecycleOptimization()'s formula: Standard storage GB x (Standard
+  // - Standard-IA) per GB-month, the us-east-1 rates in backend/src/config/
+  // aws-pricing.ts. The seed has no BucketSizeBytes, so the size is derived
+  // from the bucket's estimated cost as if it were all Standard storage.
   const buckets = resources.filter((r) => r.resource_type === 's3' && r.estimated_monthly_cost >= 100).slice(0, 2);
   for (const bucket of buckets) {
-    add(bucket, 'S3 Lifecycle Optimization', 'S3', bucket.estimated_monthly_cost * 0.3,
-      'Most objects in this bucket have not been read in 90 days; a lifecycle rule to an infrequent-access class would lower storage cost.',
-      { example_data: true, savings_basis: BASIS.s3Ceiling });
+    const standardGB = round2(bucket.estimated_monthly_cost / S3_STANDARD_PER_GB_MONTH_USD);
+    add(bucket, 'S3 Lifecycle Optimization', 'S3', standardGB * (S3_STANDARD_PER_GB_MONTH_USD - S3_STANDARD_IA_PER_GB_MONTH_USD),
+      `This bucket has no lifecycle configuration. If all ${standardGB.toFixed(1)}GB of its current Standard storage qualified for a transition to Standard-IA, the maximum possible saving is estimated below -- actual savings depend on how much of this data is genuinely infrequently accessed, since Standard-IA adds a retrieval fee.`,
+      { example_data: true, lifecycle_state: 'no_lifecycle_configuration', standard_storage_gb: standardGB, savings_basis: BASIS.s3Ceiling });
   }
 
   const lambda = resources.find((r) => r.resource_type === 'lambda' && r.estimated_monthly_cost >= 15);

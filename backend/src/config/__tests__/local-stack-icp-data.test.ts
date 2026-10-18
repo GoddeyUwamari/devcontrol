@@ -5,6 +5,7 @@
  * people.
  */
 import path from 'path';
+import { S3_STANDARD_PER_GB_MONTH_USD, S3_STANDARD_IA_PER_GB_MONTH_USD } from '../aws-pricing';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const icp = require(path.join(__dirname, '..', '..', '..', '..', 'dev', 'local', 'icp-data.js'));
@@ -207,6 +208,17 @@ describe('fits the schema', () => {
     expect(new Set(active).size).toBe(active.length);
     expect(active.length).toBeGreaterThanOrEqual(15);
     expect(data.recommendations.some((r: Row) => r.status !== 'ACTIVE')).toBe(true);
+  });
+
+  it('S3 lifecycle rows use the detector\'s ceiling formula and wording, and claim no access history', () => {
+    const s3 = data.recommendations.filter((r: Row) => r.issue === 'S3 Lifecycle Optimization');
+    expect(s3.length).toBeGreaterThan(0);
+    for (const rec of s3) {
+      const gb = (rec.metadata as Row).standard_storage_gb as number;
+      expect(rec.potential_savings).toBeCloseTo(gb * (S3_STANDARD_PER_GB_MONTH_USD - S3_STANDARD_IA_PER_GB_MONTH_USD), 2);
+      expect(rec.description).toMatch(/^This bucket has no lifecycle configuration\. If all [0-9.]+GB of its current Standard storage qualified for a transition to Standard-IA, the maximum possible saving/);
+      expect(rec.description).not.toMatch(/not been read|90 days/);
+    }
   });
 
   it('no retired oversized-RDS rows, and every figure states a savings basis (S3 lifecycle as a ceiling)', () => {
