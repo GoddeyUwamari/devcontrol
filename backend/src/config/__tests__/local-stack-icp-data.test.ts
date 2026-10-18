@@ -196,7 +196,7 @@ describe('only placeholders', () => {
 
 describe('fits the schema', () => {
   it('recommendations use the analyzers\' issues and allowed severities and statuses, one ACTIVE per resource and issue', () => {
-    const issues = ['Unattached EBS Volume', 'gp2 to gp3 Migration Opportunity', 'Idle Instance', 'Oversized Instance', 'S3 Lifecycle Optimization', 'Low-Usage Lambda Function'];
+    const issues = ['Unattached EBS Volume', 'gp2 to gp3 Migration Opportunity', 'Idle Instance', 'S3 Lifecycle Optimization', 'Low-Usage Lambda Function'];
     for (const rec of data.recommendations) {
       expect(issues).toContain(rec.issue);
       expect(['LOW', 'MEDIUM', 'HIGH']).toContain(rec.severity);
@@ -207,6 +207,15 @@ describe('fits the schema', () => {
     expect(new Set(active).size).toBe(active.length);
     expect(active.length).toBeGreaterThanOrEqual(15);
     expect(data.recommendations.some((r: Row) => r.status !== 'ACTIVE')).toBe(true);
+  });
+
+  it('no retired oversized-RDS rows, and every figure states a savings basis (S3 lifecycle as a ceiling)', () => {
+    expect(data.recommendations.some((r: Row) => r.issue === 'Oversized Instance' || r.resource_type === 'RDS')).toBe(false);
+    for (const rec of data.recommendations) {
+      const basis = (rec.metadata as Row).savings_basis as string;
+      if (rec.issue === 'S3 Lifecycle Optimization') expect(basis).toMatch(/^ceiling: /);
+      else expect(basis).toMatch(/^estimated: /);
+    }
   });
 
   it('findings use allowed categories, severities, statuses and dispositions', () => {
