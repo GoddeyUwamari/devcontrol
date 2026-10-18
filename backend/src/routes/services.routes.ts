@@ -294,9 +294,11 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
     values.push(filters.env);
   }
 
+  // A substring match: %, _ and \ in the search are literal characters, not
+  // LIKE wildcards or escapes.
   if (filters.search) {
-    conditions.push(`(r.resource_name ILIKE $${p} OR r.resource_id ILIKE $${p})`);
-    values.push(`%${filters.search}%`);
+    conditions.push(`(r.resource_name ILIKE $${p} ESCAPE '\\' OR r.resource_id ILIKE $${p} ESCAPE '\\')`);
+    values.push(`%${filters.search.replace(/[\\%_]/g, '\\$&')}%`);
     p++;
   }
 

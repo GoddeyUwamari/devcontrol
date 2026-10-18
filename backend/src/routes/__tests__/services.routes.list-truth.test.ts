@@ -8,6 +8,8 @@
  *   - ?env=untagged lists the untagged resources; ?env=production lists only
  *     resources tagged production.
  *   - ?type=ebs lists EBS volumes.
+ *   - ?search= is a case-insensitive substring match in which %, _ and \
+ *     are literal characters, not LIKE wildcards or escapes.
  *   - The list is never refused by the services plan limit: that limit counts
  *     the services registry, not the resources the list returns.
  *
@@ -234,6 +236,50 @@ describe('GET /api/services -- repeated or bracketed query parameters', () => {
     const { status, body } = await get(viewer, orgId, '/services?env[x]=production&type[y]=ebs');
     expect(status).toBe(200);
     expect(names(body)).toEqual(['rq-prod', 'rq-staging', 'rq-volume']);
+  });
+});
+
+describe('GET /api/services -- search matches %, _ and \\ literally', () => {
+  let orgId: string;
+  let viewer: string;
+
+  beforeAll(async () => {
+    orgId = await insertOrg('enterprise');
+    viewer = await member(orgId, 'viewer');
+    for (const name of ['sr_a_b', 'sr-a-b', 'srXaXb', 'sr-rate-100%', 'sr-back\\slash']) {
+      await insertResource(orgId, name);
+    }
+    // Another organization's names match every search below.
+    const otherOrgId = await insertOrg('enterprise');
+    for (const name of ['sr_foreign_a_b', 'sr-foreign-100%', 'sr-foreign\\b']) {
+      await insertResource(otherOrgId, name);
+    }
+  });
+
+  const search = async (term: string) => {
+    const { status, body } = await get(viewer, orgId, `/services?search=${encodeURIComponent(term)}`);
+    expect(status).toBe(200);
+    return body.services.map((s: any) => s.name).sort();
+  };
+
+  it('"_" matches only names containing an underscore', async () => {
+    expect(await search('_')).toEqual(['sr_a_b']);
+    expect(await search('a_b')).toEqual(['sr_a_b']);
+  });
+
+  it('"%" matches only names containing a percent sign', async () => {
+    expect(await search('%')).toEqual(['sr-rate-100%']);
+    expect(await search('100%')).toEqual(['sr-rate-100%']);
+  });
+
+  it('"\\" matches only names containing a backslash', async () => {
+    expect(await search('\\')).toEqual(['sr-back\\slash']);
+    expect(await search('back\\s')).toEqual(['sr-back\\slash']);
+  });
+
+  it('plain text still matches as a substring, in any case', async () => {
+    expect(await search('A-B')).toEqual(['sr-a-b']);
+    expect(await search('sr')).toEqual(['sr-a-b', 'sr-back\\slash', 'sr-rate-100%', 'srXaXb', 'sr_a_b']);
   });
 });
 
