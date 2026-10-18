@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Loader2 } from "lucide-react";
 import { GeneralSettingsTab } from "@/components/settings/general-settings-tab";
 import { MembersTab } from "@/components/settings/members-tab";
@@ -15,7 +14,6 @@ export default function OrganizationSettingsPage() {
   const [activeTab, setActiveTab] = useState("general");
 
   return (
-    <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
        <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10">
           {/* Header */}
@@ -57,6 +55,5 @@ export default function OrganizationSettingsPage() {
         )}
         </div>
       </div>
-    </ProtectedRoute>
   );
 }

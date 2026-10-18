@@ -24,6 +24,7 @@ import {
 import { logError } from "@/lib/safe-log";
 import { DEFAULT_RETURN_PATH, safeReturnPath } from "@/lib/safe-return-path";
 import { clearPendingInvitation, hasPendingInvitation } from "@/lib/pending-invitation";
+import { loginPathReturningHere } from "@/lib/login-redirect";
 
 /**
  * Where to go once signed in: a safe return path if one was given, else an
@@ -341,7 +342,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       toast.success("Logged out successfully");
 
-      // Only redirect if not already on login/signup page
+      // Only redirect if not already on login/signup page. The only
+      // navigation for a logout (AuthGate leaves an ended session to this),
+      // and deliberately without ?from=: the next sign-in starts fresh.
       if (typeof window !== 'undefined' &&
           !window.location.pathname.startsWith('/login') &&
           !window.location.pathname.startsWith('/signup')) {
@@ -427,7 +430,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Unlike logout(), a pending invitation is kept: an invitee whose
         // stale session expires on /accept-invitation must get back to it.
         await resetCachesForIdentityChange(queryClient);
-        router.push("/login");
+        // The only navigation for an expired session (AuthGate leaves an
+        // ended session to this): back to this page once signed in again --
+        // unless an invitation is pending, which plain /login returns to
+        // (postSignInPath).
+        router.push(hasPendingInvitation() ? "/login" : loginPathReturningHere());
       } else {
         // Non-401 error (network down, 5xx, etc.) — don't clear the session,
         // the cached user state is still valid.

@@ -102,7 +102,8 @@ describe("MEMBERSHIP_REVOKED from the backend", () => {
     expect(localStorage.getItem("accessToken")).toBeNull();
     expect(localStorage.getItem("refreshToken")).toBeNull();
     expect(push).toHaveBeenCalledTimes(1);
-    expect(push).toHaveBeenCalledWith("/login");
+    // Back to this page (jsdom's /) once signed in again.
+    expect(push).toHaveBeenCalledWith("/login?from=%2F");
   });
 
   it("many revoked responses at once still log out exactly once", async () => {

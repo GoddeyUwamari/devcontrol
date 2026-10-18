@@ -375,7 +375,8 @@ describe('each identity transition resets the cache on its own (not relying on l
 
     await act(async () => { await auth.refreshUser() })
 
-    expect(nav.log).toEqual([{ path: '/login', tenantDataEntries: 0 }])
+    // One navigation, back to the dashboard once signed in again.
+    expect(nav.log).toEqual([{ path: '/login?from=%2Fdashboard', tenantDataEntries: 0 }])
     expect(tenantDataEntries()).toEqual([])
     expect(keysMentioning(ORG.a.id)).toEqual([])
   })

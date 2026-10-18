@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { AuthGate } from '@/components/auth/auth-gate';
 import { TopNav } from '@/components/layout/top-nav';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { CommandPalette } from '@/components/command-palette';
@@ -16,7 +17,17 @@ import { usePlan } from '@/lib/hooks/use-plan';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { SiteAnalytics } from '@/components/analytics/site-analytics';
 
+// Every app route is signed-in only: the shell, and every hook in it, mounts
+// only once AuthGate has a signed-in user.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthGate>
+      <AppShell>{children}</AppShell>
+    </AuthGate>
+  );
+}
+
+function AppShell({ children }: { children: React.ReactNode }) {
   const fetchStatus = useOnboardingStore((state) => state.fetchStatus);
   const breadcrumbs = useBreadcrumbs();
   const isDemoActive = useDemoMode();
