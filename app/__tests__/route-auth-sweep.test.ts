@@ -54,6 +54,9 @@ const PUBLIC_ROUTES = [
   "/tour",
 ].sort();
 
+/** A Next.js page file in any of the extensions Next accepts. */
+const PAGE_FILE = /^page\.(t|j)sx?$/;
+
 interface Page {
   file: string;
   /** Top-level route group, e.g. "(app)"; null when the page is in none. */
@@ -63,7 +66,7 @@ interface Page {
 
 function pages(): Page[] {
   return (readdirSync(APP_DIR, { recursive: true }) as string[])
-    .filter((file) => file.split(sep).pop() === "page.tsx" && !file.split(sep).includes("__tests__"))
+    .filter((file) => PAGE_FILE.test(file.split(sep).pop() ?? "") && !file.split(sep).includes("__tests__"))
     .map((file) => {
       const segments = file.split(sep).slice(0, -1);
       const group = segments[0]?.startsWith("(") ? segments[0] : null;

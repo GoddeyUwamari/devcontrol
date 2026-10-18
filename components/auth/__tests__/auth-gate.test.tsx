@@ -98,6 +98,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   localStorage.clear();
   sessionStorage.clear();
@@ -199,7 +200,12 @@ describe("session expiry (refreshUser 401, no refresh token)", () => {
     push.mockClear();
     vi.spyOn(authService, "login").mockResolvedValue({ data: SESSION } as never);
     vi.spyOn(authService, "getCurrentUser").mockResolvedValue(USER as never);
+    // login() arms a 100 ms hard-navigation fallback; run it here (a no-op:
+    // this tab is not on /login) rather than leak it past the test.
+    vi.useFakeTimers();
     await act(() => auth.login(USER.email, "placeholder-password"));
     expect(push).toHaveBeenCalledWith("/accept-invitation");
+    vi.runOnlyPendingTimers();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

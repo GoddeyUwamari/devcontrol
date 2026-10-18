@@ -1,7 +1,8 @@
 /**
  * loginPathReturningTo: the /login?from= that AuthGate and session expiry
  * send to. The return path is the page's own path and query, re-validated
- * by login with safeReturnPath, so it round-trips exactly; an unsafe path
+ * by login with safeReturnPath, so it round-trips exactly; a fragment is
+ * never carried (it can hold a token); an unsafe path
  * returns to the dashboard, and a sign-in page gets no return path.
  */
 import { describe, it, expect } from "vitest";
@@ -43,6 +44,15 @@ describe("loginPathReturningTo", () => {
       expect(loginPathReturningTo(path)).toBe("/login");
     }
   );
+
+  it.each([
+    ["/dashboard#t", "/login?from=%2Fdashboard"],
+    ["/costs?range=30d#token=placeholder", "/login?from=%2Fcosts%3Frange%3D30d"],
+    ["/accept-invitation#token=placeholder", "/login?from=%2Faccept-invitation"],
+    ["/login#token=placeholder", "/login"],
+  ])("drops the fragment of %j", (path, expected) => {
+    expect(loginPathReturningTo(path)).toBe(expected);
+  });
 
   it("does not treat a lookalike path as a sign-in page", () => {
     expect(loginPathReturningTo("/login-history")).toBe("/login?from=%2Flogin-history");
