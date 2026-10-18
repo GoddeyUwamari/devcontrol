@@ -11,6 +11,11 @@
  * an old link cannot leave it behind. Login and register use this to clear
  * form fields a native GET submit (before hydration) left in the query.
  *
+ * The one exception is `legacyQuery`: keys listed there are also returned from
+ * the query string, for links already sent in that form (invitation emails,
+ * until they expire). The fragment still wins when both carry a value, and
+ * the query value is removed and scrubbed from history exactly as above.
+ *
  * Next.js's App Router keeps its own copy of the current URL and writes it
  * back to the address bar on router updates. Its history patch, which keeps
  * that copy in sync with `history.replaceState`, is installed in an effect
@@ -24,14 +29,16 @@
  * in the history entry or in the tree the router adopts.
  */
 export function takeUrlCredentials<K extends string>(
-  keys: readonly K[]
+  keys: readonly K[],
+  options: { legacyQuery?: readonly K[] } = {}
 ): Partial<Record<K, string>> {
+  const legacyQuery = options.legacyQuery ?? [];
   const found: Partial<Record<K, string>> = {};
   if (typeof window === "undefined") return found;
 
   const url = new URL(window.location.href);
   const fragment = new URLSearchParams(url.hash.replace(/^#/, ""));
-  // Query-string values: not returned, only removed (see above).
+  // Query-string values: not returned (unless legacyQuery), only removed (see above).
   const ignored: string[] = [];
   let fragmentHadKey = false;
 
@@ -42,7 +49,11 @@ export function takeUrlCredentials<K extends string>(
       fragmentHadKey = true;
       fragment.delete(key);
     }
-    ignored.push(...url.searchParams.getAll(key).filter(Boolean));
+    const queryValues = url.searchParams.getAll(key).filter(Boolean);
+    if (!found[key] && legacyQuery.includes(key) && queryValues.length > 0) {
+      found[key] = queryValues[0];
+    }
+    ignored.push(...queryValues);
     url.searchParams.delete(key);
   }
 

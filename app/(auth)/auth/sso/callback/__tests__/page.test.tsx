@@ -4,12 +4,18 @@
  * them where the rest of the app reads them (tokenManager), sets the auth
  * cookie the same way as password login, and no longer writes the obsolete
  * localStorage keys. Tokens in the query string are not used: such a link
- * signs no one in, and is cleaned the same way.
+ * signs no one in, and is cleaned the same way. An invitation opened in this
+ * tab before signing in (the pending invitation) is where the user lands.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import SSOCallbackPage from "../page";
 import { tokenManager } from "@/lib/services/auth.service";
+import {
+  PENDING_INVITATION_KEY,
+  PENDING_INVITATION_MAX_AGE_MS,
+  savePendingInvitation,
+} from "@/lib/pending-invitation";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -37,6 +43,7 @@ function expectNoTokensInUrl() {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   replace.mockReset();
   fetchMock = vi.fn().mockResolvedValue({ json: async () => ({ success: true, data: USER }) });
   vi.stubGlobal("fetch", fetchMock);
@@ -199,5 +206,39 @@ describe("SSO callback", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
     expectNoTokensInUrl();
+  });
+
+  describe("pending invitation", () => {
+    it("goes to /accept-invitation when an invitation is pending in this tab", async () => {
+      savePendingInvitation("pending-invite-placeholder");
+      visit(fragmentLink({ token: ACCESS, refreshToken: REFRESH, orgId: "org-1" }));
+
+      render(<SSOCallbackPage />);
+
+      await waitFor(() => expect(replace).toHaveBeenCalledWith("/accept-invitation"));
+      expect(replace).toHaveBeenCalledTimes(1);
+      // The callback only routes; the invitation page accepts (and clears) it.
+      expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).not.toBeNull();
+    });
+
+    it("goes to /dashboard when the pending invitation is older than 7 days", async () => {
+      savePendingInvitation("pending-invite-placeholder", Date.now() - PENDING_INVITATION_MAX_AGE_MS - 1);
+      visit(fragmentLink({ token: ACCESS, refreshToken: REFRESH, orgId: "org-1" }));
+
+      render(<SSOCallbackPage />);
+
+      await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
+      expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).toBeNull();
+    });
+
+    it("goes to /accept-invitation even when /me fails", async () => {
+      savePendingInvitation("pending-invite-placeholder");
+      fetchMock.mockRejectedValue(new Error("network"));
+      visit(fragmentLink({ token: ACCESS, refreshToken: REFRESH, orgId: "org-1" }));
+
+      render(<SSOCallbackPage />);
+
+      await waitFor(() => expect(replace).toHaveBeenCalledWith("/accept-invitation"));
+    });
   });
 });

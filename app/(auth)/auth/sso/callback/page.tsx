@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { tokenManager } from "@/lib/services/auth.service";
 import { takeUrlCredentials } from "@/lib/url-credentials";
 import { clearOrgScopedCaches } from "@/lib/org-scoped-cache";
+import { hasPendingInvitation } from "@/lib/pending-invitation";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -41,7 +42,8 @@ function SSOCallbackContent() {
       tokenManager.setRefreshToken(refreshToken);
       tokenManager.setAuthCookie(token);
 
-      // Fetch user info then navigate to dashboard
+      // Fetch user info then navigate: back to an invitation opened in this
+      // tab before signing in, otherwise to the dashboard
       fetch(`${BACKEND_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -55,7 +57,7 @@ function SSOCallbackContent() {
           // Non-fatal — auth context will fetch user on mount
         })
         .finally(() => {
-          router.replace("/dashboard");
+          router.replace(hasPendingInvitation() ? "/accept-invitation" : "/dashboard");
         });
     } catch {
       setError("Failed to complete SSO sign-in. Please try again.");

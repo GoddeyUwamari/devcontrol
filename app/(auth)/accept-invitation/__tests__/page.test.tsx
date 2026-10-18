@@ -1,13 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+/**
+ * Accept invitation: the token is taken from the link (#token=, or ?token=
+ * for emails sent before the link moved to the fragment) and removed from
+ * the URL, kept in this tab's pending invitation so it survives sign-in or
+ * registration, and never put into any rendered link or return path.
+ */
+import { StrictMode } from "react";
+import { renderToString } from "react-dom/server";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import AcceptInvitationPage from "../page";
+import {
+  PENDING_INVITATION_KEY,
+  PENDING_INVITATION_MAX_AGE_MS,
+  savePendingInvitation,
+} from "@/lib/pending-invitation";
 
 const mockPush = vi.fn();
-let mockSearchParams = new URLSearchParams();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
-  useSearchParams: () => mockSearchParams,
 }));
 
 const mockUseAuth = vi.fn();
@@ -25,12 +36,25 @@ vi.mock("@/lib/services/organizations.service", () => ({
 
 const TOKEN = "secret-invite-token-123";
 
-function setSearchParams(params: Record<string, string>) {
-  mockSearchParams = new URLSearchParams(params);
+function visit(path: string) {
+  window.history.replaceState(null, "", path);
+}
+
+function currentPath() {
+  return window.location.pathname + window.location.search + window.location.hash;
+}
+
+function pendingToken(): string | null {
+  const raw = sessionStorage.getItem(PENDING_INVITATION_KEY);
+  return raw === null ? null : JSON.parse(raw).token;
 }
 
 function setAuth(overrides: Partial<ReturnType<typeof baseAuth>> = {}) {
   mockUseAuth.mockReturnValue({ ...baseAuth(), ...overrides });
+}
+
+function signedIn() {
+  setAuth({ isAuthenticated: true, user: { id: "u1" } });
 }
 
 function baseAuth() {
@@ -42,79 +66,170 @@ function baseAuth() {
   };
 }
 
+function expectNoTokenInAnyHref(container: HTMLElement) {
+  for (const el of Array.from(container.querySelectorAll("[href]"))) {
+    const href = el.getAttribute("href") ?? "";
+    expect(href).not.toContain(TOKEN);
+    expect(decodeURIComponent(href)).not.toContain(TOKEN);
+    expect(href).not.toMatch(/token=/);
+  }
+}
+
 describe("AcceptInvitationPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+    sessionStorage.clear();
     mockRefreshOrganizations.mockResolvedValue(undefined);
-    setSearchParams({});
+    visit(`/accept-invitation#token=${TOKEN}`);
     setAuth();
   });
 
-  it("shows the invalid-invitation state when token is missing", () => {
-    setSearchParams({});
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
-
-    render(<AcceptInvitationPage />);
-
-    expect(
-      screen.getByText(/invalid invitation link/i)
-    ).toBeInTheDocument();
-    expect(mockAcceptInvitation).not.toHaveBeenCalled();
+  afterEach(() => {
+    visit("/");
   });
 
-  it("offers Sign in / Create account for unauthenticated users, preserving the token in the return URL", () => {
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: false, user: null, isLoading: false });
+  describe("reading the link", () => {
+    it("takes #token from the fragment, removes it from the URL and keeps it as the pending invitation", async () => {
+      signedIn();
+      mockAcceptInvitation.mockReturnValue(new Promise(() => {}));
 
-    render(<AcceptInvitationPage />);
+      render(<AcceptInvitationPage />);
 
-    const signIn = screen.getByRole("link", { name: /sign in/i });
-    const createAccount = screen.getByRole("link", { name: /create an account/i });
+      expect(currentPath()).toBe("/accept-invitation");
+      expect(window.location.href).not.toContain(TOKEN);
+      expect(pendingToken()).toBe(TOKEN);
+      fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+      await waitFor(() => expect(mockAcceptInvitation).toHaveBeenCalledWith(TOKEN));
+    });
 
-    const expectedReturnTo = encodeURIComponent(
-      `/accept-invitation?token=${encodeURIComponent(TOKEN)}`
-    );
+    it("accepts a legacy ?token link (emails sent before the fragment form) and removes it from the URL", async () => {
+      visit(`/accept-invitation?token=${TOKEN}`);
+      signedIn();
+      mockAcceptInvitation.mockReturnValue(new Promise(() => {}));
 
-    expect(signIn).toHaveAttribute(
-      "href",
-      `/login?from=${expectedReturnTo}`
-    );
-    expect(createAccount).toHaveAttribute(
-      "href",
-      `/register?from=${expectedReturnTo}`
-    );
-    expect(mockAcceptInvitation).not.toHaveBeenCalled();
+      render(<AcceptInvitationPage />);
+
+      expect(currentPath()).toBe("/accept-invitation");
+      expect(window.location.href).not.toContain(TOKEN);
+      expect(pendingToken()).toBe(TOKEN);
+      fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+      await waitFor(() => expect(mockAcceptInvitation).toHaveBeenCalledWith(TOKEN));
+    });
+
+    it("prefers the fragment when a link carries both forms", async () => {
+      visit(`/accept-invitation?token=OLDQUERYTOKEN#token=${TOKEN}`);
+      signedIn();
+      mockAcceptInvitation.mockReturnValue(new Promise(() => {}));
+
+      render(<AcceptInvitationPage />);
+
+      expect(currentPath()).toBe("/accept-invitation");
+      fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+      await waitFor(() => expect(mockAcceptInvitation).toHaveBeenCalledWith(TOKEN));
+    });
+
+    it("keeps the token through React Strict Mode's second effect run", async () => {
+      signedIn();
+      mockAcceptInvitation.mockReturnValue(new Promise(() => {}));
+
+      render(
+        <StrictMode>
+          <AcceptInvitationPage />
+        </StrictMode>
+      );
+
+      expect(screen.queryByText(/invalid invitation link/i)).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+      await waitFor(() => expect(mockAcceptInvitation).toHaveBeenCalledWith(TOKEN));
+      expect(pendingToken()).toBe(TOKEN);
+    });
+
+    it("shows a reading state, not the invalid-link state, before the link has been read", () => {
+      signedIn();
+
+      const html = renderToString(<AcceptInvitationPage />);
+
+      expect(html).toMatch(/Reading invitation link/);
+      expect(html).not.toMatch(/Invalid invitation link/i);
+      expect(html).not.toContain(TOKEN);
+    });
+
+    it("shows the invalid-invitation state when there is no token and no pending invitation", () => {
+      visit("/accept-invitation");
+      signedIn();
+
+      render(<AcceptInvitationPage />);
+
+      expect(screen.getByText(/invalid invitation link/i)).toBeInTheDocument();
+      expect(mockAcceptInvitation).not.toHaveBeenCalled();
+    });
+
+    it("uses the pending invitation when the user returns without a token in the URL", async () => {
+      savePendingInvitation(TOKEN);
+      visit("/accept-invitation");
+      signedIn();
+      mockAcceptInvitation.mockReturnValue(new Promise(() => {}));
+
+      render(<AcceptInvitationPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+      await waitFor(() => expect(mockAcceptInvitation).toHaveBeenCalledWith(TOKEN));
+    });
+
+    it("ignores and removes a pending invitation older than 7 days", () => {
+      savePendingInvitation(TOKEN, Date.now() - PENDING_INVITATION_MAX_AGE_MS - 1);
+      visit("/accept-invitation");
+      signedIn();
+
+      render(<AcceptInvitationPage />);
+
+      expect(screen.getByText(/invalid invitation link/i)).toBeInTheDocument();
+      expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).toBeNull();
+    });
+
+    it("a new link replaces an older pending invitation", () => {
+      savePendingInvitation("older-pending-invitation-token");
+
+      render(<AcceptInvitationPage />);
+
+      expect(pendingToken()).toBe(TOKEN);
+    });
+  });
+
+  describe("signed out", () => {
+    it.each([
+      ["#token", `/accept-invitation#token=${TOKEN}`],
+      ["legacy ?token", `/accept-invitation?token=${TOKEN}`],
+    ])("%s: offers Sign in / Create account returning to /accept-invitation, with no token in any link", (_form, link) => {
+      visit(link);
+      setAuth({ isAuthenticated: false, user: null, isLoading: false });
+
+      const { container } = render(<AcceptInvitationPage />);
+
+      const signIn = screen.getByRole("link", { name: /sign in/i });
+      const createAccount = screen.getByRole("link", { name: /create an account/i });
+      expect(signIn).toHaveAttribute("href", "/login?from=%2Faccept-invitation");
+      expect(createAccount).toHaveAttribute("href", "/register?from=%2Faccept-invitation");
+      expectNoTokenInAnyHref(container);
+      expect(container.innerHTML).not.toContain(TOKEN);
+      // Kept for after sign-in instead.
+      expect(pendingToken()).toBe(TOKEN);
+      expect(mockAcceptInvitation).not.toHaveBeenCalled();
+    });
   });
 
   it("shows an explicit Accept invitation action for authenticated users and does not auto-fire", () => {
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
+    signedIn();
 
     render(<AcceptInvitationPage />);
 
-    expect(
-      screen.getByRole("button", { name: /accept invitation/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /accept invitation/i })).toBeInTheDocument();
     expect(mockAcceptInvitation).not.toHaveBeenCalled();
   });
 
-  it("calls acceptInvitation with the token when the button is clicked", async () => {
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
-    // Never resolves: this test only cares about the call arguments, not
-    // the success flow -- avoids leaking the component's success-redirect
-    // timer into a later test.
-    mockAcceptInvitation.mockReturnValue(new Promise(() => {}));
-
-    render(<AcceptInvitationPage />);
-    fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
-
-    await waitFor(() => expect(mockAcceptInvitation).toHaveBeenCalledWith(TOKEN));
-  });
-
   it("prevents repeated submission while the request is in progress", async () => {
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
+    signedIn();
 
     let resolveAccept: (value: { organizationId: string; role: string }) => void;
     mockAcceptInvitation.mockReturnValue(
@@ -147,65 +262,81 @@ describe("AcceptInvitationPage", () => {
     });
   });
 
-  it("refreshes organizations and navigates to /dashboard on success", async () => {
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
+  it("refreshes organizations, clears the pending invitation and navigates to /dashboard on success", async () => {
+    signedIn();
     mockAcceptInvitation.mockResolvedValue({
       organizationId: "org-1",
       role: "member",
     });
 
-    render(<AcceptInvitationPage />);
+    const { container } = render(<AcceptInvitationPage />);
     fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
 
     await waitFor(() => expect(mockRefreshOrganizations).toHaveBeenCalledTimes(1));
     // Awaited: the success state is set after refreshOrganizations() resolves,
     // a later step than the call the waitFor above observed.
     expect(await screen.findByText(/invitation accepted/i)).toBeInTheDocument();
+    expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).toBeNull();
+    expectNoTokenInAnyHref(container);
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/dashboard"), {
       timeout: 3000,
     });
   });
 
-  it("displays backend error messages using the existing error-extraction convention", async () => {
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
+  it("treats 'already a member' as a soft success, clears the pending invitation and redirects to /dashboard", async () => {
+    signedIn();
     mockAcceptInvitation.mockRejectedValue({
-      response: { data: { error: "This invitation was sent to a different email address" } },
-    });
-
-    render(<AcceptInvitationPage />);
-    fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
-
-    expect(
-      await screen.findByText("This invitation was sent to a different email address")
-    ).toBeInTheDocument();
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it("treats 'already a member' as a soft success and redirects to /dashboard", async () => {
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
-    mockAcceptInvitation.mockRejectedValue({
-      response: { data: { error: "User is already a member of this organization" } },
+      response: { status: 400, data: { error: "User is already a member of this organization" } },
     });
 
     render(<AcceptInvitationPage />);
     fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
 
     expect(await screen.findByText(/already a member/i)).toBeInTheDocument();
+    expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).toBeNull();
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/dashboard"), {
       timeout: 3000,
     });
   });
 
+  it("displays backend error messages and clears the pending invitation on a terminal error", async () => {
+    signedIn();
+    mockAcceptInvitation.mockRejectedValue({
+      response: { status: 403, data: { error: "This invitation was sent to a different email address" } },
+    });
+
+    const { container } = render(<AcceptInvitationPage />);
+    fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+
+    expect(
+      await screen.findByText("This invitation was sent to a different email address")
+    ).toBeInTheDocument();
+    expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).toBeNull();
+    expectNoTokenInAnyHref(container);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a server error", { response: { status: 503, data: { error: "Service unavailable" } } }, "Service unavailable"],
+    ["a rate limit", { response: { status: 429, data: { error: "Too many requests" } } }, "Too many requests"],
+    ["a network error", { message: "Network Error" }, "Failed to accept invitation"],
+  ])("keeps the pending invitation after %s, which may succeed on retry", async (_kind, error, shown) => {
+    signedIn();
+    mockAcceptInvitation.mockRejectedValue(error);
+
+    render(<AcceptInvitationPage />);
+    fireEvent.click(screen.getByRole("button", { name: /accept invitation/i }));
+
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    expect(pendingToken()).toBe(TOKEN);
+  });
+
   it("never renders or logs the raw invitation token on error", async () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    setSearchParams({ token: TOKEN });
-    setAuth({ isAuthenticated: true, user: { id: "u1" } });
+    signedIn();
     mockAcceptInvitation.mockRejectedValue({
-      response: { data: { error: "Invalid or expired invitation" } },
+      response: { status: 410, data: { error: "Invalid or expired invitation" } },
     });
 
     const { container } = render(<AcceptInvitationPage />);
@@ -213,7 +344,7 @@ describe("AcceptInvitationPage", () => {
 
     await screen.findByText("Invalid or expired invitation");
 
-    expect(container.textContent).not.toContain(TOKEN);
+    expect(container.innerHTML).not.toContain(TOKEN);
     for (const call of consoleErrorSpy.mock.calls) {
       expect(JSON.stringify(call)).not.toContain(TOKEN);
     }

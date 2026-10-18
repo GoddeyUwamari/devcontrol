@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -39,10 +39,17 @@ export default function RegisterPage() {
   // Submit stays disabled until hydrated: see useHydrated.
   const hydrated = useHydrated();
 
+  // Where to go once signed in (from ?from=, validated by the auth context);
+  // read once, so a second effect run (Strict Mode) cannot drop it.
+  const returnTo = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     // Clear any submitted fields from the URL and history; the values are
-    // discarded, never used or sent.
-    takeUrlCredentials(FORM_FIELDS);
+    // discarded, never used or sent. `from` is kept and removed the same way.
+    const { from } = takeUrlCredentials([...FORM_FIELDS, "from"] as const, {
+      legacyQuery: ["from"],
+    });
+    if (from) returnTo.current = from;
   }, []);
 
   const {
@@ -73,7 +80,7 @@ export default function RegisterPage() {
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     try {
-      await registerUser(data.email, data.password, data.fullName);
+      await registerUser(data.email, data.password, data.fullName, returnTo.current);
       // Navigation handled by auth context
     } catch {
       // Error toast and logging handled by auth context

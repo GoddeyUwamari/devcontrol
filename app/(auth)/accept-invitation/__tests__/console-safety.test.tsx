@@ -15,7 +15,6 @@ import {
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useSearchParams: () => new URLSearchParams({ token: SENTINEL_TOKEN }),
 }));
 
 vi.mock("@/lib/contexts/auth-context", () => ({
@@ -31,11 +30,14 @@ let restoreApi: () => void;
 let spies: ReturnType<typeof spyOnConsole>;
 
 beforeEach(() => {
+  sessionStorage.clear();
+  window.history.replaceState(null, "", `/accept-invitation#token=${encodeURIComponent(SENTINEL_TOKEN)}`);
   restoreApi = rejectEveryApiRequest(410, { success: false, error: "Invitation expired", code: "INVITATION_EXPIRED" });
   spies = spyOnConsole();
 });
 
 afterEach(() => {
+  window.history.replaceState(null, "", "/");
   restoreApi();
   vi.restoreAllMocks();
 });
