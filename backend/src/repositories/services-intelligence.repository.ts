@@ -131,11 +131,14 @@ export class ServicesIntelligenceRepository {
       [organizationId]
     );
 
+    // services.owner is NOT NULL, so a blank owner is stored as '' (or
+    // whitespace); it is reported as no owner, not as an empty name. BTRIM's
+    // default trims spaces only, hence the explicit set.
     const services = await executor.query<IntelligenceServiceRow>(
       `SELECT s.id,
               s.name,
               s.description,
-              s.owner,
+              NULLIF(BTRIM(s.owner, E' \\t\\r\\n'), '') AS owner,
               t.id   AS team_id,
               t.name AS team_name
          FROM services s

@@ -689,6 +689,34 @@ describe('grouping', () => {
   });
 });
 
+describe('owner_declared', () => {
+  // services.owner is NOT NULL, so "no owner" is stored as a blank string.
+  it('is null for a blank or whitespace-only owner, trimmed otherwise, and never another organization\'s', async () => {
+    const org = await harness.buildOrg();
+    const other = await harness.buildOrg();
+    const insert = async (orgId: string, name: string, owner: string) => {
+      const { rows } = await pool.query(
+        `INSERT INTO services (name, template, owner, status, organization_id)
+         VALUES ($1, 'api', $2, 'active', $3) RETURNING id`,
+        [`${name}-${suffix}`, owner, orgId]
+      );
+      return rows[0].id as string;
+    };
+    const blank = await insert(org.orgId, 'si-owner-blank', '');
+    const spaces = await insert(org.orgId, 'si-owner-spaces', ' \t ');
+    const padded = await insert(org.orgId, 'si-owner-padded', '  padded-owner@example.com ');
+    await insert(other.orgId, 'si-owner-foreign', 'foreign-owner@example.com');
+
+    const { status, body } = await read(org.orgId, org.member);
+    expect(status).toBe(200);
+    const data = body.data as ServicesIntelligence;
+    const owners = Object.fromEntries(data.services.map((s) => [s.id, s.owner_declared]));
+    expect(owners).toEqual({ [blank]: null, [spaces]: null, [padded]: 'padded-owner@example.com' });
+    expect(JSON.stringify(data)).not.toContain('foreign-owner@example.com');
+    expect(servicesIntelligenceSchema.safeParse(data).success).toBe(true);
+  });
+});
+
 describe('findings', () => {
   it('keep their stable key and their verification marker, including unverified', async () => {
     const data = await intelligence(a);
