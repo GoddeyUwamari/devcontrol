@@ -134,7 +134,9 @@ describe('EmailService', () => {
       const call = mockSend.mock.calls[0][0];
       expect(call.to).toBe('invitee@example.com');
       expect(call.subject).toBe("You've been invited to join Acme Corp on DevControl");
-      expect(call.html).toContain('https://app.example.com/accept-invitation?token&#x3D;invite-token-789');
+      // Token in the fragment (never sent to a server), not the query string.
+      expect(call.html).toContain('https://app.example.com/accept-invitation#token&#x3D;invite-token-789');
+      expect(call.html).not.toContain('accept-invitation?token');
       expect(call.html).toContain('Acme Corp');
       expect(call.html).toContain('admin');
       expect(call.html).toContain('7 days');

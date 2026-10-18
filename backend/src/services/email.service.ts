@@ -151,7 +151,9 @@ export class EmailService {
    */
   async sendInvitationEmail(params: InvitationEmailParams): Promise<boolean> {
     const { to, organizationName, role, invitationToken } = params;
-    const invitationUrl = `${this.getFrontendUrl()}/accept-invitation?token=${invitationToken}`;
+    // Fragment, not query string: the token is never sent to a server when
+    // the link is opened, and the page removes it from the URL on load.
+    const invitationUrl = `${this.getFrontendUrl()}/accept-invitation#token=${encodeURIComponent(invitationToken)}`;
 
     return this.send({
       to,
