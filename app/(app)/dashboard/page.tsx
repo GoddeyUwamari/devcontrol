@@ -40,6 +40,7 @@ import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
+import { NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
 import { deriveAnalysisStatus, pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { roundCents } from '../costs/cost-display'
 import type { OpportunityEvaluationState } from '@/components/dashboard/savings-opportunities'
@@ -400,9 +401,11 @@ export default function DashboardPage() {
   // Cost-saving opportunities, grouped by resource type from the already-fetched cost
   // recommendations — no new fetch. Structured as a list (not one variable per type)
   // so a newly-supported resource type only ever needs one new entry here, never a
-  // UI restructure. All four types below ARE real, wired, currently-running detectors
+  // UI restructure. All three types below ARE real, wired, currently-running detectors
   // in cost-optimization.service.ts (verified directly against the backend source,
-  // not assumed) — none is hardcoded as unsupported.
+  // not assumed) — none is hardcoded as unsupported. RDS has no card: its only
+  // detector (oversized instances) was retired for having no utilisation data, and a
+  // card for a check that never runs would read as a truthful "0 detected".
   const priorityBadgeFor = (severity?: 'LOW' | 'MEDIUM' | 'HIGH') =>
     severity === 'HIGH' ? { label: 'High priority', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
     : severity === 'MEDIUM' ? { label: 'Medium priority', color: 'var(--text-warning)', background: 'var(--bg-warning)' }
@@ -410,28 +413,35 @@ export default function DashboardPage() {
     : undefined
   const OPPORTUNITY_CATEGORIES: { type: string; title: string; description: string }[] = [
     // Idle-instance candidates (low 7-day average CPU) and Reserved Instance
-    // coverage estimates -- not rightsizing, which DevControl does not do yet.
-    { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates' },
+    // coverage gaps (no dollar estimate -- Savings Plans are not read) -- not
+    // rightsizing, which DevControl does not do yet.
+    { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage gaps' },
     { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities' },
-    { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load' },
     { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities' },
   ]
   const opportunityCategories = isDemoActive
     ? [
-        { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage estimates', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
+        { type: 'EC2', title: 'Review EC2 instances', description: 'Idle-instance candidates (low average CPU) and Reserved Instance coverage gaps', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
         { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', priorityBadge: priorityBadgeFor('LOW') },
-        { type: 'RDS', title: 'Optimize RDS storage', description: 'Database instances sized above actual load', count: 1, savingsLabel: '$0.16/mo', priorityBadge: priorityBadgeFor('MEDIUM') },
         { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: '$0/mo', priorityBadge: undefined },
       ]
     : OPPORTUNITY_CATEGORIES.map((cat) => {
         const matches = costRecsRaw.filter((r) => r.resourceType === cat.type)
         // The server's de-duplicated per-type total, not a client-side sum: two
         // recommendations can draw on the same instance's cost (e.g. idle + RI).
+        // Estimates and ceilings (S3 lifecycle's upper bound) are separate server
+        // totals and are shown apart, never added; a type whose active rows have
+        // no savings basis has no dollar figure at all.
         const total = costRecStats?.potentialSavingsByResourceType?.[cat.type]
+        const ceiling = costRecStats?.potentialSavingsCeilingByResourceType?.[cat.type]
+        const figures = [
+          ...(total != null ? [`${formatSavingsCents(roundCents(total))}/mo`] : []),
+          ...(ceiling != null ? [`Up to ${formatSavingsCents(roundCents(ceiling))}/mo`] : []),
+        ]
         return {
           ...cat,
           count: matches.length,
-          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : total != null ? `${formatSavingsCents(roundCents(total))}/mo` : '—',
+          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : !costRecStats ? '—' : figures.length > 0 ? figures.join(' + ') : NO_DOLLAR_ESTIMATE,
           priorityBadge: priorityBadgeFor(matches[0]?.severity),
         }
       })

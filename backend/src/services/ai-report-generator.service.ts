@@ -21,6 +21,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { classifySavingsBasis } from './estimated-savings';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import type { ChatContext } from './ai-chat.service';
 import {
@@ -835,6 +836,9 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
         const active = await this.costRecommendationsRepo.findAll(organizationId, { status: 'ACTIVE', limit: 10 });
         const items = active
           .filter(rec => rec.issue.toLowerCase().includes('idle') || rec.issue.toLowerCase().includes('unused'))
+          // Only figures with an estimate basis are "estimated savings"; a ceiling
+          // or a figure with no savings_basis is never reported as one.
+          .filter(rec => classifySavingsBasis(rec.metadata?.savings_basis) === 'estimate')
           .slice(0, 5)
           .map(rec => ({
             resourceId: rec.resource_id,

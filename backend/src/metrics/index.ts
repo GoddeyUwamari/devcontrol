@@ -181,10 +181,15 @@ export async function updateBusinessMetrics(dbPool: any, wsServer?: WebSocketSer
       }
     }
 
-    // Cost Optimization Recommendations
+    // Cost Optimization Recommendations. Savings: estimates only (see
+    // classifySavingsBasis() in services/estimated-savings.ts) -- never ceilings
+    // or figures with no savings_basis.
     const recommendations = await dbPool.query(`
       SELECT
-        COALESCE(SUM(potential_savings), 0) as total_savings,
+        COALESCE(SUM(potential_savings) FILTER (
+          WHERE metadata->>'savings_basis' LIKE 'estimated:%'
+             OR metadata->>'savings_basis' LIKE 'comparison:%'
+        ), 0) as total_savings,
         COALESCE(SUM(CASE WHEN severity = 'HIGH' THEN 1 ELSE 0 END), 0) as high,
         COALESCE(SUM(CASE WHEN severity = 'MEDIUM' THEN 1 ELSE 0 END), 0) as medium,
         COALESCE(SUM(CASE WHEN severity = 'LOW' THEN 1 ELSE 0 END), 0) as low

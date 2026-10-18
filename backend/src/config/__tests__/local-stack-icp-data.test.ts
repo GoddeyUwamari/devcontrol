@@ -5,6 +5,7 @@
  * people.
  */
 import path from 'path';
+import { S3_STANDARD_PER_GB_MONTH_USD, S3_STANDARD_IA_PER_GB_MONTH_USD } from '../aws-pricing';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const icp = require(path.join(__dirname, '..', '..', '..', '..', 'dev', 'local', 'icp-data.js'));
@@ -196,7 +197,7 @@ describe('only placeholders', () => {
 
 describe('fits the schema', () => {
   it('recommendations use the analyzers\' issues and allowed severities and statuses, one ACTIVE per resource and issue', () => {
-    const issues = ['Unattached EBS Volume', 'gp2 to gp3 Migration Opportunity', 'Idle Instance', 'Oversized Instance', 'S3 Lifecycle Optimization', 'Low-Usage Lambda Function'];
+    const issues = ['Unattached EBS Volume', 'gp2 to gp3 Migration Opportunity', 'Idle Instance', 'S3 Lifecycle Optimization', 'Low-Usage Lambda Function'];
     for (const rec of data.recommendations) {
       expect(issues).toContain(rec.issue);
       expect(['LOW', 'MEDIUM', 'HIGH']).toContain(rec.severity);
@@ -207,6 +208,26 @@ describe('fits the schema', () => {
     expect(new Set(active).size).toBe(active.length);
     expect(active.length).toBeGreaterThanOrEqual(15);
     expect(data.recommendations.some((r: Row) => r.status !== 'ACTIVE')).toBe(true);
+  });
+
+  it('S3 lifecycle rows use the detector\'s ceiling formula and wording, and claim no access history', () => {
+    const s3 = data.recommendations.filter((r: Row) => r.issue === 'S3 Lifecycle Optimization');
+    expect(s3.length).toBeGreaterThan(0);
+    for (const rec of s3) {
+      const gb = (rec.metadata as Row).standard_storage_gb as number;
+      expect(rec.potential_savings).toBeCloseTo(gb * (S3_STANDARD_PER_GB_MONTH_USD - S3_STANDARD_IA_PER_GB_MONTH_USD), 2);
+      expect(rec.description).toMatch(/^This bucket has no lifecycle configuration\. If all [0-9.]+GB of its current Standard storage qualified for a transition to Standard-IA, the maximum possible saving/);
+      expect(rec.description).not.toMatch(/not been read|90 days/);
+    }
+  });
+
+  it('no retired oversized-RDS rows, and every figure states a savings basis (S3 lifecycle as a ceiling)', () => {
+    expect(data.recommendations.some((r: Row) => r.issue === 'Oversized Instance' || r.resource_type === 'RDS')).toBe(false);
+    for (const rec of data.recommendations) {
+      const basis = (rec.metadata as Row).savings_basis as string;
+      if (rec.issue === 'S3 Lifecycle Optimization') expect(basis).toMatch(/^ceiling: /);
+      else expect(basis).toMatch(/^estimated: /);
+    }
   });
 
   it('findings use allowed categories, severities, statuses and dispositions', () => {

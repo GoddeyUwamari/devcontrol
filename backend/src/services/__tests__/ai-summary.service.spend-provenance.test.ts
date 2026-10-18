@@ -100,7 +100,7 @@ function mockDependencies(opts: {
   if (opts.recommendations instanceof Error) getStats.mockRejectedValue(opts.recommendations);
   else getStats.mockResolvedValue({
     total_recommendations: 0, active_recommendations: opts.recommendations?.active ?? 0,
-    total_potential_savings: opts.recommendations?.savings ?? 0, potential_savings_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
+    total_potential_savings: opts.recommendations?.savings ?? 0, potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
   });
   jest.spyOn(AIChatContextRepository.prototype, 'gatherCostContext').mockImplementation(async () => {
     const discovery = await collectSection<{ completedAt: string }>({ source: 'DevControl resource discovery runs' }, async () => ({ state: 'available', data: { completedAt: '2026-09-26T05:00:00.000Z' } }));

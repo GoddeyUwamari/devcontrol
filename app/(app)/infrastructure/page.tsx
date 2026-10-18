@@ -19,6 +19,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
+import { rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
 import { formatCalculatedAgo } from './calculatedAgo'
 import { describeAttentionCard } from './attentionCard'
 import { describeStatsSpend } from '../costs/cost-display'
@@ -141,8 +142,7 @@ async function fetchTopActions(): Promise<any[] | null> {
       fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/anomalies`, { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }),
     ])
     const anomalyData = anomalyRes.ok ? await anomalyRes.json() : { anomalies: [] }
-    const costActions = [...recs]
-      .sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))
+    const costActions = rankBySavings(recs)
       .slice(0, 3)
       .map((r, i) => ({
         id: r.id, title: r.issue || 'Cost optimization available',
@@ -150,6 +150,10 @@ async function fetchTopActions(): Promise<any[] | null> {
         // figure as the backend-aggregated intelWaste/recommendationStats total — round
         // only at display time, same rule as Math.round(totalRecoverable) further down.
         savings: r.potentialSavings || 0,
+        // What the figure is (lib/savings-basis.ts): an estimate is summed into
+        // "Est. savings", a ceiling is shown apart as "up to", and a figure with
+        // no basis is no dollar amount at all.
+        savingsKind: savingsBasisKind(r) as SavingsBasisKind | null,
         risk: 'zero' as const, urgency: i === 0 ? 'now' as const : 'today' as const,
         subtitle: `${r.resourceName ?? 'Resource'} · ${r.awsRegion ?? 'us-east-1'} · cost leakage active`,
         type: 'cost' as const,
@@ -159,7 +163,7 @@ async function fetchTopActions(): Promise<any[] | null> {
       .slice(0, 1)
       .map((a: any) => ({
         id: a.id ?? 'anomaly-0', title: a.title ?? a.message ?? 'Reliability issue detected',
-        savings: null, risk: 'review' as const, urgency: 'now' as const,
+        savings: null, savingsKind: null, risk: 'review' as const, urgency: 'now' as const,
         subtitle: `${a.resourceName ?? a.resource ?? 'Resource'} · ${a.impact ?? 'potential downtime risk'}`,
         type: 'reliability' as const,
       }))
@@ -440,7 +444,7 @@ function InfrastructureContent() {
   const scoreOffset      = intelScore > 0 ? scoreCirc - (intelScore / 100) * scoreCirc : scoreCirc
   const scoreChip        = (score: number) => ({ color: score >= 80 ? '#065F46' : '#92400E', bg: score >= 80 ? '#D1FAE5' : '#FEF3C7' })
 
-  const DEMO_TOP_ACTIONS = [
+  const DEMO_TOP_ACTIONS: { id: string; rank: string; urgency: 'now' | 'today'; risk: 'zero' | 'review'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; sub: string; isTop: boolean }[] = [
     { id: 'demo-1', rank: '01', urgency: 'now'   as const, risk: 'zero'   as const, title: 'Downsize RDS cluster',                     savings: 740,  sub: 'production-postgres-primary · us-east-1 · cost leakage active',              isTop: true  },
     { id: 'demo-2', rank: '02', urgency: 'now'   as const, risk: 'review' as const, title: 'Investigate CloudFront latency warnings',   savings: null, sub: 'production-cdn · potential downtime risk · degraded user experience',         isTop: false },
     { id: 'demo-3', rank: '03', urgency: 'today' as const, risk: 'zero'   as const, title: 'Remove unused EBS volumes',                 savings: 320,  sub: '6 unattached volumes · us-east-1 · no impact to workloads',                  isTop: false },
@@ -451,11 +455,15 @@ function InfrastructureContent() {
     ? DEMO_TOP_ACTIONS
     : (topActionsData ?? []).map((a, i) => ({
         id: a.id, rank: String(i + 1).padStart(2, '0'),
-        urgency: a.urgency, risk: a.risk, title: a.title, savings: a.savings, sub: a.subtitle,
+        urgency: a.urgency, risk: a.risk, title: a.title, savings: a.savings, savingsKind: a.savingsKind, sub: a.subtitle,
         isTop: i === 0,
       }))
 
-  const totalRecoverable = displayTopActions.reduce((sum, a) => sum + (a.savings ?? 0), 0)
+  // Demo figures are illustrative estimates; a real action counts only as what its
+  // savings_basis says. Ceilings never enter totalRecoverable.
+  const actionKind = (a: { savings: number | null; savingsKind?: SavingsBasisKind | null }) => (isDemoActive ? 'estimate' : a.savingsKind ?? null)
+  const totalRecoverable = displayTopActions.reduce((sum, a) => sum + (actionKind(a) === 'estimate' ? a.savings ?? 0 : 0), 0)
+  const recoverableCeiling = displayTopActions.reduce((sum, a) => sum + (actionKind(a) === 'ceiling' ? a.savings ?? 0 : 0), 0)
   // Count of cost recommendations for the "Apply Recommended Fixes" caption — deliberately
   // not the "zero-risk" classification above. Only Idle EC2 stop / unattached-volume delete
   // have a real rollback path (remediation.service.ts); RDS downgrade, EIP delete, and RI
@@ -565,9 +573,10 @@ function InfrastructureContent() {
             <a href="/cost-optimization" className="flex items-center gap-1.5 bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline">
               <Check size={13} /> Apply Recommended Fixes
             </a>
-            {(isDemoActive || totalRecoverable > 0) && (
+            {(isDemoActive || totalRecoverable > 0 || recoverableCeiling > 0) && (
               <p className="text-xs text-slate-500 text-right">
                 Applies {optimizationCount} recommended optimization{optimizationCount !== 1 ? 's' : ''} · Est. savings: {formatSavingsCurrency(totalRecoverable)}/mo
+                {recoverableCeiling > 0 && <> · plus up to {formatSavingsCurrency(recoverableCeiling)}/mo (upper bound, not included)</>}
               </p>
             )}
           </div>
@@ -796,7 +805,11 @@ function InfrastructureContent() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">
                     {action.title}
-                    {action.savings != null && <span className="text-emerald-600 font-bold"> — save {formatSavingsCurrency(action.savings)}/mo</span>}
+                    {action.savings != null && (
+                      actionKind(action) === 'estimate' ? <span className="text-emerald-600 font-bold"> — save {formatSavingsCurrency(action.savings)}/mo</span>
+                      : actionKind(action) === 'ceiling' ? <span className="text-emerald-600 font-bold"> — up to {formatSavingsCurrency(action.savings)}/mo</span>
+                      : <span className="text-slate-500 font-semibold"> — no dollar estimate</span>
+                    )}
                   </p>
                   <p className="text-xs text-slate-500">{action.sub}</p>
                 </div>

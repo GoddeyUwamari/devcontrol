@@ -79,13 +79,19 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   // retrieval fees netted out -- see cost-optimization.service.ts's
   // savings_basis metadata). The card must say "Up to $X/mo", not present it
   // as a plain expected monthly saving.
-  it('detects ceiling-basis recommendations from the metadata.savings_basis contract, not resourceType/issue guessing', () => {
-    expect(source).toMatch(/rec\.metadata\?\.savings_basis/)
-    expect(source).toMatch(/basis\.startsWith\(['"]ceiling['"]\)/)
+  it('detects ceiling-basis recommendations from the metadata.savings_basis contract (lib/savings-basis), not resourceType/issue guessing', () => {
+    expect(source).toMatch(/import \{ describeCeilings, formatRecommendationSavings, savingsBasisKind \} from '@\/lib\/savings-basis'/)
+    expect(source).toMatch(/savingsBasisKind\(rec\) === 'ceiling'/)
   })
 
-  it('renders ceiling-basis savings as "Up to $X/mo" rather than an unqualified figure', () => {
-    expect(source).toMatch(/Up to \$\{formatSavings\(rec\.potentialSavings\)\}/)
+  it('renders each card\'s figure through formatRecommendationSavings ("Up to $X/mo" for a ceiling, "No dollar estimate" without a basis)', () => {
+    expect(source).toMatch(/\{formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
+    expect(source).not.toMatch(/formatSavings\(rec\.potentialSavings\)/)
+  })
+
+  it('the Estimated Monthly Savings KPI excludes ceilings and states each type\'s upper bound on its own line', () => {
+    expect(source).toMatch(/const ceilingLines = describeCeilings\(stats\?\.potentialSavingsCeilingByResourceType \?\? \{\}, formatWholeDollars\)/)
+    expect(source).toMatch(/\{ceilingLines\.map\(\(line\) => \(/)
   })
 
   it('discloses the ceiling nature of the figure near the amount, not just in the page-wide disclaimer', () => {

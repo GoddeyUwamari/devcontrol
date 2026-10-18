@@ -23,6 +23,7 @@ import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendation
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { annualizeMonthly, cn, formatSavingsCurrency } from '@/lib/utils';
+import { describeCeilings, formatRecommendationSavings, savingsBasisKind } from '@/lib/savings-basis';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -36,18 +37,14 @@ import { deriveAnalysisStatus, pickLatestAnalysis, type AnalysisStatusKey, type 
 // this; see the implementation report's "known limitation" note.
 const RECOMMENDATIONS_FETCH_LIMIT = 100;
 
-function formatSavings(value: number | null | undefined): string {
-  return value != null ? `${formatSavingsCurrency(value)}/mo` : '—';
-}
-
 // A detector may disclose its savings figure as a ceiling (e.g. S3 lifecycle:
 // assumes 100% of current Standard storage transitions, no retrieval fees
 // netted out) rather than an ordinary expected saving -- see
 // backend/src/services/cost-optimization.service.ts's savings_basis metadata.
-// The card must not present a ceiling as if it were a plain monthly estimate.
+// The card must not present a ceiling as if it were a plain monthly estimate,
+// nor a figure with no savings basis as any dollar amount.
 function isSavingsCeiling(rec: CostRecommendation): boolean {
-  const basis = rec.metadata?.savings_basis;
-  return typeof basis === 'string' && basis.startsWith('ceiling');
+  return savingsBasisKind(rec) === 'ceiling';
 }
 
 // Despite the name (kept for call-site stability), this now shows 2 decimal
@@ -287,6 +284,8 @@ export default function CostOptimizationPage() {
   const activeCount = stats?.activeRecommendations ?? recommendations.length;
   const totalEverCount = stats?.totalRecommendations ?? 0;
   const monthlySavings = stats?.totalPotentialSavings ?? 0;
+  // Upper bounds (S3 lifecycle, DynamoDB capacity), one line per type, never added to the total.
+  const ceilingLines = describeCeilings(stats?.potentialSavingsCeilingByResourceType ?? {}, formatWholeDollars);
   const annualSavings = annualizeMonthly(monthlySavings);
   const bySeverity = stats?.bySeverity ?? { high: 0, medium: 0, low: 0 };
 
@@ -337,7 +336,12 @@ export default function CostOptimizationPage() {
               <CardContent className="px-5">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Estimated Monthly Savings</p>
                 {statsLoading ? <Skeleton className="h-8 w-24" /> : (
-                  <p className="text-3xl font-bold text-green-600">{formatWholeDollars(monthlySavings)}<span className="text-sm font-semibold text-slate-400">/mo</span></p>
+                  <>
+                    <p className="text-3xl font-bold text-green-600">{formatWholeDollars(monthlySavings)}<span className="text-sm font-semibold text-slate-400">/mo</span></p>
+                    {ceilingLines.map((line) => (
+                      <p key={line} className="text-xs text-slate-500 mt-1">{line}</p>
+                    ))}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -481,7 +485,7 @@ export default function CostOptimizationPage() {
                       <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3">
                         <div className="text-right">
                           <p className="text-xl sm:text-2xl font-bold text-green-600 whitespace-nowrap">
-                            {isSavingsCeiling(rec) ? `Up to ${formatSavings(rec.potentialSavings)}` : formatSavings(rec.potentialSavings)}
+                            {formatRecommendationSavings(rec, formatSavingsCurrency)}
                           </p>
                           {isSavingsCeiling(rec) && (
                             <p className="text-[10px] text-slate-400 font-medium">Estimated ceiling, not an expected saving</p>

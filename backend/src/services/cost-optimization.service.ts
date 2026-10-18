@@ -11,11 +11,6 @@ import {
   DescribeVolumesCommand,
   Instance,
 } from '@aws-sdk/client-ec2';
-import {
-  RDSClient,
-  DescribeDBInstancesCommand,
-  DBInstance,
-} from '@aws-sdk/client-rds';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
 import { PoolClient } from 'pg';
@@ -248,11 +243,10 @@ class CostOptimizationService {
     }
 
     try {
-      const [idleEC2, oversizedRDS, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities] = await Promise.all([
+      const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities] = await Promise.all([
         ec2IdleConfigResult.status === 'fulfilled'
           ? this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch, ec2IdleConfigResult.value)
           : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
-        this.detectOversizedRDSInstances(clients.rds),
         this.detectUnusedElasticIPs(clients.ec2),
         this.detectUnattachedEBSVolumes(clients.ec2),
         this.detectGp2ToGp3Migrations(clients.ec2),
@@ -279,7 +273,14 @@ class CostOptimizationService {
 
       const observations: DetectorObservation[] = [
         { issue: ISSUE_EC2_IDLE_INSTANCE, success: idleEC2.success, recommendations: idleEC2.issues.map(toRequest) },
-        { issue: ISSUE_RDS_OVERSIZED_INSTANCE, success: oversizedRDS.success, recommendations: oversizedRDS.issues.map(toRequest) },
+        // Retired detector (rds_rightsizing is 'planned'): it matched dev/staging/
+        // test in the name plus "large" in the class, with no utilisation data,
+        // and priced unlisted classes at a flat default. A successful, empty
+        // observation makes reconcileActiveRecommendations() delete the
+        // category's existing ACTIVE rows on every scan, while RESOLVED/
+        // DISMISSED rows stay as history. Never success: false -- that would
+        // keep stale ACTIVE rows alive indefinitely.
+        { issue: ISSUE_RDS_OVERSIZED_INSTANCE, success: true, recommendations: [] },
         { issue: ISSUE_EC2_UNUSED_ELASTIC_IP, success: unusedEIPs.success, recommendations: unusedEIPs.issues.map(toRequest) },
         { issue: ISSUE_EBS_UNATTACHED_VOLUME, success: unattachedEBS.success, recommendations: unattachedEBS.issues.map(toRequest) },
         { issue: ISSUE_EBS_GP2_TO_GP3, success: gp2ToGp3.success, recommendations: gp2ToGp3.issues.map(toRequest) },
@@ -412,65 +413,6 @@ class CostOptimizationService {
   }
 
   /**
-   * Detect oversized RDS instances (dev/staging using production-sized instances)
-   */
-  private async detectOversizedRDSInstances(rdsClient: RDSClient): Promise<DetectorResult> {
-    try {
-      const command = new DescribeDBInstancesCommand({});
-      const response = await rdsClient.send(command);
-      const issues: OptimizationIssue[] = [];
-
-      for (const instance of response.DBInstances || []) {
-        if (!instance.DBInstanceIdentifier) continue;
-
-        // Check if it's a dev/staging environment (common naming patterns)
-        const identifier = instance.DBInstanceIdentifier.toLowerCase();
-        const isNonProd =
-          identifier.includes('dev') ||
-          identifier.includes('staging') ||
-          identifier.includes('test');
-
-        // Check if using large instance types
-        const instanceClass = instance.DBInstanceClass || '';
-        const isOversized =
-          instanceClass.includes('large') ||
-          instanceClass.includes('xlarge') ||
-          instanceClass.includes('2xlarge');
-
-        if (isNonProd && isOversized) {
-          const currentCost = this.estimateRDSCost(instanceClass);
-          const recommendedClass = this.recommendSmallerRDSInstance(instanceClass);
-          const recommendedCost = this.estimateRDSCost(recommendedClass);
-          const savings = currentCost - recommendedCost;
-
-          if (savings > 0) {
-            issues.push({
-              resourceId: instance.DBInstanceIdentifier,
-              resourceName: instance.DBInstanceIdentifier,
-              resourceType: 'RDS',
-              issue: ISSUE_RDS_OVERSIZED_INSTANCE,
-              description: `Non-production RDS instance using ${instanceClass}. Consider downsizing to ${recommendedClass} to save $${savings.toFixed(2)}/month.`,
-              potentialSavings: savings,
-              severity: this.calculateSeverity(savings),
-              awsRegion: instance.AvailabilityZone?.slice(0, -1) || process.env.AWS_REGION || 'us-east-1',
-              metadata: {
-                current_instance_class: instanceClass,
-                recommended_instance_class: recommendedClass,
-                environment: isNonProd ? 'non-production' : 'production',
-              },
-            });
-          }
-        }
-      }
-
-      return { success: true, issues };
-    } catch (error) {
-      console.error('Error detecting oversized RDS instances:', error);
-      return { success: false, issues: [] };
-    }
-  }
-
-  /**
    * Detect unused Elastic IPs
    */
   private async detectUnusedElasticIPs(ec2Client: EC2Client): Promise<DetectorResult> {
@@ -496,6 +438,7 @@ class CostOptimizationService {
             metadata: {
               public_ip: address.PublicIp,
               allocation_id: address.AllocationId,
+              savings_basis: 'estimated: AWS public IPv4 list price ($0.005/hour, 720 hours) for an address that is allocated but not associated; not billed cost',
             },
           });
         }
@@ -552,6 +495,7 @@ class CostOptimizationService {
             size_gb: sizeGB,
             availability_zone: volume.AvailabilityZone,
             encrypted: volume.Encrypted || false,
+            savings_basis: 'estimated: provisioned size x DevControl\'s us-east-1 EBS list-price table for the volume type (gp2 rate for unlisted types), whatever region the volume is in; excludes snapshots and any provisioned IOPS/throughput; not billed cost',
           },
         });
       }
@@ -854,6 +798,7 @@ class CostOptimizationService {
             avg_duration_ms: avgDurationMs,
             memory_mb: memoryMB,
             usage_state: invocations === 0 ? 'zero_usage' : 'low_usage',
+            savings_basis: `estimated: us-east-1 x86 request and duration list price for this function's observed ${LAMBDA_USAGE_WINDOW_DAYS}-day invocations and average duration at its configured memory, whatever its region or architecture; does not deduct the free tier; not billed cost`,
             configuration: {
               parameter: 'max_invocations',
               value: config.value,
@@ -902,9 +847,12 @@ class CostOptimizationService {
    * - No exact recommended RCU/WCU is ever produced (Model B, evidence-only).
    *   The cost figure is an explicitly-labeled illustrative scenario --
    *   "modeled monthly savings if provisioned capacity matched the highest
-   *   hourly-average demand observed" -- never "recommended," "safe,"
-   *   "ceiling," or "maximum required" capacity. `savings_basis` always
-   *   starts with `scenario:`, never `ceiling:`.
+   *   hourly-average demand observed" -- never "recommended," "safe," or
+   *   "maximum required" capacity. That capacity has no safety margin, so any
+   *   safe setting is at or above it and the real saving at or below the
+   *   figure: `savings_basis` starts with `ceiling:` (an upper bound on the
+   *   saving, never a statement about capacity), and the figure is kept out
+   *   of estimated totals.
    *
    * Architecture: reads already-enriched `aws_resources` metadata (written
    * by awsResourceDiscovery.ts's enrichDynamoDBTables(), which already runs
@@ -1043,10 +991,11 @@ class CostOptimizationService {
         });
 
         const savingsBasis =
-          'scenario:highest_observed_hourly_average — modeled monthly cost if provisioned capacity matched the single ' +
-          'highest hourly-average RCU/WCU observed in the 30-day analysis window; not a recommended or safe capacity ' +
-          'setting, no safety margin applied; does not account for sub-hour spikes hidden by hourly averaging, traffic ' +
-          'growth, or burst capacity';
+          'ceiling: highest_observed_hourly_average — upper bound on the monthly saving: modeled cost difference if ' +
+          'provisioned capacity were cut to the single highest hourly-average RCU/WCU observed in the 30-day analysis ' +
+          'window, with no safety margin; any safe setting is at or above that capacity, so the real saving is at or ' +
+          'below this figure. Not a recommended capacity setting; does not account for sub-hour spikes hidden by hourly ' +
+          'averaging, traffic growth, or burst capacity';
 
         issues.push({
           resourceId: tableName,
@@ -1230,7 +1179,7 @@ class CostOptimizationService {
       `Potential cost scenario\n` +
       `- Current modeled monthly cost: $${input.currentMonthlyCost.toFixed(2)}/month\n` +
       `- Modeled monthly savings if provisioned capacity matched the highest hourly-average demand observed during the analysis window: ` +
-      `$${input.modeledMonthlySavings.toFixed(2)}/month\n\n` +
+      `up to $${input.modeledMonthlySavings.toFixed(2)}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)\n\n` +
       `This is an illustrative cost scenario, not a recommended capacity setting. Short-lived spikes narrower than one hour, workload ` +
       `growth, burst capacity, and other DynamoDB capacity considerations are not fully modeled. Table-level throttle metrics confirm no ` +
       `provisioned-throughput throttling at the table level; they do not by themselves rule out partition-level or account-level throttling.`
@@ -1814,7 +1763,14 @@ class CostOptimizationService {
   }
 
   /**
-   * Detect Reserved Instance opportunities
+   * Reserved Instance coverage gaps: instance types with at least two running
+   * instances not matched by an active Reserved Instance of the same type.
+   *
+   * No dollar figure (potentialSavings 0, no savings_basis): the discount
+   * depends on term, payment option and instance-level pricing DevControl does
+   * not model, and Savings Plans -- which may already cover these instances --
+   * are not read at all. "Uncovered" means only "no matching RI", so the
+   * finding says that and nothing more.
    */
   private async detectReservedInstanceOpportunities(
     ec2Client: EC2Client
@@ -1842,8 +1798,8 @@ class CostOptimizationService {
       });
       const riResponse = await ec2Client.send(riCommand);
 
-      // Count instances by type, keeping their IDs so the savings claim below
-      // names the pool it draws on (see estimated-savings.ts).
+      // Count instances by type, keeping their IDs so the finding names the
+      // instances it is about.
       const instanceCounts: Record<string, number> = {};
       const instanceIdsByType: Record<string, string[]> = {};
       for (const reservation of instancesResponse.Reservations || []) {
@@ -1863,38 +1819,27 @@ class CostOptimizationService {
 
       const issues: OptimizationIssue[] = [];
 
-      // Find instances running for 3+ months without RI (simplified: if count > 2, suggest RI)
       for (const [instanceType, count] of Object.entries(instanceCounts)) {
         const reservedCount = riCounts[instanceType] || 0;
-        const unconveredCount = count - reservedCount;
+        const uncoveredCount = count - reservedCount;
 
-        if (unconveredCount >= 2) {
-          // RI typically saves 30-40% vs on-demand
-          const onDemandCost = this.estimateEC2Cost(instanceType);
-          const riCost = onDemandCost * 0.65; // 35% savings
-          const monthlySavings = (onDemandCost - riCost) * unconveredCount;
-
+        if (uncoveredCount >= 2) {
           issues.push({
             resourceId: `ri-opportunity-${instanceType}`,
-            resourceName: `${unconveredCount}x ${instanceType}`,
+            resourceName: `${uncoveredCount} uncovered × ${instanceType}`,
             resourceType: 'EC2',
             issue: ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
-            description: `You have ${unconveredCount} ${instanceType} instance(s) running without Reserved Instance coverage. Purchasing RIs could save approximately $${monthlySavings.toFixed(2)}/month (35% discount).`,
-            potentialSavings: monthlySavings,
-            severity: this.calculateSeverity(monthlySavings),
+            description: `${uncoveredCount} uncovered × ${instanceType}: ${count} running, ${reservedCount} covered by an active Reserved Instance of the same type. This does not account for Savings Plans, which may already cover these instances, so no dollar estimate is given.`,
+            potentialSavings: 0,
+            severity: 'LOW',
             awsRegion: process.env.AWS_REGION || 'us-east-1',
             metadata: {
               instance_type: instanceType,
-              uncovered_count: unconveredCount,
-              estimated_discount: '35%',
-              // Which of the type's instances are uncovered is undefined (RIs
-              // float across a type), so the claim is on the whole pool.
-              savings_claim: {
-                kind: 'fleet_discount',
-                resource_ids: instanceIdsByType[instanceType] ?? [],
-                per_resource_savings: onDemandCost - riCost,
-                counted_resources: unconveredCount,
-              },
+              running_count: count,
+              reserved_count: reservedCount,
+              uncovered_count: uncoveredCount,
+              instance_ids: instanceIdsByType[instanceType] ?? [],
+              coverage_basis: 'Reserved Instances of the same instance type only; Savings Plans are not accounted for',
             },
           });
         }
@@ -2015,43 +1960,6 @@ class CostOptimizationService {
     };
 
     return costs[instanceType] || 50;
-  }
-
-  /**
-   * Estimate RDS monthly cost
-   */
-  private estimateRDSCost(instanceClass: string): number {
-    const costs: Record<string, number> = {
-      'db.t3.micro': 12,
-      'db.t3.small': 24,
-      'db.t3.medium': 48,
-      'db.t3.large': 96,
-      'db.m5.large': 122,
-      'db.m5.xlarge': 244,
-      'db.m5.2xlarge': 488,
-      'db.r5.large': 175,
-      'db.r5.xlarge': 350,
-      'db.r5.2xlarge': 700,
-    };
-
-    return costs[instanceClass] || 75;
-  }
-
-  /**
-   * Recommend smaller RDS instance
-   */
-  private recommendSmallerRDSInstance(currentClass: string): string {
-    const downsizeMap: Record<string, string> = {
-      'db.m5.2xlarge': 'db.t3.medium',
-      'db.m5.xlarge': 'db.t3.small',
-      'db.m5.large': 'db.t3.small',
-      'db.r5.2xlarge': 'db.t3.medium',
-      'db.r5.xlarge': 'db.t3.small',
-      'db.r5.large': 'db.t3.small',
-      'db.t3.large': 'db.t3.medium',
-    };
-
-    return downsizeMap[currentClass] || 'db.t3.micro';
   }
 }
 

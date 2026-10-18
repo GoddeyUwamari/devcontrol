@@ -20,9 +20,12 @@ const ORG = '3f2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f';
 const T = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
 const RECOMMENDATIONS = [
-  { created_at: T(1), potential_savings: '0.48', issue: 'Unattached volume', severity: 'LOW' },
-  { created_at: T(2), potential_savings: '0.00', issue: 'gp2 volume', severity: 'LOW' },
-  { created_at: T(3), potential_savings: '12.5', issue: 'Idle Instance', severity: 'MEDIUM' },
+  { created_at: T(1), potential_savings: '0.48', issue: 'Unattached volume', severity: 'LOW', savings_basis: 'estimated: list price' },
+  { created_at: T(2), potential_savings: '0.00', issue: 'gp2 volume', severity: 'LOW', savings_basis: 'estimated: list price' },
+  { created_at: T(3), potential_savings: '12.5', issue: 'Idle Instance', severity: 'MEDIUM', savings_basis: 'estimated: list price' },
+  { created_at: T(4), potential_savings: '41.27', issue: 'S3 Lifecycle Optimization', severity: 'LOW', savings_basis: 'ceiling: assumes 100% transitions' },
+  { created_at: T(5), potential_savings: '0.00', issue: 'Reserved Instance Opportunity', severity: 'LOW', savings_basis: null },
+  { created_at: T(6), potential_savings: '98.00', issue: 'Oversized Instance', severity: 'MEDIUM', savings_basis: 'made up' },
 ];
 
 function routeQueries(anomalyRows: unknown[] = [{ created_at: T(4), description: 'legacy tag-derived spike', severity: 'high' }]) {
@@ -50,7 +53,14 @@ describe('optimization activity', () => {
     expect(sql).toMatch(/status = 'ACTIVE'/);
   });
 
-  it('DECIMAL-string savings render in cents and the source is not dropped', async () => {
+  it('reads each row\'s savings_basis so the figure can be labelled by what it is', async () => {
+    routeQueries();
+    await new ActivityFeedService().getActivityFeed(ORG);
+    const [sql] = sqlFor('cost_recommendations');
+    expect(sql).toMatch(/metadata->>'savings_basis' AS savings_basis/);
+  });
+
+  it('DECIMAL-string savings render in cents, a ceiling reads "up to", no supported basis reads "no dollar estimate"', async () => {
     routeQueries();
     const events = await new ActivityFeedService().getActivityFeed(ORG);
     const optimization = events.filter((e) => e.type === 'optimization').map((e) => e.message);
@@ -58,6 +68,9 @@ describe('optimization activity', () => {
       'Cost optimization found · Unattached volume — ~$0.48/month opportunity',
       'Cost optimization found · gp2 volume — ~$0.00/month opportunity',
       'Cost optimization found · Idle Instance — ~$12.50/month opportunity',
+      'Cost optimization found · S3 Lifecycle Optimization — up to $41.27/month opportunity',
+      'Cost optimization found · Reserved Instance Opportunity — no dollar estimate',
+      'Cost optimization found · Oversized Instance — no dollar estimate',
     ]);
     expect(console.warn).not.toHaveBeenCalledWith(expect.stringContaining('cost_recommendations'), expect.anything());
   });

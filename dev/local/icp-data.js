@@ -688,6 +688,22 @@ function severityForSavings(monthly) {
   return 'LOW';
 }
 
+// metadata.savings_basis as cost-optimization.service.ts writes it: without
+// one, a figure counts in no total and the UI shows "No dollar estimate". The
+// S3 row is a ceiling, kept out of the estimated total.
+// Mirrors S3_STANDARD_PER_GB_MONTH_USD / S3_STANDARD_IA_PER_GB_MONTH_USD in
+// backend/src/config/aws-pricing.ts (local-stack-icp-data.test.ts checks they agree).
+const S3_STANDARD_PER_GB_MONTH_USD = 0.023;
+const S3_STANDARD_IA_PER_GB_MONTH_USD = 0.0125;
+
+const BASIS = {
+  ebs: 'estimated: example seed data; provisioned size x EBS list price',
+  gp2: 'estimated: example seed data; gp2-to-gp3 storage-rate difference',
+  ec2Idle: 'estimated: example seed data; compute list price',
+  lambda: 'estimated: example seed data; request and duration list price',
+  s3Ceiling: 'ceiling: example seed data; assumes 100% of current Standard storage transitions to Standard-IA',
+};
+
 function buildRecommendations({ rng, id, at, organization, resources }) {
   const recs = [];
   const add = (resource, issue, resourceType, savings, description, metadata, status = 'ACTIVE') => {
@@ -714,14 +730,14 @@ function buildRecommendations({ rng, id, at, organization, resources }) {
   for (const volume of unattached) {
     add(volume, 'Unattached EBS Volume', 'EBS', volume.estimated_monthly_cost,
       `This ${volume.metadata.size_gb}GB ${volume.metadata.volume_type} volume is not attached to any instance. Unattached EBS volumes continue to incur storage charges.`,
-      { volume_type: volume.metadata.volume_type, size_gb: volume.metadata.size_gb, encrypted: volume.is_encrypted });
+      { volume_type: volume.metadata.volume_type, size_gb: volume.metadata.size_gb, encrypted: volume.is_encrypted, savings_basis: BASIS.ebs });
   }
 
   const gp2 = resources.filter((r) => r.resource_type === 'ebs' && r.status === 'in-use' && r.metadata.volume_type === 'gp2').slice(0, 4);
   for (const volume of gp2) {
     add(volume, 'gp2 to gp3 Migration Opportunity', 'EBS', volume.estimated_monthly_cost * 0.2,
       `Migrating this ${volume.metadata.size_gb}GB gp2 volume to gp3 keeps baseline performance at a lower per-GB price.`,
-      { volume_type: 'gp2', size_gb: volume.metadata.size_gb });
+      { volume_type: 'gp2', size_gb: volume.metadata.size_gb, savings_basis: BASIS.gp2 });
   }
 
   const idle = resources.filter((r) => r.resource_type === 'ec2' && r.status === 'running' && r.estimated_monthly_cost >= 60).slice(0, 4);
@@ -729,34 +745,35 @@ function buildRecommendations({ rng, id, at, organization, resources }) {
     const cpu = round2(1 + rng.next() * 3);
     add(instance, 'Idle Instance', 'EC2', instance.estimated_monthly_cost,
       `This EC2 instance averaged ${cpu.toFixed(2)}% CPU utilization over the past 14 days. It is an idle candidate: review whether it is still needed. Average CPU alone does not show peak load or memory use, so this is not a rightsizing recommendation.`,
-      { instance_type: instance.metadata.instance_type, average_cpu: cpu, days_analyzed: 14, example_data: true });
+      { instance_type: instance.metadata.instance_type, average_cpu: cpu, days_analyzed: 14, example_data: true, savings_basis: BASIS.ec2Idle });
   }
 
-  const bigDbs = resources.filter((r) => r.resource_type === 'rds' && r.estimated_monthly_cost >= 300).slice(0, 2);
-  for (const db of bigDbs) {
-    add(db, 'Oversized Instance', 'RDS', db.estimated_monthly_cost * 0.45,
-      'This database averaged low CPU and connection counts over the past 14 days; a smaller instance class may fit its load.',
-      { db_instance_class: db.metadata.db_instance_class, example_data: true });
-  }
+  // No RDS rows: the oversized-RDS detector is retired (rds_rightsizing is
+  // 'planned' in optimization-rules.ts), so the product never produces one.
 
+  // detectS3LifecycleOptimization()'s formula: Standard storage GB x (Standard
+  // - Standard-IA) per GB-month, the us-east-1 rates in backend/src/config/
+  // aws-pricing.ts. The seed has no BucketSizeBytes, so the size is derived
+  // from the bucket's estimated cost as if it were all Standard storage.
   const buckets = resources.filter((r) => r.resource_type === 's3' && r.estimated_monthly_cost >= 100).slice(0, 2);
   for (const bucket of buckets) {
-    add(bucket, 'S3 Lifecycle Optimization', 'S3', bucket.estimated_monthly_cost * 0.3,
-      'Most objects in this bucket have not been read in 90 days; a lifecycle rule to an infrequent-access class would lower storage cost.',
-      { example_data: true });
+    const standardGB = round2(bucket.estimated_monthly_cost / S3_STANDARD_PER_GB_MONTH_USD);
+    add(bucket, 'S3 Lifecycle Optimization', 'S3', standardGB * (S3_STANDARD_PER_GB_MONTH_USD - S3_STANDARD_IA_PER_GB_MONTH_USD),
+      `This bucket has no lifecycle configuration. If all ${standardGB.toFixed(1)}GB of its current Standard storage qualified for a transition to Standard-IA, the maximum possible saving is estimated below -- actual savings depend on how much of this data is genuinely infrequently accessed, since Standard-IA adds a retrieval fee.`,
+      { example_data: true, lifecycle_state: 'no_lifecycle_configuration', standard_storage_gb: standardGB, savings_basis: BASIS.s3Ceiling });
   }
 
   const lambda = resources.find((r) => r.resource_type === 'lambda' && r.estimated_monthly_cost >= 15);
   if (lambda) {
     add(lambda, 'Low-Usage Lambda Function', 'Lambda', lambda.estimated_monthly_cost,
-      'This function was invoked only a handful of times in the past 30 days; review whether it is still needed.', { example_data: true });
+      'This function was invoked only a handful of times in the past 30 days; review whether it is still needed.', { example_data: true, savings_basis: BASIS.lambda });
   }
 
   // History: what the team already acted on.
   const history = resources.filter((r) => r.resource_type === 'ebs' && r.status === 'in-use').slice(10, 14);
   history.forEach((volume, i) => {
     add(volume, 'Unattached EBS Volume', 'EBS', volume.estimated_monthly_cost,
-      'This volume was unattached at the time of the scan.', { size_gb: volume.metadata.size_gb },
+      'This volume was unattached at the time of the scan.', { size_gb: volume.metadata.size_gb, savings_basis: BASIS.ebs },
       i < 3 ? 'RESOLVED' : 'DISMISSED');
   });
   return recs;

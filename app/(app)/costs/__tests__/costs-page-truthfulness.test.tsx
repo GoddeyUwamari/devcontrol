@@ -56,7 +56,7 @@ function discoveryJob(status: 'running' | 'completed' | 'failed', costAnalysisCo
 vi.mock('@/lib/services/nl-query.service', () => ({ nlQueryService: { executeQuery: vi.fn() } }))
 
 function recStats(totalPotentialSavings: number, activeRecommendations = 1) {
-  return { totalRecommendations: activeRecommendations, activeRecommendations, totalPotentialSavings, potentialSavingsByResourceType: {}, bySeverity: { high: 0, medium: 0, low: 0 } }
+  return { totalRecommendations: activeRecommendations, activeRecommendations, totalPotentialSavings, potentialSavingsByResourceType: {}, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {}, bySeverity: { high: 0, medium: 0, low: 0 } }
 }
 
 function spendActual(amount: number): CostSummary['spend'] {
@@ -300,6 +300,29 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     renderPage()
     await card('Estimated Savings Opportunity')
     expect(screen.getByText(/AWS spend visibility, forecasting/).textContent).not.toMatch(/real[- ]?time/i)
+  })
+
+  it('top savings rows label each figure by its basis: estimate, "Up to" ceiling, or "No dollar estimate"', async () => {
+    const recommendation = (id: string, issue: string, potentialSavings: number, metadata: Record<string, unknown>) => ({
+      id, resourceId: id, resourceType: 'S3', issue, potentialSavings, severity: 'LOW', status: 'ACTIVE', metadata, createdAt: '', updatedAt: '',
+    })
+    mockGetStats.mockResolvedValue(recStats(12.4, 3))
+    mockGetAll.mockResolvedValue([
+      recommendation('b-1', 'S3 Lifecycle Optimization', 41.27, { savings_basis: 'ceiling: assumes 100% transitions' }),
+      recommendation('v-1', 'Unattached EBS Volume', 12.4, { savings_basis: 'estimated: list price' }),
+      recommendation('ri-1', 'Reserved Instance Opportunity', 0, {}),
+    ])
+    renderPage()
+
+    const row = async (title: string) => (await screen.findByText(title)).parentElement as HTMLElement
+    expect(await row('S3 Lifecycle Optimization')).toHaveTextContent('Up to $41/mo')
+    expect(await row('Unattached EBS Volume')).toHaveTextContent('$12/mo')
+    expect(await row('Reserved Instance Opportunity')).toHaveTextContent('No dollar estimate')
+    expect((await row('Reserved Instance Opportunity')).textContent).not.toMatch(/\$0/)
+    // Ranked by the counted estimate: the $12 estimate before the larger $41 ceiling, basis-less last.
+    const titles = ['Unattached EBS Volume', 'S3 Lifecycle Optimization', 'Reserved Instance Opportunity'].map((t) => screen.getByText(t))
+    expect(titles[0].compareDocumentPosition(titles[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(titles[1].compareDocumentPosition(titles[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('existing recommendations are shown even without analysis history', async () => {

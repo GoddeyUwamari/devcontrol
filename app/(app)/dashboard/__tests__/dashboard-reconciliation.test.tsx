@@ -39,6 +39,7 @@ const ACTIVE_EC2 = {
 const stats = (savings: number, active = 1) => ({
   totalRecommendations: active, activeRecommendations: active, totalPotentialSavings: savings,
   potentialSavingsByResourceType: active > 0 ? { EC2: savings } : {},
+  potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {},
 })
 const job = (status: 'completed' | 'failed' | 'running', createdAt: string, costAnalysisCompleted = true) => ({
   id: `job-${createdAt}`, organization_id: 'org-test', status, resources_discovered: 3, resources_updated: 1, resources_deleted: 0,
@@ -179,6 +180,47 @@ describe('Recommended Action, Cost-Saving Opportunities and ROI agree', () => {
     expect(within(roi()).getByText('$62.04')).toBeInTheDocument()
     expect(recommendedAction()).toHaveTextContent('Estimated potential savings: $5.17/month')
     expect(within(ec2Card()).getByText('$5.17/mo')).toBeInTheDocument()
+  })
+})
+
+describe('Cost-Saving Opportunities: savings basis and retired categories', () => {
+  const ACTIVE_S3 = {
+    id: 'rec-s3', resourceId: 'example-bucket', resourceType: 'S3', issue: 'S3 Lifecycle Optimization', potentialSavings: 41.27,
+    severity: 'LOW', status: 'ACTIVE', metadata: { savings_basis: 'ceiling: assumes 100% transitions' }, createdAt: '2026-08-09T11:15:00Z', updatedAt: '2026-08-09T11:15:00Z',
+  }
+  const LEGACY_RDS = {
+    id: 'rec-rds', resourceId: 'dev-db', resourceType: 'RDS', issue: 'Oversized Instance', potentialSavings: 98,
+    severity: 'MEDIUM', status: 'ACTIVE', metadata: {}, createdAt: '2026-08-09T11:15:00Z', updatedAt: '2026-08-09T11:15:00Z',
+  }
+  const s3Card = () => within(opportunities()).getByText('Optimize S3 storage').parentElement as HTMLElement
+
+  it('the S3 category shows its ceiling as "Up to $X/mo", apart from any estimate', async () => {
+    getAll.mockResolvedValue([ACTIVE_EC2, ACTIVE_S3])
+    getStats.mockResolvedValue({ ...stats(8.5, 2), potentialSavingsCeiling: 41.27, potentialSavingsCeilingByResourceType: { S3: 41.27 } })
+    renderDashboard()
+
+    await waitFor(() => expect(within(s3Card()).getByText('Up to $41.27/mo')).toBeInTheDocument())
+    expect(within(ec2Card()).getByText('$8.50/mo')).toBeInTheDocument()
+    expect(recommendedAction()).toHaveTextContent('Estimated potential savings: $8.50/month')
+    expect(recommendedAction().textContent).not.toMatch(/49\.77/)
+  })
+
+  it('has no RDS card, even while a legacy ACTIVE RDS row is still present before the next scan clears it', async () => {
+    getAll.mockResolvedValue([ACTIVE_EC2, LEGACY_RDS])
+    getStats.mockResolvedValue(stats(8.5, 2))
+    renderDashboard()
+
+    await waitFor(() => expect(within(ec2Card()).getByText('$8.50/mo')).toBeInTheDocument())
+    expect(within(opportunities()).queryByText(/RDS/)).toBeNull()
+  })
+
+  it('a category whose active rows have no savings basis reads "No dollar estimate", not $0.00/mo', async () => {
+    getAll.mockResolvedValue([{ ...ACTIVE_EC2, id: 'rec-ri', resourceId: 'ri-opportunity-m5.large', issue: 'Reserved Instance Opportunity', potentialSavings: 0, metadata: {} }])
+    getStats.mockResolvedValue({ ...stats(0, 1), potentialSavingsByResourceType: {} })
+    renderDashboard()
+
+    await waitFor(() => expect(within(ec2Card()).getByText('No dollar estimate')).toBeInTheDocument())
+    expect(ec2Card().textContent).not.toMatch(/\$0\.00/)
   })
 })
 

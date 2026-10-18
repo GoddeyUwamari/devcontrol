@@ -7,6 +7,7 @@ import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILAB
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
+import { aggregateEstimatedSavings, describeCeilings } from '../services/estimated-savings';
 import {
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   getOptimizationRules,
@@ -76,10 +77,9 @@ export class CostRecommendationsController {
       // doesn't count as "value seen." Guarded once-per-org by
       // trackFunnelEventOnce, so every refresh after the first is a no-op.
       if (filters.status === 'ACTIVE') {
-        const totalActiveSavings = recommendations.reduce(
-          (sum, r: any) => sum + (Number(r.potential_savings) || 0),
-          0
-        );
+        // Supported estimates only, like getStats(): a ceiling or a figure
+        // with no savings_basis is not "value seen".
+        const totalActiveSavings = aggregateEstimatedSavings(recommendations).total;
         if (totalActiveSavings > 0) {
           await trackFunnelEventOnce({
             organizationId,
@@ -400,7 +400,8 @@ export class CostRecommendationsController {
       const { observations, riRecommendations } = await costOptimizationService.analyzeAllResources(organizationId);
 
       // Occurrence-lifecycle reconciliation for the 3 resource-level detectors
-      // (idle EC2, oversized RDS, unused EIPs): suppresses an unchanged
+      // (idle EC2, unused EIPs, EBS, S3, Lambda, DynamoDB; the retired oversized-RDS
+      // category always reports an empty observation): suppresses an unchanged
       // Resolve/Dismiss'd finding instead of resurrecting it every scan, and
       // only ends that suppression once a detector successfully, completely
       // observes the condition is genuinely gone.
@@ -455,10 +456,15 @@ export class CostRecommendationsController {
         data: {
           recommendationsFound: insertedCount,
           totalPotentialSavings: stats.total_potential_savings,
+          totalPotentialSavingsCeiling: stats.potential_savings_ceiling,
           bySeverity: stats.by_severity,
           timestamp: new Date().toISOString(),
         },
-        message: `Analysis complete. Found ${insertedCount} optimization opportunities with potential savings of $${stats.total_potential_savings.toFixed(2)}/month.`,
+        message:
+          `Analysis complete. Found ${insertedCount} optimization opportunities with estimated potential savings of $${stats.total_potential_savings.toFixed(2)}/month.` +
+          describeCeilings(stats.potential_savings_ceiling_by_resource_type, (amount) => `$${amount.toFixed(2)}`, 'month')
+            .map((line) => ` ${line}.`)
+            .join(''),
       };
 
       res.json(response);

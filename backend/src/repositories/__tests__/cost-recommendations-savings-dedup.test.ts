@@ -3,7 +3,8 @@
  * savings aggregate: the canonical total every surface reads (dashboard,
  * Cost Optimization, System Intelligence, AI summary, weekly email) must not
  * count the same instance's cost twice across an idle-instance finding and a
- * Reserved Instance opportunity. Runs against the local Postgres, like
+ * Reserved Instance opportunity, and an S3 lifecycle ceiling (an upper bound)
+ * is never summed into it. Runs against the local Postgres, like
  * cost-recommendations-occurrence-lifecycle.test.ts.
  */
 import { Pool } from 'pg';
@@ -19,6 +20,7 @@ const pool = new Pool({
 });
 const repository = new CostRecommendationsRepository();
 const createdOrgIds: string[] = [];
+const ESTIMATED = 'estimated: list price';
 
 async function insertOrg(): Promise<string> {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -60,13 +62,13 @@ describe('getStats -- estimated potential savings aggregate', () => {
     await repository.createBulk([
       rec({
         potential_savings: 70,
-        metadata: { savings_claim: { kind: 'full_resource_cost', resource_ids: ['i-a'] } },
+        metadata: { savings_basis: ESTIMATED, savings_claim: { kind: 'full_resource_cost', resource_ids: ['i-a'] } },
       }),
       rec({
         resource_id: 'ri-opportunity-m5.large',
         issue: 'Reserved Instance Opportunity',
         potential_savings: 49,
-        metadata: { savings_claim: { kind: 'fleet_discount', resource_ids: ['i-a', 'i-b'], per_resource_savings: 24.5, counted_resources: 2 } },
+        metadata: { savings_basis: ESTIMATED, savings_claim: { kind: 'fleet_discount', resource_ids: ['i-a', 'i-b'], per_resource_savings: 24.5, counted_resources: 2 } },
       }),
     ], orgId);
 
@@ -80,14 +82,46 @@ describe('getStats -- estimated potential savings aggregate', () => {
   it('distinct resources across types aggregate to their plain sum', async () => {
     const orgId = await insertOrg();
     await repository.createBulk([
-      rec({ potential_savings: 70, metadata: { savings_claim: { kind: 'full_resource_cost', resource_ids: ['i-a'] } } }),
-      rec({ resource_id: 'vol-1', resource_type: 'EBS', issue: 'Unattached EBS Volume', potential_savings: 12.4 }),
+      rec({ potential_savings: 70, metadata: { savings_basis: ESTIMATED, savings_claim: { kind: 'full_resource_cost', resource_ids: ['i-a'] } } }),
+      rec({ resource_id: 'vol-1', resource_type: 'EBS', issue: 'Unattached EBS Volume', potential_savings: 12.4, metadata: { savings_basis: ESTIMATED } }),
     ], orgId);
 
     const stats = await repository.getStats(orgId);
 
     expect(stats.total_potential_savings).toBe(82.4);
     expect(stats.potential_savings_by_resource_type).toEqual({ EC2: 70, EBS: 12.4 });
+  });
+
+  it('an S3 lifecycle ceiling is excluded from the total and exposed as potential_savings_ceiling', async () => {
+    const orgId = await insertOrg();
+    await repository.createBulk([
+      rec({ resource_id: 'vol-1', resource_type: 'EBS', issue: 'Unattached EBS Volume', potential_savings: 12.4, metadata: { savings_basis: ESTIMATED } }),
+      rec({
+        resource_id: 'example-bucket', resource_type: 'S3', issue: 'S3 Lifecycle Optimization', potential_savings: 41.27,
+        metadata: { savings_basis: 'ceiling: assumes 100% of current Standard storage transitions to Standard-IA; does not net out Standard-IA retrieval fees' },
+      }),
+    ], orgId);
+
+    const stats = await repository.getStats(orgId);
+
+    expect(stats.active_recommendations).toBe(2);
+    expect(stats.total_potential_savings).toBe(12.4);
+    expect(stats.potential_savings_by_resource_type).toEqual({ EBS: 12.4 });
+    expect(stats.potential_savings_ceiling).toBe(41.27);
+    expect(stats.potential_savings_ceiling_by_resource_type).toEqual({ S3: 41.27 });
+  });
+
+  it('a figure with no savings_basis (e.g. a legacy row) is counted in neither total, but stays an active recommendation', async () => {
+    const orgId = await insertOrg();
+    await repository.createBulk([
+      rec({ resource_id: 'dev-db', resource_type: 'RDS', issue: 'Oversized Instance', potential_savings: 98, metadata: {} }),
+    ], orgId);
+
+    const stats = await repository.getStats(orgId);
+
+    expect(stats.active_recommendations).toBe(1);
+    expect(stats.total_potential_savings).toBe(0);
+    expect(stats.potential_savings_ceiling).toBe(0);
   });
 
   it('an organization with no active recommendations has a total of 0 and no per-type entries', async () => {
@@ -97,5 +131,7 @@ describe('getStats -- estimated potential savings aggregate', () => {
 
     expect(stats.total_potential_savings).toBe(0);
     expect(stats.potential_savings_by_resource_type).toEqual({});
+    expect(stats.potential_savings_ceiling).toBe(0);
+    expect(stats.potential_savings_ceiling_by_resource_type).toEqual({});
   });
 });

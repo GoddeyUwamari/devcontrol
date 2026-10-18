@@ -22,6 +22,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
 import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
+import { formatRecommendationSavings, rankBySavings } from '@/lib/savings-basis'
 import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
@@ -260,12 +261,13 @@ export default function CostsPage() {
     : 'No cost analysis has run yet'
   const savingsValue = recsUnavailable ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`
 
-  const topSavingsRows: { id: string; title: string; savings: number; severity: RecommendationSeverity }[] = isDemoActive
-    ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savings: d.savings, severity: d.severity }))
-    : [...activeRecs]
-        .sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))
+  // Each figure is labelled by its savings_basis: "$X/mo", "Up to $X/mo" (a
+  // ceiling), or "No dollar estimate" -- see lib/savings-basis.ts.
+  const topSavingsRows: { id: string; title: string; savingsLabel: string; severity: RecommendationSeverity }[] = isDemoActive
+    ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savingsLabel: `${formatSavingsCurrency(d.savings)}/mo`, severity: d.severity }))
+    : rankBySavings(activeRecs)
         .slice(0, 3)
-        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savings: r.potentialSavings || 0, severity: r.severity }))
+        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savingsLabel: formatRecommendationSavings(r, formatSavingsCurrency), severity: r.severity }))
 
   // Real per-service savings for the Cost by Service list, from the same activeRecs
   // (source C) already fetched above — no fabricated per-category dollar figure.
@@ -273,15 +275,15 @@ export default function CostsPage() {
     if (isDemoActive) return null
     // The total is the server's de-duplicated per-type figure (two
     // recommendations can draw on the same instance's cost), not a client sum.
+    // No database entry: the only RDS detector (oversized instances) is retired.
     const summarize = (type: string) => {
       const recs = activeRecs.filter(r => r.resourceType === type)
       const total = recStats?.potentialSavingsByResourceType?.[type] ?? 0
-      const top = [...recs].sort((a, b) => (b.potentialSavings || 0) - (a.potentialSavings || 0))[0]
+      const top = rankBySavings(recs)[0]
       return { total, issue: top?.issue ?? null }
     }
     return {
       compute: summarize('EC2'),
-      database: summarize('RDS'),
     }
   }, [isDemoActive, activeRecs, recStats])
 
@@ -801,9 +803,7 @@ export default function CostsPage() {
                   ? (isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null)
                   : (isCompute && categorySavings!.compute.total > 0
                       ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo estimated savings available · ${categorySavings!.compute.issue}`
-                      : isDatabase && categorySavings!.database.total > 0
-                        ? `⚠ ${formatSavingsCurrency(categorySavings!.database.total)}/mo estimated savings available · ${categorySavings!.database.issue}`
-                        : null)
+                      : null)
                 return (
                   <div key={name}>
                     <div className="flex items-center justify-between mb-1.5">
@@ -877,7 +877,7 @@ export default function CostsPage() {
               <div key={rec.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
-                  <span className="text-xs font-bold text-green-600 shrink-0">{formatSavingsCurrency(rec.savings)}/mo</span>
+                  <span className="text-xs font-bold text-green-600 shrink-0">{rec.savingsLabel}</span>
                 </div>
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${severityStyles[rec.severity]}`}>
                   {rec.severity}

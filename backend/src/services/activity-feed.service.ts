@@ -12,6 +12,7 @@
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { formatSavingsCents } from '../utils/formatSavingsCurrency';
+import { classifySavingsBasis } from './estimated-savings';
 import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service';
 
 export type ActivityEventType = 'sync' | 'optimization' | 'security' | 'score' | 'anomaly';
@@ -163,15 +164,23 @@ export class ActivityFeedService {
   // no resolution/dismissal event wording yet, so those rows are not shown.
   private async getOptimizationEvents(client: PoolClient, organizationId: string): Promise<ActivityEvent[]> {
     const result = await client.query(
-      `SELECT created_at, potential_savings, issue, severity
+      `SELECT created_at, potential_savings, issue, severity, metadata->>'savings_basis' AS savings_basis
        FROM cost_recommendations
        WHERE organization_id = $1 AND status = 'ACTIVE'
        ORDER BY created_at DESC LIMIT $2`,
       [organizationId, PER_SOURCE_LIMIT]
     );
+    // The figure is shown only as what its savings_basis says it is: an
+    // estimate, an upper bound, or (no supported basis) no figure at all.
+    const savingsPhrase = (row: { potential_savings: unknown; savings_basis: unknown }) => {
+      const kind = classifySavingsBasis(row.savings_basis);
+      if (kind === 'estimate') return `~${formatSavingsCents(row.potential_savings as string)}/month opportunity`;
+      if (kind === 'ceiling') return `up to ${formatSavingsCents(row.potential_savings as string)}/month opportunity`;
+      return 'no dollar estimate';
+    };
     return result.rows.map((row) => ({
       type: 'optimization' as const,
-      message: `Cost optimization found · ${row.issue} — ~${formatSavingsCents(row.potential_savings)}/month opportunity`,
+      message: `Cost optimization found · ${row.issue} — ${savingsPhrase(row)}`,
       timestamp: new Date(row.created_at).toISOString(),
       severity: row.severity ? String(row.severity).toLowerCase() : undefined,
     }));

@@ -42,7 +42,7 @@ const FAILURE_CLAIMS = /Cost data unavailable|Cost Explorer failed|No billing da
 function mockCostInputs(opts: { runRate: number; scanRan?: boolean; savings?: number; anomalyRows?: number }) {
   jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue({
     total_recommendations: 0, active_recommendations: 0, total_potential_savings: opts.savings ?? 0,
-    potential_savings_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
+    potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
   });
   mockQuery.mockImplementation(async (sql: string) => {
     if (sql.includes('resource_discovery_jobs')) {
@@ -154,7 +154,7 @@ describe('Cost component evidence state', () => {
     const scoreWith = async (anomalyRows: number) => {
       jest.spyOn(Repo.prototype, 'getStats').mockResolvedValue({
         total_recommendations: 0, active_recommendations: 0, total_potential_savings: 100,
-        potential_savings_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
+        potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
       });
       mockQuery.mockImplementation(async (sql: string) =>
         sql.includes('resource_discovery_jobs') ? { rowCount: 1, rows: [{}] } : { rowCount: 1, rows: [{ count: String(anomalyRows) }] });

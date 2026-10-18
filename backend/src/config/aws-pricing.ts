@@ -7,7 +7,7 @@
  * These are published AWS on-demand list prices for us-east-1, verified at
  * the time this was written -- not a live AWS Pricing API call, and not
  * adjusted per-region or per-account. Every existing detector in
- * cost-optimization.service.ts (estimateEC2Cost, estimateRDSCost) already
+ * cost-optimization.service.ts (estimateEC2Cost) already
  * follows this same "explicit hardcoded table, not fabricated" convention;
  * this file only centralizes the EBS table introduced alongside it instead
  * of duplicating it between awsResourceDiscovery.ts and

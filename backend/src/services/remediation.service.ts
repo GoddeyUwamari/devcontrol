@@ -76,10 +76,15 @@ interface WorkflowRow {
 // rightsizing recommendation to base that target on yet. This is "currently
 // unavailable", not "no rightsizing opportunity exists". The implementation
 // (rightsizeInstance) is kept for when a validated recommendation exists.
+// downgrade_rds_instance modifies a DB instance's class, and its only source --
+// the oversized-RDS detector -- was retired for having no utilisation data, so
+// it is unavailable for the same reason (downgradeRDSInstance is kept likewise).
 export const ACTION_UNAVAILABLE_PREFIX = 'ACTION_UNAVAILABLE:';
 const UNAVAILABLE_ACTIONS: Partial<Record<ActionType, string>> = {
   rightsize_instance:
     'EC2 rightsizing remediation is currently unavailable. DevControl does not yet have a validated rightsizing recommendation to base an instance-type change on.',
+  downgrade_rds_instance:
+    'RDS instance downgrade remediation is currently unavailable. DevControl does not yet have a validated, utilisation-based RDS sizing recommendation to base an instance-class change on.',
 };
 
 export function assertActionAvailable(actionType: string): void {
@@ -629,6 +634,7 @@ export class RemediationService {
       case 'enable_s3_lifecycle':
         return this.enableS3Lifecycle(creds, params, log);
       case 'downgrade_rds_instance':
+        assertActionAvailable(actionType); // never reaches downgradeRDSInstance while unavailable
         return this.downgradeRDSInstance(creds, params, log);
       case 'delete_unused_elasticip':
         return this.deleteUnusedElasticIP(creds, params, log);
