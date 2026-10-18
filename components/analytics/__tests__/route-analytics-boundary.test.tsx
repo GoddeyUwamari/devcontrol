@@ -30,7 +30,11 @@ vi.mock("@/app/providers", () => ({
 vi.mock("@/components/layout/MarketingNav", () => ({ MarketingNav: () => null }));
 vi.mock("@/components/footer", () => ({ Footer: () => null }));
 
-// (app) layout chrome and hooks
+// (app) layout chrome and hooks. The shell renders only signed in; the gate
+// itself is covered by components/auth/__tests__/auth-gate.test.tsx.
+vi.mock("@/components/auth/auth-gate", () => ({
+  AuthGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 vi.mock("@/components/layout/top-nav", () => ({ TopNav: () => null }));
 vi.mock("@/components/error-boundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,

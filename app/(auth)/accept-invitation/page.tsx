@@ -190,7 +190,7 @@ function AcceptInvitationContent() {
   }
 
   // Must be signed in to accept -- follow the existing app convention
-  // (ProtectedRoute's /login?from=) rather than inventing a new mechanism.
+  // (AuthGate's /login?from=) rather than inventing a new mechanism.
   // The return path carries no token: the pending invitation keeps it across
   // the login/register redirect.
   if (!isAuthenticated || !user) {

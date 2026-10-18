@@ -1,5 +1,5 @@
 /**
- * Login and register opened with ?from= (ProtectedRoute, the invitation
+ * Login and register opened with ?from= (AuthGate, the invitation
  * page): `from` is read once, removed from the URL, and handed to the auth
  * context as the return path, which validates it (see auth-redirect.test).
  */
@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import LoginPage from "../login/page";
 import RegisterPage from "../register/page";
+import { loginPathReturningTo } from "@/lib/login-redirect";
 
 const login = vi.fn();
 const registerUser = vi.fn();
@@ -95,6 +96,17 @@ describe("?from= on login and register", () => {
 
     await submitLogin();
     await waitFor(() => expect(login).toHaveBeenCalledWith(EMAIL, PASSWORD, "/settings/sso"));
+  });
+
+  it("login returns to the page AuthGate sent it from, query included", async () => {
+    window.history.replaceState(null, "", loginPathReturningTo("/costs?range=30d"));
+    expect(currentPath()).toBe("/login?from=%2Fcosts%3Frange%3D30d");
+
+    render(<LoginPage />);
+    expect(currentPath()).toBe("/login");
+
+    await submitLogin();
+    await waitFor(() => expect(login).toHaveBeenCalledWith(EMAIL, PASSWORD, "/costs?range=30d"));
   });
 
   it("login without from passes no return path", async () => {

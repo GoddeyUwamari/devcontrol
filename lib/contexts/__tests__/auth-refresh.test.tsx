@@ -69,7 +69,8 @@ function meAcceptsOnly(...tokens: string[]) {
 function expectLoggedOut() {
   expect(localStorage.getItem("accessToken")).toBeNull();
   expect(localStorage.getItem("refreshToken")).toBeNull();
-  expect(push).toHaveBeenCalledWith("/login");
+  // Back to this page (jsdom's /) once signed in again.
+  expect(push).toHaveBeenCalledWith("/login?from=%2F");
 }
 
 function expectSignedInAs(accessToken: string, refreshToken: string) {
@@ -242,7 +243,7 @@ describe("refresh race with another tab (single-use refresh tokens)", () => {
 
     await act(async () => { await auth.refreshUser(); });
 
-    expect(push).toHaveBeenCalledWith("/login");
+    expect(push).toHaveBeenCalledWith("/login?from=%2F");
   });
 });
 
