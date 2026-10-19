@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { SubscriptionTier } from './subscription.middleware';
+import { presentedUnsubscribeToken, verifyUnsubscribeToken } from '../services/unsubscribe-token';
 
 // Extend Express Request type to include user data
 declare global {
@@ -280,27 +281,37 @@ export const weeklySummaryTriggerRateLimiter = rateLimit({
   },
 });
 
+/** The public weekly summary unsubscribe endpoint (GET confirm page, POST unsubscribe). */
+function isUnsubscribeRequest(req: Request): boolean {
+  return `${req.baseUrl}${req.path}` === '/api/user/preferences/unsubscribe';
+}
+
 /**
- * Rate limiter for the public weekly summary unsubscribe endpoints
- * Counts only requests the controller did not mark res.locals.unsubscribeOk:
- * mail providers send RFC 8058 one-click POSTs for many recipients from
- * shared IPs, so successful signed-token requests must not use up the budget.
- * Invalid tokens and legacy base64(userId) POSTs (forgeable until the cutoff)
- * always count. In-memory: per backend process.
+ * Rate limiter for the public weekly summary unsubscribe endpoint
+ * A request carrying a valid signed token is never limited or counted: mail
+ * providers send RFC 8058 one-click POSTs for many recipients from shared
+ * IPs, and failed attempts from the same IP must not block them. Everything
+ * else -- invalid or expired tokens, and legacy base64(userId) tokens
+ * (forgeable until the cutoff), successful or not -- counts.
+ * This endpoint is exempt from standardRateLimiter; this is its only limiter.
+ * In-memory: per backend process.
  */
 export const unsubscribeRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // 30 failed or unverified requests per 15 minutes per IP
+  max: 30, // 30 unsigned or invalid requests per 15 minutes per IP
 
   standardHeaders: true,
   legacyHeaders: false,
 
   // No keyGenerator - uses default IP handler (IPv6 safe)
 
-  skipSuccessfulRequests: true,
-  requestWasSuccessful: (_req: Request, res: Response) => res.locals.unsubscribeOk === true,
-
-  skip: () => process.env.NODE_ENV === 'development' && process.env.SKIP_RATE_LIMIT === 'true',
+  skip: (req: Request) => {
+    if (process.env.NODE_ENV === 'development' && process.env.SKIP_RATE_LIMIT === 'true') {
+      return true;
+    }
+    const { token } = presentedUnsubscribeToken(req);
+    return verifyUnsubscribeToken(token, 'weekly-summary').kind === 'signed';
+  },
 
   handler: (req: Request, res: Response) => {
     res.status(429).type('text/plain').send('Too many unsubscribe requests. Please try again in 15 minutes.');
@@ -348,7 +359,9 @@ export const standardRateLimiter = rateLimit({
     ) {
       return true;
     }
-    return false;
+    // Limited by unsubscribeRateLimiter instead, which never blocks a valid
+    // signed token and sends that route's no-store/noindex/no-referrer headers.
+    return isUnsubscribeRequest(req);
   },
 
   handler: (req: Request, res: Response) => {

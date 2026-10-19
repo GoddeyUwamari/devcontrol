@@ -10,7 +10,8 @@
  * bootstrap schema) with no DDL on shared tables.
  *
  * Each test sends from its own X-Forwarded-For address, so the in-memory
- * rate limiter never carries counts between tests.
+ * rate limiters (standardRateLimiter, mounted on /api as in server.ts, and
+ * unsubscribeRateLimiter) never carry counts between tests.
  */
 import express from 'express';
 import http from 'http';
@@ -36,6 +37,7 @@ jest.mock('../../config/database', () => {
 import { pool } from '../../config/database';
 import userPreferencesRoutes from '../user-preferences.routes';
 import { sanitizerMiddleware } from '../../middleware/sanitizer';
+import { standardRateLimiter } from '../../middleware/rateLimiter';
 import { LEGACY_UNSUBSCRIBE_CUTOFF, signUnsubscribeToken } from '../../services/unsubscribe-token';
 
 const PATH = '/api/user/preferences/unsubscribe';
@@ -71,6 +73,9 @@ beforeAll(async () => {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(sanitizerMiddleware);
+  // Same order as server.ts: the global limiter runs on all of /api first.
+  app.use('/api', standardRateLimiter);
+  app.get('/api/ping', (_req, res) => res.send('pong'));
   app.use('/api/user/preferences', userPreferencesRoutes);
   await new Promise<void>(resolve => {
     server = app.listen(0, () => {
@@ -139,8 +144,11 @@ function expectOnlyWeeklyOff(after: Flags) {
   expect(after.updatedAt).not.toBe(PREVIOUS_UPDATE);
 }
 
-async function call(ip: string, init: { method: 'GET' | 'POST'; query?: string; form?: Record<string, string>; multipart?: Record<string, string> }) {
-  const url = `${baseUrl}${PATH}${init.query !== undefined ? `?token=${encodeURIComponent(init.query)}` : ''}`;
+async function call(
+  ip: string,
+  init: { method: 'GET' | 'POST'; path?: string; query?: string; form?: Record<string, string>; multipart?: Record<string, string> }
+) {
+  const url = `${baseUrl}${init.path ?? PATH}${init.query !== undefined ? `?token=${encodeURIComponent(init.query)}` : ''}`;
   let body: string | FormData | undefined;
   const headers: Record<string, string> = { 'X-Forwarded-For': ip };
   if (init.form) {
@@ -156,6 +164,11 @@ async function call(ip: string, init: { method: 'GET' | 'POST'; query?: string; 
 }
 
 const ONE_CLICK = { 'List-Unsubscribe': 'One-Click' };
+const NO_LEAK_HEADERS: Array<[string, string]> = [
+  ['cache-control', 'no-store'],
+  ['x-robots-tag', 'noindex, nofollow'],
+  ['referrer-policy', 'no-referrer'],
+];
 
 function forge(token: string): string {
   const [version, userId, iat, mac] = token.split('.');
@@ -365,7 +378,7 @@ describe('weekly summary unsubscribe', () => {
     expect(await flags(user.id)).toEqual(afterFirst);
   });
 
-  it('rate limit: failed attempts are limited per IP; successful signed requests are not counted', async () => {
+  it('rate limit: failed attempts are limited per IP; valid signed requests are never limited or counted', async () => {
     const user = await insertUser();
     const signed = signUnsubscribeToken(user.id, 'weekly-summary');
 
@@ -375,13 +388,25 @@ describe('weekly summary unsubscribe', () => {
     }
     expect((await call(successIp, { method: 'POST', query: signed, form: ONE_CLICK })).status).toBe(200);
 
+    // 30 failures from one (e.g. a mail provider's shared) IP exhaust its budget ...
     const failIp = nextIp();
     for (let i = 0; i < 30; i++) {
       expect((await call(failIp, { method: 'POST', form: { token: forge(signed) } })).status).toBe(400);
     }
-    const limited = await call(failIp, { method: 'POST', query: signed, form: ONE_CLICK });
+    const limited = await call(failIp, { method: 'POST', query: forge(signed), form: ONE_CLICK });
     expect(limited.status).toBe(429);
-    expect(limited.headers.get('cache-control')).toBe('no-store');
+    for (const [header, value] of NO_LEAK_HEADERS) {
+      expect(limited.headers.get(header)).toBe(value);
+    }
+
+    // ... but a valid signed request from that same IP still goes through.
+    const other = await insertUser();
+    const otherToken = signUnsubscribeToken(other.id, 'weekly-summary');
+    expect((await call(failIp, { method: 'POST', query: otherToken, form: ONE_CLICK })).status).toBe(200);
+    expectOnlyWeeklyOff(await flags(other.id));
+    expect((await call(failIp, { method: 'GET', query: otherToken })).status).toBe(200);
+    expect((await call(failIp, { method: 'POST', form: { token: otherToken } })).status).toBe(200);
+    expect((await call(failIp, { method: 'POST', form: { token: forge(signed) } })).status).toBe(429);
 
     // Legacy POSTs count even when they succeed.
     const legacyIp = nextIp();
@@ -390,5 +415,32 @@ describe('weekly summary unsubscribe', () => {
       expect((await call(legacyIp, { method: 'POST', form: { token: Buffer.from(user.id).toString('base64') } })).status).toBe(200);
     }
     expect((await call(legacyIp, { method: 'POST', form: { token: Buffer.from(user.id).toString('base64') } })).status).toBe(429);
+  });
+
+  it('the global standardRateLimiter never answers for this route, so its 429 cannot drop the no-store/noindex/no-referrer headers', async () => {
+    const user = await insertUser();
+    const signed = signUnsubscribeToken(user.id, 'weekly-summary');
+    const ip = nextIp();
+
+    // Exhaust the global limit (300/min) for this IP on another /api route.
+    for (let i = 0; i < 300; i++) {
+      expect((await call(ip, { method: 'GET', path: '/api/ping' })).status).toBe(200);
+    }
+    const globallyLimited = await call(ip, { method: 'GET', path: '/api/ping' });
+    expect(globallyLimited.status).toBe(429);
+
+    // The unsubscribe route is still answered by its own handlers and limiter.
+    const responses = [
+      await call(ip, { method: 'GET', query: signed }),
+      await call(ip, { method: 'POST', form: { token: forge(signed) } }),
+      await call(ip, { method: 'POST', query: signed, form: ONE_CLICK }),
+    ];
+    expect(responses.map(r => r.status)).toEqual([200, 400, 200]);
+    for (const res of responses) {
+      for (const [header, value] of NO_LEAK_HEADERS) {
+        expect(res.headers.get(header)).toBe(value);
+      }
+    }
+    expectOnlyWeeklyOff(await flags(user.id));
   });
 });

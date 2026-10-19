@@ -5,7 +5,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 import { pool } from '../config/database';
-import { verifyUnsubscribeToken } from '../services/unsubscribe-token';
+import { presentedUnsubscribeToken, verifyUnsubscribeToken } from '../services/unsubscribe-token';
 
 interface EmailPreferences {
   weeklySummary: boolean;
@@ -332,12 +332,11 @@ export function unsubscribeResponseHeaders(_req: Request, res: Response, next: N
  */
 export async function showUnsubscribeConfirm(req: Request, res: Response) {
   try {
-    const { token } = req.query;
+    const { token } = presentedUnsubscribeToken(req);
     const verified = verifyUnsubscribeToken(token, UNSUBSCRIBE_PURPOSE);
     if (verified.kind === 'invalid') {
       return res.status(400).send(invalidLinkPage());
     }
-    res.locals.unsubscribeOk = true;
     return res.send(confirmPage(token as string, `${req.baseUrl}${req.path}`));
   } catch (error: unknown) {
     console.error('[Unsubscribe] Confirm page error:', errorMessage(error));
@@ -346,17 +345,14 @@ export async function showUnsubscribeConfirm(req: Request, res: Response) {
 }
 
 /**
- * POST: turn off the weekly summary. A token in the query string is the
- * RFC 8058 one-click request (signed tokens only). Its body is not required
- * to parse -- receivers may send it as multipart/form-data, which this app
- * does not parse -- since the signed token alone identifies the recipient.
- * Otherwise the token comes from the confirm page's form body.
+ * POST: turn off the weekly summary, from the confirm page's form or an
+ * RFC 8058 one-click request (signed tokens only); see
+ * presentedUnsubscribeToken for which is which.
  */
 export async function confirmUnsubscribe(req: Request, res: Response) {
-  const oneClick = req.query.token !== undefined;
+  const { token, oneClick } = presentedUnsubscribeToken(req);
   const mode = oneClick ? 'one-click' : 'confirm page';
   try {
-    const token = oneClick ? req.query.token : req.body?.token;
     const verified = verifyUnsubscribeToken(token, UNSUBSCRIBE_PURPOSE);
 
     // Legacy tokens are forgeable (base64 of the user id), so they are only
@@ -380,11 +376,6 @@ export async function confirmUnsubscribe(req: Request, res: Response) {
       `[Unsubscribe] Weekly summary unsubscribe for user ${verified.userId} ` +
         `(${verified.kind} token, ${mode}, ${result.rowCount ?? 0} row updated)`
     );
-
-    // Legacy tokens keep counting against unsubscribeRateLimiter even on success.
-    if (verified.kind === 'signed') {
-      res.locals.unsubscribeOk = true;
-    }
     return oneClick
       ? res.type('text/plain').send('Unsubscribed from weekly summary emails.')
       : res.send(unsubscribedPage());
