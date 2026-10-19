@@ -5,10 +5,13 @@
 
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { unsubscribeRateLimiter } from '../middleware/rateLimiter';
 import {
   getEmailPreferences,
   updateEmailPreferences,
-  unsubscribeAll,
+  showUnsubscribeConfirm,
+  confirmUnsubscribe,
+  unsubscribeResponseHeaders,
   getDisplayPreferences,
   updateDisplayPreferences,
 } from '../controllers/user-preferences.controller';
@@ -25,8 +28,11 @@ router.put('/email', authenticateToken, updateEmailPreferences);
 router.get('/display', authenticateToken, getDisplayPreferences);
 router.put('/display', authenticateToken, updateDisplayPreferences);
 
-// Unsubscribe from all emails (public endpoint, uses token from email link)
-// CAN-SPAM Act compliance - must be accessible without login
-router.get('/unsubscribe', unsubscribeAll);
+// Weekly summary unsubscribe (public, signed token from the email link).
+// CAN-SPAM Act compliance - must be accessible without login.
+// GET only shows a confirm page; POST unsubscribes (confirm button or
+// RFC 8058 one-click).
+router.get('/unsubscribe', unsubscribeResponseHeaders, unsubscribeRateLimiter, showUnsubscribeConfirm);
+router.post('/unsubscribe', unsubscribeResponseHeaders, unsubscribeRateLimiter, confirmUnsubscribe);
 
 export default router;

@@ -3,8 +3,9 @@
  * Handles email notification preferences
  */
 
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { pool } from '../config/database';
+import { verifyUnsubscribeToken } from '../services/unsubscribe-token';
 
 interface EmailPreferences {
   weeklySummary: boolean;
@@ -218,188 +219,179 @@ export async function updateDisplayPreferences(req: Request, res: Response) {
   }
 }
 
-/**
- * Unsubscribe from all emails (via email link)
- * CAN-SPAM Act compliance
+/*
+ * Weekly summary unsubscribe (email link). Public: CAN-SPAM requires it to
+ * work without login. Tokens come from services/unsubscribe-token.ts.
+ *
+ *   GET  ?token=...        confirmation page only -- never changes state, so
+ *                          mail scanners that pre-open links unsubscribe nobody
+ *   POST body token=...    the confirm page's button; signed tokens, and legacy
+ *                          base64(userId) tokens until LEGACY_UNSUBSCRIBE_CUTOFF
+ *   POST ?token=...        RFC 8058 one-click from the mail client
+ *                          (body List-Unsubscribe=One-Click); signed tokens only
+ *
+ * Only email_weekly_summary is turned off; everything else is managed at
+ * /settings/notifications. A valid token gets the same response whether or
+ * not the user exists, and every rejected token gets the same generic page.
+ * Logs never carry the token or the email address.
  */
-export async function unsubscribeAll(req: Request, res: Response) {
+
+const UNSUBSCRIBE_PURPOSE = 'weekly-summary' as const;
+const INVALID_LINK_TEXT = 'This unsubscribe link is invalid or has expired.';
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/** The message only: never the request, token or full error object. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'unknown error';
+}
+
+function preferencesUrl(): string {
+  return `${process.env.FRONTEND_URL || 'http://localhost:3010'}/settings/notifications`;
+}
+
+function renderPage(title: string, body: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>${escapeHtml(title)} - DevControl</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 100px auto; padding: 20px; text-align: center; background: #f9fafb; }
+    .container { background: white; border-radius: 12px; padding: 40px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+    h1 { color: #1f2937; margin: 0 0 10px; font-size: 26px; }
+    p { color: #6b7280; line-height: 1.6; margin: 15px 0; }
+    a { color: #635BFF; text-decoration: none; font-weight: 600; }
+    a:hover { text-decoration: underline; }
+    button { background: #635BFF; color: white; border: 0; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+    button:hover { background: #4f46e5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+${body}
+  </div>
+</body>
+</html>`;
+}
+
+function confirmPage(token: string, action: string): string {
+  return renderPage('Unsubscribe', `
+    <h1>Unsubscribe from weekly summary emails?</h1>
+    <p>You'll stop receiving the DevControl weekly summary email.</p>
+    <form method="POST" action="${escapeHtml(action)}">
+      <input type="hidden" name="token" value="${escapeHtml(token)}">
+      <button type="submit">Unsubscribe</button>
+    </form>
+    <p>To manage other email notifications, go to <a href="${escapeHtml(preferencesUrl())}">email preferences</a>.</p>`);
+}
+
+function unsubscribedPage(): string {
+  return renderPage('Unsubscribed', `
+    <h1>You've been unsubscribed from weekly summary emails</h1>
+    <p>You'll no longer receive the DevControl weekly summary email.</p>
+    <p>To turn it back on or manage other email notifications, go to <a href="${escapeHtml(preferencesUrl())}">email preferences</a>.</p>`);
+}
+
+function invalidLinkPage(): string {
+  return renderPage('Invalid link', `
+    <h1>Invalid link</h1>
+    <p>${INVALID_LINK_TEXT}</p>
+    <p>Sign in to manage your <a href="${escapeHtml(preferencesUrl())}">email preferences</a>.</p>`);
+}
+
+function errorPage(): string {
+  return renderPage('Error', `
+    <h1>Something went wrong</h1>
+    <p>We couldn't process your request. Please try again later.</p>`);
+}
+
+/** no-store / noindex / no-referrer on every unsubscribe response, including 429s. */
+export function unsubscribeResponseHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.set({
+    'Cache-Control': 'no-store',
+    'X-Robots-Tag': 'noindex, nofollow',
+    'Referrer-Policy': 'no-referrer',
+  });
+  next();
+}
+
+/**
+ * GET: the confirmation page. Reads nothing from the database and changes
+ * nothing; the token moves into the form body so it never reappears in a URL.
+ */
+export async function showUnsubscribeConfirm(req: Request, res: Response) {
   try {
     const { token } = req.query;
+    const verified = verifyUnsubscribeToken(token, UNSUBSCRIBE_PURPOSE);
+    if (verified.kind === 'invalid') {
+      return res.status(400).send(invalidLinkPage());
+    }
+    res.locals.unsubscribeOk = true;
+    return res.send(confirmPage(token as string, `${req.baseUrl}${req.path}`));
+  } catch (error: unknown) {
+    console.error('[Unsubscribe] Confirm page error:', errorMessage(error));
+    return res.status(500).send(errorPage());
+  }
+}
 
-    if (!token || typeof token !== 'string') {
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Error - DevControl</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 100px auto; padding: 20px; text-align: center; }
-            h1 { color: #dc2626; }
-            p { color: #6b7280; }
-          </style>
-        </head>
-        <body>
-          <h1>❌ Invalid Link</h1>
-          <p>This unsubscribe link is invalid or has expired.</p>
-        </body>
-        </html>
-      `);
+/**
+ * POST: turn off the weekly summary. A token in the query string is the
+ * RFC 8058 one-click request (signed tokens only). Its body is not required
+ * to parse -- receivers may send it as multipart/form-data, which this app
+ * does not parse -- since the signed token alone identifies the recipient.
+ * Otherwise the token comes from the confirm page's form body.
+ */
+export async function confirmUnsubscribe(req: Request, res: Response) {
+  const oneClick = req.query.token !== undefined;
+  const mode = oneClick ? 'one-click' : 'confirm page';
+  try {
+    const token = oneClick ? req.query.token : req.body?.token;
+    const verified = verifyUnsubscribeToken(token, UNSUBSCRIBE_PURPOSE);
+
+    // Legacy tokens are forgeable (base64 of the user id), so they are only
+    // accepted from the human confirm page, never from one-click.
+    if (verified.kind === 'invalid' || (oneClick && verified.kind === 'legacy')) {
+      console.warn(`[Unsubscribe] Rejected ${mode} request: invalid or expired token`);
+      return oneClick
+        ? res.status(400).type('text/plain').send(INVALID_LINK_TEXT)
+        : res.status(400).send(invalidLinkPage());
     }
 
-    // Decode token to get user ID
-    // Token is base64 encoded user ID
-    let userId: string;
-    try {
-      userId = Buffer.from(token, 'base64').toString('utf-8');
-    } catch (error) {
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Error - DevControl</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 100px auto; padding: 20px; text-align: center; }
-            h1 { color: #dc2626; }
-            p { color: #6b7280; }
-          </style>
-        </head>
-        <body>
-          <h1>❌ Invalid Token</h1>
-          <p>This unsubscribe link is malformed.</p>
-        </body>
-        </html>
-      `);
-    }
-
+    // Already-off rows are left alone, so a repeat changes nothing.
     const result = await pool.query(
       `UPDATE users
        SET email_weekly_summary = false,
-           email_anomaly_alerts = false,
-           email_cost_alerts = false,
-           email_deployment_alerts = false,
            email_preferences_updated_at = NOW()
-       WHERE id = $1
-       RETURNING email`,
-      [userId]
+       WHERE id = $1 AND email_weekly_summary IS DISTINCT FROM false`,
+      [verified.userId]
+    );
+    console.log(
+      `[Unsubscribe] Weekly summary unsubscribe for user ${verified.userId} ` +
+        `(${verified.kind} token, ${mode}, ${result.rowCount ?? 0} row updated)`
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Error - DevControl</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 100px auto; padding: 20px; text-align: center; }
-            h1 { color: #dc2626; }
-            p { color: #6b7280; }
-          </style>
-        </head>
-        <body>
-          <h1>❌ User Not Found</h1>
-          <p>We couldn't find a user associated with this link.</p>
-        </body>
-        </html>
-      `);
+    // Legacy tokens keep counting against unsubscribeRateLimiter even on success.
+    if (verified.kind === 'signed') {
+      res.locals.unsubscribeOk = true;
     }
-
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
-    console.log(`[Unsubscribe] User ${userId} (${result.rows[0].email}) unsubscribed from all emails`);
-
-    // Return success page
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Unsubscribed - DevControl</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            max-width: 600px;
-            margin: 100px auto;
-            padding: 20px;
-            text-align: center;
-            background: #f9fafb;
-          }
-          .container {
-            background: white;
-            border-radius: 12px;
-            padding: 40px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-          }
-          h1 {
-            color: #1f2937;
-            margin: 20px 0 10px;
-            font-size: 28px;
-          }
-          .icon {
-            font-size: 64px;
-            margin-bottom: 10px;
-          }
-          p {
-            color: #6b7280;
-            line-height: 1.6;
-            margin: 15px 0;
-          }
-          a {
-            color: #635BFF;
-            text-decoration: none;
-            font-weight: 600;
-          }
-          a:hover {
-            text-decoration: underline;
-          }
-          .button {
-            display: inline-block;
-            background: #635BFF;
-            color: white !important;
-            padding: 12px 24px;
-            border-radius: 8px;
-            text-decoration: none;
-            margin-top: 20px;
-            font-weight: 600;
-          }
-          .button:hover {
-            background: #4f46e5;
-            text-decoration: none;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="icon">✅</div>
-          <h1>You've been unsubscribed</h1>
-          <p>You will no longer receive email notifications from DevControl.</p>
-          <p>We're sorry to see you go, but we respect your decision.</p>
-          <p>You can change your email preferences anytime in your account settings.</p>
-          <a href="${frontendUrl}/settings/notifications" class="button">Manage Email Preferences</a>
-          <p style="margin-top: 30px; font-size: 14px;">
-            <a href="${frontendUrl}">Return to Dashboard</a>
-          </p>
-        </div>
-      </body>
-      </html>
-    `);
-
-  } catch (error: any) {
-    console.error('[Unsubscribe] Error:', error);
-    return res.status(500).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Error - DevControl</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 100px auto; padding: 20px; text-align: center; }
-          h1 { color: #dc2626; }
-          p { color: #6b7280; }
-        </style>
-      </head>
-      <body>
-        <h1>❌ Something went wrong</h1>
-        <p>We encountered an error processing your request. Please try again later.</p>
-      </body>
-      </html>
-    `);
+    return oneClick
+      ? res.type('text/plain').send('Unsubscribed from weekly summary emails.')
+      : res.send(unsubscribedPage());
+  } catch (error: unknown) {
+    console.error(`[Unsubscribe] ${mode} error:`, errorMessage(error));
+    return oneClick
+      ? res.status(500).type('text/plain').send('Something went wrong. Please try again later.')
+      : res.status(500).send(errorPage());
   }
 }

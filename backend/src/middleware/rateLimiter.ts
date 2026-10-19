@@ -281,6 +281,33 @@ export const weeklySummaryTriggerRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for the public weekly summary unsubscribe endpoints
+ * Counts only requests the controller did not mark res.locals.unsubscribeOk:
+ * mail providers send RFC 8058 one-click POSTs for many recipients from
+ * shared IPs, so successful signed-token requests must not use up the budget.
+ * Invalid tokens and legacy base64(userId) POSTs (forgeable until the cutoff)
+ * always count. In-memory: per backend process.
+ */
+export const unsubscribeRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // 30 failed or unverified requests per 15 minutes per IP
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  // No keyGenerator - uses default IP handler (IPv6 safe)
+
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req: Request, res: Response) => res.locals.unsubscribeOk === true,
+
+  skip: () => process.env.NODE_ENV === 'development' && process.env.SKIP_RATE_LIMIT === 'true',
+
+  handler: (req: Request, res: Response) => {
+    res.status(429).type('text/plain').send('Too many unsubscribe requests. Please try again in 15 minutes.');
+  },
+});
+
+/**
  * Rate limiter for SAML SSO initiation
  * Prevents abuse of the IdP redirect endpoint
  */
