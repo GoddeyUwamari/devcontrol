@@ -269,6 +269,25 @@ describe('GET /api/services -- pages over more than 500 resources', () => {
     expect(same).toEqual([...same].sort());
   });
 
+  it('rows with equal names keep their id order across a page boundary', async () => {
+    // With 46 per page, row 506 (the first 'pg-same') ends page 11 and rows
+    // 507-508 open page 12.
+    async function sameAcrossBoundary(): Promise<string[][]> {
+      const pages = [];
+      for (const page of [11, 12]) {
+        const { body } = await get(viewer, orgId, `/services?limit=46&page=${page}`);
+        expect(body.pagination).toMatchObject({ page, limit: 46, total: TOTAL, total_pages: 12 });
+        pages.push(body.services.filter((s: { name: string }) => s.name === 'pg-same').map((s: { id: string }) => s.id));
+      }
+      return pages;
+    }
+    const first = await sameAcrossBoundary();
+    expect(first.map((ids) => ids.length)).toEqual([1, 2]);
+    const ids = first.flat();
+    expect(ids).toEqual([...ids].sort());
+    expect(await sameAcrossBoundary()).toEqual(first);
+  });
+
   it('?needs_attention=true returns the at-risk resource past row 500, and its count agrees with /stats', async () => {
     const { status, body } = await get(viewer, orgId, '/services?needs_attention=true');
     expect(status).toBe(200);

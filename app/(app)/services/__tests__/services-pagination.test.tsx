@@ -219,7 +219,66 @@ describe('/services -- a failed list is an error, not an empty list', () => {
   })
 })
 
+describe('/services -- the "Needs attention" chip count is organization-wide or absent', () => {
+  const chip = () => screen.getByRole('button', { name: /^Needs attention/ })
+
+  it('shows (—), not the filtered list count, when /stats failed and a filter is active', async () => {
+    serveLargeInventory()
+    mockGetStats.mockRejectedValue(new Error('500'))
+    renderPage()
+    await screen.findByText('Needs Attention · 120')
+
+    await openSelect(0)
+    fireEvent.click(screen.getByRole('option', { name: 'EBS' }))
+    await waitFor(() => expect(mockGetServices).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'ebs' })))
+    await screen.findAllByText(/matching current filters/)
+
+    expect(chip()).toHaveTextContent(/^Needs attention \(—\)$/)
+    expect(chip()).toHaveAttribute('title', 'The count across every resource in this organization is not available right now')
+  })
+
+  it('shows (—) while /stats is loading, then the organization-wide count', async () => {
+    serveLargeInventory()
+    const stats = deferred<any>()
+    mockGetStats.mockReturnValue(stats.promise)
+    renderPage()
+    await screen.findByText('Needs Attention · 120')
+    expect(chip()).toHaveTextContent(/^Needs attention \(—\)$/)
+
+    await act(async () => { stats.resolve({ ...STATS, needs_attention: 7 }); await Promise.resolve() })
+    await waitFor(() => expect(chip()).toHaveTextContent(/^Needs attention \(7\)$/))
+    expect(chip()).toHaveAttribute('title', 'Count across every resource in this organization, before search and filters')
+  })
+})
+
 describe('/services -- organization switch', () => {
+  it('after organization A has loaded, switching to B shows none of A\'s rows while B\'s answer is held back', async () => {
+    const heldB = deferred<any>()
+    mockGetServices.mockImplementation(async (req: any) => {
+      if (currentOrg === 'org-b') return heldB.promise
+      return req.needs_attention
+        ? serverPage([row('a1', true, 'org-a-at-risk')], 1, 1, { needs_attention: 1, no_flagged_issues: 1 })
+        : serverPage([row('a2', false, 'org-a-fine')], 1, 1, { needs_attention: 1, no_flagged_issues: 1 })
+    })
+
+    const { rerenderPage } = renderPage()
+    // Organization A fully loaded: its rows are on screen.
+    expect(await screen.findByText('org-a-at-risk')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /1 resource with no flagged issues/ }))
+    expect(screen.getByText('org-a-fine')).toBeInTheDocument()
+
+    currentOrg = 'org-b'
+    rerenderPage()
+    await waitFor(() => expect(mockGetServices).toHaveBeenCalledWith(expect.objectContaining({ needs_attention: true })))
+
+    // B's request is still open: the list is loading, and nothing of A's remains.
+    expect(await screen.findByText('Loading resources…')).toBeInTheDocument()
+    expect(screen.queryByText('org-a-at-risk')).not.toBeInTheDocument()
+    expect(screen.queryByText('org-a-fine')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Needs Attention · /)).not.toBeInTheDocument()
+  })
+
+
   it('a response for the previous organization that arrives after the switch is never shown', async () => {
     const lateList = deferred<any>()
     const lateStats = deferred<any>()

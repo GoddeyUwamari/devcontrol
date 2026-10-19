@@ -311,6 +311,9 @@ export default function ServicesPage() {
   // A failed stats request shows no number rather than a zero.
   const statsUnavailable = !isDemoActive && !statsLoading && !displayStats
   const kpiValue = (n: number) => statsLoading ? '…' : statsUnavailable ? '—' : n
+  // The chip's count is organization-wide, so it comes from /stats or not at all:
+  // never from the filtered list's counts.
+  const chipCountUnavailable = statsLoading || statsUnavailable
   // From the backend's count of connected accounts, never assumed from the
   // resources: inventory can outlive a connection.
   const accountsCaption = connectedAccountsCaption(displayStats?.aws_accounts_connected)
@@ -609,12 +612,14 @@ export default function ServicesPage() {
             <div className="flex gap-1.5 flex-wrap">
               <button
                 onClick={() => setOnlyNeedsAttention(v => !v)}
-                title="Count across every resource in this organization, before search and filters"
+                title={chipCountUnavailable
+                  ? 'The count across every resource in this organization is not available right now'
+                  : 'Count across every resource in this organization, before search and filters'}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold border cursor-pointer transition-all ${
                   onlyNeedsAttention ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                 }`}
               >
-                Needs attention{warningCount > 0 ? ` (${warningCount})` : ''}
+                Needs attention{chipCountUnavailable ? ' (—)' : warningCount > 0 ? ` (${warningCount})` : ''}
               </button>
               <button
                 onClick={() => setEnvFilter(prev => prev === 'production' ? 'all' : 'production')}

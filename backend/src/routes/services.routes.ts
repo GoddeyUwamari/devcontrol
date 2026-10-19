@@ -340,8 +340,9 @@ async function fetchServices(orgId: string, filters: ServiceListFilters) {
   const { where, values } = inventoryWhere(orgId, filters);
 
   // One statement, so the rows, the total and the counts the list derives from
-  // them all come from the same snapshot. No ORDER BY: the order is set in
-  // sortServices, which needs needs_attention and priority_severity first.
+  // them all come from the same snapshot. No ORDER BY: listServices sets the
+  // order (byPriorityThenName / byNameThenId), which needs needs_attention and
+  // priority_severity first.
   const { rows } = await pool.query(
     `SELECT
        r.id,
