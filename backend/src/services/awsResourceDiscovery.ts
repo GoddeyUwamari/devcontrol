@@ -106,6 +106,7 @@ import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usa
 import { describeDynamoDBTable } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
 import { describeAuroraClusters } from './aurora-cluster.util';
+import { DISCOVERY_WARNING_TRUNCATED_INDEX, DiscoveryWarning, joinDiscoveryMessage } from './discovery-warnings';
 import {
   S3SecurityEvaluation,
   carryForwardUnverifiedS3Findings,
@@ -489,6 +490,8 @@ export class AWSResourceDiscoveryService {
       const checkBackupEvidence = createAwsBackupEvidenceCache(awsClients.backup!);
 
       const errors: string[] = [];
+      // Checks deliberately not run this cycle; they do not fail the job (see discovery-warnings.ts).
+      const warnings: DiscoveryWarning[] = [];
       let totalDiscovered = 0;
       let totalUpdated = 0;
       let resourcesTerminated = 0;
@@ -573,9 +576,18 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('s3', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering S3 buckets...`);
         try {
-          const s3Resources = await this.discoverS3Buckets(organizationId, awsClients.s3!, awsClients.region, awsClients.getS3ClientForRegion);
+          const unlocatedBucketArns = new Set<string>();
+          const s3Resources = await this.discoverS3Buckets(
+            organizationId, awsClients.s3!, awsClients.region, awsClients.getS3ClientForRegion, unlocatedBucketArns
+          );
           for (const resource of s3Resources) {
+            // Listed, so present: never counted missing.
             s3ArnsFound.add(resource.resource_arn);
+            // Its region is unknown, though. A stored row keeps its stored region (the
+            // upsert never changes it); no new row is written with a guessed region.
+            if (unlocatedBucketArns.has(resource.resource_arn) && !(await this.resourceStored(client, organizationId, resource.resource_arn))) {
+              continue;
+            }
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
@@ -717,16 +729,27 @@ export class AWSResourceDiscoveryService {
           errors.push(`Aurora cluster enrichment: ${error.message}`);
         }
 
-        try {
-          const reconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, allArns, RE_RECONCILED_TYPES);
-          console.log(
-            `✅ [Discovery] Reconciliation complete (${reconciliation.resetCount} confirmed present, ` +
-            `${reconciliation.incrementedCount} absent this scan, ${reconciliation.terminatedArns.length} newly terminated)`
+        if (!searchResult.complete) {
+          // The search may have been cut off (see SearchResult): the resources it did return
+          // are real and were upserted above, but a resource missing from it may simply be
+          // past the cut-off. No row's missing_scan_count moves this cycle. A large account
+          // always lands here, so it is a warning, not a failure: the inventory still refreshed.
+          console.warn(
+            `⚠️  [Discovery] Resource Explorer search may be truncated (${searchResult.resources.length} results), reconciliation skipped`
           );
-          resourcesTerminated += reconciliation.terminatedArns.length;
-        } catch (error: any) {
-          console.error(`❌ [Discovery] Reconciliation failed:`, error.message);
-          errors.push(`Reconciliation: ${error.message}`);
+          warnings.push(DISCOVERY_WARNING_TRUNCATED_INDEX);
+        } else {
+          try {
+            const reconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, allArns, RE_RECONCILED_TYPES);
+            console.log(
+              `✅ [Discovery] Reconciliation complete (${reconciliation.resetCount} confirmed present, ` +
+              `${reconciliation.incrementedCount} absent this scan, ${reconciliation.terminatedArns.length} newly terminated)`
+            );
+            resourcesTerminated += reconciliation.terminatedArns.length;
+          } catch (error: any) {
+            console.error(`❌ [Discovery] Reconciliation failed:`, error.message);
+            errors.push(`Reconciliation: ${error.message}`);
+          }
         }
       } else {
         // Search itself failed (no index/view provisioned, throttling, permission error, etc.) —
@@ -824,7 +847,15 @@ export class AWSResourceDiscoveryService {
         const s3Outcomes = new Map<string, S3Outcome>();
         await mapWithConcurrency(s3Resources, this.callPolicy.concurrency, async (resource) => {
           try {
-            const result = await scanner.evaluateS3Security(resource, awsClients.s3!, {
+            // Read in the bucket's own region (its stored region, normalized for rows
+            // written before 'EU' was mapped to eu-west-1).
+            const bucketClient = this.s3ClientInRegion(
+              awsClients.s3!,
+              awsClients.region,
+              awsClients.getS3ClientForRegion,
+              regionFromLocationConstraint(resource.region)
+            );
+            const result = await scanner.evaluateS3Security(resource, bucketClient, {
               s3Control: awsClients.s3Control,
               accountId: awsClients.accountId,
             });
@@ -1009,7 +1040,7 @@ export class AWSResourceDiscoveryService {
       let costAnalysisCompleted = false;
       try {
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
-        const { observations, riRecommendations } = await costOptimizationService.analyzeAllResources(organizationId);
+        const { observations, riRecommendations, riSucceeded } = await costOptimizationService.analyzeAllResources(organizationId);
 
         const recommendationsRepo = new CostRecommendationsRepository();
 
@@ -1022,11 +1053,15 @@ export class AWSResourceDiscoveryService {
           observations
         );
 
-        // Reserved Instance Opportunities stay on the prior unconditional
-        // delete+recreate behavior -- excluded from the occurrence lifecycle,
-        // see cost-optimization.service.ts.
-        await recommendationsRepo.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
-        const riInsertedCount = await recommendationsRepo.createBulk(riRecommendations, organizationId);
+        // Reserved Instance Opportunities stay on delete+recreate -- excluded from
+        // the occurrence lifecycle, see cost-optimization.service.ts -- but only
+        // when the RI check completed: a failed check is no answer, and the stored
+        // RI rows stay as they are.
+        let riInsertedCount = 0;
+        if (riSucceeded) {
+          await recommendationsRepo.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
+          riInsertedCount = await recommendationsRepo.createBulk(riRecommendations, organizationId);
+        }
 
         const insertedCount = nonRIInsertedCount + riInsertedCount;
         const totalFound = observations.reduce((sum, o) => sum + o.recommendations.length, 0) + riRecommendations.length;
@@ -1074,6 +1109,9 @@ export class AWSResourceDiscoveryService {
           console.log(`    ${idx + 1}. ${err}`);
         });
       }
+      if (warnings.length > 0) {
+        console.log(`  - Warnings: ${warnings.join(', ')}`);
+      }
 
       await client.query(
         `UPDATE resource_discovery_jobs
@@ -1084,7 +1122,7 @@ export class AWSResourceDiscoveryService {
           totalDiscovered,
           totalUpdated,
           resourcesTerminated,
-          errors.length > 0 ? errors.join('; ') : null,
+          joinDiscoveryMessage(errors, warnings),
           complianceScanCompleted,
           costAnalysisCompleted,
           jobId
@@ -1119,7 +1157,8 @@ export class AWSResourceDiscoveryService {
         resources_discovered: totalDiscovered,
         resources_updated: totalUpdated,
         resources_deleted: resourcesTerminated,
-        errors
+        errors,
+        warnings
       };
     } catch (error: any) {
       console.error(`\n❌ [Discovery] Fatal error during discovery:`, error.message);
@@ -1362,7 +1401,10 @@ export class AWSResourceDiscoveryService {
     organizationId: string,
     s3Client: S3Client,
     defaultRegion: string,
-    s3ClientForRegion?: (region: string) => S3Client
+    s3ClientForRegion?: (region: string) => S3Client,
+    // Receives the ARN of every listed bucket whose GetBucketLocation failed: its
+    // returned region is then the home region, a guess, not the bucket's region.
+    unlocatedBucketArns?: Set<string>
   ): Promise<CreateAWSResourceInput[]> {
     // No generated paginator for ListBuckets in this SDK version — manual
     // ContinuationToken loop (added along with S3's 2023 quota increase to
@@ -1383,22 +1425,27 @@ export class AWSResourceDiscoveryService {
     const resources = await mapWithConcurrency(buckets, this.callPolicy.concurrency, async (bucket): Promise<CreateAWSResourceInput | null> => {
       if (!bucket.Name) return null;
 
-      let region = defaultRegion;
       // Security Truthfulness #40 (extended to S3): null means unknown/unavailable
       // evidence -- never coerce a failed AWS call into a confirmed negative. Only a
       // verified, specific AWS signal may set these to `false`.
       let isEncrypted: boolean | null = null;
       let isPublic: boolean | null = null;
-      // The region to read the bucket's tags in. The home region until GetBucketLocation
-      // answers; getBucketTags follows S3's redirect if that turns out to be wrong.
+      // The bucket's region, stored and used for every per-bucket read below. The home
+      // region until GetBucketLocation answers; getBucketTags follows S3's redirect if
+      // that turns out to be wrong.
       let bucketRegion = defaultRegion;
+      // The client for the bucket's own region: S3 answers a bucket's configuration
+      // there, so reads through a client for another region do not get the answer.
+      let bucketClient = s3Client;
+      let located = false;
 
       try {
-        // Get bucket region
+        // Get bucket region. A legacy eu-west-1 bucket reports 'EU', normalized here.
         const locationCommand = new GetBucketLocationCommand({ Bucket: bucket.Name });
         const locationResponse = await s3Client.send(locationCommand);
-        region = locationResponse.LocationConstraint || 'us-east-1';
         bucketRegion = regionFromLocationConstraint(locationResponse.LocationConstraint);
+        located = true;
+        bucketClient = this.s3ClientInRegion(s3Client, defaultRegion, s3ClientForRegion, bucketRegion);
 
         // Check encryption. AWS's well-known signal for "no default encryption
         // configured" is a ServerSideEncryptionConfigurationNotFoundError -- the S3
@@ -1409,7 +1456,7 @@ export class AWSResourceDiscoveryService {
         // fabricating a "not encrypted" finding.
         try {
           const encryptionCommand = new GetBucketEncryptionCommand({ Bucket: bucket.Name });
-          await s3Client.send(encryptionCommand);
+          await bucketClient.send(encryptionCommand);
           isEncrypted = true;
         } catch (error: any) {
           isEncrypted = error.name === 'ServerSideEncryptionConfigurationNotFoundError' ? false : null;
@@ -1421,7 +1468,7 @@ export class AWSResourceDiscoveryService {
         // "not public".
         try {
           const aclCommand = new GetBucketAclCommand({ Bucket: bucket.Name });
-          const aclResponse = await s3Client.send(aclCommand);
+          const aclResponse = await bucketClient.send(aclCommand);
           isPublic = (aclResponse.Grants || []).some(
             grant => grant.Grantee?.URI === 'http://acs.amazonaws.com/groups/global/AllUsers'
           );
@@ -1431,17 +1478,18 @@ export class AWSResourceDiscoveryService {
       } catch (error: any) {
         console.error(`[S3 Discovery] Error processing bucket ${bucket.Name}:`, error.message);
       }
+      if (!located) unlocatedBucketArns?.add(`arn:aws:s3:::${bucket.Name}`);
 
       // Real lifecycle status from AWS (see s3-lifecycle.util.ts) -- replaces
       // the old `lifecycle_rules: 0` placeholder that was never actually
       // queried. An 'unavailable' read (AccessDenied/throttling/etc.) is
       // stored as such, not silently written as "no rules".
-      const lifecycleStatus = await getBucketLifecycleStatus(s3Client, bucket.Name);
+      const lifecycleStatus = await getBucketLifecycleStatus(bucketClient, bucket.Name);
 
       // The bucket's tags, read in its own region. 'unavailable' (denied, throttled)
       // is recorded as such: the tags are then unknown, and no tag finding is raised.
       const bucketTags = await getBucketTags(
-        (target) => (target === defaultRegion || !s3ClientForRegion ? s3Client : s3ClientForRegion(target)),
+        (target) => (target === bucketRegion ? bucketClient : this.s3ClientInRegion(s3Client, defaultRegion, s3ClientForRegion, target)),
         bucket.Name,
         bucketRegion
       );
@@ -1463,7 +1511,7 @@ export class AWSResourceDiscoveryService {
         resource_id: bucket.Name,
         resource_name: bucket.Name,
         resource_type: 's3',
-        region,
+        region: bucketRegion,
         tags: bucketTags.state === 'observed' ? bucketTags.tags : {},
         metadata,
         // A bucket has no lifecycle status: see utils/resourceLifecycle.ts.
@@ -1477,6 +1525,28 @@ export class AWSResourceDiscoveryService {
     });
 
     return resources.filter((resource): resource is CreateAWSResourceInput => resource !== null);
+  }
+
+  /** Whether this organization's inventory already holds a row for `resourceArn`. */
+  private async resourceStored(client: PoolClient, organizationId: string, resourceArn: string): Promise<boolean> {
+    const { rowCount } = await client.query(
+      `SELECT 1 FROM aws_resources WHERE organization_id = $1 AND resource_arn = $2`,
+      [organizationId, resourceArn]
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  /**
+   * The S3 client for `region`: the home client for the home region (or when no
+   * regional factory is available), otherwise the regional client.
+   */
+  private s3ClientInRegion(
+    homeClient: S3Client,
+    homeRegion: string,
+    s3ClientForRegion: ((region: string) => S3Client) | undefined,
+    region: string
+  ): S3Client {
+    return region === homeRegion || !s3ClientForRegion ? homeClient : s3ClientForRegion(region);
   }
 
   /**
@@ -1515,6 +1585,10 @@ export class AWSResourceDiscoveryService {
       ON CONFLICT (organization_id, resource_arn)
       DO UPDATE SET
         resource_name = EXCLUDED.resource_name,
+        -- The region is otherwise kept as first stored. The one correction: S3 buckets
+        -- stored with GetBucketLocation's legacy 'EU' get the region it stands for.
+        region = CASE WHEN aws_resources.region = 'EU' AND EXCLUDED.region = 'eu-west-1'
+                      THEN EXCLUDED.region ELSE aws_resources.region END,
         tags = EXCLUDED.tags,
         metadata = EXCLUDED.metadata,
         status = EXCLUDED.status,
@@ -2175,7 +2249,10 @@ export class AWSResourceDiscoveryService {
         });
       }
     } catch (error: any) {
+      // A failed or partial listing is not the account's list: rethrown so the caller
+      // records the failure, upserts nothing from it, and never treats it as complete.
       console.error('[Lambda Discovery] Error:', error.message);
+      throw error;
     }
 
     return resources;
@@ -2246,7 +2323,10 @@ export class AWSResourceDiscoveryService {
         });
       }
     } catch (error: any) {
+      // A failed or partial listing is not the account's list: rethrown so the caller
+      // records the failure, upserts nothing from it, and never treats it as complete.
       console.error('[Load Balancer Discovery] Error:', error.message);
+      throw error;
     }
 
     return resources;
@@ -2280,6 +2360,11 @@ export class AWSResourceDiscoveryService {
       let pageCount = 0;
       for await (const page of paginateListDistributions({ client: cfClient }, {})) {
         pageCount++;
+        // A page that says more follow but gives no marker to read them by ends the
+        // listing early: what was read is not the account's list.
+        if (page.DistributionList?.IsTruncated && !page.DistributionList.NextMarker) {
+          throw new Error('ListDistributions returned a truncated page with no NextMarker');
+        }
         distributions.push(...(page.DistributionList?.Items || []));
       }
       this.logIfPaginated('CloudFront distributions', pageCount, distributions.length);
@@ -2318,7 +2403,10 @@ export class AWSResourceDiscoveryService {
         });
       }
     } catch (error: any) {
+      // A failed or partial listing is not the account's list: rethrown so the caller
+      // records the failure, upserts nothing from it, and never reconciles from it.
       console.error('[CloudFront Discovery] Error:', error.message);
+      throw error;
     }
 
     return resources;

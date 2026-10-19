@@ -408,6 +408,8 @@ export interface DiscoveryResult {
   resources_updated: number;
   resources_deleted: number;
   errors: string[];
+  /** Codes from services/discovery-warnings.ts: checks not run this cycle, which do not fail the job. */
+  warnings?: string[];
 }
 
 // =====================================================

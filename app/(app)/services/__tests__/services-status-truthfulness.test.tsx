@@ -304,6 +304,37 @@ describe('/services -- discovery refused by the plan limit', () => {
   })
 })
 
+describe('/services -- discovery warnings', () => {
+  const PAUSED = 'Deletion detection is paused for some resource types: your inventory exceeds 1,000 indexed resources.'
+  const discovered = (warnings: string[]) => ({ discovered: 0, updated: 1, errors: [], warnings, message: 'Discovery complete — 0 new, 1 updated' })
+
+  it('shows the deletion-detection notice when the run reports a truncated index', async () => {
+    mockGetServices.mockResolvedValue([resource('1')])
+    mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
+    mockDiscover.mockResolvedValue(discovered(['deletion_detection_paused_truncated_index']))
+    renderPage()
+    await settled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Auto Discover/ }))
+
+    expect(await screen.findByText(PAUSED)).toBeInTheDocument()
+    expectNoCutClaims()
+  })
+
+  it('shows no notice when the run reports no warning', async () => {
+    mockGetServices.mockResolvedValue([resource('1')])
+    mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
+    mockDiscover.mockResolvedValue(discovered([]))
+    renderPage()
+    await settled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Auto Discover/ }))
+
+    expect(await screen.findByText('Discovery complete — 0 new, 1 updated')).toBeInTheDocument()
+    expect(screen.queryByText(PAUSED)).not.toBeInTheDocument()
+  })
+})
+
 describe('/services -- filters', () => {
   it('the type filter offers EBS and asks the API for it', async () => {
     mockGetServices.mockResolvedValue([resource('1')])

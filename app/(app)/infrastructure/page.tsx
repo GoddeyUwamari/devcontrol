@@ -17,6 +17,7 @@ import awsServicesService from '@/lib/services/aws-services.service'
 import type { InfrastructureResource, ResourceType, PlatformDashboardStats } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/components/aws/discovery-warning-notice'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
@@ -337,6 +338,7 @@ function InfrastructureContent() {
         queryClient.invalidateQueries({ queryKey: ['account-security-findings-stats'] }),
       ])
       toast.success(`Sync complete — ${result.discovered} resources discovered`)
+      if (hasDeletionDetectionPaused(result.warnings)) toast.warning(DELETION_DETECTION_PAUSED_TEXT)
       setSyncComplete(true); setTimeout(() => setSyncComplete(false), 3000)
     } catch {
       toast.error('Sync failed — check your AWS connection')

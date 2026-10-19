@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import { CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
 import costOptimizationService from '../services/cost-optimization.service';
-import { RemediationService } from '../services/remediation.service';
+import { RemediationService, REGION_MISMATCH_PREFIX } from '../services/remediation.service';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILABLE, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
@@ -397,7 +397,7 @@ export class CostRecommendationsController {
       console.log(`Starting cost optimization analysis for org ${organizationId}...`);
 
       // Run the analysis against this org's connected AWS account
-      const { observations, riRecommendations } = await costOptimizationService.analyzeAllResources(organizationId);
+      const { observations, riRecommendations, riSucceeded } = await costOptimizationService.analyzeAllResources(organizationId);
 
       // Occurrence-lifecycle reconciliation for the 3 resource-level detectors
       // (idle EC2, unused EIPs, EBS, S3, Lambda, DynamoDB; the retired oversized-RDS
@@ -412,10 +412,13 @@ export class CostRecommendationsController {
 
       // Reserved Instance Opportunities are excluded from the occurrence
       // lifecycle -- synthetic, fleet-level aggregate identity, not a
-      // discrete resource -- and keep the prior unconditional delete+recreate
-      // behavior.
-      await repository.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
-      const riInsertedCount = await repository.createBulk(riRecommendations, organizationId);
+      // discrete resource -- and keep delete+recreate, but only when the RI
+      // check completed: a failed check leaves the stored RI rows as they are.
+      let riInsertedCount = 0;
+      if (riSucceeded) {
+        await repository.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
+        riInsertedCount = await repository.createBulk(riRecommendations, organizationId);
+      }
 
       const insertedCount = nonRIInsertedCount + riInsertedCount;
 
@@ -704,6 +707,11 @@ export class CostRecommendationsController {
       }
     } catch (error: any) {
       console.error('Error executing remediation for recommendation:', error);
+      if (error.message?.startsWith(REGION_MISMATCH_PREFIX)) {
+        // The recommendation's region contradicts the inventory: nothing was created.
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
       res.status(500).json({
         success: false,
         error: 'Failed to execute remediation',

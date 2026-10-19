@@ -21,6 +21,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
     const s3Send = jest
       .fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'no-lifecycle-bucket' }] }) // ListBuckets
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockRejectedValueOnce({ name: 'NoSuchLifecycleConfiguration' }); // GetBucketLifecycleConfiguration
     const s3Client = withMockedSend(new S3Client({ region: 'us-east-1' }), s3Send);
 
@@ -45,6 +46,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
     const s3Send = jest
       .fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'transition-only-bucket' }] })
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockResolvedValueOnce({
         Rules: [{ Status: 'Enabled', ID: 'r1', Transitions: [{ Days: 30, StorageClass: 'STANDARD_IA' }] }],
       });
@@ -66,6 +68,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
     const s3Send = jest
       .fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'sufficient-bucket' }] })
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockResolvedValueOnce({
         Rules: [{ Status: 'Enabled', ID: 'r1', Expiration: { Days: 365 } }],
       });
@@ -81,6 +84,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
     const s3Send = jest
       .fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'denied-bucket' }] })
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockRejectedValueOnce({ name: 'AccessDenied', message: 'Access Denied' });
     const s3Client = withMockedSend(new S3Client({ region: 'us-east-1' }), s3Send);
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn());
@@ -95,6 +99,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
     const s3Send = jest
       .fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'no-size-data-bucket' }] })
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockRejectedValueOnce({ name: 'NoSuchLifecycleConfiguration' });
     const s3Client = withMockedSend(new S3Client({ region: 'us-east-1' }), s3Send);
 
@@ -110,6 +115,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
     const s3Send = jest
       .fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'empty-bucket' }] })
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockRejectedValueOnce({ name: 'NoSuchLifecycleConfiguration' });
     const s3Client = withMockedSend(new S3Client({ region: 'us-east-1' }), s3Send);
 
@@ -135,6 +141,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
     const s3Send = jest
       .fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'multi-datapoint-bucket' }] })
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockRejectedValueOnce({ name: 'NoSuchLifecycleConfiguration' });
     const s3Client = withMockedSend(new S3Client({ region: 'us-east-1' }), s3Send);
 

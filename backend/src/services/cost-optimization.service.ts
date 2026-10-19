@@ -11,7 +11,7 @@ import {
   DescribeVolumesCommand,
   Instance,
 } from '@aws-sdk/client-ec2';
-import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
+import { S3Client, ListBucketsCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
 import { PoolClient } from 'pg';
 import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
@@ -43,6 +43,7 @@ import {
   DYNAMODB_ON_DEMAND_WRU_PRICE_PER_MILLION_USD,
 } from '../config/aws-pricing';
 import { getBucketLifecycleStatus, hasOnlyNonExpiringRules } from './s3-lifecycle.util';
+import { regionFromLocationConstraint } from './s3-bucket-tags.util';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 import { OptimizationRuleConfigService, EffectiveOptimizationRuleConfig } from './optimization-rule-config.service';
 import { describeDynamoDBTable, DynamoDBTableConfig } from './dynamodb-table.util';
@@ -167,8 +168,9 @@ interface OptimizationIssue {
 // failure, timeout, rate limit, etc.) -- issues is always [] in that case,
 // and MUST NOT be interpreted as "this detector found nothing." Only
 // success=true means the returned issues array is the complete observation
-// for that detector's scope this scan. Reserved Instance Opportunities are
-// deliberately NOT wrapped in this contract -- see analyzeAllResources().
+// for that detector's scope this scan. Reserved Instance Opportunities use the
+// same success contract but stay outside the occurrence lifecycle -- see
+// analyzeAllResources().
 interface DetectorResult {
   success: boolean;
   issues: OptimizationIssue[];
@@ -209,12 +211,18 @@ class CostOptimizationService {
   async analyzeAllResources(organizationId: string): Promise<{
     observations: DetectorObservation[];
     riRecommendations: CreateRecommendationRequest[];
+    /**
+     * Whether the RI check completed. Only then are riRecommendations this scan's
+     * complete answer and may replace the stored RI rows; otherwise they are [] and
+     * the stored rows must be left as they are.
+     */
+    riSucceeded: boolean;
   }> {
     const clients = await AWSClientFactory.createClients(organizationId);
 
     if (!clients.enabled) {
       console.log(`AWS not connected for org ${organizationId}, skipping cost analysis`);
-      return { observations: [], riRecommendations: [] };
+      return { observations: [], riRecommendations: [], riSucceeded: false };
     }
 
     // Enterprise Workstream 3B: resolve both configurable rules' effective
@@ -245,18 +253,21 @@ class CostOptimizationService {
     try {
       const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities] = await Promise.all([
         ec2IdleConfigResult.status === 'fulfilled'
-          ? this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch, ec2IdleConfigResult.value)
+          ? this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch, ec2IdleConfigResult.value, clients.region)
           : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
-        this.detectUnusedElasticIPs(clients.ec2),
-        this.detectUnattachedEBSVolumes(clients.ec2),
-        this.detectGp2ToGp3Migrations(clients.ec2),
-        this.detectS3LifecycleOptimization(clients.s3, clients.cloudWatch),
+        this.detectUnusedElasticIPs(clients.ec2, clients.region),
+        this.detectUnattachedEBSVolumes(clients.ec2, clients.region),
+        this.detectGp2ToGp3Migrations(clients.ec2, clients.region),
+        this.detectS3LifecycleOptimization(clients.s3, clients.cloudWatch, {
+          s3ClientForRegion: clients.getS3ClientForRegion,
+          cloudWatchClientForRegion: clients.getCloudWatchClientForRegion,
+        }),
         lambdaLowUsageConfigResult.status === 'fulfilled'
-          ? this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, lambdaLowUsageConfigResult.value)
+          ? this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, lambdaLowUsageConfigResult.value, clients.region)
           : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
         this.detectDynamoDBCapacityOptimization(organizationId, clients),
         this.detectDynamoDBOnDemandVsProvisionedOptimization(organizationId, clients),
-        this.detectReservedInstanceOpportunities(clients.ec2),
+        this.detectReservedInstanceOpportunities(clients.ec2, clients.region),
       ]);
 
       const toRequest = (issue: OptimizationIssue): CreateRecommendationRequest => ({
@@ -292,7 +303,8 @@ class CostOptimizationService {
 
       return {
         observations,
-        riRecommendations: riOpportunities.map(toRequest),
+        riRecommendations: riOpportunities.issues.map(toRequest),
+        riSucceeded: riOpportunities.success,
       };
     } catch (error) {
       console.error('Error analyzing resources:', error);
@@ -314,7 +326,8 @@ class CostOptimizationService {
   private async detectIdleEC2Instances(
     ec2Client: EC2Client,
     cloudWatchClient: CloudWatchClient,
-    config: EffectiveOptimizationRuleConfig
+    config: EffectiveOptimizationRuleConfig,
+    region: string
   ): Promise<DetectorResult> {
     try {
       const command = new DescribeInstancesCommand({
@@ -378,7 +391,7 @@ class CostOptimizationService {
               description: `This EC2 instance averaged ${cpu.average.toFixed(2)}% CPU utilization over the past ${EC2_IDLE_WINDOW_DAYS} days (${cpu.datapoints} of ${EC2_IDLE_EXPECTED_DATAPOINTS} hourly CloudWatch datapoints). It is an idle candidate: review whether it is still needed. Average CPU alone does not show peak load or memory use, so this is not a rightsizing recommendation.`,
               potentialSavings: monthlyCost,
               severity: this.calculateSeverity(monthlyCost),
-              awsRegion: instance.Placement?.AvailabilityZone?.slice(0, -1) || process.env.AWS_REGION || 'us-east-1',
+              awsRegion: region,
               metadata: {
                 instance_type: instance.InstanceType,
                 average_cpu: cpu.average,
@@ -415,7 +428,7 @@ class CostOptimizationService {
   /**
    * Detect unused Elastic IPs
    */
-  private async detectUnusedElasticIPs(ec2Client: EC2Client): Promise<DetectorResult> {
+  private async detectUnusedElasticIPs(ec2Client: EC2Client, region: string): Promise<DetectorResult> {
     try {
       const command = new DescribeAddressesCommand({});
       const response = await ec2Client.send(command);
@@ -434,7 +447,7 @@ class CostOptimizationService {
             description: `Elastic IP ${address.PublicIp} is not attached to any instance. Unattached Elastic IPs incur charges.`,
             potentialSavings: monthlyCost,
             severity: 'LOW',
-            awsRegion: process.env.AWS_REGION || 'us-east-1',
+            awsRegion: region,
             metadata: {
               public_ip: address.PublicIp,
               allocation_id: address.AllocationId,
@@ -459,7 +472,7 @@ class CostOptimizationService {
    * DescribeVolumes response, never inferred from missing tags/metadata (an
    * untagged-but-attached volume must not be flagged).
    */
-  private async detectUnattachedEBSVolumes(ec2Client: EC2Client): Promise<DetectorResult> {
+  private async detectUnattachedEBSVolumes(ec2Client: EC2Client, region: string): Promise<DetectorResult> {
     try {
       const command = new DescribeVolumesCommand({
         Filters: [
@@ -489,7 +502,7 @@ class CostOptimizationService {
           description: `This ${sizeGB}GB ${volumeType} volume is not attached to any instance. Unattached EBS volumes continue to incur storage charges.`,
           potentialSavings: monthlyCost,
           severity: this.calculateSeverity(monthlyCost),
-          awsRegion: volume.AvailabilityZone?.slice(0, -1) || process.env.AWS_REGION || 'us-east-1',
+          awsRegion: region,
           metadata: {
             volume_type: volumeType,
             size_gb: sizeGB,
@@ -535,7 +548,7 @@ class CostOptimizationService {
    * result in the volume being skipped -- never a fabricated or zero
    * savings figure.
    */
-  private async detectGp2ToGp3Migrations(ec2Client: EC2Client): Promise<DetectorResult> {
+  private async detectGp2ToGp3Migrations(ec2Client: EC2Client, region: string): Promise<DetectorResult> {
     try {
       const command = new DescribeVolumesCommand({
         Filters: [
@@ -574,7 +587,7 @@ class CostOptimizationService {
           description: `This ${sizeGB}GB gp2 volume (~${currentIops} IOPS) can migrate to gp3 at the same size for a lower storage rate, with no performance change -- it stays within gp3's included ${GP3_INCLUDED_BASELINE_IOPS.toLocaleString()} IOPS / ${GP3_INCLUDED_BASELINE_THROUGHPUT_MIBPS} MiB/s baseline, so no paid provisioned performance is required.`,
           potentialSavings: monthlySavings,
           severity: this.calculateSeverity(monthlySavings),
-          awsRegion: volume.AvailabilityZone?.slice(0, -1) || process.env.AWS_REGION || 'us-east-1',
+          awsRegion: region,
           metadata: {
             volume_type: 'gp2',
             recommended_volume_type: 'gp3',
@@ -635,16 +648,47 @@ class CostOptimizationService {
    */
   private async detectS3LifecycleOptimization(
     s3Client: S3Client,
-    cloudWatchClient: CloudWatchClient
+    cloudWatchClient: CloudWatchClient,
+    regional: {
+      s3ClientForRegion?: (region: string) => S3Client;
+      cloudWatchClientForRegion?: (region: string) => CloudWatchClient;
+    } = {}
   ): Promise<DetectorResult> {
     try {
       const response = await s3Client.send(new ListBucketsCommand({}));
       const issues: OptimizationIssue[] = [];
 
+      // A bucket's lifecycle configuration and its BucketSizeBytes metric are answered in
+      // the bucket's own region. One client per region for the whole scan.
+      const s3ByRegion = new Map<string, S3Client>();
+      const cloudWatchByRegion = new Map<string, CloudWatchClient>();
+      const inRegion = <T>(cache: Map<string, T>, build: ((region: string) => T) | undefined, fallback: T, region: string): T => {
+        if (!build) return fallback;
+        let client = cache.get(region);
+        if (!client) {
+          client = build(region);
+          cache.set(region, client);
+        }
+        return client;
+      };
+
       for (const bucket of response.Buckets || []) {
         if (!bucket.Name) continue;
 
-        const lifecycleStatus = await getBucketLifecycleStatus(s3Client, bucket.Name);
+        // Without the bucket's region its lifecycle and size cannot be read where they
+        // live: the bucket is skipped, never guessed into the org's region.
+        let bucketRegion: string;
+        try {
+          const location = await s3Client.send(new GetBucketLocationCommand({ Bucket: bucket.Name }));
+          bucketRegion = regionFromLocationConstraint(location.LocationConstraint);
+        } catch (error: any) {
+          console.error(`Error reading the region of bucket ${bucket.Name}; skipped:`, error?.name || error);
+          continue;
+        }
+        const bucketS3 = inRegion(s3ByRegion, regional.s3ClientForRegion, s3Client, bucketRegion);
+        const bucketCloudWatch = inRegion(cloudWatchByRegion, regional.cloudWatchClientForRegion, cloudWatchClient, bucketRegion);
+
+        const lifecycleStatus = await getBucketLifecycleStatus(bucketS3, bucket.Name);
 
         let lifecycleState: 'no_lifecycle_configuration' | 'incomplete_lifecycle_rules' | null = null;
         let enabledRuleCount: number | undefined;
@@ -662,7 +706,7 @@ class CostOptimizationService {
 
         if (!lifecycleState) continue;
 
-        const sizeGB = await this.getBucketStandardStorageGB(cloudWatchClient, bucket.Name);
+        const sizeGB = await this.getBucketStandardStorageGB(bucketCloudWatch, bucket.Name);
         if (sizeGB === null || sizeGB <= 0) continue; // no reliable size signal or genuinely empty -- nothing to recommend
 
         const monthlySavingsCeiling = sizeGB * (S3_STANDARD_PER_GB_MONTH_USD - S3_STANDARD_IA_PER_GB_MONTH_USD);
@@ -679,7 +723,7 @@ class CostOptimizationService {
           description,
           potentialSavings: monthlySavingsCeiling,
           severity: this.calculateSeverity(monthlySavingsCeiling),
-          awsRegion: process.env.AWS_REGION || 'us-east-1',
+          awsRegion: bucketRegion,
           metadata: {
             lifecycle_state: lifecycleState,
             enabled_rule_count: enabledRuleCount,
@@ -764,7 +808,8 @@ class CostOptimizationService {
     organizationId: string,
     lambdaClient: LambdaClient,
     cloudWatchClient: CloudWatchClient,
-    config: EffectiveOptimizationRuleConfig
+    config: EffectiveOptimizationRuleConfig,
+    region: string
   ): Promise<DetectorResult> {
     try {
       const response = await lambdaClient.send(new ListFunctionsCommand({}));
@@ -792,7 +837,7 @@ class CostOptimizationService {
             : `This function was invoked only ${invocations} time(s) over the last ${LAMBDA_USAGE_WINDOW_DAYS} days. Estimated cost below is based on its actual invocation count and average duration in that window, not an assumed usage level.`,
           potentialSavings: monthlyCost,
           severity: this.calculateSeverity(monthlyCost),
-          awsRegion: process.env.AWS_REGION || 'us-east-1',
+          awsRegion: region,
           metadata: {
             invocations_30d: invocations,
             avg_duration_ms: avgDurationMs,
@@ -1773,8 +1818,9 @@ class CostOptimizationService {
    * finding says that and nothing more.
    */
   private async detectReservedInstanceOpportunities(
-    ec2Client: EC2Client
-  ): Promise<OptimizationIssue[]> {
+    ec2Client: EC2Client,
+    region: string
+  ): Promise<DetectorResult> {
     try {
       // Get running instances
       const instancesCommand = new DescribeInstancesCommand({
@@ -1832,7 +1878,7 @@ class CostOptimizationService {
             description: `${uncoveredCount} uncovered × ${instanceType}: ${count} running, ${reservedCount} covered by an active Reserved Instance of the same type. This does not account for Savings Plans, which may already cover these instances, so no dollar estimate is given.`,
             potentialSavings: 0,
             severity: 'LOW',
-            awsRegion: process.env.AWS_REGION || 'us-east-1',
+            awsRegion: region,
             metadata: {
               instance_type: instanceType,
               running_count: count,
@@ -1845,10 +1891,10 @@ class CostOptimizationService {
         }
       }
 
-      return issues;
+      return { success: true, issues };
     } catch (error) {
       console.error('Error detecting RI opportunities:', error);
-      return [];
+      return { success: false, issues: [] };
     }
   }
 

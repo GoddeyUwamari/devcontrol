@@ -38,6 +38,8 @@ export interface DiscoverResult {
   discovered: number
   updated: number
   errors: string[]
+  /** Discovery warning codes (components/aws/discovery-warning-notice.tsx). */
+  warnings: string[]
   jobId?: string
   message: string
 }
@@ -77,6 +79,7 @@ const awsServicesService = {
       discovered: number
       updated: number
       errors: string[]
+      warnings?: string[]
       jobId?: string
       message: string
       error?: string
@@ -86,6 +89,7 @@ const awsServicesService = {
       discovered: res.data.discovered,
       updated:    res.data.updated,
       errors:     res.data.errors ?? [],
+      warnings:   res.data.warnings ?? [],
       jobId:      res.data.jobId,
       message:    res.data.message,
     }

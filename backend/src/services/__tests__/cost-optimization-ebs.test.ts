@@ -32,7 +32,7 @@ describe('CostOptimizationService.detectUnattachedEBSVolumes (ebs_unattached)', 
     });
     const ec2Client = withMockedSend(new EC2Client({ region: 'us-east-1' }), send);
 
-    const result = await (costOptimizationService as any).detectUnattachedEBSVolumes(ec2Client);
+    const result = await (costOptimizationService as any).detectUnattachedEBSVolumes(ec2Client, 'us-east-1');
 
     expect(result.success).toBe(true);
     expect(result.issues).toHaveLength(1);

@@ -209,8 +209,9 @@ describe('a connected organization', () => {
     expect(costs.total).toBe(42.5);
     expect(mockConstructed.map((c) => c.client)).toEqual(['STSClient', 'CostExplorerClient']);
     const [sts, costExplorer] = mockConstructed;
-    // The Cost Explorer client: the customer's temporary credentials, passed explicitly.
-    expect(costExplorer.config).toEqual({ region: 'eu-west-1', credentials: TEMPORARY });
+    // The Cost Explorer client: the customer's temporary credentials, passed explicitly,
+    // in us-east-1 (Cost Explorer is global) although the account's region is eu-west-1.
+    expect(costExplorer.config).toEqual({ region: 'us-east-1', credentials: TEMPORARY });
     // The STS client is the platform identity and is used only to assume the organization's role.
     expect(mockStsSend).toHaveBeenCalledTimes(1);
     expect(mockStsSend.mock.calls[0][0].input).toMatchObject({ RoleArn: ACCOUNT_ROW.role_arn, ExternalId: ACCOUNT_ROW.external_id });
@@ -232,7 +233,7 @@ describe('a connected organization', () => {
     expect(trend).toHaveLength(1);
     expect(trend[0]).toMatchObject({ date: '2026-10-01', total: 3 });
     expect(mockConstructed.map((c) => c.client)).toEqual(['STSClient', 'CostExplorerClient']);
-    expect(mockConstructed[1].config).toEqual({ region: 'eu-west-1', credentials: TEMPORARY });
+    expect(mockConstructed[1].config).toEqual({ region: 'us-east-1', credentials: TEMPORARY });
   });
 
   it('one organization\'s cached result is never served for another, and each fetch assumes its own role', async () => {

@@ -163,7 +163,9 @@ describe('detectReservedInstanceOpportunities: a coverage gap with no dollar fig
       .mockResolvedValueOnce({ ReservedInstances: reserved });
     const ec2Client = new EC2Client({ region: 'us-east-1' });
     (ec2Client as any).send = send;
-    return (costOptimizationService as any).detectReservedInstanceOpportunities(ec2Client);
+    const result = await (costOptimizationService as any).detectReservedInstanceOpportunities(ec2Client, 'us-east-1');
+    expect(result.success).toBe(true);
+    return result.issues;
   }
 
   it('reports "N uncovered × type" with no potential savings, no savings basis and no savings claim', async () => {

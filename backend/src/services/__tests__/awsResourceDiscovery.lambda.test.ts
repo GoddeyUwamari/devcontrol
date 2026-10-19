@@ -145,14 +145,27 @@ describe('AWSResourceDiscoveryService.discoverLambdaFunctions', () => {
     expect(resources).toHaveLength(0);
   });
 
-  it('a ListFunctions failure returns an empty list rather than throwing (matches every other discoverer\'s error handling)', async () => {
+  it('a ListFunctions failure is raised, never returned as an empty list', async () => {
     const lambdaSend = jest.fn().mockRejectedValueOnce(new Error('ServiceUnavailable'));
     const lambdaClient = withMockedSend(new LambdaClient({ region: 'us-east-1' }), lambdaSend);
     const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn());
 
-    const resources = await (service as any).discoverLambdaFunctions('org-lambda-8', lambdaClient, cwClient, 'us-east-1');
+    await expect(
+      (service as any).discoverLambdaFunctions('org-lambda-8', lambdaClient, cwClient, 'us-east-1')
+    ).rejects.toThrow('ServiceUnavailable');
+  });
 
-    expect(resources).toEqual([]);
+  it('a ListFunctions failure on a later page is raised: the functions of the earlier page are not returned as the list', async () => {
+    const lambdaSend = jest
+      .fn()
+      .mockResolvedValueOnce({ Functions: [{ FunctionArn: 'arn:aws:lambda:us-east-1:1:function:first-page', FunctionName: 'first-page' }], NextMarker: 'page-2' })
+      .mockRejectedValueOnce(new Error('ThrottlingException'));
+    const lambdaClient = withMockedSend(new LambdaClient({ region: 'us-east-1' }), lambdaSend);
+    const cwClient = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn());
+
+    await expect(
+      (service as any).discoverLambdaFunctions('org-lambda-9', lambdaClient, cwClient, 'us-east-1')
+    ).rejects.toThrow('ThrottlingException');
   });
 
   // Security Truthfulness #40: is_encrypted is never derived from environment variables

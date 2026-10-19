@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice';
 import { deriveAnalysisStatus, pickLatestAnalysis, type AnalysisStatusKey, type AnalysisSource, type NormalizedAnalysis } from './costOptimizationStatus';
 
 // Fetching more than this in one page is an edge case; the KPI tile (sourced
@@ -388,6 +389,8 @@ export default function CostOptimizationPage() {
                 activeCount={activeCount}
                 latestAnalysis={latestAnalysis}
               />
+              {/* The latest scheduled discovery's warnings. */}
+              <DiscoveryWarningNotice warnings={discoveryJobs?.[0]?.warnings} className="mt-3" />
             </CardContent>
           </Card>
 

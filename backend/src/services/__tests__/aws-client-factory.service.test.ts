@@ -310,6 +310,17 @@ describe('a connected organization', () => {
     expect(clients.accountId).toBe('123456789012');
   });
 
+  it('pins the global services to us-east-1 whatever the account region: Cost Explorer, CloudFront, IAM', async () => {
+    connected();
+
+    const clients = await AWSClientFactory.createClients('org-connected');
+
+    expect(await clients.ec2.config.region()).toBe('eu-west-1');
+    expect(await clients.costExplorer.config.region()).toBe('us-east-1');
+    expect(await clients.cloudFront.config.region()).toBe('us-east-1');
+    expect(await clients.iam.config.region()).toBe('us-east-1');
+  });
+
   it('with no platform credentials in the environment the clients are still the assumed role\'s, never ambient', async () => {
     setEnvironment('development', false);
     connected();

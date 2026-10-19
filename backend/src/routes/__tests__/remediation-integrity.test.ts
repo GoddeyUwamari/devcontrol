@@ -7,6 +7,10 @@
  *   - approve, reject, execute and rollback stay admin/owner only.
  *   - A referenced recommendation must belong to the caller's organization;
  *     another organization's is answered exactly like one that does not exist.
+ *     It must also be a recommendation for the workflow's resource.
+ *   - A workflow's region comes from the inventory (or its recommendation),
+ *     never from a caller-supplied value nothing confirms. Execute refuses a
+ *     workflow whose region cannot be established with 409.
  *   - A workflow has one target. action_params.resource_id is set from
  *     resourceId, a different value is refused, and execute, rollback and the
  *     self-protection guards all act on that one target.
@@ -21,7 +25,7 @@
  * the STS and EC2 clients -- no test reaches AWS.
  *
  * POST /:id/execute is limited to 10 requests an hour per caller address, and
- * every request here comes from one address: this file sends 9.
+ * every request here comes from one address: this file sends 10, the limit.
  */
 import express from 'express';
 import http from 'http';
@@ -123,13 +127,22 @@ async function buildOrg() {
 type Org = Awaited<ReturnType<typeof buildOrg>>;
 type Role = 'owner' | 'admin' | 'member' | 'viewer';
 
-async function insertRecommendation(orgId: string): Promise<string> {
+async function insertRecommendation(orgId: string, resourceId: string = instanceId()): Promise<string> {
   const { rows } = await pool.query(
     `INSERT INTO cost_recommendations (organization_id, resource_id, resource_type, issue, severity)
      VALUES ($1, $2, 'EC2', 'Idle Instance', 'LOW') RETURNING id`,
-    [orgId, instanceId()]
+    [orgId, resourceId]
   );
   return rows[0].id as string;
+}
+
+/** An inventory row for an EC2 instance in `region`. */
+async function insertInventoryInstance(orgId: string, resourceId: string, region: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status)
+     VALUES ($1, $2, $3, 'ec2', $4, 'running')`,
+    [orgId, `arn:aws:ec2:${region}:123456789012:instance/${resourceId}`, resourceId, region]
+  );
 }
 
 /** A stored workflow, written directly so it can be in any state. */
@@ -254,6 +267,7 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.query('DELETE FROM remediation_workflows WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM cost_recommendations WHERE organization_id = ANY($1)', [createdOrgIds]);
+  await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [createdOrgIds]);
   await pool.query(
     'DELETE FROM organization_memberships WHERE organization_id = ANY($1) OR user_id = ANY($2)',
@@ -291,10 +305,11 @@ const act = (org: Org, role: Role, id: string, action: string) =>
 
 describe('POST /api/remediation: recommendation ownership', () => {
   it('accepts a recommendation of the caller’s own organization', async () => {
-    const recommendationId = await insertRecommendation(home.orgId);
+    const resourceId = instanceId();
+    const recommendationId = await insertRecommendation(home.orgId, resourceId);
     const before = await rowCounts(home.orgId);
 
-    const response = await create(home, 'member', draft({ recommendationId }));
+    const response = await create(home, 'member', draft({ resourceId, recommendationId }));
 
     expect(response.status).toBe(201);
     const { data } = await response.json();
@@ -323,6 +338,17 @@ describe('POST /api/remediation: recommendation ownership', () => {
     expect(await rowCounts(other.orgId)).toEqual({ workflows: 0, audits: 0 });
   });
 
+  it('refuses a recommendation for a different resource with 400, writing nothing', async () => {
+    const recommendationId = await insertRecommendation(home.orgId);
+    const before = await rowCounts(home.orgId);
+
+    const response = await create(home, 'member', draft({ recommendationId }));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/^TARGET_MISMATCH: recommendationId must be a recommendation for resourceId/);
+    expect(await rowCounts(home.orgId)).toEqual(before);
+  });
+
   it.each(['not-a-uuid', '', 42, { id: NONEXISTENT_ID }])(
     'refuses the malformed recommendationId %p with 400, writing nothing',
     async (recommendationId) => {
@@ -344,8 +370,9 @@ describe('POST /api/remediation: recommendation ownership', () => {
 });
 
 describe('POST /api/remediation: one target', () => {
-  it('accepts action params that name the same resource', async () => {
+  it('accepts action params that name the same resource, taking the region from the inventory', async () => {
     const resourceId = instanceId();
+    await insertInventoryInstance(home.orgId, resourceId, 'eu-west-1');
 
     const response = await create(
       home,
@@ -359,6 +386,8 @@ describe('POST /api/remediation: one target', () => {
     expect(data.action_params).toEqual({ resource_id: resourceId, region: 'eu-west-1' });
   });
 
+  // The resource is in neither the inventory nor a recommendation, so a
+  // supplied region has nothing to confirm it and is not stored.
   it.each([undefined, {}, { region: 'eu-west-1' }])(
     'sets the action target from resourceId when action params are %p',
     async (actionParams) => {
@@ -367,7 +396,7 @@ describe('POST /api/remediation: one target', () => {
       const response = await create(home, 'member', draft({ resourceId, actionParams }));
 
       expect(response.status).toBe(201);
-      expect((await response.json()).data.action_params).toEqual({ ...actionParams, resource_id: resourceId });
+      expect((await response.json()).data.action_params).toEqual({ resource_id: resourceId });
     }
   );
 
@@ -415,8 +444,11 @@ describe('execute acts on the workflow’s one target', () => {
   it('stops the resource the workflow names, after the tag guard inspected that same resource', async () => {
     process.env.ENABLE_AUTOMATED_REMEDIATION = 'true';
     const resourceId = instanceId();
+    // The region is the inventory's (it is never taken from the environment or the caller).
+    await insertInventoryInstance(home.orgId, resourceId, 'us-east-1');
     const created = await create(home, 'member', draft({ resourceId }));
-    const { id } = (await created.json()).data;
+    const { id, action_params } = (await created.json()).data;
+    expect(action_params).toEqual({ resource_id: resourceId, region: 'us-east-1' });
     expect((await act(home, 'admin', id, 'approve')).status).toBe(200);
 
     const response = await act(home, 'owner', id, 'execute');
@@ -431,6 +463,21 @@ describe('execute acts on the workflow’s one target', () => {
     for (const describe of describes) expect(describe.input.InstanceIds).toEqual([resourceId]);
     expect(ec2Send.mock.calls[0][0]).toBeInstanceOf(DescribeInstancesCommand);
     expect((await workflowRow(id)).status).toBe('completed');
+  });
+
+  it('refuses a workflow whose region is unknown with 409, reaching no AWS', async () => {
+    process.env.ENABLE_AUTOMATED_REMEDIATION = 'true';
+    // A supplied region with nothing to confirm it is not stored.
+    const created = await create(home, 'member', draft({ actionParams: { region: 'us-east-1' } }));
+    const { id } = (await created.json()).data;
+    expect((await act(home, 'admin', id, 'approve')).status).toBe(200);
+
+    const response = await act(home, 'owner', id, 'execute');
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED: The workflow's resource region is unknown/);
+    expectNoAwsCall();
+    expect((await workflowRow(id)).status).toBe('approved');
   });
 
   it('refuses a stored workflow whose action target differs from its resource_id, reaching no AWS', async () => {
@@ -635,6 +682,34 @@ describe('rollback obeys the same safety boundary as execute', () => {
     expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED:.*does not match its resource_id/);
     expectNoAwsCall();
     expect((await workflowRow(id)).status).toBe('completed');
+  });
+
+  it('refuses a workflow whose region is unknown with 409, reaching no AWS', async () => {
+    process.env.ENABLE_AUTOMATED_REMEDIATION = 'true';
+    const resourceId = instanceId();
+    const { id } = await completedWorkflow({ resourceId, actionParams: { resource_id: resourceId } });
+
+    const response = await act(home, 'admin', id, 'rollback');
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED: The workflow's resource region is unknown/);
+    expectNoAwsCall();
+    expect((await workflowRow(id)).status).toBe('completed');
+  });
+
+  it('binds a missing region from the inventory, then restarts the resource', async () => {
+    process.env.ENABLE_AUTOMATED_REMEDIATION = 'true';
+    const resourceId = instanceId();
+    await insertInventoryInstance(home.orgId, resourceId, 'eu-west-1');
+    const { id } = await completedWorkflow({ resourceId, actionParams: { resource_id: resourceId } });
+
+    const response = await act(home, 'admin', id, 'rollback');
+
+    expect(response.status).toBe(200);
+    expect(awsCommands(StartInstancesCommand)).toHaveLength(1);
+    const row = await workflowRow(id);
+    expect(row.action_params).toEqual({ resource_id: resourceId, region: 'eu-west-1' });
+    expect(row.status).toBe('rolled_back');
   });
 
   it('cannot act on the self-protected instance', async () => {

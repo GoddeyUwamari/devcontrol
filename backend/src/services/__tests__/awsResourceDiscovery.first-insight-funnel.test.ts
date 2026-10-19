@@ -130,6 +130,7 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
         { issue: 'Unused Elastic IP', success: true, recommendations: [] },
       ],
       riRecommendations: [],
+      riSucceeded: true,
     });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 1 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
@@ -154,6 +155,7 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
         { issue: 'Unused Elastic IP', success: true, recommendations: [] },
       ],
       riRecommendations: [],
+      riSucceeded: true,
     });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
@@ -177,6 +179,7 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
         { issue: 'Unused Elastic IP', success: true, recommendations: [] },
       ],
       riRecommendations: [],
+      riSucceeded: true,
     });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 1 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
@@ -201,6 +204,7 @@ describe('AWSResourceDiscoveryService.discoverAllResources -> first_insight_gene
         { issue: 'Unused Elastic IP', success: true, recommendations: [] },
       ],
       riRecommendations: [],
+      riSucceeded: true,
     });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 1 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);

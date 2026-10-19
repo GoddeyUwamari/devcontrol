@@ -394,7 +394,7 @@ class AWSCostService {
    */
   static async createForOrg(organizationId: string, dbPool: Pool): Promise<AWSCostService> {
     const result = await dbPool.query(
-      "SELECT role_arn, external_id, region FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1",
+      "SELECT role_arn, external_id FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1",
       [organizationId]
     )
 
@@ -402,7 +402,7 @@ class AWSCostService {
       throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`)
     }
 
-    const { role_arn: roleArn, external_id: externalId, region } = result.rows[0]
+    const { role_arn: roleArn, external_id: externalId } = result.rows[0]
 
     const assumed = await assumeRoleAsPlatform('us-east-1', {
       RoleArn: roleArn,
@@ -418,7 +418,9 @@ class AWSCostService {
     }
 
     const instance = new AWSCostService(dbPool)
-    instance.costExplorerClient = new CostExplorerClient({ region, credentials })
+    // Cost Explorer is a global service answered in us-east-1, whatever region the
+    // account's resources are scanned in.
+    instance.costExplorerClient = new CostExplorerClient({ region: 'us-east-1', credentials })
 
     return instance
   }

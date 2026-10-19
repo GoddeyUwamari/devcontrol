@@ -11,6 +11,7 @@ import awsAccountsService from '@/lib/services/aws-accounts.service'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SeverityBadge } from '@/components/ui/severity-badge'
+import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice'
 import { statusNeedsAttention } from './statusAttention'
 import { connectedAccountsCaption } from './accountCaption'
 
@@ -120,6 +121,8 @@ export default function ServicesPage() {
   const [isDiscovering,     setIsDiscovering]     = useState(false)
   const [discoveryComplete, setDiscoveryComplete] = useState(false)
   const [discoveryMsg,      setDiscoveryMsg]      = useState<string | null>(null)
+  // The last discovery run's warnings, kept until the next run.
+  const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([])
   const [services,          setServices]          = useState<AWSService[]>([])
   const [stats,             setStats]             = useState<AWSServicesStats | null>(null)
   const [isLoading,         setIsLoading]         = useState(false)
@@ -203,10 +206,11 @@ export default function ServicesPage() {
       setTimeout(() => setDiscoveryComplete(false), 4000)
       return
     }
-    setIsDiscovering(true); setDiscoveryComplete(false); setDiscoveryMsg(null)
+    setIsDiscovering(true); setDiscoveryComplete(false); setDiscoveryMsg(null); setDiscoveryWarnings([])
     try {
       const result = await awsServicesService.discoverServices()
       setDiscoveryMsg(result.message); setDiscoveryComplete(true)
+      setDiscoveryWarnings(result.warnings)
       setTimeout(() => { setDiscoveryComplete(false); setDiscoveryMsg(null) }, 6000)
       await fetchServices()
       // A scan can flip compliance_scan_completed, which changes isPreliminary —
@@ -329,6 +333,8 @@ export default function ServicesPage() {
           </button>
         </div>
       </div>
+
+      <DiscoveryWarningNotice warnings={discoveryWarnings} className="mb-4" />
 
       {/* ── RESOURCE STATUS STRIP ── */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 mb-4">

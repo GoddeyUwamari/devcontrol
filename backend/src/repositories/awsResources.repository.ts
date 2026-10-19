@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { activeComplianceFindings } from '../utils/frameworkApplicability';
+import { splitDiscoveryMessage } from '../services/discovery-warnings';
 import {
   AWSResource,
   ResourceFilters,
@@ -395,7 +396,8 @@ export class AWSResourcesRepository {
   }
 
   /**
-   * Get all discovery jobs
+   * Get all discovery jobs. Each job's stored warnings (services/discovery-warnings.ts)
+   * are returned as `warnings`, and error_message holds only its errors.
    */
   async getDiscoveryJobs(organizationId: string, limit: number = 10) {
     const result = await this.pool.query(
@@ -406,6 +408,9 @@ export class AWSResourcesRepository {
       [organizationId, limit]
     );
 
-    return result.rows;
+    return result.rows.map((row) => {
+      const { errorMessage, warnings } = splitDiscoveryMessage(row.error_message);
+      return { ...row, error_message: errorMessage, warnings };
+    });
   }
 }
