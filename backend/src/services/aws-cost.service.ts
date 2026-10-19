@@ -7,6 +7,7 @@ import {
 import { Pool } from 'pg'
 import { pool } from '../config/database'
 import { assumeRoleAsPlatform } from './platform-sts'
+import { requireEligibleAwsAccount } from '../repositories/aws-accounts.repository'
 import type { SpendProvenance } from './ai-context-contract'
 
 
@@ -388,26 +389,17 @@ class AWSCostService {
 
   /**
    * Create an AWSCostService instance scoped to a specific org via STS AssumeRole.
-   * Queries aws_accounts for the org's role_arn / external_id / region, then assumes
+   * Reads the org's one eligible account (aws-accounts.repository.ts), then assumes
    * the role and builds the Cost Explorer client with the temporary credentials.
    * The STS client is the platform's own identity and is used only for AssumeRole.
    */
   static async createForOrg(organizationId: string, dbPool: Pool): Promise<AWSCostService> {
-    const result = await dbPool.query(
-      "SELECT role_arn, external_id FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1",
-      [organizationId]
-    )
-
-    if (result.rows.length === 0) {
-      throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`)
-    }
-
-    const { role_arn: roleArn, external_id: externalId } = result.rows[0]
+    const { role_arn: roleArn, external_id: externalId } = await requireEligibleAwsAccount(dbPool, organizationId)
 
     const assumed = await assumeRoleAsPlatform('us-east-1', {
       RoleArn: roleArn,
       RoleSessionName: 'DevControlCostSession',
-      ExternalId: externalId,
+      ExternalId: externalId ?? undefined,
       DurationSeconds: 3600,
     }, `AWSCostService org ${organizationId}`)
 

@@ -33,6 +33,7 @@ jest.mock('../../middleware/rateLimiter', () => ({
 }));
 
 import { createRemediationRoutes } from '../../routes/remediation.routes';
+import { PLACEHOLDER_ACCOUNT_ROW } from './helpers/scan-source';
 
 const RIGHTSIZE_WORKFLOW = {
   id: 'wf-rs',
@@ -194,6 +195,7 @@ describe('other remediation actions are unaffected', () => {
     const pool = makeFakePool(STOP_WORKFLOW);
     const service = new RemediationService(pool);
     jest.spyOn(service as any, 'getAWSCredentials').mockResolvedValue({ accessKeyId: 'x', secretAccessKey: 'y', sessionToken: 'z', region: 'us-east-1' });
+    jest.spyOn(service as any, 'resolveAccount').mockResolvedValue(PLACEHOLDER_ACCOUNT_ROW);
     jest.spyOn(service as any, 'assertNotDevControlInfrastructureByTag').mockResolvedValue(undefined);
     const stop = jest.spyOn(service as any, 'stopInstance').mockResolvedValue({ log: 'stopped', rollbackSnapshotId: 'snap-1', rollbackAvailable: true });
     const rightsize = jest.spyOn(service as any, 'rightsizeInstance');
@@ -210,6 +212,7 @@ describe('other remediation actions are unaffected', () => {
     const pool = makeFakePool({ ...STOP_WORKFLOW, action_type: 'delete_snapshot', resource_id: 'snap-x', action_params: { resource_id: 'snap-x', region: 'us-east-1' } });
     const service = new RemediationService(pool);
     jest.spyOn(service as any, 'getAWSCredentials').mockResolvedValue({ accessKeyId: 'x', secretAccessKey: 'y', sessionToken: 'z', region: 'us-east-1' });
+    jest.spyOn(service as any, 'resolveAccount').mockResolvedValue(PLACEHOLDER_ACCOUNT_ROW);
     jest.spyOn(service as any, 'assertNotDevControlInfrastructureByTag').mockResolvedValue(undefined);
     jest.spyOn(service as any, 'deleteSnapshot').mockResolvedValue({ log: 'deleted' });
 

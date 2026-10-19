@@ -20,6 +20,7 @@ import { Pool, PoolClient } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { OrphanedResourceDetectorService } from '../orphanedResourceDetector';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { securityAuditService } from '../securityAudit.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
@@ -89,6 +90,7 @@ async function latestJobError(orgId: string): Promise<string | null> {
 }
 
 function mockCollaborators(onCreateClients?: () => Promise<void> | void) {
+  stubScanSource();
   jest.spyOn(AWSClientFactory, 'createClients').mockImplementation(async () => {
     await onCreateClients?.();
     return {

@@ -12,6 +12,8 @@ import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE }
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
 import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/frameworkApplicability';
 import { lifecycleStateFor } from '../utils/resourceLifecycle';
+import { countEligibleAwsAccounts } from '../repositories/aws-accounts.repository';
+import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 
 const router = Router();
 const controller = new ServicesController();
@@ -518,16 +520,12 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     const stats = serviceStatsFrom(rows);
 
     // Connected means what the connect flow means: the organization has an
-    // aws_accounts row. POST /api/aws/accounts writes the only one (status
-    // 'active'), refuses a second as "already has a connected AWS account"
-    // (UNIQUE org_id), and GET /api/aws/accounts lists exactly these rows. The
+    // eligible aws_accounts row (status 'active', aws-accounts.repository.ts).
+    // POST /api/aws/accounts writes the only one (status 'active') and refuses
+    // a second as "already has a connected AWS account" (UNIQUE org_id). The
     // count is independent of the inventory: resources left from an earlier
     // connection, or seeded, do not make an account connected.
-    const { rows: accountRows } = await pool.query(
-      'SELECT COUNT(*)::int AS connected FROM aws_accounts WHERE org_id = $1',
-      [orgId]
-    );
-    const awsAccountsConnected: number = accountRows[0].connected;
+    const awsAccountsConnected = await countEligibleAwsAccounts(pool, orgId);
 
     // No real monitoring data source exists yet — avg_uptime is intentionally null
     // rather than a fabricated figure.
@@ -567,6 +565,10 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
     });
   } catch (err: any) {
     console.error('[Services/discover]', err);
+    if (isAwsAccountAmbiguous(err)) {
+      res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
+      return;
+    }
     if (err.message?.startsWith('AWS_NOT_CONNECTED:')) {
       res.status(409).json({ error: 'aws_not_connected', message: 'Please connect your AWS account in Settings to run audits.' });
       return;

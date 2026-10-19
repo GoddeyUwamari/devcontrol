@@ -7,6 +7,7 @@ import { AWSClientFactory } from './aws-client-factory.service'
 import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
+import { findEligibleAwsAccount, hasEligibleAwsAccount } from '../repositories/aws-accounts.repository'
 import { fetchMetricDataBatch, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult } from './cloudwatch-metric-batch.util'
 import { describeAuroraClusters, AuroraClusterInfo } from './aurora-cluster.util'
 
@@ -677,16 +678,10 @@ export class CloudWatchService {
     return `${organizationId}:${resolvedRange}`
   }
 
+  /** The org's one eligible account (aws-accounts.repository.ts); more than one is refused. */
   private async getAccount(organizationId: string): Promise<{ account_id: string; nickname: string | null } | null> {
-    const result = await pool.query(
-      `SELECT account_id, nickname
-       FROM aws_accounts
-       WHERE org_id = $1 AND status = 'active'
-       ORDER BY connected_at DESC
-       LIMIT 1`,
-      [organizationId]
-    )
-    return result.rows[0] ?? null
+    const account = await findEligibleAwsAccount(pool, organizationId)
+    return account ? { account_id: account.account_id as string, nickname: account.nickname } : null
   }
 
   private async getResourceInventory(organizationId: string): Promise<InventoryRow[]> {
@@ -2188,11 +2183,7 @@ export class CloudWatchService {
 
   async hasConnectedAccount(organizationId: string): Promise<boolean> {
     try {
-      const result = await pool.query(
-        `SELECT id FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1`,
-        [organizationId]
-      )
-      return result.rows.length > 0
+      return await hasEligibleAwsAccount(pool, organizationId)
     } catch {
       return false
     }

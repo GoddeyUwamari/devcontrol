@@ -16,6 +16,7 @@
  */
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
+import { findEligibleAwsAccount } from './aws-accounts.repository';
 import {
   FrameworkEvaluationRows,
   frameworkEvaluationStorageAvailable,
@@ -160,10 +161,7 @@ export class ServicesIntelligenceRepository {
       [organizationId]
     );
 
-    const account = await executor.query<{ region: string | null }>(
-      'SELECT region FROM aws_accounts WHERE org_id = $1 LIMIT 1',
-      [organizationId]
-    );
+    const account = await findEligibleAwsAccount(executor, organizationId);
 
     const lastJob = await executor.query<IntelligenceDiscoveryJobRow>(
       `SELECT id, status, started_at, completed_at
@@ -199,8 +197,8 @@ export class ServicesIntelligenceRepository {
       resources: resources.rows,
       services: services.rows,
       recommendations: recommendations.rows,
-      primaryRegion: account.rows[0]?.region ?? null,
-      hasConnectedAccount: account.rows.length > 0,
+      primaryRegion: account?.region ?? null,
+      hasConnectedAccount: account !== null,
       lastDiscoveryJob: lastJob.rows[0] ?? null,
       inventoryRefreshedAt: refreshed.rows[0]?.completed_at ?? null,
     };

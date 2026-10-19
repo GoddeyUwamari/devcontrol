@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import { CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
+import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import costOptimizationService from '../services/cost-optimization.service';
 import { RemediationService, REGION_MISMATCH_PREFIX } from '../services/remediation.service';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILABLE, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
@@ -485,6 +486,12 @@ export class CostRecommendationsController {
       }
 
       // Check for specific AWS errors
+      if (isAwsAccountAmbiguous(error)) {
+        const response: ApiResponse = { success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE };
+        res.status(409).json(response);
+        return;
+      }
+
       if (isPlatformAwsCredentialsUnavailable(error)) {
         const response: ApiResponse = { success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE };
         res.status(503).json(response);

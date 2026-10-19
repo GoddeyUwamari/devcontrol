@@ -1,6 +1,7 @@
 /**
  * AWS Client Factory
- * Creates AWS SDK clients via STS AssumeRole using the org's stored role ARN.
+ * Creates AWS SDK clients via STS AssumeRole using the role ARN of the org's
+ * one eligible account (repositories/aws-accounts.repository.ts).
  *
  * The platform's own identity -- whatever the SDK's default credential chain
  * resolves -- is used for exactly one thing here: as the caller identity for
@@ -35,6 +36,7 @@ import { BackupClient } from '@aws-sdk/client-backup';
 import { SecurityHubClient } from '@aws-sdk/client-securityhub';
 import { pool } from '../config/database';
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable } from './platform-sts';
+import { requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
 
 export interface AWSClients {
   costExplorer: CostExplorerClient;
@@ -104,57 +106,53 @@ export interface AWSClients {
 }
 
 /** Extracts the 12-digit account ID from an IAM role/user ARN, e.g. arn:aws:iam::123456789012:role/x */
-function parseAccountIdFromArn(arn: string): string | undefined {
+export function parseAccountIdFromArn(arn: string): string | undefined {
   return arn.match(/^arn:aws:iam::(\d{12}):/)?.[1];
+}
+
+/** The assumed role's temporary credentials, as every client is built with them. */
+export interface TemporaryCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken: string;
+}
+
+/**
+ * How a set of clients from createClients() was obtained, so a scan context
+ * (scan-context.ts) can assume the same role again before the credentials
+ * expire. `credentials` is the one object every client was built with: the
+ * SDK signs each request with that object's current values, so replacing its
+ * values refreshes every client at once.
+ */
+export interface AssumedRoleSource {
+  organizationId: string;
+  account: AwsAccountRow;
+  region: string;
+  credentials: TemporaryCredentials;
+  expiration: Date | undefined;
+}
+
+const assumedRoleSources = new WeakMap<AWSClients, AssumedRoleSource>();
+
+/** The source of clients built by createClients(); undefined for any other object. */
+export function assumedRoleSourceOf(clients: AWSClients): AssumedRoleSource | undefined {
+  return assumedRoleSources.get(clients);
 }
 
 export class AWSClientFactory {
   static async createClients(organizationId: string): Promise<AWSClients> {
-    // Look up the org's connected account
-    const result = await pool.query(
-      `SELECT role_arn, external_id, region FROM aws_accounts WHERE org_id = $1 LIMIT 1`,
-      [organizationId]
-    );
-
-    // No connected account means no clients, in every environment: nothing
-    // organization-scoped ever runs on the platform's own credentials.
-    if (result.rows.length === 0) {
-      throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`);
-    }
-
-    const { role_arn, external_id, region } = result.rows[0];
+    // The org's one eligible account (aws-accounts.repository.ts). None means no
+    // clients, in every environment: nothing organization-scoped ever runs on
+    // the platform's own credentials. More than one is refused, never guessed.
+    const account = await requireEligibleAwsAccount(pool, organizationId);
+    const { role_arn, external_id, region } = account;
 
     if (!external_id) {
       throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} aws_accounts row is missing external_id`);
     }
 
     const awsRegion = region ?? 'us-east-1';
-
-    // Assume the customer's role as the platform's own identity, resolved by
-    // the SDK's default credential chain (the instance role in production).
-    let tempCredentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string };
-    try {
-      const assumed = await assumeRoleAsPlatform(awsRegion, {
-        RoleArn: role_arn,
-        RoleSessionName: `devcontrol-${organizationId.slice(0, 8)}`,
-        ExternalId: external_id,
-        DurationSeconds: 3600,
-      }, `AWSClientFactory org ${organizationId}`);
-
-      const creds = assumed.Credentials!;
-      tempCredentials = {
-        accessKeyId: creds.AccessKeyId!,
-        secretAccessKey: creds.SecretAccessKey!,
-        sessionToken: creds.SessionToken!,
-      };
-    } catch (err: unknown) {
-      // The platform's own identity is unavailable: not the organization's
-      // connection, so never reported as AWS_NOT_CONNECTED.
-      if (isPlatformAwsCredentialsUnavailable(err)) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[AWSClientFactory] AssumeRole failed for org ${organizationId}:`, msg);
-      throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`);
-    }
+    const { credentials: tempCredentials, expiration } = await this.assumeAccountRole(organizationId, account, awsRegion);
 
     const config = {
       region: awsRegion,
@@ -163,7 +161,7 @@ export class AWSClientFactory {
 
     console.log(`✅ Using STS AssumeRole credentials for org ${organizationId} (region: ${awsRegion})`);
 
-    return {
+    const clients: AWSClients = {
       costExplorer: new CostExplorerClient({ ...config, region: 'us-east-1' }), // Cost Explorer is global
       ec2: new EC2Client(config),
       rds: new RDSClient(config),
@@ -193,6 +191,46 @@ export class AWSClientFactory {
       getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: tempCredentials }),
       getS3ClientForRegion: (region: string) => new S3Client({ region, credentials: tempCredentials }),
     };
+    assumedRoleSources.set(clients, { organizationId, account, region: awsRegion, credentials: tempCredentials, expiration });
+    return clients;
+  }
+
+  /**
+   * Assumes the account's role as the platform's own identity, resolved by
+   * the SDK's default credential chain (the instance role in production).
+   * The platform identity being unavailable is rethrown as is; any other
+   * failure is the organization's connection, AWS_NOT_CONNECTED.
+   */
+  static async assumeAccountRole(
+    organizationId: string,
+    account: Pick<AwsAccountRow, 'role_arn' | 'external_id'>,
+    region: string
+  ): Promise<{ credentials: TemporaryCredentials; expiration: Date | undefined }> {
+    try {
+      const assumed = await assumeRoleAsPlatform(region, {
+        RoleArn: account.role_arn,
+        RoleSessionName: `devcontrol-${organizationId.slice(0, 8)}`,
+        ExternalId: account.external_id ?? undefined,
+        DurationSeconds: 3600,
+      }, `AWSClientFactory org ${organizationId}`);
+
+      const creds = assumed.Credentials!;
+      return {
+        credentials: {
+          accessKeyId: creds.AccessKeyId!,
+          secretAccessKey: creds.SecretAccessKey!,
+          sessionToken: creds.SessionToken!,
+        },
+        expiration: creds.Expiration,
+      };
+    } catch (err: unknown) {
+      // The platform's own identity is unavailable: not the organization's
+      // connection, so never reported as AWS_NOT_CONNECTED.
+      if (isPlatformAwsCredentialsUnavailable(err)) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[AWSClientFactory] AssumeRole failed for org ${organizationId}:`, msg);
+      throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`);
+    }
   }
 
   static async validateCredentials(organizationId: string): Promise<boolean> {

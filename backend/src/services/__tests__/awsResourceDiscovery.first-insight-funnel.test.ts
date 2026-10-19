@@ -22,6 +22,7 @@
 import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import type { RecommendationStats } from '../../types';
@@ -85,6 +86,7 @@ function fakeStats(totalPotentialSavings: number): RecommendationStats {
  * call is ever attempted.
  */
 function mockDisabledAwsClients() {
+  stubScanSource();
   return jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
     enabled: true,
     region: 'us-east-1',

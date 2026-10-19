@@ -23,6 +23,7 @@ import { BackupClient } from '@aws-sdk/client-backup';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
@@ -180,6 +181,7 @@ function mockAws(scenario: Scenario) {
     }),
   });
   const empty = {} as any;
+  stubScanSource();
   jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
     enabled: true, region: REGION, accountId: ACCOUNT_ID,
     ec2, s3, s3Control: undefined, backup, resourceExplorer,
