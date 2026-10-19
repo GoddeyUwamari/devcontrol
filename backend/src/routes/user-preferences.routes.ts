@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
-import { unsubscribeRateLimiter } from '../middleware/rateLimiter';
+import { unsubscribeRateLimiter, unsubscribeSignedUserRateLimiter } from '../middleware/rateLimiter';
 import {
   getEmailPreferences,
   updateEmailPreferences,
@@ -31,8 +31,10 @@ router.put('/display', authenticateToken, updateDisplayPreferences);
 // Weekly summary unsubscribe (public, signed token from the email link).
 // CAN-SPAM Act compliance - must be accessible without login.
 // GET only shows a confirm page; POST unsubscribes (confirm button or
-// RFC 8058 one-click).
-router.get('/unsubscribe', unsubscribeResponseHeaders, unsubscribeRateLimiter, showUnsubscribeConfirm);
-router.post('/unsubscribe', unsubscribeResponseHeaders, unsubscribeRateLimiter, confirmUnsubscribe);
+// RFC 8058 one-click). Valid signed tokens are limited per user, everything
+// else per IP (see rateLimiter.ts).
+const unsubscribeLimiters = [unsubscribeSignedUserRateLimiter, unsubscribeRateLimiter];
+router.get('/unsubscribe', unsubscribeResponseHeaders, ...unsubscribeLimiters, showUnsubscribeConfirm);
+router.post('/unsubscribe', unsubscribeResponseHeaders, ...unsubscribeLimiters, confirmUnsubscribe);
 
 export default router;

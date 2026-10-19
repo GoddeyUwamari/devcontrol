@@ -146,7 +146,7 @@ function expectOnlyWeeklyOff(after: Flags) {
 
 async function call(
   ip: string,
-  init: { method: 'GET' | 'POST'; path?: string; query?: string; form?: Record<string, string>; multipart?: Record<string, string> }
+  init: { method: 'GET' | 'POST' | 'PUT'; path?: string; query?: string; form?: Record<string, string>; multipart?: Record<string, string> }
 ) {
   const url = `${baseUrl}${init.path ?? PATH}${init.query !== undefined ? `?token=${encodeURIComponent(init.query)}` : ''}`;
   let body: string | FormData | undefined;
@@ -378,15 +378,59 @@ describe('weekly summary unsubscribe', () => {
     expect(await flags(user.id)).toEqual(afterFirst);
   });
 
-  it('rate limit: failed attempts are limited per IP; valid signed requests are never limited or counted', async () => {
+  it('rate limit: a valid signed token is limited per verified user, never per IP', async () => {
     const user = await insertUser();
     const signed = signUnsubscribeToken(user.id, 'weekly-summary');
+    const ip = nextIp();
+    const query = jest.spyOn(pool, 'query');
+    const handlerUpdates = () => query.mock.calls.filter(([sql]) => String(sql).includes('UPDATE users')).length;
 
-    const successIp = nextIp();
-    for (let i = 0; i < 35; i++) {
-      expect((await call(successIp, { method: 'GET', query: signed })).status).toBe(200);
+    // 1000 replays of one token from one IP reach the handler at most 10 times.
+    const statuses: number[] = [];
+    let lastLimited: Awaited<ReturnType<typeof call>> | undefined;
+    for (let i = 0; i < 1000; i++) {
+      const res = await call(ip, { method: 'POST', query: signed, form: ONE_CLICK });
+      statuses.push(res.status);
+      if (res.status === 429) lastLimited = res;
     }
-    expect((await call(successIp, { method: 'POST', query: signed, form: ONE_CLICK })).status).toBe(200);
+    expect(statuses.filter(s => s === 200)).toHaveLength(10);
+    expect(statuses.filter(s => s === 429)).toHaveLength(990);
+    expect(handlerUpdates()).toBeLessThanOrEqual(10);
+    for (const [header, value] of NO_LEAK_HEADERS) {
+      expect(lastLimited?.headers.get(header)).toBe(value);
+    }
+
+    // The budget belongs to the user: another IP is limited too ...
+    expect((await call(nextIp(), { method: 'GET', query: signed })).status).toBe(429);
+    query.mockRestore();
+
+    // ... and another user's valid token from the same IP still succeeds.
+    const other = await insertUser();
+    const otherToken = signUnsubscribeToken(other.id, 'weekly-summary');
+    expect((await call(ip, { method: 'POST', query: otherToken, form: ONE_CLICK })).status).toBe(200);
+    expectOnlyWeeklyOff(await flags(other.id));
+  }, 120000);
+
+  it('rate limit: GET, confirm POST and one-click POST share the per-user budget of 10', async () => {
+    const user = await insertUser();
+    const signed = signUnsubscribeToken(user.id, 'weekly-summary');
+    const ip = nextIp();
+    const requests = [
+      ...Array.from({ length: 4 }, () => call(ip, { method: 'GET', query: signed })),
+      ...Array.from({ length: 3 }, () => call(ip, { method: 'POST', form: { token: signed } })),
+      ...Array.from({ length: 3 }, () => call(ip, { method: 'POST', query: signed, form: ONE_CLICK })),
+    ];
+    for (const res of await Promise.all(requests)) {
+      expect(res.status).toBe(200);
+    }
+    expect((await call(ip, { method: 'GET', query: signed })).status).toBe(429);
+    expect((await call(ip, { method: 'POST', form: { token: signed } })).status).toBe(429);
+    expect((await call(ip, { method: 'POST', query: signed, form: ONE_CLICK })).status).toBe(429);
+  });
+
+  it('rate limit: invalid and legacy tokens are limited per IP, and 30 failures from an IP do not block a valid token from it', async () => {
+    const user = await insertUser();
+    const signed = signUnsubscribeToken(user.id, 'weekly-summary');
 
     // 30 failures from one (e.g. a mail provider's shared) IP exhaust its budget ...
     const failIp = nextIp();
@@ -400,12 +444,10 @@ describe('weekly summary unsubscribe', () => {
     }
 
     // ... but a valid signed request from that same IP still goes through.
-    const other = await insertUser();
-    const otherToken = signUnsubscribeToken(other.id, 'weekly-summary');
-    expect((await call(failIp, { method: 'POST', query: otherToken, form: ONE_CLICK })).status).toBe(200);
-    expectOnlyWeeklyOff(await flags(other.id));
-    expect((await call(failIp, { method: 'GET', query: otherToken })).status).toBe(200);
-    expect((await call(failIp, { method: 'POST', form: { token: otherToken } })).status).toBe(200);
+    expect((await call(failIp, { method: 'POST', query: signed, form: ONE_CLICK })).status).toBe(200);
+    expectOnlyWeeklyOff(await flags(user.id));
+    expect((await call(failIp, { method: 'GET', query: signed })).status).toBe(200);
+    expect((await call(failIp, { method: 'POST', form: { token: signed } })).status).toBe(200);
     expect((await call(failIp, { method: 'POST', form: { token: forge(signed) } })).status).toBe(429);
 
     // Legacy POSTs count even when they succeed.
@@ -442,5 +484,9 @@ describe('weekly summary unsubscribe', () => {
       }
     }
     expectOnlyWeeklyOff(await flags(user.id));
+
+    // The exemption is GET and POST on the exact path only.
+    expect((await call(ip, { method: 'PUT' })).status).toBe(429);
+    expect((await call(ip, { method: 'GET', path: '/api//user/preferences/unsubscribe', query: signed })).status).toBe(429);
   });
 });
