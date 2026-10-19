@@ -430,6 +430,18 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
       if (causes.status === 'critical') attentionReasons.failed++;
     }
 
+    // Connected means what the connect flow means: the organization has an
+    // aws_accounts row. POST /api/aws/accounts writes the only one (status
+    // 'active'), refuses a second as "already has a connected AWS account"
+    // (UNIQUE org_id), and GET /api/aws/accounts lists exactly these rows. The
+    // count is independent of the inventory: resources left from an earlier
+    // connection, or seeded, do not make an account connected.
+    const { rows: accountRows } = await pool.query(
+      'SELECT COUNT(*)::int AS connected FROM aws_accounts WHERE org_id = $1',
+      [orgId]
+    );
+    const awsAccountsConnected: number = accountRows[0].connected;
+
     // No real monitoring data source exists yet — avg_uptime is intentionally null
     // rather than a fabricated figure.
     res.json({
@@ -438,6 +450,7 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
         total, healthy, needs_attention: needsAttention, avg_uptime: null,
         findings_by_severity: findingsBySeverity,
         attention_reasons: attentionReasons,
+        aws_accounts_connected: awsAccountsConnected,
       },
     });
   } catch (err: any) {

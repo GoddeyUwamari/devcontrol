@@ -30,6 +30,7 @@ import { ComplianceScannerService } from '../complianceScanner';
 import { InfrastructureController } from '../../controllers/infrastructure.controller';
 import servicesRouter from '../../routes/services.routes';
 import { pool as appPool } from '../../config/database';
+import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -282,6 +283,11 @@ async function measure(orgId: string) {
 beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
+});
+
+// /api/services/stats reads it; CI's bootstrap does not create it.
+beforeAll(async () => {
+  await ensureSharedFixtureTable(pool, 'aws_accounts');
 });
 
 afterEach(() => {
