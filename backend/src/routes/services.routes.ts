@@ -280,13 +280,13 @@ const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr
  * comes first and every filter is ANDed after it (RLS sits underneath as a
  * second layer, not a replacement).
  */
-function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: string; values: any[] } {
+function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: string; values: unknown[] } {
   // Services list/stats represent current infrastructure — a soft-terminated
   // resource (see resourceReconciliation.service.ts) is no longer a "service" and
   // must not surface here at all, let alone as a false critical/needs_attention
   // alarm via mapStatus's terminated->critical mapping below.
   const conditions: string[] = ['r.organization_id = $1', "r.status != 'terminated'"];
-  const values: any[] = [orgId];
+  const values: unknown[] = [orgId];
   let p = 2;
 
   if (filters.type && filters.type !== 'all') {
@@ -319,7 +319,12 @@ function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: st
 }
 
 /** The columns the needs-attention predicate reads. */
-type AttentionInputs = { type: string; raw_status: string | null; compliance_issues: any; cost_recommendations: any };
+type AttentionInputs = {
+  type: string;
+  raw_status: string | null;
+  compliance_issues: Parameters<typeof deriveAttention>[1];
+  cost_recommendations: Parameters<typeof deriveAttention>[2];
+};
 
 /**
  * The one needs-attention predicate. The list's ?needs_attention filter, the
