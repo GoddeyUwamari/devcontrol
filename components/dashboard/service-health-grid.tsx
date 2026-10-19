@@ -452,7 +452,7 @@ export function ServiceHealthGrid({
             <p className="text-sm text-muted-foreground mt-1">
               {search || statusFilter !== 'all'
                 ? 'Try adjusting your filters'
-                : 'No services are registered yet'}
+                : 'Add your first service to get started'}
             </p>
           </div>
         ) : viewMode === 'grid' ? (
