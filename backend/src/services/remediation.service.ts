@@ -130,27 +130,35 @@ function assertTargetBound(workflow: { resource_id: string; action_params: Recor
 
 // A workflow acts in its resource's region: action_params.region, taken at
 // creation from the discovered resource (or, when the resource is not in the
-// inventory, its recommendation). Never the platform's environment region.
+// inventory, its recommendation). Never the platform's environment region, and
+// never a region the caller supplied with nothing to confirm it.
 // RemediationService.bindTargetRegion() binds it when a workflow is created and
-// refuses a region that contradicts the inventory; assertTargetRegion() refuses, before
-// any AWS call, a stored workflow whose region is missing or not a region.
+// refuses a region that contradicts the inventory; resolveTargetRegion() refuses,
+// before any AWS call, a stored workflow whose region cannot be established.
 export const REGION_MISMATCH_PREFIX = 'REGION_MISMATCH:';
+
+// Execute and rollback refusals for region reasons. The routes answer them with
+// 409: the request is valid, the workflow's state does not allow it.
+export const REGION_UNKNOWN_MESSAGE =
+  "REMEDIATION_BLOCKED: The workflow's resource region is unknown. No AWS action was taken.";
+export const REGION_AMBIGUOUS_MESSAGE =
+  "REMEDIATION_BLOCKED: The inventory holds the workflow's resource in more than one region. No AWS action was taken.";
+export const REGION_INVENTORY_MISMATCH_MESSAGE =
+  "REMEDIATION_BLOCKED: The workflow's region does not match the resource's region in the inventory. No AWS action was taken.";
+
+export function isRegionBlocked(message: unknown): boolean {
+  return (
+    message === REGION_UNKNOWN_MESSAGE ||
+    message === REGION_AMBIGUOUS_MESSAGE ||
+    message === REGION_INVENTORY_MISMATCH_MESSAGE
+  );
+}
 
 /** An AWS region name, such as us-east-1 or us-gov-west-1. */
 const AWS_REGION_PATTERN = /^[a-z]{2}(-[a-z]+)+-\d+$/;
 
 export function isAwsRegion(value: unknown): value is string {
   return typeof value === 'string' && AWS_REGION_PATTERN.test(value);
-}
-
-function assertTargetRegion(workflow: { action_params: Record<string, any> }): string {
-  const region = workflow.action_params?.region;
-  if (!isAwsRegion(region)) {
-    throw new Error(
-      "REMEDIATION_BLOCKED: The workflow's resource region is unknown. No AWS action was taken."
-    );
-  }
-  return region;
 }
 
 export class RemediationService {
@@ -392,8 +400,10 @@ export class RemediationService {
    * Sets action_params.region from the resource: the inventory's region for it,
    * or, when the inventory does not hold it, its recommendation's region. A
    * supplied region that contradicts that source, or an inventory that holds
-   * the id in more than one region, is refused. With no source and none
-   * supplied, the workflow is created without a region and cannot be executed.
+   * the id in more than one region, is refused. A supplied region with no source
+   * to confirm it is not stored: the workflow is created without a region, and
+   * execute/rollback look it up again (resolveTargetRegion). A recommendation
+   * must be this organization's and for this resource.
    */
   private async bindTargetRegion(
     organizationId: string,
@@ -401,7 +411,9 @@ export class RemediationService {
     recommendationId: string | undefined,
     actionParams: Record<string, any>
   ): Promise<Record<string, any>> {
-    const supplied = actionParams.region;
+    // null is no region supplied (a recommendation with no region passes its own aws_region).
+    const { region, ...rest } = actionParams;
+    const supplied = region ?? undefined;
     if (supplied !== undefined && !isAwsRegion(supplied)) {
       throw new Error(`${REGION_MISMATCH_PREFIX} actionParams.region must be an AWS region`);
     }
@@ -412,29 +424,57 @@ export class RemediationService {
     }
 
     let known: string | undefined = inventory[0];
-    if (!known && recommendationId) {
+    if (recommendationId) {
       const result = await this.pool.query(
-        `SELECT aws_region FROM cost_recommendations WHERE id = $1 AND organization_id = $2`,
+        `SELECT resource_id, aws_region FROM cost_recommendations WHERE id = $1 AND organization_id = $2`,
         [recommendationId, organizationId]
       );
-      const recommended = result.rows[0]?.aws_region;
-      if (isAwsRegion(recommended)) known = recommended;
+      const recommendation = result.rows[0];
+      if (!recommendation || recommendation.resource_id !== resourceId) {
+        throw new Error(`${TARGET_MISMATCH_PREFIX} recommendationId must be a recommendation for resourceId`);
+      }
+      if (!known && isAwsRegion(recommendation.aws_region)) known = recommendation.aws_region;
     }
 
     if (known && supplied !== undefined && supplied !== known) {
       throw new Error(`${REGION_MISMATCH_PREFIX} actionParams.region must be the resource's region (${known})`);
     }
-    return known ? { ...actionParams, region: known } : actionParams;
+    return known ? { ...rest, region: known } : rest;
   }
 
-  /** Refuses, before any AWS call, a region the inventory contradicts. */
-  private async assertRegionMatchesInventory(organizationId: string, resourceId: string, region: string): Promise<void> {
-    const inventory = await this.inventoryRegions(organizationId, resourceId);
-    if (inventory.length > 0 && (inventory.length > 1 || inventory[0] !== region)) {
-      throw new Error(
-        "REMEDIATION_BLOCKED: The workflow's region does not match the resource's region in the inventory. No AWS action was taken."
+  /**
+   * The region execute and rollback act in, established before any AWS call:
+   *
+   *   - a stored region must be a region the inventory does not contradict;
+   *   - with no stored region, the inventory's one region for the resource is
+   *     bound and stored on the workflow; none or more than one is refused.
+   *
+   * Sets action_params.region on `workflow` so the action handlers use it.
+   */
+  private async resolveTargetRegion(workflow: WorkflowRow, organizationId: string): Promise<string> {
+    const stored = workflow.action_params?.region;
+    const inventory = await this.inventoryRegions(organizationId, workflow.resource_id);
+
+    if (stored === undefined || stored === null || stored === '') {
+      if (inventory.length === 0) throw new Error(REGION_UNKNOWN_MESSAGE);
+      if (inventory.length > 1) throw new Error(REGION_AMBIGUOUS_MESSAGE);
+      const region = inventory[0];
+      await this.pool.query(
+        `UPDATE remediation_workflows
+            SET action_params = jsonb_set(action_params, '{region}', to_jsonb($1::text)), updated_at = NOW()
+          WHERE id = $2 AND organization_id = $3`,
+        [region, workflow.id, organizationId]
       );
+      workflow.action_params = { ...workflow.action_params, region };
+      return region;
     }
+
+    if (!isAwsRegion(stored)) throw new Error(REGION_UNKNOWN_MESSAGE);
+    // A workflow created before regions were bound may carry another region.
+    if (inventory.length > 0 && (inventory.length > 1 || inventory[0] !== stored)) {
+      throw new Error(REGION_INVENTORY_MISMATCH_MESSAGE);
+    }
+    return stored;
   }
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -638,15 +678,12 @@ export class RemediationService {
     // The handlers act on action_params.resource_id; the guards inspect
     // resource_id. Refuse unless they are the same resource.
     assertTargetBound(workflow);
-    // ...and act in that resource's region, which must be known.
-    const region = assertTargetRegion(workflow);
 
     // Global kill-switch — must be checked before any AWS SDK call fires.
     this.assertAutomatedRemediationEnabled(workflow, 'execute');
 
-    // The stored region must still agree with the inventory (a workflow
-    // created before regions were bound may carry another region).
-    await this.assertRegionMatchesInventory(organizationId, workflow.resource_id, region);
+    // ...and act in that resource's region, which must be established.
+    const region = await this.resolveTargetRegion(workflow, organizationId);
 
     // Mark as executing
     await this.updateStatus(
@@ -759,9 +796,8 @@ export class RemediationService {
     // the credential fetch or any AWS call.
     this.assertNotDevControlInfrastructureByIdentifiers(workflow.organization_id, workflow.resource_id);
     assertTargetBound(workflow);
-    const region = assertTargetRegion(workflow);
     this.assertAutomatedRemediationEnabled(workflow, 'rollback');
-    await this.assertRegionMatchesInventory(organizationId, workflow.resource_id, region);
+    const region = await this.resolveTargetRegion(workflow, organizationId);
 
     const creds = await this.getAWSCredentials(organizationId);
     let log = this.appendLog(workflow.execution_log, `Rollback initiated by ${executedBy}`);

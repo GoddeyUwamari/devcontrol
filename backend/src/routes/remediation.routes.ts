@@ -17,6 +17,7 @@ import {
   ACTION_UNAVAILABLE_PREFIX,
   TARGET_MISMATCH_PREFIX,
   REGION_MISMATCH_PREFIX,
+  isRegionBlocked,
 } from '../services/remediation.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 
@@ -109,6 +110,14 @@ export function createRemediationRoutes(pool: Pool): Router {
         const recommendation = await recommendations.findById(recommendationId, orgId(req));
         if (!recommendation) {
           res.status(404).json({ success: false, error: 'Recommendation not found' });
+          return;
+        }
+        // ...and be a recommendation for the resource the workflow acts on.
+        if (recommendation.resource_id !== resourceId) {
+          res.status(400).json({
+            success: false,
+            error: `${TARGET_MISMATCH_PREFIX} recommendationId must be a recommendation for resourceId`,
+          });
           return;
         }
       }
@@ -219,7 +228,8 @@ export function createRemediationRoutes(pool: Pool): Router {
           err.message.includes('not found') ? 404 :
           err.message.includes('must be approved') ? 400 :
           err.message.startsWith('DRY_RUN_MODE') ? 400 :
-          err.message.startsWith(ACTION_UNAVAILABLE_PREFIX) ? 400 : 500;
+          err.message.startsWith(ACTION_UNAVAILABLE_PREFIX) ? 400 :
+          isRegionBlocked(err.message) ? 409 : 500;
         res.status(status).json({ success: false, error: err.message });
       }
     }
@@ -239,7 +249,9 @@ export function createRemediationRoutes(pool: Pool): Router {
       res.json({ success: true, data: workflow });
     } catch (err: any) {
       console.error('[Remediation] rollback error:', err);
-      const status = err.message.includes('not found') ? 404 : 400;
+      const status =
+        err.message.includes('not found') ? 404 :
+        isRegionBlocked(err.message) ? 409 : 400;
       res.status(status).json({ success: false, error: err.message });
     }
   });
