@@ -106,6 +106,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
         { issue: 'Unused Elastic IP', success: true, recommendations: [] },
       ],
       riRecommendations: [],
+      riSucceeded: true,
     });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 3 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
@@ -130,7 +131,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
     const orgId = await insertOrg();
     const controller = new CostRecommendationsController();
 
-    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [] });
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 2 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
@@ -200,7 +201,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
     const orgId = await insertOrg();
     const controller = new CostRecommendationsController();
 
-    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [] });
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
@@ -227,6 +228,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
         { issue: 'Unused Elastic IP', success: true, recommendations: [] },
       ],
       riRecommendations: [],
+      riSucceeded: true,
     });
     // reconcileActiveRecommendations, deleteActiveByIssue, createBulk, getStats
     // all run FOR REAL here (unmocked) -- this is what proves the existing
@@ -297,7 +299,7 @@ describe('CostRecommendationsController.getAnalysisRuns', () => {
     const orgB = await insertOrg();
     const controller = new CostRecommendationsController();
 
-    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [] });
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);

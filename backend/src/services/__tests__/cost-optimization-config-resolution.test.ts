@@ -50,7 +50,7 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
     jest.spyOn(costOptimizationService as any, 'detectS3LifecycleOptimization').mockResolvedValue({ success: true, issues: [] });
     jest.spyOn(costOptimizationService as any, 'detectDynamoDBCapacityOptimization').mockResolvedValue({ success: true, issues: [] });
     jest.spyOn(costOptimizationService as any, 'detectDynamoDBOnDemandVsProvisionedOptimization').mockResolvedValue({ success: true, issues: [] });
-    jest.spyOn(costOptimizationService as any, 'detectReservedInstanceOpportunities').mockResolvedValue([]);
+    jest.spyOn(costOptimizationService as any, 'detectReservedInstanceOpportunities').mockResolvedValue({ success: true, issues: [] });
   });
 
   afterEach(() => {
@@ -82,7 +82,7 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
 
     await costOptimizationService.analyzeAllResources('org-2');
 
-    expect(ec2DetectorSpy).toHaveBeenCalledWith(expect.anything(), expect.anything(), resolvedConfig);
+    expect(ec2DetectorSpy).toHaveBeenCalledWith(expect.anything(), expect.anything(), resolvedConfig, 'us-east-1');
   });
 
   it('(3) passes the resolved Lambda config object directly into detectLowUsageLambdaFunctions', async () => {
@@ -95,7 +95,7 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
 
     await costOptimizationService.analyzeAllResources('org-3');
 
-    expect(lambdaDetectorSpy).toHaveBeenCalledWith('org-3', expect.anything(), expect.anything(), resolvedConfig);
+    expect(lambdaDetectorSpy).toHaveBeenCalledWith('org-3', expect.anything(), expect.anything(), resolvedConfig, 'us-east-1');
   });
 
   it('(4) a configuration-resolution failure for EC2 fails only that category (success:false), and the detector is never invoked with a guessed default', async () => {

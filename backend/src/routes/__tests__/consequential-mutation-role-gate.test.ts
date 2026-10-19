@@ -198,7 +198,7 @@ beforeEach(() => {
   factorySpy = jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new Error('AWS must not be reached'));
   analyzeSpy = jest
     .spyOn(costOptimizationService, 'analyzeAllResources')
-    .mockResolvedValue({ observations: [], riRecommendations: [] } as never);
+    .mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true } as never);
   reconcileSpy = jest
     .spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations')
     .mockResolvedValue({ insertedCount: 0 } as never);

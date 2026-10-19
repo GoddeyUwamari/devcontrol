@@ -70,6 +70,7 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
   s3_lifecycle: async () => {
     const s3 = withMockedSend(new S3Client({ region: 'us-east-1' }), jest.fn()
       .mockResolvedValueOnce({ Buckets: [{ Name: 'guard-bucket' }] })
+      .mockResolvedValueOnce({}) // GetBucketLocation: no constraint, us-east-1
       .mockRejectedValueOnce({ name: 'NoSuchLifecycleConfiguration' }));
     const cw = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({
       Datapoints: [{ Average: 100 * GB, Timestamp: new Date() }],

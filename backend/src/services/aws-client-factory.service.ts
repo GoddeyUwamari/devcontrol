@@ -164,7 +164,7 @@ export class AWSClientFactory {
     console.log(`✅ Using STS AssumeRole credentials for org ${organizationId} (region: ${awsRegion})`);
 
     return {
-      costExplorer: new CostExplorerClient(config),
+      costExplorer: new CostExplorerClient({ ...config, region: 'us-east-1' }), // Cost Explorer is global
       ec2: new EC2Client(config),
       rds: new RDSClient(config),
       s3: new S3Client(config),

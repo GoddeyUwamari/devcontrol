@@ -16,6 +16,7 @@ import {
   RemediationService,
   ACTION_UNAVAILABLE_PREFIX,
   TARGET_MISMATCH_PREFIX,
+  REGION_MISMATCH_PREFIX,
 } from '../services/remediation.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 
@@ -131,7 +132,8 @@ export function createRemediationRoutes(pool: Pool): Router {
       console.error('[Remediation] create error:', err);
       if (
         err.message?.startsWith(ACTION_UNAVAILABLE_PREFIX) ||
-        err.message?.startsWith(TARGET_MISMATCH_PREFIX)
+        err.message?.startsWith(TARGET_MISMATCH_PREFIX) ||
+        err.message?.startsWith(REGION_MISMATCH_PREFIX)
       ) {
         res.status(400).json({ success: false, error: err.message });
         return;

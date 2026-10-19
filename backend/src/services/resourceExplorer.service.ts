@@ -108,8 +108,21 @@ export interface NormalizedResourceEntry {
   tagsState: TagsState;
 }
 
+/**
+ * The most results one Search returns, however many pages it spans ("The operation can
+ * return only the first 1,000 results", SearchInput.QueryString in the SDK's model docs).
+ * A result that reaches it may have been cut off.
+ */
+export const SEARCH_RESULT_LIMIT = 1000;
+
+/**
+ * `complete: false` means the search succeeded but may not hold every matching resource:
+ * AWS reported its count as not exhaustive (Count.Complete false), or the result reached
+ * SEARCH_RESULT_LIMIT. Its resources are real, but a resource missing from it is not
+ * evidence of absence, so it must never drive reconciliation.
+ */
 export type SearchResult =
-  | { success: true; resources: REResource[] }
+  | { success: true; resources: REResource[]; complete: boolean }
   | { success: false; error: string };
 
 export interface NormalizedSearchResult {
@@ -126,15 +139,25 @@ export class ResourceExplorerService {
    * Never throws — a failed/errored call (no index/view provisioned, throttling,
    * permission error, network failure, a failure partway through pagination, etc.)
    * comes back as `{ success: false }` so callers never mistake "the query broke"
-   * for "the query succeeded and found nothing."
+   * for "the query succeeded and found nothing." A successful search that may have
+   * been cut off comes back with `complete: false` (see SearchResult).
    */
   async search(client: ResourceExplorer2Client, region: string): Promise<SearchResult> {
     try {
       const resources: REResource[] = [];
+      let countIncomplete = false;
       for await (const page of paginateSearch({ client }, { QueryString: '' })) {
         resources.push(...(page.Resources || []));
+        if (page.Count?.Complete === false) countIncomplete = true;
       }
-      return { success: true, resources };
+      const complete = !countIncomplete && resources.length < SEARCH_RESULT_LIMIT;
+      if (!complete) {
+        console.error(
+          `[ResourceExplorer] Search in region ${region} may be truncated ` +
+            `(${resources.length} results, count ${countIncomplete ? 'not exhaustive' : 'at the result limit'})`
+        );
+      }
+      return { success: true, resources, complete };
     } catch (error: any) {
       console.error(`[ResourceExplorer] Search failed for region ${region}:`, error.message);
       return { success: false, error: error.message || 'Unknown Resource Explorer error' };

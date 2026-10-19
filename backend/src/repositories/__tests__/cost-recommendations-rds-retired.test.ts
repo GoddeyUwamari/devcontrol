@@ -92,7 +92,7 @@ function neutralizeOtherDetectors() {
   ]) {
     jest.spyOn(costOptimizationService as any, detector).mockResolvedValue({ success: true, issues: [] });
   }
-  jest.spyOn(costOptimizationService as any, 'detectReservedInstanceOpportunities').mockResolvedValue([]);
+  jest.spyOn(costOptimizationService as any, 'detectReservedInstanceOpportunities').mockResolvedValue({ success: true, issues: [] });
 }
 
 afterEach(() => {

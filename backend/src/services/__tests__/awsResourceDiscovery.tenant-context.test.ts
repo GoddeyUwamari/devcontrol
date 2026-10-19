@@ -100,7 +100,7 @@ function mockCollaborators(onCreateClients?: () => Promise<void> | void) {
       resourceExplorer: {}, backup: {},
     } as any;
   });
-  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [] });
+  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
   jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
   jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
   jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);

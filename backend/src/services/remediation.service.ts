@@ -8,6 +8,7 @@
 
 import { Pool } from 'pg';
 import { assumeRoleAsPlatform } from './platform-sts';
+import { regionFromLocationConstraint } from './s3-bucket-tags.util';
 import {
   EC2Client,
   StopInstancesCommand,
@@ -125,6 +126,31 @@ function assertTargetBound(workflow: { resource_id: string; action_params: Recor
       'REMEDIATION_BLOCKED: Workflow action target does not match its resource_id. No AWS action was taken.'
     );
   }
+}
+
+// A workflow acts in its resource's region: action_params.region, taken at
+// creation from the discovered resource (or, when the resource is not in the
+// inventory, its recommendation). Never the platform's environment region.
+// RemediationService.bindTargetRegion() binds it when a workflow is created and
+// refuses a region that contradicts the inventory; assertTargetRegion() refuses, before
+// any AWS call, a stored workflow whose region is missing or not a region.
+export const REGION_MISMATCH_PREFIX = 'REGION_MISMATCH:';
+
+/** An AWS region name, such as us-east-1 or us-gov-west-1. */
+const AWS_REGION_PATTERN = /^[a-z]{2}(-[a-z]+)+-\d+$/;
+
+export function isAwsRegion(value: unknown): value is string {
+  return typeof value === 'string' && AWS_REGION_PATTERN.test(value);
+}
+
+function assertTargetRegion(workflow: { action_params: Record<string, any> }): string {
+  const region = workflow.action_params?.region;
+  if (!isAwsRegion(region)) {
+    throw new Error(
+      "REMEDIATION_BLOCKED: The workflow's resource region is unknown. No AWS action was taken."
+    );
+  }
+  return region;
 }
 
 export class RemediationService {
@@ -271,7 +297,6 @@ export class RemediationService {
     accessKeyId: string;
     secretAccessKey: string;
     sessionToken: string;
-    region: string;
   }> {
     const result = await this.pool.query(
       `SELECT role_arn, account_id, external_id FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1`,
@@ -288,10 +313,10 @@ export class RemediationService {
       throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} aws_accounts row is missing external_id`);
     }
 
-    const region = process.env.AWS_DEFAULT_REGION || 'us-east-1';
-
-    // The platform's own identity, from the SDK's default credential chain.
-    const assumed = await assumeRoleAsPlatform(region, {
+    // The platform's own identity, from the SDK's default credential chain. The
+    // STS endpoint only issues the credentials; every action client is built for
+    // the workflow's own region.
+    const assumed = await assumeRoleAsPlatform('us-east-1', {
       RoleArn: roleArn,
       RoleSessionName: `devcontrol-remediation-${Date.now()}`,
       ExternalId: externalId,
@@ -307,13 +332,12 @@ export class RemediationService {
       accessKeyId: creds.AccessKeyId,
       secretAccessKey: creds.SecretAccessKey,
       sessionToken: creds.SessionToken,
-      region,
     };
   }
 
-  private makeEC2Client(creds: Awaited<ReturnType<typeof this.getAWSCredentials>>, region?: string) {
+  private makeEC2Client(creds: Awaited<ReturnType<typeof this.getAWSCredentials>>, region: string) {
     return new EC2Client({
-      region: region || creds.region,
+      region,
       credentials: {
         accessKeyId: creds.accessKeyId,
         secretAccessKey: creds.secretAccessKey,
@@ -322,9 +346,9 @@ export class RemediationService {
     });
   }
 
-  private makeS3Client(creds: Awaited<ReturnType<typeof this.getAWSCredentials>>) {
+  private makeS3Client(creds: Awaited<ReturnType<typeof this.getAWSCredentials>>, region: string) {
     return new S3Client({
-      region: creds.region,
+      region,
       credentials: {
         accessKeyId: creds.accessKeyId,
         secretAccessKey: creds.secretAccessKey,
@@ -333,15 +357,84 @@ export class RemediationService {
     });
   }
 
-  private makeRDSClient(creds: Awaited<ReturnType<typeof this.getAWSCredentials>>, region?: string) {
+  private makeRDSClient(creds: Awaited<ReturnType<typeof this.getAWSCredentials>>, region: string) {
     return new RDSClient({
-      region: region || creds.region,
+      region,
       credentials: {
         accessKeyId: creds.accessKeyId,
         secretAccessKey: creds.secretAccessKey,
         sessionToken: creds.sessionToken,
       },
     });
+  }
+
+  // ─── Target region ────────────────────────────────────────────────────────
+
+  /**
+   * The regions the inventory holds for this resource id (not terminated). More
+   * than one means the id alone does not say which resource is meant.
+   */
+  private async inventoryRegions(organizationId: string, resourceId: string): Promise<string[]> {
+    const result = await this.pool.query(
+      `SELECT DISTINCT region FROM aws_resources
+       WHERE organization_id = $1 AND resource_id = $2 AND status != 'terminated'`,
+      [organizationId, resourceId]
+    );
+    const regions = result.rows
+      .map((row) => row.region)
+      .filter((region): region is string => typeof region === 'string')
+      .map((region) => regionFromLocationConstraint(region))
+      .filter(isAwsRegion);
+    return Array.from(new Set(regions));
+  }
+
+  /**
+   * Sets action_params.region from the resource: the inventory's region for it,
+   * or, when the inventory does not hold it, its recommendation's region. A
+   * supplied region that contradicts that source, or an inventory that holds
+   * the id in more than one region, is refused. With no source and none
+   * supplied, the workflow is created without a region and cannot be executed.
+   */
+  private async bindTargetRegion(
+    organizationId: string,
+    resourceId: string,
+    recommendationId: string | undefined,
+    actionParams: Record<string, any>
+  ): Promise<Record<string, any>> {
+    const supplied = actionParams.region;
+    if (supplied !== undefined && !isAwsRegion(supplied)) {
+      throw new Error(`${REGION_MISMATCH_PREFIX} actionParams.region must be an AWS region`);
+    }
+
+    const inventory = await this.inventoryRegions(organizationId, resourceId);
+    if (inventory.length > 1) {
+      throw new Error(`${REGION_MISMATCH_PREFIX} ${resourceId} is in more than one region; its region cannot be chosen`);
+    }
+
+    let known: string | undefined = inventory[0];
+    if (!known && recommendationId) {
+      const result = await this.pool.query(
+        `SELECT aws_region FROM cost_recommendations WHERE id = $1 AND organization_id = $2`,
+        [recommendationId, organizationId]
+      );
+      const recommended = result.rows[0]?.aws_region;
+      if (isAwsRegion(recommended)) known = recommended;
+    }
+
+    if (known && supplied !== undefined && supplied !== known) {
+      throw new Error(`${REGION_MISMATCH_PREFIX} actionParams.region must be the resource's region (${known})`);
+    }
+    return known ? { ...actionParams, region: known } : actionParams;
+  }
+
+  /** Refuses, before any AWS call, a region the inventory contradicts. */
+  private async assertRegionMatchesInventory(organizationId: string, resourceId: string, region: string): Promise<void> {
+    const inventory = await this.inventoryRegions(organizationId, resourceId);
+    if (inventory.length > 0 && (inventory.length > 1 || inventory[0] !== region)) {
+      throw new Error(
+        "REMEDIATION_BLOCKED: The workflow's region does not match the resource's region in the inventory. No AWS action was taken."
+      );
+    }
   }
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -410,7 +503,12 @@ export class RemediationService {
     createdBy?: string
   ) {
     assertActionAvailable(data.actionType);
-    const actionParams = bindActionTarget(data.resourceId, data.actionParams);
+    const actionParams = await this.bindTargetRegion(
+      organizationId,
+      data.resourceId,
+      data.recommendationId,
+      bindActionTarget(data.resourceId, data.actionParams)
+    );
 
     const result = await this.pool.query(
       `INSERT INTO remediation_workflows
@@ -540,9 +638,15 @@ export class RemediationService {
     // The handlers act on action_params.resource_id; the guards inspect
     // resource_id. Refuse unless they are the same resource.
     assertTargetBound(workflow);
+    // ...and act in that resource's region, which must be known.
+    const region = assertTargetRegion(workflow);
 
     // Global kill-switch — must be checked before any AWS SDK call fires.
     this.assertAutomatedRemediationEnabled(workflow, 'execute');
+
+    // The stored region must still agree with the inventory (a workflow
+    // created before regions were bound may carry another region).
+    await this.assertRegionMatchesInventory(organizationId, workflow.resource_id, region);
 
     // Mark as executing
     await this.updateStatus(
@@ -562,7 +666,6 @@ export class RemediationService {
     try {
       const creds = await this.getAWSCredentials(organizationId);
       const params = workflow.action_params as Record<string, any>;
-      const region = params.region || creds.region;
 
       log = this.appendLog(log, `AWS credentials obtained via STS AssumeRole`);
 
@@ -656,22 +759,23 @@ export class RemediationService {
     // the credential fetch or any AWS call.
     this.assertNotDevControlInfrastructureByIdentifiers(workflow.organization_id, workflow.resource_id);
     assertTargetBound(workflow);
+    const region = assertTargetRegion(workflow);
     this.assertAutomatedRemediationEnabled(workflow, 'rollback');
+    await this.assertRegionMatchesInventory(organizationId, workflow.resource_id, region);
 
     const creds = await this.getAWSCredentials(organizationId);
-    const params = workflow.action_params as Record<string, any>;
     let log = this.appendLog(workflow.execution_log, `Rollback initiated by ${executedBy}`);
 
     try {
       // Self-protection layer 2 — live tag check, before any mutating command.
       await this.assertNotDevControlInfrastructureByTag(
-        this.makeEC2Client(creds, params.region),
+        this.makeEC2Client(creds, region),
         workflow.resource_id
       );
 
       if (workflow.action_type === 'stop_instance') {
         // Rollback: restart the instance
-        const ec2 = this.makeEC2Client(creds, params.region);
+        const ec2 = this.makeEC2Client(creds, region);
         await ec2.send(new StartInstancesCommand({ InstanceIds: [workflow.resource_id] }));
         log = this.appendLog(log, `Instance ${workflow.resource_id} start command issued`);
       } else if (workflow.action_type === 'delete_unattached_volume') {
@@ -857,7 +961,7 @@ export class RemediationService {
     params: Record<string, any>,
     log: string
   ) {
-    const s3 = this.makeS3Client(creds);
+    const s3 = this.makeS3Client(creds, params.region);
     const bucket = params.resource_id;
 
     log = this.appendLog(log, `Applying lifecycle policy to bucket ${bucket}...`);
