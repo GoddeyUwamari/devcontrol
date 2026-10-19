@@ -29,6 +29,7 @@ import { ElasticLoadBalancingV2Client } from '@aws-sdk/client-elastic-load-balan
 import { CloudFrontClient } from '@aws-sdk/client-cloudfront';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { stubScanSource } from './helpers/scan-source';
 import { ComplianceScannerService } from '../complianceScanner';
 import { ResourceExplorerService, SEARCH_RESULT_LIMIT } from '../resourceExplorer.service';
 import costOptimizationService from '../cost-optimization.service';
@@ -107,6 +108,7 @@ function resourceExplorer(page: { Resources: REResource[]; Count?: { TotalResour
 }
 
 function mockAwsClients(overrides: Record<string, unknown> = {}) {
+  stubScanSource();
   return jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
     enabled: true,
     region: 'us-east-1',

@@ -16,6 +16,7 @@
 import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
@@ -127,6 +128,7 @@ const LEGACY = [
 
 function mockAws() {
   const denied = { send: jest.fn(async () => { throw Object.assign(new Error('AccessDenied'), { name: 'AccessDenied' }); }) };
+  stubScanSource();
   jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
     enabled: true,
     region: 'us-east-1',

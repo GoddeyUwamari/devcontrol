@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DeploymentsRepository } from '../repositories/deployments.repository';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
+import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import { ApiResponse, PlatformStats } from '../types';
 import { pool } from '../config/database';
 import { NO_LIFECYCLE_RESOURCE_TYPES, NOT_APPLICABLE_STATUS, UNKNOWN_STATUS } from '../utils/resourceLifecycle';
@@ -124,6 +125,10 @@ export class StatsController {
       res.json({ success: true, data });
     } catch (error: any) {
       console.error('Error fetching cost trend:', error);
+      if (isAwsAccountAmbiguous(error)) {
+        res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
+        return;
+      }
       // No connected account: there is nothing to query, so an empty series
       // is the honest answer. Any other failure is not "no spend" -- it must
       // not reach the client as a successful empty series.

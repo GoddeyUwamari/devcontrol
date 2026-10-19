@@ -5,6 +5,11 @@
  * clients of one context instead of each assuming the role. The account is
  * the organization's one eligible account (AWSClientFactory.createClients(),
  * aws-accounts.repository.ts), so with more than one the scan never starts.
+ * The context carries that account explicitly: the aws_accounts row id and
+ * the 12-digit AWS account ID from its role ARN, read from the row
+ * createClients() recorded. Without that record, an ARN that does not
+ * parse, or credentials with no expiry, the scan fails closed before any
+ * call with the clients.
  *
  * A scan can run past the assumed role's one-hour session. Every client the
  * context hands out first checks the credentials and, when less than
@@ -16,7 +21,7 @@
  * Only the home region is scanned until multi-region scanning (M7):
  * clientsFor() refuses any other region.
  */
-import { AWSClientFactory, AWSClients, AssumedRoleSource, assumedRoleSourceOf } from './aws-client-factory.service';
+import { AWSClientFactory, AWSClients, AssumedRoleSource, assumedRoleSourceOf, parseAccountIdFromArn } from './aws-client-factory.service';
 
 /** Credentials are refreshed when less than this remains before they expire. */
 export const CREDENTIAL_REFRESH_WINDOW_MS = 10 * 60 * 1000;
@@ -33,7 +38,14 @@ function hasMiddlewareStack(value: unknown): value is MiddlewareClient {
   return typeof (value as MiddlewareClient | null)?.middlewareStack?.add === 'function';
 }
 
+/** The scan cannot be bound to an account with refreshable credentials. */
+export const SCAN_CONTEXT_UNAVAILABLE = 'SCAN_CONTEXT_UNAVAILABLE';
+
 export class ScanContext {
+  /** aws_accounts.id of the account this scan runs in. */
+  readonly awsAccountRowId: string;
+  /** The 12-digit AWS account ID, from the account's role ARN. */
+  readonly awsAccountId: string;
   private readonly home: AWSClients;
   private refreshing: Promise<void> | undefined;
   private refreshFailure: unknown;
@@ -41,25 +53,32 @@ export class ScanContext {
   private constructor(
     readonly organizationId: string,
     clients: AWSClients,
-    private readonly source: AssumedRoleSource | undefined
+    private readonly source: AssumedRoleSource,
+    awsAccountId: string
   ) {
-    this.home = source ? this.withRefresh(clients) : clients;
+    this.awsAccountRowId = source.account.id;
+    this.awsAccountId = awsAccountId;
+    this.home = this.withRefresh(clients);
   }
 
   /** The context of the organization's one eligible account. */
   static async forOrg(organizationId: string): Promise<ScanContext> {
     const clients = await AWSClientFactory.createClients(organizationId);
-    return new ScanContext(organizationId, clients, assumedRoleSourceOf(clients));
+    const source = assumedRoleSourceOf(clients);
+    const unavailable = (reason: string) =>
+      new Error(`${SCAN_CONTEXT_UNAVAILABLE}: org ${organizationId} ${reason}; the scan was not started`);
+
+    if (!source) throw unavailable('has no recorded account for its clients');
+    if (!source.account.id) throw unavailable('has an account row without an id');
+    const awsAccountId = parseAccountIdFromArn(source.account.role_arn);
+    if (!awsAccountId) throw unavailable("has a role ARN that names no 12-digit AWS account");
+    if (!source.expiration) throw unavailable('has credentials with no expiry, which could not be refreshed');
+    return new ScanContext(organizationId, clients, source, awsAccountId);
   }
 
   /** The account's home region: aws_accounts.region, or us-east-1. */
   get region(): string {
     return this.home.region;
-  }
-
-  /** The 12-digit AWS account ID, parsed from the role ARN, when it has one. */
-  get accountId(): string | undefined {
-    return this.home.accountId;
   }
 
   /** The clients for `region`. Only the home region is scanned before M7. */
@@ -74,13 +93,15 @@ export class ScanContext {
   async ensureFreshCredentials(): Promise<void> {
     const source = this.source;
     if (this.refreshFailure !== undefined) throw this.refreshFailure;
-    if (!source?.expiration) return;
-    if (source.expiration.getTime() - Date.now() > CREDENTIAL_REFRESH_WINDOW_MS) return;
+    if (source.expiration && source.expiration.getTime() - Date.now() > CREDENTIAL_REFRESH_WINDOW_MS) return;
 
     if (!this.refreshing) {
       this.refreshing = (async () => {
         try {
           const fresh = await AWSClientFactory.assumeAccountRole(source.organizationId, source.account, source.region);
+          if (!fresh.expiration) {
+            throw new Error(`${SCAN_CONTEXT_UNAVAILABLE}: org ${source.organizationId} refreshed credentials have no expiry`);
+          }
           Object.assign(source.credentials, fresh.credentials);
           source.expiration = fresh.expiration;
         } catch (err: unknown) {

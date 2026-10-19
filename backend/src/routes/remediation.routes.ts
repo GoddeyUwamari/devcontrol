@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { authenticateToken } from '../middleware/auth.middleware';
@@ -224,6 +225,10 @@ export function createRemediationRoutes(pool: Pool): Router {
         res.json({ success: true, data: workflow });
       } catch (err: any) {
         console.error('[Remediation] execute error:', err);
+        if (isAwsAccountAmbiguous(err)) {
+          res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
+          return;
+        }
         const status =
           err.message.includes('not found') ? 404 :
           err.message.includes('must be approved') ? 400 :
@@ -249,6 +254,10 @@ export function createRemediationRoutes(pool: Pool): Router {
       res.json({ success: true, data: workflow });
     } catch (err: any) {
       console.error('[Remediation] rollback error:', err);
+      if (isAwsAccountAmbiguous(err)) {
+        res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
+        return;
+      }
       const status =
         err.message.includes('not found') ? 404 :
         isRegionBlocked(err.message) ? 409 : 400;

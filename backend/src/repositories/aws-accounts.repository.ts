@@ -26,6 +26,9 @@ export const ELIGIBLE_AWS_ACCOUNT_STATUS = 'active';
 export const AWS_NOT_CONNECTED = 'AWS_NOT_CONNECTED';
 export const AWS_ACCOUNT_AMBIGUOUS = 'AWS_ACCOUNT_AMBIGUOUS';
 
+/** What a caller is told, with HTTP 409, when its organization has more than one eligible account. */
+export const AWS_ACCOUNT_AMBIGUOUS_MESSAGE = 'Multiple AWS accounts are not yet supported.';
+
 export interface AwsAccountRow {
   id: string;
   org_id: string;

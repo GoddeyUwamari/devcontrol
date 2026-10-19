@@ -13,6 +13,7 @@ import { OrganizationAccessError, requireCurrentRole } from '../services/organiz
 import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/frameworkApplicability';
 import { lifecycleStateFor } from '../utils/resourceLifecycle';
 import { countEligibleAwsAccounts } from '../repositories/aws-accounts.repository';
+import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 
 const router = Router();
 const controller = new ServicesController();
@@ -564,6 +565,10 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
     });
   } catch (err: any) {
     console.error('[Services/discover]', err);
+    if (isAwsAccountAmbiguous(err)) {
+      res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
+      return;
+    }
     if (err.message?.startsWith('AWS_NOT_CONNECTED:')) {
       res.status(409).json({ error: 'aws_not_connected', message: 'Please connect your AWS account in Settings to run audits.' });
       return;

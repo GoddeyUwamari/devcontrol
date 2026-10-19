@@ -7,6 +7,9 @@
  *     client factory, the scan context, Cost Explorer, remediation) and the
  *     cron job refuse with AWS_ACCOUNT_AMBIGUOUS before any STS call.
  *   - One AssumeRole per scan: the cost detectors run on the scan's clients.
+ *   - The context names its account (aws_accounts row id and 12-digit AWS
+ *     account ID) and fails closed without a recorded account, with an ARN
+ *     that names no account, or with credentials that have no expiry.
  *   - T17: a scan past the credentials' refresh window assumes the role once
  *     more and every client, regional ones included, signs with the new
  *     credentials; a failed refresh is classified as the first AssumeRole is
@@ -24,6 +27,7 @@ jest.mock('../../config/database', () => ({ pool: { query: mockPoolQuery } }));
 import * as platformSts from '../platform-sts';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import { ScanContext, CREDENTIAL_REFRESH_WINDOW_MS } from '../scan-context';
+import { stubScanSource, PLACEHOLDER_ACCOUNT_ROW } from './helpers/scan-source';
 import { AWSCostService } from '../aws-cost.service';
 import { RemediationService } from '../remediation.service';
 import costOptimizationService from '../cost-optimization.service';
@@ -140,8 +144,16 @@ describe('one AssumeRole per scan', () => {
     expect(assumeRole).toHaveBeenCalledTimes(1);
     expect(assumeRole.mock.calls[0][1]).toMatchObject({ RoleArn: ACCOUNT.role_arn, ExternalId: ACCOUNT.external_id });
     expect(context.region).toBe('eu-west-1');
-    expect(context.accountId).toBe('123456789012');
     expect(context.clientsFor('eu-west-1').region).toBe('eu-west-1');
+  });
+
+  it('names its account: the aws_accounts row id and the 12-digit AWS account ID', async () => {
+    jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockResolvedValue(credentials('ASIAFIRST', start + HOUR));
+
+    const context = await ScanContext.forOrg('org-scan');
+
+    expect(context.awsAccountRowId).toBe(ACCOUNT.id);
+    expect(context.awsAccountId).toBe('123456789012');
   });
 
   it('refuses any region but the home region', async () => {
@@ -153,14 +165,51 @@ describe('one AssumeRole per scan', () => {
 
   it("the cost detectors run on the scan's clients, with no second lookup or AssumeRole", async () => {
     const createClients = jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({ enabled: false, region: 'eu-west-1' } as any);
+    stubScanSource();
     const context = await ScanContext.forOrg('org-scan');
     createClients.mockClear();
+    expect(context.awsAccountRowId).toBe(PLACEHOLDER_ACCOUNT_ROW.id);
 
     await expect(costOptimizationService.analyzeAllResources('org-scan', context)).resolves.toEqual({
       observations: [], riRecommendations: [], riSucceeded: false,
     });
     expect(createClients).not.toHaveBeenCalled();
     await expect(costOptimizationService.analyzeAllResources('org-other', context)).rejects.toThrow(/^SCAN_CONTEXT_MISMATCH: /);
+  });
+});
+
+describe('the context fails closed before any call with its clients', () => {
+  /** Clients whose every send is recorded; none may happen. */
+  function recordingClients() {
+    const send = jest.fn();
+    return { send, clients: { enabled: true, region: 'eu-west-1', ec2: { send }, s3: { send } } as any };
+  }
+
+  it('no recorded account for the clients', async () => {
+    const { send, clients } = recordingClients();
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clients);
+
+    await expect(ScanContext.forOrg('org-scan')).rejects.toThrow(/^SCAN_CONTEXT_UNAVAILABLE: org org-scan has no recorded account for its clients/);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('a role ARN that names no 12-digit account', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ ...ACCOUNT, role_arn: 'arn:aws:iam::not-an-account:role/devcontrol-readonly' }] });
+    const assumeRole = jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockResolvedValue(credentials('ASIAFIRST', start + HOUR));
+    const s3Send = jest.spyOn(S3Client.prototype, 'send');
+
+    await expect(ScanContext.forOrg('org-scan')).rejects.toThrow(/^SCAN_CONTEXT_UNAVAILABLE: org org-scan has a role ARN that names no 12-digit AWS account/);
+    // Only the AssumeRole inside createClients(); no service call.
+    expect(assumeRole).toHaveBeenCalledTimes(1);
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  it('credentials with no expiry, which could never be refreshed', async () => {
+    jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockResolvedValue({
+      Credentials: { AccessKeyId: 'ASIAFIRST', SecretAccessKey: 'secret', SessionToken: 'token' },
+    } as any);
+
+    await expect(ScanContext.forOrg('org-scan')).rejects.toThrow(/^SCAN_CONTEXT_UNAVAILABLE: .*no expiry/);
   });
 });
 
@@ -178,9 +227,13 @@ describe('T17: credentials are refreshed before they expire', () => {
   });
 
   it('inside the window: the role is assumed once more and every client, regional ones included, signs with the new credentials', async () => {
+    // The second AssumeRole is held open, so every request below arrives while it is in flight.
+    let releaseSecond!: (value: unknown) => void;
+    const second = new Promise((resolve) => { releaseSecond = resolve; });
     const assumeRole = jest.spyOn(platformSts, 'assumeRoleAsPlatform')
       .mockResolvedValueOnce(credentials('ASIAFIRST', start + HOUR))
-      .mockResolvedValueOnce(credentials('ASIASECOND', start + 2 * HOUR));
+      .mockImplementationOnce(() => second as any)
+      .mockResolvedValue(credentials('ASIAUNEXPECTED', start + 2 * HOUR));
     const clients = (await ScanContext.forOrg('org-scan')).clientsFor('eu-west-1');
     const home = signedKeys(clients.s3);
     const regionalClient = clients.getS3ClientForRegion!('us-west-2');
@@ -188,7 +241,16 @@ describe('T17: credentials are refreshed before they expire', () => {
 
     await send(clients.s3);
     at(HOUR - CREDENTIAL_REFRESH_WINDOW_MS + 60_000);
-    await Promise.all([send(clients.s3), send(clients.s3), send(regionalClient)]);
+    const inFlight = Promise.all([send(clients.s3), send(clients.s3), send(regionalClient)]);
+    for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
+
+    // Three requests waiting, one refresh in flight, nothing signed yet.
+    expect(assumeRole).toHaveBeenCalledTimes(2);
+    expect(home).toEqual(['ASIAFIRST']);
+    expect(regional).toEqual([]);
+
+    releaseSecond(credentials('ASIASECOND', start + 2 * HOUR));
+    await inFlight;
     await send(clients.s3);
 
     expect(assumeRole).toHaveBeenCalledTimes(2);

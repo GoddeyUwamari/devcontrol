@@ -8,7 +8,7 @@
 
 import { Pool } from 'pg';
 import { assumeRoleAsPlatform } from './platform-sts';
-import { findEligibleAwsAccount } from '../repositories/aws-accounts.repository';
+import { findEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
 import { regionFromLocationConstraint } from './s3-bucket-tags.util';
 import {
   EC2Client,
@@ -303,21 +303,30 @@ export class RemediationService {
   }
 
   /**
-   * Assume the org's AWS role and return temporary credentials.
-   * Validates the role is still assumable before execution.
+   * The org's one eligible account, resolved before a workflow's status
+   * changes: none is refused, and more than one throws
+   * AwsAccountAmbiguousError, before any AWS call.
    */
-  private async getAWSCredentials(organizationId: string): Promise<{
-    accessKeyId: string;
-    secretAccessKey: string;
-    sessionToken: string;
-  }> {
-    // The org's one eligible account; more than one is refused before any AWS call.
+  private async resolveAccount(organizationId: string): Promise<AwsAccountRow> {
     const account = await findEligibleAwsAccount(this.pool, organizationId);
 
     if (!account) {
       throw new Error('No active AWS account configured. Connect an AWS account first.');
     }
+    return account;
+  }
 
+  /**
+   * Assume the account's AWS role (the org's one eligible account unless
+   * given) and return temporary credentials.
+   * Validates the role is still assumable before execution.
+   */
+  private async getAWSCredentials(organizationId: string, resolved?: AwsAccountRow): Promise<{
+    accessKeyId: string;
+    secretAccessKey: string;
+    sessionToken: string;
+  }> {
+    const account = resolved ?? (await this.resolveAccount(organizationId));
     const { role_arn: roleArn, external_id: externalId } = account;
 
     if (!externalId) {
@@ -446,15 +455,6 @@ export class RemediationService {
   }
 
   /**
-   * The region execute and rollback act in, established before any AWS call:
-   *
-   *   - a stored region must be a region the inventory does not contradict;
-   *   - with no stored region, the inventory's one region for the resource is
-   *     bound and stored on the workflow; none or more than one is refused.
-   *
-   * Sets action_params.region on `workflow` so the action handlers use it.
-   */
-  /**
    * Stores `region` on a workflow that has none. The write only applies while
    * the stored region is still missing, so a concurrent request cannot have
    * its binding overwritten. When it applies to no row, the stored region is
@@ -484,6 +484,15 @@ export class RemediationService {
     workflow.action_params = { ...workflow.action_params, region };
   }
 
+  /**
+   * The region execute and rollback act in, established before any AWS call:
+   *
+   *   - a stored region must be a region the inventory does not contradict;
+   *   - with no stored region, the inventory's one region for the resource is
+   *     bound and stored on the workflow; none or more than one is refused.
+   *
+   * Sets action_params.region on `workflow` so the action handlers use it.
+   */
   private async resolveTargetRegion(workflow: WorkflowRow, organizationId: string): Promise<string> {
     const stored = workflow.action_params?.region;
     const inventory = await this.inventoryRegions(organizationId, workflow.resource_id);
@@ -712,6 +721,10 @@ export class RemediationService {
     // ...and act in that resource's region, which must be established.
     const region = await this.resolveTargetRegion(workflow, organizationId);
 
+    // The account to act in, resolved before the status changes: a missing or
+    // ambiguous account refuses with the workflow left as it was.
+    const account = await this.resolveAccount(organizationId);
+
     // Mark as executing
     await this.updateStatus(
       workflowId,
@@ -728,7 +741,7 @@ export class RemediationService {
     let rollbackAvailable = false;
 
     try {
-      const creds = await this.getAWSCredentials(organizationId);
+      const creds = await this.getAWSCredentials(organizationId, account);
       const params = workflow.action_params as Record<string, any>;
 
       log = this.appendLog(log, `AWS credentials obtained via STS AssumeRole`);
@@ -826,7 +839,8 @@ export class RemediationService {
     this.assertAutomatedRemediationEnabled(workflow, 'rollback');
     const region = await this.resolveTargetRegion(workflow, organizationId);
 
-    const creds = await this.getAWSCredentials(organizationId);
+    const account = await this.resolveAccount(organizationId);
+    const creds = await this.getAWSCredentials(organizationId, account);
     let log = this.appendLog(workflow.execution_log, `Rollback initiated by ${executedBy}`);
 
     try {

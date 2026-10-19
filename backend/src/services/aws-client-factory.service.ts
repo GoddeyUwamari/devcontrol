@@ -106,7 +106,7 @@ export interface AWSClients {
 }
 
 /** Extracts the 12-digit account ID from an IAM role/user ARN, e.g. arn:aws:iam::123456789012:role/x */
-function parseAccountIdFromArn(arn: string): string | undefined {
+export function parseAccountIdFromArn(arn: string): string | undefined {
   return arn.match(/^arn:aws:iam::(\d{12}):/)?.[1];
 }
 

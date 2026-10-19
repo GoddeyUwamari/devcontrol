@@ -14,6 +14,7 @@
 import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
+import { stubScanSource } from './helpers/scan-source';
 import { ComplianceScannerService } from '../complianceScanner';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
@@ -105,6 +106,7 @@ function s3Client() {
 }
 
 function mockAwsClients(s3: object, s3Control: object) {
+  stubScanSource();
   return jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
     enabled: true,
     region: 'us-east-1',

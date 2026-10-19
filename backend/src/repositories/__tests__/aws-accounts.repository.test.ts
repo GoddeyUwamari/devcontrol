@@ -12,7 +12,7 @@
  *
  * aws_accounts_org_id_key (UNIQUE org_id) keeps a second row out of the
  * table, so two eligible accounts are covered with a stub executor here and
- * per consumer in aws-account-selection-fail-closed.test.ts.
+ * per consumer in services/__tests__/scan-context.test.ts.
  *
  * Every ID, ARN and account ID here is a placeholder.
  */
