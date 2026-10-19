@@ -26,6 +26,8 @@ let demoMode = false
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => demoMode }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: any) => selector({ enabled: false }) }))
 vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro', isPro: true }) }))
+// The registered-services section has its own test (registered-services.test.tsx).
+vi.mock('../RegisteredServices', () => ({ RegisteredServices: () => null }))
 
 const mockGetServices = vi.fn()
 const mockGetStats = vi.fn()

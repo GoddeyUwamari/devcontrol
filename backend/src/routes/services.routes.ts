@@ -524,6 +524,36 @@ router.get('/', authenticateToken, async (req: Request, res: Response, next: Nex
   }
 });
 
+// ─── GET /api/services/registered — the services table ───────────────────────
+
+/**
+ * The services registered in this organization (POST /api/services), newest
+ * first. These, not the discovered resources GET / returns, are what
+ * dependencies and deployments reference. Scoped by an explicit
+ * organization_id predicate as well as RLS; a team is named only when it
+ * belongs to the same organization. Declared before /:id, which would
+ * otherwise take "registered" as an id.
+ */
+router.get('/registered', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.organizationId;
+  if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.id, s.name, s.owner, s.team_id, t.name AS team_name, s.github_url, s.created_at
+         FROM services s
+         LEFT JOIN teams t ON t.id = s.team_id AND t.organization_id = s.organization_id
+        WHERE s.organization_id = $1
+        ORDER BY s.created_at DESC, s.id`,
+      [orgId]
+    );
+    res.json({ success: true, services: rows, total: rows.length });
+  } catch (err: unknown) {
+    console.error('[Services/registered]', err);
+    res.status(500).json({ success: false, error: 'Failed to load registered services' });
+  }
+});
+
 // ─── GET /api/services/:id — aws_resources-backed detail ─────────────────────
 
 router.get('/:id', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {

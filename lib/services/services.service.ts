@@ -1,6 +1,7 @@
 import api, { handleApiResponse } from '../api';
 import type {
   Service,
+  RegisteredService,
   CreateServicePayload,
   UpdateServicePayload,
   ServiceFilters,
@@ -8,6 +9,27 @@ import type {
 } from '../types';
 
 export const servicesService = {
+  /**
+   * The organization's registered services (the services table), newest
+   * first: GET /api/services/registered, which answers
+   * { success, services: [...], total }.
+   */
+  getRegistered: async (): Promise<RegisteredService[]> => {
+    const response = await api.get<{ success: boolean; services?: any[]; error?: string }>('/api/services/registered');
+    if (!response.data.success || !Array.isArray(response.data.services)) {
+      throw new Error(response.data.error || 'Failed to load registered services');
+    }
+    return response.data.services.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      owner: s.owner,
+      teamId: s.team_id ?? null,
+      teamName: s.team_name ?? null,
+      githubUrl: s.github_url ?? null,
+      createdAt: s.created_at,
+    }));
+  },
+
   // Get all services with optional filters
   getAll: async (filters?: ServiceFilters): Promise<Service[]> => {
     const params = new URLSearchParams();
