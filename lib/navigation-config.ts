@@ -335,6 +335,11 @@ export const userNavSections: NavSection[] = [
 // Quick Actions for the "+ New" dropdown
 export const quickActions: NavItem[] = [
   {
+    label: 'Create Service',
+    href: '/services/new',
+    icon: Layers,
+  },
+  {
     label: 'Record Deployment',
     href: '/deployments/new',
     icon: Rocket,

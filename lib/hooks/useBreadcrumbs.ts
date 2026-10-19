@@ -60,6 +60,7 @@ const routeLabels: Record<string, string> = {
 
 export const parentPaths: Record<string, { label: string; href?: string }[]> = {
   '/deployments':      [{ label: 'Services', href: '/services' }],
+  '/services/new':     [],
   '/recommendations':  [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/tenants':          [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/infrastructure/new':             [],
