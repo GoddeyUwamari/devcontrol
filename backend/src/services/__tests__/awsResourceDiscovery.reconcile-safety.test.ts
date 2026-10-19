@@ -40,6 +40,7 @@ import { AWSResourcesRepository } from '../../repositories/awsResources.reposito
 import { ServicesIntelligenceRepository } from '../../repositories/services-intelligence.repository';
 import { AIChatContextRepository } from '../../repositories/ai-chat-context.repository';
 import { ActivityFeedService } from '../activity-feed.service';
+import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -123,6 +124,11 @@ function mockCostAnalysis() {
   jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
   jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
 }
+
+// One "last refreshed" reader, ServicesIntelligenceRepository, reads aws_accounts.
+beforeAll(async () => {
+  await ensureSharedFixtureTable(pool, 'aws_accounts');
+});
 
 beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {});
