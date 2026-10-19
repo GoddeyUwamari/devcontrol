@@ -56,7 +56,8 @@ function fakePool(rowCount: number, storedRegion: string | null) {
     }
     if (isBindingUpdate(sql)) return { rows: [], rowCount };
     if (isRegionReread(sql)) return { rows: storedRegion === undefined ? [] : [{ region: storedRegion }] };
-    return { rows: [WORKFLOW], rowCount: 1 };
+    // A fresh row per read: the service sets action_params.region on the row it holds.
+    return { rows: [{ ...WORKFLOW, action_params: { ...WORKFLOW.action_params } }], rowCount: 1 };
   });
   return { query } as any;
 }
