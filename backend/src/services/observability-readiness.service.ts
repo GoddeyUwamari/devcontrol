@@ -7,6 +7,7 @@ import { pool } from '../config/database'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
 import { splitDiscoveryMessage } from './discovery-warnings'
+import { findEligibleAwsAccount } from '../repositories/aws-accounts.repository'
 import { resourceTypeRegistry } from './cloudwatch.service'
 import {
   collectSection,
@@ -380,13 +381,10 @@ interface InventoryRow {
 
 export class ObservabilityReadinessService {
 
-  /** Same row AWSClientFactory.createClients() assumes a role from. */
+  /** The org's one eligible account: the row AWSClientFactory.createClients() assumes a role from. */
   private async getAccount(organizationId: string): Promise<{ account_id: string | null } | null> {
-    const result = await pool.query(
-      `SELECT account_id FROM aws_accounts WHERE org_id = $1 LIMIT 1`,
-      [organizationId]
-    )
-    return result.rows[0] ?? null
+    const account = await findEligibleAwsAccount(pool, organizationId)
+    return account ? { account_id: account.account_id } : null
   }
 
   /** Latest finished discovery run -- never a 'running' one. */

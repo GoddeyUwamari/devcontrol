@@ -41,7 +41,8 @@ import {
   DistributionSummary,
 } from '@aws-sdk/client-cloudfront';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
-import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
+import { AWSClients } from './aws-client-factory.service';
+import { ScanContext } from './scan-context';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from './platform-sts';
 import { createAwsBackupEvidenceCache, checkEBSBackupCoverage, BackupEvidenceResult } from './aws-backup-evidence.util';
 import {
@@ -471,8 +472,10 @@ export class AWSResourceDiscoveryService {
       jobId = jobResult.rows[0].id;
       console.log(`📋 [Discovery] Created discovery job: ${jobId}`);
 
-      // Get AWS clients
-      const connectedClients = await AWSClientFactory.createClients(organizationId);
+      // The scan's account context: one AssumeRole for discovery and the cost
+      // detectors, refreshed before it expires (scan-context.ts).
+      const scanContext = await ScanContext.forOrg(organizationId);
+      const connectedClients = scanContext.clientsFor(scanContext.region);
 
       if (!connectedClients.enabled) {
         throw new Error('AWS credentials not configured for this organization');
@@ -1040,7 +1043,7 @@ export class AWSResourceDiscoveryService {
       let costAnalysisCompleted = false;
       try {
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
-        const { observations, riRecommendations, riSucceeded } = await costOptimizationService.analyzeAllResources(organizationId);
+        const { observations, riRecommendations, riSucceeded } = await costOptimizationService.analyzeAllResources(organizationId, scanContext);
 
         const recommendationsRepo = new CostRecommendationsRepository();
 

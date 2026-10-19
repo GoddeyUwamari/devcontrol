@@ -21,6 +21,7 @@ import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
 import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { AWSResourcesRepository } from './awsResources.repository';
+import { findEligibleAwsAccount } from './aws-accounts.repository';
 
 const INVENTORY_SOURCE = 'DevControl resource inventory (periodic AWS discovery)';
 
@@ -179,21 +180,18 @@ export class AIChatContextRepository {
   }
 
   /**
-   * The org's connected AWS account row -- the same row (org_id is UNIQUE on
-   * aws_accounts, and this query mirrors AWSClientFactory.createClients()'s
-   * own lookup) that both discovery and Cost Explorer assume a role from.
+   * The org's connected AWS account row -- its one eligible account, read
+   * through the same lookup (aws-accounts.repository.ts) that both discovery
+   * and Cost Explorer assume a role from; more than one is an 'error'.
    * Carries no account-type metadata: aws_accounts stores none, and DevControl
    * does not detect management/payer/member status. 'unavailable' when there
    * is no row, 'error' when the lookup fails -- never a fabricated ID or region.
    */
   private getConnectedAccount(organizationId: string): Promise<ChatContext['account']> {
     return collectSection<{ accountId: string | null; region: string | null }>({ source: 'DevControl connected AWS account record' }, async () => {
-      const { rows } = await this.pool.query(
-        `SELECT account_id, region FROM aws_accounts WHERE org_id = $1 LIMIT 1`,
-        [organizationId]
-      );
-      if (rows.length === 0) return { state: 'unavailable', reason: 'no AWS account is connected' };
-      return { state: 'available', data: { accountId: rows[0].account_id ?? null, region: rows[0].region ?? null } };
+      const account = await findEligibleAwsAccount(this.pool, organizationId);
+      if (!account) return { state: 'unavailable', reason: 'no AWS account is connected' };
+      return { state: 'available', data: { accountId: account.account_id ?? null, region: account.region ?? null } };
     });
   }
 

@@ -96,7 +96,7 @@ const { PlatformAwsCredentialsUnavailableError } = require('../platform-sts') as
 
 const PLATFORM_KEYS = { accessKeyId: 'AKIAPLATFORMKEYID', secretAccessKey: 'platform-secret-not-a-credential' };
 const TEMPORARY = { accessKeyId: 'ASIACUSTOMERTEMP', secretAccessKey: 'customer-temp-secret', sessionToken: 'customer-session-token' };
-const ACCOUNT_ROW = { role_arn: 'arn:aws:iam::123456789012:role/devcontrol-readonly', external_id: 'external-id-1', region: 'eu-west-1' };
+const ACCOUNT_ROW = { role_arn: 'arn:aws:iam::123456789012:role/devcontrol-readonly', external_id: 'external-id-1', region: 'eu-west-1', status: 'active' };
 const ENV_BEFORE_TESTS = process.env;
 
 function setEnvironment(nodeEnv: string | undefined, platformKeys: boolean) {

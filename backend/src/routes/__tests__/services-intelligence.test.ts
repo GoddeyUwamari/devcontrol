@@ -209,7 +209,7 @@ async function seed(label: string, region: string): Promise<Seeded> {
   });
 
   await pool.query(
-    `INSERT INTO aws_accounts (org_id, role_arn, account_id, region) VALUES ($1, $2, $3, $4)`,
+    `INSERT INTO aws_accounts (org_id, role_arn, account_id, region, status) VALUES ($1, $2, $3, $4, 'active')`,
     [orgId, `arn:aws:iam::${FAKE_ACCOUNT}:role/si-${label}`, `si-${label}-${suffix}`.slice(0, 32), region]
   );
   const completedJobId = await insertJob(orgId, 'completed', COMPLETED_AT, new Date('2026-01-01T09:00:00.000Z'));

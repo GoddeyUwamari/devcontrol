@@ -16,6 +16,7 @@ import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
 import { PoolClient } from 'pg';
 import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
 import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
+import type { ScanContext } from './scan-context';
 import { pool } from '../config/database';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
@@ -208,7 +209,7 @@ class CostOptimizationService {
    * CostRecommendationsRepository.reconcileActiveRecommendations() vs.
    * deleteActiveByIssue()+createBulk() for how the two paths diverge.
    */
-  async analyzeAllResources(organizationId: string): Promise<{
+  async analyzeAllResources(organizationId: string, scanContext?: ScanContext): Promise<{
     observations: DetectorObservation[];
     riRecommendations: CreateRecommendationRequest[];
     /**
@@ -218,7 +219,14 @@ class CostOptimizationService {
      */
     riSucceeded: boolean;
   }> {
-    const clients = await AWSClientFactory.createClients(organizationId);
+    // Inside a discovery scan, the scan's own account context (no second
+    // AssumeRole); called on its own, the organization's one eligible account.
+    if (scanContext && scanContext.organizationId !== organizationId) {
+      throw new Error(`SCAN_CONTEXT_MISMATCH: scan context for org ${scanContext.organizationId} used for org ${organizationId}`);
+    }
+    const clients = scanContext
+      ? scanContext.clientsFor(scanContext.region)
+      : await AWSClientFactory.createClients(organizationId);
 
     if (!clients.enabled) {
       console.log(`AWS not connected for org ${organizationId}, skipping cost analysis`);

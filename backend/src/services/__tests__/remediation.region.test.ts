@@ -60,8 +60,10 @@ function fakePool(
       return { rows: [{ resource_id: recommendedResourceId, aws_region: recommendedRegion ?? null }] };
     }
     if (/FROM aws_accounts/.test(sql)) {
-      return { rows: [{ role_arn: 'arn:aws:iam::111122223333:role/devcontrol-remediation', account_id: '111122223333', external_id: 'external-id-1' }] };
+      return { rows: [{ role_arn: 'arn:aws:iam::111122223333:role/devcontrol-remediation', account_id: '111122223333', external_id: 'external-id-1', status: 'active' }] };
     }
+    // A region binding applies to the one workflow row, as Postgres reports it.
+    if (/^\s*UPDATE remediation_workflows/.test(sql)) return { rows: [workflow], rowCount: 1 };
     return { rows: [workflow] };
   });
   return { query } as any;

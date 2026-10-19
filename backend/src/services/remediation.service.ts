@@ -8,6 +8,7 @@
 
 import { Pool } from 'pg';
 import { assumeRoleAsPlatform } from './platform-sts';
+import { findEligibleAwsAccount } from '../repositories/aws-accounts.repository';
 import { regionFromLocationConstraint } from './s3-bucket-tags.util';
 import {
   EC2Client,
@@ -146,9 +147,13 @@ export const REGION_AMBIGUOUS_MESSAGE =
 export const REGION_INVENTORY_MISMATCH_MESSAGE =
   "REMEDIATION_BLOCKED: The workflow's region does not match the resource's region in the inventory. No AWS action was taken.";
 
+export const REGION_BINDING_CONFLICT_MESSAGE =
+  "REMEDIATION_BLOCKED: The workflow's region was bound to a different region by another request. No AWS action was taken.";
+
 export function isRegionBlocked(message: unknown): boolean {
   return (
     message === REGION_UNKNOWN_MESSAGE ||
+    message === REGION_BINDING_CONFLICT_MESSAGE ||
     message === REGION_AMBIGUOUS_MESSAGE ||
     message === REGION_INVENTORY_MISMATCH_MESSAGE
   );
@@ -306,16 +311,14 @@ export class RemediationService {
     secretAccessKey: string;
     sessionToken: string;
   }> {
-    const result = await this.pool.query(
-      `SELECT role_arn, account_id, external_id FROM aws_accounts WHERE org_id = $1 AND status = 'active' LIMIT 1`,
-      [organizationId]
-    );
+    // The org's one eligible account; more than one is refused before any AWS call.
+    const account = await findEligibleAwsAccount(this.pool, organizationId);
 
-    if (result.rows.length === 0) {
+    if (!account) {
       throw new Error('No active AWS account configured. Connect an AWS account first.');
     }
 
-    const { role_arn: roleArn, external_id: externalId } = result.rows[0];
+    const { role_arn: roleArn, external_id: externalId } = account;
 
     if (!externalId) {
       throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} aws_accounts row is missing external_id`);
@@ -451,6 +454,36 @@ export class RemediationService {
    *
    * Sets action_params.region on `workflow` so the action handlers use it.
    */
+  /**
+   * Stores `region` on a workflow that has none. The write only applies while
+   * the stored region is still missing, so a concurrent request cannot have
+   * its binding overwritten. When it applies to no row, the stored region is
+   * read back: the same region is accepted, anything else is refused before
+   * any AWS call. Success is never reported without a verified write.
+   */
+  private async bindRegion(workflow: WorkflowRow, organizationId: string, region: string): Promise<void> {
+    const result = await this.pool.query(
+      `UPDATE remediation_workflows
+          SET action_params = jsonb_set(action_params, '{region}', to_jsonb($1::text)), updated_at = NOW()
+        WHERE id = $2 AND organization_id = $3
+          AND ((action_params->>'region') IS NULL OR (action_params->>'region') = '')`,
+      [region, workflow.id, organizationId]
+    );
+
+    if (result.rowCount !== 1) {
+      const { rows } = await this.pool.query(
+        `SELECT action_params->>'region' AS region FROM remediation_workflows WHERE id = $1 AND organization_id = $2`,
+        [workflow.id, organizationId]
+      );
+      const stored = rows[0]?.region;
+      if (stored !== region) {
+        throw new Error(stored ? REGION_BINDING_CONFLICT_MESSAGE : REGION_UNKNOWN_MESSAGE);
+      }
+    }
+
+    workflow.action_params = { ...workflow.action_params, region };
+  }
+
   private async resolveTargetRegion(workflow: WorkflowRow, organizationId: string): Promise<string> {
     const stored = workflow.action_params?.region;
     const inventory = await this.inventoryRegions(organizationId, workflow.resource_id);
@@ -459,13 +492,7 @@ export class RemediationService {
       if (inventory.length === 0) throw new Error(REGION_UNKNOWN_MESSAGE);
       if (inventory.length > 1) throw new Error(REGION_AMBIGUOUS_MESSAGE);
       const region = inventory[0];
-      await this.pool.query(
-        `UPDATE remediation_workflows
-            SET action_params = jsonb_set(action_params, '{region}', to_jsonb($1::text)), updated_at = NOW()
-          WHERE id = $2 AND organization_id = $3`,
-        [region, workflow.id, organizationId]
-      );
-      workflow.action_params = { ...workflow.action_params, region };
+      await this.bindRegion(workflow, organizationId, region);
       return region;
     }
 

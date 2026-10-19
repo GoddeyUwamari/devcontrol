@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { Soc2EvidenceService } from '../services/soc2-evidence.service';
 import { isPlatformAwsCredentialsUnavailable, isPlatformCredentialFailure } from '../services/platform-sts';
+import { findEligibleAwsAccount, listIneligibleAwsAccountStatuses } from '../repositories/aws-accounts.repository';
 
 /** One scheduled run's outcome per organization. Every organization lands in exactly one count. */
 export interface DiscoveryRunSummary {
@@ -10,7 +11,7 @@ export interface DiscoveryRunSummary {
   scanned: number;
   /** No aws_accounts row: nothing to discover, no job row, no AWS calls. */
   skipped: number;
-  /** An aws_accounts row whose status is not 'active': no job row, no AWS calls. */
+  /** aws_accounts rows, none of them eligible (status 'active'): no job row, no AWS calls. */
   inactive: number;
   /** Discovery failed for the organization's own reasons (e.g. its role refused AssumeRole). */
   failed: number;
@@ -233,22 +234,24 @@ export class ResourceDiscoveryJob {
   }
 
   /**
-   * Whether the organization has a connected AWS account. Read inside a
-   * transaction tagged for that organization (the tag ends with it) and
-   * filtered by it, so the answer never comes from another organization's row.
+   * Whether the organization has a connected AWS account: its one eligible
+   * account (aws-accounts.repository.ts), or else whether it has rows that are
+   * not eligible. More than one eligible account throws, so the organization
+   * counts as failed and is never scanned. Read inside a transaction tagged
+   * for that organization (the tag ends with it) and filtered by it, so the
+   * answer never comes from another organization's row.
    */
   private async getAwsConnection(organizationId: string): Promise<AwsConnection> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.current_organization_id', $1, true)", [organizationId]);
-      const { rows } = await client.query(
-        `SELECT status FROM aws_accounts WHERE org_id = $1 LIMIT 1`,
-        [organizationId]
-      );
+      const account = await findEligibleAwsAccount(client, organizationId);
+      const ineligible = account ? [] : await listIneligibleAwsAccountStatuses(client, organizationId);
       await client.query('COMMIT');
-      if (rows.length === 0) return { kind: 'none' };
-      return rows[0].status === 'active' ? { kind: 'active' } : { kind: 'inactive', status: rows[0].status ?? null };
+      if (account) return { kind: 'active' };
+      if (ineligible.length === 0) return { kind: 'none' };
+      return { kind: 'inactive', status: ineligible.length === 1 ? ineligible[0] : ineligible.map((status) => status ?? 'null').join(', ') };
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
       throw error;
