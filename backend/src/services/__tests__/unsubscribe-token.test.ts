@@ -7,12 +7,14 @@ import crypto from 'crypto';
 import {
   LEGACY_UNSUBSCRIBE_CUTOFF,
   UNSUBSCRIBE_TOKEN_TTL_SECONDS,
+  presentedUnsubscribeToken,
   signUnsubscribeToken,
   verifyUnsubscribeToken,
 } from '../unsubscribe-token';
 
-const USER_ID = '6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b';
-const OTHER_USER_ID = '0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d';
+const USER_ID = '11111111-2222-4333-8444-555555555555';
+/** Has letters, so its upper- and lowercase forms differ. */
+const OTHER_USER_ID = '66666666-7777-4888-8999-aaaaaaaaaaaa';
 const NOW = new Date('2026-11-01T12:00:00Z');
 const TEST_SECRET = 'unit-test-jwt-secret-placeholder-32chars';
 
@@ -154,6 +156,61 @@ describe('signed unsubscribe tokens', () => {
   it('fails closed when JWT_SECRET is missing', () => {
     delete process.env.JWT_SECRET;
     expect(() => signUnsubscribeToken(USER_ID, 'weekly-summary', NOW)).toThrow(/JWT_SECRET is not set/);
+  });
+});
+
+describe('canonical tokens: exactly one string verifies for a given (userId, iat)', () => {
+  const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+  function derivedKey(): Buffer {
+    return Buffer.from(crypto.hkdfSync('sha256', TEST_SECRET, Buffer.alloc(0), 'devcontrol/email-unsubscribe/v1', 32));
+  }
+
+  it('rejects a leading-zero iat even though the MAC matches its numeric value', () => {
+    const p = parts(signUnsubscribeToken(USER_ID, 'weekly-summary', NOW));
+    const padded = ['v1', p.encodedUserId, `0${p.iat}`, p.encodedMac].join('.');
+    expect(Number(`0${p.iat}`)).toBe(Number(p.iat));
+    expect(verifyUnsubscribeToken(padded, 'weekly-summary', NOW)).toEqual({ kind: 'invalid' });
+  });
+
+  it('rejects a MAC with changed tail bits that decodes to the same bytes', () => {
+    const p = parts(signUnsubscribeToken(USER_ID, 'weekly-summary', NOW));
+    const last = p.encodedMac.slice(-1);
+    const variantMac = p.encodedMac.slice(0, -1) + BASE64URL_ALPHABET[BASE64URL_ALPHABET.indexOf(last) ^ 1];
+    expect(variantMac).not.toBe(p.encodedMac);
+    expect(Buffer.from(variantMac, 'base64url').equals(Buffer.from(p.encodedMac, 'base64url'))).toBe(true);
+    const variant = ['v1', p.encodedUserId, p.iat, variantMac].join('.');
+    expect(verifyUnsubscribeToken(variant, 'weekly-summary', NOW)).toEqual({ kind: 'invalid' });
+  });
+
+  it('normalizes the user id to lowercase on sign', () => {
+    const upper = signUnsubscribeToken(OTHER_USER_ID.toUpperCase(), 'weekly-summary', NOW);
+    expect(upper).toBe(signUnsubscribeToken(OTHER_USER_ID, 'weekly-summary', NOW));
+    expect(verifyUnsubscribeToken(upper, 'weekly-summary', NOW)).toEqual({ kind: 'signed', userId: OTHER_USER_ID });
+  });
+
+  it('rejects an uppercase-encoded user id, whichever case the MAC was computed over', () => {
+    const iat = String(Math.floor(NOW.getTime() / 1000));
+    const upperId = OTHER_USER_ID.toUpperCase();
+    for (const macOver of [upperId, OTHER_USER_ID]) {
+      const tokenMac = crypto.createHmac('sha256', derivedKey()).update(`weekly-summary\n${macOver}\n${iat}`).digest('base64url');
+      const token = ['v1', Buffer.from(upperId).toString('base64url'), iat, tokenMac].join('.');
+      expect(verifyUnsubscribeToken(token, 'weekly-summary', NOW)).toEqual({ kind: 'invalid' });
+    }
+  });
+
+  it('normalizes a legacy token user id to lowercase on verify', () => {
+    const legacy = Buffer.from(OTHER_USER_ID.toUpperCase()).toString('base64');
+    expect(verifyUnsubscribeToken(legacy, 'weekly-summary', NOW)).toEqual({ kind: 'legacy', userId: OTHER_USER_ID });
+  });
+});
+
+describe('presentedUnsubscribeToken', () => {
+  it('GET reads the query; POST with a query token is one-click; other POSTs read the form body', () => {
+    expect(presentedUnsubscribeToken({ method: 'GET', query: { token: 'q' }, body: { token: 'b' } })).toEqual({ token: 'q', oneClick: false });
+    expect(presentedUnsubscribeToken({ method: 'POST', query: { token: 'q' }, body: { token: 'b' } })).toEqual({ token: 'q', oneClick: true });
+    expect(presentedUnsubscribeToken({ method: 'POST', query: {}, body: { token: 'b' } })).toEqual({ token: 'b', oneClick: false });
+    expect(presentedUnsubscribeToken({ method: 'POST', query: {} })).toEqual({ token: undefined, oneClick: false });
   });
 });
 

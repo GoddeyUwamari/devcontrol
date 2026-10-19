@@ -56,10 +56,11 @@ function mac(purpose: UnsubscribePurpose, userId: string, iat: number): Buffer {
   return crypto.createHmac('sha256', signingKey()).update(`${purpose}\n${userId}\n${iat}`).digest();
 }
 
-export function signUnsubscribeToken(userId: string, purpose: UnsubscribePurpose, now: Date = new Date()): string {
-  if (!UUID_RE.test(userId)) {
+export function signUnsubscribeToken(rawUserId: string, purpose: UnsubscribePurpose, now: Date = new Date()): string {
+  if (!UUID_RE.test(rawUserId)) {
     throw new Error('Unsubscribe tokens are only issued for UUID user ids');
   }
+  const userId = rawUserId.toLowerCase();
   const iat = Math.floor(now.getTime() / 1000);
   return [
     TOKEN_VERSION,
@@ -74,11 +75,13 @@ function verifySigned(token: string, purpose: UnsubscribePurpose, now: Date): Ve
   if (parts.length !== 4 || parts[0] !== TOKEN_VERSION) return { kind: 'invalid' };
   const [, encodedUserId, iatText, encodedMac] = parts;
 
-  if (!BASE64URL_RE.test(encodedUserId) || !BASE64URL_RE.test(encodedMac) || !/^\d{1,12}$/.test(iatText)) {
+  // Canonical form only -- lowercase user id, iat with no leading zero, and
+  // base64url that re-encodes to itself (no stray tail bits) -- so for a
+  // given (userId, iat) exactly one string verifies: the one sign() returns.
+  if (!BASE64URL_RE.test(encodedUserId) || !BASE64URL_RE.test(encodedMac) || !/^[1-9]\d{0,11}$/.test(iatText)) {
     return { kind: 'invalid' };
   }
-  const userId = Buffer.from(encodedUserId, 'base64url').toString('utf-8');
-  // Canonical encoding only, so one (userId, iat) has exactly one token.
+  const userId = Buffer.from(encodedUserId, 'base64url').toString('utf-8').toLowerCase();
   if (!UUID_RE.test(userId) || Buffer.from(userId, 'utf-8').toString('base64url') !== encodedUserId) {
     return { kind: 'invalid' };
   }
@@ -90,6 +93,7 @@ function verifySigned(token: string, purpose: UnsubscribePurpose, now: Date): Ve
   }
 
   const provided = Buffer.from(encodedMac, 'base64url');
+  if (provided.toString('base64url') !== encodedMac) return { kind: 'invalid' };
   const expected = mac(purpose, userId, iat);
   if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
     return { kind: 'invalid' };
@@ -104,7 +108,22 @@ function verifyLegacy(token: string, purpose: UnsubscribePurpose, now: Date): Ve
   }
   if (!LEGACY_RE.test(token)) return { kind: 'invalid' };
   const userId = Buffer.from(token, 'base64').toString('utf-8');
-  return UUID_RE.test(userId) ? { kind: 'legacy', userId } : { kind: 'invalid' };
+  return UUID_RE.test(userId) ? { kind: 'legacy', userId: userId.toLowerCase() } : { kind: 'invalid' };
+}
+
+/**
+ * The token an unsubscribe request presents. GET: the link's query string.
+ * POST with a query token: RFC 8058 one-click (its body need not parse --
+ * receivers may send multipart/form-data). Other POSTs: the confirm form body.
+ */
+export function presentedUnsubscribeToken(req: {
+  method: string;
+  query: Record<string, unknown>;
+  body?: Record<string, unknown>;
+}): { token: unknown; oneClick: boolean } {
+  if (req.method !== 'POST') return { token: req.query.token, oneClick: false };
+  const oneClick = req.query.token !== undefined;
+  return { token: oneClick ? req.query.token : req.body?.token, oneClick };
 }
 
 /**
