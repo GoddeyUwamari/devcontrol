@@ -6,9 +6,12 @@
 import { Pool } from 'pg';
 import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../weekly-ai-summary.job';
 import { AIInsightsService } from '../../services/ai-insights.service';
+import { verifyUnsubscribeToken } from '../../services/unsubscribe-token';
 
 const ORG_A = 'c0000000-0000-4000-8000-00000000000a';
 const ORG_B = 'c0000000-0000-4000-8000-00000000000b';
+/** Each org's owner: a UUID (unsubscribe tokens are only issued for UUID user ids). */
+const userOf = (org: string) => org.replace(/^c/, 'd');
 
 function fakePool() {
   const clients: Array<{ query: jest.Mock; release: jest.Mock }> = [];
@@ -104,7 +107,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
   }
 
   it('P/16/B1: an eligible org is sent only to its own recipient, with no model call, no AI section, and a subject with no AI claim', async () => {
-    const { job, send, repository } = setup(org => ({ userId: `user-of-${org}`, email: `owner@${org}.test`, fullName: 'Pat Owner' }));
+    const { job, send, repository } = setup(org => ({ userId: userOf(org), email: `owner@${org}.test`, fullName: 'Pat Owner' }));
     const gather = stubEvidence(repository);
     const modelCall = jest.spyOn(AIInsightsService.prototype, 'generateDashboardSummary');
 
@@ -115,8 +118,16 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     expect(send).toHaveBeenCalledTimes(1);
     const payload = (send.mock.calls[0] as any[])[0];
     expect(payload.to).toBe(`owner@${ORG_B}.test`);
-    const token = Buffer.from(`user-of-${ORG_B}`).toString('base64');
-    expect(payload.headers['List-Unsubscribe']).toContain(`token=${token}`);
+    // Signed weekly-summary token for this org's owner, never the forgeable base64(userId).
+    const header = payload.headers['List-Unsubscribe'] as string;
+    const token = /[?&]token=([^&>]+)>$/.exec(header)?.[1];
+    expect(token).toMatch(/^v1\./);
+    expect(verifyUnsubscribeToken(token, 'weekly-summary')).toEqual({ kind: 'signed', userId: userOf(ORG_B) });
+    expect(header).not.toContain(`token=${Buffer.from(userOf(ORG_B)).toString('base64')}>`);
+    expect(payload.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+    for (const body of [payload.html, payload.text]) {
+      expect(body).toContain(token);
+    }
     expect(payload.text).toContain('Cloud spend data was unavailable for this period');
     expect(payload.text).not.toMatch(/No cloud spend recorded|No alerts|DORA|lead time/i);
 
@@ -132,7 +143,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
   });
 
   it('H1: a Resend { error } result is a failed send -- counted as an error, never as sent, with a sanitized log', async () => {
-    const { job, send, repository } = setup(org => ({ userId: `user-of-${org}`, email: `owner@${org}.test`, fullName: 'Pat Owner' }));
+    const { job, send, repository } = setup(org => ({ userId: userOf(org), email: `owner@${org}.test`, fullName: 'Pat Owner' }));
     stubEvidence(repository);
     send.mockResolvedValue({
       data: null,

@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { SubscriptionTier } from './subscription.middleware';
+import { presentedUnsubscribeToken, verifyUnsubscribeToken } from '../services/unsubscribe-token';
 
 // Extend Express Request type to include user data
 declare global {
@@ -280,6 +281,76 @@ export const weeklySummaryTriggerRateLimiter = rateLimit({
   },
 });
 
+const UNSUBSCRIBE_PATH = '/api/user/preferences/unsubscribe';
+
+/** GET or POST on exactly the public weekly summary unsubscribe endpoint. */
+function isUnsubscribeRequest(req: Request): boolean {
+  return (req.method === 'GET' || req.method === 'POST') && req.originalUrl.split('?')[0] === UNSUBSCRIBE_PATH;
+}
+
+const signedUnsubscribeUserIds = new WeakMap<Request, string | null>();
+
+/** The verified user id when the request carries a valid signed token, else null (verified once per request). */
+function signedUnsubscribeUserId(req: Request): string | null {
+  if (!signedUnsubscribeUserIds.has(req)) {
+    const verified = verifyUnsubscribeToken(presentedUnsubscribeToken(req).token, 'weekly-summary');
+    signedUnsubscribeUserIds.set(req, verified.kind === 'signed' ? verified.userId : null);
+  }
+  return signedUnsubscribeUserIds.get(req) ?? null;
+}
+
+function skipUnsubscribeRateLimit(): boolean {
+  return process.env.NODE_ENV === 'development' && process.env.SKIP_RATE_LIMIT === 'true';
+}
+
+function unsubscribeLimitHandler(req: Request, res: Response) {
+  res.status(429).type('text/plain').send('Too many unsubscribe requests. Please try again in 15 minutes.');
+}
+
+/**
+ * Rate limiters for the public weekly summary unsubscribe endpoint, which is
+ * exempt from standardRateLimiter. Every request passes exactly one of them:
+ *
+ * unsubscribeSignedUserRateLimiter -- requests with a valid signed token,
+ * keyed by the verified user id, never by IP: mail providers send RFC 8058
+ * one-click POSTs for many recipients from shared IPs, so neither other
+ * users' traffic nor failed attempts from that IP may block a real one.
+ * GET, confirm POST and one-click POST share the per-user budget.
+ *
+ * unsubscribeRateLimiter -- everything else, keyed by IP: invalid or expired
+ * tokens, and legacy base64(userId) tokens (forgeable until the cutoff),
+ * successful or not.
+ *
+ * In-memory: per backend process.
+ */
+export const unsubscribeSignedUserRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 signed-token requests per 15 minutes per user
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  keyGenerator: (req: Request) => `unsubscribe-user:${signedUnsubscribeUserId(req)}`,
+
+  skip: (req: Request) => skipUnsubscribeRateLimit() || signedUnsubscribeUserId(req) === null,
+
+  handler: unsubscribeLimitHandler,
+});
+
+export const unsubscribeRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // 30 unsigned or invalid requests per 15 minutes per IP
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  // No keyGenerator - uses default IP handler (IPv6 safe)
+
+  skip: (req: Request) => skipUnsubscribeRateLimit() || signedUnsubscribeUserId(req) !== null,
+
+  handler: unsubscribeLimitHandler,
+});
+
 /**
  * Rate limiter for SAML SSO initiation
  * Prevents abuse of the IdP redirect endpoint
@@ -321,7 +392,9 @@ export const standardRateLimiter = rateLimit({
     ) {
       return true;
     }
-    return false;
+    // Limited by unsubscribeRateLimiter instead, which never blocks a valid
+    // signed token and sends that route's no-store/noindex/no-referrer headers.
+    return isUnsubscribeRequest(req);
   },
 
   handler: (req: Request, res: Response) => {
