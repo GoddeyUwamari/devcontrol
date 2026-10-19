@@ -320,7 +320,7 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
     {
       title: 'API Request',
       icon: FileCode,
-      code: `curl -X GET \\\n  https://api.getdevcontrol.com/api/services \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -H "Content-Type: application/json"`,
+      code: `curl -X GET \\\n  https://api.getdevcontrol.com/api/services \\\n  -H "Authorization: Bearer $ACCESS_TOKEN" \\\n  -H "Content-Type: application/json"`,
     },
     {
       title: 'AWS IAM Policy',
