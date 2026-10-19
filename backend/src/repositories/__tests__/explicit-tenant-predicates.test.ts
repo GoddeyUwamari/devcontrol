@@ -430,6 +430,97 @@ describe('impact analysis is scoped to the organization', () => {
   });
 });
 
+describe('a single dependency is scoped to the organization', () => {
+  it('names only the organization\'s own services, and another organization\'s dependency id is a 404', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const sourceA = await insertService(orgA);
+    const targetB = await insertService(orgB);
+    // Org A's row whose target is org B's service.
+    const pointsAway = await insertDependencyRow(orgA, sourceA, targetB);
+    const foreign = await insertDependencyRow(orgB, targetB, await insertService(orgB));
+
+    const row = await dependenciesRepository.findById(pointsAway, orgA);
+    expect(row).toEqual(expect.objectContaining({
+      id: pointsAway,
+      organization_id: orgA,
+      source_service_name: await serviceName(sourceA),
+      target_service_name: null,
+      target_service_status: null,
+    }));
+    expect(JSON.stringify(row)).not.toContain(await serviceName(targetB));
+
+    expect(await dependenciesRepository.findById(foreign, orgA)).toBeNull();
+    const { req, res, json, status } = mockReqRes(orgA, {}, { id: foreign });
+    await dependenciesController.getById(req, res, jest.fn());
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith({ success: false, error: 'Dependency not found' });
+  });
+});
+
+describe('the dependency graph is scoped to the organization', () => {
+  it('has only the organization\'s services as nodes and its own rows as edges', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const a1 = await insertService(orgA);
+    const a2 = await insertService(orgA);
+    const b1 = await insertService(orgB);
+    const b2 = await insertService(orgB);
+    const own = await insertDependencyRow(orgA, a1, a2, true);
+    const foreign = await insertDependencyRow(orgB, b1, b2);
+
+    const { req, res, json, status } = mockReqRes(orgA);
+    await dependenciesController.getGraph(req, res, jest.fn());
+
+    expect(status).not.toHaveBeenCalled();
+    const body = json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.data.nodes.map((n: any) => n.id).sort()).toEqual([a1, a2].sort());
+    expect(body.data.nodes.find((n: any) => n.id === a1).data.label).toBe(await serviceName(a1));
+    expect(body.data.edges).toEqual([
+      expect.objectContaining({ id: own, source: a1, target: a2, data: expect.objectContaining({ is_critical: true }) }),
+    ]);
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(foreign);
+    expect(serialized).not.toContain(b1);
+    expect(serialized).not.toContain(await serviceName(b1));
+  });
+});
+
+describe('cycle detection is scoped to the organization', () => {
+  it('finds the organization\'s own cycle, and never one through or of another organization\'s services', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const a1 = await insertService(orgA);
+    const a2 = await insertService(orgA);
+    const a3 = await insertService(orgA);
+    const b1 = await insertService(orgB);
+    const b2 = await insertService(orgB);
+    // Org A's own cycle a1 -> a2 -> a1.
+    await insertDependencyRow(orgA, a1, a2);
+    await insertDependencyRow(orgA, a2, a1);
+    // Org A rows that would close a cycle a3 -> b1 -> a3 through org B's service.
+    await insertDependencyRow(orgA, a3, b1);
+    await insertDependencyRow(orgA, b1, a3);
+    // Org B's own cycle.
+    await insertDependencyRow(orgB, b1, b2);
+    await insertDependencyRow(orgB, b2, b1);
+
+    const { req, res, json, status } = mockReqRes(orgA);
+    await dependenciesController.detectCycles(req, res, jest.fn());
+
+    expect(status).not.toHaveBeenCalled();
+    const body = json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].cycle.map((s: any) => s.service_id).sort()).toEqual([a1, a2].sort());
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(b1);
+    expect(serialized).not.toContain(await serviceName(b1));
+    expect(serialized).not.toContain(await serviceName(b2));
+  });
+});
+
 describe('deployment creation requires the service to belong to the organization', () => {
   function body(serviceId: string | undefined, extra: Record<string, unknown> = {}) {
     return {

@@ -76,8 +76,8 @@ export class DependenciesRepository {
         ss.status as source_service_status,
         ts.status as target_service_status
       FROM service_dependencies sd
-      LEFT JOIN services ss ON sd.source_service_id = ss.id
-      LEFT JOIN services ts ON sd.target_service_id = ts.id
+      LEFT JOIN services ss ON sd.source_service_id = ss.id AND ss.organization_id = $2
+      LEFT JOIN services ts ON sd.target_service_id = ts.id AND ts.organization_id = $2
       WHERE sd.id = $1 AND sd.organization_id = $2
     `;
 
@@ -337,8 +337,8 @@ export class DependenciesRepository {
         ss.name as source_name,
         ts.name as target_name
       FROM service_dependencies sd
-      JOIN services ss ON sd.source_service_id = ss.id
-      JOIN services ts ON sd.target_service_id = ts.id
+      JOIN services ss ON sd.source_service_id = ss.id AND ss.organization_id = $1
+      JOIN services ts ON sd.target_service_id = ts.id AND ts.organization_id = $1
       WHERE sd.organization_id = $1
     `;
 
