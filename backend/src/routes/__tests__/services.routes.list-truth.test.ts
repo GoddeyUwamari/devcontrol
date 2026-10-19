@@ -266,7 +266,7 @@ describe('GET /api/services -- search matches %, _ and \\ literally', () => {
   const search = async (term: string) => {
     const { status, body } = await get(viewer, orgId, `/services?search=${encodeURIComponent(term)}`);
     expect(status).toBe(200);
-    return body.services.map((s: any) => s.name).sort();
+    return body.services.map((s: { name: string }) => s.name).sort();
   };
 
   it('"_" matches only names containing an underscore', async () => {

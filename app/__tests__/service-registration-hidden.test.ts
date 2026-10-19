@@ -62,8 +62,10 @@ describe('service registration is not offered anywhere in the app', () => {
   })
 
   it('the top nav and mobile drawer have no /services/new entry', () => {
-    const hrefs = [...navItems.flatMap((item) => item.children ?? [item]), ...mobileSections.flatMap((s) => s.items)]
-      .map((item) => item.href)
+    const hrefs: (string | undefined)[] = [
+      ...navItems.flatMap((item) => (item.children ? item.children.map((c) => c.href) : [item.href])),
+      ...mobileSections.flatMap((s) => s.items.map((i) => i.href)),
+    ]
     expect(hrefs).toContain('/services')
     expect(hrefs).not.toContain('/services/new')
   })
