@@ -328,7 +328,7 @@ describe('/services -- discovery warnings', () => {
   const discovered = (warnings: string[]) => ({ discovered: 0, updated: 1, errors: [], warnings, message: 'Discovery complete — 0 new, 1 updated' })
 
   it('shows the deletion-detection notice when the run reports a truncated index', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
     mockDiscover.mockResolvedValue(discovered(['deletion_detection_paused_truncated_index']))
     renderPage()
@@ -341,7 +341,7 @@ describe('/services -- discovery warnings', () => {
   })
 
   it('shows no notice when the run reports no warning', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
     mockDiscover.mockResolvedValue(discovered([]))
     renderPage()
