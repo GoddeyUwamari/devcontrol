@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { Soc2EvidenceService } from '../services/soc2-evidence.service';
 import { isPlatformAwsCredentialsUnavailable, isPlatformCredentialFailure } from '../services/platform-sts';
-import { findEligibleAwsAccount, listIneligibleAwsAccountStatuses } from '../repositories/aws-accounts.repository';
+import { readAwsAccountConnection } from '../repositories/aws-accounts.repository';
 
 /** One scheduled run's outcome per organization. Every organization lands in exactly one count. */
 export interface DiscoveryRunSummary {
@@ -246,8 +246,7 @@ export class ResourceDiscoveryJob {
     try {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.current_organization_id', $1, true)", [organizationId]);
-      const account = await findEligibleAwsAccount(client, organizationId);
-      const ineligible = account ? [] : await listIneligibleAwsAccountStatuses(client, organizationId);
+      const { account, ineligibleStatuses: ineligible } = await readAwsAccountConnection(client, organizationId);
       await client.query('COMMIT');
       if (account) return { kind: 'active' };
       if (ineligible.length === 0) return { kind: 'none' };

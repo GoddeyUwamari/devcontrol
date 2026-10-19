@@ -81,8 +81,13 @@ export async function findEligibleAwsAccount(db: AwsAccountsQueryable, organizat
     `SELECT ${ACCOUNT_COLUMNS} FROM aws_accounts WHERE org_id = $1 AND ${ELIGIBLE}`,
     [organizationId]
   );
-  if (rows.length > 1) throw new AwsAccountAmbiguousError(organizationId, rows.length);
-  return rows[0] ?? null;
+  return selectOne(organizationId, rows);
+}
+
+/** The selection rule itself: exactly one eligible account, none, or a refusal. */
+function selectOne(organizationId: string, eligible: AwsAccountRow[]): AwsAccountRow | null {
+  if (eligible.length > 1) throw new AwsAccountAmbiguousError(organizationId, eligible.length);
+  return eligible[0] ?? null;
 }
 
 /**
@@ -120,13 +125,20 @@ export async function hasEligibleAwsAccount(db: AwsAccountsQueryable, organizati
 }
 
 /**
- * The statuses of the organization's accounts that are not eligible, for
- * reporting why nothing was selected. Selects no account.
+ * The organization's one eligible account (the same rule as
+ * findEligibleAwsAccount()) and, in the same read, the statuses of its rows
+ * that are not eligible, for reporting why nothing was selected. Throws
+ * AwsAccountAmbiguousError when it has more than one eligible account.
  */
-export async function listIneligibleAwsAccountStatuses(db: AwsAccountsQueryable, organizationId: string): Promise<Array<string | null>> {
-  const { rows } = await db.query(
-    `SELECT status FROM aws_accounts WHERE org_id = $1 AND status IS DISTINCT FROM '${ELIGIBLE_AWS_ACCOUNT_STATUS}' ORDER BY status NULLS FIRST`,
-    [organizationId]
-  );
-  return rows.map((row) => row.status ?? null);
+export async function readAwsAccountConnection(
+  db: AwsAccountsQueryable,
+  organizationId: string
+): Promise<{ account: AwsAccountRow | null; ineligibleStatuses: Array<string | null> }> {
+  const { rows } = await db.query(`SELECT ${ACCOUNT_COLUMNS} FROM aws_accounts WHERE org_id = $1`, [organizationId]);
+  const eligible = rows.filter((row: AwsAccountRow) => row.status === ELIGIBLE_AWS_ACCOUNT_STATUS);
+  const ineligibleStatuses = rows
+    .filter((row: AwsAccountRow) => row.status !== ELIGIBLE_AWS_ACCOUNT_STATUS)
+    .map((row: AwsAccountRow) => row.status ?? null)
+    .sort((a: string | null, b: string | null) => (a === b ? 0 : a === null ? -1 : b === null ? 1 : a < b ? -1 : 1));
+  return { account: selectOne(organizationId, eligible), ineligibleStatuses };
 }

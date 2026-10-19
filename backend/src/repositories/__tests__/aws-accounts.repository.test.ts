@@ -28,7 +28,7 @@ import {
   countEligibleAwsAccounts,
   findEligibleAwsAccount,
   hasEligibleAwsAccount,
-  listIneligibleAwsAccountStatuses,
+  readAwsAccountConnection,
   requireEligibleAwsAccount,
 } from '../aws-accounts.repository';
 
@@ -100,7 +100,7 @@ describe('selection', () => {
     const thrown = await requireEligibleAwsAccount(pool, orgId).catch((err: unknown) => err);
     expect(thrown).toBeInstanceOf(AwsAccountNotConnectedError);
     expect((thrown as Error).message).toBe(`AWS_NOT_CONNECTED: org ${orgId} has not connected an AWS account (no eligible AWS account)`);
-    await expect(listIneligibleAwsAccountStatuses(pool, orgId)).resolves.toEqual([]);
+    await expect(readAwsAccountConnection(pool, orgId)).resolves.toEqual({ account: null, ineligibleStatuses: [] });
   });
 
   it.each([['disconnected'], ['pending'], [null]])('an account with status %p is not eligible: fails closed', async (status) => {
@@ -111,7 +111,7 @@ describe('selection', () => {
     await expect(requireEligibleAwsAccount(pool, orgId)).rejects.toBeInstanceOf(AwsAccountNotConnectedError);
     await expect(hasEligibleAwsAccount(pool, orgId)).resolves.toBe(false);
     await expect(countEligibleAwsAccounts(pool, orgId)).resolves.toBe(0);
-    await expect(listIneligibleAwsAccountStatuses(pool, orgId)).resolves.toEqual([status]);
+    await expect(readAwsAccountConnection(pool, orgId)).resolves.toEqual({ account: null, ineligibleStatuses: [status] });
   });
 
   it('two eligible accounts: fails closed as AWS_ACCOUNT_AMBIGUOUS, never one of them', async () => {
@@ -126,6 +126,7 @@ describe('selection', () => {
     expect(thrown).toBeInstanceOf(AwsAccountAmbiguousError);
     expect((thrown as Error).message).toBe('AWS_ACCOUNT_AMBIGUOUS: org org-two has 2 eligible AWS accounts; multiple AWS accounts are not yet supported');
     await expect(requireEligibleAwsAccount(stub, 'org-two')).rejects.toBeInstanceOf(AwsAccountAmbiguousError);
+    await expect(readAwsAccountConnection(stub, 'org-two')).rejects.toBeInstanceOf(AwsAccountAmbiguousError);
     // Existence checks select nothing, so they do not fail on two.
     await expect(hasEligibleAwsAccount(stub, 'org-two')).resolves.toBe(true);
     // No ORDER BY or LIMIT: nothing could pick one of them.
@@ -147,8 +148,8 @@ describe('two organizations', () => {
     expect(c).toBeNull();
     await expect(countEligibleAwsAccounts(pool, orgA)).resolves.toBe(1);
     await expect(countEligibleAwsAccounts(pool, orgC)).resolves.toBe(0);
-    await expect(listIneligibleAwsAccountStatuses(pool, orgA)).resolves.toEqual([]);
-    await expect(listIneligibleAwsAccountStatuses(pool, orgC)).resolves.toEqual(['disconnected']);
+    await expect(readAwsAccountConnection(pool, orgA)).resolves.toMatchObject({ account: { org_id: orgA }, ineligibleStatuses: [] });
+    await expect(readAwsAccountConnection(pool, orgC)).resolves.toEqual({ account: null, ineligibleStatuses: ['disconnected'] });
   });
 });
 
