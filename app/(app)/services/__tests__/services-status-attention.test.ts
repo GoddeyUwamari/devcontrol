@@ -31,6 +31,8 @@ describe('the page', () => {
 
   it('no longer counts "anything but healthy" as needing attention', () => {
     expect(source).not.toMatch(/status\s*!==\s*'healthy'/)
-    expect(source).toMatch(/displayStats\?\.needs_attention \?\? allServices\.filter\(statusNeedsAttention\)\.length/)
+    // The server's list counts come first when they are there (a page of rows is not
+    // the whole set); the last fallback is still statusNeedsAttention.
+    expect(source).toMatch(/displayStats\?\.needs_attention \?\? listCounts\?\.needs_attention \?\? allServices\.filter\(statusNeedsAttention\)\.length/)
   })
 })

@@ -50,19 +50,44 @@ export interface AWSServiceFilters {
   search?: string
 }
 
+export interface AWSServicesPageRequest extends AWSServiceFilters {
+  // true: only resources that need attention; false: only the others; absent: both.
+  needs_attention?: boolean
+  page?: number
+  limit?: number
+}
+
+// One page of GET /api/services. Every number is the server's, computed over the
+// full filtered set for the organization, never over the rows of this page.
+export interface AWSServicesPage {
+  services: AWSService[]
+  pagination: { page: number; limit: number; total: number; total_pages: number; has_more: boolean }
+  // The type/env/search-filtered set split by needs_attention; needs_attention= does not narrow these.
+  counts: { needs_attention: number; no_flagged_issues: number }
+}
+
 const awsServicesService = {
-  async getServices(filters?: AWSServiceFilters): Promise<AWSService[]> {
+  async getServices(filters?: AWSServicesPageRequest): Promise<AWSServicesPage> {
     const params = new URLSearchParams()
     if (filters?.type   && filters.type   !== 'all') params.set('type',   filters.type)
     if (filters?.env    && filters.env    !== 'all') params.set('env',    filters.env)
     if (filters?.search && filters.search.trim())    params.set('search', filters.search.trim())
+    if (filters?.needs_attention !== undefined)      params.set('needs_attention', String(filters.needs_attention))
+    if (filters?.page)  params.set('page',  String(filters.page))
+    if (filters?.limit) params.set('limit', String(filters.limit))
 
     const query = params.toString() ? `?${params}` : ''
-    const res = await api.get<{ success: boolean; services: AWSService[]; error?: string }>(
-      `/api/services${query}`
-    )
+    const res = await api.get<{
+      success: boolean
+      services: AWSService[]
+      pagination?: AWSServicesPage['pagination']
+      counts?: AWSServicesPage['counts']
+      error?: string
+    }>(`/api/services${query}`)
     if (!res.data.success) throw new Error(res.data.error || 'Failed to load services')
-    return res.data.services ?? []
+    // A response without the server's pagination or counts can't be shown truthfully as a page.
+    if (!res.data.pagination || !res.data.counts) throw new Error('Failed to load services')
+    return { services: res.data.services ?? [], pagination: res.data.pagination, counts: res.data.counts }
   },
 
   async getStats(): Promise<AWSServicesStats> {

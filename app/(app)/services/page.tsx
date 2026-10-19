@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
-import awsServicesService, { AWSService, AWSServicesStats } from '@/lib/services/aws-services.service'
+import awsServicesService, { AWSService, AWSServicesPage, AWSServicesStats } from '@/lib/services/aws-services.service'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { useAuth } from '@/lib/contexts/auth-context'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice'
@@ -111,6 +112,40 @@ function ServiceRow({ svc }: { svc: any }) {
   )
 }
 
+// Rows per page of each section. The server caps a page at 100.
+const PAGE_SIZE = 50
+
+// The same order the server pages in: severity, then name compared as 'en',
+// then id, so re-sorting a page never moves a row the server placed.
+function byNameThenId(a: any, b: any) {
+  return a.name.localeCompare(b.name, 'en') || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
+// Previous / Next for one section, with the server's range and total. Only
+// rendered when the section has more than one page.
+function Pager({ label, pagination, onPage, busy }: {
+  label: string
+  pagination: AWSServicesPage['pagination']
+  onPage: (page: number) => void
+  busy: boolean
+}) {
+  const { page, limit, total, total_pages, has_more } = pagination
+  if (total_pages <= 1) return null
+  const first = Math.min((page - 1) * limit + 1, total)
+  const last  = Math.min(page * limit, total)
+  const buttonClass = 'px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 cursor-pointer transition-colors hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50'
+  return (
+    <nav aria-label={`${label} pages`} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-5 sm:px-7 py-3 border-b border-slate-100">
+      <p className="text-xs text-slate-500 font-medium m-0">Showing {first}–{last} of {total}</p>
+      <div className="flex items-center gap-2">
+        <button type="button" className={buttonClass} disabled={busy || page <= 1} onClick={() => onPage(page - 1)}>Previous</button>
+        <span className="text-xs text-slate-500 font-medium">Page {page} of {total_pages}</span>
+        <button type="button" className={buttonClass} disabled={busy || !has_more} onClick={() => onPage(page + 1)}>Next</button>
+      </div>
+    </nav>
+  )
+}
+
 export default function ServicesPage() {
   const queryClient = useQueryClient()
   const [envFilter,      setEnvFilter]      = useState<string>('all')
@@ -124,76 +159,101 @@ export default function ServicesPage() {
   const [discoveryMsg,      setDiscoveryMsg]      = useState<string | null>(null)
   // The last discovery run's warnings, kept until the next run.
   const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([])
-  const [services,          setServices]          = useState<AWSService[]>([])
-  const [stats,             setStats]             = useState<AWSServicesStats | null>(null)
-  const [isLoading,         setIsLoading]         = useState(false)
-  const [error,             setError]             = useState<string | null>(null)
-  const [noAwsAccount,      setNoAwsAccount]      = useState(true)
+  const [discoveryError,    setDiscoveryError]    = useState<string | null>(null)
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
   const demoMode      = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive  = demoMode || salesDemoMode
   const { tier }      = usePlan()
-
-  // Determines whether an AWS account is connected at all — independent of the
-  // current type/env/search filter, since a filtered-to-zero result set must
-  // never be mistaken for "nothing connected."
-  const checkAwsConnection = useCallback(async () => {
-    if (isDemoActive) return
-    try {
-      const accounts = await awsAccountsService.getAccounts()
-      setNoAwsAccount(accounts.length === 0)
-    } catch {
-      // Leave noAwsAccount as-is; fetchServices' error path covers this too.
-    }
-  }, [isDemoActive])
-
-  useEffect(() => { checkAwsConnection() }, [checkAwsConnection])
+  // Every query below is keyed by organization and disabled until it is known,
+  // so a response for one organization can never render for another: a late
+  // answer for the previous organization lands in that organization's cache
+  // entry, which this page no longer reads.
+  const { organization } = useAuth()
+  const orgId    = organization?.id ?? null
+  const realMode = !isDemoActive && !!orgId
 
   // Debounce the raw input into a separate committed value, rather than
-  // scheduling a delayed fetchServices() call directly — a setTimeout that
-  // calls fetchServices() captures whatever `search` was in scope at the
-  // moment it was scheduled. If the user then changes the input again before
-  // that timer fires, the stale closure still fires ~400ms later with the
-  // OLD search term and silently overwrites the correct, fresher results.
-  // Debouncing the state instead means fetchServices always reads the latest
-  // committed value, and there's no closure to go stale.
+  // scheduling a delayed fetch directly — a setTimeout that fetches captures
+  // whatever `search` was in scope at the moment it was scheduled. If the user
+  // then changes the input again before that timer fires, the stale closure
+  // still fires ~400ms later with the OLD search term and silently overwrites
+  // the correct, fresher results. Debouncing the state instead means the list
+  // query always reads the latest committed value.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 400)
     return () => clearTimeout(t)
   }, [search])
 
-  const fetchServices = useCallback(async () => {
-    if (isDemoActive) return
-    setIsLoading(true)
-    setError(null)
-    try {
-      const [svcs, st] = await Promise.all([
-        awsServicesService.getServices({
-          type:   templateFilter !== 'all' ? templateFilter  : undefined,
-          env:    envFilter      !== 'all' ? envFilter       : undefined,
-          search: debouncedSearch.trim()   || undefined,
-        }),
-        awsServicesService.getStats(),
-      ])
-      setServices(svcs)
-      setStats(st)
-      // Do NOT infer connection status from a successful-but-empty result here —
-      // an empty aws_resources table returns success for both a never-connected
-      // org and a connected-but-zero-matches filter. noAwsAccount is decided
-      // solely by checkAwsConnection() (an explicit aws_accounts lookup) and by
-      // totalServices > 0 (see isAwsConnected below), never by this fetch alone.
-    } catch (err: any) {
-      try {
-        const accounts = await awsAccountsService.getAccounts()
-        if (accounts.length === 0) { setNoAwsAccount(true); setError(null) }
-        else { setNoAwsAccount(false); setError(err.message || 'Failed to load resources') }
-      } catch { setNoAwsAccount(true); setError(null) }
-    } finally { setIsLoading(false) }
-  }, [isDemoActive, templateFilter, envFilter, debouncedSearch])
+  // Whether an AWS account is connected at all — independent of the current
+  // type/env/search filter, since a filtered-to-zero result set must never be
+  // mistaken for "nothing connected."
+  const accountsQuery = useQuery({
+    queryKey: ['services-aws-accounts', orgId],
+    queryFn: () => awsAccountsService.getAccounts(),
+    enabled: realMode, retry: false, refetchOnWindowFocus: false,
+  })
+  const noAwsAccount   = accountsQuery.data ? accountsQuery.data.length === 0 : true
+  const knownNoAccount = accountsQuery.data?.length === 0
 
-  useEffect(() => { fetchServices() }, [fetchServices])
+  // Organization-wide numbers. Filters can't change them, so a filter or search
+  // change never refetches them; discovery does (handleAutoDiscover).
+  const statsQuery = useQuery<AWSServicesStats>({
+    queryKey: ['services-stats', orgId],
+    queryFn: () => awsServicesService.getStats(),
+    enabled: realMode, retry: false, refetchOnWindowFocus: false,
+  })
+
+  // The two sections are paged by the server, each over the full filtered set.
+  const listFilters = {
+    type:   templateFilter !== 'all' ? templateFilter  : undefined,
+    env:    envFilter      !== 'all' ? envFilter       : undefined,
+    search: debouncedSearch.trim()   || undefined,
+  }
+  // A new organization or filter starts both sections at page 1, in the same
+  // render, so no request is made for a stale page.
+  const pagingKey = JSON.stringify([orgId, listFilters])
+  const [paging, setPaging] = useState({ key: pagingKey, needs: 1, healthy: 1 })
+  const needsPage   = paging.key === pagingKey ? paging.needs   : 1
+  const healthyPage = paging.key === pagingKey ? paging.healthy : 1
+  const goToPage = (section: 'needs' | 'healthy', page: number) =>
+    setPaging((prev) => ({ ...(prev.key === pagingKey ? prev : { needs: 1, healthy: 1 }), key: pagingKey, [section]: page }))
+
+  const sectionQuery = (needsAttention: boolean, page: number, enabled: boolean) => {
+    const queryKey = ['services-list', orgId, listFilters, needsAttention, page] as const
+    return {
+      queryKey,
+      queryFn: () => awsServicesService.getServices({ ...listFilters, needs_attention: needsAttention, page, limit: PAGE_SIZE }),
+      enabled, retry: false, refetchOnWindowFocus: false,
+      // Turning a page keeps the current rows until the next page arrives. Any
+      // other change (organization, filter, section) starts from loading.
+      placeholderData: (previous: AWSServicesPage | undefined, previousQuery: { queryKey: readonly unknown[] } | undefined) =>
+        previousQuery && JSON.stringify(previousQuery.queryKey.slice(0, 4)) === JSON.stringify(queryKey.slice(0, 4)) ? previous : undefined,
+    }
+  }
+  const needsQuery   = useQuery(sectionQuery(true,  needsPage,   realMode))
+  const healthyQuery = useQuery(sectionQuery(false, healthyPage, realMode && !onlyNeedsAttention))
+
+  // A page past the end (the inventory shrank after a discovery) goes back to the last page.
+  useEffect(() => {
+    for (const [section, data] of [['needs', needsQuery.data], ['healthy', healthyQuery.data]] as const) {
+      const p = data?.pagination
+      if (p && p.page > 1 && p.page > p.total_pages) goToPage(section, Math.max(1, p.total_pages))
+    }
+  })
+
+  // Discovery's error is cleared by the next filter change, as the list's own error is.
+  useEffect(() => { setDiscoveryError(null) }, [pagingKey])
+
+  // A query disabled because the organization isn't known yet counts as loading,
+  // so nothing renders as empty before it could be fetched.
+  const statsLoading = !isDemoActive && (!orgId || statsQuery.isPending)
+  const listLoading  = !isDemoActive && (!orgId || needsQuery.isPending || (!onlyNeedsAttention && healthyQuery.isPending))
+  const listFailed   = !isDemoActive && (needsQuery.isError || (!onlyNeedsAttention && healthyQuery.isError))
+  // A failed request is an error unless the organization is known to have no
+  // AWS account, in which case the page says that instead.
+  const error = (!isDemoActive && (listFailed || statsQuery.isError) && !knownNoAccount) || !!discoveryError
 
   const handleSearchChange = (val: string) => {
     setSearch(val)
@@ -207,13 +267,16 @@ export default function ServicesPage() {
       setTimeout(() => setDiscoveryComplete(false), 4000)
       return
     }
-    setIsDiscovering(true); setDiscoveryComplete(false); setDiscoveryMsg(null); setDiscoveryWarnings([])
+    setIsDiscovering(true); setDiscoveryComplete(false); setDiscoveryMsg(null); setDiscoveryWarnings([]); setDiscoveryError(null)
     try {
       const result = await awsServicesService.discoverServices()
       setDiscoveryMsg(result.message); setDiscoveryComplete(true)
       setDiscoveryWarnings(result.warnings)
       setTimeout(() => { setDiscoveryComplete(false); setDiscoveryMsg(null) }, 6000)
-      await fetchServices()
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['services-list', orgId] }),
+        queryClient.invalidateQueries({ queryKey: ['services-stats', orgId] }),
+      ])
       // A scan can flip compliance_scan_completed, which changes isPreliminary —
       // without this, the security score (dashboard/security pages) stays on its
       // pre-scan cached value for up to staleTime (5 min).
@@ -221,12 +284,14 @@ export default function ServicesPage() {
       queryClient.invalidateQueries({ queryKey: ['risk-score-current'] })
     } catch (err: any) {
       if (err.response?.status === 402) setShowUpgradePrompt(true)
-      else setError(err.message || 'Discovery failed — check your AWS connection')
+      else setDiscoveryError(err.message || 'Discovery failed — check your AWS connection')
     } finally { setIsDiscovering(false) }
   }
 
-  const allServices      = isDemoActive ? DEMO_SERVICES : services
-  const displayStats     = isDemoActive ? DEMO_STATS    : stats
+  const listRows: AWSService[] = [...(needsQuery.data?.services ?? []), ...(onlyNeedsAttention ? [] : healthyQuery.data?.services ?? [])]
+  const allServices      = isDemoActive ? DEMO_SERVICES : listRows
+  const displayStats     = isDemoActive ? DEMO_STATS    : statsQuery.data
+  // Real mode: the server already filtered and paged. Demo: filtered here.
   const filteredServices = isDemoActive
     ? allServices.filter((s: any) => {
         const matchEnv  = envFilter      === 'all' || s.environment === envFilter
@@ -235,35 +300,51 @@ export default function ServicesPage() {
         return matchEnv && matchType && matchSrch
       })
     : allServices
+  // The server's counts for the filtered set, used only when /stats has not answered.
+  const listCounts = isDemoActive ? undefined : needsQuery.data?.counts
 
-  const totalServices = displayStats?.total          ?? allServices.length
-  const healthyCount  = displayStats?.healthy         ?? allServices.filter((s: any) => s.status === 'healthy').length
+  const totalServices = displayStats?.total          ?? (listCounts ? listCounts.needs_attention + listCounts.no_flagged_issues : allServices.length)
+  const healthyCount  = displayStats?.healthy         ?? listCounts?.no_flagged_issues ?? allServices.filter((s: any) => s.status === 'healthy').length
   // Fallback when the stats request has not answered: only a known warning or critical
   // status counts. 'unknown' (no lifecycle state to judge) is not a reason for attention.
-  const warningCount  = displayStats?.needs_attention ?? allServices.filter(statusNeedsAttention).length
+  const warningCount  = displayStats?.needs_attention ?? listCounts?.needs_attention ?? allServices.filter(statusNeedsAttention).length
+  // A failed stats request shows no number rather than a zero.
+  const statsUnavailable = !isDemoActive && !statsLoading && !displayStats
+  const kpiValue = (n: number) => statsLoading ? '…' : statsUnavailable ? '—' : n
+  // The chip's count is organization-wide, so it comes from /stats or not at all:
+  // never from the filtered list's counts.
+  const chipCountUnavailable = statsLoading || statsUnavailable
   // From the backend's count of connected accounts, never assumed from the
   // resources: inventory can outlive a connection.
   const accountsCaption = connectedAccountsCaption(displayStats?.aws_accounts_connected)
 
   // "Needs attention" quick-filter chip narrows the already type/env/search-
-  // filtered set further — a separate dimension, not folded into fetchServices.
+  // filtered set further: the healthy section is not requested at all.
   const visibleFilteredServices = onlyNeedsAttention
     ? filteredServices.filter((s: any) => s.needs_attention)
     : filteredServices
 
-  // Priority-sorted: critical first, then by name — fixed order.
+  // Priority-sorted: critical first, then by name — fixed order, the server's.
   const needsAttentionSorted = visibleFilteredServices
     .filter((s: any) => s.needs_attention)
     .sort((a: any, b: any) => {
       const ra = SEVERITY_SORT_RANK[a.priority_severity as string] ?? 4
       const rb = SEVERITY_SORT_RANK[b.priority_severity as string] ?? 4
       if (ra !== rb) return ra - rb
-      return a.name.localeCompare(b.name)
+      return byNameThenId(a, b)
     })
 
   const healthySorted = visibleFilteredServices
     .filter((s: any) => !s.needs_attention)
-    .sort((a: any, b: any) => a.name.localeCompare(b.name))
+    .sort(byNameThenId)
+
+  // Section sizes: the server's totals over the full filtered set, never the
+  // rows of the current page.
+  const needsAttentionTotal = isDemoActive ? needsAttentionSorted.length : needsQuery.data?.pagination.total ?? 0
+  const healthyTotal        = isDemoActive ? healthySorted.length : onlyNeedsAttention ? 0 : healthyQuery.data?.pagination.total ?? 0
+  const visibleTotal        = needsAttentionTotal + healthyTotal
+  // Section counts follow the type/env/search filters; the chip and KPI counts don't.
+  const listIsNarrowed = templateFilter !== 'all' || envFilter !== 'all' || !!debouncedSearch.trim()
 
   // Connection status — deliberately independent of the current type/env/search
   // filter, so filtering to zero matches can never be mistaken for "AWS not
@@ -275,8 +356,8 @@ export default function ServicesPage() {
   // -- so real mode says "no flagged issues", and zero resources or a failed
   // request is never read as all-healthy.
   const serviceDataState: 'loading' | 'unavailable' | 'none' | 'present' = isDemoActive ? 'present'
-    : isLoading ? 'loading'
-    : error && !noAwsAccount ? 'unavailable'
+    : statsLoading ? 'loading'
+    : error ? 'unavailable'
     : totalServices === 0 ? 'none'
     : 'present'
   const serviceStatusHeadline = serviceDataState === 'loading' ? 'Loading…'
@@ -288,7 +369,7 @@ export default function ServicesPage() {
   // A "needs attention" filter turning up zero results is good news, not a
   // dead end — keep it visually and textually distinct from a real no-match.
   const isPositiveEmptyState = onlyNeedsAttention && !activeFilterLabel && !search.trim() && envFilter === 'all'
-    && visibleFilteredServices.length === 0 && isAwsConnected
+    && visibleTotal === 0 && isAwsConnected
   const noMatchTitle      = onlyNeedsAttention && !isPositiveEmptyState
     ? 'No at-risk resources match these filters'
     : activeFilterLabel
@@ -375,8 +456,8 @@ export default function ServicesPage() {
           {/* At risk */}
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">At Risk</p>
-            <p className="text-2xl font-bold text-red-600">{warningCount} <span className="text-sm text-slate-500 font-normal">of {totalServices}</span></p>
-            <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}</p>
+            <p className="text-2xl font-bold text-red-600">{kpiValue(warningCount)} <span className="text-sm text-slate-500 font-normal">of {kpiValue(totalServices)}</span></p>
+            <p className="text-xs text-slate-500">{isDemoActive ? '1 reliability · 1 cost' : statsUnavailable ? '—' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}</p>
           </div>
         </div>
 
@@ -420,9 +501,9 @@ export default function ServicesPage() {
             {/* At risk */}
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-red-600 mb-1">At Risk</p>
-              <p className="text-2xl font-bold text-red-600 mb-0.5">{warningCount} of {totalServices}</p>
+              <p className="text-2xl font-bold text-red-600 mb-0.5">{kpiValue(warningCount)} of {kpiValue(totalServices)}</p>
               <p className="text-xs font-medium text-slate-500 m-0">
-                {isDemoActive ? '1 reliability · 1 cost inefficiency' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}
+                {isDemoActive ? '1 reliability · 1 cost inefficiency' : statsUnavailable ? '—' : warningCount > 0 ? 'Flagged for review' : serviceDataState === 'present' ? 'None flagged' : '—'}
               </p>
             </div>
           </div>
@@ -445,7 +526,7 @@ export default function ServicesPage() {
       )}
 
       {/* ── ERROR BANNER ── */}
-      {error && !noAwsAccount && (
+      {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
           <p className="text-sm text-red-600 m-0">Failed to load resources.</p>
         </div>
@@ -453,23 +534,23 @@ export default function ServicesPage() {
 
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-8">
-        <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
+        <div className={`bg-white rounded-xl p-5 border border-slate-200 ${statsLoading ? 'opacity-60' : ''}`}>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">AWS resources</p>
-          <div className="text-4xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalServices}</div>
+          <div className="text-4xl font-bold text-slate-900 leading-none mb-1">{kpiValue(totalServices)}</div>
           {accountsCaption && <p className="text-slate-500 text-xs font-medium m-0">{accountsCaption}</p>}
         </div>
 
-        <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
+        <div className={`bg-white rounded-xl p-5 border border-slate-200 ${statsLoading ? 'opacity-60' : ''}`}>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">{isDemoActive ? 'Healthy' : 'No Flagged Issues'}</p>
-          <div className="text-4xl font-bold text-green-600 leading-none mb-1">{isLoading && !isDemoActive ? '…' : healthyCount}</div>
+          <div className="text-4xl font-bold text-green-600 leading-none mb-1">{kpiValue(healthyCount)}</div>
           <p className="text-slate-500 text-xs font-medium m-0">{isDemoActive ? 'Operating within thresholds' : 'Resources with no flagged issues'}</p>
         </div>
 
-        <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
+        <div className={`bg-white rounded-xl p-5 border border-slate-200 ${statsLoading ? 'opacity-60' : ''}`}>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">At Risk</p>
-          <div className="text-4xl font-bold text-red-600 leading-none mb-1">{isLoading && !isDemoActive ? '…' : warningCount}</div>
+          <div className="text-4xl font-bold text-red-600 leading-none mb-1">{kpiValue(warningCount)}</div>
           <p className="text-slate-500 text-xs font-medium m-0">
-            {isDemoActive ? '1 reliability · 1 cost inefficiency · both in production' : warningCount > 0 ? `${warningCount} flagged for review` : serviceDataState === 'present' ? 'None flagged' : '—'}
+            {isDemoActive ? '1 reliability · 1 cost inefficiency · both in production' : statsUnavailable ? '—' : warningCount > 0 ? `${warningCount} flagged for review` : serviceDataState === 'present' ? 'None flagged' : '—'}
           </p>
         </div>
       </div>
@@ -531,11 +612,14 @@ export default function ServicesPage() {
             <div className="flex gap-1.5 flex-wrap">
               <button
                 onClick={() => setOnlyNeedsAttention(v => !v)}
+                title={chipCountUnavailable
+                  ? 'The count across every resource in this organization is not available right now'
+                  : 'Count across every resource in this organization, before search and filters'}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold border cursor-pointer transition-all ${
                   onlyNeedsAttention ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                 }`}
               >
-                Needs attention{warningCount > 0 ? ` (${warningCount})` : ''}
+                Needs attention{chipCountUnavailable ? ' (—)' : warningCount > 0 ? ` (${warningCount})` : ''}
               </button>
               <button
                 onClick={() => setEnvFilter(prev => prev === 'production' ? 'all' : 'production')}
@@ -550,12 +634,24 @@ export default function ServicesPage() {
         </div>
 
         {/* Content */}
-        {isLoading && !isDemoActive ? (
+        {listLoading ? (
           <div className="px-7 py-12 text-center">
             <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
             <p className="text-sm text-slate-500 m-0">Loading resources…</p>
           </div>
-        ) : visibleFilteredServices.length === 0 ? (
+        ) : listFailed && !knownNoAccount ? (
+          // ── The list request failed: an error, never an empty state ──
+          <div className="px-5 py-10 text-center" role="alert">
+            <p className="text-sm font-semibold text-slate-900 mb-1">The resource list could not be loaded</p>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">This is a loading error, not an empty result.</p>
+            <button
+              onClick={() => { needsQuery.refetch(); if (!onlyNeedsAttention) healthyQuery.refetch() }}
+              className="bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+            >
+              <RefreshCw size={13} /> Try again
+            </button>
+          </div>
+        ) : visibleTotal === 0 ? (
           !isAwsConnected ? (
             // ── STATE A — no AWS account connected at all ──
             <div className="px-5 sm:px-12 py-12 text-center">
@@ -620,20 +716,24 @@ export default function ServicesPage() {
         ) : (
           <>
             {/* Needs attention — expanded by default, restrained styling, fixed severity+name sort */}
-            {needsAttentionSorted.length > 0 && (
-              <div>
+            {needsAttentionTotal > 0 && (
+              <div className={needsQuery.isPlaceholderData ? 'opacity-60' : ''}>
                 <div className="px-5 sm:px-7 py-2.5 bg-slate-50/70 border-b border-slate-100">
                   <p className="text-xs font-bold text-slate-600 uppercase tracking-widest m-0">
-                    Needs Attention · {needsAttentionSorted.length}
+                    <span>Needs Attention · {needsAttentionTotal}</span>
+                    {listIsNarrowed && <span className="normal-case tracking-normal font-medium text-slate-500"> · matching current filters</span>}
                   </p>
                 </div>
                 {needsAttentionSorted.map((svc: any) => <ServiceRow key={svc.id} svc={svc} />)}
+                {needsQuery.data && (
+                  <Pager label="Needs attention" pagination={needsQuery.data.pagination} busy={needsQuery.isFetching} onPage={(p) => goToPage('needs', p)} />
+                )}
               </div>
             )}
 
             {/* Collapsed no-flagged-issues group — expands into the same row format, sorted by name */}
-            {healthySorted.length > 0 && (
-              <div>
+            {healthyTotal > 0 && (
+              <div className={healthyQuery.isPlaceholderData ? 'opacity-60' : ''}>
                 <button
                   onClick={() => setHealthyExpanded(v => !v)}
                   className="w-full flex items-center justify-between gap-3 px-5 sm:px-7 py-3.5 bg-green-50/40 hover:bg-green-50 border-b border-slate-100 cursor-pointer text-left transition-colors"
@@ -641,12 +741,16 @@ export default function ServicesPage() {
                   <span className="flex items-center gap-2">
                     <CheckCircle2 size={15} className="text-green-600 shrink-0" />
                     <span className="text-sm font-semibold text-slate-700">
-                      {healthySorted.length} resource{healthySorted.length !== 1 ? 's' : ''} with no flagged issues
+                      {healthyTotal} resource{healthyTotal !== 1 ? 's' : ''} with no flagged issues
                     </span>
+                    {listIsNarrowed && <span className="text-xs font-medium text-slate-500">matching current filters</span>}
                   </span>
                   {healthyExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
                 </button>
                 {healthyExpanded && healthySorted.map((svc: any) => <ServiceRow key={svc.id} svc={svc} />)}
+                {healthyExpanded && healthyQuery.data && (
+                  <Pager label="No flagged issues" pagination={healthyQuery.data.pagination} busy={healthyQuery.isFetching} onPage={(p) => goToPage('healthy', p)} />
+                )}
               </div>
             )}
           </>

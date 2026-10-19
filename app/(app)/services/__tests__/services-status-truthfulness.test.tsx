@@ -28,6 +28,7 @@ vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: any) => 
 vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro', isPro: true }) }))
 // The registered-services section has its own test (registered-services.test.tsx).
 vi.mock('../RegisteredServices', () => ({ RegisteredServices: () => null }))
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' } }) }))
 
 const mockGetServices = vi.fn()
 const mockGetStats = vi.fn()
@@ -73,6 +74,22 @@ function resource(id: string, opts: { needsAttention?: boolean; environment?: st
   }
 }
 
+// Answers getServices the way GET /api/services does: needs_attention splits the
+// rows, the page is cut from the split, and every count covers all of them.
+function serveList(rows: any[]) {
+  mockGetServices.mockImplementation(async (req: any = {}) => {
+    const needs = rows.filter((r) => r.needs_attention)
+    const selected = req.needs_attention === true ? needs : req.needs_attention === false ? rows.filter((r) => !r.needs_attention) : rows
+    const page = req.page ?? 1
+    const limit = req.limit ?? 50
+    return {
+      services: selected.slice((page - 1) * limit, page * limit),
+      pagination: { page, limit, total: selected.length, total_pages: Math.ceil(selected.length / limit), has_more: page * limit < selected.length },
+      counts: { needs_attention: needs.length, no_flagged_issues: rows.length - needs.length },
+    }
+  })
+}
+
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}><ServicesPage /></QueryClientProvider>)
@@ -106,7 +123,7 @@ beforeEach(() => {
 
 describe('/services -- title and the resource count', () => {
   it('is titled Services and counts discovered AWS resources, not registered services', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null, aws_accounts_connected: 1 })
     renderPage()
     await settled()
@@ -128,7 +145,7 @@ describe('/services -- the connected-account caption comes from the backend', ()
   it('says no account is connected when resources remain but the backend counts none', async () => {
     // Inventory left from an earlier connection: resources, no account.
     mockGetAccounts.mockResolvedValue([])
-    mockGetServices.mockResolvedValue([resource('1'), resource('2')])
+    serveList([resource('1'), resource('2')])
     mockGetStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0, avg_uptime: null, aws_accounts_connected: 0 })
     renderPage()
     await settled()
@@ -138,7 +155,7 @@ describe('/services -- the connected-account caption comes from the backend', ()
   })
 
   it('counts more than one account if the backend reports more', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null, aws_accounts_connected: 2 })
     renderPage()
     await settled()
@@ -150,7 +167,7 @@ describe('/services -- the connected-account caption comes from the backend', ()
     ['a backend that does not report it', () => mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })],
     ['a failed stats request', () => mockGetStats.mockRejectedValue(new Error('500'))],
   ])('claims nothing about accounts for %s', async (_label, arrange) => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     arrange()
     renderPage()
     await settled()
@@ -162,7 +179,7 @@ describe('/services -- the connected-account caption comes from the backend', ()
 describe('/services -- no AWS account connected', () => {
   it('says so plainly and offers only to connect', async () => {
     mockGetAccounts.mockResolvedValue([])
-    mockGetServices.mockResolvedValue([])
+    serveList([])
     mockGetStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0, avg_uptime: null })
     renderPage()
     await settled()
@@ -176,7 +193,7 @@ describe('/services -- no AWS account connected', () => {
 
 describe('/services -- no resources discovered', () => {
   it('says so, and claims nothing about health', async () => {
-    mockGetServices.mockResolvedValue([])
+    serveList([])
     mockGetStats.mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0, avg_uptime: null })
     renderPage()
     await settled()
@@ -206,7 +223,7 @@ describe('/services -- failed request', () => {
 
 describe('/services -- resources present', () => {
   it('none flagged reads as "no flagged issues", not healthy', async () => {
-    mockGetServices.mockResolvedValue([resource('1'), resource('2')])
+    serveList([resource('1'), resource('2')])
     mockGetStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0, avg_uptime: null })
     renderPage()
     await settled()
@@ -218,7 +235,7 @@ describe('/services -- resources present', () => {
   })
 
   it('flagged resources are still surfaced with their count', async () => {
-    mockGetServices.mockResolvedValue([resource('1'), resource('2', { needsAttention: true })])
+    serveList([resource('1'), resource('2', { needsAttention: true })])
     mockGetStats.mockResolvedValue({ total: 2, healthy: 1, needs_attention: 1, avg_uptime: null })
     renderPage()
     await settled()
@@ -232,7 +249,7 @@ describe('/services -- resources present', () => {
   })
 
   it('rows show the name as stored, "Untagged" for no environment, no cost and no link', async () => {
-    mockGetServices.mockResolvedValue([
+    serveList([
       resource('1', { name: 'i-1234567890abcdef0', environment: null }),
       resource('2', { name: 'checkout-api-prod', environment: 'Production' }),
       resource('3', { name: 'data-volume', environment: null, type: 'ebs', needsAttention: true }),
@@ -254,7 +271,7 @@ describe('/services -- resources present', () => {
   })
 
   it('styles the environment badge by meaning, whatever the case of the tag value', async () => {
-    mockGetServices.mockResolvedValue([
+    serveList([
       resource('1', { name: 'a', environment: 'production' }),
       resource('2', { name: 'b', environment: 'Production' }),
       resource('3', { name: 'c', environment: 'PRODUCTION' }),
@@ -275,7 +292,7 @@ describe('/services -- resources present', () => {
   })
 
   it('needs-attention rows tied on severity sort by name, not cost', async () => {
-    mockGetServices.mockResolvedValue([
+    serveList([
       { ...resource('1', { name: 'zeta', needsAttention: true }), monthly_cost: 900 },
       { ...resource('2', { name: 'alpha', needsAttention: true }), monthly_cost: 1 },
     ])
@@ -291,7 +308,7 @@ describe('/services -- resources present', () => {
 
 describe('/services -- discovery refused by the plan limit', () => {
   it('names the AWS resource limit and links to the upgrade page, nothing more', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
     mockDiscover.mockRejectedValue(Object.assign(new Error('402'), { response: { status: 402 } }))
     renderPage()
@@ -311,7 +328,7 @@ describe('/services -- discovery warnings', () => {
   const discovered = (warnings: string[]) => ({ discovered: 0, updated: 1, errors: [], warnings, message: 'Discovery complete — 0 new, 1 updated' })
 
   it('shows the deletion-detection notice when the run reports a truncated index', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
     mockDiscover.mockResolvedValue(discovered(['deletion_detection_paused_truncated_index']))
     renderPage()
@@ -324,7 +341,7 @@ describe('/services -- discovery warnings', () => {
   })
 
   it('shows no notice when the run reports no warning', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
     mockDiscover.mockResolvedValue(discovered([]))
     renderPage()
@@ -339,7 +356,7 @@ describe('/services -- discovery warnings', () => {
 
 describe('/services -- filters', () => {
   it('the type filter offers EBS and asks the API for it', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
     renderPage()
     await settled()
@@ -350,7 +367,7 @@ describe('/services -- filters', () => {
   })
 
   it('the environment filter offers Untagged and asks the API for it', async () => {
-    mockGetServices.mockResolvedValue([resource('1')])
+    serveList([resource('1')])
     mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
     renderPage()
     await settled()
