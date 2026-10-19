@@ -241,13 +241,12 @@ export function deriveAttention(
   };
 }
 
-// ─── Shared row fetch — single source of truth for both /stats and / ────────
-// Both endpoints need the same joins and the same priority_severity/
-// needs_attention computation; duplicating either here would let them drift
-// (exactly what happened before — /stats used a separate, cruder
-// status-only query and disagreed with the list once compliance/cost data
-// existed). /stats calls this with no filters and no limit for a true
-// org-wide count; / passes the request's type/env/search and a row cap.
+// ─── Shared inventory read — single source of truth for both /stats and / ────
+// Both endpoints read the same rows (this organization, not terminated) with
+// the same joins, and decide needs_attention with the same predicate
+// (attentionOf below); duplicating either would let them drift (exactly what
+// happened before — /stats used a separate, cruder status-only query and
+// disagreed with the list once compliance/cost data existed).
 
 type ServiceListFilters = { type?: string; env?: string; search?: string };
 
@@ -267,7 +266,21 @@ function tagValue(key: 'environment' | 'owner' | 'team'): string {
 // "Untagged", never assumed to be production.
 const ENVIRONMENT_SQL = `COALESCE(${tagValue('environment')}, NULLIF(BTRIM(r.metadata->>'environment'), ''))`;
 
-async function fetchServices(orgId: string, filters: ServiceListFilters, limit?: number) {
+// A resource's active cost recommendations, scoped by the row's own organization.
+const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
+        FROM cost_recommendations cr
+       WHERE cr.organization_id = r.organization_id
+         AND cr.resource_id = r.resource_id
+         AND LOWER(cr.resource_type) = r.resource_type
+         AND cr.status = 'ACTIVE'
+     )`;
+
+/**
+ * The WHERE clause of every inventory read. The explicit organization predicate
+ * comes first and every filter is ANDed after it (RLS sits underneath as a
+ * second layer, not a replacement).
+ */
+function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: string; values: any[] } {
   // Services list/stats represent current infrastructure — a soft-terminated
   // resource (see resourceReconciliation.service.ts) is no longer a "service" and
   // must not surface here at all, let alone as a false critical/needs_attention
@@ -302,9 +315,28 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
     p++;
   }
 
-  const where = conditions.join(' AND ');
-  const limitClause = limit ? `LIMIT ${Number(limit)}` : '';
+  return { where: conditions.join(' AND '), values };
+}
 
+/** The columns the needs-attention predicate reads. */
+type AttentionInputs = { type: string; raw_status: string | null; compliance_issues: any; cost_recommendations: any };
+
+/**
+ * The one needs-attention predicate. The list's ?needs_attention filter, the
+ * list's counts and /stats all call this, over rows read by inventoryWhere, so
+ * a count and the rows it counts cannot disagree.
+ */
+function attentionOf(row: AttentionInputs) {
+  const status = mapStatus(row.type, row.raw_status);
+  return { status, ...deriveAttention(status, row.compliance_issues, row.cost_recommendations) };
+}
+
+async function fetchServices(orgId: string, filters: ServiceListFilters) {
+  const { where, values } = inventoryWhere(orgId, filters);
+
+  // One statement, so the rows, the total and the counts the list derives from
+  // them all come from the same snapshot. No ORDER BY: the order is set in
+  // sortServices, which needs needs_attention and priority_severity first.
   const { rows } = await pool.query(
     `SELECT
        r.id,
@@ -321,23 +353,14 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
        r.last_synced_at,
        r.metadata,
        r.compliance_issues,
-       (SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
-        FROM cost_recommendations cr
-        WHERE cr.organization_id = r.organization_id
-          AND cr.resource_id = r.resource_id
-          AND LOWER(cr.resource_type) = r.resource_type
-          AND cr.status = 'ACTIVE'
-       ) AS cost_recommendations
+       ${COST_RECOMMENDATIONS_SQL} AS cost_recommendations
      FROM aws_resources r
-     WHERE ${where}
-     ORDER BY r.resource_name ASC NULLS LAST, r.resource_id ASC
-     ${limitClause}`,
+     WHERE ${where}`,
     values
   );
 
   return rows.map((row) => {
-    const status = mapStatus(row.type, row.raw_status);
-    const { priority_severity, reason, needs_attention } = derivePrioritySeverity(status, row.compliance_issues, row.cost_recommendations);
+    const { status, priority_severity, reason, needs_attention } = attentionOf(row);
     return {
       id:           row.id,
       name:         row.name,
@@ -357,6 +380,88 @@ async function fetchServices(orgId: string, filters: ServiceListFilters, limit?:
       reason,
     };
   });
+}
+
+type ServiceRowOut = Awaited<ReturnType<typeof fetchServices>>[number];
+
+// The same comparison the page uses (localeCompare with 'en'), so a page the
+// browser re-sorts keeps the server's order. The row id breaks every tie, so
+// rows with equal names never move between pages.
+const NAME_COLLATOR = new Intl.Collator('en');
+
+function byNameThenId(a: ServiceRowOut, b: ServiceRowOut): number {
+  return NAME_COLLATOR.compare(a.name ?? '', b.name ?? '') || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
+function byPriorityThenName(a: ServiceRowOut, b: ServiceRowOut): number {
+  const ra = a.priority_severity ? SEVERITY_RANK[a.priority_severity] : 4;
+  const rb = b.priority_severity ? SEVERITY_RANK[b.priority_severity] : 4;
+  return ra - rb || byNameThenId(a, b);
+}
+
+export const DEFAULT_PAGE_SIZE = 50;
+export const MAX_PAGE_SIZE = 100;
+
+export interface ServicesListPage {
+  services: ServiceRowOut[];
+  pagination: { page: number; limit: number; total: number; total_pages: number; has_more: boolean };
+  /** The filtered set (type/env/search) split by the predicate; ?needs_attention does not narrow these. */
+  counts: { needs_attention: number; no_flagged_issues: number };
+}
+
+/**
+ * One page of the list. Every number is computed over the full filtered,
+ * organization-scoped set, never over the page: pagination.total is the size of
+ * the set after ?needs_attention, counts split the set before it. Needs-attention
+ * rows sort by severity, then name; the others by name; the row id breaks ties.
+ */
+async function listServices(
+  orgId: string,
+  filters: ServiceListFilters,
+  options: { needsAttention?: boolean; page: number; limit: number }
+): Promise<ServicesListPage> {
+  const all = await fetchServices(orgId, filters);
+  const needsAttention = all.filter((s) => s.needs_attention);
+  const counts = { needs_attention: needsAttention.length, no_flagged_issues: all.length - needsAttention.length };
+
+  const selected = options.needsAttention === true ? needsAttention.sort(byPriorityThenName)
+    : options.needsAttention === false ? all.filter((s) => !s.needs_attention).sort(byNameThenId)
+    : all.sort(byNameThenId);
+
+  const total = selected.length;
+  const totalPages = Math.ceil(total / options.limit);
+  const start = (options.page - 1) * options.limit;
+  return {
+    services: selected.slice(start, start + options.limit),
+    pagination: { page: options.page, limit: options.limit, total, total_pages: totalPages, has_more: options.page < totalPages },
+    counts,
+  };
+}
+
+/** /stats' numbers from one read of the inventory. Pure, so its parity can be tested. */
+export function serviceStatsFrom(rows: AttentionInputs[]) {
+  const findingsBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  const attentionReasons = { with_finding: 0, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 };
+  let needsAttention = 0;
+  for (const row of rows) {
+    for (const finding of activeComplianceFindings(row.compliance_issues)) {
+      if (finding.severity in findingsBySeverity) findingsBySeverity[finding.severity]++;
+    }
+    const { needs_attention, causes } = attentionOf(row);
+    if (needs_attention) needsAttention++;
+    if (causes.finding) attentionReasons.with_finding++;
+    if (causes.cost_recommendation) attentionReasons.with_cost_recommendation++;
+    if (causes.status === 'warning') attentionReasons.stopped_or_degraded++;
+    if (causes.status === 'critical') attentionReasons.failed++;
+  }
+  const total = rows.length;
+  return {
+    total,
+    healthy: total - needsAttention,
+    needs_attention: needsAttention,
+    findings_by_severity: findingsBySeverity,
+    attention_reasons: attentionReasons,
+  };
 }
 
 // ─── Single-row fetch, mirroring fetchServices' terminated exclusion ────────
@@ -386,49 +491,25 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     const orgId = req.organizationId;
     if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
-    // No filters, no limit — a true org-wide count, computed via the exact
-    // same priority_severity logic as the list below so the two can never
-    // disagree on what "needs attention" means.
-    const services = await fetchServices(orgId, {});
-    const total          = services.length;
-    const needsAttention = services.filter((s) => s.needs_attention).length;
-    const healthy        = total - needsAttention;
-
-    // How many current findings of each severity the same resources carry. A page
-    // that labels the needs_attention count has to be able to say how many of them
-    // are Critical instead of assuming so. Same rows as fetchServices (this
-    // organization, not terminated) and the same currency rule as needs_attention
-    // (isActiveComplianceFinding), so the two cannot disagree.
+    // One read of the whole inventory (no filters, no limit): a true org-wide
+    // count through the same WHERE and the same needs-attention predicate as the
+    // list, so the two can never disagree on what "needs attention" means.
     //
-    // attention_reasons says why the needs_attention resources are counted: how many
-    // carry a Critical or High finding, how many are there through a cost
-    // recommendation, and how many through their status. A resource can be in more
-    // than one. The cost recommendations are read the way fetchServices reads them.
-    const { rows: findingRows } = await pool.query(
-      `SELECT r.resource_type, r.status, r.compliance_issues,
-              (SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
-                 FROM cost_recommendations cr
-                WHERE cr.organization_id = r.organization_id
-                  AND cr.resource_id = r.resource_id
-                  AND LOWER(cr.resource_type) = r.resource_type
-                  AND cr.status = 'ACTIVE'
-              ) AS cost_recommendations
+    // findings_by_severity says how many current findings of each severity the
+    // resources carry (same currency rule as needs_attention:
+    // isActiveComplianceFinding), so a page that labels the needs_attention count
+    // can say how many are Critical instead of assuming so. attention_reasons says
+    // why the needs_attention resources are counted; a resource can be in more
+    // than one.
+    const { where, values } = inventoryWhere(orgId, {});
+    const { rows } = await pool.query(
+      `SELECT r.resource_type AS type, r.status AS raw_status, r.compliance_issues,
+              ${COST_RECOMMENDATIONS_SQL} AS cost_recommendations
          FROM aws_resources r
-        WHERE r.organization_id = $1 AND r.status != 'terminated'`,
-      [orgId]
+        WHERE ${where}`,
+      values
     );
-    const findingsBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-    const attentionReasons = { with_finding: 0, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 };
-    for (const row of findingRows) {
-      for (const finding of activeComplianceFindings(row.compliance_issues)) {
-        if (finding.severity in findingsBySeverity) findingsBySeverity[finding.severity]++;
-      }
-      const { causes } = deriveAttention(mapStatus(row.resource_type, row.status), row.compliance_issues, row.cost_recommendations);
-      if (causes.finding) attentionReasons.with_finding++;
-      if (causes.cost_recommendation) attentionReasons.with_cost_recommendation++;
-      if (causes.status === 'warning') attentionReasons.stopped_or_degraded++;
-      if (causes.status === 'critical') attentionReasons.failed++;
-    }
+    const stats = serviceStatsFrom(rows);
 
     // Connected means what the connect flow means: the organization has an
     // aws_accounts row. POST /api/aws/accounts writes the only one (status
@@ -447,9 +528,9 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     res.json({
       success: true,
       stats: {
-        total, healthy, needs_attention: needsAttention, avg_uptime: null,
-        findings_by_severity: findingsBySeverity,
-        attention_reasons: attentionReasons,
+        total: stats.total, healthy: stats.healthy, needs_attention: stats.needs_attention, avg_uptime: null,
+        findings_by_severity: stats.findings_by_severity,
+        attention_reasons: stats.attention_reasons,
         aws_accounts_connected: awsAccountsConnected,
       },
     });
@@ -497,6 +578,10 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
 // ─── GET /api/services — aws_resources-backed list ───────────────────────────
 // Reading the list is never blocked by a plan limit: the services limit counts
 // the registry, not the resources this list returns.
+//
+// Paged with ?page (from 1) and ?limit (default DEFAULT_PAGE_SIZE, at most
+// MAX_PAGE_SIZE). ?needs_attention=true lists only the resources that need
+// attention, =false only the others; absent lists both.
 
 // A repeated parameter (?env=a&env=b) arrives as an array and a bracketed one
 // (?env[x]=y) as an object: the first string value is used, anything else is
@@ -506,18 +591,45 @@ function firstQueryValue(value: unknown): string | undefined {
   return typeof first === 'string' ? first : undefined;
 }
 
+// undefined when absent, null when present but not a positive integer.
+function positiveIntegerParam(value: string | undefined): number | undefined | null {
+  if (value === undefined) return undefined;
+  if (!/^[1-9]\d{0,8}$/.test(value)) return null;
+  return Number(value);
+}
+
+function booleanParam(value: string | undefined): boolean | undefined | null {
+  if (value === undefined) return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return null;
+}
+
 router.get('/', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const orgId = req.organizationId;
   if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
+  const page = positiveIntegerParam(firstQueryValue(req.query.page));
+  const limit = positiveIntegerParam(firstQueryValue(req.query.limit));
+  const needsAttention = booleanParam(firstQueryValue(req.query.needs_attention));
+  if (page === null)  { res.status(400).json({ success: false, error: 'page must be a positive integer' }); return; }
+  if (limit === null) { res.status(400).json({ success: false, error: 'limit must be a positive integer' }); return; }
+  if (needsAttention === null) { res.status(400).json({ success: false, error: 'needs_attention must be true or false' }); return; }
+
   try {
-    const services = await fetchServices(orgId, {
+    const result = await listServices(orgId, {
       type:   firstQueryValue(req.query.type),
       env:    firstQueryValue(req.query.env),
       search: firstQueryValue(req.query.search),
-    }, 500);
+    }, {
+      needsAttention,
+      page:  page ?? 1,
+      // Larger requests get the largest page, not an error.
+      limit: Math.min(limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
+    });
 
-    res.json({ success: true, services, total: services.length });
+    // total stays at the top level for older clients; it is pagination.total.
+    res.json({ success: true, services: result.services, total: result.pagination.total, pagination: result.pagination, counts: result.counts });
   } catch (err: any) {
     console.error('[Services/list]', err);
     // The real error is logged above; the response carries only a fixed message.
