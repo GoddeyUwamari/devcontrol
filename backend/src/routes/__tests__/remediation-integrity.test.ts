@@ -21,7 +21,7 @@
  * the STS and EC2 clients -- no test reaches AWS.
  *
  * POST /:id/execute is limited to 10 requests an hour per caller address, and
- * every request here comes from one address: this file sends 9.
+ * every request here comes from one address: this file sends 10, the limit.
  */
 import express from 'express';
 import http from 'http';
@@ -415,7 +415,8 @@ describe('execute acts on the workflow’s one target', () => {
   it('stops the resource the workflow names, after the tag guard inspected that same resource', async () => {
     process.env.ENABLE_AUTOMATED_REMEDIATION = 'true';
     const resourceId = instanceId();
-    const created = await create(home, 'member', draft({ resourceId }));
+    // Not in the inventory, so the draft names its region (it is never taken from the environment).
+    const created = await create(home, 'member', draft({ resourceId, actionParams: { region: 'us-east-1' } }));
     const { id } = (await created.json()).data;
     expect((await act(home, 'admin', id, 'approve')).status).toBe(200);
 
@@ -431,6 +432,20 @@ describe('execute acts on the workflow’s one target', () => {
     for (const describe of describes) expect(describe.input.InstanceIds).toEqual([resourceId]);
     expect(ec2Send.mock.calls[0][0]).toBeInstanceOf(DescribeInstancesCommand);
     expect((await workflowRow(id)).status).toBe('completed');
+  });
+
+  it('refuses a workflow whose region is unknown, reaching no AWS', async () => {
+    process.env.ENABLE_AUTOMATED_REMEDIATION = 'true';
+    const created = await create(home, 'member', draft());
+    const { id } = (await created.json()).data;
+    expect((await act(home, 'admin', id, 'approve')).status).toBe(200);
+
+    const response = await act(home, 'owner', id, 'execute');
+
+    expect(response.status).toBe(500);
+    expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED: The workflow's resource region is unknown/);
+    expectNoAwsCall();
+    expect((await workflowRow(id)).status).toBe('approved');
   });
 
   it('refuses a stored workflow whose action target differs from its resource_id, reaching no AWS', async () => {

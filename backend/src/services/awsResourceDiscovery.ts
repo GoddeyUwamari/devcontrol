@@ -721,12 +721,9 @@ export class AWSResourceDiscoveryService {
           // The search may have been cut off (see SearchResult): the resources it did return
           // are real and were upserted above, but a resource missing from it may simply be
           // past the cut-off. No row's missing_scan_count moves this cycle.
-          console.error(
-            `❌ [Discovery] Resource Explorer search may be truncated (${searchResult.resources.length} results), skipping reconciliation`
-          );
-          errors.push(
-            `Resource Explorer: search may be truncated (${searchResult.resources.length} results), reconciliation skipped`
-          );
+          const truncated = `search may be truncated (${searchResult.resources.length} results), reconciliation skipped`;
+          console.error(`❌ [Discovery] Resource Explorer ${truncated}`);
+          errors.push(`Resource Explorer: ${truncated}`);
         } else {
           try {
             const reconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, allArns, RE_RECONCILED_TYPES);
