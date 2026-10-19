@@ -20,7 +20,13 @@ import {
   useDependencyServices,
   useSessionOrganizationId,
 } from '@/lib/hooks/use-dependencies'
-import { DependencyList, DEPENDENCY_TYPE_LABELS } from '@/components/dependencies/DependencyList'
+import {
+  DependencyList,
+  DEPENDENCY_TYPE_LABELS,
+  NO_DEPENDENCY_FILTERS,
+  filterDependencies,
+  type DependencyListFilters,
+} from '@/components/dependencies/DependencyList'
 import { EnhancedEmptyState } from '@/components/dependencies/EnhancedEmptyState'
 import { ExportMenu } from '@/components/dependencies/ExportMenu'
 import type { CircularDependency, ServiceDependency } from '@/lib/types'
@@ -89,6 +95,7 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null)
   const [impactServiceId, setImpactServiceId] = useState<string | null>(null)
+  const [listFilters, setListFilters] = useState<DependencyListFilters>(NO_DEPENDENCY_FILTERS)
   const panelOpen = selectedNode !== null || selectedEdge !== null
 
   const listQuery = useDependencyList(organizationId)
@@ -260,7 +267,12 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
           </TabsContent>
 
           <TabsContent value="list" className="space-y-4">
-            <DependencyList dependencies={dependencies} cycles={cycles} />
+            <DependencyList
+              dependencies={dependencies}
+              cycles={cycles}
+              filters={listFilters}
+              onFiltersChange={setListFilters}
+            />
           </TabsContent>
 
           <TabsContent value="impact" className="space-y-4">
@@ -303,7 +315,7 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Service Dependency Mapping</h1>
           <p className="text-sm text-slate-500 leading-relaxed">
-            Analyze critical paths, detect bottlenecks, and understand system-wide impact.
+            Map dependencies, detect cycles, and analyze impact
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -320,7 +332,8 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
           )}
           {listQuery.isSuccess && dependencies.length > 0 && (
             <ExportMenu
-              dependencies={dependencies}
+              // The searched and filtered rows, as the list view shows them.
+              dependencies={filterDependencies(dependencies, listFilters)}
               cycles={cyclesQuery.isSuccess ? cycles : null}
               graphRef={graphRef}
               activeTab={activeTab}
@@ -443,7 +456,13 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
         <SectionHeader>Dependency</SectionHeader>
         <Field label="Type" value={dep ? DEPENDENCY_TYPE_LABELS[dep.dependencyType] || dep.dependencyType : NO_DATA} />
         <Field label="Priority" value={dep ? (dep.isCritical ? 'Critical' : 'Standard') : NO_DATA} />
-        <Field label="Failure Impact" value={dep ? (dep.isCritical ? 'Critical' : 'Moderate') : NO_DATA} />
+        {!dep ? (
+          <Field label="Failure Impact" value={NO_DATA} />
+        ) : dep.isCritical ? (
+          <Field label="Failure Impact" value="Critical" />
+        ) : (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500 m-0">Not marked critical</p>
+        )}
         <Field label="Description" value={display(dep?.description)} />
         <Field label="Recorded by" value={display(dep?.createdBy)} />
         <Field label="Recorded on" value={dep?.createdAt ? new Date(dep.createdAt).toLocaleDateString() : NO_DATA} />

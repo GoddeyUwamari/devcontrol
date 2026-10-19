@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { AlertTriangle, Filter, Search, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,9 +30,20 @@ export const DEPENDENCY_TYPE_LABELS: Record<DependencyType, string> = {
   'shared-lib': 'Shared Lib',
 }
 
+/** The list view's search and filters, held by the page so Export can use them. */
+export interface DependencyListFilters {
+  query: string
+  type: 'all' | DependencyType
+  priority: 'all' | 'critical' | 'standard'
+}
+
+export const NO_DEPENDENCY_FILTERS: DependencyListFilters = { query: '', type: 'all', priority: 'all' }
+
 interface DependencyListProps {
   dependencies: ServiceDependency[]
   cycles: CircularDependency[]
+  filters: DependencyListFilters
+  onFiltersChange: (filters: DependencyListFilters) => void
 }
 
 /**
@@ -52,24 +62,26 @@ export function matchesDependencySearch(dep: ServiceDependency, query: string): 
   ].some((field) => typeof field === 'string' && field.toLowerCase().includes(needle))
 }
 
-export function DependencyList({ dependencies, cycles }: DependencyListProps) {
-  const [query, setQuery] = useState('')
-  const [typeFilter, setTypeFilter] = useState<'all' | DependencyType>('all')
-  const [criticalFilter, setCriticalFilter] = useState<'all' | 'critical' | 'standard'>('all')
-
-  const filteredDeps = dependencies.filter((dep) => {
-    if (typeFilter !== 'all' && dep.dependencyType !== typeFilter) return false
-    if (criticalFilter === 'critical' && !dep.isCritical) return false
-    if (criticalFilter === 'standard' && dep.isCritical) return false
-    return matchesDependencySearch(dep, query)
+/** The rows the list view shows for these filters (and Export exports). */
+export function filterDependencies(dependencies: ServiceDependency[], filters: DependencyListFilters): ServiceDependency[] {
+  return dependencies.filter((dep) => {
+    if (filters.type !== 'all' && dep.dependencyType !== filters.type) return false
+    if (filters.priority === 'critical' && !dep.isCritical) return false
+    if (filters.priority === 'standard' && dep.isCritical) return false
+    return matchesDependencySearch(dep, filters.query)
   })
+}
+
+export function DependencyList({ dependencies, cycles, filters, onFiltersChange }: DependencyListProps) {
+  const { query, type: typeFilter, priority: criticalFilter } = filters
+  const setQuery = (value: string) => onFiltersChange({ ...filters, query: value })
+  const setTypeFilter = (value: DependencyListFilters['type']) => onFiltersChange({ ...filters, type: value })
+  const setCriticalFilter = (value: DependencyListFilters['priority']) => onFiltersChange({ ...filters, priority: value })
+
+  const filteredDeps = filterDependencies(dependencies, filters)
 
   const hasActiveFilters = query.trim() !== '' || typeFilter !== 'all' || criticalFilter !== 'all'
-  const clearAll = () => {
-    setQuery('')
-    setTypeFilter('all')
-    setCriticalFilter('all')
-  }
+  const clearAll = () => onFiltersChange(NO_DEPENDENCY_FILTERS)
 
   return (
     <div className="space-y-4">

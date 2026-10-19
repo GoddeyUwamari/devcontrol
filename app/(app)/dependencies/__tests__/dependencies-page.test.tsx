@@ -298,7 +298,7 @@ afterEach(() => {
 })
 
 describe('real data', () => {
-  it('counts come from the rows the API returned; the original subtitle is back', async () => {
+  it('counts come from the rows the API returned; the subtitle states what the page does', async () => {
     signInAs(ORG.a)
     await mountPage()
 
@@ -307,7 +307,8 @@ describe('real data', () => {
     expect(stat('Critical')).toBe('2')
     expect(stat('Runtime')).toBe('1')
     await waitFor(() => expect(stat('Circular cycles')).toBe('0'))
-    expect(screen.getByText('Analyze critical paths, detect bottlenecks, and understand system-wide impact.')).toBeInTheDocument()
+    expect(screen.getByText('Map dependencies, detect cycles, and analyze impact')).toBeInTheDocument()
+    expect(screen.queryByText(/detect bottlenecks/)).not.toBeInTheDocument()
     expect(calls('/api/dependencies')).toBeGreaterThan(0)
     expect(document.body.textContent).not.toMatch(FABRICATED)
   })
@@ -427,6 +428,40 @@ describe('header actions', () => {
     expect(stats).toEqual(expect.objectContaining({ totalServices: 3, totalDependencies: 3, criticalDependencies: 2, circularDependencies: 1 }))
   })
 
+  it('Export exports only the rows the list view\'s search and filters leave, from any tab', async () => {
+    signInAs(ORG.a)
+    await mountPage()
+    await screen.findByText('Total dependencies')
+    await openTab(/List View/)
+    await screen.findByText('Showing 3 of 3 dependencies')
+
+    await chooseOption(screen.getByRole('combobox', { name: 'Filter by priority' }), 'Critical Only')
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search dependencies' }), { target: { value: 'orders db' } })
+    expect(screen.getByText('Showing 2 of 3 dependencies')).toBeInTheDocument()
+
+    await openMenu(screen.getByRole('button', { name: /Export/ }))
+    await act(async () => { fireEvent.click(await screen.findByRole('menuitem', { name: /Export as CSV/ })) })
+    await waitFor(() => expect(exportDependenciesToCSV).toHaveBeenCalledTimes(1))
+    const [rows, stats] = vi.mocked(exportDependenciesToCSV).mock.calls[0]
+    expect(rows.map(r => `${r.serviceName} -> ${r.dependsOn}`)).toEqual(['Checkout API -> Orders DB', 'Mail Queue -> Orders DB'])
+    expect(stats).toEqual(expect.objectContaining({ totalDependencies: 2, criticalDependencies: 2 }))
+
+    // The filters stay applied on the graph tab, and so does the export.
+    await openTab(/Graph View/)
+    await openMenu(screen.getByRole('button', { name: /Export/ }))
+    await act(async () => { fireEvent.click(await screen.findByRole('menuitem', { name: /Export Report as PDF/ })) })
+    await waitFor(() => expect(exportDependencyReport).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(exportDependencyReport).mock.calls[0][0].map(r => r.serviceName)).toEqual(['Checkout API', 'Mail Queue'])
+
+    // Cleared filters export every row again.
+    await openTab(/List View/)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    await openMenu(screen.getByRole('button', { name: /Export/ }))
+    await act(async () => { fireEvent.click(await screen.findByRole('menuitem', { name: /Export as CSV/ })) })
+    await waitFor(() => expect(exportDependenciesToCSV).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(exportDependenciesToCSV).mock.calls[1][0]).toHaveLength(3)
+  })
+
   it('Export Report as PDF passes the detected cycle paths, and "Unavailable" cycles as null', async () => {
     signInAs(ORG.a)
     server.cycles = () => { throw httpError(500) }
@@ -507,14 +542,16 @@ describe('side panel', () => {
     expect(panel.textContent).not.toMatch(FABRICATED)
   })
 
-  it('a standard dependency is labelled by its real type, with Moderate failure impact', async () => {
+  it('a standard dependency is labelled by its real type and reads "Not marked critical"', async () => {
     signInAs(ORG.a)
     await mountPage()
 
     await click((await screen.findByText('edge: d2')).textContent!)
     const panel = await screen.findByRole('dialog', { name: 'Details: Checkout API → Mail Queue' })
     expect(within(panel).getByText('Runtime dependency')).toBeInTheDocument()
-    expect(within(panel).getByText('Failure Impact').nextElementSibling).toHaveTextContent('Moderate')
+    expect(within(panel).getByText('Not marked critical')).toBeInTheDocument()
+    expect(within(panel).queryByText('Failure Impact')).not.toBeInTheDocument()
+    expect(panel.textContent).not.toMatch(/Moderate/)
   })
 
   it('"View Full Service" opens /services; "Analyze impact" opens impact analysis; Escape closes the panel', async () => {
