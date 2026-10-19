@@ -238,8 +238,9 @@ export const tokenManager = {
   /**
    * The organization the stored access token is scoped to -- the
    * organization every API response in this session belongs to. Decoded,
-   * not verified, like getCurrentRole(): used only to key browser caches of
-   * that organization's data (lib/org-scoped-cache.ts), never to authorize.
+   * not verified, like getCurrentRole(): used only to key cached copies of
+   * that organization's data (lib/hooks/use-dependencies.ts), never to
+   * authorize.
    */
   getCurrentOrganizationId(): string | null {
     const payload = decodeAccessTokenPayload(this.getAccessToken());

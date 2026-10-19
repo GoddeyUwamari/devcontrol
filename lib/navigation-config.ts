@@ -66,6 +66,12 @@ export const appNav: NavGroup = {
           description: 'Discovered AWS resources and their findings',
         },
         {
+          label: 'Dependencies',
+          href: '/dependencies',
+          icon: Network,
+          description: 'Service dependencies and relationships',
+        },
+        {
           label: 'Deployments',
           href: '/deployments',
           icon: Rocket,
