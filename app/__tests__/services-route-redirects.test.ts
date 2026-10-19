@@ -16,6 +16,14 @@ describe('removed /services sub-pages', () => {
     ])
   })
 
+  // Registration is hidden, not removed: the page stays for the contract fix.
+  it('/services/new redirects to /services while registration is hidden', async () => {
+    const redirects = await nextConfig.redirects!()
+    expect(redirects.filter((r) => r.source === '/services/new')).toEqual([
+      { source: '/services/new', destination: '/services', permanent: false },
+    ])
+  })
+
   it.each(['health', 'dependencies'])('services/%s has no page', (dir) => {
     expect(existsSync(join(__dirname, '..', '(app)', 'services', dir))).toBe(false)
   })

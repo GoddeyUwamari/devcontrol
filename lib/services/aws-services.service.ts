@@ -30,6 +30,8 @@ export interface AWSServicesStats {
   findings_by_severity?: { critical: number; high: number; medium: number; low: number }
   // Why the needs_attention resources are counted. A resource can be in more than one.
   attention_reasons?: { with_finding: number; with_cost_recommendation: number; stopped_or_degraded: number; failed: number }
+  // The organization's connected AWS accounts (its aws_accounts rows). Absent from an older backend.
+  aws_accounts_connected?: number
 }
 
 export interface DiscoverResult {

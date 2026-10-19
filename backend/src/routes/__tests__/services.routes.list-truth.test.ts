@@ -8,6 +8,11 @@
  *   - ?env=untagged lists the untagged resources; ?env=production lists only
  *     resources tagged production.
  *   - ?type=ebs lists EBS volumes.
+ *   - ?search= is a case-insensitive substring match in which %, _ and \
+ *     are literal characters, not LIKE wildcards or escapes.
+ *   - /stats reports how many AWS accounts the organization has connected:
+ *     its aws_accounts rows, which is what the connect flow counts. Resources
+ *     alone do not make an account connected.
  *   - The list is never refused by the services plan limit: that limit counts
  *     the services registry, not the resources the list returns.
  *
@@ -21,6 +26,7 @@ import servicesRoutes from '../services.routes';
 import { errorHandler } from '../../middleware/error-handler';
 import { authService } from '../../services/auth.service';
 import { pool as appPool } from '../../config/database';
+import { ensureSharedFixtureTable } from './shared-fixture-tables';
 
 function dbConfig() {
   return {
@@ -92,6 +98,8 @@ let server: http.Server;
 let baseUrl: string;
 
 beforeAll(async () => {
+  // /stats reads it; CI's bootstrap does not create it.
+  await ensureSharedFixtureTable(pool, 'aws_accounts');
   const app = express();
   app.use(express.json());
   app.use('/api/services', servicesRoutes);
@@ -110,6 +118,7 @@ afterEach(() => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
+  await pool.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM services WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query(
     'DELETE FROM organization_memberships WHERE organization_id = ANY($1) OR user_id = ANY($2)',
@@ -234,6 +243,90 @@ describe('GET /api/services -- repeated or bracketed query parameters', () => {
     const { status, body } = await get(viewer, orgId, '/services?env[x]=production&type[y]=ebs');
     expect(status).toBe(200);
     expect(names(body)).toEqual(['rq-prod', 'rq-staging', 'rq-volume']);
+  });
+});
+
+describe('GET /api/services -- search matches %, _ and \\ literally', () => {
+  let orgId: string;
+  let viewer: string;
+
+  beforeAll(async () => {
+    orgId = await insertOrg('enterprise');
+    viewer = await member(orgId, 'viewer');
+    for (const name of ['sr_a_b', 'sr-a-b', 'srXaXb', 'sr-rate-100%', 'sr-back\\slash']) {
+      await insertResource(orgId, name);
+    }
+    // Another organization's names match every search below.
+    const otherOrgId = await insertOrg('enterprise');
+    for (const name of ['sr_foreign_a_b', 'sr-foreign-100%', 'sr-foreign\\b']) {
+      await insertResource(otherOrgId, name);
+    }
+  });
+
+  const search = async (term: string) => {
+    const { status, body } = await get(viewer, orgId, `/services?search=${encodeURIComponent(term)}`);
+    expect(status).toBe(200);
+    return body.services.map((s: { name: string }) => s.name).sort();
+  };
+
+  it('"_" matches only names containing an underscore', async () => {
+    expect(await search('_')).toEqual(['sr_a_b']);
+    expect(await search('a_b')).toEqual(['sr_a_b']);
+  });
+
+  it('"%" matches only names containing a percent sign', async () => {
+    expect(await search('%')).toEqual(['sr-rate-100%']);
+    expect(await search('100%')).toEqual(['sr-rate-100%']);
+  });
+
+  it('"\\" matches only names containing a backslash', async () => {
+    expect(await search('\\')).toEqual(['sr-back\\slash']);
+    expect(await search('back\\s')).toEqual(['sr-back\\slash']);
+  });
+
+  it('plain text still matches as a substring, in any case', async () => {
+    expect(await search('A-B')).toEqual(['sr-a-b']);
+    expect(await search('sr')).toEqual(['sr-a-b', 'sr-back\\slash', 'sr-rate-100%', 'srXaXb', 'sr_a_b']);
+  });
+});
+
+describe('GET /api/services/stats -- connected AWS accounts', () => {
+  async function connectAccount(orgId: string): Promise<void> {
+    await pool.query(
+      `INSERT INTO aws_accounts (org_id, role_arn, account_id, region, connected_at, status)
+       VALUES ($1, 'arn:aws:iam::123456789012:role/DevControlRole', $2, 'us-east-1', NOW(), 'active')`,
+      [orgId, `lt-${uniqueSuffix()}`.slice(0, 32)]
+    );
+  }
+
+  it('counts only the caller\'s organization: 1 with an account, 0 without, whatever the inventory', async () => {
+    const connected = await insertOrg('enterprise');
+    const connectedViewer = await member(connected, 'viewer');
+    await connectAccount(connected);
+
+    // Resources but no account: inventory left from an earlier connection.
+    const leftover = await insertOrg('enterprise');
+    const leftoverViewer = await member(leftover, 'viewer');
+    await insertResource(leftover, 'ac-leftover-resource');
+
+    const a = await get(connectedViewer, connected, '/services/stats');
+    expect(a.status).toBe(200);
+    expect(a.body.stats).toMatchObject({ total: 0, aws_accounts_connected: 1 });
+
+    const b = await get(leftoverViewer, leftover, '/services/stats');
+    expect(b.status).toBe(200);
+    expect(b.body.stats).toMatchObject({ total: 1, aws_accounts_connected: 0 });
+  });
+
+  it('an organization with nothing reports 0, not another organization\'s account', async () => {
+    const other = await insertOrg('enterprise');
+    await connectAccount(other);
+    const empty = await insertOrg('enterprise');
+    const viewer = await member(empty, 'viewer');
+
+    const { status, body } = await get(viewer, empty, '/services/stats');
+    expect(status).toBe(200);
+    expect(body.stats.aws_accounts_connected).toBe(0);
   });
 });
 

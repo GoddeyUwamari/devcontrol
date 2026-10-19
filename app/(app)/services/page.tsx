@@ -12,6 +12,7 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { statusNeedsAttention } from './statusAttention'
+import { connectedAccountsCaption } from './accountCaption'
 
 const _now = Date.now()
 
@@ -23,7 +24,7 @@ const DEMO_SERVICES: AWSService[] = [
   { id: '5', name: 'analytics-worker',     environment: 'production', region: 'eu-west-1', status: 'healthy', type: 'ec2',    uptime: 99.5, lastDeployed: new Date(_now - 1000 * 60 * 60 * 24).toISOString(),     owner: 'david.kim',    team: 'Data Team',      monthly_cost: 623.4, metadata: {}, priority_severity: 'medium', needs_attention: true,  reason: 'Cost inefficiency detected — over-provisioned' } as any,
 ]
 
-const DEMO_STATS: AWSServicesStats = { total: 5, healthy: 3, needs_attention: 2, avg_uptime: 99.4 }
+const DEMO_STATS: AWSServicesStats = { total: 5, healthy: 3, needs_attention: 2, avg_uptime: 99.4, aws_accounts_connected: 1 }
 
 // Sort rank for the merged severity scale — critical first. Any resource
 // without a priority_severity is healthy and sorts after all of these.
@@ -235,6 +236,9 @@ export default function ServicesPage() {
   // Fallback when the stats request has not answered: only a known warning or critical
   // status counts. 'unknown' (no lifecycle state to judge) is not a reason for attention.
   const warningCount  = displayStats?.needs_attention ?? allServices.filter(statusNeedsAttention).length
+  // From the backend's count of connected accounts, never assumed from the
+  // resources: inventory can outlive a connection.
+  const accountsCaption = connectedAccountsCaption(displayStats?.aws_accounts_connected)
 
   // "Needs attention" quick-filter chip narrows the already type/env/search-
   // filtered set further — a separate dimension, not folded into fetchServices.
@@ -445,7 +449,7 @@ export default function ServicesPage() {
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-3">AWS resources</p>
           <div className="text-4xl font-bold text-slate-900 leading-none mb-1">{isLoading && !isDemoActive ? '…' : totalServices}</div>
-          <p className="text-slate-500 text-xs font-medium m-0">One connected account; not every region is scanned</p>
+          {accountsCaption && <p className="text-slate-500 text-xs font-medium m-0">{accountsCaption}</p>}
         </div>
 
         <div className={`bg-white rounded-xl p-5 border border-slate-200 ${isLoading && !isDemoActive ? 'opacity-60' : ''}`}>

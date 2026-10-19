@@ -141,7 +141,7 @@ function PopularTopicsSection({ isMobile, isTablet }: ResponsiveProps) {
     { title: 'Configure RBAC',       href: '/docs',                  icon: Users },
     { title: 'Security Scanning',    href: '/docs',                  icon: Shield },
     { title: 'DORA Metrics Setup',   href: '/app/dora-metrics',      icon: BarChart3 },
-    { title: 'Service Catalog',      href: '/services',              icon: Layers },
+    { title: 'Resource Inventory',   href: '/services',              icon: Layers },
     { title: 'CI/CD Integration',    href: '/docs',                  icon: GitBranch },
     { title: 'API Authentication',   href: '/docs/api',              icon: FileCode },
   ];
@@ -232,7 +232,6 @@ function CategoriesSection({ isMobile, isTablet }: ResponsiveProps) {
       description: 'Build your internal developer platform',
       icon: Layers,
       links: [
-        { title: 'Service Catalog', href: '/docs' },
         { title: 'Golden Paths', href: '/docs' },
         { title: 'Self-Service Workflows', href: '/docs' },
         { title: 'DORA Metrics', href: '/docs' },
@@ -320,7 +319,7 @@ function CodeExamplesSection({ isMobile, isTablet }: ResponsiveProps) {
     {
       title: 'API Request',
       icon: FileCode,
-      code: `curl -X GET \\\n  https://api.getdevcontrol.com/v1/services \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -H "Content-Type: application/json"`,
+      code: `curl -X GET \\\n  https://api.getdevcontrol.com/api/services \\\n  -H "Authorization: Bearer $API_KEY" \\\n  -H "Content-Type: application/json"`,
     },
     {
       title: 'AWS IAM Policy',

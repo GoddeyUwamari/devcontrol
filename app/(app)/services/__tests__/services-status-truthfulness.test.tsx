@@ -105,18 +105,55 @@ beforeEach(() => {
 describe('/services -- title and the resource count', () => {
   it('is titled Services and counts discovered AWS resources, not registered services', async () => {
     mockGetServices.mockResolvedValue([resource('1')])
-    mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })
+    mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null, aws_accounts_connected: 1 })
     renderPage()
     await settled()
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Services$/)
     expect(screen.getByText('Until services are mapped, this page lists the AWS resources discovered in your connected account and any flagged issues.')).toBeInTheDocument()
     expect(screen.getByText('AWS resources')).toBeInTheDocument()
-    expect(screen.getByText('One connected account; not every region is scanned')).toBeInTheDocument()
+    expect(screen.getByText('1 AWS account connected; not every region is scanned')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search 1 resource…')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Deployments/ })).toHaveAttribute('href', '/deployments')
     expect(screen.queryByText('Dependencies')).not.toBeInTheDocument()
     expectNoCutClaims()
+  })
+})
+
+describe('/services -- the connected-account caption comes from the backend', () => {
+  const card = () => screen.getByText('AWS resources').parentElement!
+
+  it('says no account is connected when resources remain but the backend counts none', async () => {
+    // Inventory left from an earlier connection: resources, no account.
+    mockGetAccounts.mockResolvedValue([])
+    mockGetServices.mockResolvedValue([resource('1'), resource('2')])
+    mockGetStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0, avg_uptime: null, aws_accounts_connected: 0 })
+    renderPage()
+    await settled()
+
+    expect(card()).toHaveTextContent('No AWS account connected')
+    expect(card()).not.toHaveTextContent(/One connected account|1 AWS account connected|region/)
+  })
+
+  it('counts more than one account if the backend reports more', async () => {
+    mockGetServices.mockResolvedValue([resource('1')])
+    mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null, aws_accounts_connected: 2 })
+    renderPage()
+    await settled()
+
+    expect(card()).toHaveTextContent('2 AWS accounts connected; not every region is scanned')
+  })
+
+  it.each([
+    ['a backend that does not report it', () => mockGetStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0, avg_uptime: null })],
+    ['a failed stats request', () => mockGetStats.mockRejectedValue(new Error('500'))],
+  ])('claims nothing about accounts for %s', async (_label, arrange) => {
+    mockGetServices.mockResolvedValue([resource('1')])
+    arrange()
+    renderPage()
+    await settled()
+
+    expect(card()).not.toHaveTextContent(/account/i)
   })
 })
 

@@ -64,22 +64,16 @@ export default function ApiReferencePage() {
   const endpoints = [
     {
       title: 'Services API',
-      description: 'Create, update, and manage services in your catalog',
+      description: 'List the AWS resources discovered in your organization',
       icon: Layers,
-      methods: ['GET', 'POST', 'PUT', 'DELETE'],
-      baseUrl: '/v1/services',
+      methods: ['GET'],
+      baseUrl: '/api/services',
       examples: [
         {
-          title: 'List all services',
+          title: 'List discovered resources',
           method: 'GET',
-          endpoint: '/v1/services',
-          description: 'Retrieve all services in your organization',
-        },
-        {
-          title: 'Create a service',
-          method: 'POST',
-          endpoint: '/v1/services',
-          description: 'Register a new service in the catalog',
+          endpoint: '/api/services',
+          description: 'Retrieve the discovered AWS resources in your organization',
         },
       ],
     },
@@ -190,43 +184,16 @@ export default function ApiReferencePage() {
     },
   ];
 
-  const authExample = `curl -X GET https://api.getdevcontrol.com/v1/services \\
+  const authExample = `curl -X GET https://api.getdevcontrol.com/api/services \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json"`;
-
-  const createServiceExample = `{
-  "name": "payment-service",
-  "description": "Handles payment processing",
-  "tier": "critical",
-  "owner": "platform-team",
-  "repository": "https://github.com/org/payment-service",
-  "tags": {
-    "environment": "production",
-    "language": "nodejs"
-  }
-}`;
-
-  const responseExample = `{
-  "id": "svc_1a2b3c4d",
-  "name": "payment-service",
-  "description": "Handles payment processing",
-  "tier": "critical",
-  "owner": "platform-team",
-  "repository": "https://github.com/org/payment-service",
-  "tags": {
-    "environment": "production",
-    "language": "nodejs"
-  },
-  "created_at": "2024-01-15T10:30:00Z",
-  "updated_at": "2024-01-15T10:30:00Z"
-}`;
 
   const errorExample = `{
   "error": {
     "code": "validation_error",
     "message": "Invalid request parameters",
     "details": {
-      "name": "Service name is required"
+      "limit": "Must be a positive integer"
     }
   }
 }`;
@@ -567,84 +534,6 @@ export default function ApiReferencePage() {
                 </Card>
               );
             })}
-          </div>
-        </div>
-
-        {/* Example: Create Service */}
-        <div className="mb-12">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
-            <Terminal className="w-7 h-7 text-primary" />
-            Example: Create a Service
-          </h2>
-
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Request */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800">
-                    POST
-                  </Badge>
-                  Request Body
-                </CardTitle>
-                <CardDescription>
-                  Create a new service in your catalog
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="relative">
-                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs border max-h-80">
-                    <code className="text-muted-foreground">{createServiceExample}</code>
-                  </pre>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleCopy(createServiceExample, 'request')}
-                    className="absolute top-2 right-2"
-                  >
-                    {copiedCode === 'request' ? (
-                      <Check className="w-4 h-4 text-green-600" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Response */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800">
-                    200
-                  </Badge>
-                  Response
-                </CardTitle>
-                <CardDescription>
-                  Successful service creation response
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="relative">
-                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs border max-h-80">
-                    <code className="text-muted-foreground">{responseExample}</code>
-                  </pre>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleCopy(responseExample, 'response')}
-                    className="absolute top-2 right-2"
-                  >
-                    {copiedCode === 'response' ? (
-                      <Check className="w-4 h-4 text-green-600" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
 
