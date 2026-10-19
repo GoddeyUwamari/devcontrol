@@ -57,7 +57,16 @@ export const servicesService = {
 
   // Create new service
   create: async (payload: CreateServicePayload): Promise<Service> => {
-    const response = await api.post<ApiResponse<any>>('/api/services', payload);
+    // POST /api/services validates snake_case (backend createServiceSchema);
+    // unknown keys are stripped, so camelCase teamId/githubUrl would be lost.
+    const response = await api.post<ApiResponse<any>>('/api/services', {
+      name: payload.name,
+      template: payload.template,
+      owner: payload.owner,
+      team_id: payload.teamId,
+      github_url: payload.githubUrl,
+      description: payload.description,
+    });
     const s = handleApiResponse(response);
     
     return {
