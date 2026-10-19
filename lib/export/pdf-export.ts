@@ -12,15 +12,18 @@ declare module 'jspdf' {
 }
 
 /**
- * Exports a comprehensive dependency report as a professional PDF
+ * Exports a dependency report as a PDF. Every figure and line in it comes
+ * from the recorded dependencies, the detected cycles and the rendered graph.
  * @param dependencies - Array of dependency data
  * @param stats - Statistics for the report
  * @param graphElement - The HTML element containing the graph to embed
+ * @param cyclePaths - The detected cycles, as "a → b → a" paths
  */
 export async function exportDependencyReport(
   dependencies: DependencyExportData[],
   stats: ExportStats,
-  graphElement: HTMLElement | null
+  graphElement: HTMLElement | null,
+  cyclePaths: string[] = []
 ): Promise<void> {
   try {
     // Initialize PDF with Letter size
@@ -73,7 +76,7 @@ export async function exportDependencyReport(
     doc.text(`Generated: ${reportDate}`, margin, yPosition);
 
     yPosition += 0.3;
-    doc.text(`Total Services: ${stats.totalServices}`, margin, yPosition);
+    doc.text(`Services in dependencies: ${stats.totalServices}`, margin, yPosition);
 
     yPosition += 0.3;
     doc.text(`Total Dependencies: ${stats.totalDependencies}`, margin, yPosition);
@@ -83,7 +86,6 @@ export async function exportDependencyReport(
     doc.setFontSize(10);
     doc.setTextColor(lightGray);
     doc.text('DevControl - Service Dependency Management', margin, yPosition);
-    doc.text('https://devcontrol.io', margin, yPosition + 0.2);
 
     // ==========================
     // 2. EXECUTIVE SUMMARY
@@ -133,12 +135,18 @@ export async function exportDependencyReport(
     };
 
     // Draw stat cards
-    drawStatCard(cardX, cardY, 'Total Services', stats.totalServices.toString(), primaryBlue);
+    drawStatCard(cardX, cardY, 'Services in dependencies', stats.totalServices.toString(), primaryBlue);
     drawStatCard(cardX + cardWidth + 0.2, cardY, 'Total Dependencies', stats.totalDependencies.toString(), primaryBlue);
 
     cardY += cardHeight + 0.2;
-    drawStatCard(cardX, cardY, 'Critical Paths', stats.criticalPaths.toString(), stats.criticalPaths > 0 ? '#ef4444' : '#10b981');
-    drawStatCard(cardX + cardWidth + 0.2, cardY, 'Circular Dependencies', stats.circularDependencies.toString(), stats.circularDependencies > 0 ? '#ef4444' : '#10b981');
+    drawStatCard(cardX, cardY, 'Critical Dependencies', stats.criticalDependencies.toString(), stats.criticalDependencies > 0 ? '#ef4444' : primaryBlue);
+    drawStatCard(
+      cardX + cardWidth + 0.2,
+      cardY,
+      'Circular Dependencies',
+      stats.circularDependencies === null ? 'Unavailable' : stats.circularDependencies.toString(),
+      stats.circularDependencies ? '#ef4444' : primaryBlue
+    );
 
     yPosition = cardY + cardHeight + 0.5;
 
@@ -155,18 +163,22 @@ export async function exportDependencyReport(
 
     const insights: string[] = [];
 
-    if (stats.criticalPaths > 0) {
-      insights.push(`⚠ ${stats.criticalPaths} critical path dependencies require immediate attention`);
+    if (stats.criticalDependencies > 0) {
+      insights.push(`• ${stats.criticalDependencies} of ${stats.totalDependencies} dependencies are marked critical`);
     }
 
-    if (stats.circularDependencies > 0) {
+    if (stats.circularDependencies === null) {
+      insights.push('• Circular dependency detection was unavailable for this report');
+    } else if (stats.circularDependencies > 0) {
       insights.push(`⚠ ${stats.circularDependencies} circular dependency cycles detected - may cause deployment issues`);
     } else {
-      insights.push('✓ No circular dependencies detected - architecture is healthy');
+      insights.push('• No circular dependencies detected');
     }
 
-    const avgDepsPerService = (stats.totalDependencies / stats.totalServices).toFixed(1);
-    insights.push(`• Average dependencies per service: ${avgDepsPerService}`);
+    if (stats.totalServices > 0) {
+      const avgDepsPerService = (stats.totalDependencies / stats.totalServices).toFixed(1);
+      insights.push(`• Average dependencies per service: ${avgDepsPerService}`);
+    }
 
     insights.forEach((insight) => {
       doc.text(insight, margin + 0.2, yPosition);
@@ -226,15 +238,15 @@ export async function exportDependencyReport(
     const tableData = dependencies.map((dep) => [
       dep.serviceName,
       dep.dependsOn,
-      dep.type,
-      dep.isCriticalPath ? 'Yes' : 'No',
-      dep.tags.join(', '),
+      dep.dependencyType,
+      dep.isCritical ? 'Yes' : 'No',
+      dep.description,
     ]);
 
     // Add table using autotable
     autoTable(doc, {
       startY: yPosition,
-      head: [['Service', 'Depends On', 'Type', 'Critical', 'Tags']],
+      head: [['Service', 'Depends On', 'Type', 'Critical', 'Description']],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -261,7 +273,7 @@ export async function exportDependencyReport(
     // 5. CIRCULAR DEPENDENCIES
     // ==========================
 
-    if (stats.circularDependencies > 0) {
+    if (cyclePaths.length > 0) {
       doc.addPage();
       yPosition = margin;
 
@@ -275,32 +287,15 @@ export async function exportDependencyReport(
       doc.setTextColor(darkGray);
       doc.setFont('helvetica', 'normal');
       doc.text(
-        'Circular dependencies can cause deployment issues, infinite loops, and cascading failures.',
+        'This can cause deployment issues and runtime failures. Detected cycles:',
         margin,
         yPosition,
         { maxWidth: contentWidth }
       );
 
-      yPosition += 0.5;
-      doc.setFontSize(12);
-      doc.setTextColor(primaryBlue);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Recommended Actions:', margin, yPosition);
-
-      yPosition += 0.3;
-      doc.setFontSize(11);
-      doc.setTextColor(darkGray);
-      doc.setFont('helvetica', 'normal');
-
-      const recommendations = [
-        '1. Identify and break circular dependencies by introducing mediator services',
-        '2. Use event-driven architecture to decouple tightly-coupled services',
-        '3. Review service boundaries and consider domain-driven design principles',
-        '4. Implement dependency injection to reduce tight coupling',
-      ];
-
-      recommendations.forEach((rec) => {
-        doc.text(rec, margin + 0.2, yPosition, { maxWidth: contentWidth - 0.2 });
+      yPosition += 0.4;
+      cyclePaths.forEach((path, index) => {
+        doc.text(`${index + 1}. ${path.replace(/→/g, '->')}`, margin + 0.2, yPosition, { maxWidth: contentWidth - 0.2 });
         yPosition += 0.3;
       });
     }

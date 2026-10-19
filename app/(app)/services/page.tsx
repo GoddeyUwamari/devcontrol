@@ -14,6 +14,7 @@ import { SeverityBadge } from '@/components/ui/severity-badge'
 import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice'
 import { statusNeedsAttention } from './statusAttention'
 import { connectedAccountsCaption } from './accountCaption'
+import { RegisteredServices } from './RegisteredServices'
 
 const _now = Date.now()
 
@@ -486,6 +487,9 @@ export default function ServicesPage() {
           <ArrowRight size={14} className="text-slate-400 shrink-0" />
         </div>
       </Link>
+
+      {/* ── REGISTERED SERVICES ── */}
+      <RegisteredServices />
 
       {/* ── SERVICES LIST ── */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">

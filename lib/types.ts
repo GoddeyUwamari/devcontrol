@@ -388,6 +388,21 @@ export interface Service {
   updatedAt: string;
 }
 
+/**
+ * A row of the services table as GET /api/services/registered returns it:
+ * a service registered through Add Service, not a discovered AWS resource.
+ */
+export interface RegisteredService {
+  id: string;
+  name: string;
+  owner: string;
+  teamId: string | null;
+  /** Null when the service has no team or its team is not this organization's. */
+  teamName: string | null;
+  githubUrl: string | null;
+  createdAt: string;
+}
+
 export interface CreateServicePayload {
   name: string;
   template: ServiceTemplate;

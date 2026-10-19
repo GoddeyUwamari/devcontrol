@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -20,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
-import { servicesService } from '@/lib/services/services.service'
+import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
 import { logError } from '@/lib/safe-log'
 
 // AWS Regions
@@ -54,11 +53,8 @@ export default function NewInfrastructurePage() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Fetch services for dropdown
-  const { data: services = [], isLoading: servicesLoading } = useQuery({
-    queryKey: ['services'],
-    queryFn: () => servicesService.getAll(),
-  })
+  // Registered services for the dropdown: service_id references the services table
+  const { data: services = [], isPending: servicesLoading } = useRegisteredServices()
 
   const {
     register,
@@ -161,7 +157,7 @@ export default function NewInfrastructurePage() {
               )}
               {services.length === 0 && !servicesLoading && (
                 <p className="text-xs text-amber-600">
-                  No registered services found.
+                  No services found. Please create a service first.
                 </p>
               )}
             </div>

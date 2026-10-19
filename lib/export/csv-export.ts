@@ -19,23 +19,22 @@ export async function exportDependenciesToCSV(
     const metadataRows = [
       ['Exported from', 'DevControl'],
       ['Export date', stats.exportDate],
-      ['Total services', stats.totalServices.toString()],
+      ['Services in dependencies', stats.totalServices.toString()],
       ['Total dependencies', stats.totalDependencies.toString()],
-      ['Critical paths', stats.criticalPaths.toString()],
-      ['Circular dependencies', stats.circularDependencies.toString()],
+      ['Critical dependencies', stats.criticalDependencies.toString()],
+      ['Circular dependencies', stats.circularDependencies === null ? 'Unavailable' : stats.circularDependencies.toString()],
       [], // Blank row separator
     ];
 
     // Prepare data rows with headers
     const dataRows = [
-      ['Service Name', 'Depends On', 'Type', 'Status', 'Critical Path', 'Tags'],
+      ['Service Name', 'Depends On', 'Type', 'Critical', 'Description'],
       ...dependencies.map((dep) => [
         dep.serviceName,
         dep.dependsOn,
-        dep.type,
-        dep.status,
-        dep.isCriticalPath ? 'Yes' : 'No',
-        dep.tags.join('; '), // Use semicolon to avoid comma conflicts
+        dep.dependencyType,
+        dep.isCritical ? 'Yes' : 'No',
+        dep.description,
       ]),
     ];
 

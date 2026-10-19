@@ -1,7 +1,8 @@
 /**
  * Tenant ownership is explicit in the SQL for the webhook deployment
- * de-dupe, the team -> services list, dependency creation, and deployment
- * creation -- none of them leans on RLS alone.
+ * de-dupe, the team -> services list, dependency creation, the dependency
+ * list, impact analysis, and deployment creation -- none of them leans on
+ * RLS alone.
  *
  * Every query here runs through the shared pool with NO tenant tag, as a
  * role RLS cannot filter (see the precondition test, which fails the suite
@@ -299,6 +300,224 @@ describe('dependency creation requires both services to belong to the organizati
     });
     await dependenciesController.create(req, res, jest.fn());
     expect(status).toHaveBeenCalledWith(400);
+  });
+});
+
+/**
+ * Writes a dependency row directly, skipping create()'s ownership check, so a
+ * test can hold rows that reference another organization's services -- what
+ * data written before that check, or by hand, may contain.
+ */
+async function insertDependencyRow(organizationId: string, source: string, target: string, isCritical = false): Promise<string> {
+  const { rows } = await pool.query(
+    `INSERT INTO service_dependencies (organization_id, source_service_id, target_service_id, dependency_type, is_critical, created_by)
+     VALUES ($1, $2, $3, 'runtime', $4, 'seed@example.test')
+     RETURNING id`,
+    [organizationId, source, target, isCritical]
+  );
+  return rows[0].id as string;
+}
+
+async function serviceName(id: string): Promise<string> {
+  const { rows } = await pool.query('SELECT name FROM services WHERE id = $1', [id]);
+  return rows[0].name as string;
+}
+
+describe('the dependency list is scoped to the organization', () => {
+  it('returns only the organization\'s own rows, and never names another organization\'s service', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const sourceA = await insertService(orgA);
+    const targetA = await insertService(orgA);
+    const sourceB = await insertService(orgB);
+    const targetB = await insertService(orgB);
+    const own = await insertDependencyRow(orgA, sourceA, targetA, true);
+    const foreign = await insertDependencyRow(orgB, sourceB, targetB);
+    // Org A's row whose target is org B's service.
+    const pointsAway = await insertDependencyRow(orgA, sourceA, targetB);
+
+    const { req, res, json, status } = mockReqRes(orgA);
+    await dependenciesController.getAll(req, res, jest.fn());
+
+    expect(status).not.toHaveBeenCalled();
+    const body = json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.data.map((d: any) => d.id).sort()).toEqual([own, pointsAway].sort());
+    expect(body.data.map((d: any) => d.id)).not.toContain(foreign);
+
+    const ownRow = body.data.find((d: any) => d.id === own);
+    expect(ownRow).toEqual(expect.objectContaining({
+      organization_id: orgA,
+      source_service_name: await serviceName(sourceA),
+      target_service_name: await serviceName(targetA),
+      source_service_status: 'active',
+      target_service_status: 'active',
+      is_critical: true,
+    }));
+
+    const awayRow = body.data.find((d: any) => d.id === pointsAway);
+    expect(awayRow.source_service_name).toBe(await serviceName(sourceA));
+    expect(awayRow.target_service_name).toBeNull();
+    expect(awayRow.target_service_status).toBeNull();
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(await serviceName(sourceB));
+    expect(serialized).not.toContain(await serviceName(targetB));
+  });
+});
+
+describe('impact analysis is scoped to the organization', () => {
+  async function impact(organizationId: string, serviceId: string) {
+    const { req, res, json, status } = mockReqRes(organizationId, {}, { serviceId });
+    await dependenciesController.getImpactAnalysis(req, res, jest.fn());
+    return { json, status };
+  }
+
+  it('lists only the organization\'s own dependency rows and services in both directions', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const service = await insertService(orgA);
+    const upstreamA = await insertService(orgA);
+    const downstreamA = await insertService(orgA);
+    const foreignB = await insertService(orgB);
+    const otherB = await insertService(orgB);
+
+    await insertDependencyRow(orgA, service, upstreamA, true);
+    await insertDependencyRow(orgA, downstreamA, service);
+    // Org B rows that reference org A's service id.
+    await insertDependencyRow(orgB, service, otherB);
+    await insertDependencyRow(orgB, otherB, service);
+    // Org A rows whose other end is org B's service.
+    await insertDependencyRow(orgA, service, foreignB);
+    await insertDependencyRow(orgA, foreignB, service);
+
+    const { json, status } = await impact(orgA, service);
+
+    expect(status).not.toHaveBeenCalled();
+    const body = json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual({
+      service_id: service,
+      service_name: await serviceName(service),
+      upstream_dependencies: [
+        { id: upstreamA, name: await serviceName(upstreamA), dependency_type: 'runtime', is_critical: true },
+      ],
+      downstream_dependencies: [
+        { id: downstreamA, name: await serviceName(downstreamA), dependency_type: 'runtime', is_critical: false },
+      ],
+      total_upstream: 1,
+      total_downstream: 1,
+      total_affected_if_fails: 1,
+      critical_path: true,
+    });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(foreignB);
+    expect(serialized).not.toContain(otherB);
+  });
+
+  it('another organization\'s service is a 404, the same answer as an id that exists nowhere', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const foreign = await insertService(orgB);
+    await insertDependencyRow(orgB, foreign, await insertService(orgB));
+
+    const withForeign = await impact(orgA, foreign);
+    const withMissing = await impact(orgA, randomUUID());
+
+    expect(withForeign.status).toHaveBeenCalledWith(404);
+    expect(withForeign.json).toHaveBeenCalledWith({ success: false, error: 'Service not found' });
+    expect(withForeign.status.mock.calls).toEqual(withMissing.status.mock.calls);
+    expect(withForeign.json.mock.calls).toEqual(withMissing.json.mock.calls);
+  });
+});
+
+describe('a single dependency is scoped to the organization', () => {
+  it('names only the organization\'s own services, and another organization\'s dependency id is a 404', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const sourceA = await insertService(orgA);
+    const targetB = await insertService(orgB);
+    // Org A's row whose target is org B's service.
+    const pointsAway = await insertDependencyRow(orgA, sourceA, targetB);
+    const foreign = await insertDependencyRow(orgB, targetB, await insertService(orgB));
+
+    const row = await dependenciesRepository.findById(pointsAway, orgA);
+    expect(row).toEqual(expect.objectContaining({
+      id: pointsAway,
+      organization_id: orgA,
+      source_service_name: await serviceName(sourceA),
+      target_service_name: null,
+      target_service_status: null,
+    }));
+    expect(JSON.stringify(row)).not.toContain(await serviceName(targetB));
+
+    expect(await dependenciesRepository.findById(foreign, orgA)).toBeNull();
+    const { req, res, json, status } = mockReqRes(orgA, {}, { id: foreign });
+    await dependenciesController.getById(req, res, jest.fn());
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith({ success: false, error: 'Dependency not found' });
+  });
+});
+
+describe('the dependency graph is scoped to the organization', () => {
+  it('has only the organization\'s services as nodes and its own rows as edges', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const a1 = await insertService(orgA);
+    const a2 = await insertService(orgA);
+    const b1 = await insertService(orgB);
+    const b2 = await insertService(orgB);
+    const own = await insertDependencyRow(orgA, a1, a2, true);
+    const foreign = await insertDependencyRow(orgB, b1, b2);
+
+    const { req, res, json, status } = mockReqRes(orgA);
+    await dependenciesController.getGraph(req, res, jest.fn());
+
+    expect(status).not.toHaveBeenCalled();
+    const body = json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.data.nodes.map((n: any) => n.id).sort()).toEqual([a1, a2].sort());
+    expect(body.data.nodes.find((n: any) => n.id === a1).data.label).toBe(await serviceName(a1));
+    expect(body.data.edges).toEqual([
+      expect.objectContaining({ id: own, source: a1, target: a2, data: expect.objectContaining({ is_critical: true }) }),
+    ]);
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(foreign);
+    expect(serialized).not.toContain(b1);
+    expect(serialized).not.toContain(await serviceName(b1));
+  });
+});
+
+describe('cycle detection is scoped to the organization', () => {
+  it('finds the organization\'s own cycle, and never one through or of another organization\'s services', async () => {
+    const orgA = await insertOrg();
+    const orgB = await insertOrg();
+    const a1 = await insertService(orgA);
+    const a2 = await insertService(orgA);
+    const a3 = await insertService(orgA);
+    const b1 = await insertService(orgB);
+    const b2 = await insertService(orgB);
+    // Org A's own cycle a1 -> a2 -> a1.
+    await insertDependencyRow(orgA, a1, a2);
+    await insertDependencyRow(orgA, a2, a1);
+    // Org A rows that would close a cycle a3 -> b1 -> a3 through org B's service.
+    await insertDependencyRow(orgA, a3, b1);
+    await insertDependencyRow(orgA, b1, a3);
+    // Org B's own cycle.
+    await insertDependencyRow(orgB, b1, b2);
+    await insertDependencyRow(orgB, b2, b1);
+
+    const { req, res, json, status } = mockReqRes(orgA);
+    await dependenciesController.detectCycles(req, res, jest.fn());
+
+    expect(status).not.toHaveBeenCalled();
+    const body = json.mock.calls[0][0];
+    expect(body.success).toBe(true);
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].cycle.map((s: any) => s.service_id).sort()).toEqual([a1, a2].sort());
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(b1);
+    expect(serialized).not.toContain(await serviceName(b1));
+    expect(serialized).not.toContain(await serviceName(b2));
   });
 });
 

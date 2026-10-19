@@ -64,9 +64,9 @@ export default function ApiReferencePage() {
   const endpoints = [
     {
       title: 'Services API',
-      description: 'List the AWS resources discovered in your organization',
+      description: 'Create, update, and manage services in your catalog',
       icon: Layers,
-      methods: ['GET'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE'],
       baseUrl: '/api/services',
       examples: [
         {
@@ -74,6 +74,18 @@ export default function ApiReferencePage() {
           method: 'GET',
           endpoint: '/api/services',
           description: 'Retrieve the discovered AWS resources in your organization',
+        },
+        {
+          title: 'List registered services',
+          method: 'GET',
+          endpoint: '/api/services/registered',
+          description: 'Retrieve the services registered in your catalog',
+        },
+        {
+          title: 'Create a service',
+          method: 'POST',
+          endpoint: '/api/services',
+          description: 'Register a new service in the catalog (organization owners and admins)',
         },
       ],
     },
@@ -185,17 +197,45 @@ export default function ApiReferencePage() {
   ];
 
   const authExample = `curl -X GET https://api.getdevcontrol.com/api/services \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
   -H "Content-Type: application/json"`;
 
+  // POST /api/services: body validated by createServiceSchema
+  // (backend/src/validators/schemas.ts), answered 201 by ServicesController.create.
+  const createServiceExample = `{
+  "name": "payment-service",
+  "template": "api",
+  "owner": "owner@example.com",
+  "team_id": "00000000-0000-4000-8000-000000000000",
+  "github_url": "https://github.com/example-org/payment-service",
+  "description": "Handles payment processing"
+}`;
+
+  const responseExample = `{
+  "success": true,
+  "data": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "payment-service",
+    "template": "api",
+    "owner": "owner@example.com",
+    "team_id": "00000000-0000-4000-8000-000000000000",
+    "github_url": "https://github.com/example-org/payment-service",
+    "status": "active",
+    "description": "Handles payment processing",
+    "metadata": {},
+    "organization_id": "00000000-0000-4000-8000-000000000002",
+    "created_at": "2026-01-15T10:30:00.000Z",
+    "updated_at": "2026-01-15T10:30:00.000Z"
+  },
+  "message": "Service created successfully"
+}`;
+
+  // What validateBody (backend/src/middleware/validation.ts) answers with 400,
+  // here for POST /api/services with an empty name.
   const errorExample = `{
-  "error": {
-    "code": "validation_error",
-    "message": "Invalid request parameters",
-    "details": {
-      "limit": "Must be a positive integer"
-    }
-  }
+  "success": false,
+  "error": "Validation failed",
+  "details": "name: Service name is required"
 }`;
 
   const webhookExample = `{
@@ -236,9 +276,9 @@ export default function ApiReferencePage() {
           {/* Quick Links */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Button asChild variant="default" className="gap-2">
-              <Link href="/settings/api-keys">
+              <Link href="/login">
                 <Key className="w-4 h-4" />
-                Get API Key
+                Sign In
               </Link>
             </Button>
             <Button asChild variant="outline" className="gap-2">
@@ -283,7 +323,7 @@ export default function ApiReferencePage() {
                 <div>
                   <h3 className="font-semibold mb-1">Secure by Default</h3>
                   <p className="text-sm text-muted-foreground">
-                    API keys with granular permissions and audit logging
+                    Requests use your access token and are limited to your organization and role
                   </p>
                 </div>
               </div>
@@ -348,10 +388,11 @@ export default function ApiReferencePage() {
 
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">API Key Authentication</CardTitle>
+              <CardTitle className="text-lg">Access Token Authentication</CardTitle>
               <CardDescription>
                 All API requests require authentication using a Bearer token in the
-                Authorization header.
+                Authorization header: the access token you get by signing in
+                (POST /api/auth/login returns it as data.accessToken). It is valid for 7 days.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -386,9 +427,9 @@ export default function ApiReferencePage() {
                     <div>
                       <h4 className="font-semibold text-sm mb-1">Best Practices</h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li>• Store API keys securely (environment variables)</li>
-                        <li>• Rotate keys regularly (every 90 days)</li>
-                        <li>• Use different keys per environment</li>
+                        <li>• Store access tokens securely (environment variables)</li>
+                        <li>• Sign in again when a token expires (after 7 days)</li>
+                        <li>• Requests act as you, with your organization and role</li>
                       </ul>
                     </div>
                   </div>
@@ -400,9 +441,9 @@ export default function ApiReferencePage() {
                     <div>
                       <h4 className="font-semibold text-sm mb-1">Important</h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li>• Never commit keys to version control</li>
-                        <li>• Don&apos;t expose keys in client-side code</li>
-                        <li>• Revoke compromised keys immediately</li>
+                        <li>• Never commit tokens to version control</li>
+                        <li>• Don&apos;t expose tokens in client-side code</li>
+                        <li>• Treat a token like your password: anyone holding it can act as you</li>
                       </ul>
                     </div>
                   </div>
@@ -411,9 +452,9 @@ export default function ApiReferencePage() {
 
               <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
                 <Button asChild size="sm" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
-                  <Link href="/settings/api-keys">
+                  <Link href="/login">
                     <Key className="w-4 h-4" />
-                    Manage API Keys
+                    Sign In
                   </Link>
                 </Button>
                 <Button asChild size="sm" variant="outline" className="gap-2" style={{ width: isMobile ? '100%' : undefined }}>
@@ -530,10 +571,103 @@ export default function ApiReferencePage() {
                         </Badge>
                       ))}
                     </div>
+                    <ul className="mt-4 space-y-2 border-t pt-4" aria-label={`${endpoint.title} examples`}>
+                      {endpoint.examples.map((example) => (
+                        <li key={`${example.method} ${example.endpoint} ${example.title}`} className="text-sm">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs font-semibold text-muted-foreground">{example.method}</span>
+                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded break-all">{example.endpoint}</code>
+                          </div>
+                          <div className="font-medium mt-1">{example.title}</div>
+                          <div className="text-xs text-muted-foreground">{example.description}</div>
+                        </li>
+                      ))}
+                    </ul>
                   </CardContent>
                 </Card>
               );
             })}
+          </div>
+        </div>
+
+        {/* Example: Create Service */}
+        <div className="mb-12">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
+            <Terminal className="w-7 h-7 text-primary" />
+            Example: Create a Service
+          </h2>
+
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Request */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800">
+                    POST
+                  </Badge>
+                  Request Body
+                </CardTitle>
+                <CardDescription>
+                  Create a new service in your catalog. Organization owners and admins only.
+                  name, template (api, frontend, worker or database), owner (an email) and
+                  team_id (one of your organization&apos;s teams) are required; github_url and
+                  description are optional.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="relative">
+                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs border max-h-80">
+                    <code className="text-muted-foreground">{createServiceExample}</code>
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleCopy(createServiceExample, 'request')}
+                    className="absolute top-2 right-2"
+                  >
+                    {copiedCode === 'request' ? (
+                      <Check className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Response */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800">
+                    201
+                  </Badge>
+                  Response
+                </CardTitle>
+                <CardDescription>
+                  Successful service creation response
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="relative">
+                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs border max-h-80">
+                    <code className="text-muted-foreground">{responseExample}</code>
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleCopy(responseExample, 'response')}
+                    className="absolute top-2 right-2"
+                  >
+                    {copiedCode === 'response' ? (
+                      <Check className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
@@ -594,7 +728,7 @@ export default function ApiReferencePage() {
                     <div>
                       <div className="font-medium text-sm">Unauthorized</div>
                       <div className="text-xs text-muted-foreground">
-                        Missing or invalid API key
+                        Missing, invalid or expired access token
                       </div>
                     </div>
                   </div>
@@ -847,9 +981,9 @@ export default function ApiReferencePage() {
                     How do I get started with the API?
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    First, generate an API key from your account settings. Then, include it
-                    in the Authorization header of your requests. Check out our Getting
-                    Started guide for a complete walkthrough.
+                    First, sign in to get an access token (POST /api/auth/login returns it as
+                    data.accessToken). Then, include it in the Authorization header of your
+                    requests. Check out our Getting Started guide for a complete walkthrough.
                   </AccordionContent>
                 </AccordionItem>
 
@@ -858,7 +992,7 @@ export default function ApiReferencePage() {
                     Is there a sandbox environment for testing?
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    Yes! Use your API key with{' '}
+                    Yes! Use your access token with{' '}
                     <code className="bg-muted px-1 py-0.5 rounded text-xs">
                       https://api.getdevcontrol.com
                     </code>{' '}

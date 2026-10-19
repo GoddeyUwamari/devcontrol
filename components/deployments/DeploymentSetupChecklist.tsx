@@ -23,8 +23,8 @@ const steps: ChecklistStep[] = [
   {
     id: 'create-service',
     number: 1,
-    title: 'Review Services',
-    description: 'See the resources discovered in your AWS account',
+    title: 'Create Service',
+    description: 'Register your first application',
     icon: <Rocket className="w-6 h-6" />,
     isCompleted: false,
     isCurrent: true,

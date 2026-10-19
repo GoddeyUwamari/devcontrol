@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/command'
 import { DialogTitle } from '@/components/ui/dialog'
 import {
-  Layers, Rocket, Server, Users, Activity,
+  Layers, Rocket, Server, Users, Activity, Plus,
   LayoutDashboard, Sparkles, X, AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -242,6 +242,11 @@ export function CommandPalette() {
         {!nlResult && (
           <>
             <CommandGroup heading="Actions">
+              <CommandItem onSelect={() =>
+                runCommand(() => router.push('/services/new'))}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Service
+              </CommandItem>
               <CommandItem onSelect={() =>
                 runCommand(() => router.push('/deployments'))}>
                 <Rocket className="mr-2 h-4 w-4" />

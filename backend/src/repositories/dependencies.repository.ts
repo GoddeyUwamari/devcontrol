@@ -14,7 +14,8 @@ import {
 export class DependenciesRepository {
   /**
    * Get all dependencies with optional filters
-   * Joins with services table to get service names and status
+   * Joins with services table to get service names and status -- only this
+   * organization's services, so a row pointing elsewhere never names them
    */
   async findAll(organizationId: string, filters?: DependencyFilters): Promise<ServiceDependency[]> {
     let query = `
@@ -25,8 +26,8 @@ export class DependenciesRepository {
         ss.status as source_service_status,
         ts.status as target_service_status
       FROM service_dependencies sd
-      LEFT JOIN services ss ON sd.source_service_id = ss.id
-      LEFT JOIN services ts ON sd.target_service_id = ts.id
+      LEFT JOIN services ss ON sd.source_service_id = ss.id AND ss.organization_id = $1
+      LEFT JOIN services ts ON sd.target_service_id = ts.id AND ts.organization_id = $1
       WHERE sd.organization_id = $1
     `;
 
@@ -75,8 +76,8 @@ export class DependenciesRepository {
         ss.status as source_service_status,
         ts.status as target_service_status
       FROM service_dependencies sd
-      LEFT JOIN services ss ON sd.source_service_id = ss.id
-      LEFT JOIN services ts ON sd.target_service_id = ts.id
+      LEFT JOIN services ss ON sd.source_service_id = ss.id AND ss.organization_id = $2
+      LEFT JOIN services ts ON sd.target_service_id = ts.id AND ts.organization_id = $2
       WHERE sd.id = $1 AND sd.organization_id = $2
     `;
 
@@ -273,7 +274,8 @@ export class DependenciesRepository {
 
     const service = serviceResult.rows[0];
 
-    // Get upstream (what this service depends on)
+    // Get upstream (what this service depends on). Both the dependency row
+    // and the service on the other end must belong to this organization.
     const upstreamQuery = `
       SELECT
         s.id,
@@ -281,11 +283,11 @@ export class DependenciesRepository {
         sd.dependency_type,
         sd.is_critical
       FROM service_dependencies sd
-      JOIN services s ON sd.target_service_id = s.id
-      WHERE sd.source_service_id = $1
+      JOIN services s ON sd.target_service_id = s.id AND s.organization_id = $2
+      WHERE sd.source_service_id = $1 AND sd.organization_id = $2
     `;
 
-    // Get downstream (what depends on this service)
+    // Get downstream (what depends on this service), scoped the same way
     const downstreamQuery = `
       SELECT
         s.id,
@@ -293,13 +295,13 @@ export class DependenciesRepository {
         sd.dependency_type,
         sd.is_critical
       FROM service_dependencies sd
-      JOIN services s ON sd.source_service_id = s.id
-      WHERE sd.target_service_id = $1
+      JOIN services s ON sd.source_service_id = s.id AND s.organization_id = $2
+      WHERE sd.target_service_id = $1 AND sd.organization_id = $2
     `;
 
     const [upstreamResult, downstreamResult] = await Promise.all([
-      pool.query(upstreamQuery, [serviceId]),
-      pool.query(downstreamQuery, [serviceId]),
+      pool.query(upstreamQuery, [serviceId, organizationId]),
+      pool.query(downstreamQuery, [serviceId, organizationId]),
     ]);
 
     const upstream = upstreamResult.rows;
@@ -335,8 +337,8 @@ export class DependenciesRepository {
         ss.name as source_name,
         ts.name as target_name
       FROM service_dependencies sd
-      JOIN services ss ON sd.source_service_id = ss.id
-      JOIN services ts ON sd.target_service_id = ts.id
+      JOIN services ss ON sd.source_service_id = ss.id AND ss.organization_id = $1
+      JOIN services ts ON sd.target_service_id = ts.id AND ts.organization_id = $1
       WHERE sd.organization_id = $1
     `;
 

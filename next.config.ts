@@ -92,10 +92,6 @@ const nextConfig: NextConfig = {
       // Removed pages: static or fabricated content with no data behind it.
       { source: '/services/health',                 destination: '/services',                       permanent: false },
       { source: '/services/dependencies',           destination: '/services',                       permanent: false },
-      { source: '/dependencies',                    destination: '/services',                       permanent: false },
-      // Service registration is hidden until its create contract is fixed;
-      // the page and the backend routes are kept.
-      { source: '/services/new',                    destination: '/services',                       permanent: false },
       // Demo mode is off; /tour is the public walkthrough every other "demo" link uses.
       { source: '/demo',                            destination: '/tour',                           permanent: false },
     ];
