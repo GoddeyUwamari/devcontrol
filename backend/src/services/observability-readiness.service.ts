@@ -6,6 +6,7 @@ import {
 import { pool } from '../config/database'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
+import { splitDiscoveryMessage } from './discovery-warnings'
 import { resourceTypeRegistry } from './cloudwatch.service'
 import {
   collectSection,
@@ -408,7 +409,8 @@ export class ObservabilityReadinessService {
       startedAt: new Date(row.started_at),
       completedAt: new Date(row.completed_at),
       resourceTypes: row.resource_types ?? null,
-      errorMessage: row.error_message ?? null,
+      // Warnings are not failures: a failed run is judged on its errors alone.
+      errorMessage: splitDiscoveryMessage(row.error_message).errorMessage,
     }
   }
 

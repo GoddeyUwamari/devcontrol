@@ -172,7 +172,9 @@ export class ServicesIntelligenceRepository {
     );
 
     // 'completed' is written only when the job recorded no error at all, so
-    // every resource step in it succeeded. A 'failed' job may also have
+    // every resource step in it succeeded (it may carry a warning, such as
+    // deletion detection paused on a truncated index, which skips no
+    // inventory refresh: see discovery-warnings.ts). A 'failed' job may also have
     // refreshed inventory, but its stored error text does not say which steps
     // failed, so it is not counted.
     const refreshed = await executor.query<{ completed_at: Date | null }>(

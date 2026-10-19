@@ -4,9 +4,14 @@
  *
  *   - a Resource Explorer search that may have been cut off (Count.Complete
  *     false, or the 1,000-result limit reached) upserts what it returned but
- *     moves no row's missing_scan_count;
- *   - a failed Lambda or load balancer listing is recorded as a discovery
- *     error instead of passing as an empty account;
+ *     moves no row's missing_scan_count; the job still completes, with the
+ *     deletion_detection_paused_truncated_index warning, and every "last
+ *     refreshed" reader advances;
+ *   - a failed Lambda, load balancer or CloudFront listing is recorded as a
+ *     discovery error instead of passing as an empty account, and a failed
+ *     CloudFront listing never reconciles CloudFront rows;
+ *   - a bucket whose GetBucketLocation fails is still present (never counted
+ *     missing), but no new row is written with a guessed region;
  *   - Reserved Instance recommendations are replaced only when the RI check
  *     completed, in the scheduled scan and in the manual analyze alike;
  *   - an S3 row's security evaluation uses a client for the bucket's region,
@@ -21,6 +26,7 @@ import { Pool } from 'pg';
 import { ResourceExplorer2Client, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { ElasticLoadBalancingV2Client } from '@aws-sdk/client-elastic-load-balancing-v2';
+import { CloudFrontClient } from '@aws-sdk/client-cloudfront';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import { ComplianceScannerService } from '../complianceScanner';
@@ -29,6 +35,11 @@ import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { CostRecommendationsController } from '../../controllers/cost-recommendations.controller';
 import { ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY } from '../../config/optimization-rules';
+import { DISCOVERY_WARNING_TRUNCATED_INDEX } from '../discovery-warnings';
+import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
+import { ServicesIntelligenceRepository } from '../../repositories/services-intelligence.repository';
+import { AIChatContextRepository } from '../../repositories/ai-chat-context.repository';
+import { ActivityFeedService } from '../activity-feed.service';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -160,7 +171,7 @@ describe('discovery: a Resource Explorer search that may be truncated never reco
     mockAwsClients({ resourceExplorer: resourceExplorer({ Resources: [vpc(1)], Count: { TotalResources: 1000, Complete: false } }) });
     mockCostAnalysis();
 
-    await new AWSResourceDiscoveryService(pool).discoverAllResources(orgId);
+    const result = await new AWSResourceDiscoveryService(pool).discoverAllResources(orgId);
 
     expect(await instanceRow(orgId)).toEqual({ status: 'running', missing_scan_count: 1 });
     const { rows: vpcs } = await pool.query(
@@ -168,7 +179,59 @@ describe('discovery: a Resource Explorer search that may be truncated never reco
       [orgId, vpc(1).Arn]
     );
     expect(vpcs).toHaveLength(1);
-    expect((await latestJob(orgId)).error_message).toContain('Resource Explorer: search may be truncated (1 results), reconciliation skipped');
+    expect(result.warnings).toEqual([DISCOVERY_WARNING_TRUNCATED_INDEX]);
+    expect(result.errors.some((error) => error.startsWith('Resource Explorer: '))).toBe(false);
+    expect((await latestJob(orgId)).error_message.split('; ')).toContain(DISCOVERY_WARNING_TRUNCATED_INDEX);
+  });
+
+  it('otherwise clean: the job completes with the warning, nothing is terminated, and every "last refreshed" reader advances', async () => {
+    const orgId = await insertOrg();
+    await insertInstanceMissingOnce(orgId);
+    // An earlier completed run, so "advances" is observable.
+    const earlier = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, created_at)
+       VALUES ($1, 'completed', $2, $2, $2)`,
+      [orgId, earlier]
+    );
+    // Every other step of the scan succeeds, finding nothing.
+    for (const method of ['discoverEC2Instances', 'discoverEBSVolumes', 'discoverRDSDatabases', 'discoverS3Buckets']) {
+      jest.spyOn(AWSResourceDiscoveryService.prototype as any, method).mockResolvedValue([]);
+    }
+    jest.spyOn(ComplianceScannerService.prototype, 'checkSecurityGroups').mockResolvedValue({ category: 'networking', complete: true, issues: [] } as any);
+    jest.spyOn(ComplianceScannerService.prototype, 'checkIAMSecurity').mockResolvedValue({ category: 'iam', complete: true, issues: [] } as any);
+    mockAwsClients({ resourceExplorer: resourceExplorer({ Resources: [vpc(1)], Count: { TotalResources: 1000, Complete: false } }) });
+    mockCostAnalysis();
+
+    const result = await new AWSResourceDiscoveryService(pool).discoverAllResources(orgId);
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([DISCOVERY_WARNING_TRUNCATED_INDEX]);
+    expect(result.resources_deleted).toBe(0);
+    expect(await instanceRow(orgId)).toEqual({ status: 'running', missing_scan_count: 1 });
+
+    const { rows: [job] } = await pool.query(
+      `SELECT status, error_message, completed_at FROM resource_discovery_jobs
+        WHERE organization_id = $1 ORDER BY started_at DESC LIMIT 1`,
+      [orgId]
+    );
+    expect(job.status).toBe('completed');
+    expect(job.error_message).toBe(DISCOVERY_WARNING_TRUNCATED_INDEX);
+    expect(job.completed_at.getTime()).toBeGreaterThan(earlier.getTime());
+
+    // GET /api/aws-resources/discovery/jobs: a structured warning, no error.
+    const [listed] = await new AWSResourcesRepository(pool).getDiscoveryJobs(orgId, 1);
+    expect(listed).toMatchObject({ status: 'completed', error_message: null, warnings: [DISCOVERY_WARNING_TRUNCATED_INDEX] });
+
+    // Services intelligence's inventory_refreshed_at.
+    const intelligence = await new ServicesIntelligenceRepository().readWith(pool, orgId);
+    expect(new Date(intelligence.inventoryRefreshedAt!).getTime()).toBe(job.completed_at.getTime());
+    // The AI chat's last successful scan.
+    const freshness = await (new AIChatContextRepository(pool) as any).getDiscoveryFreshness(orgId);
+    expect(freshness).toMatchObject({ state: 'available', data: { completedAt: job.completed_at.toISOString() } });
+    // The activity feed's latest sync event.
+    const [latestSync] = await (new ActivityFeedService() as any).getSyncEvents(pool, orgId);
+    expect(latestSync.timestamp).toBe(job.completed_at.toISOString());
   });
 
   it('control: the same absence in a complete search terminates the row', async () => {
@@ -180,6 +243,107 @@ describe('discovery: a Resource Explorer search that may be truncated never reco
     await new AWSResourceDiscoveryService(pool).discoverAllResources(orgId);
 
     expect(await instanceRow(orgId)).toEqual({ status: 'terminated', missing_scan_count: 2 });
+  });
+});
+
+const DISTRIBUTION_ARN = 'arn:aws:cloudfront::111122223333:distribution/EDFDVBD6EXAMPLE';
+
+async function cloudFrontRow(orgId: string) {
+  const { rows } = await pool.query(
+    `SELECT status, missing_scan_count FROM aws_resources WHERE organization_id = $1 AND resource_arn = $2`,
+    [orgId, DISTRIBUTION_ARN]
+  );
+  return rows[0];
+}
+
+describe('discovery: a failed CloudFront listing never reconciles CloudFront rows', () => {
+  async function insertDistribution(orgId: string): Promise<void> {
+    await pool.query(
+      `INSERT INTO aws_resources
+         (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, missing_scan_count)
+       VALUES ($1, $2, 'EDFDVBD6EXAMPLE', 'EDFDVBD6EXAMPLE', 'cloudfront', 'global', 'active', 0)`,
+      [orgId, DISTRIBUTION_ARN]
+    );
+  }
+
+  it.each([
+    ['the first page fails', () => jest.fn().mockRejectedValue(awsError('AccessDenied'))],
+    [
+      'a later page fails',
+      () =>
+        jest.fn()
+          .mockResolvedValueOnce({ DistributionList: { Items: [], IsTruncated: true, NextMarker: 'page-2' } })
+          .mockRejectedValueOnce(awsError('ThrottlingException')),
+    ],
+    [
+      'a page claims more but gives no marker',
+      () => jest.fn().mockResolvedValue({ DistributionList: { Items: [], IsTruncated: true } }),
+    ],
+  ])('%s, twice in a row: nothing terminated, missing_scan_count unchanged, each failure recorded', async (_label, send) => {
+    const orgId = await insertOrg('starter');
+    await insertDistribution(orgId);
+    mockCostAnalysis();
+
+    for (let run = 0; run < 2; run++) {
+      mockAwsClients({ cloudFront: withMockedSend(new CloudFrontClient({ region: 'us-east-1' }), send()) });
+      await new AWSResourceDiscoveryService(pool).discoverAllResources(orgId);
+
+      const job = await latestJob(orgId);
+      expect(job.status).toBe('failed');
+      expect(job.error_message.split('; ').some((segment: string) => segment.startsWith('CloudFront: '))).toBe(true);
+      expect(job.error_message).not.toContain('CloudFront reconciliation');
+    }
+
+    expect(await cloudFrontRow(orgId)).toEqual({ status: 'active', missing_scan_count: 0 });
+  });
+
+  it('control: two complete listings without it terminate it', async () => {
+    const orgId = await insertOrg('starter');
+    await insertDistribution(orgId);
+    mockCostAnalysis();
+
+    for (let run = 0; run < 2; run++) {
+      mockAwsClients({
+        cloudFront: withMockedSend(new CloudFrontClient({ region: 'us-east-1' }), jest.fn().mockResolvedValue({ DistributionList: { Items: [] } })),
+      });
+      await new AWSResourceDiscoveryService(pool).discoverAllResources(orgId);
+    }
+
+    expect(await cloudFrontRow(orgId)).toEqual({ status: 'terminated', missing_scan_count: 2 });
+  });
+});
+
+describe('discovery: a bucket whose region cannot be read', () => {
+  it('stays present when already stored, and is not written with a guessed region when new', async () => {
+    const orgId = await insertOrg();
+    await pool.query(
+      `INSERT INTO aws_resources
+         (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, missing_scan_count)
+       VALUES ($1, 'arn:aws:s3:::stored-bucket', 'stored-bucket', 'stored-bucket', 's3', 'ap-southeast-2', 'not_applicable', 1)`,
+      [orgId]
+    );
+    const home = {
+      send: jest.fn(async (command: { constructor: { name: string } }) => {
+        switch (command.constructor.name) {
+          case 'ListBucketsCommand': return { Buckets: [{ Name: 'stored-bucket' }, { Name: 'new-bucket' }] };
+          case 'GetBucketLocationCommand': throw awsError('AccessDenied');
+          default: throw awsError('AccessDenied');
+        }
+      }),
+    };
+    mockAwsClients({ s3: home, resourceExplorer: resourceExplorer({ Resources: [], Count: { TotalResources: 0, Complete: true } }) });
+    mockCostAnalysis();
+
+    await new AWSResourceDiscoveryService(pool).discoverAllResources(orgId);
+
+    const { rows } = await pool.query(
+      `SELECT resource_id, region, status, missing_scan_count FROM aws_resources
+        WHERE organization_id = $1 AND resource_type = 's3' ORDER BY resource_id`,
+      [orgId]
+    );
+    // Listed, so present (its missing count resets); its stored region is kept.
+    // The new bucket has no row: its region would have been a guess.
+    expect(rows).toEqual([{ resource_id: 'stored-bucket', region: 'ap-southeast-2', status: 'not_applicable', missing_scan_count: 0 }]);
   });
 });
 

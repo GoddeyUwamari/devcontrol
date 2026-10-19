@@ -17,6 +17,7 @@ import {
 } from '../observability-readiness.service';
 import { DISCOVERY_FAILED_MESSAGE } from '../awsResourceDiscovery';
 import { PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../platform-sts';
+import { DISCOVERY_WARNING_TRUNCATED_INDEX, joinDiscoveryMessage, splitDiscoveryMessage } from '../discovery-warnings';
 
 const source = readFileSync(join(__dirname, '..', 'awsResourceDiscovery.ts'), 'utf8');
 
@@ -41,7 +42,17 @@ describe('readiness discovery gate -- pinned to runDiscovery() error format', ()
 
   it('segments are joined with the separator the gate splits on', () => {
     expect(DISCOVERY_ERROR_SEPARATOR).toBe('; ');
-    expect(source).toContain("errors.join('; ')");
+    expect(source).toContain('joinDiscoveryMessage(errors, warnings)');
+    expect(joinDiscoveryMessage(['EC2: a', 'RDS: b'], [])).toBe(['EC2: a', 'RDS: b'].join(DISCOVERY_ERROR_SEPARATOR));
+  });
+
+  it('a warning stored beside errors is neither an error nor an unrecognized segment', () => {
+    const errorMessage = joinDiscoveryMessage(['S3: AccessDenied'], [DISCOVERY_WARNING_TRUNCATED_INDEX]);
+    const run = { id: 'run', status: 'failed' as const, startedAt: new Date(), completedAt: new Date(), resourceTypes: ['ec2', 'rds'], errorMessage };
+    // getGatedRun() passes the gate only the errors.
+    const gated = { ...run, errorMessage: splitDiscoveryMessage(errorMessage).errorMessage };
+    expect(evaluateDiscoveryGate(gated, 'ec2')).toEqual({ kind: 'usable', run: gated });
+    expect(source).not.toContain('errors.push(DISCOVERY_WARNING');
   });
 
   it('a fatal error is written as a fixed unprefixed message, which the gate treats as unrecognized', () => {

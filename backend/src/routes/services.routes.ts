@@ -460,6 +460,7 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
       discovered: result.resources_discovered,
       updated:    result.resources_updated,
       errors:     result.errors,
+      warnings:   result.warnings ?? [],
       jobId:      result.job_id,
     });
   } catch (err: any) {

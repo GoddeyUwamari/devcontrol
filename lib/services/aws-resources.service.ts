@@ -67,6 +67,9 @@ export interface DiscoveryJob {
   regions: string[];
   resource_types: string[];
   error_message: string | null;
+  // Discovery warning codes, separated from error_message by the backend
+  // (backend/src/services/discovery-warnings.ts). A warning does not fail the job.
+  warnings?: string[];
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
