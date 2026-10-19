@@ -243,7 +243,7 @@ export function CommandPalette() {
           <>
             <CommandGroup heading="Actions">
               <CommandItem onSelect={() =>
-                runCommand(() => router.push('/services'))}>
+                runCommand(() => router.push('/services/new'))}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Service
               </CommandItem>

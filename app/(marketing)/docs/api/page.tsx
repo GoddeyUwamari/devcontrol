@@ -64,9 +64,9 @@ export default function ApiReferencePage() {
   const endpoints = [
     {
       title: 'Services API',
-      description: 'List the AWS resources discovered in your organization',
+      description: 'Create, update, and manage services in your catalog',
       icon: Layers,
-      methods: ['GET'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE'],
       baseUrl: '/api/services',
       examples: [
         {
@@ -74,6 +74,18 @@ export default function ApiReferencePage() {
           method: 'GET',
           endpoint: '/api/services',
           description: 'Retrieve the discovered AWS resources in your organization',
+        },
+        {
+          title: 'List registered services',
+          method: 'GET',
+          endpoint: '/api/services/registered',
+          description: 'Retrieve the services registered in your catalog',
+        },
+        {
+          title: 'Create a service',
+          method: 'POST',
+          endpoint: '/api/services',
+          description: 'Register a new service in the catalog (organization owners and admins)',
         },
       ],
     },
@@ -187,6 +199,36 @@ export default function ApiReferencePage() {
   const authExample = `curl -X GET https://api.getdevcontrol.com/api/services \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json"`;
+
+  // POST /api/services: body validated by createServiceSchema
+  // (backend/src/validators/schemas.ts), answered 201 by ServicesController.create.
+  const createServiceExample = `{
+  "name": "payment-service",
+  "template": "api",
+  "owner": "owner@example.com",
+  "team_id": "00000000-0000-4000-8000-000000000000",
+  "github_url": "https://github.com/example-org/payment-service",
+  "description": "Handles payment processing"
+}`;
+
+  const responseExample = `{
+  "success": true,
+  "data": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "payment-service",
+    "template": "api",
+    "owner": "owner@example.com",
+    "team_id": "00000000-0000-4000-8000-000000000000",
+    "github_url": "https://github.com/example-org/payment-service",
+    "status": "active",
+    "description": "Handles payment processing",
+    "metadata": {},
+    "organization_id": "00000000-0000-4000-8000-000000000002",
+    "created_at": "2026-01-15T10:30:00.000Z",
+    "updated_at": "2026-01-15T10:30:00.000Z"
+  },
+  "message": "Service created successfully"
+}`;
 
   const errorExample = `{
   "error": {
@@ -534,6 +576,87 @@ export default function ApiReferencePage() {
                 </Card>
               );
             })}
+          </div>
+        </div>
+
+        {/* Example: Create Service */}
+        <div className="mb-12">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 flex items-center gap-3" style={{ fontSize: isMobile ? 'clamp(1.5rem,4vw,2rem)' : undefined }}>
+            <Terminal className="w-7 h-7 text-primary" />
+            Example: Create a Service
+          </h2>
+
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Request */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800">
+                    POST
+                  </Badge>
+                  Request Body
+                </CardTitle>
+                <CardDescription>
+                  Create a new service in your catalog. Organization owners and admins only.
+                  name, template (api, frontend, worker or database), owner (an email) and
+                  team_id (one of your organization&apos;s teams) are required; github_url and
+                  description are optional.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="relative">
+                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs border max-h-80">
+                    <code className="text-muted-foreground">{createServiceExample}</code>
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleCopy(createServiceExample, 'request')}
+                    className="absolute top-2 right-2"
+                  >
+                    {copiedCode === 'request' ? (
+                      <Check className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Response */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800">
+                    201
+                  </Badge>
+                  Response
+                </CardTitle>
+                <CardDescription>
+                  Successful service creation response
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="relative">
+                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs border max-h-80">
+                    <code className="text-muted-foreground">{responseExample}</code>
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleCopy(responseExample, 'response')}
+                    className="absolute top-2 right-2"
+                  >
+                    {copiedCode === 'response' ? (
+                      <Check className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 

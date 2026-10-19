@@ -38,6 +38,13 @@ describe('/dependencies in navigation', () => {
     ])
   })
 
+  it('navigation-config: Services is described as the service catalog', () => {
+    const items = appNav.sections!.flatMap((s) => s.items)
+    expect(items.find((i) => i.href === '/services')).toEqual(
+      expect.objectContaining({ label: 'Services', description: 'Service catalog and management' })
+    )
+  })
+
   it('breadcrumbs: Dashboard > Services > Dependencies', () => {
     expect(parentPaths['/dependencies']).toEqual([{ label: 'Services', href: '/services' }])
     const { result } = renderHook(() => useBreadcrumbs())
