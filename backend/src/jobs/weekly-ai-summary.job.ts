@@ -15,6 +15,7 @@ import { Resend } from 'resend';
 import { WeeklySummaryRepository, type WeeklyEvidence } from '../repositories/weekly-summary.repository';
 import { requireOrganizationId } from '../services/ai-context-contract';
 import { composeWeeklySummary, type WeeklySummaryContent } from '../services/weekly-summary-content';
+import { signUnsubscribeToken } from '../services/unsubscribe-token';
 import { RELEASE_SHA } from '../version';
 
 /** No "AI" claim: the email contains no model-written content. */
@@ -226,9 +227,10 @@ export class WeeklyAISummaryJob {
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
       const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
 
-      // Unsubscribe token (base64 encoded user ID) -- unchanged scheme, see
-      // user-preferences.controller.ts unsubscribeAll().
-      const unsubscribeToken = Buffer.from(recipient.userId).toString('base64');
+      // Signed, purpose-bound unsubscribe token (services/unsubscribe-token.ts).
+      // GET on the link only shows a confirm page; List-Unsubscribe-Post below
+      // lets mail clients POST to the same URL (RFC 8058 one-click).
+      const unsubscribeToken = signUnsubscribeToken(recipient.userId, 'weekly-summary');
 
       const templateData = this.buildTemplateData({
         userName,
@@ -255,6 +257,7 @@ export class WeeklyAISummaryJob {
           text: textContent,
           headers: {
             'List-Unsubscribe': `<${templateData.unsubscribeUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
             'X-Entity-Ref-ID': `weekly-summary-${Date.now()}`,
           },
         });
