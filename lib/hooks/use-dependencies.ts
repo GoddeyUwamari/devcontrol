@@ -94,12 +94,18 @@ export function useDependencyCycles(organizationId: string | null) {
   });
 }
 
-/** The organization's services, for the impact selector and the add dialog. */
+/**
+ * The organization's registered services (GET /api/services/registered) --
+ * the ids service_dependencies references -- for the impact selector and the
+ * add dialog.
+ */
 export function useDependencyServices(organizationId: string | null) {
   return useQuery({
     queryKey: dependencyKeys.services(organizationId),
-    queryFn: fetchForOrganization(organizationId ?? '', () => servicesService.getAll()),
+    queryFn: fetchForOrganization(organizationId ?? '', () => servicesService.getRegistered()),
     enabled: !!organizationId,
+    // A service registered moments ago (on /services/new) must be selectable.
+    refetchOnMount: 'always',
   });
 }
 

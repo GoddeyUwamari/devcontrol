@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { FilterSummary } from '@/components/dependencies/FilterSummary'
 import type { ServiceDependency, CircularDependency, DependencyType } from '@/lib/types'
 
 export const DEPENDENCY_TYPE_LABELS: Record<DependencyType, string> = {
@@ -134,6 +135,11 @@ export function DependencyList({ dependencies, cycles }: DependencyListProps) {
           Showing {filteredDeps.length} of {dependencies.length} dependencies
         </div>
       </div>
+
+      <FilterSummary
+        filters={{ type: typeFilter, priority: criticalFilter }}
+        onRemoveFilter={(key) => (key === 'type' ? setTypeFilter('all') : setCriticalFilter('all'))}
+      />
 
       {filteredDeps.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border p-10 text-center">

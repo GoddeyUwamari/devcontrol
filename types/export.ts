@@ -1,16 +1,19 @@
+/** One recorded dependency, as exported: only fields service_dependencies holds. */
 export interface DependencyExportData {
   serviceName: string;
   dependsOn: string;
-  type: 'direct' | 'transitive';
-  status: string;
-  isCriticalPath: boolean;
-  tags: string[];
+  dependencyType: string;
+  isCritical: boolean;
+  description: string;
 }
 
 export interface ExportStats {
+  /** Distinct services named in the exported dependencies. */
   totalServices: number;
   totalDependencies: number;
-  criticalPaths: number;
-  circularDependencies: number;
+  /** Dependencies marked critical. */
+  criticalDependencies: number;
+  /** Null when cycle detection failed or has not loaded. */
+  circularDependencies: number | null;
   exportDate: string;
 }

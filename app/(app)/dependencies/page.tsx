@@ -1,25 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { useQueryClient } from '@tanstack/react-query'
 import type { Node, Edge } from '@xyflow/react'
-import { Network, List, Activity, AlertTriangle, Plus, Loader2, X } from 'lucide-react'
+import { Network, List, Activity, AlertTriangle, Plus, Loader2, X, Clock, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { EmptyState } from '@/components/ui/empty-state'
 import { ErrorDisplay } from '@/components/ui/error-display'
 import { createAppError, ErrorType, type AppError } from '@/lib/errors/error-types'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
 import {
   SessionOrganizationChangedError,
+  dependencyKeys,
   useDependencyCycles,
   useDependencyList,
   useDependencyServices,
   useSessionOrganizationId,
 } from '@/lib/hooks/use-dependencies'
 import { DependencyList, DEPENDENCY_TYPE_LABELS } from '@/components/dependencies/DependencyList'
+import { EnhancedEmptyState } from '@/components/dependencies/EnhancedEmptyState'
+import { ExportMenu } from '@/components/dependencies/ExportMenu'
 import type { CircularDependency, ServiceDependency } from '@/lib/types'
 
 // Dynamically import React Flow component to avoid SSR issues
@@ -39,6 +42,9 @@ const AddDependencyDialog = dynamic(
 )
 
 const NO_DATA = 'No data yet'
+
+/** How long the first load may take before the page says so. */
+export const LOADING_TIMEOUT_MS = 15_000
 
 function toAppError(error: unknown): AppError {
   if (error instanceof SessionOrganizationChangedError) {
@@ -71,8 +77,12 @@ export default function DependenciesPage() {
 
 function DependenciesContent({ organizationId }: { organizationId: string | null }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const role = useCurrentRole()
   const canManage = role === 'owner' || role === 'admin'
+  const graphRef = useRef<HTMLDivElement>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [loadingTimeout, setLoadingTimeout] = useState(false)
 
   const [activeTab, setActiveTab] = useState('graph')
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -93,6 +103,26 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
     setSelectedNode(null)
     setSelectedEdge(null)
   }
+
+  // Refetches every query on this page for this organization: list, cycles,
+  // graph, services and any open impact analysis.
+  const handleRefresh = async () => {
+    if (!organizationId) return
+    setIsRefreshing(true)
+    try {
+      await queryClient.refetchQueries({ queryKey: dependencyKeys.all(organizationId), type: 'active' })
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  // Say so when the first load is taking unusually long.
+  const isFirstLoad = listQuery.isPending && !listQuery.isError
+  useEffect(() => {
+    if (!isFirstLoad) return
+    const timer = setTimeout(() => setLoadingTimeout(true), LOADING_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [isFirstLoad])
 
   // Close the side panel on Escape
   useEffect(() => {
@@ -129,7 +159,25 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
       />
     )
   } else if (listQuery.isPending) {
-    body = (
+    body = loadingTimeout && isFirstLoad ? (
+      <div role="status" className="flex flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-4 py-8 text-center sm:px-6 sm:py-12">
+        <Clock size={32} className="mb-4 text-amber-600" aria-hidden="true" />
+        <h3 className="mb-2 text-base font-semibold text-amber-800">
+          This is taking longer than usual
+        </h3>
+        <p className="mb-5 max-w-md text-sm leading-relaxed text-amber-700">
+          We&apos;re still loading your dependencies. This might be due to network conditions. You can wait or try refreshing.
+        </p>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed"
+        >
+          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
+          {isRefreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+    ) : (
       <div role="status" className="flex items-center justify-center gap-2 rounded-lg border bg-white p-12 text-sm text-slate-500">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         Loading dependencies...
@@ -137,23 +185,15 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
     )
   } else if (dependencies.length === 0) {
     body = (
-      <EmptyState
-        icon={Network}
-        title="No dependencies recorded yet"
-        description={
-          !canManage
-            ? 'Dependencies are added by an organization owner or admin. Ask one to record which services depend on each other.'
-            : servicesQuery.isSuccess && !hasServices
-              ? 'Add a service first, then record which services depend on each other.'
-              : 'Record which services call, read from, deploy after, or share code with each other to see the graph, cycles and impact analysis.'
-        }
-      >
-        {canManage && servicesQuery.isSuccess && !hasServices ? (
-          <Button onClick={() => router.push('/services/new')}>Add a service</Button>
-        ) : (
-          addButton
-        )}
-      </EmptyState>
+      <>
+        <p className="text-sm font-medium text-slate-700">No dependencies recorded yet.</p>
+        <EnhancedEmptyState
+          canManage={canManage}
+          hasServices={servicesQuery.isSuccess ? hasServices : null}
+          onAddDependency={() => setIsAddDialogOpen(true)}
+          onAddService={() => router.push('/services/new')}
+        />
+      </>
     )
   } else {
     const critical = dependencies.filter(d => d.isCritical).length
@@ -182,6 +222,7 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />
             <AlertDescription>
               <strong>Warning:</strong> {cycles.length} circular dependency cycle{cycles.length > 1 ? 's' : ''} detected.
+              This can cause deployment issues and runtime failures.
               {' '}
               <button
                 onClick={() => setActiveTab('list')}
@@ -212,6 +253,7 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
           <TabsContent value="graph" className="space-y-4">
             <DependencyGraph
               organizationId={organizationId}
+              graphRef={graphRef}
               onNodeClick={(node) => { setSelectedNode(node); setSelectedEdge(null) }}
               onEdgeClick={(edge) => { setSelectedEdge(edge); setSelectedNode(null) }}
             />
@@ -244,6 +286,10 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
                 setActiveTab('impact')
                 closePanel()
               }}
+              onViewServices={() => {
+                closePanel()
+                router.push('/services')
+              }}
             />
           </>
         )}
@@ -257,10 +303,31 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Service Dependency Mapping</h1>
           <p className="text-sm text-slate-500 leading-relaxed">
-            Which of your services depend on each other, any circular dependencies, and what a failure would affect.
+            Analyze critical paths, detect bottlenecks, and understand system-wide impact.
           </p>
         </div>
-        {listQuery.isSuccess && dependencies.length > 0 && addButton}
+        <div className="flex flex-wrap items-center gap-2">
+          {organizationId && (
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label={isRefreshing ? 'Refreshing dependencies' : 'Refresh dependencies'}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          )}
+          {listQuery.isSuccess && dependencies.length > 0 && (
+            <ExportMenu
+              dependencies={dependencies}
+              cycles={cyclesQuery.isSuccess ? cycles : null}
+              graphRef={graphRef}
+              activeTab={activeTab}
+            />
+          )}
+          {listQuery.isSuccess && dependencies.length > 0 && addButton}
+        </div>
       </div>
 
       {body}
@@ -301,6 +368,7 @@ interface DetailsPanelProps {
   cycles: CircularDependency[] | null
   onClose: () => void
   onAnalyzeImpact: (serviceId: string) => void
+  onViewServices: () => void
 }
 
 /**
@@ -308,7 +376,7 @@ interface DetailsPanelProps {
  * service's own columns, the recorded dependency rows touching it, and the
  * detected cycles. Anything the product does not record reads "No data yet".
  */
-function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpact }: DetailsPanelProps) {
+function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpact, onViewServices }: DetailsPanelProps) {
   const title = node
     ? display(node.data?.label)
     : edge
@@ -317,6 +385,8 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
           return `${dep?.sourceServiceName || edge.source} → ${dep?.targetServiceName || edge.target}`
         })()
       : ''
+
+  const edgeDependency = edge ? dependencies.find(d => d.id === edge.id) ?? null : null
 
   let content: React.ReactNode = null
   if (node) {
@@ -361,7 +431,8 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
           <Field label="Latency, errors, traffic, cost" value={NO_DATA} />
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => onAnalyzeImpact(node.id)}>Analyze impact</Button>
+          <Button size="sm" onClick={onViewServices}>View Full Service</Button>
+          <Button size="sm" variant="outline" onClick={() => onAnalyzeImpact(node.id)}>Analyze impact</Button>
         </div>
       </>
     )
@@ -372,6 +443,7 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
         <SectionHeader>Dependency</SectionHeader>
         <Field label="Type" value={dep ? DEPENDENCY_TYPE_LABELS[dep.dependencyType] || dep.dependencyType : NO_DATA} />
         <Field label="Priority" value={dep ? (dep.isCritical ? 'Critical' : 'Standard') : NO_DATA} />
+        <Field label="Failure Impact" value={dep ? (dep.isCritical ? 'Critical' : 'Moderate') : NO_DATA} />
         <Field label="Description" value={display(dep?.description)} />
         <Field label="Recorded by" value={display(dep?.createdBy)} />
         <Field label="Recorded on" value={dep?.createdAt ? new Date(dep.createdAt).toLocaleDateString() : NO_DATA} />
@@ -388,7 +460,20 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-start justify-between gap-2 border-b border-slate-100 px-6 pb-4 pt-5">
-        <h2 className="text-base font-bold leading-snug text-slate-900">{title}</h2>
+        <div className="min-w-0">
+          <h2 className="text-base font-bold leading-snug text-slate-900">{title}</h2>
+          {edgeDependency && (
+            <span
+              className={`mt-2 inline-block rounded px-2 py-0.5 text-[0.68rem] font-semibold uppercase ${
+                edgeDependency.isCritical ? 'bg-red-50 text-red-500' : 'bg-slate-50 text-slate-500'
+              }`}
+            >
+              {edgeDependency.isCritical
+                ? 'Critical'
+                : DEPENDENCY_TYPE_LABELS[edgeDependency.dependencyType] || edgeDependency.dependencyType} dependency
+            </span>
+          )}
+        </div>
         <button onClick={onClose} aria-label="Close details" className="p-0.5 text-slate-400 hover:text-slate-600">
           <X className="h-4 w-4" aria-hidden="true" />
         </button>

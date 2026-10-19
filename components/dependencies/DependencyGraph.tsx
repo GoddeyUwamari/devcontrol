@@ -27,6 +27,8 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
 
 interface DependencyGraphProps {
   organizationId: string | null
+  /** Receives the rendered graph's container, for the PNG and PDF exports. */
+  graphRef?: React.RefObject<HTMLDivElement | null>
   onNodeClick?: (node: Node) => void
   onEdgeClick?: (edge: Edge) => void
 }
@@ -39,8 +41,9 @@ export function DependencyGraph(props: DependencyGraphProps) {
   )
 }
 
-function DependencyGraphInner({ organizationId, onNodeClick, onEdgeClick }: DependencyGraphProps) {
-  const graphRef = useRef<HTMLDivElement>(null)
+function DependencyGraphInner({ organizationId, graphRef: externalRef, onNodeClick, onEdgeClick }: DependencyGraphProps) {
+  const internalRef = useRef<HTMLDivElement>(null)
+  const graphRef = externalRef || internalRef
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
