@@ -85,8 +85,20 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202609031800_add_cost_recommendations_occurrence_lifecycle.sql`**,
 **`202609040035_add_account_security_findings_disposition.sql`**,
 **`202610102024_drop_auto_detect_resource_ownership.sql`**,
-**`202610112300_create_framework_evaluation_persistence.sql`**, and
-**`202610161210_create_resource_health_evaluations.sql`**.
+**`202610112300_create_framework_evaluation_persistence.sql`**,
+**`202610161210_create_resource_health_evaluations.sql`**, and
+**`202610191200_create_multi_region_scan_foundation.sql`**.
+
+`202610191200_create_multi_region_scan_foundation.sql` creates four new
+tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
+`organization_feature_flags`) with row-level security enabled and forced,
+and adds one nullable column, `warnings`, to the `postgres`-owned
+`resource_discovery_jobs`. The new tables' policies need the owner, and so
+does the column, for the same reason as `202608270610_add_stripe_fields.sql`
+below. Unlike the other files here it is re-run safe (every statement is
+`IF NOT EXISTS` or conditional), and its paired rollback drops only objects
+whose comment carries the migration's marker. Its header documents the
+lease fencing-token contract.
 
 `202609010800_add_payment_failed_notification_tracking.sql` `ALTER TABLE`s
 `organizations` (adding the payment-failed-notification-reliability fix's
