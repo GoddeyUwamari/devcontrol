@@ -118,7 +118,8 @@ function remediationFor(recommendation: IntelligenceRecommendationRow): Remediat
 // load balancers are described in the account's primary region; S3 is listed
 // account-wide and each bucket carries its own region; CloudFront is global;
 // the generic types come from the primary region's Resource Explorer index.
-// S3 and CloudFront rows are written with no tags.
+// A bucket's tags are read in its own region (getBucketTags); CloudFront rows
+// are written with no tags.
 type DiscoveryCapability = Capability['discovery'] & { tagsCollected: boolean };
 
 const DESCRIBED_TYPES: Record<string, DiscoveryCapability> = {
@@ -127,7 +128,7 @@ const DESCRIBED_TYPES: Record<string, DiscoveryCapability> = {
   rds: { source: 'describe', region_scope: 'primary', tagsCollected: true },
   lambda: { source: 'describe', region_scope: 'primary', tagsCollected: true },
   'load-balancer': { source: 'describe', region_scope: 'primary', tagsCollected: true },
-  s3: { source: 'describe', region_scope: 'per_resource', tagsCollected: false },
+  s3: { source: 'describe', region_scope: 'per_resource', tagsCollected: true },
   cloudfront: { source: 'describe', region_scope: 'global', tagsCollected: false },
 };
 

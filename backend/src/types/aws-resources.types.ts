@@ -490,6 +490,8 @@ export interface EC2InstanceMetadata {
     reason?: 'security_groups_unreadable' | 'prefix_list_source';
     rules?: NetworkExposureEvidence['rules'];
   };
+  /** Always 'observed': the tags come inline with the Describe response that listed the resource. */
+  tags_state?: TagsState;
 }
 
 export interface RDSInstanceMetadata {
@@ -500,6 +502,8 @@ export interface RDSInstanceMetadata {
   multi_az?: boolean;
   publicly_accessible?: boolean;
   vpc_id?: string;
+  /** Always 'observed': the tags come inline with the Describe response that listed the resource. */
+  tags_state?: TagsState;
 }
 
 export interface EBSVolumeMetadata {
@@ -510,6 +514,8 @@ export interface EBSVolumeMetadata {
   availability_zone?: string;
   attached: boolean;
   attached_instance_id?: string;
+  /** Always 'observed': the tags come inline with the Describe response that listed the resource. */
+  tags_state?: TagsState;
 }
 
 export interface S3BucketMetadata {

@@ -392,6 +392,13 @@ describe('GET /api/services/stats -- one read of the inventory, the same numbers
       findings_by_severity: { critical: 1, high: 2, medium: 0, low: 2 },
       attention_reasons: { with_finding: 3, with_cost_recommendation: 1, stopped_or_degraded: 2, failed: 1 },
       aws_accounts_connected: 0,
+      // Added for the Services page (services.routes.inventory-facets.test.ts); every number above is unchanged.
+      attention_by_severity: { critical: 2, high: 3, medium: 1, low: 0 },
+      ownership: { owned: 0, unowned: 10, unknown: 0 },
+      unknown_by_type: {},
+      regions: [{ region: 'us-east-1', count: 10 }],
+      teams: { top: [], all: [], total_teams: 0 },
+      mapped_to_service: 0,
     });
   });
 

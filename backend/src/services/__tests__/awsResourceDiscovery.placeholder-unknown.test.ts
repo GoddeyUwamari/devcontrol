@@ -205,6 +205,10 @@ describe('EBS volumes', () => {
   it('keeps the lifecycle state AWS reported: a volume has one', async () => {
     expect((await discover(true)).status).toBe('available');
   });
+
+  it('records its tags as observed: they come with DescribeVolumes', async () => {
+    expect((await discover(true)).metadata.tags_state).toBe('observed');
+  });
 });
 
 describe('EC2 instances', () => {
@@ -223,6 +227,10 @@ describe('EC2 instances', () => {
   const discover = async (c: EC2Client, listedIn = 'us-east-1') =>
     service().discoverEC2Instances(ORG, c, listedIn, '111122223333', noBackupEvidence);
   const openSsh = { GroupId: 'sg-1234567890abcdef0', IpPermissions: [{ IpProtocol: 'tcp', FromPort: 22, ToPort: 22, IpRanges: [{ CidrIp: '0.0.0.0/0' }] }] };
+
+  it('records its tags as observed: they come with DescribeInstances', async () => {
+    expect((await discover(ec2()))[0].metadata.tags_state).toBe('observed');
+  });
 
   describe('volume encryption', () => {
     it('every volume confirmed encrypted: true', async () => {
@@ -340,6 +348,11 @@ describe('RDS instances', () => {
   it('a field it leaves out is unknown, not false', async () => {
     const [db] = await service().discoverRDSDatabases(ORG, rds({}), 'us-east-1');
     expect(db).toMatchObject({ is_encrypted: null, is_public: null, has_backup: null });
+  });
+
+  it('records its tags as observed: they come with DescribeDBInstances', async () => {
+    const [db] = await service().discoverRDSDatabases(ORG, rds({}), 'us-east-1');
+    expect(db.metadata.tags_state).toBe('observed');
   });
 });
 
