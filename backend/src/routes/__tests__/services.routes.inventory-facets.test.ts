@@ -15,15 +15,17 @@
  *     severity; a finding below the floor never lifts a row. The default is unchanged.
  *   - ?search_tags=true also matches tag keys and values, literally: %, _ and \
  *     are characters, not wildcards. Paged like any list, length-capped.
- *   - Nothing crosses organizations.
+ *   - Nothing crosses organizations, by the explicit predicate and, as the
+ *     non-superuser devcontrol role, by row-level security alone.
  *
  * Real routes over an in-process HTTP server against live Postgres. Only
  * authService.verifyToken (to choose the caller) is stubbed.
  */
 import express from 'express';
 import http from 'http';
-import { Pool } from 'pg';
+import { Client, Pool } from 'pg';
 import servicesRoutes, { MAX_TAG_SEARCH_LENGTH } from '../services.routes';
+import { tagsObserved } from '../../services/complianceScanner';
 import { errorHandler } from '../../middleware/error-handler';
 import { authService } from '../../services/auth.service';
 import { pool as appPool } from '../../config/database';
@@ -133,7 +135,30 @@ async function insertCostRecommendation(orgId: string, resourceId: string, sever
 let server: http.Server;
 let baseUrl: string;
 
+// Every statement the app runs, with its parameters: a pass-through recorder on pg's Client.prototype.query, installed before
+// any connection exists (config/database.ts wraps each pooled client's query once,
+// keeping whatever method it found then).
+interface Recorded { text: string; values: unknown[] }
+const originalClientQuery = Client.prototype.query;
+const recorded: Recorded[] = [];
+
+/** The statements run during `fn` whose text matches `pattern`. */
+async function statementsDuring(fn: () => Promise<unknown>, pattern: RegExp): Promise<Recorded[]> {
+  const start = recorded.length;
+  await fn();
+  return recorded.slice(start).filter((r) => pattern.test(r.text));
+}
+
 beforeAll(async () => {
+  Client.prototype.query = function (this: Client, ...args: unknown[]) {
+    const arg = args[0] as string | { text?: string; values?: unknown[] } | null;
+    const entry: Recorded = {
+      text: typeof arg === 'string' ? arg : arg?.text ?? '',
+      values: (typeof arg === 'string' ? (Array.isArray(args[1]) ? args[1] : []) : arg?.values ?? []) as unknown[],
+    };
+    recorded.push(entry);
+    return (originalClientQuery as (...a: unknown[]) => unknown).apply(this, args);
+  } as typeof Client.prototype.query;
   // /stats reads it; CI's bootstrap does not create it.
   await ensureSharedFixtureTable(pool, 'aws_accounts');
   const app = express();
@@ -164,6 +189,7 @@ afterAll(async () => {
   await pool.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
   await pool.end();
   await appPool.end();
+  Client.prototype.query = originalClientQuery;
 });
 
 async function get(userId: string, orgId: string, path: string) {
@@ -486,6 +512,125 @@ describe('the inventory facets: rows, filters and /stats', () => {
       expect(names((await get(viewerB, orgB, '/services?search=owner-a&search_tags=true')).body)).toEqual(['ob-ec2-platform']);
     });
   });
+
+  describe('/stats returns its facets once', () => {
+    // The statement /stats ran, run again with its own parameters.
+    async function statsStatementRows(userId: string, orgId: string) {
+      const [statement] = await statementsDuring(() => get(userId, orgId, '/services/stats'), /WITH inv AS/);
+      expect(statement).toBeDefined();
+      return (await pool.query(statement.text, statement.values)).rows;
+    }
+
+    it('on one row, not on every resource row', async () => {
+      const rows = await statsStatementRows(viewerA, orgA);
+      expect(rows).toHaveLength(15);
+      expect(rows.filter((row) => row.facets !== null)).toHaveLength(1);
+    });
+
+    it('an empty organization gets one row carrying the facets', async () => {
+      const empty = await insertOrg();
+      const viewer = await member(empty);
+      const rows = await statsStatementRows(viewer, empty);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBeNull();
+      expect(rows[0].facets).toMatchObject({ ownership: { owned: 0, unowned: 0, unknown: 0 }, regions: [], mapped_to_service: 0 });
+      expect((await get(viewer, empty, '/services/stats')).status).toBe(200);
+    });
+  });
+
+  it('?team that is empty after trimming is a 400', async () => {
+    for (const value of ['', '%20%20']) {
+      const { status, body } = await get(viewerA, orgA, `/services?team=${value}`);
+      expect(status).toBe(400);
+      expect(body.error).toBe('team must not be empty');
+    }
+  });
+
+  describe('row-level security alone, as the non-superuser devcontrol role', () => {
+    // The exact statements the routes run, with every explicit organization
+    // predicate replaced by a test that holds for any organization. Only RLS
+    // (app.current_organization_id) is left to scope them.
+    function withoutOrganizationPredicate(text: string): string {
+      const stripped = text
+        .split('r.organization_id = $1').join('$1::uuid IS NOT NULL')
+        .split('s.organization_id = $1').join('$1::uuid IS NOT NULL');
+      expect(stripped).not.toMatch(/organization_id = \$1/);
+      return stripped;
+    }
+
+    it('returns only the tagged organization\'s rows and counts, whatever organization is asked for', async () => {
+      // Filters org B's rows would also match (ob-ec2-platform: owned, team platform, an "a" in its tags).
+      const listPath = '/services?ownership=owned&team=platform&tags_known=true&search=a&search_tags=true&sort=attention&limit=100';
+      const viaRoute = names((await get(viewerA, orgA, listPath)).body);
+      expect(sorted(viaRoute)).toEqual(['of-ebs-team-upper', 'of-ec2-owner', 'of-ec2-team']);
+      const [listStatement] = await statementsDuring(() => get(viewerA, orgA, listPath), /CROSS JOIN LATERAL/);
+      const [regionStatement] = await statementsDuring(() => get(viewerA, orgA, '/services?region=ap-south-1'), /CROSS JOIN LATERAL/);
+      const [statsStatement] = await statementsDuring(() => get(viewerA, orgA, '/services/stats'), /WITH inv AS/);
+      const statsA = (await get(viewerA, orgA, '/services/stats')).body.stats;
+      const statsB = (await get(viewerB, orgB, '/services/stats')).body.stats;
+      const list = withoutOrganizationPredicate(listStatement.text);
+      const region = withoutOrganizationPredicate(regionStatement.text);
+      const stats = withoutOrganizationPredicate(statsStatement.text);
+      const facetsOf = (rows: any[]) => rows.find((row) => row.facets !== null).facets;
+
+      const client = await pool.connect();
+      try {
+        // Rolled back: the grants never outlive this test.
+        await client.query('BEGIN');
+        await client.query('GRANT SELECT ON aws_resources, services, cost_recommendations TO devcontrol');
+        await client.query('SET LOCAL ROLE devcontrol');
+        const role = await client.query(
+          'SELECT current_user AS name, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'
+        );
+        expect(role.rows[0]).toEqual({ name: 'devcontrol', rolsuper: false, rolbypassrls: false });
+        const tables = await client.query(
+          `SELECT relname, relrowsecurity, pg_get_userbyid(relowner) <> current_user AS not_owner
+             FROM pg_class WHERE relkind = 'r' AND relname = ANY($1) ORDER BY relname`,
+          [['aws_resources', 'cost_recommendations', 'services']]
+        );
+        expect(tables.rows).toEqual([
+          { relname: 'aws_resources', relrowsecurity: true, not_owner: true },
+          { relname: 'cost_recommendations', relrowsecurity: true, not_owner: true },
+          { relname: 'services', relrowsecurity: true, not_owner: true },
+        ]);
+
+        // Tagged for A, asking for B.
+        await client.query("SELECT set_config('app.current_organization_id', $1, true)", [orgA]);
+        const listA = await client.query(list, [orgB, ...listStatement.values.slice(1)]);
+        expect(listA.rows.map((row) => row.name)).not.toContain('ob-ec2-platform');
+        expect(sorted(listA.rows.map((row) => row.name))).toEqual(sorted(viaRoute));
+        expect((await client.query(region, [orgB, ...regionStatement.values.slice(1)])).rows).toEqual([]);
+        const rowsA = (await client.query(stats, [orgB])).rows;
+        expect(rowsA.filter((row) => row.id !== null)).toHaveLength(statsA.total);
+        expect(facetsOf(rowsA)).toEqual({
+          ownership: statsA.ownership,
+          unknown_by_type: statsA.unknown_by_type,
+          regions: statsA.regions,
+          teams: { all: statsA.teams.all, total_teams: statsA.teams.total_teams },
+          // RLS hides org B's service from the join too.
+          mapped_to_service: statsA.mapped_to_service,
+        });
+
+        // Tagged for B, asking for A.
+        await client.query("SELECT set_config('app.current_organization_id', $1, true)", [orgB]);
+        const listB = await client.query(list, [orgA, ...listStatement.values.slice(1)]);
+        expect(listB.rows.map((row) => row.name)).toEqual(['ob-ec2-platform']);
+        const rowsB = (await client.query(stats, [orgA])).rows;
+        expect(rowsB.filter((row) => row.id !== null)).toHaveLength(statsB.total);
+        expect(facetsOf(rowsB)).toMatchObject({ ownership: statsB.ownership, regions: statsB.regions, mapped_to_service: 0 });
+
+        // No tag: nothing.
+        await client.query("SELECT set_config('app.current_organization_id', '', true)");
+        expect((await client.query(list, listStatement.values)).rows).toEqual([]);
+        const untagged = (await client.query(stats, [orgA])).rows;
+        expect(untagged).toHaveLength(1);
+        expect(untagged[0].facets.ownership).toEqual({ owned: 0, unowned: 0, unknown: 0 });
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+    });
+  });
 });
 
 describe('?search_tags: tag keys and values, matched literally', () => {
@@ -503,6 +648,8 @@ describe('?search_tags: tag keys and values, matched literally', () => {
     await insertResource(orgId, 'wc-no-backslash', { tags: { Path: 'ab' } });
     // Not an object: no tag to match, and no error.
     await insertResource(orgId, 'wc-array-tags', { tags: ['zzq'] });
+    // Its tags could not be read: what it stores is not searched.
+    await insertResource(orgId, 'wc-unreadable', { type: 's3', status: 'not_applicable', tags: { CostCenter: 'rate-unreadable' }, metadata: { tags_state: 'unavailable' } });
   });
 
   const search = async (term: string, extra = '&search_tags=true') =>
@@ -528,6 +675,13 @@ describe('?search_tags: tag keys and values, matched literally', () => {
 
   it('"\\" is a backslash, not an escape', async () => {
     expect(await search('a\\b')).toEqual(['wc-backslash']);
+  });
+
+  it('never matches the tags of a row whose tags could not be read, as ?team does not', async () => {
+    expect(await search('rate-unreadable')).toEqual([]);
+    expect(await search('rate')).toEqual(['wc-percent', 'wc-plain']);
+    // Its name and id are still searched.
+    expect(await search('wc-unreadable')).toEqual(['wc-unreadable']);
   });
 
   it('a row whose tags are not an object matches nothing by tag', async () => {
@@ -557,5 +711,106 @@ describe('?search_tags: tag keys and values, matched literally', () => {
 
   it('search_tags must be true or false', async () => {
     expect((await get(viewer, orgId, '/services?search=x&search_tags=1')).status).toBe(400);
+  });
+});
+
+describe('ownership "unknown" is exactly !tagsObserved (complianceScanner)', () => {
+  let orgId: string;
+  let viewer: string;
+  // name → [type, metadata]. Every row has Team: ops, so a row whose tags count is owned.
+  const MATRIX: Record<string, [string, Record<string, unknown>]> = {
+    'tm-elb-legacy': ['elb', {}],
+    'tm-load-balancer-legacy': ['load-balancer', {}],
+    'tm-dynamodb-legacy': ['dynamodb', {}],
+    'tm-sqs-legacy': ['sqs', { source: 'resource-explorer' }],
+    'tm-ec2-legacy': ['ec2', {}],
+    'tm-ebs-legacy': ['ebs', {}],
+    'tm-rds-legacy': ['rds', {}],
+    'tm-ec2-unavailable': ['ec2', { tags_state: 'unavailable' }],
+    'tm-rds-observed': ['rds', { tags_state: 'observed' }],
+    'tm-ec2-other-state': ['ec2', { tags_state: 'partial' }],
+    'tm-lambda-other-state': ['lambda', { tags_state: 'partial' }],
+    'tm-load-balancer-observed': ['load-balancer', { tags_state: 'observed' }],
+    'tm-elb-observed': ['elb', { tags_state: 'observed' }],
+    'tm-s3-unavailable': ['s3', { tags_state: 'unavailable' }],
+  };
+
+  beforeAll(async () => {
+    orgId = await insertOrg();
+    viewer = await member(orgId);
+    for (const [name, [type, metadata]] of Object.entries(MATRIX)) {
+      await insertResource(orgId, name, { type, status: 'unknown', tags: { Team: 'ops' }, metadata });
+    }
+  });
+
+  it('a row with no tags_state is Unknown unless its type reads tags inline (EC2, EBS, RDS)', async () => {
+    const { body } = await get(viewer, orgId, '/services?ownership=unknown&limit=100');
+    expect(sorted(names(body))).toEqual([
+      'tm-dynamodb-legacy', 'tm-ec2-unavailable', 'tm-elb-legacy', 'tm-lambda-other-state',
+      'tm-load-balancer-legacy', 'tm-s3-unavailable', 'tm-sqs-legacy',
+    ]);
+  });
+
+  it('agrees with tagsObserved on every row', async () => {
+    const { body } = await get(viewer, orgId, '/services?limit=100');
+    expect(body.services).toHaveLength(Object.keys(MATRIX).length);
+    for (const row of body.services) {
+      const [type, metadata] = MATRIX[row.name];
+      expect([row.name, row.ownership === 'unknown']).toEqual([row.name, !tagsObserved({ resource_type: type, metadata } as any)]);
+    }
+  });
+});
+
+describe('attention_cause comes from the causes of needs attention', () => {
+  let orgId: string;
+  let viewer: string;
+
+  beforeAll(async () => {
+    orgId = await insertOrg();
+    viewer = await member(orgId);
+    // Stopped, with a MEDIUM cost recommendation: the recommendation is below the
+    // floor and is the reason shown (as bad as the status); the status is the cause.
+    const mediumId = await insertResource(orgId, 'ac-stopped-medium-cost', { status: 'stopped' });
+    await insertCostRecommendation(orgId, mediumId, 'MEDIUM');
+    // Stopped, with a HIGH cost recommendation: both are causes; the reason is the recommendation.
+    const highId = await insertResource(orgId, 'ac-stopped-high-cost', { status: 'stopped' });
+    await insertCostRecommendation(orgId, highId, 'HIGH');
+    // Running, with only a MEDIUM cost recommendation: no attention, no cause.
+    const runningId = await insertResource(orgId, 'ac-running-medium-cost');
+    await insertCostRecommendation(orgId, runningId, 'MEDIUM');
+  });
+
+  it('a stopped instance with a MEDIUM cost recommendation: status, not cost_recommendation', async () => {
+    const { body } = await get(viewer, orgId, '/services?limit=100');
+    const rows = Object.fromEntries(body.services.map((s: any) => [s.name, s]));
+    expect(rows['ac-stopped-medium-cost']).toMatchObject({ needs_attention: true, reason: 'Idle Instance', attention_cause: 'status' });
+    expect(rows['ac-stopped-high-cost']).toMatchObject({ needs_attention: true, reason: 'Idle Instance', attention_cause: 'cost_recommendation' });
+    expect(rows['ac-running-medium-cost']).toMatchObject({ needs_attention: false, attention_cause: null });
+  });
+});
+
+describe('/stats teams: ties are deterministic', () => {
+  let orgId: string;
+  let viewer: string;
+
+  beforeAll(async () => {
+    orgId = await insertOrg();
+    viewer = await member(orgId);
+    // ops twice, one of each casing: a casing tie. Zed and apple once each: a count
+    // tie that byte order of the raw value ("Z" < "a") would get backwards.
+    for (const [name, team] of [['tt-1', 'ops'], ['tt-2', 'Ops'], ['tt-3', 'Zed'], ['tt-4', 'apple']]) {
+      await insertResource(orgId, name, { tags: { Team: team } });
+    }
+  });
+
+  it('count first; a count tie by the lowercased value; a casing tie by byte order', async () => {
+    for (let i = 0; i < 3; i++) {
+      const { stats } = (await get(viewer, orgId, '/services/stats')).body;
+      expect(stats.teams.all).toEqual([
+        { team: 'Ops', count: 2 },
+        { team: 'apple', count: 1 },
+        { team: 'Zed', count: 1 },
+      ]);
+    }
   });
 });

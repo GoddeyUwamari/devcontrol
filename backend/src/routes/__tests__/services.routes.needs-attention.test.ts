@@ -4,7 +4,7 @@
  * consulted only once the entry is known to be a finding, so a Critical entry that
  * was not evaluated never puts a resource at risk. Pure: no database.
  */
-import { derivePrioritySeverity, deriveAttention } from '../services.routes';
+import { derivePrioritySeverity, deriveAttention, attentionCauseOf } from '../services.routes';
 
 const baselineHigh = { severity: 'high', category: 'public_access', issue: 'EC2 instance has a public IP address', recommendation: 'r', provenance: 'OBSERVED' };
 const baselineLow = { severity: 'low', category: 'tagging', issue: 'Resource is missing required tags: Owner', recommendation: 'r', provenance: 'SELF_ATTESTED' };
@@ -92,5 +92,22 @@ describe('deriveAttention.reason_source: the signal the reason comes from', () =
     expect(derivePrioritySeverity('warning', [mediumFinding], [])).toEqual({
       priority_severity: 'medium', reason: mediumFinding.issue, needs_attention: true,
     });
+  });
+});
+
+describe('attentionCauseOf: from the causes, never from a reason that is not one', () => {
+  const highCost = { severity: 'HIGH', issue: 'Idle Instance', potential_savings: 10 };
+  const mediumCost = { severity: 'MEDIUM', issue: 'Idle Instance', potential_savings: 10 };
+
+  it.each<[string, Parameters<typeof deriveAttention>, string | null]>([
+    ['stopped, with a MEDIUM cost recommendation (the reason): status', ['warning', [], [mediumCost]], 'status'],
+    ['stopped, with a HIGH cost recommendation (the reason): cost_recommendation', ['warning', [], [highCost]], 'cost_recommendation'],
+    ['failed, with a HIGH cost recommendation: the status is the reason and a cause', ['critical', [], [highCost]], 'status'],
+    ['a current High finding', ['healthy', [baselineHigh], []], 'finding'],
+    ['stopped, with a Low finding (the reason is the status)', ['warning', [baselineLow], []], 'status'],
+    ['a MEDIUM cost recommendation alone: no attention', ['healthy', [], [mediumCost]], null],
+    ['nothing', ['healthy', [], []], null],
+  ])('%s', (_name, args, expected) => {
+    expect(attentionCauseOf(deriveAttention(...args))).toBe(expected);
   });
 });

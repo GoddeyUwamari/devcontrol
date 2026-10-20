@@ -14,7 +14,7 @@ import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/fr
 import { lifecycleStateFor } from '../utils/resourceLifecycle';
 import { countEligibleAwsAccounts } from '../repositories/aws-accounts.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
-import { GENERIC_RESOURCE_TYPES } from '../services/resourceExplorer.service';
+import { INLINE_TAG_TYPES } from '../services/complianceScanner';
 
 const router = Router();
 const controller = new ServicesController();
@@ -258,6 +258,27 @@ export function deriveAttention(
   };
 }
 
+/** Why a listed resource needs attention, for the page's per-row action. */
+export type AttentionCause = ReasonSource;
+
+/**
+ * The attention cause of a row, from deriveAttention().causes: null unless it
+ * needs attention; otherwise a cause that holds. When more than one holds, the
+ * one the reason comes from is preferred, so the cause and the reason shown agree;
+ * a reason from a signal that is not a cause (a MEDIUM cost recommendation beside
+ * a stopped instance: the recommendation is below the floor) is never the cause.
+ */
+export function attentionCauseOf(attention: Pick<ReturnType<typeof deriveAttention>, 'needs_attention' | 'reason_source' | 'causes'>): AttentionCause | null {
+  if (!attention.needs_attention) return null;
+  const holds: Record<AttentionCause, boolean> = {
+    finding: attention.causes.finding,
+    cost_recommendation: attention.causes.cost_recommendation,
+    status: attention.causes.status !== null,
+  };
+  if (attention.reason_source && holds[attention.reason_source]) return attention.reason_source;
+  return holds.finding ? 'finding' : holds.cost_recommendation ? 'cost_recommendation' : holds.status ? 'status' : null;
+}
+
 // ─── Shared inventory read — single source of truth for both /stats and / ────
 // Both endpoints read the same rows (this organization, not terminated) with
 // the same joins, and decide needs_attention with the same predicate
@@ -300,17 +321,7 @@ function tagValue(key: 'environment' | 'owner' | 'team'): string {
 // "Untagged", never assumed to be production.
 const ENVIRONMENT_SQL = `COALESCE(${tagValue('environment')}, NULLIF(BTRIM(r.metadata->>'environment'), ''))`;
 
-// The types whose discovery records metadata.tags_state ('observed' or
-// 'unavailable'): S3 (getBucketTags), Lambda (ListTags), load balancers
-// (DescribeTags), CloudFront (never read: always 'unavailable') and every
-// Resource Explorer type. A row of one of these types without the flag was
-// written before it existed, so whether its tags were read is not known. EC2,
-// EBS and RDS read their tags inline with the Describe call that lists them, so
-// a row of theirs without the flag (written before they recorded 'observed') was
-// read like any other.
-const TAGS_STATE_RECORDED_TYPES: readonly string[] = ['s3', 'lambda', 'load-balancer', 'cloudfront', ...GENERIC_RESOURCE_TYPES];
-
-/** A SQL text[] literal of fixed identifiers from this file, never of request input. */
+/** A SQL text[] literal of fixed resource-type identifiers, never of request input. */
 function sqlIdentifierArray(values: readonly string[]): string {
   for (const value of values) {
     if (!/^[a-z0-9-]+$/.test(value)) throw new Error(`Not a resource type identifier: ${value}`);
@@ -318,9 +329,15 @@ function sqlIdentifierArray(values: readonly string[]): string {
   return `ARRAY[${values.map((v) => `'${v}'`).join(', ')}]::text[]`;
 }
 
-// The tags could not be read: the owner is unknown, not missing.
-const TAGS_UNKNOWN_SQL = `(r.metadata->>'tags_state' = 'unavailable'
-        OR (r.metadata->>'tags_state' IS NULL AND r.resource_type = ANY(${sqlIdentifierArray(TAGS_STATE_RECORDED_TYPES)})))`;
+// The tags could not be read: the owner is unknown, not missing. The negation of
+// complianceScanner's tagsObserved(), the one definition of "these tags are what
+// AWS reported": a recorded 'unavailable' is decisive for every type; otherwise a
+// type whose tags come inline with its Describe call (INLINE_TAG_TYPES) is read,
+// and any other type only with a recorded 'observed'. IS [NOT] DISTINCT FROM keeps
+// a missing tags_state from turning the test into NULL.
+const TAGS_UNKNOWN_SQL = `NOT ((r.metadata->>'tags_state') IS DISTINCT FROM 'unavailable'
+        AND (r.resource_type = ANY(${sqlIdentifierArray(INLINE_TAG_TYPES)})
+             OR (r.metadata->>'tags_state') IS NOT DISTINCT FROM 'observed'))`;
 
 /**
  * Every inventory read's FROM clause. tg holds the Owner and Team tag values
@@ -381,12 +398,13 @@ function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: st
 
   // A substring match: %, _ and \ in the search are literal characters, not
   // LIKE wildcards or escapes. With searchTags, a tag key or value can match too
-  // (the row's own tags only).
+  // (the row's own tags only), unless the tags could not be read: what such a row
+  // stores is not what AWS reports, as ?team treats it.
   if (filters.search) {
     const tagMatch = filters.searchTags
-      ? ` OR EXISTS (SELECT 1
+      ? ` OR (os.ownership <> 'unknown' AND EXISTS (SELECT 1
                        FROM jsonb_each_text(CASE WHEN jsonb_typeof(r.tags) = 'object' THEN r.tags ELSE '{}'::jsonb END) st
-                      WHERE st.key ILIKE $${p} ESCAPE '\\' OR st.value ILIKE $${p} ESCAPE '\\')`
+                      WHERE st.key ILIKE $${p} ESCAPE '\\' OR st.value ILIKE $${p} ESCAPE '\\'))`
       : '';
     conditions.push(`(r.resource_name ILIKE $${p} ESCAPE '\\' OR r.resource_id ILIKE $${p} ESCAPE '\\'${tagMatch})`);
     values.push(`%${filters.search.replace(/[\\%_]/g, '\\$&')}%`);
@@ -470,7 +488,8 @@ async function fetchServices(orgId: string, filters: ServiceListFilters) {
   );
 
   return rows.map((row) => {
-    const { status, priority_severity, reason, reason_source, needs_attention } = attentionOf(row);
+    const attention = attentionOf(row);
+    const { status, priority_severity, reason, needs_attention } = attention;
     return {
       id:           row.id,
       name:         row.name,
@@ -494,8 +513,8 @@ async function fetchServices(orgId: string, filters: ServiceListFilters) {
       // When the row was last listed by a discovery (never metadata.last_deployed).
       last_seen_at: row.last_synced_at ?? null,
       ownership:    row.ownership as Ownership,
-      // Which signal the reason of a resource that needs attention comes from; null otherwise.
-      attention_cause: needs_attention ? reason_source : null,
+      // Why a resource that needs attention does (attentionCauseOf); null otherwise.
+      attention_cause: attentionCauseOf(attention),
     };
   });
 }
@@ -657,15 +676,18 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     //   unknown_by_type   the 'unknown' ones, by resource type;
     //   regions           by aws_resources.region, the list's ?region values;
     //   teams             by Team tag value, case-insensitively (the list's ?team
-    //                     rule), labelled with the most common casing; only rows
-    //                     whose tags were read; at most STATS_TEAMS_LIMIT, largest
-    //                     first, ties by the lowercased value;
+    //                     rule), labelled with the most common casing (a tie: the
+    //                     first in byte order, COLLATE "C"); only rows whose tags
+    //                     were read; at most STATS_TEAMS_LIMIT, largest first, ties
+    //                     by the lowercased value in byte order;
     //   mapped_to_service rows whose service_id names a service of this organization.
-    // facets is one row, so the LEFT JOIN returns it even with no resources.
+    // facets is one row, so the LEFT JOIN returns it even with no resources. It is
+    // returned on that one row only (rn 1, or the lone row of an empty inventory),
+    // not repeated on every resource row.
     const { where, values } = inventoryWhere(orgId, {});
     const { rows } = await pool.query(
       `WITH inv AS (
-         SELECT r.id, r.resource_type AS type, r.status AS raw_status, r.compliance_issues,
+         SELECT ROW_NUMBER() OVER () AS rn, r.id, r.resource_type AS type, r.status AS raw_status, r.compliance_issues,
                 ${COST_RECOMMENDATIONS_SQL} AS cost_recommendations,
                 r.region, r.service_id, tg.team_tag, os.ownership
            FROM ${INVENTORY_FROM}
@@ -683,16 +705,16 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
                 FROM (SELECT type, COUNT(*) AS n FROM inv WHERE ownership = 'unknown' GROUP BY type) u),
              '{}'::json),
            'regions', COALESCE(
-             (SELECT json_agg(json_build_object('region', region, 'count', n) ORDER BY n DESC, region)
+             (SELECT json_agg(json_build_object('region', region, 'count', n) ORDER BY n DESC, region COLLATE "C")
                 FROM (SELECT region, COUNT(*) AS n FROM inv GROUP BY region) g),
              '[]'::json),
            'teams', (
              SELECT json_build_object(
                       'all', COALESCE(json_agg(json_build_object('team', label, 'count', n) ORDER BY rk) FILTER (WHERE rk <= ${STATS_TEAMS_LIMIT}), '[]'::json),
                       'total_teams', COUNT(*))
-               FROM (SELECT mode() WITHIN GROUP (ORDER BY team_tag) AS label,
+               FROM (SELECT mode() WITHIN GROUP (ORDER BY team_tag COLLATE "C") AS label,
                             COUNT(*) AS n,
-                            ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, LOWER(team_tag)) AS rk
+                            ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, LOWER(team_tag) COLLATE "C") AS rk
                        FROM inv
                       WHERE ownership <> 'unknown' AND team_tag IS NOT NULL
                       GROUP BY LOWER(team_tag)) t
@@ -704,11 +726,12 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
            )
          ) AS facets
        )
-       SELECT facets.facets, inv.id, inv.type, inv.raw_status, inv.compliance_issues, inv.cost_recommendations
+       SELECT CASE WHEN inv.rn IS NULL OR inv.rn = 1 THEN facets.facets END AS facets,
+              inv.id, inv.type, inv.raw_status, inv.compliance_issues, inv.cost_recommendations
          FROM facets LEFT JOIN inv ON true`,
       values
     );
-    const facets = rows[0].facets as InventoryFacets;
+    const facets = rows.find((row) => row.facets !== null)!.facets as InventoryFacets;
     const stats = serviceStatsFrom(rows.filter((row) => row.id !== null));
 
     // Connected means what the connect flow means: the organization has an
@@ -841,6 +864,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response, next: Nex
   const tagsKnown = booleanParam(firstQueryValue(req.query.tags_known));
   const searchTags = booleanParam(firstQueryValue(req.query.search_tags));
   const search = firstQueryValue(req.query.search);
+  const team = firstQueryValue(req.query.team);
   if (page === null)  { res.status(400).json({ success: false, error: 'page must be a positive integer' }); return; }
   if (limit === null) { res.status(400).json({ success: false, error: 'limit must be a positive integer' }); return; }
   if (needsAttention === null) { res.status(400).json({ success: false, error: 'needs_attention must be true or false' }); return; }
@@ -848,6 +872,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response, next: Nex
   if (sort === null) { res.status(400).json({ success: false, error: 'sort must be name or attention' }); return; }
   if (tagsKnown === null) { res.status(400).json({ success: false, error: 'tags_known must be true or false' }); return; }
   if (searchTags === null) { res.status(400).json({ success: false, error: 'search_tags must be true or false' }); return; }
+  if (team !== undefined && team.trim() === '') { res.status(400).json({ success: false, error: 'team must not be empty' }); return; }
   if (searchTags && search && search.length > MAX_TAG_SEARCH_LENGTH) {
     res.status(400).json({ success: false, error: `search must be at most ${MAX_TAG_SEARCH_LENGTH} characters when search_tags is true` });
     return;
@@ -861,7 +886,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response, next: Nex
       searchTags: searchTags ?? false,
       region: firstQueryValue(req.query.region),
       ownership,
-      team:   firstQueryValue(req.query.team),
+      team,
       tagsKnown,
     }, {
       needsAttention,
