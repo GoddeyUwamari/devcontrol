@@ -36,7 +36,7 @@ import { BackupClient } from '@aws-sdk/client-backup';
 import { SecurityHubClient } from '@aws-sdk/client-securityhub';
 import { pool } from '../config/database';
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable } from './platform-sts';
-import { requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
+import { homeRegionOf, requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
 
 export interface AWSClients {
   costExplorer: CostExplorerClient;
@@ -145,13 +145,13 @@ export class AWSClientFactory {
     // clients, in every environment: nothing organization-scoped ever runs on
     // the platform's own credentials. More than one is refused, never guessed.
     const account = await requireEligibleAwsAccount(pool, organizationId);
-    const { role_arn, external_id, region } = account;
+    const { role_arn, external_id } = account;
 
     if (!external_id) {
       throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} aws_accounts row is missing external_id`);
     }
 
-    const awsRegion = region ?? 'us-east-1';
+    const awsRegion = homeRegionOf(account);
     const { credentials: tempCredentials, expiration } = await this.assumeAccountRole(organizationId, account, awsRegion);
 
     const config = {

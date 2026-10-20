@@ -3,6 +3,7 @@ import authRoutes from './auth.routes';
 import organizationsRoutes from './organizations.routes';
 import servicesRoutes from './services.routes';
 import servicesIntelligenceRoutes from './services-intelligence.routes';
+import servicesCoverageRoutes from './services-coverage.routes';
 import dependenciesRoutes from './dependencies.routes';
 import deploymentsRoutes from './deployments.routes';
 import infrastructureRoutes from './infrastructure.routes';
@@ -50,6 +51,7 @@ router.use('/organizations', organizationsRoutes);
 // API routes (will need authentication middleware)
 // Mounted before /services so its /:id route does not capture the path.
 router.use('/services/intelligence', servicesIntelligenceRoutes);
+router.use('/services/coverage', servicesCoverageRoutes);
 router.use('/services', servicesRoutes);
 router.use('/dependencies', dependenciesRoutes);
 router.use('/deployments', deploymentsRoutes);
