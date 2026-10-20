@@ -106,8 +106,9 @@ describe('deriveAttention: why a resource needs attention', () => {
 
   it('agrees with derivePrioritySeverity on everything they share', () => {
     for (const [status, issues, recommendations] of [['healthy', [high], []], ['warning', [], [costHigh]], ['unknown', [low], []]] as const) {
-      const { causes, ...shared } = deriveAttention(status, [...issues], [...recommendations]);
+      const { causes, reason_source, ...shared } = deriveAttention(status, [...issues], [...recommendations]);
       expect(causes).toBeDefined();
+      expect(reason_source).not.toBeUndefined();
       expect(derivePrioritySeverity(status, [...issues], [...recommendations])).toEqual(shared);
     }
   });

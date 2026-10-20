@@ -609,6 +609,14 @@ describe('capabilities', () => {
     expect(supported.sort()).toEqual(['aurora', 'cloudfront', 'dynamodb', 'ebs', 'ec2', 'ecs', 'eks', 'lambda', 'load-balancer']);
   });
 
+  it('says S3 tags are collected (each bucket\'s tags are read in its own region) and CloudFront\'s are not', () => {
+    expect(capabilities.s3.tags).toEqual({ collected: true });
+    expect(capabilities.cloudfront.tags).toEqual({ collected: false });
+    for (const type of ['ec2', 'ebs', 'rds', 'lambda', 'load-balancer', ...GENERIC_RESOURCE_TYPES]) {
+      expect([type, capabilities[type].tags]).toEqual([type, { collected: true }]);
+    }
+  });
+
   it('claims no pricing basis and no at-risk policy for any type', () => {
     for (const capability of Object.values(capabilities)) {
       expect(capability.health.counts_toward_at_risk).toBeNull();
@@ -627,7 +635,7 @@ describe('capabilities', () => {
     expect(capabilities.ec2.discovery).toEqual({ source: 'describe', region_scope: 'primary' });
     expect(capabilities.s3).toMatchObject({
       discovery: { source: 'describe', region_scope: 'per_resource' },
-      tags: { collected: false },
+      tags: { collected: true },
     });
     expect(capabilities.cloudfront).toMatchObject({
       discovery: { source: 'describe', region_scope: 'global' },

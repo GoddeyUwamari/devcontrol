@@ -1227,6 +1227,7 @@ export class AWSResourceDiscoveryService {
         private_ip: instance.PrivateIpAddress,
         availability_zone: instance.Placement?.AvailabilityZone,
         launch_time: instance.LaunchTime?.toISOString(),
+        tags_state: 'observed',
       };
 
       // What the instance's security groups show, read in the region it was listed in.
@@ -1303,6 +1304,7 @@ export class AWSResourceDiscoveryService {
         availability_zone: volume.AvailabilityZone,
         attached: !!attachment,
         attached_instance_id: attachment?.InstanceId,
+        tags_state: 'observed',
       };
 
       // Security Truthfulness #41: same real AWS Backup evidence model as EC2, plus the
@@ -1374,6 +1376,7 @@ export class AWSResourceDiscoveryService {
         multi_az: dbInstance.MultiAZ,
         publicly_accessible: dbInstance.PubliclyAccessible,
         vpc_id: dbInstance.DBSubnetGroup?.VpcId,
+        tags_state: 'observed',
       };
 
       resources.push({

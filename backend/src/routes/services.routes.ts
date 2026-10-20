@@ -14,6 +14,7 @@ import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/fr
 import { lifecycleStateFor } from '../utils/resourceLifecycle';
 import { countEligibleAwsAccounts } from '../repositories/aws-accounts.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
+import { GENERIC_RESOURCE_TYPES } from '../services/resourceExplorer.service';
 
 const router = Router();
 const controller = new ServicesController();
@@ -213,20 +214,33 @@ export interface AttentionCauses {
   status: 'warning' | 'critical' | null;
 }
 
+/** Where a resource's reason (and priority_severity) comes from. */
+export type ReasonSource = 'finding' | 'cost_recommendation' | 'status';
+
 /**
  * derivePrioritySeverity's result plus the causes behind needs_attention. One
  * computation, so a count of resources needing attention and an account of why
- * can never disagree.
+ * can never disagree. reason_source says which signal the reason is taken from.
  */
 export function deriveAttention(
   status: OperationalStatus,
   complianceIssues: any[] | null,
   costRecommendations: any[] | null
-): { priority_severity: PrioritySeverity | null; reason: string | null; needs_attention: boolean; causes: AttentionCauses } {
+): {
+  priority_severity: PrioritySeverity | null;
+  reason: string | null;
+  reason_source: ReasonSource | null;
+  needs_attention: boolean;
+  causes: AttentionCauses;
+} {
   const complianceFinding = worstComplianceIssue(complianceIssues);
   const flagged = complianceFinding ?? worstCostRecommendation(costRecommendations);
   const statusFinding = statusSeverity(status);
   const combined = worseSeverity(flagged, statusFinding);
+  const reasonSource: ReasonSource | null = !combined ? null
+    : combined === statusFinding ? 'status'
+    : complianceFinding ? 'finding'
+    : 'cost_recommendation';
 
   const flaggedMeetsFloor = !!flagged && SEVERITY_RANK[flagged.severity] <= SEVERITY_RANK[NEEDS_ATTENTION_FLOOR];
   const needsAttention = flaggedMeetsFloor || !!statusFinding;
@@ -234,6 +248,7 @@ export function deriveAttention(
   return {
     priority_severity: combined?.severity ?? null,
     reason: combined?.reason ?? null,
+    reason_source: reasonSource,
     needs_attention: needsAttention,
     causes: {
       finding: flaggedMeetsFloor && !!complianceFinding,
@@ -250,7 +265,24 @@ export function deriveAttention(
 // happened before — /stats used a separate, cruder status-only query and
 // disagreed with the list once compliance/cost data existed).
 
-type ServiceListFilters = { type?: string; env?: string; search?: string };
+/** Whose a resource is, from its tags: the rule in INVENTORY_FROM. */
+export type Ownership = 'owned' | 'unowned' | 'unknown';
+export const OWNERSHIPS: readonly Ownership[] = ['owned', 'unowned', 'unknown'];
+
+type ServiceListFilters = {
+  type?: string;
+  env?: string;
+  search?: string;
+  /** Also match the search against tag keys and values. */
+  searchTags?: boolean;
+  /** aws_resources.region, exactly ('global' for CloudFront). */
+  region?: string;
+  ownership?: Ownership;
+  /** The Team tag value, compared case-insensitively. */
+  team?: string;
+  /** true: only resources whose tags could be read; false: only those whose tags could not. */
+  tagsKnown?: boolean;
+};
 
 // Tags keep the key case they have in AWS, and AWS convention is capitalised
 // (Environment, Owner, Team), so a tag is read whatever the case of its key.
@@ -268,6 +300,44 @@ function tagValue(key: 'environment' | 'owner' | 'team'): string {
 // "Untagged", never assumed to be production.
 const ENVIRONMENT_SQL = `COALESCE(${tagValue('environment')}, NULLIF(BTRIM(r.metadata->>'environment'), ''))`;
 
+// The types whose discovery records metadata.tags_state ('observed' or
+// 'unavailable'): S3 (getBucketTags), Lambda (ListTags), load balancers
+// (DescribeTags), CloudFront (never read: always 'unavailable') and every
+// Resource Explorer type. A row of one of these types without the flag was
+// written before it existed, so whether its tags were read is not known. EC2,
+// EBS and RDS read their tags inline with the Describe call that lists them, so
+// a row of theirs without the flag (written before they recorded 'observed') was
+// read like any other.
+const TAGS_STATE_RECORDED_TYPES: readonly string[] = ['s3', 'lambda', 'load-balancer', 'cloudfront', ...GENERIC_RESOURCE_TYPES];
+
+/** A SQL text[] literal of fixed identifiers from this file, never of request input. */
+function sqlIdentifierArray(values: readonly string[]): string {
+  for (const value of values) {
+    if (!/^[a-z0-9-]+$/.test(value)) throw new Error(`Not a resource type identifier: ${value}`);
+  }
+  return `ARRAY[${values.map((v) => `'${v}'`).join(', ')}]::text[]`;
+}
+
+// The tags could not be read: the owner is unknown, not missing.
+const TAGS_UNKNOWN_SQL = `(r.metadata->>'tags_state' = 'unavailable'
+        OR (r.metadata->>'tags_state' IS NULL AND r.resource_type = ANY(${sqlIdentifierArray(TAGS_STATE_RECORDED_TYPES)})))`;
+
+/**
+ * Every inventory read's FROM clause. tg holds the Owner and Team tag values
+ * (read once per row); os.ownership is the one ownership rule:
+ *   unknown  the tags could not be read (TAGS_UNKNOWN_SQL), whatever they hold;
+ *   owned    an Owner tag or a Team tag (a Team tag alone is that team's);
+ *   unowned  neither.
+ * The list's rows, its ?ownership filter and /stats' counts all read os.ownership.
+ */
+const INVENTORY_FROM = `aws_resources r
+       CROSS JOIN LATERAL (SELECT ${tagValue('owner')} AS owner_tag, ${tagValue('team')} AS team_tag) tg
+       CROSS JOIN LATERAL (
+         SELECT CASE WHEN ${TAGS_UNKNOWN_SQL} THEN 'unknown'
+                     WHEN tg.owner_tag IS NOT NULL OR tg.team_tag IS NOT NULL THEN 'owned'
+                     ELSE 'unowned' END AS ownership
+       ) os`;
+
 // A resource's active cost recommendations, scoped by the row's own organization.
 const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
         FROM cost_recommendations cr
@@ -278,9 +348,9 @@ const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr
      )`;
 
 /**
- * The WHERE clause of every inventory read. The explicit organization predicate
- * comes first and every filter is ANDed after it (RLS sits underneath as a
- * second layer, not a replacement).
+ * The WHERE clause of every inventory read, over INVENTORY_FROM. The explicit
+ * organization predicate comes first and every filter is ANDed after it (RLS
+ * sits underneath as a second layer, not a replacement).
  */
 function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: string; values: unknown[] } {
   // Services list/stats represent current infrastructure — a soft-terminated
@@ -310,11 +380,41 @@ function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: st
   }
 
   // A substring match: %, _ and \ in the search are literal characters, not
-  // LIKE wildcards or escapes.
+  // LIKE wildcards or escapes. With searchTags, a tag key or value can match too
+  // (the row's own tags only).
   if (filters.search) {
-    conditions.push(`(r.resource_name ILIKE $${p} ESCAPE '\\' OR r.resource_id ILIKE $${p} ESCAPE '\\')`);
+    const tagMatch = filters.searchTags
+      ? ` OR EXISTS (SELECT 1
+                       FROM jsonb_each_text(CASE WHEN jsonb_typeof(r.tags) = 'object' THEN r.tags ELSE '{}'::jsonb END) st
+                      WHERE st.key ILIKE $${p} ESCAPE '\\' OR st.value ILIKE $${p} ESCAPE '\\')`
+      : '';
+    conditions.push(`(r.resource_name ILIKE $${p} ESCAPE '\\' OR r.resource_id ILIKE $${p} ESCAPE '\\'${tagMatch})`);
     values.push(`%${filters.search.replace(/[\\%_]/g, '\\$&')}%`);
     p++;
+  }
+
+  if (filters.region) {
+    conditions.push(`r.region = $${p++}`);
+    values.push(filters.region);
+  }
+
+  if (filters.ownership) {
+    conditions.push(`os.ownership = $${p++}`);
+    values.push(filters.ownership);
+  }
+
+  // The tag value is stored trimmed (tagValue); the request's value is trimmed the
+  // same way. A row whose tags could not be read is on no team, whatever it stores,
+  // as /stats' teams count it.
+  if (filters.team) {
+    conditions.push(`(os.ownership <> 'unknown' AND LOWER(tg.team_tag) = LOWER(BTRIM($${p++})))`);
+    values.push(filters.team);
+  }
+
+  // With ?env=untagged, tags_known=true leaves out the resources whose tags could
+  // not be read: their environment is unknown, not untagged.
+  if (filters.tagsKnown !== undefined) {
+    conditions.push(filters.tagsKnown ? `os.ownership <> 'unknown'` : `os.ownership = 'unknown'`);
   }
 
   return { where: conditions.join(' AND '), values };
@@ -355,26 +455,31 @@ async function fetchServices(orgId: string, filters: ServiceListFilters) {
        COALESCE(r.tags->>'region', r.metadata->>'region')  AS region,
        r.status                                            AS raw_status,
        r.estimated_monthly_cost                            AS monthly_cost,
-       ${tagValue('owner')}                                AS owner,
-       ${tagValue('team')}                                 AS team,
+       tg.owner_tag                                        AS owner,
+       tg.team_tag                                         AS team,
+       os.ownership,
+       r.region                                            AS aws_region,
        r.metadata->>'last_deployed'                        AS last_deployed,
        r.last_synced_at,
        r.metadata,
        r.compliance_issues,
        ${COST_RECOMMENDATIONS_SQL} AS cost_recommendations
-     FROM aws_resources r
+     FROM ${INVENTORY_FROM}
      WHERE ${where}`,
     values
   );
 
   return rows.map((row) => {
-    const { status, priority_severity, reason, needs_attention } = attentionOf(row);
+    const { status, priority_severity, reason, reason_source, needs_attention } = attentionOf(row);
     return {
       id:           row.id,
       name:         row.name,
       type:         row.type,
       environment:  row.environment ?? null,
+      // Kept for older clients: tags.region / metadata.region, null in practice.
+      // aws_region is the stored region the resource was discovered in.
       region:       row.region,
+      aws_region:   row.aws_region as string,
       status,
       // No real monitoring data source exists yet — null rather than a fabricated figure.
       uptime:       null,
@@ -386,6 +491,11 @@ async function fetchServices(orgId: string, filters: ServiceListFilters) {
       priority_severity,
       needs_attention,
       reason,
+      // When the row was last listed by a discovery (never metadata.last_deployed).
+      last_seen_at: row.last_synced_at ?? null,
+      ownership:    row.ownership as Ownership,
+      // Which signal the reason of a resource that needs attention comes from; null otherwise.
+      attention_cause: needs_attention ? reason_source : null,
     };
   });
 }
@@ -407,6 +517,19 @@ function byPriorityThenName(a: ServiceRowOut, b: ServiceRowOut): number {
   return ra - rb || byNameThenId(a, b);
 }
 
+// ?sort=attention: the resources that need attention first, by severity, then
+// every other resource. Only a resource that needs attention is ranked by its
+// severity: a finding below the attention floor never lifts a row above the
+// resources with nothing flagged.
+function byAttentionThenName(a: ServiceRowOut, b: ServiceRowOut): number {
+  const ra = a.needs_attention && a.priority_severity ? SEVERITY_RANK[a.priority_severity] : 4;
+  const rb = b.needs_attention && b.priority_severity ? SEVERITY_RANK[b.priority_severity] : 4;
+  return ra - rb || byNameThenId(a, b);
+}
+
+export type ServicesSort = 'name' | 'attention';
+export const SERVICES_SORTS: readonly ServicesSort[] = ['name', 'attention'];
+
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 100;
 
@@ -422,11 +545,13 @@ export interface ServicesListPage {
  * organization-scoped set, never over the page: pagination.total is the size of
  * the set after ?needs_attention, counts split the set before it. Needs-attention
  * rows sort by severity, then name; the others by name; the row id breaks ties.
+ * With both kinds listed, sort 'attention' puts the needs-attention rows first
+ * (byAttentionThenName); 'name', the default, sorts every row by name.
  */
 async function listServices(
   orgId: string,
   filters: ServiceListFilters,
-  options: { needsAttention?: boolean; page: number; limit: number }
+  options: { needsAttention?: boolean; page: number; limit: number; sort?: ServicesSort }
 ): Promise<ServicesListPage> {
   const all = await fetchServices(orgId, filters);
   const needsAttention = all.filter((s) => s.needs_attention);
@@ -434,7 +559,7 @@ async function listServices(
 
   const selected = options.needsAttention === true ? needsAttention.sort(byPriorityThenName)
     : options.needsAttention === false ? all.filter((s) => !s.needs_attention).sort(byNameThenId)
-    : all.sort(byNameThenId);
+    : all.sort(options.sort === 'attention' ? byAttentionThenName : byNameThenId);
 
   const total = selected.length;
   const totalPages = Math.ceil(total / options.limit);
@@ -449,14 +574,17 @@ async function listServices(
 /** /stats' numbers from one read of the inventory. Pure, so its parity can be tested. */
 export function serviceStatsFrom(rows: AttentionInputs[]) {
   const findingsBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  // The resources that need attention, by their priority_severity (resources, not findings).
+  const attentionBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
   const attentionReasons = { with_finding: 0, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 };
   let needsAttention = 0;
   for (const row of rows) {
     for (const finding of activeComplianceFindings(row.compliance_issues)) {
       if (finding.severity in findingsBySeverity) findingsBySeverity[finding.severity]++;
     }
-    const { needs_attention, causes } = attentionOf(row);
+    const { needs_attention, priority_severity, causes } = attentionOf(row);
     if (needs_attention) needsAttention++;
+    if (needs_attention && priority_severity) attentionBySeverity[priority_severity]++;
     if (causes.finding) attentionReasons.with_finding++;
     if (causes.cost_recommendation) attentionReasons.with_cost_recommendation++;
     if (causes.status === 'warning') attentionReasons.stopped_or_degraded++;
@@ -469,7 +597,20 @@ export function serviceStatsFrom(rows: AttentionInputs[]) {
     needs_attention: needsAttention,
     findings_by_severity: findingsBySeverity,
     attention_reasons: attentionReasons,
+    attention_by_severity: attentionBySeverity,
   };
+}
+
+/** How many team values /stats lists. */
+export const STATS_TEAMS_LIMIT = 200;
+
+/** /stats' counts that SQL computes over the same rows (see the /stats statement). */
+interface InventoryFacets {
+  ownership: Record<Ownership, number>;
+  unknown_by_type: Record<string, number>;
+  regions: { region: string; count: number }[];
+  teams: { all: { team: string; count: number }[]; total_teams: number };
+  mapped_to_service: number;
 }
 
 // ─── Single-row fetch, mirroring fetchServices' terminated exclusion ────────
@@ -509,15 +650,66 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
     // can say how many are Critical instead of assuming so. attention_reasons says
     // why the needs_attention resources are counted; a resource can be in more
     // than one.
+    //
+    // The ownership, region and team counts are computed in SQL over the same
+    // rows, in the same statement, so every number comes from one snapshot:
+    //   ownership         by os.ownership (INVENTORY_FROM), the list's ?ownership rule;
+    //   unknown_by_type   the 'unknown' ones, by resource type;
+    //   regions           by aws_resources.region, the list's ?region values;
+    //   teams             by Team tag value, case-insensitively (the list's ?team
+    //                     rule), labelled with the most common casing; only rows
+    //                     whose tags were read; at most STATS_TEAMS_LIMIT, largest
+    //                     first, ties by the lowercased value;
+    //   mapped_to_service rows whose service_id names a service of this organization.
+    // facets is one row, so the LEFT JOIN returns it even with no resources.
     const { where, values } = inventoryWhere(orgId, {});
     const { rows } = await pool.query(
-      `SELECT r.resource_type AS type, r.status AS raw_status, r.compliance_issues,
-              ${COST_RECOMMENDATIONS_SQL} AS cost_recommendations
-         FROM aws_resources r
-        WHERE ${where}`,
+      `WITH inv AS (
+         SELECT r.id, r.resource_type AS type, r.status AS raw_status, r.compliance_issues,
+                ${COST_RECOMMENDATIONS_SQL} AS cost_recommendations,
+                r.region, r.service_id, tg.team_tag, os.ownership
+           FROM ${INVENTORY_FROM}
+          WHERE ${where}
+       ),
+       facets AS (
+         SELECT json_build_object(
+           'ownership', json_build_object(
+             'owned',   (SELECT COUNT(*) FROM inv WHERE ownership = 'owned'),
+             'unowned', (SELECT COUNT(*) FROM inv WHERE ownership = 'unowned'),
+             'unknown', (SELECT COUNT(*) FROM inv WHERE ownership = 'unknown')
+           ),
+           'unknown_by_type', COALESCE(
+             (SELECT json_object_agg(type, n ORDER BY type)
+                FROM (SELECT type, COUNT(*) AS n FROM inv WHERE ownership = 'unknown' GROUP BY type) u),
+             '{}'::json),
+           'regions', COALESCE(
+             (SELECT json_agg(json_build_object('region', region, 'count', n) ORDER BY n DESC, region)
+                FROM (SELECT region, COUNT(*) AS n FROM inv GROUP BY region) g),
+             '[]'::json),
+           'teams', (
+             SELECT json_build_object(
+                      'all', COALESCE(json_agg(json_build_object('team', label, 'count', n) ORDER BY rk) FILTER (WHERE rk <= ${STATS_TEAMS_LIMIT}), '[]'::json),
+                      'total_teams', COUNT(*))
+               FROM (SELECT mode() WITHIN GROUP (ORDER BY team_tag) AS label,
+                            COUNT(*) AS n,
+                            ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, LOWER(team_tag)) AS rk
+                       FROM inv
+                      WHERE ownership <> 'unknown' AND team_tag IS NOT NULL
+                      GROUP BY LOWER(team_tag)) t
+           ),
+           'mapped_to_service', (
+             SELECT COUNT(*) FROM inv
+              WHERE inv.service_id IS NOT NULL
+                AND EXISTS (SELECT 1 FROM services s WHERE s.id = inv.service_id AND s.organization_id = $1)
+           )
+         ) AS facets
+       )
+       SELECT facets.facets, inv.id, inv.type, inv.raw_status, inv.compliance_issues, inv.cost_recommendations
+         FROM facets LEFT JOIN inv ON true`,
       values
     );
-    const stats = serviceStatsFrom(rows);
+    const facets = rows[0].facets as InventoryFacets;
+    const stats = serviceStatsFrom(rows.filter((row) => row.id !== null));
 
     // Connected means what the connect flow means: the organization has an
     // eligible aws_accounts row (status 'active', aws-accounts.repository.ts).
@@ -536,6 +728,12 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
         findings_by_severity: stats.findings_by_severity,
         attention_reasons: stats.attention_reasons,
         aws_accounts_connected: awsAccountsConnected,
+        attention_by_severity: stats.attention_by_severity,
+        ownership: facets.ownership,
+        unknown_by_type: facets.unknown_by_type,
+        regions: facets.regions,
+        teams: { top: facets.teams.all.slice(0, 3), all: facets.teams.all, total_teams: facets.teams.total_teams },
+        mapped_to_service: facets.mapped_to_service,
       },
     });
   } catch (err: any) {
@@ -590,6 +788,15 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
 // Paged with ?page (from 1) and ?limit (default DEFAULT_PAGE_SIZE, at most
 // MAX_PAGE_SIZE). ?needs_attention=true lists only the resources that need
 // attention, =false only the others; absent lists both.
+//
+// Further filters, each ANDed after the organization predicate:
+//   ?region=     aws_resources.region, exactly
+//   ?ownership=  owned | unowned | unknown (the rule in INVENTORY_FROM)
+//   ?team=       the Team tag value, case-insensitively
+//   ?tags_known= true: only resources whose tags were read; false: only the others
+//   ?search_tags=true  ?search also matches tag keys and values
+// ?sort=attention lists the resources that need attention first (byAttentionThenName);
+// the default, name, is unchanged.
 
 // A repeated parameter (?env=a&env=b) arrives as an array and a bracketed one
 // (?env[x]=y) as an object: the first string value is used, anything else is
@@ -613,6 +820,15 @@ function booleanParam(value: string | undefined): boolean | undefined | null {
   return null;
 }
 
+// undefined when absent or empty, null when present but not one of `allowed`.
+function oneOfParam<T extends string>(value: string | undefined, allowed: readonly T[]): T | undefined | null {
+  if (value === undefined || value === '') return undefined;
+  return (allowed as readonly string[]).includes(value) ? (value as T) : null;
+}
+
+// A tag search compares the term with every tag of every row, so its length is capped.
+export const MAX_TAG_SEARCH_LENGTH = 200;
+
 router.get('/', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const orgId = req.organizationId;
   if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
@@ -620,17 +836,36 @@ router.get('/', authenticateToken, async (req: Request, res: Response, next: Nex
   const page = positiveIntegerParam(firstQueryValue(req.query.page));
   const limit = positiveIntegerParam(firstQueryValue(req.query.limit));
   const needsAttention = booleanParam(firstQueryValue(req.query.needs_attention));
+  const ownership = oneOfParam(firstQueryValue(req.query.ownership), OWNERSHIPS);
+  const sort = oneOfParam(firstQueryValue(req.query.sort), SERVICES_SORTS);
+  const tagsKnown = booleanParam(firstQueryValue(req.query.tags_known));
+  const searchTags = booleanParam(firstQueryValue(req.query.search_tags));
+  const search = firstQueryValue(req.query.search);
   if (page === null)  { res.status(400).json({ success: false, error: 'page must be a positive integer' }); return; }
   if (limit === null) { res.status(400).json({ success: false, error: 'limit must be a positive integer' }); return; }
   if (needsAttention === null) { res.status(400).json({ success: false, error: 'needs_attention must be true or false' }); return; }
+  if (ownership === null) { res.status(400).json({ success: false, error: 'ownership must be owned, unowned or unknown' }); return; }
+  if (sort === null) { res.status(400).json({ success: false, error: 'sort must be name or attention' }); return; }
+  if (tagsKnown === null) { res.status(400).json({ success: false, error: 'tags_known must be true or false' }); return; }
+  if (searchTags === null) { res.status(400).json({ success: false, error: 'search_tags must be true or false' }); return; }
+  if (searchTags && search && search.length > MAX_TAG_SEARCH_LENGTH) {
+    res.status(400).json({ success: false, error: `search must be at most ${MAX_TAG_SEARCH_LENGTH} characters when search_tags is true` });
+    return;
+  }
 
   try {
     const result = await listServices(orgId, {
       type:   firstQueryValue(req.query.type),
       env:    firstQueryValue(req.query.env),
-      search: firstQueryValue(req.query.search),
+      search,
+      searchTags: searchTags ?? false,
+      region: firstQueryValue(req.query.region),
+      ownership,
+      team:   firstQueryValue(req.query.team),
+      tagsKnown,
     }, {
       needsAttention,
+      sort,
       page:  page ?? 1,
       // Larger requests get the largest page, not an error.
       limit: Math.min(limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),

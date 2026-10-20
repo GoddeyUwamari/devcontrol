@@ -50,6 +50,7 @@ describe('AWSResourceDiscoveryService.discoverEBSVolumes', () => {
       availability_zone: 'us-east-1a',
       attached: true,
       attached_instance_id: 'i-abc123',
+      tags_state: 'observed',
     });
     expect(resource.estimated_monthly_cost).toBeCloseTo(50 * 0.08); // gp3 rate
   });
