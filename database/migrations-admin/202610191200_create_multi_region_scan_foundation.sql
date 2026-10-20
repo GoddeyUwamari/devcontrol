@@ -92,7 +92,8 @@
 -- closed.
 --
 -- Grants to devcontrol (never TRUNCATE: TRUNCATE is not subject to row-level
--- security):
+-- security). Every privilege of PUBLIC and devcontrol on the four tables is
+-- REVOKEd first, so default privileges (pg_default_acl) cannot add to this list:
 --   aws_account_regions           SELECT, INSERT, UPDATE, DELETE
 --   aws_scan_leases, job_leases   SELECT, INSERT, UPDATE (no DELETE, see above)
 --   organization_feature_flags    SELECT only; flags are written by a
@@ -107,9 +108,14 @@
 -- (manual; database/migrate.js never runs a file whose name contains
 -- "rollback").
 
--- ADD COLUMN takes a brief ACCESS EXCLUSIVE lock on resource_discovery_jobs
--- (no default, so no table rewrite). Fail instead of queueing behind long
--- transactions, which would block every later reader while it waited.
+-- Locks, all held until COMMIT:
+--   - each new table's foreign key takes SHARE ROW EXCLUSIVE on organizations
+--     (blocks writes to organizations, not reads);
+--   - the ADD COLUMN at the END of this file takes ACCESS EXCLUSIVE on
+--     resource_discovery_jobs (no default, so no table rewrite), last, so it is
+--     held as briefly as possible.
+-- Fail instead of queueing behind long transactions, which would block every
+-- later reader while it waited.
 SET LOCAL lock_timeout = '5s';
 
 DO $$
@@ -130,33 +136,22 @@ BEGIN
 
   FOREACH t IN ARRAY ARRAY['aws_account_regions', 'aws_scan_leases', 'job_leases', 'organization_feature_flags'] LOOP
     IF to_regclass(t) IS NOT NULL
-       AND COALESCE(obj_description(to_regclass(t), 'pg_class'), '') NOT LIKE marker || '%' THEN
+       AND NOT starts_with(COALESCE(obj_description(to_regclass(t), 'pg_class'), ''), marker) THEN
       RAISE EXCEPTION
         '% already exists and was not created by this migration -- refusing to proceed. '
         'Investigate before re-running.', t;
     END IF;
   END LOOP;
 
+  -- Checked here, before anything is created; the column itself is added
+  -- last (see the end of this file).
   SELECT format_type(atttypid, atttypmod) INTO existing_type
     FROM pg_attribute
    WHERE attrelid = 'resource_discovery_jobs'::regclass AND attname = 'warnings' AND NOT attisdropped;
-  IF existing_type IS NULL THEN
-    ALTER TABLE resource_discovery_jobs ADD COLUMN IF NOT EXISTS warnings JSONB;
-    EXECUTE format(
-      'COMMENT ON COLUMN resource_discovery_jobs.warnings IS %L',
-      marker || ' Non-fatal problems recorded by the discovery job (for example a region or '
-             || 'source that could not be read), as a JSON array. NULL means none were recorded.');
-  ELSIF existing_type <> 'jsonb' THEN
+  IF existing_type IS NOT NULL AND existing_type <> 'jsonb' THEN
     RAISE EXCEPTION
       'resource_discovery_jobs.warnings already exists with type % (expected jsonb) -- refusing to proceed.',
       existing_type;
-  ELSIF COALESCE(col_description('resource_discovery_jobs'::regclass,
-                                 (SELECT attnum FROM pg_attribute
-                                   WHERE attrelid = 'resource_discovery_jobs'::regclass
-                                     AND attname = 'warnings' AND NOT attisdropped)), '') LIKE marker || '%' THEN
-    RAISE NOTICE 'resource_discovery_jobs.warnings was already added by this migration; nothing to do.';
-  ELSE
-    RAISE NOTICE 'resource_discovery_jobs.warnings already exists as jsonb (not added by this migration); left as it is.';
   END IF;
 END $$;
 
@@ -348,7 +343,44 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Start from no privileges at all, whatever default privileges (pg_default_acl)
+-- or an earlier run left, then grant exactly the list above. Re-run safe.
+REVOKE ALL ON TABLE aws_account_regions, aws_scan_leases, job_leases, organization_feature_flags
+  FROM PUBLIC, devcontrol;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE aws_account_regions TO devcontrol;
 GRANT SELECT, INSERT, UPDATE ON TABLE aws_scan_leases TO devcontrol;
 GRANT SELECT, INSERT, UPDATE ON TABLE job_leases TO devcontrol;
 GRANT SELECT ON TABLE organization_feature_flags TO devcontrol;
+
+-- ---------------------------------------------------------------------------
+-- resource_discovery_jobs.warnings, last: the ADD COLUMN takes ACCESS EXCLUSIVE
+-- on resource_discovery_jobs until COMMIT, so it comes after everything else and
+-- the lock is held only for the end of the transaction.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  marker CONSTANT TEXT := '[202610191200_create_multi_region_scan_foundation]';
+  existing_type TEXT;
+BEGIN
+  SELECT format_type(atttypid, atttypmod) INTO existing_type
+    FROM pg_attribute
+   WHERE attrelid = 'resource_discovery_jobs'::regclass AND attname = 'warnings' AND NOT attisdropped;
+  IF existing_type IS NULL THEN
+    ALTER TABLE resource_discovery_jobs ADD COLUMN IF NOT EXISTS warnings JSONB;
+    EXECUTE format(
+      'COMMENT ON COLUMN resource_discovery_jobs.warnings IS %L',
+      marker || ' Non-fatal problems recorded by the discovery job (for example a region or '
+             || 'source that could not be read), as a JSON array. NULL means none were recorded.');
+  ELSIF existing_type <> 'jsonb' THEN
+    RAISE EXCEPTION
+      'resource_discovery_jobs.warnings already exists with type % (expected jsonb) -- refusing to proceed.',
+      existing_type;
+  ELSIF starts_with(COALESCE(col_description('resource_discovery_jobs'::regclass,
+                                 (SELECT attnum FROM pg_attribute
+                                   WHERE attrelid = 'resource_discovery_jobs'::regclass
+                                     AND attname = 'warnings' AND NOT attisdropped)), ''), marker) THEN
+    RAISE NOTICE 'resource_discovery_jobs.warnings was already added by this migration; nothing to do.';
+  ELSE
+    RAISE NOTICE 'resource_discovery_jobs.warnings already exists as jsonb (not added by this migration); left as it is.';
+  END IF;
+END $$;

@@ -358,6 +358,43 @@ describe(`${MIGRATION_FILE}: catalog`, () => {
     });
   });
 
+  it('ignores default privileges: devcontrol ends with exactly arwd / arw / arw / r, and PUBLIC with nothing', async () => {
+    await inIsolatedSchema(
+      async (client, schema) => {
+        const acl = async (relname: string): Promise<string[]> =>
+          (await client.query(`SELECT relacl::text[] AS acl FROM pg_class WHERE relname = $1 AND relnamespace = $2::regnamespace`, [relname, schema])).rows[0].acl ?? [];
+        const privilegesOf = (entries: string[], grantee: string) =>
+          entries.filter((e) => e.startsWith(`${grantee}=`)).map((e) => e.slice(grantee.length + 1).split('/')[0]);
+
+        // The default privileges were in force: a table created alongside got them.
+        const probe = await acl('default_acl_probe');
+        expect(privilegesOf(probe, 'devcontrol')).toEqual(['arwdDxt']);
+        expect(privilegesOf(probe, '')).toEqual(['r']);
+
+        const expected: Record<string, string> = {
+          aws_account_regions: 'arwd',
+          aws_scan_leases: 'arw',
+          job_leases: 'arw',
+          organization_feature_flags: 'r',
+        };
+        for (const table of TABLES) {
+          const entries = await acl(table);
+          expect([table, privilegesOf(entries, 'devcontrol')]).toEqual([table, [expected[table]]]);
+          // PUBLIC's entry is the one with an empty grantee ("=r/owner").
+          expect([table, privilegesOf(entries, '')]).toEqual([table, []]);
+        }
+      },
+      {
+        beforeMigrate: async (client) => {
+          const { rows } = await client.query('SELECT current_schema() AS s');
+          await client.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA ${rows[0].s} GRANT ALL ON TABLES TO devcontrol`);
+          await client.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA ${rows[0].s} GRANT SELECT ON TABLES TO PUBLIC`);
+          await client.query('CREATE TABLE default_acl_probe (id INT)');
+        },
+      }
+    );
+  });
+
   it('adds resource_discovery_jobs.warnings as nullable JSONB with no default, marked, and changes nothing else there', async () => {
     let before: unknown;
     await inIsolatedSchema(
@@ -772,6 +809,116 @@ describe(`${MIGRATION_FILE}: lease contract, as devcontrol`, () => {
       expect(lease?.lastCompletedAt).toBeInstanceOf(Date);
     });
   });
+});
+
+/** Polls `condition` until it holds; fails after `timeoutMs`. */
+async function waitFor(condition: () => Promise<boolean>, what: string, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await condition())) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for: ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+const ACQUIRE_SCAN_WITH_TTL = ACQUIRE_SCAN.replace("now() + interval '5 minutes'", 'now() + $4::interval');
+
+/**
+ * Runs `fn` against a schema whose fixture and migration are COMMITTED, so
+ * separate connections see them. The schema (and with it every row, grant,
+ * sequence and policy) is dropped in finally.
+ */
+async function withCommittedSchema(fn: (schema: string, admin: Client) => Promise<void>): Promise<void> {
+  const admin = new Client(dbConfig());
+  await admin.connect();
+  const schema = `${SCHEMA_PREFIX}fence_${process.pid}_${Date.now()}_${schemaCounter++}`;
+  try {
+    await admin.query('BEGIN');
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await admin.query(`SET LOCAL search_path TO ${schema}`);
+    await createFixture(admin);
+    await admin.query(MIGRATION_SQL);
+    await admin.query(`GRANT USAGE ON SCHEMA ${schema} TO devcontrol`);
+    await admin.query('COMMIT');
+    await fn(schema, admin);
+  } finally {
+    await admin.query('ROLLBACK').catch(() => undefined);
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.end();
+  }
+}
+
+/** A connection acting as devcontrol for one organization, for its whole session. */
+async function appConnection(schema: string, organization: string): Promise<Client> {
+  const client = new Client(dbConfig());
+  await client.connect();
+  await client.query(`SET search_path TO ${schema}`);
+  await client.query('SET ROLE devcontrol');
+  await client.query("SELECT set_config('app.current_organization_id', $1, false)", [organization]);
+  const { rows } = await client.query(
+    'SELECT current_user AS role, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'
+  );
+  expect(rows).toEqual([{ role: 'devcontrol', rolsuper: false, rolbypassrls: false }]);
+  return client;
+}
+
+describe(`${MIGRATION_FILE}: commit fence across two connections, as devcontrol`, () => {
+  it.each(['COMMIT', 'ROLLBACK'] as const)(
+    "A holds the fence; after expiry B's takeover waits for A to %s, then gets a greater token and A's fence fails",
+    async (end) => {
+      await withCommittedSchema(async (schema, admin) => {
+        const org = (await admin.query(`INSERT INTO ${schema}.organizations (name) VALUES ('Fence Org') RETURNING id`)).rows[0].id;
+        const a = await appConnection(schema, org);
+        const b = await appConnection(schema, org);
+        try {
+          const t1 = BigInt((await a.query(ACQUIRE_SCAN_WITH_TTL, [org, ACCOUNT_A, 'host:a:run', '3 seconds'])).rows[0].fencing_token);
+
+          // A's destructive transaction: the fence first, then the write.
+          await a.query('BEGIN');
+          expect((await a.query(FENCE_SCAN, [org, ACCOUNT_A, t1.toString()])).rows).toHaveLength(1);
+          await a.query(
+            `INSERT INTO aws_account_regions (organization_id, aws_account_id, region, enabled) VALUES ($1, $2, 'eu-west-1', true)`,
+            [org, ACCOUNT_A]
+          );
+
+          // The lease expires while A's transaction is still open.
+          await waitFor(
+            async () => (await admin.query(`SELECT expires_at <= clock_timestamp() AS expired FROM ${schema}.aws_scan_leases`)).rows[0].expired,
+            'the lease to expire'
+          );
+
+          // B's takeover blocks on A's FOR SHARE row lock.
+          const bPid = (await b.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+          let bFinished = false;
+          const takeover = b.query(ACQUIRE_SCAN, [org, ACCOUNT_A, 'host:b:run']).then((result) => {
+            bFinished = true;
+            return result;
+          });
+          await waitFor(
+            async () => (await admin.query('SELECT wait_event_type FROM pg_stat_activity WHERE pid = $1', [bPid])).rows[0]?.wait_event_type === 'Lock',
+            "B to wait on a lock"
+          );
+          expect(bFinished).toBe(false);
+
+          await a.query(end);
+
+          const t2 = BigInt((await takeover).rows[0].fencing_token);
+          expect(t2 > t1).toBe(true);
+          const written = await admin.query(`SELECT count(*)::int AS n FROM ${schema}.aws_account_regions WHERE organization_id = $1`, [org]);
+          expect(written.rows[0].n).toBe(end === 'COMMIT' ? 1 : 0);
+          expect(await getScanLease(b, org, ACCOUNT_A, 'discovery')).toMatchObject({ held: true, holder: 'host:b:run', fencingToken: t2.toString() });
+
+          // A's stale token no longer passes the fence.
+          await a.query('BEGIN');
+          expect((await a.query(FENCE_SCAN, [org, ACCOUNT_A, t1.toString()])).rows).toHaveLength(0);
+          await a.query('ROLLBACK');
+        } finally {
+          await a.end();
+          await b.end();
+        }
+      });
+    },
+    30_000
+  );
 });
 
 describe(`${MIGRATION_FILE}: aws_account_regions shape, as devcontrol`, () => {

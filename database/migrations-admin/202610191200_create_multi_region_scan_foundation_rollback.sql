@@ -11,16 +11,22 @@
 --     -f 202610191200_create_multi_region_scan_foundation_rollback.sql
 --
 -- Precondition: no deployed release reads or writes these objects (true until
--- M4/M5 code ships, since M3 adds no reader or writer).
+-- M4/M5 code ships, since M3 adds no reader or writer), and no process that
+-- holds a lease token from before the rollback is still running: the token
+-- sequences go with their tables, so after a re-apply tokens restart at 1 and
+-- an old token could equal a new one.
 --
 -- Removes ONLY what the paired migration created, in dependency order (no new
 -- table references another; the warnings column depends on nothing):
 --   1. organization_feature_flags   DATA LOSS: every per-organization flag
 --                                   value; every flag reads as OFF afterwards.
 --   2. job_leases                   DATA LOSS: current job leases, their
---                                   fencing tokens and last_completed_at.
+--                                   fencing tokens and last_completed_at, and
+--                                   the token sequence: after a re-apply
+--                                   tokens restart at 1.
 --   3. aws_scan_leases              DATA LOSS: current scan leases and their
---                                   fencing tokens (and the token sequence).
+--                                   fencing tokens, and the token sequence:
+--                                   after a re-apply tokens restart at 1.
 --   4. aws_account_regions          DATA LOSS: every recorded region list,
 --                                   allow-list choice and per-region scan
 --                                   status, time and error.
@@ -50,7 +56,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY['organization_feature_flags', 'job_leases', 'aws_scan_leases', 'aws_account_regions'] LOOP
     IF to_regclass(t) IS NULL THEN
       RAISE NOTICE '% does not exist; skipped.', t;
-    ELSIF COALESCE(obj_description(to_regclass(t), 'pg_class'), '') NOT LIKE marker || '%' THEN
+    ELSIF NOT starts_with(COALESCE(obj_description(to_regclass(t), 'pg_class'), ''), marker) THEN
       RAISE NOTICE '% was not created by the paired migration (no marker); left in place.', t;
     ELSE
       EXECUTE format('DROP TABLE %I', t);
@@ -73,7 +79,7 @@ BEGIN
    WHERE attrelid = 'resource_discovery_jobs'::regclass AND attname = 'warnings' AND NOT attisdropped;
   IF col_attnum IS NULL THEN
     RAISE NOTICE 'resource_discovery_jobs.warnings does not exist; skipped.';
-  ELSIF COALESCE(col_description('resource_discovery_jobs'::regclass, col_attnum), '') NOT LIKE marker || '%' THEN
+  ELSIF NOT starts_with(COALESCE(col_description('resource_discovery_jobs'::regclass, col_attnum), ''), marker) THEN
     RAISE NOTICE 'resource_discovery_jobs.warnings was not added by the paired migration (no marker); left in place.';
   ELSE
     ALTER TABLE resource_discovery_jobs DROP COLUMN IF EXISTS warnings;
