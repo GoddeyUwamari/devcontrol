@@ -7,14 +7,15 @@ import { fetchForOrganization, useSessionOrganizationId } from '@/lib/hooks/use-
  * /api/services/registered): the services-table rows that deployments,
  * infrastructure and dependencies reference by service_id. Keyed by the
  * access token's organization and refetched on every mount, so a service
- * registered moments ago on /services/new is listed.
+ * registered moments ago on /services/new is listed. `enabled: false` makes
+ * no request (demo mode).
  */
-export function useRegisteredServices() {
+export function useRegisteredServices({ enabled = true }: { enabled?: boolean } = {}) {
   const organizationId = useSessionOrganizationId();
   return useQuery({
     queryKey: ['registered-services', organizationId],
     queryFn: fetchForOrganization(organizationId ?? '', () => servicesService.getRegistered()),
-    enabled: !!organizationId,
+    enabled: enabled && !!organizationId,
     refetchOnMount: 'always',
   });
 }

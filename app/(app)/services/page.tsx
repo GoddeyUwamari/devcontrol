@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
@@ -16,6 +16,10 @@ import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notic
 import { statusNeedsAttention } from './statusAttention'
 import { connectedAccountsCaption } from './accountCaption'
 import { RegisteredServices } from './RegisteredServices'
+import { TYPE_DISPLAY } from './resourceTypes'
+import { isServicesV2Enabled } from './servicesV2Flag'
+import { ServicesOverview } from './ServicesOverview'
+import { servicesDemoFixture } from './demo-fixture'
 
 const _now = Date.now()
 
@@ -40,14 +44,6 @@ const RESOURCE_TYPE_CHIPS = [
   'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
   'load-balancer', 'vpc',
 ]
-
-const TYPE_DISPLAY: Record<string, string> = {
-  'all': 'All Types', 'ec2': 'EC2', 'ebs': 'EBS', 'ecs': 'ECS', 'lambda': 'Lambda',
-  'rds': 'RDS', 's3': 'S3', 'eks': 'EKS', 'dynamodb': 'DynamoDB',
-  'cloudfront': 'CloudFront', 'api-gateway': 'API Gateway',
-  'elasticache': 'ElastiCache', 'aurora': 'Aurora', 'sqs': 'SQS',
-  'sns': 'SNS', 'load-balancer': 'Load Balancer', 'vpc': 'VPC',
-}
 
 const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
   ec2:            { bg: '#F0FDF4', color: '#059669' },
@@ -165,6 +161,10 @@ export default function ServicesPage() {
   const demoMode      = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive  = demoMode || salesDemoMode
+  // The Phase 1 redesign (top half) behind NEXT_PUBLIC_SERVICES_V2; off renders today's page.
+  const servicesV2    = isServicesV2Enabled()
+  const v2Demo        = useMemo(() => (servicesV2 && isDemoActive ? servicesDemoFixture() : null), [servicesV2, isDemoActive])
+  const listRef       = useRef<HTMLDivElement>(null)
   const { tier }      = usePlan()
   // Every query below is keyed by organization and disabled until it is known,
   // so a response for one organization can never render for another: a late
@@ -276,6 +276,10 @@ export default function ServicesPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['services-list', orgId] }),
         queryClient.invalidateQueries({ queryKey: ['services-stats', orgId] }),
+        ...(servicesV2 ? [
+          queryClient.invalidateQueries({ queryKey: ['services-coverage', orgId] }),
+          queryClient.invalidateQueries({ queryKey: ['services-attention', orgId] }),
+        ] : []),
       ])
       // A scan can flip compliance_scan_completed, which changes isPreliminary —
       // without this, the security score (dashboard/security pages) stays on its
@@ -289,8 +293,8 @@ export default function ServicesPage() {
   }
 
   const listRows: AWSService[] = [...(needsQuery.data?.services ?? []), ...(onlyNeedsAttention ? [] : healthyQuery.data?.services ?? [])]
-  const allServices      = isDemoActive ? DEMO_SERVICES : listRows
-  const displayStats     = isDemoActive ? DEMO_STATS    : statsQuery.data
+  const allServices      = isDemoActive ? (v2Demo?.services ?? DEMO_SERVICES) : listRows
+  const displayStats     = isDemoActive ? (v2Demo?.stats    ?? DEMO_STATS)    : statsQuery.data
   // Real mode: the server already filtered and paged. Demo: filtered here.
   const filteredServices = isDemoActive
     ? allServices.filter((s: any) => {
@@ -365,6 +369,10 @@ export default function ServicesPage() {
     : serviceDataState === 'none' ? 'No resources discovered'
     : warningCount === 0 ? 'No resources flagged'
     : `${warningCount} of ${totalServices} at risk`
+  // The redesign says "need attention"; the current page keeps "at risk".
+  const statusHeadlineV2 = serviceDataState === 'present' && warningCount !== 0
+    ? `${warningCount} of ${totalServices} need attention`
+    : serviceStatusHeadline
   const activeFilterLabel = templateFilter !== 'all' ? TYPE_DISPLAY[templateFilter] : null
   // A "needs attention" filter turning up zero results is good news, not a
   // dead end — keep it visually and textually distinct from a real no-match.
@@ -386,10 +394,50 @@ export default function ServicesPage() {
 
   useEffect(() => { setHealthyExpanded(false) }, [envFilter, templateFilter, search, onlyNeedsAttention])
 
+  // Redesign only: "View all N" and "Show all resources" open the list below.
+  const openList = (needsAttentionOnly: boolean) => {
+    clearFilters()
+    setOnlyNeedsAttention(needsAttentionOnly)
+    listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const upgradePrompt = showUpgradePrompt && (
+        <div className="flex items-center justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-4 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">⚠️</span>
+            <span className="text-sm font-medium text-amber-900">
+              You've reached the AWS resource limit on the <strong>{tier}</strong> plan. Upgrade to discover more resources.
+            </span>
+          </div>
+          <a href="/settings/billing/upgrade" className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
+            Upgrade plan
+          </a>
+        </div>
+  )
+
+  const errorBanner = error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
+          <p className="text-sm text-red-600 m-0">Failed to load resources.</p>
+        </div>
+  )
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans">
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
 
+      {servicesV2 ? (
+        <ServicesOverview
+          orgId={orgId}
+          realMode={realMode}
+          demo={v2Demo}
+          stats={{ loading: statsLoading, unavailable: statsUnavailable, stats: displayStats }}
+          statusHeadline={statusHeadlineV2}
+          discovery={{ isDiscovering, discoveryComplete, discoveryMsg, warnings: discoveryWarnings, onAutoDiscover: handleAutoDiscover }}
+          banners={<>{upgradePrompt}{errorBanner}</>}
+          onViewAllAttention={() => openList(true)}
+          onShowAllResources={() => openList(false)}
+        />
+      ) : (<>
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
@@ -511,26 +559,10 @@ export default function ServicesPage() {
       </div>
 
       {/* ── UPGRADE PROMPT ── */}
-      {showUpgradePrompt && (
-        <div className="flex items-center justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-4 flex-wrap">
-          <div className="flex items-center gap-2.5">
-            <span className="text-lg">⚠️</span>
-            <span className="text-sm font-medium text-amber-900">
-              You've reached the AWS resource limit on the <strong>{tier}</strong> plan. Upgrade to discover more resources.
-            </span>
-          </div>
-          <a href="/settings/billing/upgrade" className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
-            Upgrade plan
-          </a>
-        </div>
-      )}
+      {upgradePrompt}
 
       {/* ── ERROR BANNER ── */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
-          <p className="text-sm text-red-600 m-0">Failed to load resources.</p>
-        </div>
-      )}
+      {errorBanner}
 
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-8">
@@ -571,9 +603,10 @@ export default function ServicesPage() {
 
       {/* ── REGISTERED SERVICES ── */}
       <RegisteredServices />
+      </>)}
 
       {/* ── SERVICES LIST ── */}
-      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+      <div ref={listRef} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
 
         {/* Search — primary navigation method */}
         <div className="px-5 sm:px-7 py-5 border-b border-slate-100">
