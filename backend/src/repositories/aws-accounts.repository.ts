@@ -70,6 +70,19 @@ export function isAwsAccountAmbiguous(err: unknown): err is AwsAccountAmbiguousE
   return err instanceof AwsAccountAmbiguousError;
 }
 
+/** The region an account with no recorded region is scanned in. */
+export const DEFAULT_HOME_REGION = 'us-east-1';
+
+/**
+ * The account's home region, the one region discovery scans: its recorded
+ * region, or DEFAULT_HOME_REGION when none is recorded. The client factory
+ * builds the scan's clients in it, and readers that report the scanned region
+ * use the same rule.
+ */
+export function homeRegionOf(account: Pick<AwsAccountRow, 'region'>): string {
+  return account.region ?? DEFAULT_HOME_REGION;
+}
+
 /** The eligibility predicate, in SQL. A NULL status is not eligible. */
 const ELIGIBLE = `status = '${ELIGIBLE_AWS_ACCOUNT_STATUS}'`;
 

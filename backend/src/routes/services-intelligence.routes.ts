@@ -8,12 +8,13 @@ const router = Router();
 const service = new ServicesIntelligenceService();
 
 /**
- * Reading services intelligence is open to every role, viewers included, but
+ * Reading services intelligence (and services coverage,
+ * services-coverage.routes.ts) is open to every role, viewers included, but
  * only to a caller who CURRENTLY holds a membership in an active organization
  * (not merely a JWT role claim). Runs after `authenticate`, which has already
  * answered 401 for a missing/invalid token or a revoked membership.
  */
-async function requireCurrentMembership(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function requireCurrentMembership(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.user) {
       res.status(401).json({ success: false, error: 'Authentication required' });

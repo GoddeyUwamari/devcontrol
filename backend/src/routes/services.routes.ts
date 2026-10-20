@@ -347,7 +347,7 @@ const TAGS_UNKNOWN_SQL = `NOT ((r.metadata->>'tags_state') IS DISTINCT FROM 'una
  *   unowned  neither.
  * The list's rows, its ?ownership filter and /stats' counts all read os.ownership.
  */
-const INVENTORY_FROM = `aws_resources r
+export const INVENTORY_FROM = `aws_resources r
        CROSS JOIN LATERAL (SELECT ${tagValue('owner')} AS owner_tag, ${tagValue('team')} AS team_tag) tg
        CROSS JOIN LATERAL (
          SELECT CASE WHEN ${TAGS_UNKNOWN_SQL} THEN 'unknown'
@@ -369,7 +369,7 @@ const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr
  * organization predicate comes first and every filter is ANDed after it (RLS
  * sits underneath as a second layer, not a replacement).
  */
-function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: string; values: unknown[] } {
+export function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: string; values: unknown[] } {
   // Services list/stats represent current infrastructure — a soft-terminated
   // resource (see resourceReconciliation.service.ts) is no longer a "service" and
   // must not surface here at all, let alone as a false critical/needs_attention
