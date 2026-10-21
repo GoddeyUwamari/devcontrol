@@ -173,8 +173,9 @@ describe('header', () => {
     expect(screen.queryByText('Deployment history and tracking')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Auto Discover/ })).toBeEnabled()
     expect(screen.queryByText('OLD REGISTERED SERVICES')).not.toBeInTheDocument()
-    // The current resource list stays below until S1-D.
-    expect(screen.getByPlaceholderText('Search 10 resources…')).toBeInTheDocument()
+    // S1-D: All resources replaces the current resource list.
+    expect(screen.queryByPlaceholderText(/^Search \d+ resources?…$/)).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'All resources' })).toBeInTheDocument()
   })
 
   it('Auto Discover keeps its states and refreshes coverage and the attention table', async () => {
@@ -691,8 +692,9 @@ describe('What needs attention', () => {
     renderPage()
     await settled()
     fireEvent.click(within(attention()).getByRole('button', { name: 'View all 3 →' }))
-    await waitFor(() => expect(mockGetServices).toHaveBeenCalledWith(expect.objectContaining({ needs_attention: true, limit: 50 })))
-    await waitFor(() => expect(screen.getByText(/^Needs Attention · 3/)).toBeInTheDocument())
+    await waitFor(() => expect(mockGetServices).toHaveBeenLastCalledWith({ sort: 'attention', page: 1, limit: 50, needs_attention: true }))
+    expect(within(screen.getByRole('region', { name: 'All resources' })).getByLabelText('Show')).toHaveValue('needs_attention')
+    await waitFor(() => expect(screen.getByRole('region', { name: 'All resources' })).toHaveTextContent('3 resources matching current filters'))
     expect(screen.queryByText(/resources? with no flagged issues/)).not.toBeInTheDocument()
   })
 
@@ -784,7 +786,7 @@ describe('demo mode (Q6)', () => {
     expect(within(tile('Services')).getByText('3')).toBeInTheDocument()
     expect(tile('AWS spend, month to date')).toHaveTextContent('$1,234.56')
     // The list below uses the same fixture.
-    expect(screen.getByPlaceholderText('Search 12 resources…')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'All resources' })).toHaveTextContent('12 resources')
     expect(document.body.textContent).not.toMatch(/Service Health Score|High confidence|sarah\.chen|mike\.johnson|alex\.wong|emma\.davis|david\.kim|api-gateway|Lambda invocation spike/)
     // Every email address is a placeholder owner-*@example.com.
     const text = document.body.textContent!

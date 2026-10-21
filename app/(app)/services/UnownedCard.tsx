@@ -9,7 +9,13 @@ import { PhaseTwoTag } from './PhaseTwoTag'
  * from /stats). Resources whose tags could not be read are in neither.
  * Rendered only with /stats loaded.
  */
-export function UnownedCard({ stats }: { stats: AWSServicesStats }) {
+export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter }: {
+  stats: AWSServicesStats
+  /** "Show the N": All resources with Show = Unowned. */
+  onShowUnowned?: () => void
+  /** "all teams": opens the Owner / team filter. Hidden when there are no teams. */
+  onOpenTeamFilter?: () => void
+}) {
   const unowned = stats.ownership?.unowned
   if (typeof unowned !== 'number') return null
   const top = stats.teams?.top ?? []
@@ -40,9 +46,17 @@ export function UnownedCard({ stats }: { stats: AWSServicesStats }) {
             </li>
           ))}
         </ul>
-        <p className="m-0 text-[11px] text-slate-600">Resources per team (Team tag)</p>
+        <p className="m-0 text-[11px] text-slate-600">
+          Resources per team (Team tag)
+          {onOpenTeamFilter && (stats.teams?.total_teams ?? 0) > 0 && <> · <button type="button" onClick={onOpenTeamFilter} className="font-semibold text-violet-700 hover:underline">all teams</button></>}
+        </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        {onShowUnowned && unowned > 0 && (
+          <button type="button" onClick={onShowUnowned} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:border-slate-400">
+            Show the {unowned}
+          </button>
+        )}
         <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 opacity-60 cursor-not-allowed">
           Assign owner
         </button>

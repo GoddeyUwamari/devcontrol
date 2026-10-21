@@ -1,4 +1,12 @@
-// Display names of the inventoried resource types (the Type filter's options).
+// The Type filter's options: 'all', then the inventoried resource types.
+export const RESOURCE_TYPE_CHIPS = [
+  'all',
+  'ec2', 'ebs', 'ecs', 'lambda', 'rds', 's3', 'eks', 'dynamodb',
+  'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
+  'load-balancer', 'vpc',
+]
+
+// Display names of the inventoried resource types.
 export const TYPE_DISPLAY: Record<string, string> = {
   'all': 'All Types', 'ec2': 'EC2', 'ebs': 'EBS', 'ecs': 'ECS', 'lambda': 'Lambda',
   'rds': 'RDS', 's3': 'S3', 'eks': 'EKS', 'dynamodb': 'DynamoDB',

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import awsServicesService, { type AWSServicesPage, type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
@@ -12,18 +13,31 @@ import { AttentionTable, ATTENTION_ROWS, type AttentionState } from './Attention
 import { YourServices, type YourServicesState } from './YourServices'
 import { UnownedCard } from './UnownedCard'
 import { SAMPLE_DATA_BANNER, type ServicesDemoFixture } from './demo-fixture'
+import { AllResourcesTable, type AllResourcesState } from './AllResourcesTable'
+import { NotCheckedCard } from './NotCheckedCard'
+import { type AllResourcesFilters, DEFAULT_FILTERS, allResourcesRequest, demoAllResourcesPage } from './allResources'
+
+/** "Failed to load resources." (E9): the same banner as the current page's. */
+function LoadErrorBanner() {
+  return (
+    <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
+      <p className="text-sm text-red-600 m-0">Failed to load resources.</p>
+    </div>
+  )
+}
 
 /**
- * The top half of the redesigned Services page (Phase 1, PR S1-C): header,
- * coverage strip, summary tiles, What needs attention, Your services and the
- * Unowned card. Behind NEXT_PUBLIC_SERVICES_V2 (servicesV2Flag.ts); the
- * resource list below it is still the current page's until S1-D.
+ * The redesigned Services page (Phase 1): header, coverage strip, summary
+ * tiles, What needs attention, Your services, the Unowned card (S1-C), All
+ * resources and What we didn't check (S1-D). Behind NEXT_PUBLIC_SERVICES_V2
+ * (servicesV2Flag.ts); with it on, All resources replaces the current page's
+ * resource list.
  *
  * Every query is keyed by organization and disabled until it is known, and
  * none runs in demo mode, which renders the placeholder fixture instead.
  */
 export function ServicesOverview({
-  orgId, realMode, demo, stats, statusHeadline, discovery, banners, onViewAllAttention, onShowAllResources,
+  orgId, realMode, demo, stats, statusHeadline, discovery, banners, pageError, knownNoAccount, onFiltersChange,
 }: {
   orgId: string | null
   realMode: boolean
@@ -38,10 +52,14 @@ export function ServicesOverview({
     warnings: readonly string[]
     onAutoDiscover: () => void
   }
-  /** The upgrade prompt and the load-error banner, kept above the coverage strip (Q3). */
+  /** The upgrade prompt, kept above the coverage strip (Q3). */
   banners: React.ReactNode
-  onViewAllAttention: () => void
-  onShowAllResources: () => void
+  /** The page's load error (stats or discovery), shown as E9 with the list's own. */
+  pageError: boolean
+  /** The organization is known to have no AWS account: a failed list is then not an error (as before). */
+  knownNoAccount: boolean
+  /** A filter or organization change (the page clears the discovery error, as before). Must be stable. */
+  onFiltersChange: () => void
 }) {
   const coverageQuery = useQuery<ServicesCoverage>({
     queryKey: ['services-coverage', orgId],
@@ -60,6 +78,60 @@ export function ServicesOverview({
     enabled: realMode, retry: false, refetchOnWindowFocus: false,
   })
   const registeredQuery = useRegisteredServices({ enabled: !demo })
+
+  // ── All resources: filters, paging and the list query ──
+  const [filters, setFilters] = useState<AllResourcesFilters>(DEFAULT_FILTERS)
+  const [searchInput, setSearchInput] = useState('')
+  // The search is committed 400 ms after typing stops, so a request never
+  // carries a stale term (as the current list).
+  useEffect(() => {
+    const t = setTimeout(() => setFilters((f) => (f.search === searchInput ? f : { ...f, search: searchInput })), 400)
+    return () => clearTimeout(t)
+  }, [searchInput])
+  const applyFilters = (next: AllResourcesFilters) => { setSearchInput(next.search); setFilters(next) }
+
+  // A new organization or filter starts at page 1 in the same render, so no
+  // request is made for a stale page.
+  const filtersKey = JSON.stringify([orgId, filters])
+  const [paging, setPaging] = useState({ key: filtersKey, page: 1 })
+  const listPage = paging.key === filtersKey ? paging.page : 1
+  const goToPage = (page: number) => setPaging({ key: filtersKey, page })
+  useEffect(() => { onFiltersChange() }, [filtersKey, onFiltersChange])
+
+  const listQuery = useQuery<AWSServicesPage>({
+    queryKey: ['services-list', orgId, 'all-resources', filtersKey, listPage],
+    queryFn: () => awsServicesService.getServices(allResourcesRequest(filters, listPage)),
+    enabled: realMode, retry: false, refetchOnWindowFocus: false,
+    // Turning a page keeps the current rows until the next page arrives; any other change starts from loading.
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[3] === filtersKey ? previous : undefined),
+  })
+  // A page past the end (the inventory shrank after a discovery) goes back to the last page.
+  useEffect(() => {
+    const p = listQuery.data?.pagination
+    if (p && p.page > 1 && p.page > p.total_pages) goToPage(Math.max(1, p.total_pages))
+  })
+
+  const listState: AllResourcesState = demo
+    ? { status: 'ready', page: demoAllResourcesPage(demo.services, filters, listPage), dimmed: false }
+    : listQuery.data ? { status: 'ready', page: listQuery.data, dimmed: listQuery.isPlaceholderData }
+    : listQuery.isError ? { status: 'error', retry: () => listQuery.refetch() }
+    : { status: 'loading' }
+  const listFailed = !demo && listQuery.isError && !knownNoAccount
+
+  // The controls above that open the list: each sets its filters and scrolls to it.
+  const listRef = useRef<HTMLDivElement>(null)
+  const teamSelectRef = useRef<HTMLSelectElement>(null)
+  const showList = (change: Partial<AllResourcesFilters>) => {
+    applyFilters({ ...DEFAULT_FILTERS, ...change })
+    listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  const openTeamFilter = () => {
+    const select = teamSelectRef.current
+    if (!select) return
+    select.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    select.focus()
+    try { select.showPicker?.() } catch { /* not allowed or not supported: focus is enough */ }
+  }
 
   // A query that can't run yet (organization unknown) reads as loading, never as empty.
   const coverageState: CoverageState = demo ? { status: 'ready', coverage: demo.coverage }
@@ -101,9 +173,10 @@ export function ServicesOverview({
         onAutoDiscover={discovery.onAutoDiscover}
       />
       {banners}
+      {(pageError || listFailed) && <LoadErrorBanner />}
       <CoverageStrip
         state={coverageState}
-        statusHeadline={statusHeadline}
+        statusHeadline={!stats.loading && listFailed ? 'Resource data unavailable' : statusHeadline}
         inTabWarnings={discovery.warnings}
         storedResources={!stats.loading && (statsData?.total ?? 0) > 0}
       />
@@ -116,12 +189,35 @@ export function ServicesOverview({
           count: registeredState.status === 'ready' ? registeredState.services.length : undefined,
         }}
         spend={spend}
+        onShowUnowned={() => showList({ show: 'unowned' })}
       />
       {!noResources && (
-        <AttentionTable state={attentionState} totalResources={statsData?.total} onViewAll={onViewAllAttention} onShowAll={onShowAllResources} />
+        <AttentionTable state={attentionState} totalResources={statsData?.total} onViewAll={() => showList({ show: 'needs_attention' })} onShowAll={() => showList({})} />
       )}
       <YourServices state={registeredState} mappedToService={statsData?.mapped_to_service} totalResources={statsData?.total} />
-      {!noResources && statsData && !stats.loading && <UnownedCard stats={statsData} />}
+      {!noResources && statsData && !stats.loading && (
+        <UnownedCard stats={statsData} onShowUnowned={() => showList({ show: 'unowned' })} onOpenTeamFilter={openTeamFilter} />
+      )}
+      <div ref={listRef} className="scroll-mt-4">
+        <AllResourcesTable
+          state={listState}
+          filters={filters}
+          searchInput={searchInput}
+          onSearchInput={setSearchInput}
+          onFilters={(change) => applyFilters({ ...filters, search: searchInput, ...change })}
+          onClearFilters={() => applyFilters(DEFAULT_FILTERS)}
+          onPage={goToPage}
+          stats={stats}
+          coverage={coverageState.status === 'ready' ? coverageState.coverage : undefined}
+          knownNoAccount={knownNoAccount}
+          teamSelectRef={teamSelectRef}
+          isDiscovering={discovery.isDiscovering}
+          onAutoDiscover={discovery.onAutoDiscover}
+        />
+      </div>
+      {coverageState.status === 'ready' && (
+        <NotCheckedCard coverage={coverageState.coverage} stats={statsData} inTabWarnings={discovery.warnings} />
+      )}
     </>
   )
 }

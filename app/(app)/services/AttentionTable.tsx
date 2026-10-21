@@ -19,7 +19,7 @@ export type AttentionState =
   | { status: 'error'; retry: () => void }
   | { status: 'ready'; page: AWSServicesPage }
 
-const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
+export const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
 
 // The lifecycle state as the list reports it, without calling anything healthy.
 const STATUS_LABEL: Record<AWSService['status'], string> = {
@@ -31,11 +31,16 @@ const STATUS_LABEL: Record<AWSService['status'], string> = {
 
 const OWNERSHIP_LABEL: Record<string, string> = { owned: 'Owned', unowned: 'Unowned', unknown: 'Unknown · tags unreadable' }
 
-function typeLabel(type: string) {
+export function typeLabel(type: string) {
   return TYPE_DISPLAY[type] ?? type?.toUpperCase() ?? '—'
 }
 
-export function OwnerCell({ row }: { row: AWSService }) {
+/**
+ * The owner, as S1-C labels it. withTeam: the team follows the owner
+ * ("{owner} · {team}", "No Owner tag · {team}"); tables with their own Team
+ * column pass false, so the team is shown once.
+ */
+export function OwnerCell({ row, withTeam = true }: { row: AWSService; withTeam?: boolean }) {
   const owner = ownerDisplay(row)
   switch (owner.kind) {
     case 'unowned':
@@ -43,16 +48,21 @@ export function OwnerCell({ row }: { row: AWSService }) {
     case 'unknown':
       return <span className="rounded px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700">{owner.label}</span>
     case 'owner':
-      return <span className="text-slate-700">{owner.label}{owner.team ? ` · ${owner.team}` : ''}</span>
+      return <span className="text-slate-700">{owner.label}{withTeam && owner.team ? ` · ${owner.team}` : ''}</span>
     case 'team-only':
-      return <span className="text-slate-700">No Owner tag · {owner.team}</span>
+      return <span className="text-slate-700">{withTeam ? `No Owner tag · ${owner.team}` : 'No Owner tag'}</span>
     default:
       return <span className="text-slate-600">—</span>
   }
 }
 
+/** A row's environment: "Untagged" only when its tags were read; "—" when they could not be. */
+export function environmentLabel(row: AWSService): string {
+  return row.environment ?? (row.ownership === 'unknown' ? '—' : 'Untagged')
+}
+
 /** The expanded row (Q5): fields the list already returned. Nothing is fetched. */
-function Details({ row }: { row: AWSService }) {
+export function Details({ row }: { row: AWSService }) {
   const [now] = useState(() => Date.now())
   const owner = ownerDisplay(row)
   const items: [string, string][] = [
@@ -60,7 +70,7 @@ function Details({ row }: { row: AWSService }) {
     ['Resource', row.name],
     ['Type', typeLabel(row.type)],
     ['Region', row.aws_region ?? '—'],
-    ['Environment', row.environment ?? 'Untagged'],
+    ['Environment', environmentLabel(row)],
     ['Owner', owner.kind === 'owner' ? owner.label : owner.kind === 'team-only' ? 'No Owner tag' : owner.label],
     ['Team', owner.kind === 'unknown' ? '—' : row.team ?? '—'],
     ['Ownership', row.ownership ? OWNERSHIP_LABEL[row.ownership] : '—'],

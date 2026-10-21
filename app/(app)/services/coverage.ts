@@ -27,6 +27,19 @@ export const LISTING_TRUNCATED_TEXT = 'Some resource listings were cut off, so r
 
 const KNOWN_WARNINGS = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED]
 
+/**
+ * Codes the backend records for itself (backend/src/services/discovery-warnings.ts,
+ * "Internal: no page renders it"): ignored everywhere on this page, so they never
+ * make a scan Partial or add the generic warning line. scan_lease_lost: another
+ * scan took over the lease (multi-region M4b).
+ */
+export const INTERNAL_WARNINGS: readonly string[] = ['scan_lease_lost']
+
+/** The warnings this page describes: every code except the internal ones. */
+export function shownWarnings(codes: readonly string[]): string[] {
+  return codes.filter((code) => !INTERNAL_WARNINGS.includes(code))
+}
+
 /** A job started longer ago than this is no longer treated as in progress. */
 export const STALE_SCAN_MS = 60 * 60 * 1000
 
@@ -58,7 +71,7 @@ export function formatScanTime(iso: string, now: number): string {
  * Whether the scope fields describe a completed scan: only when the newest scan
  * completed. A running, failed or abandoned newest scan's scope is never claimed.
  */
-function scopeIsCompleted(coverage: ServicesCoverage): boolean {
+export function scopeIsCompleted(coverage: ServicesCoverage): boolean {
   return coverage.last_scan?.status === 'completed'
 }
 
@@ -114,7 +127,7 @@ export const UNKNOWN_WARNING_TEXT = 'The last scan reported a warning that this 
  * their own copy; any other code gets one generic line.
  */
 export function warningNotes(persisted: readonly string[], inTab: readonly string[]): CoverageNote[] {
-  const codes = new Set([...persisted, ...inTab])
+  const codes = new Set(shownWarnings([...persisted, ...inTab]))
   const notes: CoverageNote[] = []
   if (codes.has(DISCOVERY_WARNING_TRUNCATED_INDEX)) {
     notes.push({ key: 'deletion-paused', tone: 'warn', body: DELETION_DETECTION_PAUSED_TEXT })
@@ -184,7 +197,7 @@ export function describeCoverage(coverage: ServicesCoverage, now: number, inTabW
     lastScan = failed + (lastSuccess ? `Last successful scan ${formatScanTime(lastSuccess, now)}` : 'No successful scan yet')
   }
 
-  const warnings = last?.warnings ?? []
+  const warnings = shownWarnings(last?.warnings ?? [])
   const chips: CoverageChip[] = [homeChip(home, last, inProgress, lastFailed, warnings)]
   // Stored counts are always shown; the scope (in or not in the last scan) only from a completed one.
   const { cloudfront, s3 } = coverage.scope
