@@ -16,6 +16,8 @@ import {
   getOptimizationRuleParameterDefinition,
 } from '../config/optimization-rules';
 import { OptimizationRuleConfigService, OptimizationRuleConfigValidationError } from '../services/optimization-rule-config.service';
+import { isLeaseLost } from '../services/scan-lease';
+import { LeaseSession, LeaseTiming, SCAN_BUSY_MESSAGE, isScanBusy, leaseAccountFor, waitForScanSession } from '../services/scan-session';
 
 const repository = new CostRecommendationsRepository();
 const analysisRunsRepository = new CostAnalysisRunsRepository();
@@ -47,6 +49,9 @@ function classifyRunFailureMessage(rawMessage: string | null): string | null {
 }
 
 export class CostRecommendationsController {
+  // How Analyze waits for the scan lease (scan-session.ts). The defaults are production's; tests shorten them.
+  private leaseTiming: LeaseTiming = {};
+
   /**
    * GET /api/cost-recommendations
    * Get all recommendations with optional filters
@@ -378,6 +383,7 @@ export class CostRecommendationsController {
     // below, which is unchanged from before this run-tracking was added.
     let organizationIdForRun: string | undefined;
     let runId: string | undefined;
+    let session: LeaseSession | undefined;
 
     try {
       const organizationId = (req as any).user?.organizationId;
@@ -396,11 +402,21 @@ export class CostRecommendationsController {
 
       console.log(`Starting cost optimization analysis for org ${organizationId}...`);
 
+      // The scan lease discovery uses (multi-region plan M4b, §4.6): Analyze changes the
+      // same rows, so it waits for a running scan (every SCAN_WAIT_POLL_MS, up to
+      // SCAN_WAIT_CAP_MS, then 409), then holds the lease while it runs. With no
+      // eligible account there is no lease to take: the analysis below then fails
+      // exactly as it does without one, before it writes anything.
+      const leaseAccountId = await leaseAccountFor(pool, organizationId);
+      if (leaseAccountId) session = await waitForScanSession(pool, organizationId, leaseAccountId, this.leaseTiming);
+
       // Run the analysis against this org's connected AWS account
       const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(organizationId);
       // The home-listed detectors' rows are reconciled in the region they listed
       // (no region when AWS is not connected: there is then nothing to reconcile).
-      const costScope = homeRegion ? { homeRegion } : undefined;
+      // Without the lease nothing is written.
+      const costScope = homeRegion && session ? { homeRegion } : undefined;
+      const lease = session;
 
       // Occurrence-lifecycle reconciliation for the 3 resource-level detectors
       // (idle EC2, unused EIPs, EBS, S3, Lambda, DynamoDB; the retired oversized-RDS
@@ -408,11 +424,14 @@ export class CostRecommendationsController {
       // Resolve/Dismiss'd finding instead of resurrecting it every scan, and
       // only ends that suppression once a detector successfully, completely
       // observes the condition is genuinely gone.
-      const { insertedCount: nonRIInsertedCount } = await repository.reconcileActiveRecommendations(
-        organizationId,
-        observations,
-        costScope
-      );
+      // F12: fenced with the lease, after the detectors' AWS calls.
+      let nonRIInsertedCount = 0;
+      if (lease) {
+        lease.checkpoint();
+        ({ insertedCount: nonRIInsertedCount } = await lease.watch(() =>
+          repository.reconcileActiveRecommendations(organizationId, observations, costScope, lease.lease)
+        ));
+      }
 
       // Reserved Instance Opportunities are excluded from the occurrence
       // lifecycle -- synthetic, fleet-level aggregate identity, not a
@@ -420,11 +439,10 @@ export class CostRecommendationsController {
       // check completed: a failed check leaves the stored RI rows as they are.
       // Delete and insert share one transaction.
       let riInsertedCount = 0;
-      if (riSucceeded && costScope) {
-        ({ insertedCount: riInsertedCount } = await repository.replaceReservedInstanceRecommendations(
-          organizationId,
-          costScope,
-          riRecommendations
+      if (riSucceeded && costScope && lease) {
+        // F13: fenced with the lease.
+        ({ insertedCount: riInsertedCount } = await lease.watch(() =>
+          repository.replaceReservedInstanceRecommendations(organizationId, costScope, riRecommendations, lease.lease)
         ));
       }
 
@@ -492,6 +510,15 @@ export class CostRecommendationsController {
         }
       }
 
+      // A scan was still running after the wait cap, or another scan took the lease
+      // over while Analyze held it: the approved fixed text, never error.message
+      // (a lease error names the organization and the AWS account).
+      if (isScanBusy(error) || isLeaseLost(error)) {
+        const response: ApiResponse = { success: false, error: SCAN_BUSY_MESSAGE };
+        res.status(409).json(response);
+        return;
+      }
+
       // Check for specific AWS errors
       if (isAwsAccountAmbiguous(error)) {
         const response: ApiResponse = { success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE };
@@ -528,6 +555,9 @@ export class CostRecommendationsController {
         error: `Failed to analyze AWS resources: ${error.message || 'Unknown error'}`,
       };
       res.status(500).json(response);
+    } finally {
+      // Every path: the heartbeat stops and the lease is released (or expires).
+      await session?.end();
     }
   }
 

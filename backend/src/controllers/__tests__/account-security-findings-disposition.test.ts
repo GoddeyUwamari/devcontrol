@@ -8,6 +8,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { AccountSecurityFindingsController } from '../account-security-findings.controller';
 import { AccountSecurityFindingsRepository, NewAccountFinding } from '../../repositories/account-security-findings.repository';
+import { TestLeases } from '../../services/__tests__/helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -23,6 +24,7 @@ const pool = new Pool(dbConfig());
 const controller = new AccountSecurityFindingsController();
 const repository = new AccountSecurityFindingsRepository();
 const createdOrgIds: string[] = [];
+const leases = new TestLeases(pool);
 const createdUserIds: string[] = [];
 
 function uniqueSuffix(): string {
@@ -38,6 +40,7 @@ async function insertOrg(): Promise<string> {
     [`Disposition Ctrl Org ${suffix}`, `disposition-ctrl-org-${suffix}`, `Disposition Ctrl Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  await leases.hold(rows[0].id);
   return rows[0].id as string;
 }
 
@@ -79,7 +82,7 @@ function fakeFinding(overrides: Partial<NewAccountFinding> = {}): NewAccountFind
 
 async function seedFinding(orgId: string): Promise<string> {
   const finding = fakeFinding();
-  await repository.reconcileScan(orgId, new Date(), [finding]);
+  await repository.reconcileScan(orgId, new Date(), [finding], ['networking', 'iam'], undefined, leases.of(orgId));
   const active = await repository.getActive(orgId);
   const match = active.find((f) => f.finding_key === finding.findingKey);
   if (!match) throw new Error('seedFinding: finding was not persisted');
@@ -101,6 +104,7 @@ function mockReqRes(params: Record<string, string>, body: any, organizationId: s
 }
 
 afterAll(async () => {
+  await leases.cleanup();
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
@@ -197,11 +201,11 @@ describe('disposition endpoints reject an already-resolved finding', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const finding = fakeFinding();
-    await repository.reconcileScan(orgId, new Date(), [finding], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [finding], ['networking'], undefined, leases.of(orgId));
     const [row] = await repository.getActive(orgId);
 
     // A complete scan that no longer sees it -> verified resolved
-    await repository.reconcileScan(orgId, new Date(), [], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [], ['networking'], undefined, leases.of(orgId));
 
     const { req, res, status, json } = mockReqRes({ id: row.id }, {}, orgId, userId);
     await controller.acknowledge(req, res);

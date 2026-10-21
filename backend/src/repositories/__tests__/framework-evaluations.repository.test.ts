@@ -38,6 +38,10 @@ import {
   writeBaselinePreservingFrameworkFindings,
 } from '../framework-evaluations.repository';
 import { ComplianceIssue, FindingEvaluationState, FrameworkApplicabilityState, FrameworkCheckEvaluation } from '../../types/aws-resources.types';
+import { PLACEHOLDER_ACCOUNT_ROW, TestLeases } from '../../services/__tests__/helpers/scan-source';
+import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
+import { acquireScanLease } from '../../services/scan-lease';
+import { SCAN_KIND_DISCOVERY } from '../../services/scan-session';
 
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -48,6 +52,7 @@ const dbConfig = {
 };
 const pool = new Pool(dbConfig);
 const createdOrgIds: string[] = [];
+const leases = new TestLeases(pool);
 
 const BACKUPS = 'hipaa.automated_backups';
 const RETENTION = 'hipaa.backup_retention_policy';
@@ -75,7 +80,7 @@ const project = (failures: StoredFailure[]): ComplianceIssue[] =>
 function input(orgId: string, resourceId: string, run: FrameworkRun, evaluations: FrameworkCheckEvaluation[], overrides: Partial<PersistResourceInput> = {}): PersistResourceInput {
   return {
     organizationId: orgId, resourceId, evaluatorVersion: '1', baselineIssues: [BASELINE],
-    frameworks: [{ run, evaluations, registeredCheckKeys: REGISTERED }], project, ...overrides,
+    frameworks: [{ run, evaluations, registeredCheckKeys: REGISTERED }], project, lease: leases.of(orgId), ...overrides,
   };
 }
 
@@ -99,6 +104,7 @@ async function insertOrg(): Promise<string> {
     [`Framework Eval Org ${suffix}`, `framework-eval-org-${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  await leases.hold(rows[0].id);
   return rows[0].id;
 }
 
@@ -133,6 +139,7 @@ async function stateOf(client: PoolClient, orgId: string, resourceId: string): P
 }
 
 afterAll(async () => {
+  await leases.cleanup();
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM framework_evaluation_runs WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
@@ -425,7 +432,7 @@ describe('real tables: states, last conclusive result and the findings projectio
     const hipaa = await start(client, orgId);
     const second = await startFrameworkRun(client, { organizationId: orgId, framework: 'SECOND', applicability: 'enabled', reasonCode: 'explicitly_enabled', discoveryJobId: null, evaluatorVersion: '1' });
     await persistResourceEvaluation(client, {
-      organizationId: orgId, resourceId: resource, evaluatorVersion: '1', baselineIssues: [BASELINE], project,
+      organizationId: orgId, resourceId: resource, evaluatorVersion: '1', baselineIssues: [BASELINE], project, lease: leases.of(orgId),
       frameworks: [
         { run: hipaa, evaluations: [outcome(BACKUPS, 'failed')], registeredCheckKeys: REGISTERED },
         { run: second, evaluations: [{ ...outcome('second.check', 'failed', 'high'), framework: 'SECOND' }], registeredCheckKeys: ['second.check'] },
@@ -442,7 +449,7 @@ describe('real tables: states, last conclusive result and the findings projectio
     const disabled = await start(client, orgId, 'disabled');
     const secondAgain = await startFrameworkRun(client, { organizationId: orgId, framework: 'SECOND', applicability: 'enabled', reasonCode: 'explicitly_enabled', discoveryJobId: null, evaluatorVersion: '1' });
     await persistResourceEvaluation(client, {
-      organizationId: orgId, resourceId: resource, evaluatorVersion: '1', baselineIssues: [BASELINE], project,
+      organizationId: orgId, resourceId: resource, evaluatorVersion: '1', baselineIssues: [BASELINE], project, lease: leases.of(orgId),
       frameworks: [
         { run: disabled, evaluations: [], registeredCheckKeys: REGISTERED },
         { run: secondAgain, evaluations: [{ ...outcome('second.check', 'failed', 'high'), framework: 'SECOND' }], registeredCheckKeys: ['second.check'] },
@@ -679,6 +686,7 @@ function savepointing(client: Client): Pick<PoolClient, 'query'> {
 }
 
 async function asApplicationRole(fn: (executor: Pick<PoolClient, 'query'>, admin: { setOrganization(id: string | null): Promise<void>; seed: { orgA: string; orgB: string; resourceA: string; resourceB: string } }) => Promise<void>): Promise<void> {
+  await ensureSharedFixtureTable(pool, 'aws_accounts'); // the shape copied below
   const client = new Client(dbConfig);
   await client.connect();
   const schema = `fw_eval_repo_test_${process.pid}_${Date.now()}`;
@@ -702,6 +710,28 @@ async function asApplicationRole(fn: (executor: Pick<PoolClient, 'query'>, admin
     const orgA = await org('A');
     const orgB = await org('B');
     const seed = { orgA, orgB, resourceA: await res(orgA), resourceB: await res(orgB) };
+
+    // Every write is fenced with a real scan lease (multi-region plan M4b): this
+    // schema's own lease and account tables (the real ones' shape), one placeholder
+    // account and one lease per organization, all rolled back with the test.
+    await client.query(`CREATE TABLE aws_scan_leases (LIKE public.aws_scan_leases INCLUDING ALL)`);
+    await client.query(`CREATE TABLE aws_accounts (LIKE public.aws_accounts INCLUDING ALL)`);
+    for (const id of [orgA, orgB]) {
+      await client.query(
+        `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, status)
+         VALUES ($1, $2, $3, 'placeholder-external-id', 'us-east-1', 'active')`,
+        [id, PLACEHOLDER_ACCOUNT_ROW.role_arn, `ph-${id.replace(/-/g, '').slice(0, 29)}`]
+      );
+      const lease = await acquireScanLease(
+        client,
+        { organizationId: id, awsAccountId: PLACEHOLDER_ACCOUNT_ROW.account_id!, scanKind: SCAN_KIND_DISCOVERY },
+        'test-lease-holder',
+        { ttlSeconds: 60 * 60 }
+      );
+      leases.remember(id, lease!);
+    }
+    await client.query(`GRANT SELECT ON aws_accounts TO devcontrol`);
+    await client.query(`GRANT SELECT, UPDATE ON aws_scan_leases TO devcontrol`);
 
     await client.query(`GRANT USAGE ON SCHEMA ${schema} TO devcontrol`);
     await client.query(`GRANT SELECT, UPDATE ON aws_resources TO devcontrol`);

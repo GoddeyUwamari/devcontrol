@@ -16,6 +16,7 @@ import { Soc2EvidenceRepository } from '../../repositories/soc2-evidence.reposit
 import { S3Client } from '@aws-sdk/client-s3';
 import { S3_FINDING_KEYS, S3_FINDING_TEXTS } from '../s3-security-evaluation';
 import { ComplianceScannerService } from '../complianceScanner';
+import { TestLeases } from './helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -31,6 +32,7 @@ const pool = new Pool(dbConfig());
 const service = new Soc2EvidenceService(pool);
 const repository = new Soc2EvidenceRepository(pool);
 const createdOrgIds: string[] = [];
+const leases = new TestLeases(pool, 'job');
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -45,6 +47,7 @@ async function insertOrg(): Promise<string> {
     [`SOC2 Service Org ${suffix}`, `soc2-service-org-${suffix}`, `SOC2 Service Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  await leases.hold(rows[0].id);
   return rows[0].id as string;
 }
 
@@ -122,7 +125,7 @@ async function cc66For(compliance_issues: unknown[]) {
   const orgId = await insertOrg();
   await insertDiscoveryJob(orgId, true);
   const bucket = await insertResource(orgId, { resource_type: 's3', is_public: false, compliance_issues });
-  await service.computeAndPersistEvidence(orgId);
+  await service.computeAndPersistEvidence(orgId, leases.of(orgId));
   return (await observationsFor(orgId, 'CC6.6')).find((o) => o.resource_arn === bucket);
 }
 
@@ -133,7 +136,7 @@ describe('Soc2EvidenceService — CC6.1 encryption', () => {
     const unencrypted = await insertResource(orgId, { resource_type: 's3', is_encrypted: false });
     const unknown = await insertResource(orgId, { resource_type: 's3', is_encrypted: null });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.1');
 
     expect(observations.find((o) => o.resource_arn === encrypted)?.result).toBe('SUPPORTS');
@@ -149,7 +152,7 @@ describe('Soc2EvidenceService — CC6.1 encryption', () => {
     const orgId = await insertOrg();
     const unknown = await insertResource(orgId, { resource_type: 'rds', is_encrypted: null });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.1');
     const obs = observations.find((o) => o.resource_arn === unknown);
 
@@ -162,7 +165,7 @@ describe('Soc2EvidenceService — CC6.1 encryption', () => {
     // Simulates the generic-inventory path's hardcoded false -- not real evidence.
     const auroraArn = await insertResource(orgId, { resource_type: 'aurora', is_encrypted: false });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.1');
     const obs = observations.find((o) => o.resource_arn === auroraArn);
 
@@ -177,7 +180,7 @@ describe('Soc2EvidenceService — CC6.6 public exposure (EC2/RDS)', () => {
     const privateRes = await insertResource(orgId, { resource_type: 'ec2', is_public: false });
     const unknownRes = await insertResource(orgId, { resource_type: 'rds', is_public: null });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.6');
 
     expect(observations.find((o) => o.resource_arn === publicRes)?.result).toBe('CONTRADICTS');
@@ -195,7 +198,7 @@ describe('Soc2EvidenceService — CC6.6 public exposure (S3, enhanced-check base
       compliance_issues: [{ severity: 'critical', category: 'public_access', issue: 'S3 bucket ACL allows public read access', recommendation: 'x' }],
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.6');
     const obs = observations.find((o) => o.resource_arn === bucket);
 
@@ -208,7 +211,7 @@ describe('Soc2EvidenceService — CC6.6 public exposure (S3, enhanced-check base
     await insertDiscoveryJob(orgId, true);
     const bucket = await insertResource(orgId, { resource_type: 's3', is_public: false, compliance_issues: [] });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.6');
     const obs = observations.find((o) => o.resource_arn === bucket);
 
@@ -220,7 +223,7 @@ describe('Soc2EvidenceService — CC6.6 public exposure (S3, enhanced-check base
     await insertDiscoveryJob(orgId, false);
     const bucket = await insertResource(orgId, { resource_type: 's3', is_public: false, compliance_issues: [] });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.6');
     const obs = observations.find((o) => o.resource_arn === bucket);
 
@@ -232,7 +235,7 @@ describe('Soc2EvidenceService — CC6.6 public exposure (S3, enhanced-check base
     const orgId = await insertOrg();
     const bucket = await insertResource(orgId, { resource_type: 's3', is_public: false, compliance_issues: [] });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.6');
     const obs = observations.find((o) => o.resource_arn === bucket);
 
@@ -249,7 +252,7 @@ describe('Soc2EvidenceService — CC6.6 public exposure (S3, enhanced-check base
       compliance_issues: [{ severity: 'critical', category: 'public_access', issue: 'S3 bucket policy allows public access (wildcard principal)', recommendation: 'x' }],
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.6');
     const obs = observations.find((o) => o.resource_arn === bucket);
 
@@ -376,7 +379,7 @@ describe('Soc2EvidenceService — CC9.1 AWS Backup', () => {
     const notBackedUp = await insertResource(orgId, { resource_type: 'ec2', has_backup: false });
     const unknown = await insertResource(orgId, { resource_type: 'rds', has_backup: null });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC9.1');
 
     expect(observations.find((o) => o.resource_arn === backedUp)?.result).toBe('SUPPORTS');
@@ -395,7 +398,7 @@ describe('Soc2EvidenceService — CC6.2 IAM MFA', () => {
       evidence: { schema_version: 1, resource_type: 'iam_user', finding_type: 'mfa_not_enabled', relevant_aws_attributes: { has_login_profile: true, mfa_device_count: 0 } },
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.2');
     const obs = observations.find((o) => o.resource_arn === userArn);
 
@@ -408,7 +411,7 @@ describe('Soc2EvidenceService — CC6.2 IAM MFA', () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, false);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.2');
     const aggregate = observations.find((o) => o.resource_arn === null);
 
@@ -420,7 +423,7 @@ describe('Soc2EvidenceService — CC6.2 IAM MFA', () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, true);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.2');
     const aggregate = observations.find((o) => o.resource_arn === null);
 
@@ -440,7 +443,7 @@ describe('Soc2EvidenceService — CC6.2 IAM MFA', () => {
       evidence: { schema_version: 1, resource_type: 'iam_user', finding_type: 'mfa_not_enabled', relevant_aws_attributes: { has_login_profile: true, mfa_device_count: 0 } },
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.2');
 
     expect(observations.filter((o) => o.result === 'SUPPORTS')).toHaveLength(0);
@@ -462,7 +465,7 @@ describe('Soc2EvidenceService — CC6.2 IAM MFA', () => {
       evidence: { schema_version: 1, resource_type: 'iam_user', finding_type: 'some_other_iam_finding_type', relevant_aws_attributes: {} },
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.2');
 
     expect(observations.find((o) => o.resource_arn === userArn)).toBeUndefined();
@@ -483,7 +486,7 @@ describe('Soc2EvidenceService — CC6.3 stale access keys', () => {
       },
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.3');
     const obs = observations.find((o) => o.resource_arn === `${userArn}#access-key#AKIASTALE123`);
 
@@ -504,7 +507,7 @@ describe('Soc2EvidenceService — CC6.3 stale access keys', () => {
       evidence: { schema_version: 1, resource_type: 'iam_access_key', finding_type: 'access_key_stale', relevant_aws_attributes: { access_key_id: 'AKIATWO', age_in_days: 200, key_status: 'Active' } },
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.3');
     const perKey = observations.filter((o) => o.resource_arn?.startsWith(userArn));
 
@@ -519,7 +522,7 @@ describe('Soc2EvidenceService — CC6.3 stale access keys', () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, false);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.3');
     const aggregate = observations.find((o) => o.resource_arn === null);
 
@@ -536,7 +539,7 @@ describe('Soc2EvidenceService — CC6.3 stale access keys', () => {
       evidence: { schema_version: 1, resource_type: 'iam_user', finding_type: 'some_other_iam_finding_type', relevant_aws_attributes: {} },
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.3');
 
     expect(observations.find((o) => o.resource_arn?.startsWith(userArn))).toBeUndefined();
@@ -567,7 +570,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
     const sgArn = 'arn:aws:ec2:us-east-1:1:security-group/sg-open';
     await insertFinding(orgId, { category: 'networking', resource_identifier: sgArn, evidence: unrestrictedIngressEvidence() });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
     const obs = observations.find((o) => o.resource_arn === sgArn);
 
@@ -585,7 +588,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
       evidence: unrestrictedIngressEvidence({ ip_version: 'v6', cidr: '::/0' }),
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
 
     expect(observations.find((o) => o.resource_arn === sgArn)?.result).toBe('CONTRADICTS');
@@ -599,7 +602,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
     // ingress finding merely because it shares the category label.
     await insertFinding(orgId, { category: 'networking', resource_identifier: sgArn });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
 
     expect(observations.find((o) => o.resource_arn === sgArn)).toBeUndefined();
@@ -614,7 +617,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
     await insertFinding(orgId, { category: 'networking', resource_identifier: egressArn, evidence: unrestrictedIngressEvidence({ direction: 'egress' }) });
     await insertFinding(orgId, { category: 'networking', resource_identifier: narrowCidrArn, evidence: unrestrictedIngressEvidence({ cidr: '10.0.0.0/8' }) });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
 
     expect(observations.find((o) => o.resource_arn === egressArn)).toBeUndefined();
@@ -626,7 +629,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, true);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
     const aggregate = observations.find((o) => o.resource_arn === null);
 
@@ -637,7 +640,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, false);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
     const aggregate = observations.find((o) => o.resource_arn === null);
 
@@ -648,7 +651,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
     const orgId = await insertOrg();
     // Deliberately no insertDiscoveryJob() call -- completeness cannot be established.
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
     const aggregate = observations.find((o) => o.resource_arn === null);
 
@@ -661,7 +664,7 @@ describe('Soc2EvidenceService — CC7.1 unrestricted security-group ingress (nar
     const sgArn = 'arn:aws:ec2:us-east-1:1:security-group/sg-resolved';
     await insertFinding(orgId, { category: 'networking', resource_identifier: sgArn, status: 'resolved', evidence: unrestrictedIngressEvidence() });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
 
     expect(observations.find((o) => o.resource_arn === sgArn)).toBeUndefined();
@@ -676,7 +679,7 @@ describe('Soc2EvidenceService — freshness', () => {
     const before = new Date();
     await insertResource(orgId, { resource_type: 's3', is_encrypted: true });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await repository.getObservations(orgId);
     const after = new Date();
 
@@ -700,7 +703,7 @@ describe('Soc2EvidenceService — evaluation rollup', () => {
     await insertResource(orgId, { resource_type: 's3', is_encrypted: false });
     await insertResource(orgId, { resource_type: 's3', is_encrypted: null });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const evaluations = await repository.getControlEvaluations(orgId);
     const cc61 = evaluations.find((e) => e.criterion_id === 'CC6.1')!;
 
@@ -719,8 +722,8 @@ describe('Soc2EvidenceService — evaluation rollup', () => {
     const orgId = await insertOrg();
     await insertResource(orgId, { resource_type: 's3', is_encrypted: true });
 
-    await service.computeAndPersistEvidence(orgId);
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
 
     const evaluations = await repository.getControlEvaluations(orgId);
     const cc61 = evaluations.find((e) => e.criterion_id === 'CC6.1')!;
@@ -729,7 +732,7 @@ describe('Soc2EvidenceService — evaluation rollup', () => {
 
   it('every configured criterion gets an evaluation row, even with zero matching resources', async () => {
     const orgId = await insertOrg();
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const evaluations = await repository.getControlEvaluations(orgId);
     expect(evaluations.map((e) => e.criterion_id).sort()).toEqual(['CC6.1', 'CC6.2', 'CC6.3', 'CC6.6', 'CC7.1', 'CC9.1']);
   });
@@ -741,7 +744,7 @@ describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows
     const arnA = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: true });
     const arnB = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: true });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const afterRun1 = await observationsFor(orgId, 'CC6.1');
     expect(afterRun1.find((o) => o.resource_arn === arnA)).toBeDefined();
     expect(afterRun1.find((o) => o.resource_arn === arnB)).toBeDefined();
@@ -751,7 +754,7 @@ describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows
     // filters on (status != 'terminated').
     await pool.query(`UPDATE aws_resources SET status = 'terminated' WHERE resource_arn = $1`, [arnB]);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const afterRun2 = await observationsFor(orgId, 'CC6.1');
 
     expect(afterRun2.find((o) => o.resource_arn === arnA)).toBeDefined();
@@ -762,12 +765,12 @@ describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows
     const orgId = await insertOrg();
     const arn = await insertResource(orgId, { resource_type: 's3', is_encrypted: true });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     expect((await observationsFor(orgId, 'CC6.1')).find((o) => o.resource_arn === arn)).toBeDefined();
 
     await pool.query(`UPDATE aws_resources SET status = 'terminated' WHERE resource_arn = $1`, [arn]);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC6.1');
     expect(observations.find((o) => o.resource_type === 's3')).toBeUndefined();
   });
@@ -782,7 +785,7 @@ describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows
       evidence: { schema_version: 1, resource_type: 'iam_user', finding_type: 'mfa_not_enabled', relevant_aws_attributes: { has_login_profile: true, mfa_device_count: 0 } },
     });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const afterRun1 = await observationsFor(orgId, 'CC6.2');
     expect(afterRun1.find((o) => o.resource_arn === userArn)?.result).toBe('CONTRADICTS');
     expect(afterRun1.find((o) => o.resource_arn === null)).toBeDefined();
@@ -791,7 +794,7 @@ describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows
     // readActiveFindings() no longer returns it.
     await pool.query(`UPDATE account_security_findings SET status = 'resolved' WHERE resource_identifier = $1`, [userArn]);
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const afterRun2 = await observationsFor(orgId, 'CC6.2');
 
     expect(afterRun2.find((o) => o.resource_arn === userArn)).toBeUndefined();
@@ -809,7 +812,7 @@ describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows
     const sgArn = 'arn:aws:ec2:us-east-1:1:security-group/sg-still-open';
     await insertFinding(orgId, { category: 'networking', resource_identifier: sgArn, evidence: unrestrictedIngressEvidence() });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     expect((await observationsFor(orgId, 'CC7.1')).find((o) => o.resource_arn === sgArn)?.result).toBe('CONTRADICTS');
 
     // Nothing about this finding changed -- exactly what a run where EC2/S3/etc.
@@ -817,7 +820,7 @@ describe('Soc2EvidenceService — Phase 5 observation reconciliation (stale rows
     // like from this service's point of view (see buildReconciliationScopes()'s own
     // docblock: a failed scan never touches the source tables, so this run's read is
     // identical to the last one). Recomputing must not treat that as disappearance.
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const observations = await observationsFor(orgId, 'CC7.1');
 
     expect(observations.find((o) => o.resource_arn === sgArn)?.result).toBe('CONTRADICTS');
@@ -830,13 +833,13 @@ describe('Soc2EvidenceService — Phase 5 idempotency after resource disappearan
     const arnA = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: true });
     const arnB = await insertResource(orgId, { resource_type: 'ec2', is_encrypted: false });
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     await pool.query(`UPDATE aws_resources SET status = 'terminated' WHERE resource_arn = $1`, [arnB]);
 
     // Repeated scheduled trigger: run several times in a row after the disappearance.
-    await service.computeAndPersistEvidence(orgId);
-    await service.computeAndPersistEvidence(orgId);
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
 
     const observations = await observationsFor(orgId, 'CC6.1');
     expect(observations.filter((o) => o.resource_type === 'ec2')).toHaveLength(1);
@@ -854,8 +857,8 @@ describe('Soc2EvidenceService — Phase 5 concurrency guard', () => {
     await insertResource(orgId, { resource_type: 's3', is_encrypted: true });
 
     await Promise.all([
-      service.computeAndPersistEvidence(orgId),
-      service.computeAndPersistEvidence(orgId),
+      service.computeAndPersistEvidence(orgId, leases.of(orgId)),
+      service.computeAndPersistEvidence(orgId, leases.of(orgId)),
     ]);
 
     const observations = await observationsFor(orgId, 'CC6.1');
@@ -875,8 +878,8 @@ describe('Soc2EvidenceService — Phase 5 concurrency guard', () => {
 
     await expect(
       Promise.all([
-        service.computeAndPersistEvidence(orgA),
-        service.computeAndPersistEvidence(orgB),
+        service.computeAndPersistEvidence(orgA, leases.of(orgA)),
+        service.computeAndPersistEvidence(orgB, leases.of(orgB)),
       ])
     ).resolves.toBeDefined();
 
@@ -894,7 +897,7 @@ describe('Soc2EvidenceService — Phase 5 evaluation atomicity', () => {
 
     // Establish a real, valid prior evaluation state to prove it survives a failed
     // recompute untouched.
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const before = await repository.getControlEvaluations(orgId);
     expect(before).toHaveLength(6);
 
@@ -913,7 +916,7 @@ describe('Soc2EvidenceService — Phase 5 evaluation atomicity', () => {
     ];
 
     await expect(
-      repository.persistComputation(orgId, freshObservations, [], brokenEvaluations)
+      repository.persistComputation(orgId, freshObservations, [], brokenEvaluations, leases.of(orgId))
     ).rejects.toThrow();
 
     const afterFailedAttempt = await repository.getControlEvaluations(orgId);
@@ -922,13 +925,14 @@ describe('Soc2EvidenceService — Phase 5 evaluation atomicity', () => {
     expect(afterFailedAttempt).toEqual(before);
 
     // Retry with the real (valid) computation succeeds and produces a full, correct set.
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
     const afterRetry = await repository.getControlEvaluations(orgId);
     expect(afterRetry).toHaveLength(6);
   });
 });
 
 afterAll(async () => {
+  await leases.cleanup();
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }

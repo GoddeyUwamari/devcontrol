@@ -10,7 +10,7 @@ import { Pool } from 'pg';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { stubScanSource } from './helpers/scan-source';
+import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
@@ -34,6 +34,8 @@ async function insertOrgWithInstanceMissingOnce(): Promise<string> {
   );
   const orgId = rows[0].id as string;
   createdOrgIds.push(orgId);
+  // A scan leases this account and its fences check it (multi-region plan M4b).
+  await connectPlaceholderAccount(pool, orgId);
   await pool.query(
     `INSERT INTO aws_resources
        (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, missing_scan_count)
@@ -92,6 +94,7 @@ afterEach(() => {
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

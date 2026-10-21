@@ -17,6 +17,7 @@ import { CostRecommendationsController } from '../cost-recommendations.controlle
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import costOptimizationService from '../../services/cost-optimization.service';
 import type { CostRecommendation, RecommendationStats } from '../../types';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from '../../services/__tests__/helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -45,6 +46,8 @@ async function insertOrg(): Promise<string> {
     [`Cost Recs Funnel Org ${suffix}`, `cost-recs-funnel-org-${suffix}`, `Cost Recs Funnel Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan leases this account and its fences check it (multi-region plan M4b).
+  await connectPlaceholderAccount(pool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -107,6 +110,7 @@ function mockReqRes(organizationId: string, userId: string, query: any = {}) {
 
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   if (createdUserIds.length > 0) {

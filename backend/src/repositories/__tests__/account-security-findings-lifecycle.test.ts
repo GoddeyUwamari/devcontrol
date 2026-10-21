@@ -17,6 +17,7 @@ import {
 } from '../account-security-findings.repository';
 import { SecurityGroupEvidence, IamAccessKeyEvidence } from '../../types/aws-resources.types';
 import { computeIamFindingKey } from '../../utils/iamFindingKey';
+import { TestLeases } from '../../services/__tests__/helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -31,6 +32,7 @@ function dbConfig() {
 const pool = new Pool(dbConfig());
 const repository = new AccountSecurityFindingsRepository();
 const createdOrgIds: string[] = [];
+const leases = new TestLeases(pool);
 const createdUserIds: string[] = [];
 
 function uniqueSuffix(): string {
@@ -46,6 +48,7 @@ async function insertOrg(): Promise<string> {
     [`SG Findings Org ${suffix}`, `sg-findings-org-${suffix}`, `SG Findings Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  await leases.hold(rows[0].id);
   return rows[0].id as string;
 }
 
@@ -103,6 +106,7 @@ function fakeFinding(overrides: Partial<NewAccountFinding> = {}): NewAccountFind
 }
 
 afterAll(async () => {
+  await leases.cleanup();
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
@@ -134,7 +138,7 @@ describe('reconcileScan — basic insert/no-duplicate (tests 10-11)', () => {
     const orgId = await insertOrg();
     const key = `key-${uniqueSuffix()}`;
 
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })]);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgId));
 
     const row = await fetchRow(orgId, key);
     expect(row.status).toBe('active');
@@ -146,8 +150,8 @@ describe('reconcileScan — basic insert/no-duplicate (tests 10-11)', () => {
     const orgId = await insertOrg();
     const key = `key-${uniqueSuffix()}`;
 
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })]);
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })]);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgId));
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgId));
 
     await pool.query("SELECT set_config('app.current_organization_id', $1, false)", [orgId]);
     const { rows } = await pool.query(
@@ -163,10 +167,10 @@ describe('category-scoped completeness (tests 12-15)', () => {
     const orgId = await insertOrg();
     const key = `key-${uniqueSuffix()}`;
     const t0 = new Date();
-    await repository.reconcileScan(orgId, t0, [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, t0, [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
 
     const t1 = new Date();
-    await repository.reconcileScan(orgId, t1, [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, t1, [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
 
     const row = await fetchRow(orgId, key);
     expect(row.status).toBe('active');
@@ -175,10 +179,10 @@ describe('category-scoped completeness (tests 12-15)', () => {
   it('a complete scan without the finding resolves it', async () => {
     const orgId = await insertOrg();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
 
     const later = new Date();
-    await repository.reconcileScan(orgId, later, [], ['networking']);
+    await repository.reconcileScan(orgId, later, [], ['networking'], undefined, leases.of(orgId));
 
     const row = await fetchRow(orgId, key);
     expect(row.status).toBe('resolved');
@@ -188,11 +192,11 @@ describe('category-scoped completeness (tests 12-15)', () => {
   it('an incomplete scan does not resolve an absent finding', async () => {
     const orgId = await insertOrg();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
 
     const later = new Date();
     // networking NOT in completeCategories -> absence must not resolve it
-    await repository.reconcileScan(orgId, later, [], []);
+    await repository.reconcileScan(orgId, later, [], [], undefined, leases.of(orgId));
 
     const row = await fetchRow(orgId, key);
     expect(row.status).toBe('active');
@@ -206,13 +210,13 @@ describe('category-scoped completeness (tests 12-15)', () => {
       orgId,
       new Date(),
       [fakeFinding({ findingKey: staleKey }), fakeFinding({ findingKey: stillDetectedKey })],
-      ['networking']
+      ['networking'], undefined, leases.of(orgId)
     );
 
     const later = new Date();
     // Simulates a partial/failed scan: only stillDetectedKey observed, category
     // marked incomplete because the scan didn't finish.
-    await repository.reconcileScan(orgId, later, [fakeFinding({ findingKey: stillDetectedKey })], []);
+    await repository.reconcileScan(orgId, later, [fakeFinding({ findingKey: stillDetectedKey })], [], undefined, leases.of(orgId));
 
     expect((await fetchRow(orgId, staleKey)).status).toBe('active');
     expect((await fetchRow(orgId, stillDetectedKey)).status).toBe('active');
@@ -229,12 +233,12 @@ describe('category-scoped completeness (tests 12-15)', () => {
         fakeFinding({ findingKey: networkingKey, category: 'networking' }),
         fakeFinding({ findingKey: iamKey, category: 'iam', region: undefined }),
       ],
-      ['networking', 'iam']
+      ['networking', 'iam'], undefined, leases.of(orgId)
     );
 
     const later = new Date();
     // networking incomplete this time, iam complete and finds nothing
-    await repository.reconcileScan(orgId, later, [], ['iam']);
+    await repository.reconcileScan(orgId, later, [], ['iam'], undefined, leases.of(orgId));
 
     expect((await fetchRow(orgId, networkingKey)).status).toBe('active');
     expect((await fetchRow(orgId, iamKey)).status).toBe('resolved');
@@ -246,7 +250,7 @@ describe('disposition mutations (tests 16-19)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })]);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
 
     const result = await repository.setDisposition(orgId, row.id, 'acknowledged', userId, null);
@@ -264,7 +268,7 @@ describe('disposition mutations (tests 16-19)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })]);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
 
     const result = await repository.setDisposition(orgId, row.id, 'dismissed', userId, 'False positive — internal-only IP range');
@@ -281,7 +285,7 @@ describe('disposition mutations (tests 16-19)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })]);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
 
     const result = await repository.setDisposition(orgId, row.id, 'accepted_risk', userId, 'Approved by security team, ticket SEC-123');
@@ -296,7 +300,7 @@ describe('disposition mutations (tests 16-19)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })]);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgId));
     const before = await fetchRow(orgId, key);
 
     await repository.setDisposition(orgId, before.id, 'acknowledged', userId, null);
@@ -313,13 +317,13 @@ describe('recurrence and race-ordering invariants (tests 20-25)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
     await repository.setDisposition(orgId, row.id, 'accepted_risk', userId, 'Known, accepted');
 
     // Rescan still detects the same finding
     const later = new Date();
-    await repository.reconcileScan(orgId, later, [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, later, [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
 
     const after = await fetchRow(orgId, key);
     expect(after.status).toBe('active');
@@ -332,18 +336,18 @@ describe('recurrence and race-ordering invariants (tests 20-25)', () => {
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
     const t0 = new Date();
-    await repository.reconcileScan(orgId, t0, [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, t0, [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
     await repository.setDisposition(orgId, row.id, 'dismissed', userId, 'Thought it was fine');
 
     // Complete scan without the finding -> verified resolved
     const t1 = new Date();
-    await repository.reconcileScan(orgId, t1, [], ['networking']);
+    await repository.reconcileScan(orgId, t1, [], ['networking'], undefined, leases.of(orgId));
     expect((await fetchRow(orgId, key)).status).toBe('resolved');
 
     // Same canonical finding recurs later
     const t2 = new Date();
-    await repository.reconcileScan(orgId, t2, [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, t2, [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
 
     const recurred = await fetchRow(orgId, key);
     expect(recurred.status).toBe('active');
@@ -356,11 +360,11 @@ describe('recurrence and race-ordering invariants (tests 20-25)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
 
     const later = new Date();
-    await repository.reconcileScan(orgId, later, [], ['networking']);
+    await repository.reconcileScan(orgId, later, [], ['networking'], undefined, leases.of(orgId));
     expect((await fetchRow(orgId, key)).status).toBe('resolved');
 
     const result = await repository.setDisposition(orgId, row.id, 'acknowledged', userId, null);
@@ -379,11 +383,11 @@ describe('recurrence and race-ordering invariants (tests 20-25)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
 
     // Scan runs first and resolves it
-    await repository.reconcileScan(orgId, new Date(), [], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [], ['networking'], undefined, leases.of(orgId));
 
     // A disposition request that was in flight before the scan committed arrives after
     const result = await repository.setDisposition(orgId, row.id, 'dismissed', userId, 'stale request');
@@ -395,13 +399,13 @@ describe('recurrence and race-ordering invariants (tests 20-25)', () => {
     const orgId = await insertOrg();
     const userId = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
     const row = await fetchRow(orgId, key);
 
     await repository.setDisposition(orgId, row.id, 'acknowledged', userId, null);
 
     // Scan runs after and still detects the same finding
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking']);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key })], ['networking'], undefined, leases.of(orgId));
 
     const after = await fetchRow(orgId, key);
     expect(after.status).toBe('active');
@@ -415,7 +419,7 @@ describe('organization isolation (test 26)', () => {
     const orgB = await insertOrg();
     const userB = await insertUser();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgA, new Date(), [fakeFinding({ findingKey: key })]);
+    await repository.reconcileScan(orgA, new Date(), [fakeFinding({ findingKey: key })], ['networking', 'iam'], undefined, leases.of(orgA));
     const row = await fetchRow(orgA, key);
 
     const activeInB = await repository.getActive(orgB);
@@ -430,7 +434,7 @@ describe('getActive projection (derived_status, evidence, framework_mapping)', (
   it('exposes derived_status, evidence, and the CIS framework mapping for an SSH finding', async () => {
     const orgId = await insertOrg();
     const key = `key-${uniqueSuffix()}`;
-    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key, evidence: fakeEvidence({ from_port: 22, to_port: 22 }) })]);
+    await repository.reconcileScan(orgId, new Date(), [fakeFinding({ findingKey: key, evidence: fakeEvidence({ from_port: 22, to_port: 22 }) })], ['networking', 'iam'], undefined, leases.of(orgId));
 
     const [finding] = await repository.getActive(orgId, { limit: 1 });
     expect(finding.derived_status).toBe('active');
@@ -443,7 +447,7 @@ describe('getActive projection (derived_status, evidence, framework_mapping)', (
     const key = `key-${uniqueSuffix()}`;
     await repository.reconcileScan(orgId, new Date(), [
       fakeFinding({ findingKey: key, evidence: fakeEvidence({ from_port: 8080, to_port: 8080 }) }),
-    ]);
+    ], ['networking', 'iam'], undefined, leases.of(orgId));
 
     const [finding] = await repository.getActive(orgId, { limit: 1 });
     expect(finding.framework_mapping).toBeNull();
@@ -499,7 +503,7 @@ describe('IAM access-key finding identity — bug-fix regression coverage', () =
     const userId = await insertUser();
 
     // Day 91: key first crosses the 90-day threshold.
-    await repository.reconcileScan(orgId, new Date(), [fakeIamAccessKeyFinding(91, 'medium')], ['iam']);
+    await repository.reconcileScan(orgId, new Date(), [fakeIamAccessKeyFinding(91, 'medium')], ['iam'], undefined, leases.of(orgId));
     const firstRow = await fetchRow(orgId, computeIamFindingKey({
       findingType: 'access_key_stale',
       userArn: 'arn:aws:iam::123456789012:user/stale-key-user',
@@ -512,7 +516,7 @@ describe('IAM access-key finding identity — bug-fix regression coverage', () =
     // 90 days later: the SAME key, now 181 days old — a later scan reports it
     // with the same finding_key (per computeIamFindingKey) but escalated severity.
     const later = new Date();
-    await repository.reconcileScan(orgId, later, [fakeIamAccessKeyFinding(181, 'high')], ['iam']);
+    await repository.reconcileScan(orgId, later, [fakeIamAccessKeyFinding(181, 'high')], ['iam'], undefined, leases.of(orgId));
 
     const secondRow = await fetchRow(orgId, computeIamFindingKey({
       findingType: 'access_key_stale',

@@ -93,6 +93,7 @@
  */
 import { Pool, PoolClient } from 'pg';
 import { Soc2EvidenceRepository } from '../repositories/soc2-evidence.repository';
+import type { HeldLease } from './scan-lease';
 import { SOC2_V1_CRITERIA, Soc2CriterionConfig } from '../config/soc2CriteriaConfig';
 import {
   Soc2ControlEvaluation,
@@ -198,9 +199,10 @@ export class Soc2EvidenceService {
    * persists the control-evaluation rollup for all six criteria. Zero AWS calls --
    * reads only. The entire persist step (reconciliation + observation upserts + all
    * six evaluation upserts) is one atomic transaction guarded by a per-organization
-   * advisory lock -- see Soc2EvidenceRepository.persistComputation().
+   * advisory lock -- see Soc2EvidenceRepository.persistComputation() -- and fenced
+   * with `jobLease`, the cron's job lease (multi-region plan M4b F14; required).
    */
-  async computeAndPersistEvidence(organizationId: string): Promise<void> {
+  async computeAndPersistEvidence(organizationId: string, jobLease: HeldLease): Promise<void> {
     const collectedAt = new Date();
 
     const [resources, activeFindings, discoveryComplete] = await Promise.all([
@@ -224,7 +226,7 @@ export class Soc2EvidenceService {
 
     const reconciliationScopes = this.buildReconciliationScopes(observations);
 
-    await this.repository.persistComputation(organizationId, observations, reconciliationScopes, evaluations);
+    await this.repository.persistComputation(organizationId, observations, reconciliationScopes, evaluations, jobLease);
   }
 
   /**

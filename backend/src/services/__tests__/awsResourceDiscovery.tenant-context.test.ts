@@ -20,7 +20,8 @@ import { Pool, PoolClient } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { OrphanedResourceDetectorService } from '../orphanedResourceDetector';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { stubScanSource } from './helpers/scan-source';
+import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 import costOptimizationService from '../cost-optimization.service';
 import { securityAuditService } from '../securityAudit.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
@@ -57,6 +58,8 @@ async function insertOrg(label: string): Promise<string> {
     [`Discovery Tenant ${s}`, `discovery-tenant-${s}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan leases this account and its fences check it (multi-region plan M4b).
+  await connectPlaceholderAccount(admin, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -113,6 +116,8 @@ function mockCollaborators(onCreateClients?: () => Promise<void> | void) {
 }
 
 beforeAll(async () => {
+  // Before the grants below, so the role can read it (the scan fences check the account).
+  await ensureSharedFixtureTable(admin, 'aws_accounts');
   await admin.query(`CREATE ROLE ${ROLE} NOSUPERUSER NOBYPASSRLS`);
   await admin.query(`GRANT USAGE ON SCHEMA public TO ${ROLE}`);
   await admin.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${ROLE}`);
@@ -122,6 +127,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await Promise.all(rolePools.map((p) => p.end()));
   if (createdOrgIds.length > 0) {
+    await removePlaceholderAccounts(admin, createdOrgIds);
     await admin.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await admin.query(`DROP OWNED BY ${ROLE}`);
@@ -222,7 +228,16 @@ describe('H2 -- discovery started from inside a request never uses the request\'
     // the ambient requestContext for the request's lifetime.
     const requestClient = await p.connect();
     await requestClient.query("SELECT set_config('app.current_organization_id', $1, false)", [orgId]);
-    const requestClientQuery = jest.spyOn(requestClient, 'query');
+    // Queries made on the request's client while it is the ambient context. The
+    // pool hands the same physical connection out again once the request has
+    // released it (the scan lease's heartbeat checks out its own connection,
+    // multi-region plan M4b): such a fresh checkout is not ambient use.
+    const ambientQueries: unknown[] = [];
+    const unwrappedQuery = requestClient.query.bind(requestClient);
+    jest.spyOn(requestClient, 'query').mockImplementation(((...args: unknown[]) => {
+      if (requestContext.getStore() === requestClient) ambientQueries.push(args[0]);
+      return (unwrappedQuery as (...a: unknown[]) => unknown)(...args);
+    }) as never);
 
     let ambientDuringDiscovery: PoolClient | undefined;
     let ambientTag: string | null = null;
@@ -256,7 +271,7 @@ describe('H2 -- discovery started from inside a request never uses the request\'
     // Nothing discovery did -- ambient pool.query() included -- touched the
     // request client. (The tenant-tag reset its own release() issues goes
     // through the unwrapped query captured at checkout, so it isn't counted.)
-    expect(requestClientQuery).not.toHaveBeenCalled();
+    expect(ambientQueries).toEqual([]);
     expect(await orphanState(resourceId)).toEqual({ is_orphaned: true, savings: 0 });
   });
 });

@@ -14,7 +14,7 @@
 import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { stubScanSource } from './helpers/scan-source';
+import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import { ComplianceScannerService } from '../complianceScanner';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
@@ -45,6 +45,8 @@ async function insertOrg(): Promise<string> {
     [`S3 Security Org ${suffix}`, `s3-security-org-${suffix}`, `S3 Security Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan leases this account and its fences check it (multi-region plan M4b).
+  await connectPlaceholderAccount(pool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -132,6 +134,7 @@ afterEach(() => {
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

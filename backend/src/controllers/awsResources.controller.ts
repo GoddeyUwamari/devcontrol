@@ -6,6 +6,7 @@ import { AWSResourcesExportService } from '../services/awsResourcesExport.servic
 import { ApiResponse } from '../types/api.types';
 import { ResourceFilters } from '../types/aws-resources.types';
 import { ExportFormat, ExportColumn } from '../types/export.types';
+import { isScanAlreadyRunning } from '../services/scan-session';
 
 export class AWSResourcesController {
   private repository: AWSResourcesRepository;
@@ -213,6 +214,12 @@ export class AWSResourcesController {
           console.log('[Discovery] Completed:', result);
         })
         .catch(error => {
+          // A scan for this account is already running (multi-region plan M4b, §4.6):
+          // skipped. The response below still holds: a scan is running.
+          if (isScanAlreadyRunning(error)) {
+            console.log(`[Discovery] Skipped for org ${organizationId}: a scan is already running`);
+            return;
+          }
           console.error('[Discovery] Failed:', error);
         });
 

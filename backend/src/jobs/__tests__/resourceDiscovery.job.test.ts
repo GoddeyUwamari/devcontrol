@@ -41,6 +41,10 @@ import { ResourceDiscoveryJob } from '../resourceDiscovery.job';
 import { PlatformAwsCredentialsUnavailableError } from '../../services/platform-sts';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
+/** SOC 2 is computed with the organization's job lease (multi-region plan M4b, F14). */
+const jobLeaseOf = (organizationId: string) =>
+  expect.objectContaining({ key: { table: 'job_leases', organizationId, jobName: 'resource_discovery' } });
+
 function dbConfig() {
   return {
     host: process.env.DB_HOST || 'localhost',
@@ -124,7 +128,7 @@ describe('ResourceDiscoveryJob — SOC 2 evidence trigger integration (Phase 5, 
     await job.triggerManualScan();
 
     expect(mockDiscoverAllResources).toHaveBeenCalledWith(org.id);
-    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(org.id);
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(org.id, jobLeaseOf(org.id));
   });
 
   it('a partially-erred but non-throwing discovery result (e.g. cost-analysis failed) still triggers SOC 2 computation', async () => {
@@ -135,7 +139,7 @@ describe('ResourceDiscoveryJob — SOC 2 evidence trigger integration (Phase 5, 
 
     await job.triggerManualScan();
 
-    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(org.id);
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(org.id, jobLeaseOf(org.id));
   });
 
   it('does NOT call computeAndPersistEvidence for an organization whose discoverAllResources call throws', async () => {
@@ -147,7 +151,7 @@ describe('ResourceDiscoveryJob — SOC 2 evidence trigger integration (Phase 5, 
 
     await job.triggerManualScan();
 
-    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalledWith(org.id);
+    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalledWith(org.id, expect.anything());
   });
 
   it('a SOC 2 computation failure does not throw out of the job and does not stop the loop', async () => {
@@ -164,8 +168,8 @@ describe('ResourceDiscoveryJob — SOC 2 evidence trigger integration (Phase 5, 
     // attempt simply failed internally without aborting the sweep.
     expect(mockDiscoverAllResources).toHaveBeenCalledWith(orgA.id);
     expect(mockDiscoverAllResources).toHaveBeenCalledWith(orgB.id);
-    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgA.id);
-    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id);
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgA.id, jobLeaseOf(orgA.id));
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id, jobLeaseOf(orgB.id));
   });
 
   it("one organization's discovery failure does not prevent the next organization from being processed (discovery and SOC2 both)", async () => {
@@ -178,9 +182,9 @@ describe('ResourceDiscoveryJob — SOC 2 evidence trigger integration (Phase 5, 
 
     await job.triggerManualScan();
 
-    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalledWith(orgA.id);
+    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalledWith(orgA.id, expect.anything());
     expect(mockDiscoverAllResources).toHaveBeenCalledWith(orgB.id);
-    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id);
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id, jobLeaseOf(orgB.id));
   });
 
   it('calls discoverAllResources before computeAndPersistEvidence for the same organization (ordering)', async () => {
@@ -229,7 +233,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
 
     const summary = await job.scanOrganizations([org]);
 
-    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, platformFailed: 0, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, locked: 0, platformFailed: 0, notAttempted: 0 });
     expect(mockDiscoverAllResources).not.toHaveBeenCalled();
     expect(mockComputeAndPersistEvidence).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
@@ -249,7 +253,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
 
     const summary = await job.scanOrganizations([org]);
 
-    expect(summary).toEqual({ scanned: 0, skipped: 0, inactive: 1, failed: 0, platformFailed: 0, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 0, skipped: 0, inactive: 1, failed: 0, locked: 0, platformFailed: 0, notAttempted: 0 });
     expect(mockDiscoverAllResources).not.toHaveBeenCalled();
     expect(logged(warn)).toEqual([`[Resource Discovery Job] Skipping org ${org.id}: AWS connection status is ${status ?? 'null'}, not active`]);
     expect(error).not.toHaveBeenCalled();
@@ -265,14 +269,14 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
 
     const summary = await job.scanOrganizations([orgA, orgB]);
 
-    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 1, platformFailed: 0, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 1, locked: 0, platformFailed: 0, notAttempted: 0 });
     expect(logged(error)).toEqual([
       `[Resource Discovery Job] Failed for org ${orgA.id} (Error): AWS_NOT_CONNECTED: org ${orgA.id} has not connected an AWS account`,
     ]);
     expect(warn).not.toHaveBeenCalled();
     expect(mockDiscoverAllResources).toHaveBeenCalledWith(orgB.id);
-    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalledWith(orgA.id);
-    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id);
+    expect(mockComputeAndPersistEvidence).not.toHaveBeenCalledWith(orgA.id, expect.anything());
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(orgB.id, jobLeaseOf(orgB.id));
   });
 
   /** Every name, ARN and account ID below is a placeholder. */
@@ -306,9 +310,9 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
 
     const summary = await job.scanOrganizations([deniedA, deniedB, second]);
 
-    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 0, platformFailed: 2, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 0, locked: 0, platformFailed: 2, notAttempted: 0 });
     expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([deniedA.id, deniedB.id, second.id]);
-    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(second.id);
+    expect(mockComputeAndPersistEvidence).toHaveBeenCalledWith(second.id, jobLeaseOf(second.id));
     expect(logged(error)).toEqual([iamDenialLine(deniedA.id), iamDenialLine(deniedB.id)]);
   });
 
@@ -324,7 +328,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
 
     const summary = await job.scanOrganizations([credA, okA, credB, okB]);
 
-    expect(summary).toEqual({ scanned: 2, skipped: 0, inactive: 0, failed: 0, platformFailed: 2, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 2, skipped: 0, inactive: 0, failed: 0, locked: 0, platformFailed: 2, notAttempted: 0 });
     expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([credA.id, okA.id, credB.id, okB.id]);
     expect(logged(error)).toEqual([credentialFailureLine(credA.id), credentialFailureLine(credB.id)]);
   });
@@ -362,7 +366,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
 
     const summary = await job.scanOrganizations([credA, unconnected, credB, remainingConnected, remainingUnconnected]);
 
-    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, platformFailed: 2, notAttempted: 2 });
+    expect(summary).toEqual({ scanned: 0, skipped: 1, inactive: 0, failed: 0, locked: 0, platformFailed: 2, notAttempted: 2 });
     expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([credA.id, credB.id]);
     expect(mockComputeAndPersistEvidence).not.toHaveBeenCalled();
     expect(logged(error)).toEqual([
@@ -370,7 +374,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
       `[Resource Discovery Job] Platform AWS credentials unavailable for 2 organizations in a row (last org ${credB.id}); stopping this run, 2 remaining organizations not checked`,
     ]);
     expect(logged(log)).toContain(
-      '[Resource Discovery Job] Scanned 0, skipped 1 (no AWS connection), inactive 0, failed 0, platform_failed 2, 2 remaining not checked (stopped early)'
+      '[Resource Discovery Job] Scanned 0, skipped 1 (no AWS connection), inactive 0, failed 0, locked 0, platform_failed 2, 2 remaining not checked (stopped early)'
     );
   });
 
@@ -418,6 +422,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
       skipped: 0,
       inactive: between === 'inactive' ? 1 : 0,
       failed: between === 'check-failed' ? 1 : 0,
+      locked: 0,
       platformFailed: 2,
       notAttempted: 1,
     });
@@ -465,7 +470,7 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
       for (const [client, realQuery] of originals) client.query = realQuery;
     }
 
-    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 1, platformFailed: 0, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 1, skipped: 0, inactive: 0, failed: 1, locked: 0, platformFailed: 0, notAttempted: 0 });
     expect(mockDiscoverAllResources).not.toHaveBeenCalledWith(broken.id);
     expect(mockDiscoverAllResources).toHaveBeenCalledWith(healthy.id);
     const message = where === 'connect' ? 'placeholder: connection refused' : 'placeholder: relation is unavailable';
@@ -491,10 +496,10 @@ describe('ResourceDiscoveryJob — which organizations are scanned, and how each
 
     const summary = await job.scanOrganizations([scannedA, unconnectedA, inactive, failing, unconnectedB, platformFailing, scannedB]);
 
-    expect(summary).toEqual({ scanned: 2, skipped: 2, inactive: 1, failed: 1, platformFailed: 1, notAttempted: 0 });
+    expect(summary).toEqual({ scanned: 2, skipped: 2, inactive: 1, failed: 1, locked: 0, platformFailed: 1, notAttempted: 0 });
     const summaryLines = logged(log).filter((line) => line.startsWith('[Resource Discovery Job] Scanned '));
     expect(summaryLines).toEqual([
-      '[Resource Discovery Job] Scanned 2, skipped 2 (no AWS connection), inactive 1, failed 1, platform_failed 1',
+      '[Resource Discovery Job] Scanned 2, skipped 2 (no AWS connection), inactive 1, failed 1, locked 0, platform_failed 1',
     ]);
     expect(mockDiscoverAllResources.mock.calls.map(([id]) => id)).toEqual([scannedA.id, failing.id, platformFailing.id, scannedB.id]);
   });

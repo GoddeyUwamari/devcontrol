@@ -16,6 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
 import { Soc2EvidenceService } from '../soc2-evidence.service';
+import { TestLeases } from './helpers/scan-source';
 
 /** Strip block/line comments so this file's OWN explanatory comments (which legitimately
  * name calculateRiskScore/RiskTrackingService/the forbidden tables to document that they
@@ -87,6 +88,7 @@ describe('SOC 2 Evidence Layer — Risk Score isolation (live DB, behavioral)', 
   const pool = new Pool(dbConfig());
   const service = new Soc2EvidenceService(pool);
   const createdOrgIds: string[] = [];
+  const leases = new TestLeases(pool, 'job');
 
   function uniqueSuffix(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -100,6 +102,7 @@ describe('SOC 2 Evidence Layer — Risk Score isolation (live DB, behavioral)', 
       [`SOC2 Risk Isolation Org ${suffix}`, `soc2-risk-isolation-${suffix}`, `SOC2 Risk Isolation Org ${suffix}`]
     );
     createdOrgIds.push(rows[0].id);
+    await leases.hold(rows[0].id);
     return rows[0].id as string;
   }
 
@@ -125,7 +128,7 @@ describe('SOC 2 Evidence Layer — Risk Score isolation (live DB, behavioral)', 
     const beforeFinding = (await pool.query(`SELECT * FROM account_security_findings WHERE organization_id = $1 AND finding_key = $2`, [orgId, findingKey])).rows[0];
     const beforeRiskHistoryCount = (await pool.query(`SELECT COUNT(*) FROM risk_score_history WHERE organization_id = $1`, [orgId])).rows[0].count;
 
-    await service.computeAndPersistEvidence(orgId);
+    await service.computeAndPersistEvidence(orgId, leases.of(orgId));
 
     const afterResource = (await pool.query(`SELECT compliance_issues FROM aws_resources WHERE organization_id = $1 AND resource_arn = $2`, [orgId, arn])).rows[0];
     const afterFinding = (await pool.query(`SELECT * FROM account_security_findings WHERE organization_id = $1 AND finding_key = $2`, [orgId, findingKey])).rows[0];
@@ -138,6 +141,7 @@ describe('SOC 2 Evidence Layer — Risk Score isolation (live DB, behavioral)', 
   });
 
   afterAll(async () => {
+    await leases.cleanup();
     if (createdOrgIds.length > 0) {
       await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
     }

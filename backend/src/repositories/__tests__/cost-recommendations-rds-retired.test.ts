@@ -16,6 +16,7 @@ import costOptimizationService from '../../services/cost-optimization.service';
 import { AWSClientFactory } from '../../services/aws-client-factory.service';
 import { OptimizationRuleConfigService } from '../../services/optimization-rule-config.service';
 import { ISSUE_RDS_OVERSIZED_INSTANCE } from '../../config/optimization-rules';
+import { TestLeases } from '../../services/__tests__/helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -30,6 +31,7 @@ function dbConfig() {
 const pool = new Pool(dbConfig());
 const repository = new CostRecommendationsRepository();
 const createdOrgIds: string[] = [];
+const leases = new TestLeases(pool);
 
 async function insertOrg(): Promise<string> {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -40,6 +42,7 @@ async function insertOrg(): Promise<string> {
     [`RDS Retired Org ${suffix}`, `rds-retired-org-${suffix}`, `RDS Retired Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  await leases.hold(rows[0].id);
   return rows[0].id as string;
 }
 
@@ -100,6 +103,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  await leases.cleanup();
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
@@ -135,7 +139,7 @@ describe('retired oversized-RDS detector', () => {
     jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(mockClients(jest.fn()) as any);
     neutralizeOtherDetectors();
     const { observations } = await costOptimizationService.analyzeAllResources(orgId);
-    await repository.reconcileActiveRecommendations(orgId, observations);
+    await repository.reconcileActiveRecommendations(orgId, observations, undefined, leases.of(orgId));
 
     expect(await rdsRows(orgId)).toEqual(['dev-db-dismissed:DISMISSED', 'dev-db-resolved:RESOLVED']);
   });
@@ -148,7 +152,7 @@ describe('retired oversized-RDS detector', () => {
     neutralizeOtherDetectors();
     jest.spyOn(costOptimizationService as any, 'detectUnusedElasticIPs').mockResolvedValue({ success: false, issues: [] });
     const { observations } = await costOptimizationService.analyzeAllResources(orgId);
-    await repository.reconcileActiveRecommendations(orgId, observations);
+    await repository.reconcileActiveRecommendations(orgId, observations, undefined, leases.of(orgId));
 
     expect(await rdsRows(orgId)).toEqual([]);
   });
@@ -159,7 +163,7 @@ describe('retired oversized-RDS detector', () => {
 
     jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({ enabled: false } as any);
     const { observations } = await costOptimizationService.analyzeAllResources(orgId);
-    await repository.reconcileActiveRecommendations(orgId, observations);
+    await repository.reconcileActiveRecommendations(orgId, observations, undefined, leases.of(orgId));
 
     expect(observations).toEqual([]);
     expect(await rdsRows(orgId)).toEqual(['dev-db-active:ACTIVE']);
@@ -181,7 +185,7 @@ describe('retired oversized-RDS detector', () => {
 
     await repository.reconcileActiveRecommendations(orgId, [
       { issue: ISSUE_RDS_OVERSIZED_INSTANCE, success: false, recommendations: [] },
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect(await rdsRows(orgId)).toEqual(['dev-db-active:ACTIVE']);
   });

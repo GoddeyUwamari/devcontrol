@@ -4,6 +4,7 @@ import awsCostService from '../services/aws-cost.service'
 import { pool } from '../config/database'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
+import { isScanAlreadyRunning } from '../services/scan-session'
 import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents'
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
@@ -310,7 +311,12 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
 
     // Kick off initial resource discovery in the background.
     // Fire-and-forget so we don't block the 201 response (a full scan can take 30-120s).
+    // A scan for this account already running (multi-region plan M4b, §4.6) is skipped.
     discoveryService.discoverAllResources(orgId).catch(err => {
+      if (isScanAlreadyRunning(err)) {
+        console.log(`[Connect AWS] Initial discovery skipped for org ${orgId}: a scan for this account is already running`)
+        return
+      }
       console.error(`[Connect AWS] Initial discovery failed for org ${orgId}:`, err)
     })
 

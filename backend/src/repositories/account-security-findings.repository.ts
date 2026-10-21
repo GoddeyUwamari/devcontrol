@@ -4,6 +4,7 @@ import { pool } from '../config/database';
 import { ComplianceIssue, ComplianceSeverity, FindingEvidence } from '../types/aws-resources.types';
 import { getFrameworkMapping, FrameworkMapping } from '../config/securityFrameworkMappings';
 import { securityAuditService } from '../services/securityAudit.service';
+import { HeldLease, beginFenced } from '../services/scan-lease';
 
 export type AccountFindingCategory = 'networking' | 'iam';
 export type AccountFindingStatus = 'active' | 'resolved';
@@ -179,6 +180,9 @@ export class AccountSecurityFindingsRepository {
    * of another region is not this scan's to resolve (multi-region plan M4, §6.2). IAM
    * is global and has no region limit. Without it no region limit applies.
    *
+   * `lease` (multi-region plan M4b, F10; required): the transaction
+   * starts with the commit fence, so a worker that lost its lease changes nothing.
+   *
    * Runs in a single transaction on the org-tagged client so a mid-scan failure
    * doesn't leave findings half-reconciled.
    */
@@ -186,12 +190,14 @@ export class AccountSecurityFindingsRepository {
     organizationId: string,
     scanStartedAt: Date,
     findings: NewAccountFinding[],
-    completeCategories: AccountFindingCategory[] = ['networking', 'iam'],
-    homeRegion?: string
+    completeCategories: AccountFindingCategory[],
+    homeRegion: string | undefined,
+    lease: HeldLease
   ): Promise<{ active: number; resolved: number }> {
     const { resolvedIds, detectedIds } = await this.withOrgClient(organizationId, async (client) => {
       try {
         await client.query('BEGIN');
+        await beginFenced(client, lease);
 
         const detectedIds: string[] = [];
 
