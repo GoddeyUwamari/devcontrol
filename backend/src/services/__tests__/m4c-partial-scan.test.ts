@@ -45,12 +45,17 @@ import {
 } from '../discovery-warnings';
 import {
   ISSUE_DYNAMODB_CAPACITY,
+  ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   ISSUE_LAMBDA_LOW_USAGE,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
 } from '../../config/optimization-rules';
 import type { CreateRecommendationRequest } from '../../types';
+import * as dynamoTableUtil from '../dynamodb-table.util';
+import * as dynamoAutoscalingUtil from '../dynamodb-autoscaling.util';
+import * as capacityAnalysisUtil from '../dynamodb-capacity-analysis.util';
+import { checkAwsBackupRecoveryPoints } from '../aws-backup-evidence.util';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
 const pool = new Pool({
@@ -755,5 +760,227 @@ describe('two organizations with the same identifiers', () => {
     expect(await recs(orgB)).toEqual(before);
     const { rows } = await pool.query(`SELECT status FROM account_security_findings WHERE organization_id = $1`, [orgB]);
     expect(rows).toEqual([{ status: 'active' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 1 (F1-F4).
+
+/** A detector's issue as the request discovery and Analyze reconcile with. */
+function toRequest(issue: any): CreateRecommendationRequest {
+  return {
+    resource_id: issue.resourceId,
+    resource_name: issue.resourceName,
+    resource_type: issue.resourceType,
+    issue: issue.issue,
+    description: issue.description,
+    potential_savings: issue.potentialSavings,
+    severity: issue.severity,
+    aws_region: issue.awsRegion,
+    metadata: issue.metadata,
+  };
+}
+
+/** Runs one detector result through the reconcile, as a scan does. */
+async function reconcileResult(orgId: string, issue: string, result: { success: boolean; issues: any[]; unknownResourceIds?: string[] }) {
+  await repository.reconcileActiveRecommendations(
+    orgId,
+    [{ issue, success: result.success, recommendations: result.issues.map(toRequest), unknownResourceIds: result.unknownResourceIds }],
+    { homeRegion: HOME }
+  );
+}
+
+describe('F1: DynamoDB detectors treat too little data as unknown, never as "no issue"', () => {
+  const TABLE = 'table-gated';
+  const old = new Date(Date.now() - 400 * 24 * 3600 * 1000).toISOString();
+  const liveConfig = {
+    billing_mode: 'PROVISIONED', table_status: 'ACTIVE', creation_date_time: old,
+    provisioned_read_capacity: 500, provisioned_write_capacity: 200, table_class: 'STANDARD',
+    last_increase_date_time: old, last_decrease_date_time: old,
+  };
+  const clients = {
+    getDynamoDBClientForRegion: () => ({}),
+    getApplicationAutoScalingClientForRegion: () => ({}),
+    getCloudWatchClientForRegion: () => ({}),
+  };
+  const capacity = (overrides: Record<string, unknown> = {}) => ({
+    totalIntervals: 720, validUtilizationIntervals: 700, lowUtilizationIntervals: 700, lowUtilizationPercentage: 100,
+    highestHourlyAverageUtilizationPercent: 5, highestHourlyAverageThroughputPerSecond: 10,
+    throttleValidIntervals: 700, throttleConfirmedIntervals: 0, ...overrides,
+  });
+  const mode = (overrides: Record<string, unknown> = {}) => ({
+    totalIntervals: 720, validConsumedIntervals: 700, validProvisionedIntervals: 700, validUtilizationIntervals: 700,
+    averageUtilizationPercent: 10, highestObservedHourlyAverageThroughputPerSecond: 50, percentIntervalsBelowPeakFraction: 60,
+    sumConsumedRequestUnits: 1000, sumProvisionedCapacityUnitHours: 350_000, throttleValidIntervals: 700, throttleConfirmedIntervals: 0,
+    ...overrides,
+  });
+  const CAPACITY = { detector: 'detectDynamoDBCapacityOptimization', issue: ISSUE_DYNAMODB_CAPACITY, analyze: 'analyzeDynamoDBCapacityDimension' } as const;
+  const MODE = { detector: 'detectDynamoDBOnDemandVsProvisionedOptimization', issue: ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED, analyze: 'analyzeDynamoDBModeComparisonDimension' } as const;
+  type Detector = typeof CAPACITY | typeof MODE;
+
+  async function seedTable(orgId: string) {
+    await pool.query(
+      `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, metadata)
+       VALUES ($1, $2, $3, $3, 'dynamodb', $4, 'unknown', $5)`,
+      [orgId, `arn:aws:dynamodb:${HOME}:${ACCOUNT_ID}:table/${TABLE}`, TABLE, HOME,
+        JSON.stringify({ billing_mode: 'PROVISIONED', autoscaling_state: 'AUTOSCALING_DISABLED', creation_date_time: old })]
+    );
+  }
+
+  /** The table's live reads succeed; each dimension's analysis is `analysis`. */
+  function stubLive(detector: Detector, analysis: Record<string, unknown>) {
+    jest.spyOn(dynamoTableUtil, 'describeDynamoDBTable').mockResolvedValue({ status: 'described', config: liveConfig } as any);
+    jest.spyOn(dynamoAutoscalingUtil, 'describeDynamoDBAutoscaling').mockResolvedValue({
+      status: 'described', config: { autoscaling_state: 'AUTOSCALING_DISABLED', read_capacity_autoscaled: false, write_capacity_autoscaled: false },
+    } as any);
+    jest.spyOn(capacityAnalysisUtil, 'fetchDynamoDBCapacityMetrics').mockResolvedValue({ status: 'fetched', series: {} } as any);
+    jest.spyOn(capacityAnalysisUtil, detector.analyze).mockReturnValue(analysis as any);
+  }
+
+  async function scan(orgId: string, detector: Detector, analysis: Record<string, unknown>) {
+    stubLive(detector, analysis);
+    const result = await (costOptimizationService as any)[detector.detector](orgId, clients);
+    await reconcileResult(orgId, detector.issue, result);
+    return result;
+  }
+
+  it.each([
+    ['capacity: fewer valid utilization intervals than the floor', CAPACITY, capacity({ validUtilizationIntervals: 100 }), capacity()],
+    ['capacity: no throttle data at all', CAPACITY, capacity({ throttleValidIntervals: 0 }), capacity()],
+    ['mode comparison: a series below the data-completeness floor', MODE, mode({ validConsumedIntervals: 100 }), mode()],
+  ])('%s: the table is unknown; its rows stay; with enough data later, no fresh ACTIVE row replaces the dismissal', async (_name, detector, insufficient, sufficient) => {
+    const orgId = await insertOrg();
+    await seedTable(orgId);
+    await seedRec(orgId, { resourceId: TABLE, issue: detector.issue });
+    await seedRec(orgId, { resourceId: TABLE, issue: detector.issue, status: 'DISMISSED' });
+
+    const first = await scan(orgId, detector, insufficient);
+    expect(first).toEqual({ success: true, issues: [], unknownResourceIds: [TABLE] });
+    expect(await recs(orgId)).toEqual([
+      { resource_id: TABLE, issue: detector.issue, status: 'ACTIVE', aws_region: HOME, ended: false },
+      { resource_id: TABLE, issue: detector.issue, status: 'DISMISSED', aws_region: HOME, ended: false },
+    ]);
+
+    // Enough data, and the condition holds: the detector reports the table again,
+    // and the open dismissal still suppresses a new ACTIVE row.
+    const second = await scan(orgId, detector, sufficient);
+    expect(second.issues.map((i: any) => i.resourceId)).toEqual([TABLE]);
+    expect(await recs(orgId)).toEqual([
+      { resource_id: TABLE, issue: detector.issue, status: 'DISMISSED', aws_region: HOME, ended: false },
+    ]);
+  });
+
+  it.each([
+    ['capacity: the low-utilization share is under the threshold', capacity({ lowUtilizationPercentage: 50 })],
+    ['capacity: throttling was observed', capacity({ throttleConfirmedIntervals: 3 })],
+    ['capacity: throttling observed even with too few valid intervals', capacity({ validUtilizationIntervals: 100, throttleConfirmedIntervals: 3 })],
+  ])('control, known: %s ends the occurrence and removes the ACTIVE row', async (_name, analysis) => {
+    const orgId = await insertOrg();
+    await seedTable(orgId);
+    await seedRec(orgId, { resourceId: TABLE, issue: ISSUE_DYNAMODB_CAPACITY });
+    await seedRec(orgId, { resourceId: TABLE, issue: ISSUE_DYNAMODB_CAPACITY, status: 'DISMISSED' });
+
+    const result = await scan(orgId, CAPACITY, analysis);
+
+    expect(result).toEqual({ success: true, issues: [], unknownResourceIds: [] });
+    expect(await recs(orgId)).toEqual([
+      { resource_id: TABLE, issue: ISSUE_DYNAMODB_CAPACITY, status: 'DISMISSED', aws_region: HOME, ended: true },
+    ]);
+  });
+});
+
+describe('F2: idle EC2 without a full-window run is unknown', () => {
+  const now = Date.now();
+  it.each([
+    ['restarted inside the window (stop/start)', new Date(now - 24 * 3600 * 1000)],
+    ['no LaunchTime reported', undefined],
+  ])('%s: a dismissed idle occurrence and an ACTIVE row are kept', async (_name, launchTime) => {
+    const orgId = await insertOrg();
+    await seedRec(orgId, { resourceId: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE });
+    await seedRec(orgId, { resourceId: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'DISMISSED' });
+    const ec2 = withMockedSend(new EC2Client({ region: HOME }), async () => ({
+      Reservations: [{ Instances: [{ InstanceId: 'i-1234567890abcdef0', LaunchTime: launchTime, InstanceType: 't3.micro' }] }],
+    }));
+    const cw = withMockedSend(new CloudWatchClient({ region: HOME }), async () => { throw awsError('NotCalled'); });
+
+    const result = await (costOptimizationService as any).detectIdleEC2Instances(ec2, cw, EC2_CONFIG, HOME);
+    expect(result).toEqual({ success: true, issues: [], unknownResourceIds: ['i-1234567890abcdef0'] });
+    await reconcileResult(orgId, ISSUE_EC2_IDLE_INSTANCE, result);
+
+    expect(await recs(orgId)).toEqual([
+      { resource_id: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'ACTIVE', aws_region: HOME, ended: false },
+      { resource_id: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'DISMISSED', aws_region: HOME, ended: false },
+    ]);
+  });
+});
+
+describe('F3: the per-resource pagers are bounded; the limit or a page error is unknown', () => {
+  const endlessCloudWatch = () => withMockedSend(new CloudWatchClient({ region: HOME }), async () => ({ MetricDataResults: [], NextToken: 'more' }));
+
+  it('DynamoDB metrics: a GetMetricData that never ends stops at the limit and is unavailable, not a series', async () => {
+    const cw = endlessCloudWatch();
+    const result = await capacityAnalysisUtil.fetchDynamoDBCapacityMetrics(cw, 'table-x');
+    expect(result.status).toBe('unavailable');
+    expect((cw.send as jest.Mock).mock.calls).toHaveLength(MAX_LISTING_PAGES);
+  });
+
+  it('DynamoDB metrics: a page that fails is unavailable', async () => {
+    const cw = withMockedSend(new CloudWatchClient({ region: HOME }), async (command) => {
+      if (command.input?.NextToken) throw awsError('ThrottlingException');
+      return { MetricDataResults: [], NextToken: 'page-2' };
+    });
+    expect((await capacityAnalysisUtil.fetchDynamoDBCapacityMetrics(cw, 'table-x')).status).toBe('unavailable');
+  });
+
+  it('DynamoDB metrics control: a complete two-page answer is fetched', async () => {
+    const cw = withMockedSend(new CloudWatchClient({ region: HOME }), async (command) =>
+      command.input?.NextToken ? { MetricDataResults: [] } : { MetricDataResults: [], NextToken: 'page-2' }
+    );
+    expect((await capacityAnalysisUtil.fetchDynamoDBCapacityMetrics(cw, 'table-x')).status).toBe('fetched');
+  });
+
+  it('AWS Backup: recovery points that never end are unknown (null), never "no backup"', async () => {
+    const backup = { send: jest.fn(async () => ({ RecoveryPoints: [{ Status: 'EXPIRED' }], NextToken: 'more' })) };
+    expect(await checkAwsBackupRecoveryPoints(backup as any, 'arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0')).toBeNull();
+    expect(backup.send).toHaveBeenCalledTimes(MAX_LISTING_PAGES);
+  });
+
+  it('AWS Backup: a page that fails is unknown; a qualifying point on page 2 is a backup; a complete listing without one is not', async () => {
+    const arn = 'arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0';
+    const failing = { send: jest.fn(async (command: any) => { if (command.input.NextToken) throw awsError('ServiceUnavailable'); return { RecoveryPoints: [], NextToken: 'p2' }; }) };
+    expect(await checkAwsBackupRecoveryPoints(failing as any, arn)).toBeNull();
+    const second = { send: jest.fn(async (command: any) => (command.input.NextToken ? { RecoveryPoints: [{ Status: 'COMPLETED' }], NextToken: 'p3' } : { RecoveryPoints: [], NextToken: 'p2' })) };
+    expect(await checkAwsBackupRecoveryPoints(second as any, arn)).toBe(true);
+    expect(second.send).toHaveBeenCalledTimes(2);
+    const none = { send: jest.fn(async () => ({ RecoveryPoints: [{ Status: 'EXPIRED' }] })) };
+    expect(await checkAwsBackupRecoveryPoints(none as any, arn)).toBe(false);
+  });
+});
+
+describe('F4: createBulk and the RI replacement share one INSERT', () => {
+  it('both write the same row for the same recommendation', async () => {
+    const viaBulk = await insertOrg();
+    const viaReplace = await insertOrg();
+    const rec = { ...finding('ri-opportunity-m5.large', ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY), potential_savings: 12.5, severity: 'MEDIUM' as const, metadata: { instance_type: 'm5.large' } };
+
+    await repository.createBulk([rec], viaBulk);
+    await repository.replaceReservedInstanceRecommendations(viaReplace, { homeRegion: HOME }, [rec]);
+
+    const row = async (orgId: string) => (await pool.query(
+      `SELECT resource_id, resource_name, resource_type, issue, description, potential_savings, severity, aws_region, metadata, status,
+              occurrence_ended_at, resolved_at
+         FROM cost_recommendations WHERE organization_id = $1`,
+      [orgId]
+    )).rows;
+    const bulkRows = await row(viaBulk);
+    expect(bulkRows).toHaveLength(1);
+    expect(await row(viaReplace)).toEqual(bulkRows);
+  });
+
+  it('the repository has one INSERT for unconditional ACTIVE rows (static)', () => {
+    const fs = jest.requireActual('fs') as typeof import('fs');
+    const path = jest.requireActual('path') as typeof import('path');
+    const text = fs.readFileSync(path.join(__dirname, '..', '..', 'repositories', 'cost-recommendations.repository.ts'), 'utf8');
+    expect(text.match(/VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10\)\s+ON CONFLICT/g)).toHaveLength(1);
   });
 });

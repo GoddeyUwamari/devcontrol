@@ -70,6 +70,40 @@ const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
 ]);
 
+/**
+ * Inserts one ACTIVE recommendation, unconditionally (no occurrence-lifecycle
+ * suppression), and returns how many rows it inserted. ON CONFLICT DO NOTHING
+ * guards idx_cost_recommendations_active_identity. The one INSERT shared by
+ * createBulk() and replaceReservedInstanceRecommendations().
+ */
+async function insertActiveRecommendation(
+  client: PoolClient,
+  organizationId: string,
+  rec: CreateRecommendationRequest
+): Promise<number> {
+  const result = await client.query(
+    `INSERT INTO cost_recommendations (
+       organization_id, resource_id, resource_name, resource_type, issue, description,
+       potential_savings, severity, aws_region, metadata
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING`,
+    [
+      organizationId,
+      rec.resource_id,
+      rec.resource_name,
+      rec.resource_type,
+      rec.issue,
+      rec.description,
+      rec.potential_savings,
+      rec.severity,
+      rec.aws_region,
+      JSON.stringify(rec.metadata || {}),
+    ]
+  );
+  return result.rowCount || 0;
+}
+
 /** The region a statement for `issue` is limited to, or null for no region limit. */
 function regionLimitFor(issue: string, scope: CostReconcileScope | undefined): string | null {
   return scope && HOME_REGION_SCOPED_ISSUES.has(issue) ? scope.homeRegion : null;
@@ -219,29 +253,7 @@ export class CostRecommendationsRepository {
 
         let insertedCount = 0;
         for (const rec of recommendations) {
-          const query = `
-            INSERT INTO cost_recommendations (
-              organization_id, resource_id, resource_name, resource_type, issue, description,
-              potential_savings, severity, aws_region, metadata
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING
-          `;
-
-          const result = await client.query(query, [
-            organizationId,
-            rec.resource_id,
-            rec.resource_name,
-            rec.resource_type,
-            rec.issue,
-            rec.description,
-            rec.potential_savings,
-            rec.severity,
-            rec.aws_region,
-            JSON.stringify(rec.metadata || {}),
-          ]);
-
-          insertedCount += result.rowCount || 0;
+          insertedCount += await insertActiveRecommendation(client, organizationId, rec);
         }
 
         await client.query('COMMIT');
@@ -468,27 +480,7 @@ export class CostRecommendationsRepository {
 
         let insertedCount = 0;
         for (const rec of recommendations) {
-          const result = await client.query(
-            `INSERT INTO cost_recommendations (
-               organization_id, resource_id, resource_name, resource_type, issue, description,
-               potential_savings, severity, aws_region, metadata
-             )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING`,
-            [
-              organizationId,
-              rec.resource_id,
-              rec.resource_name,
-              rec.resource_type,
-              rec.issue,
-              rec.description,
-              rec.potential_savings,
-              rec.severity,
-              rec.aws_region,
-              JSON.stringify(rec.metadata || {}),
-            ]
-          );
-          insertedCount += result.rowCount || 0;
+          insertedCount += await insertActiveRecommendation(client, organizationId, rec);
         }
 
         await client.query('COMMIT');

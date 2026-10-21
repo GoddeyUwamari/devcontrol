@@ -142,6 +142,9 @@ const LISTING_FILES = [
   'services/complianceScanner.ts',
   'services/resourceExplorer.service.ts',
   'services/aurora-cluster.util.ts',
+  // Per-resource pagers: a table's metrics, an ARN's recovery points.
+  'services/dynamodb-capacity-analysis.util.ts',
+  'services/aws-backup-evidence.util.ts',
 ];
 
 // Every command these files list with. A new listing is added here and to listAllPages.
@@ -159,6 +162,8 @@ const LISTING_COMMANDS = [
   'ListBucketsCommand',
   'ListUsersCommand',
   'SearchCommand',
+  'GetMetricDataCommand',
+  'ListRecoveryPointsByResourceCommand',
 ];
 
 describe('G7: every discovery and detector listing goes through listAllPages', () => {

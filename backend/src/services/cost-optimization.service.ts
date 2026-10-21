@@ -408,10 +408,16 @@ class CostOptimizationService {
           // primary network interface's attachment time), so a stop/start
           // resets it. A LaunchTime inside the window means the instance has
           // not run continuously for the whole window -- not a full-window
-          // evaluation. A missing LaunchTime is insufficient evidence.
+          // evaluation. A missing LaunchTime is insufficient evidence. Either
+          // way the instance is unknown this scan, not "not idle": a stored
+          // recommendation for it is kept as it is (so a stop/start does not end
+          // a dismissed occurrence).
           const windowEnd = new Date();
           const windowStart = new Date(windowEnd.getTime() - EC2_IDLE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-          if (!instance.LaunchTime || instance.LaunchTime.getTime() > windowStart.getTime()) continue;
+          if (!instance.LaunchTime || instance.LaunchTime.getTime() > windowStart.getTime()) {
+            unknownResourceIds.push(instance.InstanceId);
+            continue;
+          }
 
           const cpu = await this.getAverageCPUUtilization(
             cloudWatchClient,
@@ -1094,9 +1100,19 @@ class CostOptimizationService {
           DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT
         );
 
-        const readQualifies = this.dynamoDBCapacityDimensionQualifies(readAnalysis);
-        const writeQualifies = this.dynamoDBCapacityDimensionQualifies(writeAnalysis);
-        if (!readQualifies && !writeQualifies) continue; // no defensible review opportunity on either dimension
+        const readOutcome = this.classifyDynamoDBCapacityDimension(readAnalysis);
+        const writeOutcome = this.classifyDynamoDBCapacityDimension(writeAnalysis);
+        const readQualifies = readOutcome === 'qualifies';
+        const writeQualifies = writeOutcome === 'qualifies';
+        if (!readQualifies && !writeQualifies) {
+          // No defensible review opportunity on either dimension. Only when the data
+          // shows that for both is it an answer; a dimension with too little data
+          // leaves the table unknown this scan (its stored recommendation is kept).
+          if (readOutcome === 'insufficient_evidence' || writeOutcome === 'insufficient_evidence') {
+            unknownResourceIds.push(tableName);
+          }
+          continue;
+        }
 
         const tableClass = freshConfig.table_class;
         const currentMonthlyCost = estimateDynamoDBProvisionedMonthlyCost(currentReadCapacity, currentWriteCapacity, tableClass);
@@ -1255,14 +1271,23 @@ class CostOptimizationService {
     return { eligible: true };
   }
 
-  /** Locked v1 per-dimension eligibility policy -- see the class-level constants' doc comment. */
-  private dynamoDBCapacityDimensionQualifies(analysis: DynamoDBCapacityDimensionAnalysis): boolean {
-    return (
-      analysis.validUtilizationIntervals >= DYNAMODB_CAPACITY_MIN_VALID_INTERVALS &&
-      analysis.lowUtilizationPercentage >= DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT &&
-      analysis.throttleValidIntervals > 0 &&
-      analysis.throttleConfirmedIntervals === 0
-    );
+  /**
+   * Locked v1 per-dimension eligibility policy -- see the class-level constants'
+   * doc comment. A dimension qualifies exactly as before (enough valid intervals,
+   * a low-utilization share at or above the threshold, throttle data present and
+   * no throttling). It does not qualify only when the data shows that: throttling
+   * was observed, or the valid sample's low-utilization share is under the
+   * threshold. Too few valid utilization intervals, or no throttle data at all,
+   * is insufficient evidence -- never an answer.
+   */
+  private classifyDynamoDBCapacityDimension(
+    analysis: DynamoDBCapacityDimensionAnalysis
+  ): 'qualifies' | 'does_not_qualify' | 'insufficient_evidence' {
+    if (analysis.throttleConfirmedIntervals > 0) return 'does_not_qualify';
+    if (analysis.validUtilizationIntervals < DYNAMODB_CAPACITY_MIN_VALID_INTERVALS) return 'insufficient_evidence';
+    if (analysis.lowUtilizationPercentage < DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT) return 'does_not_qualify';
+    if (analysis.throttleValidIntervals === 0) return 'insufficient_evidence';
+    return 'qualifies';
   }
 
   private buildDynamoDBCapacityDescription(input: {
@@ -1498,13 +1523,15 @@ class CostOptimizationService {
         // Data-completeness gate: each of the four series must independently
         // clear the 576/720 floor. Layers 1-2 themselves cannot be
         // defensibly built below this -- never extrapolated, never partially
-        // reported as if it were a full window.
+        // reported as if it were a full window. Below it the table is unknown
+        // this scan, not "no comparison": its stored recommendation is kept.
         if (
           readAnalysis.validConsumedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS ||
           readAnalysis.validProvisionedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS ||
           writeAnalysis.validConsumedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS ||
           writeAnalysis.validProvisionedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS
         ) {
+          unknownResourceIds.push(tableName);
           continue;
         }
 
