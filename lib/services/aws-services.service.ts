@@ -19,7 +19,23 @@ export interface AWSService {
   priority_severity: 'critical' | 'high' | 'medium' | 'low' | null
   needs_attention: boolean
   reason: string | null
+  // From services Phase 1 (S1-A). Absent from an older backend.
+  /** aws_resources.region: the region the resource was discovered in ('global' for CloudFront). */
+  aws_region?: string | null
+  /** When a discovery last listed the resource. */
+  last_seen_at?: string | null
+  ownership?: ResourceOwnership
+  /** Why a resource that needs attention does; null when it doesn't. */
+  attention_cause?: AttentionCause | null
 }
+
+/**
+ * Whose a resource is, from its tags: 'owned' has an Owner or a Team tag,
+ * 'unowned' has neither, 'unknown' means its tags could not be read (not
+ * counted as unowned).
+ */
+export type ResourceOwnership = 'owned' | 'unowned' | 'unknown'
+export type AttentionCause = 'finding' | 'cost_recommendation' | 'status'
 
 export interface AWSServicesStats {
   total: number
@@ -32,6 +48,50 @@ export interface AWSServicesStats {
   attention_reasons?: { with_finding: number; with_cost_recommendation: number; stopped_or_degraded: number; failed: number }
   // The organization's connected AWS accounts (its aws_accounts rows). Absent from an older backend.
   aws_accounts_connected?: number
+  // From services Phase 1 (S1-A). Absent from an older backend.
+  /** The needs_attention resources by their priority_severity (resources, not findings). */
+  attention_by_severity?: { critical: number; high: number; medium: number; low: number }
+  ownership?: Record<ResourceOwnership, number>
+  /** The 'unknown' ownership count by resource type. */
+  unknown_by_type?: Record<string, number>
+  regions?: { region: string; count: number }[]
+  /** By Team tag value, case-insensitively; only resources whose tags were read. */
+  teams?: { top: { team: string; count: number }[]; all: { team: string; count: number }[]; total_teams: number }
+  /** Resources whose service_id names a registered service of this organization. */
+  mapped_to_service?: number
+}
+
+/**
+ * GET /api/services/coverage (S1-B): what the page may say about scan
+ * coverage, read from the database only.
+ *
+ * - scope.home_region.count includes S3 buckets stored in the home region, so it
+ *   is never added to the S3 or CloudFront counts: totals come from `total` or
+ *   `regions`.
+ * - in_last_scan means the type was in the last scan's planned scope, not that
+ *   it was scanned successfully: read it with last_scan.status.
+ * - last_scan is the organization's newest discovery job, which can predate a
+ *   reconnect, so it is not described as the connected account's scan.
+ */
+export interface ServicesCoverage {
+  account: { connected: boolean; status: string | null; home_region: string | null }
+  scope: {
+    home_region: { region: string; count: number } | null
+    s3: { in_last_scan: boolean; regions: { region: string | null; count: number }[] }
+    cloudfront: { in_last_scan: boolean; count: number }
+    enabled_regions: { known: boolean; count: number | null }
+  }
+  last_successful_scan_at: string | null
+  last_scan: {
+    status: string
+    started_at: string | null
+    completed_at: string | null
+    warnings: string[]
+  } | null
+  resource_types: string[] | null
+  tags_unknown_by_type: Record<string, number>
+  regions: { region: string | null; count: number }[]
+  total: number
 }
 
 export interface DiscoverResult {
@@ -53,6 +113,18 @@ export interface AWSServiceFilters {
 export interface AWSServicesPageRequest extends AWSServiceFilters {
   // true: only resources that need attention; false: only the others; absent: both.
   needs_attention?: boolean
+  // Opt-in filters from services Phase 1 (S1-A); each is sent only when set.
+  /** aws_resources.region, exactly. */
+  region?: string
+  ownership?: ResourceOwnership
+  /** The Team tag value, case-insensitively. Empty means every team and is not sent (the API rejects ?team=). */
+  team?: string
+  /** true: only resources whose tags were read; false: only the others. */
+  tags_known?: boolean
+  /** ?search also matches tag keys and values. */
+  search_tags?: boolean
+  /** 'attention': resources that need attention first, by severity, then name. */
+  sort?: 'name' | 'attention'
   page?: number
   limit?: number
 }
@@ -73,6 +145,12 @@ const awsServicesService = {
     if (filters?.env    && filters.env    !== 'all') params.set('env',    filters.env)
     if (filters?.search && filters.search.trim())    params.set('search', filters.search.trim())
     if (filters?.needs_attention !== undefined)      params.set('needs_attention', String(filters.needs_attention))
+    if (filters?.region)                             params.set('region', filters.region)
+    if (filters?.ownership)                          params.set('ownership', filters.ownership)
+    if (filters?.team && filters.team.trim())        params.set('team', filters.team.trim())
+    if (filters?.tags_known !== undefined)           params.set('tags_known', String(filters.tags_known))
+    if (filters?.search_tags)                        params.set('search_tags', 'true')
+    if (filters?.sort)                               params.set('sort', filters.sort)
     if (filters?.page)  params.set('page',  String(filters.page))
     if (filters?.limit) params.set('limit', String(filters.limit))
 
@@ -96,6 +174,14 @@ const awsServicesService = {
     )
     if (!res.data.success) throw new Error(res.data.error || 'Failed to load stats')
     return res.data.stats
+  },
+
+  async getCoverage(): Promise<ServicesCoverage> {
+    const res = await api.get<{ success: boolean; coverage?: ServicesCoverage; error?: string }>(
+      '/api/services/coverage'
+    )
+    if (!res.data.success || !res.data.coverage) throw new Error(res.data.error || 'Failed to load scan coverage')
+    return res.data.coverage
   },
 
   async discoverServices(): Promise<DiscoverResult> {
