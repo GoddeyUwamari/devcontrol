@@ -8,6 +8,7 @@ import { requireMember } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
 import { checkDiscoveryLimit } from '../middleware/subscription.middleware';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
+import { SCAN_BUSY_MESSAGE, isScanBusy } from '../services/scan-session';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization';
 import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/frameworkApplicability';
@@ -773,7 +774,9 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
     if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
 
     console.log(`[Services/discover] Starting for org ${orgId}`);
-    const result = await discoveryService.discoverAllResources(orgId);
+    // Joins a scan already running for this account and answers with its totals
+    // (multi-region plan M4b, §4.6); 409 below after the wait cap.
+    const result = await discoveryService.discoverOrJoin(orgId);
 
     res.json({
       success:    true,
@@ -786,6 +789,10 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
     });
   } catch (err: any) {
     console.error('[Services/discover]', err);
+    if (isScanBusy(err)) {
+      res.status(409).json({ success: false, error: SCAN_BUSY_MESSAGE });
+      return;
+    }
     if (isAwsAccountAmbiguous(err)) {
       res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
       return;

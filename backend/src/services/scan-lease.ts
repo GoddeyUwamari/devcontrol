@@ -5,8 +5,8 @@
  * and the token contract come from
  * database/migrations-admin/202610191200_create_multi_region_scan_foundation.sql.
  *
- * Nothing calls this module yet: M4b takes these leases at every scan entry
- * point and fences every destructive transaction with them.
+ * Callers (M4b): scan-session.ts takes these leases at every scan entry
+ * point, and every destructive transaction of a scan is fenced with them.
  *
  * THE GUARANTEE IS THE DATABASE ROW, never process memory. Acquire, renew,
  * release, completion and the commit fence are each one statement on the
@@ -86,6 +86,14 @@ export const RENEW_STATEMENT_TIMEOUT_MARGIN_MS = 2 * 1000;
 /** The heartbeat waits at most this long for a connection from its pool. */
 export const HEARTBEAT_CONNECT_TIMEOUT_MS = 10 * 1000;
 
+/**
+ * How much longer than its server-side statement timeout the heartbeat waits for
+ * any one reply on its own connection before giving the connection up (a dead TCP
+ * connection never replies, and the server's limit cannot reach a client that is
+ * no longer connected).
+ */
+export const HEARTBEAT_CLIENT_TIMEOUT_MARGIN_MS = 2 * 1000;
+
 /** Consecutive renewal errors (not refusals) after which a lease counts as lost. */
 export const MAX_CONSECUTIVE_RENEW_ERRORS = 2;
 
@@ -103,6 +111,11 @@ export const FENCED_STATEMENT_TIMEOUT_MS = 60 * 1000;
 export const FENCED_IDLE_IN_TRANSACTION_TIMEOUT_MS = 10 * 1000;
 
 const LOCK_NOT_AVAILABLE = '55P03';
+
+export interface FencedTransactionOptions {
+  statementTimeoutMs?: number;
+  idleInTransactionTimeoutMs?: number;
+}
 
 export type LeaseKey =
   | { table: 'aws_scan_leases'; organizationId: string; awsAccountId: string; scanKind: string }
@@ -362,10 +375,60 @@ export async function fence(client: Executor, lease: HeldLease): Promise<void> {
   else await fenceLease(client, lease);
 }
 
-export interface FencedTransactionOptions {
-  statementTimeoutMs?: number;
-  idleInTransactionTimeoutMs?: number;
+/**
+ * Records the scan's own discovery job on its lease row (plan §5.1 F15), so a
+ * manual Sync that finds the lease held can join that job. Token-guarded: it is
+ * its own fence. False when the lease is no longer this worker's.
+ */
+export async function linkScanLeaseJob(db: Executor, lease: HeldLease, jobId: string): Promise<boolean> {
+  if (lease.key.table !== 'aws_scan_leases') throw new Error(`linkScanLeaseJob: ${describeKey(lease.key)} is not a scan lease`);
+  const { sql, values } = keyPredicate(lease.key);
+  const result = await db.query(
+    `UPDATE aws_scan_leases SET job_id = $${values.length + 2}
+      WHERE ${sql} AND fencing_token = $${values.length + 1} AND released_at IS NULL AND expires_at > clock_timestamp()`,
+    [...values, lease.fencingToken, jobId]
+  );
+  return (result.rowCount ?? 0) === 1;
 }
+
+/** Who holds a scan key now, by the database clock, and the job it linked. */
+export interface ScanLeaseState {
+  held: boolean;
+  jobId: string | null;
+}
+
+/** The current state of a scan key's lease row (no row: not held). */
+export async function readScanLeaseState(
+  db: Executor,
+  key: { organizationId: string; awsAccountId: string; scanKind: string }
+): Promise<ScanLeaseState> {
+  const { rows } = await db.query(
+    `SELECT (released_at IS NULL AND expires_at > clock_timestamp()) AS held, job_id
+       FROM aws_scan_leases WHERE organization_id = $1 AND aws_account_id = $2 AND scan_kind = $3`,
+    [key.organizationId, key.awsAccountId, key.scanKind]
+  );
+  return rows.length === 0 ? { held: false, jobId: null } : { held: rows[0].held === true, jobId: rows[0].job_id ?? null };
+}
+
+/**
+ * The start of a fenced transaction, for a caller that has just issued BEGIN on
+ * `client` itself (a repository that takes an advisory lock first): the two
+ * server limits of withFencedTransaction, then the fence. Throws as the fence
+ * does; the caller rolls back.
+ */
+export async function beginFenced(
+  client: Executor,
+  lease: HeldLease,
+  {
+    statementTimeoutMs = FENCED_STATEMENT_TIMEOUT_MS,
+    idleInTransactionTimeoutMs = FENCED_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  }: FencedTransactionOptions = {}
+): Promise<void> {
+  await client.query(`SET LOCAL statement_timeout = ${Math.round(statementTimeoutMs)}`);
+  await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${Math.round(idleInTransactionTimeoutMs)}`);
+  await fence(client, lease);
+}
+
 
 /**
  * Runs `fn` in one transaction on `client` that starts with the fence for
@@ -391,9 +454,7 @@ export async function withFencedTransaction<T>(
 ): Promise<T> {
   await client.query('BEGIN');
   try {
-    await client.query(`SET LOCAL statement_timeout = ${Math.round(statementTimeoutMs)}`);
-    await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${Math.round(idleInTransactionTimeoutMs)}`);
-    await fence(client, lease);
+    await beginFenced(client, lease, { statementTimeoutMs, idleInTransactionTimeoutMs });
     const result = await fn();
     await client.query('COMMIT');
     return result;
@@ -580,22 +641,31 @@ export class LeaseHeartbeat {
 
   /**
    * A connection from the pool, tagged with the organization for `fn`, and
-   * untagged again before it goes back. A connection whose tag could not be
-   * cleared is released with an error, so the pool discards it.
+   * untagged again before it goes back. Every query on it is also bounded on
+   * this side (the server's statement timeout plus a margin): a connection that
+   * stops answering (a dead TCP connection) fails the query instead of holding
+   * the heartbeat forever. A connection on which anything failed is released
+   * with the error, so the pool discards it.
    */
   private async onOwnConnection<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-    const client = await this.connect();
+    const raw = await this.connect();
+    const client = withClientTimeout(raw, this.renewStatementTimeoutMs + HEARTBEAT_CLIENT_TIMEOUT_MARGIN_MS);
     let releaseError: Error | undefined;
     try {
       await client.query("SELECT set_config('app.current_organization_id', $1, false)", [this.lease.key.organizationId]);
       return await fn(client);
+    } catch (error: unknown) {
+      releaseError = error instanceof Error ? error : new Error(String(error));
+      throw error;
     } finally {
-      try {
-        await client.query("SELECT set_config('app.current_organization_id', '', false)");
-      } catch (error: unknown) {
-        releaseError = error instanceof Error ? error : new Error(String(error));
+      if (!releaseError) {
+        try {
+          await client.query("SELECT set_config('app.current_organization_id', '', false)");
+        } catch (error: unknown) {
+          releaseError = error instanceof Error ? error : new Error(String(error));
+        }
       }
-      client.release(releaseError);
+      raw.release(releaseError);
     }
   }
 
@@ -620,4 +690,24 @@ export class LeaseHeartbeat {
       clearTimeout(timer);
     }
   }
+}
+
+/**
+ * `client` with every query given up after `timeoutMs` on this side. The same
+ * connection underneath (it inherits from it); only `query` is replaced. A query
+ * given up this way leaves the connection in an unknown state: the caller must
+ * release it with the error.
+ */
+function withClientTimeout(client: PoolClient, timeoutMs: number): PoolClient {
+  const guarded = Object.create(client) as PoolClient;
+  guarded.query = ((...args: unknown[]) => {
+    let timer: NodeJS.Timeout | undefined;
+    const reply = (client.query as (...a: unknown[]) => Promise<unknown>).apply(client, args);
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`no reply from the database within ${timeoutMs} ms`)), timeoutMs);
+      timer.unref?.();
+    });
+    return Promise.race([reply, deadline]).finally(() => clearTimeout(timer));
+  }) as PoolClient['query'];
+  return guarded;
 }

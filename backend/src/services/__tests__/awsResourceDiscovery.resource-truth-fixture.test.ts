@@ -23,7 +23,7 @@ import { BackupClient } from '@aws-sdk/client-backup';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { stubScanSource } from './helpers/scan-source';
+import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
@@ -93,6 +93,8 @@ async function insertAccount(): Promise<string> {
   );
   const orgId = org.rows[0].id as string;
   createdOrgIds.push(orgId);
+  // A scan leases this account and its fences check it (multi-region plan M4b).
+  await connectPlaceholderAccount(pool, orgId);
   for (const r of ACCOUNT) {
     await pool.query(
       `INSERT INTO aws_resources
@@ -304,6 +306,7 @@ afterAll(async () => {
     await pool.query('DELETE FROM framework_evaluation_runs WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM resource_discovery_jobs WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

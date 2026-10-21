@@ -13,6 +13,7 @@
  * account_security_findings, or security_hub_findings.
  */
 import { Pool, PoolClient } from 'pg';
+import { HeldLease, beginFenced } from '../services/scan-lease';
 import {
   Soc2ControlEvaluation,
   Soc2EvidenceObservation,
@@ -323,12 +324,17 @@ export class Soc2EvidenceRepository {
    *      released back to the pool -- released on both success and failure, and never
    *      left held on a pooled connection that could later be reused for an unrelated
    *      request.
+   *
+   * `lease` (multi-region plan M4b, F14; required): the cron's job lease for this
+   * organization. The transaction starts with its commit fence (right after BEGIN), so a cron
+   * worker that lost its job lease changes nothing.
    */
   async persistComputation(
     organizationId: string,
     observations: Soc2EvidenceObservation[],
     reconciliationScopes: Soc2ObservationReconciliationScope[],
-    evaluations: Soc2ControlEvaluation[]
+    evaluations: Soc2ControlEvaluation[],
+    lease: HeldLease
   ): Promise<void> {
     await this.withOrgClient(organizationId, async (client) => {
       await client.query(
@@ -338,6 +344,7 @@ export class Soc2EvidenceRepository {
 
       try {
         await client.query('BEGIN');
+        await beginFenced(client, lease);
 
         for (const scope of reconciliationScopes) {
           await this.reconcileObservationScope(client, organizationId, scope);

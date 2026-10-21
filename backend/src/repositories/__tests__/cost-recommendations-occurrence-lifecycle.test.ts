@@ -23,6 +23,7 @@ import { Pool, Client } from 'pg';
 import { CostRecommendationsRepository } from '../cost-recommendations.repository';
 import type { DetectorObservation } from '../../services/cost-optimization.service';
 import type { CreateRecommendationRequest } from '../../types';
+import { TestLeases } from '../../services/__tests__/helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -37,6 +38,7 @@ function dbConfig() {
 const pool = new Pool(dbConfig());
 const repository = new CostRecommendationsRepository();
 const createdOrgIds: string[] = [];
+const leases = new TestLeases(pool);
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -51,6 +53,7 @@ async function insertOrg(): Promise<string> {
     [`Occurrence Lifecycle Org ${suffix}`, `occurrence-lifecycle-org-${suffix}`, `Occurrence Lifecycle Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  await leases.hold(rows[0].id);
   return rows[0].id as string;
 }
 
@@ -97,6 +100,7 @@ function observation(overrides: Partial<DetectorObservation> = {}): DetectorObse
 }
 
 afterAll(async () => {
+  await leases.cleanup();
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
@@ -109,7 +113,7 @@ describe('reconcileActiveRecommendations -- basic insert/suppress behavior', () 
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding()] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect(insertedCount).toBe(1);
     const rows = await fetchRows(orgId, 'i-abc', 'Idle Instance');
@@ -123,7 +127,7 @@ describe('reconcileActiveRecommendations -- basic insert/suppress behavior', () 
 
     await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding({ resource_id: 'i-one' }), fakeFinding({ resource_id: 'i-two' })] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect((await fetchRows(orgId, 'i-one', 'Idle Instance'))[0].status).toBe('ACTIVE');
     expect((await fetchRows(orgId, 'i-two', 'Idle Instance'))[0].status).toBe('ACTIVE');
@@ -135,7 +139,7 @@ describe('reconcileActiveRecommendations -- basic insert/suppress behavior', () 
     await repository.reconcileActiveRecommendations(orgId, [
       observation({ issue: 'Idle Instance', recommendations: [fakeFinding({ issue: 'Idle Instance' })] }),
       observation({ issue: 'Oversized Instance', recommendations: [fakeFinding({ issue: 'Oversized Instance', resource_type: 'RDS' })] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect((await fetchRows(orgId, 'i-abc', 'Idle Instance'))[0].status).toBe('ACTIVE');
     expect((await fetchRows(orgId, 'i-abc', 'Oversized Instance'))[0].status).toBe('ACTIVE');
@@ -145,13 +149,13 @@ describe('reconcileActiveRecommendations -- basic insert/suppress behavior', () 
 describe('Resolve -> rescan lifecycle (test items 7-9)', () => {
   it('Resolve -> unchanged complete scan -> stays suppressed, no duplicate ACTIVE row', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'RESOLVED', orgId);
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding()] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect(insertedCount).toBe(0);
     const rows = await fetchRows(orgId, 'i-abc', 'Idle Instance');
@@ -162,12 +166,12 @@ describe('Resolve -> rescan lifecycle (test items 7-9)', () => {
 
   it('Resolve -> condition disappears via a complete successful scan -> occurrence_ended_at is set, no ACTIVE row', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'RESOLVED', orgId);
 
     // Successful category, this resource no longer appears.
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })], undefined, leases.of(orgId));
 
     const rows = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     expect(rows).toHaveLength(1);
@@ -178,13 +182,13 @@ describe('Resolve -> rescan lifecycle (test items 7-9)', () => {
 
   it('after occurrence ended, identical recurrence creates a NEW ACTIVE row and preserves the old RESOLVED row', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [firstActive] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(firstActive.id, 'RESOLVED', orgId);
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })]); // ends occurrence
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })], undefined, leases.of(orgId)); // ends occurrence
 
     // Identical finding recurs, same metadata.
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
 
     const rows = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     expect(rows).toHaveLength(2);
@@ -200,13 +204,13 @@ describe('Resolve -> rescan lifecycle (test items 7-9)', () => {
 describe('Dismiss lifecycle (test items 10-11)', () => {
   it('Dismiss -> unchanged complete scan -> stays suppressed', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'DISMISSED', orgId);
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding()] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect(insertedCount).toBe(0);
     const rows = await fetchRows(orgId, 'i-abc', 'Idle Instance');
@@ -216,12 +220,12 @@ describe('Dismiss lifecycle (test items 10-11)', () => {
 
   it('Dismiss -> complete absence -> identical recurrence -> new occurrence can become ACTIVE', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'DISMISSED', orgId);
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })]); // ends occurrence
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })], undefined, leases.of(orgId)); // ends occurrence
 
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
 
     const rows = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     const newActive = rows.find((r) => r.status === 'ACTIVE');
@@ -233,11 +237,11 @@ describe('Dismiss lifecycle (test items 10-11)', () => {
 describe('Detector failure/partial-observation must NOT be interpreted as disappearance (test items 1-6)', () => {
   it('successful detector + empty result: eligible existing occurrence gets occurrence_ended_at', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'RESOLVED', orgId);
 
-    await repository.reconcileActiveRecommendations(orgId, [observation({ success: true, recommendations: [] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ success: true, recommendations: [] })], undefined, leases.of(orgId));
 
     const [row] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     expect(row.occurrence_ended_at).not.toBeNull();
@@ -245,13 +249,13 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
 
   it('failed detector + empty result: existing occurrence is NOT ended', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'RESOLVED', orgId);
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ success: false, recommendations: [] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect(insertedCount).toBe(0);
     const [row] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
@@ -261,9 +265,9 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
 
   it('timeout/failure-equivalent (success:false with a prior ACTIVE, never-resolved row): the ACTIVE row is left untouched, not deleted', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
 
-    await repository.reconcileActiveRecommendations(orgId, [observation({ success: false, recommendations: [] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ success: false, recommendations: [] })], undefined, leases.of(orgId));
 
     const [row] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     expect(row.status).toBe('ACTIVE');
@@ -271,14 +275,14 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
 
   it('skipped detector (category entirely absent from the observations array): existing occurrence is NOT ended', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'RESOLVED', orgId);
 
     // Idle-EC2 category simply never appears in this scan's observations.
     await repository.reconcileActiveRecommendations(orgId, [
       observation({ issue: 'Oversized Instance', recommendations: [] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     const [row] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     expect(row.occurrence_ended_at).toBeNull();
@@ -289,7 +293,7 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
     await repository.reconcileActiveRecommendations(orgId, [
       observation({ issue: 'Idle Instance', recommendations: [fakeFinding({ issue: 'Idle Instance' })] }),
       observation({ issue: 'Oversized Instance', recommendations: [fakeFinding({ issue: 'Oversized Instance', resource_type: 'RDS' })] }),
-    ]);
+    ], undefined, leases.of(orgId));
     const [idleRow] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     const [rdsRow] = await fetchRows(orgId, 'i-abc', 'Oversized Instance');
     await repository.updateStatus(idleRow.id, 'RESOLVED', orgId);
@@ -299,7 +303,7 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
     await repository.reconcileActiveRecommendations(orgId, [
       observation({ issue: 'Idle Instance', success: true, recommendations: [] }),
       observation({ issue: 'Oversized Instance', success: false, recommendations: [] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect((await fetchRows(orgId, 'i-abc', 'Idle Instance'))[0].occurrence_ended_at).not.toBeNull();
     expect((await fetchRows(orgId, 'i-abc', 'Oversized Instance'))[0].occurrence_ended_at).toBeNull();
@@ -307,11 +311,11 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
 
   it('AWS-not-connected (empty observations array): no DB row is touched, no occurrence ended', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     await repository.updateStatus(active.id, 'RESOLVED', orgId);
 
-    const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, []);
+    const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [], undefined, leases.of(orgId));
 
     expect(insertedCount).toBe(0);
     const [row] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
@@ -336,7 +340,7 @@ describe('Existing rows after migration (test item 12)', () => {
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding({ resource_id: 'i-legacy' })] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect(insertedCount).toBe(0);
     const rows = await fetchRows(orgId, 'i-legacy', 'Idle Instance');
@@ -427,10 +431,10 @@ describe('Concurrency (test items 13-14)', () => {
     try {
       const scanA = repository.reconcileActiveRecommendations(orgId, [
         observation({ recommendations: [fakeFinding({ resource_id: 'i-scan-a' })] }),
-      ]);
+      ], undefined, leases.of(orgId));
       const scanB = repository.reconcileActiveRecommendations(orgId, [
         observation({ recommendations: [fakeFinding({ resource_id: 'i-scan-b' })] }),
-      ]);
+      ], undefined, leases.of(orgId));
 
       // Give both calls time to actually reach and issue their own
       // pg_advisory_lock() request against the barrier-held key (a handful
@@ -476,7 +480,7 @@ describe('Concurrency (test items 13-14)', () => {
     // silently skip it rather than aborting the whole call.
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding(), fakeFinding()] }),
-    ]);
+    ], undefined, leases.of(orgId));
 
     expect(insertedCount).toBe(1);
     const rows = await fetchRows(orgId, 'i-abc', 'Idle Instance');
@@ -493,14 +497,14 @@ describe('RI opportunities are unaffected by the occurrence lifecycle (test item
       issue: 'Reserved Instance Opportunity',
     });
 
-    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [riFinding]);
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [riFinding], leases.of(orgId));
     const [firstRow] = await fetchRows(orgId, 'ri-opportunity-t3.large', 'Reserved Instance Opportunity');
     await repository.updateStatus(firstRow.id, 'RESOLVED', orgId);
 
     // Unlike the non-RI lifecycle, RI's path has no suppression check --
     // the identical finding is unconditionally recreated as ACTIVE every
     // call, exactly matching pre-existing behavior.
-    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [riFinding]);
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [riFinding], leases.of(orgId));
 
     const rows = await fetchRows(orgId, 'ri-opportunity-t3.large', 'Reserved Instance Opportunity');
     const active = rows.filter((r) => r.status === 'ACTIVE');
@@ -510,9 +514,9 @@ describe('RI opportunities are unaffected by the occurrence lifecycle (test item
 
   it('replaceReservedInstanceRecommendations scoped to RI does not touch a non-RI ACTIVE row for the same organization', async () => {
     const orgId = await insertOrg();
-    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
 
-    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, []);
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [], leases.of(orgId));
 
     const [row] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     expect(row.status).toBe('ACTIVE');

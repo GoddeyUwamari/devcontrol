@@ -74,6 +74,23 @@ import {
   withCallPolicyOnClients,
 } from '../utils/awsCallPolicy';
 import { SourceOutcome, authorizesCleanup, failedSourceStatus } from './source-outcome';
+import { LeaseLostError, isLeaseLost, linkScanLeaseJob } from './scan-lease';
+import {
+  DISCOVERY_INTERRUPTED_MESSAGE,
+  DISCOVERY_LEASE_LOST_MESSAGE,
+  LeaseSession,
+  LeaseTiming,
+  ScanAlreadyRunningError,
+  ScanBusyError,
+  SCAN_WAIT_CAP_MS,
+  SCAN_WAIT_POLL_MS,
+  isScanAlreadyRunning,
+  leaseAccountFor,
+  openScanSession,
+  scanLeaseState,
+  sleep,
+} from './scan-session';
+import { isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import { readBuiltInFrameworkSettings } from '../repositories/compliance-frameworks.repository';
 import { FrameworkApplicability, REGISTERED_FRAMEWORKS, resolveFrameworkApplicability } from '../utils/frameworkApplicability';
 import { FRAMEWORK_EVALUATOR_VERSION } from './framework-checks';
@@ -116,10 +133,13 @@ import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
 import { describeAuroraClusters } from './aurora-cluster.util';
 import {
   DISCOVERY_WARNING_LISTING_TRUNCATED,
+  DISCOVERY_WARNING_SCAN_LEASE_LOST,
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DiscoveryWarning,
   discoveryWarningsColumn,
+  jobWarnings,
   joinDiscoveryMessage,
+  splitDiscoveryMessage,
 } from './discovery-warnings';
 import {
   S3SecurityEvaluation,
@@ -181,12 +201,36 @@ export function fatalDiscoveryErrorMessage(error: unknown): string {
  */
 type ListingObserver = (listing: Pick<Listing<unknown>, 'complete'>) => void;
 
+/**
+ * Runs a write step's database statements in one fenced transaction on the scan's
+ * connection (LeaseSession.fenced). Database statements only: every AWS call is
+ * made before it (scan-lease.ts withFencedTransaction contract).
+ */
+type Fenced = <T>(fn: () => Promise<T>) => Promise<T>;
+
+/** For a helper called on its own by a unit test, with no scan around it: statements run as they are. */
+const UNFENCED: Fenced = (fn) => fn();
+
+/** Resource upserts per fenced transaction (plan §5.1 F5): bounded, so no transaction holds its fence long. */
+export const UPSERT_BATCH_SIZE = 200;
+
+/**
+ * A lost lease, or a second eligible AWS account seen by a fence, stops the scan:
+ * a step's own catch passes it on instead of recording it as that step's error.
+ */
+function abortIfLeaseLost(error: unknown): void {
+  if (isLeaseLost(error) || isAwsAccountAmbiguous(error)) throw error;
+}
+
 export class AWSResourceDiscoveryService {
   private resourceExplorer = new ResourceExplorerService();
   private reconciliation = new ResourceReconciliationService();
   // How the per-bucket, per-instance, per-volume and per-region AWS calls are made:
   // bounded concurrency, a time limit per call, throttled calls retried with backoff.
   private callPolicy: AwsCallPolicy = DEFAULT_AWS_CALL_POLICY;
+  // How the scan lease is renewed and how a manual Sync waits for a running scan
+  // (scan-session.ts). The defaults are production's; tests shorten them.
+  private leaseTiming: LeaseTiming = {};
 
   constructor(private pool: Pool) {}
 
@@ -242,7 +286,8 @@ export class AWSResourceDiscoveryService {
     client: PoolClient,
     organizationId: string,
     jobId: string,
-    applicability: FrameworkApplicability[]
+    applicability: FrameworkApplicability[],
+    fenced: Fenced
   ): Promise<FrameworkEvaluationScan> {
     const scan: FrameworkEvaluationScan = { storageAvailable: false, runs: [], persisted: 0, failed: 0, stateCounts: {} };
     try {
@@ -257,20 +302,27 @@ export class AWSResourceDiscoveryService {
       // reported in the applicability log line and evaluated by nothing.
       const registered = new Set(REGISTERED_FRAMEWORKS.map((f) => f.key));
       for (const framework of applicability.filter((a) => registered.has(a.framework))) {
+        // F9: closing abandoned runs, pruning and the insert, in one fenced transaction.
         scan.runs.push(
-          await startFrameworkRun(client, {
-            organizationId,
-            framework: framework.framework,
-            applicability: framework.state,
-            reasonCode: framework.reason_code,
-            discoveryJobId: jobId,
-            evaluatorVersion: FRAMEWORK_EVALUATOR_VERSION,
-          })
+          await fenced(() =>
+            startFrameworkRun(client, {
+              organizationId,
+              framework: framework.framework,
+              applicability: framework.state,
+              reasonCode: framework.reason_code,
+              discoveryJobId: jobId,
+              evaluatorVersion: FRAMEWORK_EVALUATOR_VERSION,
+            })
+          )
         );
       }
       scan.storageAvailable = true;
       return scan;
     } catch (error: any) {
+      if (isLeaseLost(error) || isAwsAccountAmbiguous(error)) {
+        await this.failFrameworkEvaluation(client, organizationId, scan);
+        throw error;
+      }
       console.error(
         `❌ [Discovery] FRAMEWORK_EVAL_STORAGE_UNAVAILABLE: a framework evaluation run could not be started; ` +
         `frameworks were not evaluated and existing framework findings were kept unverified:`,
@@ -307,14 +359,19 @@ export class AWSResourceDiscoveryService {
     resource: AWSResource,
     baselineIssues: ComplianceIssue[],
     frameworkEvaluations: FrameworkCheckEvaluation[],
-    scan: FrameworkEvaluationScan
+    scan: FrameworkEvaluationScan,
+    session: LeaseSession
   ): Promise<void> {
+    const fenced: Fenced = (fn) => session.fenced(client, fn);
     if (!scan.storageAvailable) {
-      await writeBaselinePreservingFrameworkFindings(client, { organizationId, resourceId: resource.id, baselineIssues });
+      await fenced(() => writeBaselinePreservingFrameworkFindings(client, { organizationId, resourceId: resource.id, baselineIssues }));
       return;
     }
 
-    const result = await persistResourceEvaluation(client, {
+    // F7: fenced inside persistResourceEvaluation, right after its BEGIN.
+    session.checkpoint();
+    const result = await session.watch(() => persistResourceEvaluation(client, {
+      lease: session.lease,
       organizationId,
       resourceId: resource.id,
       evaluatorVersion: FRAMEWORK_EVALUATOR_VERSION,
@@ -326,7 +383,7 @@ export class AWSResourceDiscoveryService {
       })),
       project: (failures) =>
         failures.map((failure) => scanner.frameworkFinding(resource, failure.framework, failure.check, failure)),
-    });
+    }));
 
     if (result.outcome === 'resource_missing') return;
 
@@ -347,27 +404,33 @@ export class AWSResourceDiscoveryService {
     );
     // Each of the two statements below is independent of the other and of the scan:
     // a failure of either is logged and the scan goes on to the next resource.
+    // F8: each fenced on its own. A lost lease is passed on: the scan stops.
     const newestGeneration = scan.runs.reduce((max, run) => (BigInt(run.generation) > BigInt(max) ? run.generation : max), '0');
-    await recordReconciliationRequired(client, {
-      organizationId,
-      resourceId: resource.id,
-      failureCode: result.failureCode,
-      generation: newestGeneration,
-    }).catch((error: any) => {
+    await fenced(() =>
+      recordReconciliationRequired(client, {
+        organizationId,
+        resourceId: resource.id,
+        failureCode: result.failureCode,
+        generation: newestGeneration,
+      })
+    ).catch((error: any) => {
+      abortIfLeaseLost(error);
       console.error(`[Discovery] Could not record the reconciliation marker for ${resource.resource_arn}:`, error.message);
     });
     if (result.failureCode !== 'lock_timeout') {
-      await writeBaselinePreservingFrameworkFindings(client, { organizationId, resourceId: resource.id, baselineIssues }).catch(
+      await fenced(() => writeBaselinePreservingFrameworkFindings(client, { organizationId, resourceId: resource.id, baselineIssues })).catch(
         (error: any) => {
+          abortIfLeaseLost(error);
           console.error(`[Discovery] Could not write baseline findings for ${resource.resource_arn}:`, error.message);
         }
       );
     }
   }
 
-  private async heartbeatFrameworkEvaluation(client: PoolClient, organizationId: string, scan: FrameworkEvaluationScan): Promise<void> {
+  /** F9: fenced, so a worker that lost its lease cannot keep its runs looking 'running'. */
+  private async heartbeatFrameworkEvaluation(client: PoolClient, organizationId: string, scan: FrameworkEvaluationScan, fenced: Fenced): Promise<void> {
     for (const run of scan.runs) {
-      await heartbeatFrameworkRun(client, organizationId, run.id).catch(() => {});
+      await fenced(() => heartbeatFrameworkRun(client, organizationId, run.id)).catch(abortIfLeaseLost);
     }
   }
 
@@ -376,15 +439,19 @@ export class AWSResourceDiscoveryService {
     client: PoolClient,
     organizationId: string,
     scan: FrameworkEvaluationScan,
-    inScope: number
+    inScope: number,
+    fenced: Fenced
   ): Promise<void> {
     for (const run of scan.runs) {
-      const finished = await finishFrameworkRun(client, organizationId, run.id, {
-        inScope,
-        persisted: scan.persisted,
-        failed: scan.failed,
-        stateCounts: scan.stateCounts[run.framework] ?? {},
-      });
+      // F9: fenced.
+      const finished = await fenced(() =>
+        finishFrameworkRun(client, organizationId, run.id, {
+          inScope,
+          persisted: scan.persisted,
+          failed: scan.failed,
+          stateCounts: scan.stateCounts[run.framework] ?? {},
+        })
+      );
       if (!finished) {
         console.error(`[Discovery] Framework evaluation run for ${run.framework} was closed before it finished; its stored results stand.`);
       }
@@ -428,6 +495,11 @@ export class AWSResourceDiscoveryService {
   /**
    * Discover all AWS resources for an organization
    * Creates a discovery job and scans resources based on subscription tier
+   *
+   * Takes the scan lease for (organization, AWS account) first (multi-region plan
+   * M4b, §4.2). When another worker holds it -- in this process or any other --
+   * nothing is written and ScanAlreadyRunningError is thrown: the caller skips
+   * (cron, legacy discover, connect) or joins the running scan (discoverOrJoin).
    */
   async discoverAllResources(organizationId: string): Promise<DiscoveryResult> {
     console.log(`\n🔍 [Discovery] Starting AWS resource discovery for organization: ${organizationId}`);
@@ -443,8 +515,97 @@ export class AWSResourceDiscoveryService {
     return requestContext.run(client, () => this.runDiscovery(organizationId, client));
   }
 
+  /**
+   * Manual Sync (plan §4.6, Q1): runs discovery, or, when a scan for this account
+   * is already running, JOINS it: the lease and the running job's row are read
+   * every SCAN_WAIT_POLL_MS, and once that job has finished its totals are
+   * returned in the same shape. A lease held with no job of its own (a cost
+   * Analyze) is waited out, then this scan runs. After SCAN_WAIT_CAP_MS,
+   * ScanBusyError (answered 409 with SCAN_BUSY_MESSAGE). Everything is read from
+   * the database, so it joins a scan running in any process or on any host.
+   */
+  async discoverOrJoin(organizationId: string): Promise<DiscoveryResult> {
+    const pollMs = this.leaseTiming.pollMs ?? SCAN_WAIT_POLL_MS;
+    const capMs = this.leaseTiming.capMs ?? SCAN_WAIT_CAP_MS;
+    const wait = this.leaseTiming.sleep ?? sleep;
+    const started = Date.now();
+    for (;;) {
+      let running: ScanAlreadyRunningError;
+      try {
+        return await this.discoverAllResources(organizationId);
+      } catch (error: unknown) {
+        if (!isScanAlreadyRunning(error)) throw error;
+        running = error;
+      }
+      console.log(`[Discovery] A scan for org ${organizationId} is already running; joining it`);
+      for (;;) {
+        if (Date.now() - started + pollMs > capMs) throw new ScanBusyError(organizationId);
+        await wait(pollMs);
+        const state = await scanLeaseState(this.pool, organizationId, running.awsAccountId);
+        if (state.jobId) {
+          const joined = await this.finishedJobResult(organizationId, state.jobId);
+          if (joined) return joined;
+        }
+        if (!state.held) break; // free again (an Analyze ended, or the holder stopped): run this scan
+      }
+    }
+  }
+
+  /** A finished job's totals in DiscoveryResult's shape; null while it is still running. */
+  private async finishedJobResult(organizationId: string, jobId: string): Promise<DiscoveryResult | null> {
+    const { rows } = await this.pool.query(
+      `SELECT j.*, to_jsonb(j) -> 'warnings' AS warnings_column
+         FROM resource_discovery_jobs j WHERE j.id = $1 AND j.organization_id = $2`,
+      [jobId, organizationId]
+    );
+    const job = rows[0];
+    if (!job || job.status === 'running' || job.status === 'pending') return null;
+    const { errorMessage } = splitDiscoveryMessage(job.error_message);
+    return {
+      job_id: job.id,
+      resources_discovered: job.resources_discovered ?? 0,
+      resources_updated: job.resources_updated ?? 0,
+      resources_deleted: job.resources_deleted ?? 0,
+      errors: errorMessage ? errorMessage.split('; ') : [],
+      warnings: jobWarnings(job.warnings_column, job.error_message),
+    };
+  }
+
+  /**
+   * Race-safe recovery (plan §4.2, AC-1, F16). Runs only right after this worker
+   * ACQUIRED the scan lease, which the M3 contract allows only when the previous
+   * lease was released or has expired, and before this scan's own job row exists:
+   * every job row of the organization still 'running' or 'pending' that was
+   * created before this lease was acquired belongs to a worker that is gone. They
+   * are closed in one fenced transaction with the approved recovery text. A job row
+   * is never closed on its age alone, and never while a live lease exists (the
+   * acquisition would have failed).
+   *
+   * ORG-SCOPED until MA-1: resource_discovery_jobs has no aws_account_id column yet,
+   * so this closes the organization's interrupted jobs whatever account they
+   * scanned. That is exact only while an organization has one eligible account,
+   * which every fence enforces (a second one aborts the scan). MA-1 adds the
+   * column; recovery then becomes account-scoped (plan §2.4, MA-1 scope).
+   */
+  private async recoverInterruptedJobs(client: PoolClient, session: LeaseSession, organizationId: string): Promise<number> {
+    const recovered = await session.fenced(client, async () => {
+      const result = await client.query(
+        `UPDATE resource_discovery_jobs
+            SET status = 'failed', completed_at = NOW(), error_message = $3
+          WHERE organization_id = $1 AND status IN ('running', 'pending') AND created_at < $2`,
+        [organizationId, session.lease.acquiredAt, DISCOVERY_INTERRUPTED_MESSAGE]
+      );
+      return result.rowCount ?? 0;
+    });
+    if (recovered > 0) console.warn(`[Discovery] Closed ${recovered} interrupted discovery job(s) for org ${organizationId}`);
+    return recovered;
+  }
+
   private async runDiscovery(organizationId: string, client: PoolClient): Promise<DiscoveryResult> {
     let jobId: string;
+    let session: LeaseSession | undefined;
+    // The framework runs this scan opened, so a lost lease can close them (own rows).
+    let openFrameworkScan: FrameworkEvaluationScan | undefined;
 
     try {
       // NOTE: must be session-scoped (is_local = false), not transaction-local.
@@ -465,6 +626,29 @@ export class AWSResourceDiscoveryService {
       console.log(`🎫 [Discovery] Subscription tier: ${tier}`);
       console.log(`📦 [Discovery] Allowed resource types: ${allowedTypes.join(', ')}`);
 
+      // The scan's account context: one AssumeRole for discovery and the cost
+      // detectors, refreshed before it expires (scan-context.ts). It names the AWS
+      // account the scan leases. A failure here is recorded as a failed job, as it
+      // always was, under the scan lease (recordAccountContextFailure); nothing
+      // else is written.
+      let scanContext: ScanContext;
+      try {
+        scanContext = await ScanContext.forOrg(organizationId);
+      } catch (error: unknown) {
+        await this.recordAccountContextFailure(client, organizationId, allowedTypes, fatalDiscoveryErrorMessage(error));
+        throw error;
+      }
+
+      // The scan lease for (organization, AWS account), before anything is written
+      // (plan §4.2), heartbeated from now on. Held by another worker: nothing is
+      // written, not even a job row.
+      session = (await openScanSession(this.pool, client, organizationId, scanContext.awsAccountId, this.leaseTiming)) ?? undefined;
+      if (!session) throw new ScanAlreadyRunningError(organizationId, scanContext.awsAccountId);
+      console.log(`🔒 [Discovery] Scan lease acquired (token ${session.lease.fencingToken})`);
+      const scan = session;
+      const fenced: Fenced = (fn) => scan.fenced(client, fn);
+      await this.recoverInterruptedJobs(client, scan, organizationId);
+
       // Create discovery job with allowed resource types
       const jobResult = await client.query(
         `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, resource_types, regions)
@@ -479,10 +663,8 @@ export class AWSResourceDiscoveryService {
       );
       jobId = jobResult.rows[0].id;
       console.log(`📋 [Discovery] Created discovery job: ${jobId}`);
-
-      // The scan's account context: one AssumeRole for discovery and the cost
-      // detectors, refreshed before it expires (scan-context.ts).
-      const scanContext = await ScanContext.forOrg(organizationId);
+      // F15: the lease names its job, so a manual Sync can join it.
+      if (!(await linkScanLeaseJob(client, scan.lease, jobId))) throw new LeaseLostError('lease_lost', scan.lease.key);
       const connectedClients = scanContext.clientsFor(scanContext.region);
 
       if (!connectedClients.enabled) {
@@ -503,8 +685,8 @@ export class AWSResourceDiscoveryService {
       const errors: string[] = [];
       // Checks deliberately not run this cycle; they do not fail the job (see discovery-warnings.ts).
       const warnings: DiscoveryWarning[] = [];
-      let totalDiscovered = 0;
-      let totalUpdated = 0;
+      // Upserts counted once each fenced batch has committed.
+      const totals = { created: 0, updated: 0 };
       let resourcesTerminated = 0;
       const skippedTypes: string[] = [];
       // How each own listing fared (source-outcome.ts). Only a complete one may drive a
@@ -528,18 +710,16 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EC2 instances...`);
         try {
+          scan.checkpoint();
           ec2Outcome.status = 'complete';
           const ec2Resources = await this.discoverEC2Instances(
             organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence, this.observeListing(ec2Outcome)
           );
-          for (const resource of ec2Resources) {
-            ownListedArns.add(resource.resource_arn);
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          for (const resource of ec2Resources) ownListedArns.add(resource.resource_arn);
+          await this.upsertFenced(fenced, ec2Resources, (resource) => this.upsertResource(client, resource), totals);
           console.log(`✅ [Discovery] Found ${ec2Resources.length} EC2 instances`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           ec2Outcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] EC2 discovery failed:`, error.message);
           errors.push(`EC2: ${error.message}`);
@@ -558,18 +738,16 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('ebs', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EBS volumes...`);
         try {
+          scan.checkpoint();
           ebsOutcome.status = 'complete';
           const ebsResources = await this.discoverEBSVolumes(
             organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence, this.observeListing(ebsOutcome)
           );
-          for (const resource of ebsResources) {
-            ebsArnsFound.add(resource.resource_arn);
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          for (const resource of ebsResources) ebsArnsFound.add(resource.resource_arn);
+          await this.upsertFenced(fenced, ebsResources, (resource) => this.upsertResource(client, resource), totals);
           console.log(`✅ [Discovery] Found ${ebsResources.length} EBS volumes`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           ebsOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] EBS discovery failed:`, error.message);
           errors.push(`EBS: ${error.message}`);
@@ -583,16 +761,14 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('rds', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering RDS databases...`);
         try {
+          scan.checkpoint();
           rdsOutcome.status = 'complete';
           const rdsResources = await this.discoverRDSDatabases(organizationId, awsClients.rds!, awsClients.region, this.observeListing(rdsOutcome));
-          for (const resource of rdsResources) {
-            ownListedArns.add(resource.resource_arn);
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          for (const resource of rdsResources) ownListedArns.add(resource.resource_arn);
+          await this.upsertFenced(fenced, rdsResources, (resource) => this.upsertResource(client, resource), totals);
           console.log(`✅ [Discovery] Found ${rdsResources.length} RDS databases`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           rdsOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] RDS discovery failed:`, error.message);
           errors.push(`RDS: ${error.message}`);
@@ -612,25 +788,30 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('s3', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering S3 buckets...`);
         try {
+          scan.checkpoint();
           s3Outcome.status = 'complete';
           const unlocatedBucketArns = new Set<string>();
           const s3Resources = await this.discoverS3Buckets(
             organizationId, awsClients.s3!, awsClients.region, awsClients.getS3ClientForRegion, unlocatedBucketArns, this.observeListing(s3Outcome)
           );
-          for (const resource of s3Resources) {
-            // Listed, so present: never counted missing.
-            s3ArnsFound.add(resource.resource_arn);
-            // Its region is unknown, though. A stored row keeps its stored region (the
-            // upsert never changes it); no new row is written with a guessed region.
-            if (unlocatedBucketArns.has(resource.resource_arn) && !(await this.resourceStored(client, organizationId, resource.resource_arn))) {
-              continue;
-            }
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          // Listed, so present: never counted missing.
+          for (const resource of s3Resources) s3ArnsFound.add(resource.resource_arn);
+          await this.upsertFenced(
+            fenced,
+            s3Resources,
+            async (resource) => {
+              // Its region is unknown, though. A stored row keeps its stored region (the
+              // upsert never changes it); no new row is written with a guessed region.
+              if (unlocatedBucketArns.has(resource.resource_arn) && !(await this.resourceStored(client, organizationId, resource.resource_arn))) {
+                return 'skipped';
+              }
+              return this.upsertResource(client, resource);
+            },
+            totals
+          );
           console.log(`✅ [Discovery] Found ${s3Resources.length} S3 buckets`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           s3Outcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] S3 discovery failed:`, error.message);
           errors.push(`S3: ${error.message}`);
@@ -644,18 +825,16 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('lambda', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Lambda functions...`);
         try {
+          scan.checkpoint();
           lambdaOutcome.status = 'complete';
           const lambdaResources = await this.discoverLambdaFunctions(
             organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region, this.observeListing(lambdaOutcome)
           );
-          for (const resource of lambdaResources) {
-            ownListedArns.add(resource.resource_arn);
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          for (const resource of lambdaResources) ownListedArns.add(resource.resource_arn);
+          await this.upsertFenced(fenced, lambdaResources, (resource) => this.upsertResource(client, resource), totals);
           console.log(`✅ [Discovery] Found ${lambdaResources.length} Lambda functions`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           lambdaOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] Lambda discovery failed:`, error.message);
           errors.push(`Lambda: ${error.message}`);
@@ -669,16 +848,14 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('load-balancer', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Load Balancers...`);
         try {
+          scan.checkpoint();
           loadBalancerOutcome.status = 'complete';
           const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.elb, awsClients.region, this.observeListing(loadBalancerOutcome));
-          for (const resource of lbResources) {
-            ownListedArns.add(resource.resource_arn);
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          for (const resource of lbResources) ownListedArns.add(resource.resource_arn);
+          await this.upsertFenced(fenced, lbResources, (resource) => this.upsertResource(client, resource), totals);
           console.log(`✅ [Discovery] Found ${lbResources.length} Load Balancers`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           loadBalancerOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] Load Balancer discovery failed:`, error.message);
           errors.push(`Load Balancer: ${error.message}`);
@@ -699,16 +876,14 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('cloudfront', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering CloudFront distributions...`);
         try {
+          scan.checkpoint();
           cloudFrontOutcome.status = 'complete';
           const cfResources = await this.discoverCloudFrontDistributions(organizationId, awsClients.cloudFront, this.observeListing(cloudFrontOutcome));
-          for (const resource of cfResources) {
-            cloudFrontArnsFound.add(resource.resource_arn);
-            const result = await this.upsertResource(client, resource);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          for (const resource of cfResources) cloudFrontArnsFound.add(resource.resource_arn);
+          await this.upsertFenced(fenced, cfResources, (resource) => this.upsertResource(client, resource), totals);
           console.log(`✅ [Discovery] Found ${cfResources.length} CloudFront distributions`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           cloudFrontOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] CloudFront discovery failed:`, error.message);
           errors.push(`CloudFront: ${error.message}`);
@@ -744,6 +919,7 @@ export class AWSResourceDiscoveryService {
       });
 
       console.log(`🔎 [Discovery] Searching AWS Resource Explorer for generic inventory + reconciliation...`);
+      scan.checkpoint();
       const searchResult = await this.resourceExplorer.search(awsClients.resourceExplorer, awsClients.region);
 
       if (searchResult.success) {
@@ -751,13 +927,10 @@ export class AWSResourceDiscoveryService {
         const allowedEntries = genericEntries.filter((e) => allowedGenericTypes.includes(e.resourceType));
 
         try {
-          for (const entry of allowedEntries) {
-            const result = await this.upsertGenericResource(client, organizationId, entry);
-            if (result === 'created') totalDiscovered++;
-            else if (result === 'updated') totalUpdated++;
-          }
+          await this.upsertFenced(fenced, allowedEntries, (entry) => this.upsertGenericResource(client, organizationId, entry), totals);
           console.log(`✅ [Discovery] Found ${allowedEntries.length} generic resources via Resource Explorer (${searchResult.resources.length} total indexed)`);
         } catch (error: any) {
+          abortIfLeaseLost(error);
           console.error(`❌ [Discovery] Resource Explorer generic upsert failed:`, error.message);
           errors.push(`Resource Explorer inventory: ${error.message}`);
         }
@@ -765,10 +938,11 @@ export class AWSResourceDiscoveryService {
         try {
           const dynamoDbEntries = allowedEntries.filter((e) => e.resourceType === 'dynamodb');
           if (dynamoDbEntries.length > 0) {
-            const enrichedCount = await this.enrichDynamoDBTables(organizationId, client, awsClients, dynamoDbEntries);
+            const enrichedCount = await this.enrichDynamoDBTables(organizationId, client, awsClients, dynamoDbEntries, fenced);
             console.log(`✅ [Discovery] Enriched ${enrichedCount} of ${dynamoDbEntries.length} DynamoDB table(s) with real configuration`);
           }
         } catch (error: any) {
+          abortIfLeaseLost(error);
           console.error(`❌ [Discovery] DynamoDB enrichment failed:`, error.message);
           errors.push(`DynamoDB enrichment: ${error.message}`);
         }
@@ -776,10 +950,11 @@ export class AWSResourceDiscoveryService {
         try {
           const auroraEntries = allowedEntries.filter((e) => e.resourceType === 'aurora');
           if (auroraEntries.length > 0) {
-            const { confirmed, reclassified } = await this.enrichAuroraClusters(organizationId, client, awsClients.rds!, auroraEntries);
+            const { confirmed, reclassified } = await this.enrichAuroraClusters(organizationId, client, awsClients.rds!, auroraEntries, fenced);
             console.log(`✅ [Discovery] Confirmed ${confirmed} Aurora cluster(s), reclassified ${reclassified} non-Aurora DB cluster(s) out of 'aurora'`);
           }
         } catch (error: any) {
+          abortIfLeaseLost(error);
           console.error(`❌ [Discovery] Aurora cluster enrichment failed:`, error.message);
           errors.push(`Aurora cluster enrichment: ${error.message}`);
         }
@@ -796,13 +971,17 @@ export class AWSResourceDiscoveryService {
         } else {
           try {
             const presentArns = new Set([...allArns, ...ownListedArns]);
-            const reconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, presentArns, RE_RECONCILED_TYPES);
+            // F1: reset and increment in one fenced transaction.
+            const reconciliation = await fenced(() =>
+              this.reconciliation.reconcile(client, organizationId, awsClients.region, presentArns, RE_RECONCILED_TYPES)
+            );
             console.log(
               `✅ [Discovery] Reconciliation complete (${reconciliation.resetCount} confirmed present, ` +
               `${reconciliation.incrementedCount} absent this scan, ${reconciliation.terminatedArns.length} newly terminated)`
             );
             resourcesTerminated += reconciliation.terminatedArns.length;
           } catch (error: any) {
+            abortIfLeaseLost(error);
             console.error(`❌ [Discovery] Reconciliation failed:`, error.message);
             errors.push(`Reconciliation: ${error.message}`);
           }
@@ -822,13 +1001,15 @@ export class AWSResourceDiscoveryService {
       // configured region, and CloudFront rows are always stored with region='global'.
       if (authorizesCleanup(s3Outcome)) {
         try {
-          const s3Reconciliation = await this.reconciliation.reconcile(client, organizationId, null, s3ArnsFound, ['s3']);
+          // F2.
+          const s3Reconciliation = await fenced(() => this.reconciliation.reconcile(client, organizationId, null, s3ArnsFound, ['s3']));
           console.log(
             `✅ [Discovery] S3 reconciliation complete (${s3Reconciliation.resetCount} confirmed present, ` +
             `${s3Reconciliation.incrementedCount} absent this scan, ${s3Reconciliation.terminatedArns.length} newly terminated)`
           );
           resourcesTerminated += s3Reconciliation.terminatedArns.length;
         } catch (error: any) {
+          abortIfLeaseLost(error);
           console.error(`❌ [Discovery] S3 reconciliation failed:`, error.message);
           errors.push(`S3 reconciliation: ${error.message}`);
         }
@@ -836,13 +1017,15 @@ export class AWSResourceDiscoveryService {
 
       if (authorizesCleanup(cloudFrontOutcome)) {
         try {
-          const cfReconciliation = await this.reconciliation.reconcile(client, organizationId, null, cloudFrontArnsFound, ['cloudfront']);
+          // F3.
+          const cfReconciliation = await fenced(() => this.reconciliation.reconcile(client, organizationId, null, cloudFrontArnsFound, ['cloudfront']));
           console.log(
             `✅ [Discovery] CloudFront reconciliation complete (${cfReconciliation.resetCount} confirmed present, ` +
             `${cfReconciliation.incrementedCount} absent this scan, ${cfReconciliation.terminatedArns.length} newly terminated)`
           );
           resourcesTerminated += cfReconciliation.terminatedArns.length;
         } catch (error: any) {
+          abortIfLeaseLost(error);
           console.error(`❌ [Discovery] CloudFront reconciliation failed:`, error.message);
           errors.push(`CloudFront reconciliation: ${error.message}`);
         }
@@ -850,13 +1033,15 @@ export class AWSResourceDiscoveryService {
 
       if (authorizesCleanup(ebsOutcome)) {
         try {
-          const ebsReconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, ebsArnsFound, ['ebs']);
+          // F4.
+          const ebsReconciliation = await fenced(() => this.reconciliation.reconcile(client, organizationId, awsClients.region, ebsArnsFound, ['ebs']));
           console.log(
             `✅ [Discovery] EBS reconciliation complete (${ebsReconciliation.resetCount} confirmed present, ` +
             `${ebsReconciliation.incrementedCount} absent this scan, ${ebsReconciliation.terminatedArns.length} newly terminated)`
           );
           resourcesTerminated += ebsReconciliation.terminatedArns.length;
         } catch (error: any) {
+          abortIfLeaseLost(error);
           console.error(`❌ [Discovery] EBS reconciliation failed:`, error.message);
           errors.push(`EBS reconciliation: ${error.message}`);
         }
@@ -873,6 +1058,7 @@ export class AWSResourceDiscoveryService {
       let complianceScanCompleted = false;
       try {
         console.log(`🔎 [Discovery] Running compliance scan...`);
+        scan.checkpoint();
         const scanner = new ComplianceScannerService();
         const { rows: allResources } = await client.query(
           `SELECT * FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
@@ -891,7 +1077,8 @@ export class AWSResourceDiscoveryService {
         // in compliance_issues are rebuilt from what is stored. When there is nowhere to
         // store them, frameworks are NOT evaluated this scan: see the storage-unavailable
         // branch below.
-        const evaluation = await this.startFrameworkEvaluation(client, organizationId, jobId, frameworkApplicability);
+        const evaluation = await this.startFrameworkEvaluation(client, organizationId, jobId, frameworkApplicability, fenced);
+        openFrameworkScan = evaluation;
 
         // Each bucket's S3 security evaluation is several AWS calls. They are made
         // ahead of the loop below, a bounded number of buckets at a time, so the loop
@@ -946,16 +1133,21 @@ export class AWSResourceDiscoveryService {
               addToS3EvaluationTally(s3Tally, s3Evaluation);
             }
 
-            await this.persistResourceCompliance(client, organizationId, scanner, resource, baselineIssues, evaluated.frameworkEvaluations, evaluation);
+            await this.persistResourceCompliance(client, organizationId, scanner, resource, baselineIssues, evaluated.frameworkEvaluations, evaluation, scan);
 
             scanned++;
-            if (scanned % 25 === 0) await this.heartbeatFrameworkEvaluation(client, organizationId, evaluation);
+            // Checkpoint (plan §4.2): every 25 resources, with the run heartbeat.
+            if (scanned % 25 === 0) {
+              scan.checkpoint();
+              await this.heartbeatFrameworkEvaluation(client, organizationId, evaluation, fenced);
+            }
           }
         } catch (error) {
           await this.failFrameworkEvaluation(client, organizationId, evaluation);
           throw error;
         }
-        await this.finishFrameworkEvaluation(client, organizationId, evaluation, allResources.length);
+        await this.finishFrameworkEvaluation(client, organizationId, evaluation, allResources.length, fenced);
+        openFrameworkScan = undefined;
 
         if (s3Tally.buckets > 0) {
           console.log(`🪣 [Discovery] S3 security evaluation: ${formatS3EvaluationTally(s3Tally)}`);
@@ -977,6 +1169,7 @@ export class AWSResourceDiscoveryService {
         console.log(`✅ [Discovery] Compliance scan complete (${allResources.length} resources scanned)`);
         complianceScanCompleted = true;
       } catch (error: any) {
+        abortIfLeaseLost(error);
         console.error(`❌ [Discovery] Compliance scan failed:`, error.message);
         errors.push(`Compliance scan: ${error.message}`);
       }
@@ -998,6 +1191,7 @@ export class AWSResourceDiscoveryService {
 
       try {
         console.log(`🔎 [Discovery] Running account-level security scan (security groups + IAM)...`);
+        scan.checkpoint();
         const scanner = new ComplianceScannerService();
         const scanStartedAt = new Date();
 
@@ -1033,13 +1227,11 @@ export class AWSResourceDiscoveryService {
           ...(iamObservation.complete ? (['iam'] as const) : []),
         ];
         // Networking findings are resolved in the region the security groups were
-        // listed in only (the repository's region limit).
-        const { active, resolved } = await findingsRepo.reconcileScan(
-          organizationId,
-          scanStartedAt,
-          findings,
-          completeCategories,
-          awsClients.region
+        // listed in only (the repository's region limit). F10: fenced inside, on the
+        // repository's own connection; both AWS scans above are done before it.
+        scan.checkpoint();
+        const { active, resolved } = await scan.watch(() =>
+          findingsRepo.reconcileScan(organizationId, scanStartedAt, findings, completeCategories, awsClients.region, scan.lease)
         );
 
         const fullyComplete = networkingObservation.complete && iamObservation.complete;
@@ -1058,6 +1250,7 @@ export class AWSResourceDiscoveryService {
           `✅ [Discovery] Account-level security scan ${fullyComplete ? 'complete' : 'partial'} (${active} active, ${resolved} resolved)`
         );
       } catch (error: any) {
+        abortIfLeaseLost(error);
         console.error(`❌ [Discovery] Account-level security scan failed:`, error.message);
         errors.push(`Account-level security scan: ${error.message}`);
         complianceScanCompleted = false;
@@ -1071,22 +1264,18 @@ export class AWSResourceDiscoveryService {
       // of the stubbed always-0 orphaned_count.
       try {
         console.log(`🔎 [Discovery] Running orphaned-resource detection...`);
+        scan.checkpoint();
         const detector = new OrphanedResourceDetectorService(client);
         const orphaned = await detector.detectOrphaned(organizationId);
 
         // One statement for the whole organization (multi-region plan M4, P-4): every
         // row's flag and savings are set together, so no reader ever sees them all
-        // cleared, and a failure leaves every row as it was.
-        await client.query(
-          `UPDATE aws_resources
-              SET is_orphaned = (id = ANY($2::uuid[])),
-                  orphaned_monthly_savings = COALESCE(($3::numeric[])[array_position($2::uuid[], id)], 0)
-            WHERE organization_id = $1`,
-          [organizationId, orphaned.map((o) => o.resource.id), orphaned.map((o) => o.potential_savings)]
-        );
+        // cleared, and a failure leaves every row as it was. F11: fenced.
+        await fenced(() => this.writeOrphanFlags(client, organizationId, orphaned));
 
         console.log(`✅ [Discovery] Orphaned-resource detection complete (${orphaned.length} found)`);
       } catch (error: any) {
+        abortIfLeaseLost(error);
         console.error(`❌ [Discovery] Orphaned-resource detection failed:`, error.message);
         errors.push(`Orphaned detection: ${error.message}`);
         complianceScanCompleted = false;
@@ -1098,6 +1287,7 @@ export class AWSResourceDiscoveryService {
       let costAnalysisCompleted = false;
       try {
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
+        scan.checkpoint();
         const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(organizationId, scanContext);
         // The home-listed detectors' rows are reconciled in the region they listed.
         const costScope = { homeRegion: homeRegion ?? awsClients.region };
@@ -1108,10 +1298,10 @@ export class AWSResourceDiscoveryService {
         // detectors -- mirrors the manual /api/cost-recommendations/analyze
         // path (cost-recommendations.controller.ts): suppresses an unchanged
         // Resolve/Dismiss'd finding instead of resurrecting it every scan.
-        const { insertedCount: nonRIInsertedCount } = await recommendationsRepo.reconcileActiveRecommendations(
-          organizationId,
-          observations,
-          costScope
+        // F12: fenced inside, after the detectors' AWS calls above.
+        scan.checkpoint();
+        const { insertedCount: nonRIInsertedCount } = await scan.watch(() =>
+          recommendationsRepo.reconcileActiveRecommendations(organizationId, observations, costScope, scan.lease)
         );
 
         // Reserved Instance Opportunities stay on delete+recreate -- excluded from
@@ -1120,10 +1310,9 @@ export class AWSResourceDiscoveryService {
         // RI rows stay as they are. Delete and insert share one transaction.
         let riInsertedCount = 0;
         if (riSucceeded) {
-          ({ insertedCount: riInsertedCount } = await recommendationsRepo.replaceReservedInstanceRecommendations(
-            organizationId,
-            costScope,
-            riRecommendations
+          // F13: fenced inside.
+          ({ insertedCount: riInsertedCount } = await scan.watch(() =>
+            recommendationsRepo.replaceReservedInstanceRecommendations(organizationId, costScope, riRecommendations, scan.lease)
           ));
         }
 
@@ -1150,6 +1339,7 @@ export class AWSResourceDiscoveryService {
         console.log(`✅ [Discovery] Cost optimization analysis complete (${totalFound} opportunities found)`);
         costAnalysisCompleted = true;
       } catch (error: any) {
+        abortIfLeaseLost(error);
         console.error(`❌ [Discovery] Cost optimization analysis failed:`, error.message);
         errors.push(`Cost analysis: ${error.message}`);
       }
@@ -1157,9 +1347,9 @@ export class AWSResourceDiscoveryService {
       // Update job status
       console.log(`\n📊 [Discovery] Discovery Summary:`);
       console.log(`  - Subscription tier: ${tier}`);
-      console.log(`  - Total resources discovered (new): ${totalDiscovered}`);
-      console.log(`  - Total resources updated: ${totalUpdated}`);
-      console.log(`  - Total resources: ${totalDiscovered + totalUpdated}`);
+      console.log(`  - Total resources discovered (new): ${totals.created}`);
+      console.log(`  - Total resources updated: ${totals.updated}`);
+      console.log(`  - Total resources: ${totals.created + totals.updated}`);
       console.log(`  - Resources newly terminated (reconciliation): ${resourcesTerminated}`);
 
       if (skippedTypes.length > 0) {
@@ -1183,8 +1373,8 @@ export class AWSResourceDiscoveryService {
          WHERE id = $8`,
         [
           errors.length > 0 ? 'failed' : 'completed',
-          totalDiscovered,
-          totalUpdated,
+          totals.created,
+          totals.updated,
           resourcesTerminated,
           joinDiscoveryMessage(errors, warnings),
           complianceScanCompleted,
@@ -1217,23 +1407,38 @@ export class AWSResourceDiscoveryService {
       // trusting this status. aws_resources remains the authoritative
       // product state; this only decides whether the one-time funnel event
       // fires, guarded per-org so rescans/retries never re-fire it.
-      if (totalDiscovered > 0 || totalUpdated > 0) {
+      if (totals.created > 0 || totals.updated > 0) {
         await trackFunnelEventOnce({
           organizationId,
           eventName: 'discovery_completed',
-          properties: { resourcesDiscovered: totalDiscovered, resourcesUpdated: totalUpdated },
+          properties: { resourcesDiscovered: totals.created, resourcesUpdated: totals.updated },
         });
       }
 
       return {
         job_id: jobId,
-        resources_discovered: totalDiscovered,
-        resources_updated: totalUpdated,
+        resources_discovered: totals.created,
+        resources_updated: totals.updated,
         resources_deleted: resourcesTerminated,
         errors,
         warnings
       };
     } catch (error: any) {
+      if (isScanAlreadyRunning(error)) {
+        // Nothing was written: no job row, no lease. The caller skips or joins.
+        console.log(`⏭️  [Discovery] A scan for org ${organizationId} is already running; this one did not start`);
+        throw error;
+      }
+      if (isLeaseLost(error)) {
+        // Another scan took over (or the lease expired, aged out, or the account
+        // changed): nothing more is written. The scan's own rows record why.
+        console.error(`⚠️  [Discovery] Scan lease lost (${error.reason}); stopped, nothing more written`);
+        if (openFrameworkScan) await this.failFrameworkEvaluation(client, organizationId, openFrameworkScan);
+        if (jobId!) await this.recordLeaseLost(client, jobId).catch((recordError: any) => {
+          console.error(`[Discovery] Could not record the lost lease on job ${jobId}:`, recordError.message);
+        });
+        throw error;
+      }
       console.error(`\n❌ [Discovery] Fatal error during discovery:`, error.message);
       console.error(`Stack trace:`, error.stack);
 
@@ -1251,7 +1456,69 @@ export class AWSResourceDiscoveryService {
       }
       throw error;
     } finally {
+      // Every path: the heartbeat stops and the lease is released (or expires).
+      await session?.end();
       client.release();
+    }
+  }
+
+  /**
+   * The job row of a scan that lost its lease (plan §4.2, Q3): failed, with the
+   * approved lease-lost text and the unrendered scan_lease_lost warning (warnings
+   * column only). Unfenced: it is this worker's own row and says something true.
+   */
+  private async recordLeaseLost(client: PoolClient, jobId: string): Promise<void> {
+    await client.query(
+      `UPDATE resource_discovery_jobs SET status = 'failed', completed_at = NOW(), error_message = $1 WHERE id = $2`,
+      [DISCOVERY_LEASE_LOST_MESSAGE, jobId]
+    );
+    if (await this.discoveryWarningsColumnExists(client)) {
+      await client.query(`UPDATE resource_discovery_jobs SET warnings = $1::jsonb WHERE id = $2`, [
+        discoveryWarningsColumn([DISCOVERY_WARNING_SCAN_LEASE_LOST]),
+        jobId,
+      ]);
+    }
+  }
+
+  /** The organization's orphan flags, in one statement (P-4); database statements only (F11 runs it fenced). */
+  private async writeOrphanFlags(
+    client: PoolClient,
+    organizationId: string,
+    orphaned: Array<{ resource: { id: string }; potential_savings: number }>
+  ): Promise<void> {
+    await client.query(
+      `UPDATE aws_resources
+          SET is_orphaned = (id = ANY($2::uuid[])),
+              orphaned_monthly_savings = COALESCE(($3::numeric[])[array_position($2::uuid[], id)], 0)
+        WHERE organization_id = $1`,
+      [organizationId, orphaned.map((o) => o.resource.id), orphaned.map((o) => o.potential_savings)]
+    );
+  }
+
+  /**
+   * Upserts `items` in fenced transactions of UPSERT_BATCH_SIZE (F5). Each batch's
+   * counts are added to `totals` once it has committed, so a later batch that fails
+   * (and throws) leaves the earlier batches counted.
+   */
+  private async upsertFenced<T>(
+    fenced: Fenced,
+    items: readonly T[],
+    upsert: (item: T) => Promise<'created' | 'updated' | 'skipped'>,
+    totals: { created: number; updated: number }
+  ): Promise<void> {
+    for (let start = 0; start < items.length; start += UPSERT_BATCH_SIZE) {
+      const batch = items.slice(start, start + UPSERT_BATCH_SIZE);
+      const batchCounts = await fenced(async () => {
+        const c = { created: 0, updated: 0 };
+        for (const item of batch) {
+          const result = await upsert(item);
+          if (result === 'created') c.created++;
+          else if (result === 'updated') c.updated++;
+        }
+        return c;
+      });
+      totals.created += batchCounts.created;
+      totals.updated += batchCounts.updated;
     }
   }
 
@@ -1601,6 +1868,58 @@ export class AWSResourceDiscoveryService {
     return resources.filter((resource): resource is CreateAWSResourceInput => resource !== null);
   }
 
+  /**
+   * A scan whose account context could not be set up (AssumeRole failed, plan
+   * M4b F4) records its failed job row under the scan lease of the account the
+   * database names (leaseAccountFor, the rule ScanContext uses), then releases
+   * it. Another worker holding that lease is mid-scan: nothing is written, so
+   * its job stays the latest. With no account to lease (none, ambiguous, or an
+   * ARN that names none) no scan of this organization can hold a lease either,
+   * and the row is recorded as before.
+   */
+  private async recordAccountContextFailure(
+    client: PoolClient,
+    organizationId: string,
+    allowedTypes: ResourceType[],
+    message: string
+  ): Promise<void> {
+    const awsAccountId = await leaseAccountFor(client, organizationId);
+    if (!awsAccountId) {
+      await this.insertFailedJob(client, organizationId, allowedTypes, message);
+      return;
+    }
+    const session = await openScanSession(this.pool, client, organizationId, awsAccountId, this.leaseTiming);
+    if (!session) {
+      console.log(`⏭️  [Discovery] A scan for org ${organizationId} is already running; this attempt's failure is not recorded`);
+      return;
+    }
+    try {
+      await session.fenced(client, () => this.insertFailedJob(client, organizationId, allowedTypes, message));
+    } catch (error: unknown) {
+      // Lost already: another worker has it, so nothing is written. The account
+      // context failure, not this, is what the caller is told.
+      if (!isLeaseLost(error)) throw error;
+      console.log(`⏭️  [Discovery] Scan lease lost before this attempt's failure was recorded; nothing written`);
+    } finally {
+      await session.end();
+    }
+  }
+
+  /**
+   * A job row recording an attempt that failed before the scan started (its account
+   * context could not be set up): what the 'running' row updated to 'failed' used
+   * to record. The organization's own row, and true. Database statements only:
+   * recordAccountContextFailure writes it inside a fenced transaction under the
+   * scan lease, and without a lease only when there is no account to lease.
+   */
+  private async insertFailedJob(client: PoolClient, organizationId: string, allowedTypes: ResourceType[], message: string): Promise<void> {
+    await client.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, resource_types, regions, error_message)
+       VALUES ($1, 'failed', NOW(), NOW(), $2, $3, $4)`,
+      [organizationId, allowedTypes, [], message]
+    );
+  }
+
   /** Whether resource_discovery_jobs has the warnings column (added by the multi-region M3 admin migration). */
   private async discoveryWarningsColumnExists(client: PoolClient): Promise<boolean> {
     const { rows } = await client.query(
@@ -1875,14 +2194,18 @@ export class AWSResourceDiscoveryService {
    * autoscaling_state explicitly recorded as AUTOSCALING_UNKNOWN -- never
    * silently omitted, and never collapsed into AUTOSCALING_DISABLED. Only a
    * DescribeTable failure skips the table entirely, as before.
+   *
+   * Every AWS call is made first; the writes then run in one fenced transaction
+   * (multi-region plan M4b, F6), database statements only.
    */
   private async enrichDynamoDBTables(
     organizationId: string,
     client: PoolClient,
     awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion' | 'getApplicationAutoScalingClientForRegion'>,
-    entries: NormalizedResourceEntry[]
+    entries: NormalizedResourceEntry[],
+    fenced: Fenced = UNFENCED
   ): Promise<number> {
-    let enrichedCount = 0;
+    const updates: Array<{ arn: string; metadata: Record<string, unknown> }> = [];
     const dynamoDbClientsByRegion = new Map<string, ReturnType<AWSClients['getDynamoDBClientForRegion']>>();
     const autoscalingClientsByRegion = new Map<string, ReturnType<AWSClients['getApplicationAutoScalingClientForRegion']>>();
 
@@ -1927,16 +2250,21 @@ export class AWSResourceDiscoveryService {
           : {}),
       };
 
-      await client.query(
-        `UPDATE aws_resources
-         SET metadata = metadata || $1::jsonb, updated_at = NOW()
-         WHERE organization_id = $2 AND resource_arn = $3`,
-        [JSON.stringify(metadata), organizationId, entry.arn]
-      );
-      enrichedCount++;
+      updates.push({ arn: entry.arn, metadata });
     }
 
-    return enrichedCount;
+    if (updates.length === 0) return 0;
+    await fenced(async () => {
+      for (const update of updates) {
+        await client.query(
+          `UPDATE aws_resources
+           SET metadata = metadata || $1::jsonb, updated_at = NOW()
+           WHERE organization_id = $2 AND resource_arn = $3`,
+          [JSON.stringify(update.metadata), organizationId, update.arn]
+        );
+      }
+    });
+    return updates.length;
   }
 
   /**
@@ -1964,20 +2292,31 @@ export class AWSResourceDiscoveryService {
     organizationId: string,
     client: PoolClient,
     rdsClient: RDSClient,
-    entries: NormalizedResourceEntry[]
+    entries: NormalizedResourceEntry[],
+    fenced: Fenced = UNFENCED
   ): Promise<{ confirmed: number; reclassified: number }> {
+    // The one AWS call first; the writes below run in one fenced transaction (F6).
     const result = await describeAuroraClusters(rdsClient);
     if (result.status === 'unavailable') {
       console.error(`[Discovery] Aurora cluster enrichment unavailable this cycle: ${result.reason}`);
       return { confirmed: 0, reclassified: 0 };
     }
 
+    return fenced(() => this.writeAuroraClusters(organizationId, client, entries, result.clustersById));
+  }
+
+  private async writeAuroraClusters(
+    organizationId: string,
+    client: PoolClient,
+    entries: NormalizedResourceEntry[],
+    clustersById: Map<string, { engine: string; engineMode?: string; status?: string; hasReader: boolean; isAuroraEngine: boolean }>
+  ): Promise<{ confirmed: number; reclassified: number }> {
     let confirmed = 0;
     let reclassified = 0;
 
     for (const entry of entries) {
       const clusterId = this.resourceExplorer.extractResourceId(entry.arn);
-      const cluster = result.clustersById.get(clusterId);
+      const cluster = clustersById.get(clusterId);
 
       if (!cluster) continue;
 

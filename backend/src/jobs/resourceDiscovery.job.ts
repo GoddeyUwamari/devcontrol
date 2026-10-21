@@ -4,6 +4,7 @@ import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { Soc2EvidenceService } from '../services/soc2-evidence.service';
 import { isPlatformAwsCredentialsUnavailable, isPlatformCredentialFailure } from '../services/platform-sts';
 import { readAwsAccountConnection } from '../repositories/aws-accounts.repository';
+import { LeaseSession, LeaseTiming, isScanAlreadyRunning, onTaggedConnection, openDiscoveryJobSession } from '../services/scan-session';
 
 /** One scheduled run's outcome per organization. Every organization lands in exactly one count. */
 export interface DiscoveryRunSummary {
@@ -15,6 +16,13 @@ export interface DiscoveryRunSummary {
   inactive: number;
   /** Discovery failed for the organization's own reasons (e.g. its role refused AssumeRole). */
   failed: number;
+  /**
+   * Not scanned this run because another worker holds it (multi-region plan M4b,
+   * §4.3): its job lease (another process is running this cycle for it, or ran it
+   * within the last five hours), or its scan lease (a manual Sync or Analyze is
+   * running). Nothing is written for it.
+   */
+  locked: number;
   /**
    * Discovery failed on the platform's side: its own AWS identity could not
    * be resolved, or its own IAM policies refused the AssumeRole.
@@ -52,6 +60,8 @@ export class ResourceDiscoveryJob {
   private service: AWSResourceDiscoveryService;
   private soc2EvidenceService: Soc2EvidenceService;
  private task: ReturnType<typeof cron.schedule> | null = null;
+  // How the job lease is renewed (scan-session.ts). The defaults are production's; tests shorten them.
+  private leaseTiming: LeaseTiming = {};
 
   constructor(private pool: Pool) {
     this.service = new AWSResourceDiscoveryService(pool);
@@ -122,7 +132,7 @@ export class ResourceDiscoveryJob {
    * organizations skipped before any AWS call leave it unchanged.
    */
   async scanOrganizations(organizations: Array<{ id: string; name: string }>): Promise<DiscoveryRunSummary> {
-    const summary: DiscoveryRunSummary = { scanned: 0, skipped: 0, inactive: 0, failed: 0, platformFailed: 0, notAttempted: 0 };
+    const summary: DiscoveryRunSummary = { scanned: 0, skipped: 0, inactive: 0, failed: 0, locked: 0, platformFailed: 0, notAttempted: 0 };
     let credentialFailureStreak = 0;
 
     // Run discovery for each organization sequentially
@@ -146,88 +156,124 @@ export class ResourceDiscoveryJob {
         continue;
       }
 
+      // The organization's job lease for this cycle (multi-region plan M4b, §4.3), so
+      // each organization is scanned once per cycle across every process and host --
+      // and across overlapping ticks of this one (node-cron's noOverlap defaults to
+      // false). Held, or completed within the last five hours: skipped.
+      let jobSession: LeaseSession | null;
       try {
-        console.log(`[Resource Discovery Job] Scanning organization: ${org.name} (${org.id})`);
-        const discoveryResult = await this.service.discoverAllResources(org.id);
-        credentialFailureStreak = 0;
-        summary.scanned++;
-        console.log(
-          `[Resource Discovery Job] ${org.name}: ` +
-          `Discovered ${discoveryResult.resources_discovered}, ` +
-          `Updated ${discoveryResult.resources_updated}, ` +
-          `Errors: ${discoveryResult.errors.length}`
-        );
-      } catch (error: any) {
-        if (isPlatformAwsCredentialsUnavailable(error) && isPlatformCredentialFailure(error.cause)) {
-          summary.platformFailed++;
-          credentialFailureStreak++;
-          if (credentialFailureStreak >= CREDENTIAL_FAILURE_STOP_STREAK) {
-            summary.notAttempted = organizations.length - index - 1;
-            console.error(
-              `[Resource Discovery Job] Platform AWS credentials unavailable for ${credentialFailureStreak} organizations in a row (last org ${org.id}); ` +
-              `stopping this run, ${summary.notAttempted} remaining organizations not checked`
-            );
-            break;
-          }
-          console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: platform AWS credentials unavailable`);
-        } else if (isPlatformAwsCredentialsUnavailable(error)) {
-          credentialFailureStreak = 0;
-          summary.platformFailed++;
-          console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: the platform's IAM policies refused AssumeRole for this organization's role`);
-        } else {
-          credentialFailureStreak = 0;
-          summary.failed++;
-          console.error(`[Resource Discovery Job] Failed for org ${org.id} (${error?.name ?? 'Error'}):`, error?.message);
-        }
-        // Continue with next organization even if this one fails -- and skip SOC 2
-        // computation for it this cycle (below): discoverAllResources() throwing here
-        // means it never reached its own resource_discovery_jobs completion write for
-        // this attempt, so there is nothing new for this cycle to compute from.
+        jobSession = await onTaggedConnection(this.pool, org.id, (client) => openDiscoveryJobSession(this.pool, client, org.id, this.leaseTiming));
+      } catch (error: unknown) {
+        const { name, message } = error instanceof Error ? error : { name: 'Error', message: String(error) };
+        console.error(`[Resource Discovery Job] Failed for org ${org.id}: could not take its job lease (${name}):`, message);
+        summary.failed++;
         continue;
       }
+      if (!jobSession) {
+        console.log(`[Resource Discovery Job] Skipping org ${org.id}: its discovery is already running or ran within the last cycle (job lease held)`);
+        summary.locked++;
+        continue;
+      }
+      // Released without completion when the scan lease was held (a manual scan is
+      // running): the next cycle tries again. Completed otherwise, scan succeeded or not.
+      let scanLeaseHeld = false;
 
-      // PHASE 5 -- SOC 2 evidence computation. Runs strictly after this organization's
-      // discovery attempt has finished and persisted its own completion state
-      // (resource_discovery_jobs, aws_resources, account_security_findings).
-      //
-      // Deliberately its own try/catch, entirely separate from discovery's above: a
-      // SOC 2 computation failure must never be reported as, or mistaken for, a
-      // discovery failure, and must never stop this loop from reaching the next
-      // organization -- discovery for this organization already succeeded/was
-      // recorded above regardless of what happens next.
-      //
-      // No separate completeness gate is re-implemented here on purpose:
-      // computeAndPersistEvidence() already consults the one structurally-persisted
-      // completeness signal (Soc2EvidenceRepository.isLatestDiscoveryComplete(), i.e.
-      // resource_discovery_jobs.compliance_scan_completed) internally, per criterion,
-      // to decide whether an absence of findings may become SUPPORTS or must stay
-      // UNKNOWN. A second, cruder gate here (e.g. skipping computation whenever
-      // discoveryResult.errors is non-empty) would be wrong, not just redundant: that
-      // errors array also covers cost-analysis and orphaned-resource detection, which
-      // have nothing to do with SOC 2's actual evidence sources, and would
-      // needlessly withhold evidence for an organization whose aws_resources /
-      // account_security_findings are otherwise fine and fresh -- the same
-      // whole-job-status pitfall onboarding.service.ts already avoids by checking
-      // aws_resources directly instead of resource_discovery_jobs.status.
       try {
-        const soc2StartedAt = Date.now();
-        await this.soc2EvidenceService.computeAndPersistEvidence(org.id);
-        console.log(
-          `[Resource Discovery Job] ${org.name}: SOC 2 evidence computed (${Date.now() - soc2StartedAt}ms)`
-        );
-      } catch (error: any) {
-        console.error(
-          `[Resource Discovery Job] SOC 2 evidence computation failed for ${org.name}:`,
-          error.message
-        );
-        // Non-fatal: this organization's discovery result above is unaffected, and
-        // the loop continues to the next organization regardless.
+        try {
+          console.log(`[Resource Discovery Job] Scanning organization: ${org.name} (${org.id})`);
+          const discoveryResult = await this.service.discoverAllResources(org.id);
+          credentialFailureStreak = 0;
+          summary.scanned++;
+          console.log(
+            `[Resource Discovery Job] ${org.name}: ` +
+            `Discovered ${discoveryResult.resources_discovered}, ` +
+            `Updated ${discoveryResult.resources_updated}, ` +
+            `Errors: ${discoveryResult.errors.length}`
+          );
+        } catch (error: any) {
+          if (isScanAlreadyRunning(error)) {
+            console.log(`[Resource Discovery Job] Skipping org ${org.id}: a scan for its AWS account is already running (scan lease held)`);
+            scanLeaseHeld = true;
+            summary.locked++;
+            continue;
+          }
+          if (isPlatformAwsCredentialsUnavailable(error) && isPlatformCredentialFailure(error.cause)) {
+            summary.platformFailed++;
+            credentialFailureStreak++;
+            if (credentialFailureStreak >= CREDENTIAL_FAILURE_STOP_STREAK) {
+              summary.notAttempted = organizations.length - index - 1;
+              console.error(
+                `[Resource Discovery Job] Platform AWS credentials unavailable for ${credentialFailureStreak} organizations in a row (last org ${org.id}); ` +
+                `stopping this run, ${summary.notAttempted} remaining organizations not checked`
+              );
+              break;
+            }
+            console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: platform AWS credentials unavailable`);
+          } else if (isPlatformAwsCredentialsUnavailable(error)) {
+            credentialFailureStreak = 0;
+            summary.platformFailed++;
+            console.error(`[Resource Discovery Job] Failed for org ${org.id}: ${error.name}: the platform's IAM policies refused AssumeRole for this organization's role`);
+          } else {
+            credentialFailureStreak = 0;
+            summary.failed++;
+            console.error(`[Resource Discovery Job] Failed for org ${org.id} (${error?.name ?? 'Error'}):`, error?.message);
+          }
+          // Continue with next organization even if this one fails -- and skip SOC 2
+          // computation for it this cycle (below): discoverAllResources() throwing here
+          // means it never reached its own resource_discovery_jobs completion write for
+          // this attempt, so there is nothing new for this cycle to compute from.
+          continue;
+        }
+
+        // PHASE 5 -- SOC 2 evidence computation. Runs strictly after this organization's
+        // discovery attempt has finished and persisted its own completion state
+        // (resource_discovery_jobs, aws_resources, account_security_findings).
+        //
+        // Deliberately its own try/catch, entirely separate from discovery's above: a
+        // SOC 2 computation failure must never be reported as, or mistaken for, a
+        // discovery failure, and must never stop this loop from reaching the next
+        // organization -- discovery for this organization already succeeded/was
+        // recorded above regardless of what happens next.
+        //
+        // No separate completeness gate is re-implemented here on purpose:
+        // computeAndPersistEvidence() already consults the one structurally-persisted
+        // completeness signal (Soc2EvidenceRepository.isLatestDiscoveryComplete(), i.e.
+        // resource_discovery_jobs.compliance_scan_completed) internally, per criterion,
+        // to decide whether an absence of findings may become SUPPORTS or must stay
+        // UNKNOWN. A second, cruder gate here (e.g. skipping computation whenever
+        // discoveryResult.errors is non-empty) would be wrong, not just redundant: that
+        // errors array also covers cost-analysis and orphaned-resource detection, which
+        // have nothing to do with SOC 2's actual evidence sources, and would
+        // needlessly withhold evidence for an organization whose aws_resources /
+        // account_security_findings are otherwise fine and fresh -- the same
+        // whole-job-status pitfall onboarding.service.ts already avoids by checking
+        // aws_resources directly instead of resource_discovery_jobs.status.
+        try {
+          const soc2StartedAt = Date.now();
+          // F14: its one transaction is fenced with this organization's job lease.
+          const lease = jobSession;
+          lease.checkpoint();
+          await lease.watch(() => this.soc2EvidenceService.computeAndPersistEvidence(org.id, lease.lease));
+          console.log(
+            `[Resource Discovery Job] ${org.name}: SOC 2 evidence computed (${Date.now() - soc2StartedAt}ms)`
+          );
+        } catch (error: any) {
+          console.error(
+            `[Resource Discovery Job] SOC 2 evidence computation failed for ${org.name}:`,
+            error.message
+          );
+          // Non-fatal: this organization's discovery result above is unaffected, and
+          // the loop continues to the next organization regardless.
+        }
+      } finally {
+        if (scanLeaseHeld) await jobSession.end();
+        else await jobSession.complete();
       }
     }
 
     console.log(
       `[Resource Discovery Job] Scanned ${summary.scanned}, skipped ${summary.skipped} (no AWS connection), ` +
-      `inactive ${summary.inactive}, failed ${summary.failed}, platform_failed ${summary.platformFailed}` +
+      `inactive ${summary.inactive}, failed ${summary.failed}, locked ${summary.locked}, platform_failed ${summary.platformFailed}` +
       (summary.notAttempted > 0 ? `, ${summary.notAttempted} remaining not checked (stopped early)` : '')
     );
     return summary;

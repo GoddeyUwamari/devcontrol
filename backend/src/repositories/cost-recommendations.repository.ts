@@ -8,6 +8,7 @@ import {
   RecommendationStatus,
 } from '../types';
 import { DetectorObservation } from '../services/cost-optimization.service';
+import { HeldLease, beginFenced } from '../services/scan-lease';
 import { aggregateEstimatedSavings } from '../services/estimated-savings';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
@@ -297,6 +298,10 @@ export class CostRecommendationsRepository {
    * scan's home region; every scan passes it. Without it no region limit
    * applies.
    *
+   * `lease` (multi-region plan M4b, F12; required): the scan lease of the scan or
+   * Analyze calling it. The transaction starts with the commit fence, so a worker
+   * that lost its lease changes nothing.
+   *
    * Serialized per-organization via a session-level advisory lock
    * (hashtextextended keyspace, salt distinct from the migration runner's
    * plain-integer lock and from stripe-webhook-ledger.service.ts's salt 0)
@@ -309,7 +314,8 @@ export class CostRecommendationsRepository {
   async reconcileActiveRecommendations(
     organizationId: string,
     observations: DetectorObservation[],
-    scope?: CostReconcileScope
+    scope: CostReconcileScope | undefined,
+    lease: HeldLease
   ): Promise<{ insertedCount: number }> {
     const successful = observations.filter((o) => o.success);
     if (successful.length === 0) {
@@ -324,6 +330,7 @@ export class CostRecommendationsRepository {
 
       try {
         await client.query('BEGIN');
+        await beginFenced(client, lease);
 
         let insertedCount = 0;
 
@@ -455,12 +462,14 @@ export class CostRecommendationsRepository {
    * reconcileActiveRecommendations(): the delete and the inserts commit together or
    * not at all, so a failed insert leaves the stored rows exactly as they were. Only
    * the scan's home region (and rows with no region) is replaced: the RI check lists
-   * the home region only.
+   * the home region only. The transaction starts with the commit fence for `lease`
+   * (multi-region plan M4b, F13; required).
    */
   async replaceReservedInstanceRecommendations(
     organizationId: string,
     scope: CostReconcileScope,
-    recommendations: CreateRecommendationRequest[]
+    recommendations: CreateRecommendationRequest[],
+    lease: HeldLease
   ): Promise<{ deletedCount: number; insertedCount: number }> {
     return this.withOrgClient(organizationId, async (client) => {
       await client.query(
@@ -470,6 +479,7 @@ export class CostRecommendationsRepository {
 
       try {
         await client.query('BEGIN');
+        await beginFenced(client, lease);
 
         const deleted = await client.query(
           `DELETE FROM cost_recommendations

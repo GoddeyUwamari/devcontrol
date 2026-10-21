@@ -29,7 +29,7 @@ import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-s
 import { ResourceExplorer2Client, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { stubScanSource } from './helpers/scan-source';
+import { TestLeases, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import costOptimizationService, { DetectorObservation } from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { AccountSecurityFindingsRepository } from '../../repositories/account-security-findings.repository';
@@ -66,6 +66,8 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || 'postgres',
 });
 const createdOrgIds: string[] = [];
+/** The repository reconciles below run as a scan's would: under the organization's real scan lease. */
+const leases = new TestLeases(pool);
 const ACCOUNT_ID = '123456789012';
 const HOME = 'us-east-1';
 const OTHER = 'eu-west-1';
@@ -103,6 +105,8 @@ async function insertOrg(tier: 'free' | 'starter' = 'free'): Promise<string> {
     [`M4c Org ${suffix}`, `m4c-org-${suffix}`, `M4c Org ${suffix}`, tier]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan leases this account and its fences check it (multi-region plan M4b).
+  await connectPlaceholderAccount(pool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -217,6 +221,7 @@ afterAll(async () => {
     await pool.query('DELETE FROM cost_recommendations WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM account_security_findings WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();
@@ -234,7 +239,7 @@ describe('P-1: a resource the detector could not evaluate keeps its recommendati
     await repository.reconcileActiveRecommendations(
       orgId,
       [observation({ unknownResourceIds: ['i-unknown', 'i-unknown-dismissed'] })],
-      { homeRegion: HOME }
+      { homeRegion: HOME }, await leases.hold(orgId)
     );
 
     expect(await recs(orgId)).toEqual([
@@ -329,7 +334,7 @@ describe('P-1: a resource the detector could not evaluate keeps its recommendati
     expect(lambdaObservation).toMatchObject({ success: true, recommendations: [], unknownResourceIds: ['fn-unread'] });
     expect(analysis.homeRegion).toBe(HOME);
 
-    await repository.reconcileActiveRecommendations(orgId, analysis.observations, { homeRegion: analysis.homeRegion! });
+    await repository.reconcileActiveRecommendations(orgId, analysis.observations, { homeRegion: analysis.homeRegion! }, await leases.hold(orgId));
 
     expect((await recs(orgId)).filter((r) => r.issue === ISSUE_LAMBDA_LOW_USAGE)).toEqual([
       { resource_id: 'fn-unread', issue: ISSUE_LAMBDA_LOW_USAGE, status: 'ACTIVE', aws_region: HOME, ended: false },
@@ -392,7 +397,7 @@ describe('P-2 / AC-3: the detectors read every page, and a cut-off listing is no
 
     const analysis = await costOptimizationService.analyzeAllResources(orgId);
     expect(analysis.observations.find((o) => o.issue === ISSUE_LAMBDA_LOW_USAGE)!.success).toBe(false);
-    await repository.reconcileActiveRecommendations(orgId, analysis.observations, { homeRegion: HOME });
+    await repository.reconcileActiveRecommendations(orgId, analysis.observations, { homeRegion: HOME }, await leases.hold(orgId));
 
     expect((await recs(orgId)).filter((r) => r.issue === ISSUE_LAMBDA_LOW_USAGE)).toHaveLength(1);
   });
@@ -433,7 +438,7 @@ describe('AC-3 G4: detector calls time out under the call policy', () => {
     });
 
     const analysis = await costOptimizationService.analyzeAllResources(orgId);
-    await repository.reconcileActiveRecommendations(orgId, analysis.observations, { homeRegion: HOME });
+    await repository.reconcileActiveRecommendations(orgId, analysis.observations, { homeRegion: HOME }, await leases.hold(orgId));
 
     expect((await recs(orgId)).filter((r) => r.issue === ISSUE_LAMBDA_LOW_USAGE).map((r) => r.resource_id)).toEqual(['fn-slow']);
   });
@@ -561,7 +566,7 @@ describe('P-3: Reserved Instance replacement is one transaction', () => {
     const orgId = await insertOrg();
     await seedRec(orgId, { resourceId: 'ri-opportunity-old', issue: ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY });
 
-    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: HOME }, [finding('ri-opportunity-new', ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY)]);
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: HOME }, [finding('ri-opportunity-new', ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY)], await leases.hold(orgId));
 
     expect((await recs(orgId)).map((r) => r.resource_id)).toEqual(['ri-opportunity-new']);
   });
@@ -572,7 +577,7 @@ describe('P-3: Reserved Instance replacement is one transaction', () => {
     const broken = { ...finding('ri-opportunity-broken', ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY), severity: 'NOT-A-SEVERITY' as any };
 
     await expect(
-      repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: HOME }, [finding('ri-opportunity-new', ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY), broken])
+      repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: HOME }, [finding('ri-opportunity-new', ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY), broken], await leases.hold(orgId))
     ).rejects.toThrow();
 
     expect(await recs(orgId)).toEqual([
@@ -634,7 +639,7 @@ describe('§6.2 region predicates', () => {
     await repository.reconcileActiveRecommendations(
       orgId,
       [observation({}), observation({ issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION }), observation({ issue: ISSUE_DYNAMODB_CAPACITY })],
-      { homeRegion: HOME }
+      { homeRegion: HOME }, await leases.hold(orgId)
     );
 
     expect(await recs(orgId)).toEqual([
@@ -647,7 +652,7 @@ describe('§6.2 region predicates', () => {
     const orgId = await insertOrg();
     await seedRec(orgId, { resourceId: 'i-other', issue: ISSUE_EC2_IDLE_INSTANCE, region: OTHER });
 
-    await repository.reconcileActiveRecommendations(orgId, [observation({})]);
+    await repository.reconcileActiveRecommendations(orgId, [observation({})], undefined, await leases.hold(orgId));
 
     expect(await recs(orgId)).toEqual([]);
   });
@@ -658,7 +663,7 @@ describe('§6.2 region predicates', () => {
     await seedRec(orgId, { resourceId: 'ri-opportunity-none', issue: ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, region: null });
     await seedRec(orgId, { resourceId: 'ri-opportunity-other', issue: ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, region: OTHER });
 
-    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: HOME }, []);
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: HOME }, [], await leases.hold(orgId));
 
     expect((await recs(orgId)).map((r) => r.resource_id)).toEqual(['ri-opportunity-other']);
   });
@@ -677,7 +682,7 @@ describe('§6.2 region predicates', () => {
     await insert('net-other', 'networking', OTHER);
     await insert('iam-user', 'iam', null);
 
-    await findingsRepository.reconcileScan(orgId, new Date(), [], ['networking', 'iam'], HOME);
+    await findingsRepository.reconcileScan(orgId, new Date(), [], ['networking', 'iam'], HOME, await leases.hold(orgId));
 
     const { rows } = await pool.query(
       `SELECT finding_key, status FROM account_security_findings WHERE organization_id = $1 ORDER BY finding_key`,
@@ -752,9 +757,9 @@ describe('two organizations with the same identifiers', () => {
     }
     const before = await recs(orgB);
 
-    await repository.reconcileActiveRecommendations(orgA, [observation({})], { homeRegion: HOME });
-    await repository.replaceReservedInstanceRecommendations(orgA, { homeRegion: HOME }, []);
-    await findingsRepository.reconcileScan(orgA, new Date(), [], ['networking', 'iam'], HOME);
+    await repository.reconcileActiveRecommendations(orgA, [observation({})], { homeRegion: HOME }, await leases.hold(orgA));
+    await repository.replaceReservedInstanceRecommendations(orgA, { homeRegion: HOME }, [], await leases.hold(orgA));
+    await findingsRepository.reconcileScan(orgA, new Date(), [], ['networking', 'iam'], HOME, await leases.hold(orgA));
 
     expect((await recs(orgA)).map((r) => [r.resource_id, r.status, r.ended])).toEqual([['i-same-dismissed', 'DISMISSED', true]]);
     expect(await recs(orgB)).toEqual(before);
@@ -786,7 +791,7 @@ async function reconcileResult(orgId: string, issue: string, result: { success: 
   await repository.reconcileActiveRecommendations(
     orgId,
     [{ issue, success: result.success, recommendations: result.issues.map(toRequest), unknownResourceIds: result.unknownResourceIds }],
-    { homeRegion: HOME }
+    { homeRegion: HOME }, await leases.hold(orgId)
   );
 }
 
@@ -964,7 +969,7 @@ describe('F4: createBulk and the RI replacement share one INSERT', () => {
     const rec = { ...finding('ri-opportunity-m5.large', ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY), potential_savings: 12.5, severity: 'MEDIUM' as const, metadata: { instance_type: 'm5.large' } };
 
     await repository.createBulk([rec], viaBulk);
-    await repository.replaceReservedInstanceRecommendations(viaReplace, { homeRegion: HOME }, [rec]);
+    await repository.replaceReservedInstanceRecommendations(viaReplace, { homeRegion: HOME }, [rec], await leases.hold(viaReplace));
 
     const row = async (orgId: string) => (await pool.query(
       `SELECT resource_id, resource_name, resource_type, issue, description, potential_savings, severity, aws_region, metadata, status,

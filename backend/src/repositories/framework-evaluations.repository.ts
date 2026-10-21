@@ -44,6 +44,8 @@
  * stale. The two cannot disagree: both come from the same generation.
  */
 import { PoolClient } from 'pg';
+import { HeldLease, beginFenced, isLeaseLost } from '../services/scan-lease';
+import { isAwsAccountAmbiguous } from './aws-accounts.repository';
 import {
   ComplianceIssue,
   ComplianceIssueProvenance,
@@ -124,6 +126,13 @@ export interface PersistResourceInput {
   frameworks: FrameworkResourceEvaluation[];
   /** Turns the resource's stored failures into findings. Called inside the transaction. */
   project: (failures: StoredFailure[]) => ComplianceIssue[];
+  /**
+   * The scan lease (multi-region plan M4b, F7; required): the transaction
+   * starts with the commit fence, before the resource's row
+   * lock. A lost lease (or a second eligible account) is thrown, not returned as
+   * a failed resource: the scan must stop.
+   */
+  lease: HeldLease;
 }
 
 export type PersistResourceResult =
@@ -346,6 +355,8 @@ export async function persistResourceEvaluation(
 ): Promise<PersistResourceResult> {
   await client.query('BEGIN');
   try {
+    // The scan passes its own connection (a PoolClient); the fence needs one connection.
+    await beginFenced(client as PoolClient, input.lease);
     // A concurrent scan holding this resource is writing it right now; do not queue behind it.
     await client.query(`SET LOCAL lock_timeout = '5s'`);
 
@@ -419,6 +430,7 @@ export async function persistResourceEvaluation(
     } catch {
       throw new EvaluationConnectionUnusableError();
     }
+    if (isLeaseLost(error) || isAwsAccountAmbiguous(error)) throw error;
     // 55P03 = lock_not_available. Only the category is returned and stored; the
     // database's message goes to the log and nowhere else.
     const failureCode = error?.code === '55P03' ? 'lock_timeout' : 'persist_error';

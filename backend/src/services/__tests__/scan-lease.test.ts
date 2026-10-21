@@ -933,6 +933,63 @@ describe('scan-lease: L8 heartbeat', () => {
     });
   });
 
+  it('N1: the renewal\'s lock timeout alone bounds a blocked renewal (statement timeout far longer): it settles fast, as an error', async () => {
+    await withSchema(async (env) => {
+      const org = await env.organization();
+      const db = await env.connection(org);
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const lease = (await acquireScanLease(db, scanKey(org), 'h'))!;
+      // Only the lock timeout can end this wait: the statement limit is 30 s.
+      const heartbeat = new LeaseHeartbeat(env.pool(), lease, { renewLockTimeoutMs: 200, renewStatementTimeoutMs: 30_000 });
+      const hold = gate();
+      const entered = gate();
+      const transaction = withFencedTransaction(db, lease, async () => {
+        entered.open();
+        await hold.opened;
+      }, { idleInTransactionTimeoutMs: 20_000 });
+      await entered.opened;
+      const started = Date.now();
+      const beat = heartbeat.beat();
+      try {
+        await within(beat, 3_000, 'the blocked renewal to give up on the lock');
+        expect(Date.now() - started).toBeLessThan(3_000);
+        expect(heartbeat.lost).toBe(false); // one error is not a loss
+      } finally {
+        hold.open();
+        await transaction;
+        await Promise.allSettled([beat]);
+      }
+      expect(await heartbeat.stopAndRelease()).toBe(true);
+    });
+  });
+
+  it('N2: a connection that never answers (a dead TCP connection) is given up client-side; the renewal settles and the connection is discarded', async () => {
+    await withSchema(async (env) => {
+      const org = await env.organization();
+      const db = await env.connection(org);
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const lease = (await acquireScanLease(db, scanKey(org), 'h'))!;
+      const released: unknown[] = [];
+      const dead = {
+        connect: async () =>
+          ({
+            query: () => new Promise(() => undefined),
+            release: (error?: unknown) => released.push(error),
+          }) as unknown as PoolClient,
+      };
+      // The server-side limit cannot reach a connection that is gone; the client-side
+      // guard (statement timeout + HEARTBEAT_CLIENT_TIMEOUT_MARGIN_MS) does.
+      const heartbeat = new LeaseHeartbeat(dead, lease, { renewLockTimeoutMs: 100, renewStatementTimeoutMs: 200 });
+      await within(heartbeat.beat(), 5_000, 'the first renewal on a dead connection to settle');
+      expect(heartbeat.lost).toBe(false);
+      await within(heartbeat.beat(), 5_000, 'the second renewal on a dead connection to settle');
+      expect(heartbeat.lost).toBe(true);
+      expect(released).toHaveLength(2);
+      for (const error of released) expect(error).toBeInstanceOf(Error);
+      expect(await within(heartbeat.stopAndRelease(), 5_000, 'stopAndRelease() to return')).toBe(false);
+    });
+  }, 20_000);
+
   it('F8: the age warning uses the database\'s acquired_at, so a heartbeat started late still warns at the first renewal', async () => {
     await withSchema(async (env) => {
       const org = await env.organization();

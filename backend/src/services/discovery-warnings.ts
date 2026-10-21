@@ -11,8 +11,9 @@
  * to code that reads only error_message still shows them. splitDiscoveryMessage()
  * separates them again: readers take the column when it is set and fall back to
  * error_message for older rows (jobWarnings()), and the readiness gate ignores them.
- * A code added after the column (DISCOVERY_WARNING_LISTING_TRUNCATED) is written to
- * the column only, never to error_message.
+ * A code added after the column (DISCOVERY_WARNING_LISTING_TRUNCATED,
+ * DISCOVERY_WARNING_SCAN_LEASE_LOST) is written to the column only, never to
+ * error_message.
  */
 
 /**
@@ -29,7 +30,17 @@ export const DISCOVERY_WARNING_TRUNCATED_INDEX = 'deletion_detection_paused_trun
  */
 export const DISCOVERY_WARNING_LISTING_TRUNCATED = 'discovery_listing_truncated';
 
-export const DISCOVERY_WARNINGS = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED] as const;
+/**
+ * The scan stopped because another scan took over its lease (multi-region plan M4b,
+ * Q3); its job row carries the approved lease-lost text. Internal: no page renders it.
+ */
+export const DISCOVERY_WARNING_SCAN_LEASE_LOST = 'scan_lease_lost';
+
+export const DISCOVERY_WARNINGS = [
+  DISCOVERY_WARNING_TRUNCATED_INDEX,
+  DISCOVERY_WARNING_LISTING_TRUNCATED,
+  DISCOVERY_WARNING_SCAN_LEASE_LOST,
+] as const;
 
 export type DiscoveryWarning = (typeof DISCOVERY_WARNINGS)[number];
 
