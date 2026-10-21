@@ -158,7 +158,7 @@ let errorSpy: jest.SpyInstance;
 let factorySpy: jest.SpyInstance;
 let analyzeSpy: jest.SpyInstance;
 let reconcileSpy: jest.SpyInstance;
-let deleteByIssueSpy: jest.SpyInstance;
+let replaceRiSpy: jest.SpyInstance;
 let createBulkSpy: jest.SpyInstance;
 let syncSpy: jest.SpyInstance;
 let anomalyScanSpy: jest.SpyInstance;
@@ -202,7 +202,7 @@ beforeEach(() => {
   reconcileSpy = jest
     .spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations')
     .mockResolvedValue({ insertedCount: 0 } as never);
-  deleteByIssueSpy = jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0 as never);
+  replaceRiSpy = jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 } as never);
   createBulkSpy = jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0 as never);
   syncSpy = jest.spyOn(SecurityHubSyncService.prototype, 'sync').mockResolvedValue({ status: 'stubbed' } as never);
   // One finding, so an allowed scan goes on to the AI explainer and the write.
@@ -302,7 +302,7 @@ const mutations: Mutation[] = [
     happened: async (orgId, runsBefore) =>
       analyzeSpy.mock.calls.length +
         reconcileSpy.mock.calls.length +
-        deleteByIssueSpy.mock.calls.length +
+        replaceRiSpy.mock.calls.length +
         createBulkSpy.mock.calls.length >
         0 || (await count('cost_analysis_runs', orgId)) !== Number(runsBefore),
   },

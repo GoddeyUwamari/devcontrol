@@ -49,6 +49,7 @@
  * GSI-scoped throttling, not just the utilization evidence.
  */
 import { CloudWatchClient, GetMetricDataCommand, ScanBy } from '@aws-sdk/client-cloudwatch';
+import { listAllPages } from '../utils/awsCallPolicy';
 
 export const DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS = 30;
 export const DYNAMODB_CAPACITY_PERIOD_SECONDS = 3600;
@@ -105,8 +106,9 @@ function alignToGrid(expected: Date[], timestamps: Date[], values: number[]): Ar
  * Fetches all six metrics for one table in a single batched `GetMetricData`
  * call (paginating via `NextToken` if CloudWatch ever splits the response --
  * not expected at this datapoint volume, but handled correctly rather than
- * assumed away). Returns `{status: 'unavailable'}` -- never a partial or
- * zero-filled series -- if the call itself fails.
+ * assumed away), at most listAllPages' page limit. Returns `{status: 'unavailable'}`
+ * -- never a partial or zero-filled series -- if a page fails or the limit is
+ * reached with pages left: the table's capacity is then unknown this scan.
  */
 export async function fetchDynamoDBCapacityMetrics(
   cloudWatchClient: CloudWatchClient,
@@ -122,8 +124,7 @@ export async function fetchDynamoDBCapacityMetrics(
     const rawById = new Map<string, { timestamps: Date[]; values: number[] }>();
     for (const q of METRIC_QUERIES) rawById.set(q.id, { timestamps: [], values: [] });
 
-    let nextToken: string | undefined;
-    do {
+    const listing = await listAllPages(`DynamoDB metrics: GetMetricData (${tableName})`, async (nextToken) => {
       const response = await cloudWatchClient.send(
         new GetMetricDataCommand({
           MetricDataQueries: METRIC_QUERIES.map((q) => ({
@@ -146,15 +147,19 @@ export async function fetchDynamoDBCapacityMetrics(
         })
       );
 
-      for (const result of response.MetricDataResults || []) {
-        if (!result.Id) continue;
-        const acc = rawById.get(result.Id);
-        if (!acc) continue;
-        acc.timestamps.push(...(result.Timestamps || []));
-        acc.values.push(...(result.Values || []));
-      }
-      nextToken = response.NextToken;
-    } while (nextToken);
+      return { items: response.MetricDataResults || [], nextToken: response.NextToken };
+    });
+    if (!listing.complete) {
+      return { status: 'unavailable', reason: `GetMetricData stopped at ${listing.pages} pages with more to read` };
+    }
+
+    for (const result of listing.items) {
+      if (!result.Id) continue;
+      const acc = rawById.get(result.Id);
+      if (!acc) continue;
+      acc.timestamps.push(...(result.Timestamps || []));
+      acc.values.push(...(result.Values || []));
+    }
 
     const consumedReadSum = alignToGrid(expectedTimestamps, rawById.get('consumedRead')!.timestamps, rawById.get('consumedRead')!.values);
     const consumedWriteSum = alignToGrid(expectedTimestamps, rawById.get('consumedWrite')!.timestamps, rawById.get('consumedWrite')!.values);

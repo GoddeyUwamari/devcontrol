@@ -29,7 +29,8 @@
  * prose and the installed SDK's own `Status?: string` typing) -- callers
  * must treat any unrecognized value defensively, never assume completeness.
  */
-import { RDSClient, paginateDescribeDBClusters } from '@aws-sdk/client-rds';
+import { RDSClient, DescribeDBClustersCommand } from '@aws-sdk/client-rds';
+import { listAllPages } from '../utils/awsCallPolicy';
 
 // 'aurora' (the legacy bare engine name, pre-dating the aurora-mysql/
 // aurora-postgresql split) is included defensively even though current AWS
@@ -64,19 +65,23 @@ export type DescribeAuroraClustersResult =
 export async function describeAuroraClusters(client: RDSClient): Promise<DescribeAuroraClustersResult> {
   try {
     const clustersById = new Map<string, AuroraClusterInfo>();
-    for await (const page of paginateDescribeDBClusters({ client }, {})) {
-      for (const cluster of page.DBClusters ?? []) {
-        if (!cluster.DBClusterIdentifier) continue;
-        const engine = cluster.Engine ?? '';
-        clustersById.set(cluster.DBClusterIdentifier, {
-          dbClusterIdentifier: cluster.DBClusterIdentifier,
-          engine,
-          engineMode: cluster.EngineMode,
-          status: cluster.Status,
-          hasReader: (cluster.DBClusterMembers ?? []).some((m) => m.IsClusterWriter === false),
-          isAuroraEngine: AURORA_ENGINES.has(engine),
-        });
-      }
+    // A listing cut off at its page limit still names real clusters; one it did not
+    // reach is absent, and an absent candidate is never changed (see the caller).
+    const listing = await listAllPages('Aurora: DescribeDBClusters', async (token) => {
+      const page = await client.send(new DescribeDBClustersCommand({ Marker: token }));
+      return { items: page.DBClusters ?? [], nextToken: page.Marker };
+    });
+    for (const cluster of listing.items) {
+      if (!cluster.DBClusterIdentifier) continue;
+      const engine = cluster.Engine ?? '';
+      clustersById.set(cluster.DBClusterIdentifier, {
+        dbClusterIdentifier: cluster.DBClusterIdentifier,
+        engine,
+        engineMode: cluster.EngineMode,
+        status: cluster.Status,
+        hasReader: (cluster.DBClusterMembers ?? []).some((m) => m.IsClusterWriter === false),
+        isAuroraEngine: AURORA_ENGINES.has(engine),
+      });
     }
     return { status: 'described', clustersById };
   } catch (error: any) {

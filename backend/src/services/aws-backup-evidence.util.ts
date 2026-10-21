@@ -28,6 +28,7 @@
  * that same instance ARN share one AWS call, not one each).
  */
 import { BackupClient, ListRecoveryPointsByResourceCommand } from '@aws-sdk/client-backup';
+import { listAllPages } from '../utils/awsCallPolicy';
 
 // AWS Backup's RecoveryPointStatus values that represent a real, usable backup -- see
 // RecoveryPointStatus in @aws-sdk/client-backup: AVAILABLE and COMPLETED are the only
@@ -40,7 +41,9 @@ export type BackupEvidenceResult = boolean | null;
 
 /**
  * Checks one resource ARN for qualifying AWS Backup recovery-point evidence. Paginates
- * via NextToken. Never throws -- every failure path (including AccessDenied) resolves to
+ * via NextToken, at most listAllPages' page limit, and stops at the first qualifying
+ * point. Reaching the limit with pages left is unknown (`null`), never "no backup".
+ * Never throws -- every failure path (including AccessDenied) resolves to
  * `null`, logged distinctly so a missing IAM permission is diagnosable separately from a
  * transient AWS-side failure, though callers never need to distinguish them themselves.
  */
@@ -49,17 +52,21 @@ export async function checkAwsBackupRecoveryPoints(
   resourceArn: string
 ): Promise<BackupEvidenceResult> {
   try {
-    let nextToken: string | undefined;
-    do {
+    let qualifying = false;
+    const listing = await listAllPages('AWS Backup: ListRecoveryPointsByResource', async (nextToken) => {
       const response = await backupClient.send(
         new ListRecoveryPointsByResourceCommand({ ResourceArn: resourceArn, NextToken: nextToken })
       );
       const points = response.RecoveryPoints ?? [];
-      if (points.some((p) => p.Status && QUALIFYING_RECOVERY_POINT_STATUSES.has(p.Status))) {
-        return true;
-      }
-      nextToken = response.NextToken;
-    } while (nextToken);
+      qualifying = points.some((p) => p.Status && QUALIFYING_RECOVERY_POINT_STATUSES.has(p.Status));
+      // One qualifying point is the answer: no further page is read.
+      return { items: [], nextToken: qualifying ? undefined : response.NextToken };
+    });
+    if (qualifying) return true;
+    if (!listing.complete) {
+      console.error(`[AWS Backup] Recovery points for ${resourceArn} not fully read (page limit); recorded as unknown`);
+      return null;
+    }
     return false;
   } catch (err: any) {
     const isAccessDenied = err?.name === 'AccessDeniedException' || err?.$metadata?.httpStatusCode === 403;

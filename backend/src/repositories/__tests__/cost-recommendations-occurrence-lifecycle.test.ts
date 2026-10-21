@@ -17,7 +17,7 @@
  * cost-optimization.service.ts and the NON_RI_ISSUES comment in
  * cost-recommendations.repository.ts) and are covered separately in the
  * "RI opportunities are unaffected" section below, via
- * deleteActiveByIssue()+createBulk() instead.
+ * replaceReservedInstanceRecommendations() instead.
  */
 import { Pool, Client } from 'pg';
 import { CostRecommendationsRepository } from '../cost-recommendations.repository';
@@ -485,7 +485,7 @@ describe('Concurrency (test items 13-14)', () => {
 });
 
 describe('RI opportunities are unaffected by the occurrence lifecycle (test item 15)', () => {
-  it('deleteActiveByIssue + createBulk (the RI path) unconditionally replaces RI findings every call, no suppression', async () => {
+  it('replaceReservedInstanceRecommendations (the RI path) unconditionally replaces RI findings every call, no suppression', async () => {
     const orgId = await insertOrg();
     const riFinding = fakeFinding({
       resource_id: 'ri-opportunity-t3.large',
@@ -493,16 +493,14 @@ describe('RI opportunities are unaffected by the occurrence lifecycle (test item
       issue: 'Reserved Instance Opportunity',
     });
 
-    await repository.deleteActiveByIssue(orgId, 'Reserved Instance Opportunity');
-    await repository.createBulk([riFinding], orgId);
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [riFinding]);
     const [firstRow] = await fetchRows(orgId, 'ri-opportunity-t3.large', 'Reserved Instance Opportunity');
     await repository.updateStatus(firstRow.id, 'RESOLVED', orgId);
 
     // Unlike the non-RI lifecycle, RI's path has no suppression check --
     // the identical finding is unconditionally recreated as ACTIVE every
     // call, exactly matching pre-existing behavior.
-    await repository.deleteActiveByIssue(orgId, 'Reserved Instance Opportunity');
-    await repository.createBulk([riFinding], orgId);
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [riFinding]);
 
     const rows = await fetchRows(orgId, 'ri-opportunity-t3.large', 'Reserved Instance Opportunity');
     const active = rows.filter((r) => r.status === 'ACTIVE');
@@ -510,11 +508,11 @@ describe('RI opportunities are unaffected by the occurrence lifecycle (test item
     expect(rows.find((r) => r.status === 'RESOLVED')).toBeDefined();
   });
 
-  it('deleteActiveByIssue scoped to RI does not touch a non-RI ACTIVE row for the same organization', async () => {
+  it('replaceReservedInstanceRecommendations scoped to RI does not touch a non-RI ACTIVE row for the same organization', async () => {
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })]);
 
-    await repository.deleteActiveByIssue(orgId, 'Reserved Instance Opportunity');
+    await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, []);
 
     const [row] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     expect(row.status).toBe('ACTIVE');

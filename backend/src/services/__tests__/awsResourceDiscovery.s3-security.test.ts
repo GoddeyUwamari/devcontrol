@@ -121,7 +121,7 @@ function mockAwsClients(s3: object, s3Control: object) {
 function mockCostAnalysis() {
   jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true } as any);
   jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 } as any);
-  jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+  jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 });
   jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
 }
 
@@ -170,7 +170,9 @@ describe('discovery compliance loop: S3 security evaluation', () => {
       // The organization's own S3 client, with discovery's call policy (time limit,
       // throttling retries) around its send: the same client underneath.
       expect(Object.getPrototypeOf(call[1])).toBe(s3);
-      expect(call[2]).toEqual({ s3Control, accountId: ACCOUNT_ID });
+      // The S3 Control client likewise (every discovery client is under the call policy).
+      expect(call[2]?.accountId).toBe(ACCOUNT_ID);
+      expect(Object.getPrototypeOf(call[2]?.s3Control)).toBe(s3Control);
     }
     // Account-level Block Public Access: one lookup for the whole scan, for this account.
     expect(s3Control.send).toHaveBeenCalledTimes(1);

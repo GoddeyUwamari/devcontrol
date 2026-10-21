@@ -19,6 +19,13 @@ import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
 import type { ScanContext } from './scan-context';
 import { pool } from '../config/database';
 import {
+  AwsCallPolicy,
+  DEFAULT_AWS_CALL_POLICY,
+  MAX_LIST_FUNCTIONS_PAGES,
+  listAllPages,
+  withCallPolicyOnClients,
+} from '../utils/awsCallPolicy';
+import {
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
   ISSUE_EC2_UNUSED_ELASTIC_IP,
@@ -166,15 +173,20 @@ interface OptimizationIssue {
 }
 
 // success=false means the detector's AWS call(s) threw internally (auth
-// failure, timeout, rate limit, etc.) -- issues is always [] in that case,
-// and MUST NOT be interpreted as "this detector found nothing." Only
-// success=true means the returned issues array is the complete observation
-// for that detector's scope this scan. Reserved Instance Opportunities use the
-// same success contract but stay outside the occurrence lifecycle -- see
-// analyzeAllResources().
+// failure, timeout, rate limit, etc.) or its listing stopped at its page limit
+// (listAllPages) -- issues is always [] in that case, and MUST NOT be
+// interpreted as "this detector found nothing." Only success=true means the
+// returned issues array is the complete observation for that detector's scope
+// this scan, apart from unknownResourceIds: resources the detector listed but
+// could not evaluate this scan (a per-resource read failed, timed out or
+// returned too little evidence). Their stored recommendations are neither
+// deleted nor ended (multi-region plan M4, P-1). Reserved Instance
+// Opportunities use the same success contract but stay outside the occurrence
+// lifecycle -- see analyzeAllResources().
 interface DetectorResult {
   success: boolean;
   issues: OptimizationIssue[];
+  unknownResourceIds?: string[];
 }
 
 // One entry per non-RI detector category, tagged with the fixed `issue`
@@ -186,6 +198,11 @@ export interface DetectorObservation {
   issue: string;
   success: boolean;
   recommendations: CreateRecommendationRequest[];
+  /**
+   * Resources this scan could not evaluate (see DetectorResult): reconciliation
+   * leaves their rows as they are. Absent means none.
+   */
+  unknownResourceIds?: string[];
 }
 
 class CostOptimizationService {
@@ -195,6 +212,9 @@ class CostOptimizationService {
   // does no caching (see optimization-rule-config.service.ts), so this is just
   // avoiding repeated object construction, not a data cache.
   private readonly optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
+  // Every detector AWS call is made under this policy: a time limit per call, and
+  // throttled calls retried with backoff (utils/awsCallPolicy.ts), as in discovery.
+  private callPolicy: AwsCallPolicy = DEFAULT_AWS_CALL_POLICY;
 
   /**
    * Main analysis function - detects all cost optimization opportunities
@@ -207,7 +227,7 @@ class CostOptimizationService {
    * lifecycle (resolve/dismiss suppression, disappearance/recurrence
    * tracking) applied to the other three -- see
    * CostRecommendationsRepository.reconcileActiveRecommendations() vs.
-   * deleteActiveByIssue()+createBulk() for how the two paths diverge.
+   * replaceReservedInstanceRecommendations() for how the two paths diverge.
    */
   async analyzeAllResources(organizationId: string, scanContext?: ScanContext): Promise<{
     observations: DetectorObservation[];
@@ -218,15 +238,25 @@ class CostOptimizationService {
      * the stored rows must be left as they are.
      */
     riSucceeded: boolean;
+    /**
+     * The region the home-listed detectors (idle EC2, Elastic IP, EBS, gp2, Lambda,
+     * Reserved Instances) listed: their stale recommendations are reconciled in
+     * this region only (CostRecommendationsRepository). Undefined when AWS is not
+     * connected.
+     */
+    homeRegion?: string;
   }> {
     // Inside a discovery scan, the scan's own account context (no second
     // AssumeRole); called on its own, the organization's one eligible account.
     if (scanContext && scanContext.organizationId !== organizationId) {
       throw new Error(`SCAN_CONTEXT_MISMATCH: scan context for org ${scanContext.organizationId} used for org ${organizationId}`);
     }
-    const clients = scanContext
-      ? scanContext.clientsFor(scanContext.region)
-      : await AWSClientFactory.createClients(organizationId);
+    // Every client, the regional ones included, under the call policy: no detector
+    // call runs without a time limit.
+    const clients = withCallPolicyOnClients(
+      scanContext ? scanContext.clientsFor(scanContext.region) : await AWSClientFactory.createClients(organizationId),
+      this.callPolicy
+    );
 
     if (!clients.enabled) {
       console.log(`AWS not connected for org ${organizationId}, skipping cost analysis`);
@@ -291,7 +321,7 @@ class CostOptimizationService {
       });
 
       const observations: DetectorObservation[] = [
-        { issue: ISSUE_EC2_IDLE_INSTANCE, success: idleEC2.success, recommendations: idleEC2.issues.map(toRequest) },
+        { issue: ISSUE_EC2_IDLE_INSTANCE, success: idleEC2.success, recommendations: idleEC2.issues.map(toRequest), unknownResourceIds: idleEC2.unknownResourceIds },
         // Retired detector (rds_rightsizing is 'planned'): it matched dev/staging/
         // test in the name plus "large" in the class, with no utilisation data,
         // and priced unlisted classes at a flat default. A successful, empty
@@ -303,16 +333,17 @@ class CostOptimizationService {
         { issue: ISSUE_EC2_UNUSED_ELASTIC_IP, success: unusedEIPs.success, recommendations: unusedEIPs.issues.map(toRequest) },
         { issue: ISSUE_EBS_UNATTACHED_VOLUME, success: unattachedEBS.success, recommendations: unattachedEBS.issues.map(toRequest) },
         { issue: ISSUE_EBS_GP2_TO_GP3, success: gp2ToGp3.success, recommendations: gp2ToGp3.issues.map(toRequest) },
-        { issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION, success: s3Lifecycle.success, recommendations: s3Lifecycle.issues.map(toRequest) },
-        { issue: ISSUE_LAMBDA_LOW_USAGE, success: lowUsageLambda.success, recommendations: lowUsageLambda.issues.map(toRequest) },
-        { issue: ISSUE_DYNAMODB_CAPACITY, success: dynamoDBCapacity.success, recommendations: dynamoDBCapacity.issues.map(toRequest) },
-        { issue: ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED, success: dynamoDBModeComparison.success, recommendations: dynamoDBModeComparison.issues.map(toRequest) },
+        { issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION, success: s3Lifecycle.success, recommendations: s3Lifecycle.issues.map(toRequest), unknownResourceIds: s3Lifecycle.unknownResourceIds },
+        { issue: ISSUE_LAMBDA_LOW_USAGE, success: lowUsageLambda.success, recommendations: lowUsageLambda.issues.map(toRequest), unknownResourceIds: lowUsageLambda.unknownResourceIds },
+        { issue: ISSUE_DYNAMODB_CAPACITY, success: dynamoDBCapacity.success, recommendations: dynamoDBCapacity.issues.map(toRequest), unknownResourceIds: dynamoDBCapacity.unknownResourceIds },
+        { issue: ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED, success: dynamoDBModeComparison.success, recommendations: dynamoDBModeComparison.issues.map(toRequest), unknownResourceIds: dynamoDBModeComparison.unknownResourceIds },
       ];
 
       return {
         observations,
         riRecommendations: riOpportunities.issues.map(toRequest),
         riSucceeded: riOpportunities.success,
+        homeRegion: clients.region,
       };
     } catch (error) {
       console.error('Error analyzing resources:', error);
@@ -338,19 +369,24 @@ class CostOptimizationService {
     region: string
   ): Promise<DetectorResult> {
     try {
-      const command = new DescribeInstancesCommand({
-        Filters: [
-          {
-            Name: 'instance-state-name',
-            Values: ['running'],
-          },
-        ],
+      const listing = await listAllPages('idle EC2: DescribeInstances', async (token) => {
+        const page = await ec2Client.send(new DescribeInstancesCommand({
+          Filters: [
+            {
+              Name: 'instance-state-name',
+              Values: ['running'],
+            },
+          ],
+          NextToken: token,
+        }));
+        return { items: page.Reservations || [], nextToken: page.NextToken };
       });
+      if (!listing.complete) return { success: false, issues: [] };
 
-      const response = await ec2Client.send(command);
       const issues: OptimizationIssue[] = [];
+      const unknownResourceIds: string[] = [];
 
-      for (const reservation of response.Reservations || []) {
+      for (const reservation of listing.items) {
         for (const instance of reservation.Instances || []) {
           if (!instance.InstanceId) continue;
 
@@ -372,10 +408,16 @@ class CostOptimizationService {
           // primary network interface's attachment time), so a stop/start
           // resets it. A LaunchTime inside the window means the instance has
           // not run continuously for the whole window -- not a full-window
-          // evaluation. A missing LaunchTime is insufficient evidence.
+          // evaluation. A missing LaunchTime is insufficient evidence. Either
+          // way the instance is unknown this scan, not "not idle": a stored
+          // recommendation for it is kept as it is (so a stop/start does not end
+          // a dismissed occurrence).
           const windowEnd = new Date();
           const windowStart = new Date(windowEnd.getTime() - EC2_IDLE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-          if (!instance.LaunchTime || instance.LaunchTime.getTime() > windowStart.getTime()) continue;
+          if (!instance.LaunchTime || instance.LaunchTime.getTime() > windowStart.getTime()) {
+            unknownResourceIds.push(instance.InstanceId);
+            continue;
+          }
 
           const cpu = await this.getAverageCPUUtilization(
             cloudWatchClient,
@@ -384,8 +426,13 @@ class CostOptimizationService {
             windowEnd
           );
 
-          // Missing or incomplete telemetry is insufficient evidence -- never assumed idle.
-          if (cpu === null || cpu.datapoints < EC2_IDLE_MIN_DATAPOINTS) continue;
+          // Missing or incomplete telemetry is insufficient evidence -- never assumed
+          // idle, and never taken as "no longer idle" either: the instance is unknown
+          // this scan, so a stored recommendation for it is kept as it is.
+          if (cpu === null || cpu.datapoints < EC2_IDLE_MIN_DATAPOINTS) {
+            unknownResourceIds.push(instance.InstanceId);
+            continue;
+          }
 
           if (cpu.average < config.value) {
             const nameTag = instance.Tags?.find((tag) => tag.Key === 'Name');
@@ -426,7 +473,7 @@ class CostOptimizationService {
         }
       }
 
-      return { success: true, issues };
+      return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting idle EC2 instances:', error);
       return { success: false, issues: [] };
@@ -438,11 +485,14 @@ class CostOptimizationService {
    */
   private async detectUnusedElasticIPs(ec2Client: EC2Client, region: string): Promise<DetectorResult> {
     try {
-      const command = new DescribeAddressesCommand({});
-      const response = await ec2Client.send(command);
+      // DescribeAddresses has no pages: one call is the whole listing.
+      const listing = await listAllPages('unused Elastic IPs: DescribeAddresses', async () => {
+        const page = await ec2Client.send(new DescribeAddressesCommand({}));
+        return { items: page.Addresses || [] };
+      });
       const issues: OptimizationIssue[] = [];
 
-      for (const address of response.Addresses || []) {
+      for (const address of listing.items) {
         // Elastic IPs not attached to an instance are charged
         if (!address.InstanceId && !address.NetworkInterfaceId) {
           const monthlyCost = 3.6; // $0.005/hour * 24 * 30 = $3.6/month
@@ -482,19 +532,23 @@ class CostOptimizationService {
    */
   private async detectUnattachedEBSVolumes(ec2Client: EC2Client, region: string): Promise<DetectorResult> {
     try {
-      const command = new DescribeVolumesCommand({
-        Filters: [
-          {
-            Name: 'status',
-            Values: ['available'],
-          },
-        ],
+      const listing = await listAllPages('unattached EBS: DescribeVolumes', async (token) => {
+        const page = await ec2Client.send(new DescribeVolumesCommand({
+          Filters: [
+            {
+              Name: 'status',
+              Values: ['available'],
+            },
+          ],
+          NextToken: token,
+        }));
+        return { items: page.Volumes || [], nextToken: page.NextToken };
       });
+      if (!listing.complete) return { success: false, issues: [] };
 
-      const response = await ec2Client.send(command);
       const issues: OptimizationIssue[] = [];
 
-      for (const volume of response.Volumes || []) {
+      for (const volume of listing.items) {
         if (!volume.VolumeId) continue;
 
         const nameTag = volume.Tags?.find((tag) => tag.Key === 'Name');
@@ -558,19 +612,23 @@ class CostOptimizationService {
    */
   private async detectGp2ToGp3Migrations(ec2Client: EC2Client, region: string): Promise<DetectorResult> {
     try {
-      const command = new DescribeVolumesCommand({
-        Filters: [
-          {
-            Name: 'volume-type',
-            Values: ['gp2'],
-          },
-        ],
+      const listing = await listAllPages('gp2 volumes: DescribeVolumes', async (token) => {
+        const page = await ec2Client.send(new DescribeVolumesCommand({
+          Filters: [
+            {
+              Name: 'volume-type',
+              Values: ['gp2'],
+            },
+          ],
+          NextToken: token,
+        }));
+        return { items: page.Volumes || [], nextToken: page.NextToken };
       });
+      if (!listing.complete) return { success: false, issues: [] };
 
-      const response = await ec2Client.send(command);
       const issues: OptimizationIssue[] = [];
 
-      for (const volume of response.Volumes || []) {
+      for (const volume of listing.items) {
         if (!volume.VolumeId) continue;
         if (volume.VolumeType !== 'gp2') continue; // defensive -- the API filter already guarantees this
 
@@ -663,8 +721,16 @@ class CostOptimizationService {
     } = {}
   ): Promise<DetectorResult> {
     try {
-      const response = await s3Client.send(new ListBucketsCommand({}));
+      const listing = await listAllPages('S3 lifecycle: ListBuckets', async (token) => {
+        const page = await s3Client.send(new ListBucketsCommand({ ContinuationToken: token }));
+        return { items: page.Buckets || [], nextToken: page.ContinuationToken };
+      });
+      if (!listing.complete) return { success: false, issues: [] };
+
       const issues: OptimizationIssue[] = [];
+      // Buckets listed but not evaluated this scan: a per-bucket read failed or gave no
+      // answer. Their stored recommendations are kept (see DetectorResult).
+      const unknownResourceIds: string[] = [];
 
       // A bucket's lifecycle configuration and its BucketSizeBytes metric are answered in
       // the bucket's own region. One client per region for the whole scan.
@@ -680,17 +746,18 @@ class CostOptimizationService {
         return client;
       };
 
-      for (const bucket of response.Buckets || []) {
+      for (const bucket of listing.items) {
         if (!bucket.Name) continue;
 
         // Without the bucket's region its lifecycle and size cannot be read where they
-        // live: the bucket is skipped, never guessed into the org's region.
+        // live: the bucket is skipped (unknown), never guessed into the org's region.
         let bucketRegion: string;
         try {
           const location = await s3Client.send(new GetBucketLocationCommand({ Bucket: bucket.Name }));
           bucketRegion = regionFromLocationConstraint(location.LocationConstraint);
         } catch (error: any) {
           console.error(`Error reading the region of bucket ${bucket.Name}; skipped:`, error?.name || error);
+          unknownResourceIds.push(bucket.Name);
           continue;
         }
         const bucketS3 = inRegion(s3ByRegion, regional.s3ClientForRegion, s3Client, bucketRegion);
@@ -710,12 +777,20 @@ class CostOptimizationService {
           }
           // else: has real expiring/transitioning rules -- sufficient, no finding
         }
-        // lifecycleStatus.state === 'unavailable' -- skip, don't guess
+        // lifecycleStatus.state === 'unavailable' -- skip, don't guess (unknown)
+        if (lifecycleStatus.state === 'unavailable') {
+          unknownResourceIds.push(bucket.Name);
+          continue;
+        }
 
         if (!lifecycleState) continue;
 
         const sizeGB = await this.getBucketStandardStorageGB(bucketCloudWatch, bucket.Name);
-        if (sizeGB === null || sizeGB <= 0) continue; // no reliable size signal or genuinely empty -- nothing to recommend
+        if (sizeGB === null) {
+          unknownResourceIds.push(bucket.Name); // no reliable size signal -- unknown, not "nothing to recommend"
+          continue;
+        }
+        if (sizeGB <= 0) continue; // genuinely empty -- nothing to recommend
 
         const monthlySavingsCeiling = sizeGB * (S3_STANDARD_PER_GB_MONTH_USD - S3_STANDARD_IA_PER_GB_MONTH_USD);
 
@@ -741,7 +816,7 @@ class CostOptimizationService {
         });
       }
 
-      return { success: true, issues };
+      return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting S3 lifecycle optimization opportunities:', error);
       return { success: false, issues: [] };
@@ -820,14 +895,29 @@ class CostOptimizationService {
     region: string
   ): Promise<DetectorResult> {
     try {
-      const response = await lambdaClient.send(new ListFunctionsCommand({}));
-      const issues: OptimizationIssue[] = [];
+      const listing = await listAllPages(
+        'low-usage Lambda: ListFunctions',
+        async (token) => {
+          const page = await lambdaClient.send(new ListFunctionsCommand({ Marker: token }));
+          return { items: page.Functions || [], nextToken: page.NextMarker };
+        },
+        MAX_LIST_FUNCTIONS_PAGES
+      );
+      if (!listing.complete) return { success: false, issues: [] };
 
-      for (const func of response.Functions || []) {
+      const issues: OptimizationIssue[] = [];
+      const unknownResourceIds: string[] = [];
+
+      for (const func of listing.items) {
         if (!func.FunctionName) continue;
 
         const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, func.FunctionName);
-        if (usage === null) continue; // CloudWatch call itself failed -- never assumed zero
+        if (usage === null) {
+          // CloudWatch call itself failed -- never assumed zero, and the function is
+          // unknown this scan: a stored recommendation for it is kept.
+          unknownResourceIds.push(func.FunctionName);
+          continue;
+        }
 
         const { invocations, avgDurationMs } = usage;
         if (invocations > config.value) continue; // normal usage
@@ -861,7 +951,7 @@ class CostOptimizationService {
         });
       }
 
-      return { success: true, issues };
+      return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting low-usage Lambda functions:', error);
       return { success: false, issues: [] };
@@ -946,6 +1036,9 @@ class CostOptimizationService {
       client = undefined;
 
       const issues: OptimizationIssue[] = [];
+      // Tables whose live re-confirmation or metrics could not be read this scan:
+      // their stored recommendations are kept (see DetectorResult).
+      const unknownResourceIds: string[] = [];
       const now = new Date();
 
       for (const row of tablesResult.rows) {
@@ -962,12 +1055,14 @@ class CostOptimizationService {
         const tableResult = await describeDynamoDBTable(dynamoDBClient, tableName);
         if (tableResult.status !== 'described') {
           console.error(`[dynamodb_capacity] Live DescribeTable unavailable for ${tableName} (${region}): ${tableResult.reason}`);
+          unknownResourceIds.push(tableName);
           continue; // fail closed -- never fall back to the stale metadata snapshot for the final decision
         }
 
         const autoscalingResult = await describeDynamoDBAutoscaling(autoscalingClient, tableName);
         if (autoscalingResult.status !== 'described') {
           console.error(`[dynamodb_capacity] Live Application Auto Scaling check unavailable for ${tableName} (${region}): ${autoscalingResult.reason}`);
+          unknownResourceIds.push(tableName);
           continue; // fail closed -- never assume AUTOSCALING_DISABLED
         }
 
@@ -987,6 +1082,7 @@ class CostOptimizationService {
         const metricsResult = await fetchDynamoDBCapacityMetrics(cloudWatchClient, tableName);
         if (metricsResult.status !== 'fetched') {
           console.error(`[dynamodb_capacity] CloudWatch capacity metrics unavailable for ${tableName} (${region}): ${metricsResult.reason}`);
+          unknownResourceIds.push(tableName);
           continue;
         }
         const series = metricsResult.series;
@@ -1004,9 +1100,19 @@ class CostOptimizationService {
           DYNAMODB_CAPACITY_REFERENCE_UTILIZATION_THRESHOLD_PERCENT
         );
 
-        const readQualifies = this.dynamoDBCapacityDimensionQualifies(readAnalysis);
-        const writeQualifies = this.dynamoDBCapacityDimensionQualifies(writeAnalysis);
-        if (!readQualifies && !writeQualifies) continue; // no defensible review opportunity on either dimension
+        const readOutcome = this.classifyDynamoDBCapacityDimension(readAnalysis);
+        const writeOutcome = this.classifyDynamoDBCapacityDimension(writeAnalysis);
+        const readQualifies = readOutcome === 'qualifies';
+        const writeQualifies = writeOutcome === 'qualifies';
+        if (!readQualifies && !writeQualifies) {
+          // No defensible review opportunity on either dimension. Only when the data
+          // shows that for both is it an answer; a dimension with too little data
+          // leaves the table unknown this scan (its stored recommendation is kept).
+          if (readOutcome === 'insufficient_evidence' || writeOutcome === 'insufficient_evidence') {
+            unknownResourceIds.push(tableName);
+          }
+          continue;
+        }
 
         const tableClass = freshConfig.table_class;
         const currentMonthlyCost = estimateDynamoDBProvisionedMonthlyCost(currentReadCapacity, currentWriteCapacity, tableClass);
@@ -1097,7 +1203,7 @@ class CostOptimizationService {
         });
       }
 
-      return { success: true, issues };
+      return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting DynamoDB capacity optimization opportunities:', error);
       return { success: false, issues: [] };
@@ -1165,14 +1271,23 @@ class CostOptimizationService {
     return { eligible: true };
   }
 
-  /** Locked v1 per-dimension eligibility policy -- see the class-level constants' doc comment. */
-  private dynamoDBCapacityDimensionQualifies(analysis: DynamoDBCapacityDimensionAnalysis): boolean {
-    return (
-      analysis.validUtilizationIntervals >= DYNAMODB_CAPACITY_MIN_VALID_INTERVALS &&
-      analysis.lowUtilizationPercentage >= DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT &&
-      analysis.throttleValidIntervals > 0 &&
-      analysis.throttleConfirmedIntervals === 0
-    );
+  /**
+   * Locked v1 per-dimension eligibility policy -- see the class-level constants'
+   * doc comment. A dimension qualifies exactly as before (enough valid intervals,
+   * a low-utilization share at or above the threshold, throttle data present and
+   * no throttling). It does not qualify only when the data shows that: throttling
+   * was observed, or the valid sample's low-utilization share is under the
+   * threshold. Too few valid utilization intervals, or no throttle data at all,
+   * is insufficient evidence -- never an answer.
+   */
+  private classifyDynamoDBCapacityDimension(
+    analysis: DynamoDBCapacityDimensionAnalysis
+  ): 'qualifies' | 'does_not_qualify' | 'insufficient_evidence' {
+    if (analysis.throttleConfirmedIntervals > 0) return 'does_not_qualify';
+    if (analysis.validUtilizationIntervals < DYNAMODB_CAPACITY_MIN_VALID_INTERVALS) return 'insufficient_evidence';
+    if (analysis.lowUtilizationPercentage < DYNAMODB_CAPACITY_MIN_LOW_UTILIZATION_INTERVAL_PERCENT) return 'does_not_qualify';
+    if (analysis.throttleValidIntervals === 0) return 'insufficient_evidence';
+    return 'qualifies';
   }
 
   private buildDynamoDBCapacityDescription(input: {
@@ -1336,6 +1451,9 @@ class CostOptimizationService {
       client = undefined;
 
       const issues: OptimizationIssue[] = [];
+      // Tables whose live re-confirmation or metrics could not be read this scan:
+      // their stored recommendations are kept (see DetectorResult).
+      const unknownResourceIds: string[] = [];
       const now = new Date();
 
       for (const row of tablesResult.rows) {
@@ -1352,6 +1470,7 @@ class CostOptimizationService {
         const tableResult = await describeDynamoDBTable(dynamoDBClient, tableName);
         if (tableResult.status !== 'described') {
           console.error(`[dynamodb_on_demand_vs_provisioned] Live DescribeTable unavailable for ${tableName} (${region}): ${tableResult.reason}`);
+          unknownResourceIds.push(tableName);
           continue; // fail closed -- the entire cost model depends on this call, never fall back to stale metadata
         }
         const freshConfig: DynamoDBTableConfig = tableResult.config;
@@ -1381,6 +1500,7 @@ class CostOptimizationService {
         const metricsResult = await fetchDynamoDBCapacityMetrics(cloudWatchClient, tableName);
         if (metricsResult.status !== 'fetched') {
           console.error(`[dynamodb_on_demand_vs_provisioned] CloudWatch capacity metrics unavailable for ${tableName} (${region}): ${metricsResult.reason}`);
+          unknownResourceIds.push(tableName);
           continue;
         }
         const series = metricsResult.series;
@@ -1403,13 +1523,15 @@ class CostOptimizationService {
         // Data-completeness gate: each of the four series must independently
         // clear the 576/720 floor. Layers 1-2 themselves cannot be
         // defensibly built below this -- never extrapolated, never partially
-        // reported as if it were a full window.
+        // reported as if it were a full window. Below it the table is unknown
+        // this scan, not "no comparison": its stored recommendation is kept.
         if (
           readAnalysis.validConsumedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS ||
           readAnalysis.validProvisionedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS ||
           writeAnalysis.validConsumedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS ||
           writeAnalysis.validProvisionedIntervals < DYNAMODB_MODE_COMPARISON_MIN_VALID_INTERVALS
         ) {
+          unknownResourceIds.push(tableName);
           continue;
         }
 
@@ -1543,7 +1665,7 @@ class CostOptimizationService {
         });
       }
 
-      return { success: true, issues };
+      return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting DynamoDB on-demand vs provisioned optimization opportunities:', error);
       return { success: false, issues: [] };
@@ -1831,32 +1953,39 @@ class CostOptimizationService {
   ): Promise<DetectorResult> {
     try {
       // Get running instances
-      const instancesCommand = new DescribeInstancesCommand({
-        Filters: [
-          {
-            Name: 'instance-state-name',
-            Values: ['running'],
-          },
-        ],
+      const instances = await listAllPages('RI: DescribeInstances', async (token) => {
+        const page = await ec2Client.send(new DescribeInstancesCommand({
+          Filters: [
+            {
+              Name: 'instance-state-name',
+              Values: ['running'],
+            },
+          ],
+          NextToken: token,
+        }));
+        return { items: page.Reservations || [], nextToken: page.NextToken };
       });
-      const instancesResponse = await ec2Client.send(instancesCommand);
+      if (!instances.complete) return { success: false, issues: [] };
 
-      // Get existing Reserved Instances
-      const riCommand = new DescribeReservedInstancesCommand({
-        Filters: [
-          {
-            Name: 'state',
-            Values: ['active'],
-          },
-        ],
+      // Get existing Reserved Instances. DescribeReservedInstances has no pages: one
+      // call is the whole listing.
+      const reservedInstances = await listAllPages('RI: DescribeReservedInstances', async () => {
+        const page = await ec2Client.send(new DescribeReservedInstancesCommand({
+          Filters: [
+            {
+              Name: 'state',
+              Values: ['active'],
+            },
+          ],
+        }));
+        return { items: page.ReservedInstances || [] };
       });
-      const riResponse = await ec2Client.send(riCommand);
 
       // Count instances by type, keeping their IDs so the finding names the
       // instances it is about.
       const instanceCounts: Record<string, number> = {};
       const instanceIdsByType: Record<string, string[]> = {};
-      for (const reservation of instancesResponse.Reservations || []) {
+      for (const reservation of instances.items) {
         for (const instance of reservation.Instances || []) {
           const type = instance.InstanceType || 'unknown';
           instanceCounts[type] = (instanceCounts[type] || 0) + 1;
@@ -1866,7 +1995,7 @@ class CostOptimizationService {
 
       // Count reserved instances by type
       const riCounts: Record<string, number> = {};
-      for (const ri of riResponse.ReservedInstances || []) {
+      for (const ri of reservedInstances.items) {
         const type = ri.InstanceType || 'unknown';
         riCounts[type] = (riCounts[type] || 0) + (ri.InstanceCount || 0);
       }

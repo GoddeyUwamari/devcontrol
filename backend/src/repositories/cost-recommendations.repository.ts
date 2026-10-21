@@ -13,7 +13,9 @@ import {
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
   ISSUE_EC2_UNUSED_ELASTIC_IP,
+  ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   ISSUE_EBS_UNATTACHED_VOLUME,
+  ISSUE_EBS_GP2_TO_GP3,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
 } from '../config/optimization-rules';
@@ -25,7 +27,7 @@ import {
 // is deliberately excluded -- its resource_id is a synthetic, fleet-level
 // aggregate (`ri-opportunity-${instanceType}`), not a discrete AWS resource,
 // so it keeps the pre-existing unconditional delete+recreate behavior via
-// deleteActiveByIssue()+createBulk() instead of reconcileActiveRecommendations().
+// replaceReservedInstanceRecommendations() instead of reconcileActiveRecommendations().
 const NON_RI_ISSUES = [
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
@@ -41,6 +43,71 @@ const NON_RI_ISSUES = [
 // (same two-argument keyspace, salt 0) -- this uses the same keyspace with
 // a different salt so none of the three can collide with each other.
 const RECONCILIATION_LOCK_SALT = 1;
+
+/**
+ * The scan a reconciliation answers for (multi-region plan M4, §6.2): the home region
+ * its home-listed detectors listed. Rows of those issues in another region are not
+ * this scan's to delete or end.
+ */
+export interface CostReconcileScope {
+  homeRegion: string;
+}
+
+/**
+ * Issues whose detector lists the home region only (DescribeInstances,
+ * DescribeAddresses, DescribeVolumes, ListFunctions with the home-region client), so
+ * a scan reconciles their rows in the home region only (and rows with no region, as
+ * written before regions were recorded). S3 lifecycle (account-wide ListBuckets), the
+ * DynamoDB issues (every DynamoDB row of the organization, whatever its region) and the
+ * retired oversized-RDS issue keep their region-unrestricted scope.
+ */
+const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
+  ISSUE_EC2_IDLE_INSTANCE,
+  ISSUE_EC2_UNUSED_ELASTIC_IP,
+  ISSUE_EBS_UNATTACHED_VOLUME,
+  ISSUE_EBS_GP2_TO_GP3,
+  ISSUE_LAMBDA_LOW_USAGE,
+  ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
+]);
+
+/**
+ * Inserts one ACTIVE recommendation, unconditionally (no occurrence-lifecycle
+ * suppression), and returns how many rows it inserted. ON CONFLICT DO NOTHING
+ * guards idx_cost_recommendations_active_identity. The one INSERT shared by
+ * createBulk() and replaceReservedInstanceRecommendations().
+ */
+async function insertActiveRecommendation(
+  client: PoolClient,
+  organizationId: string,
+  rec: CreateRecommendationRequest
+): Promise<number> {
+  const result = await client.query(
+    `INSERT INTO cost_recommendations (
+       organization_id, resource_id, resource_name, resource_type, issue, description,
+       potential_savings, severity, aws_region, metadata
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING`,
+    [
+      organizationId,
+      rec.resource_id,
+      rec.resource_name,
+      rec.resource_type,
+      rec.issue,
+      rec.description,
+      rec.potential_savings,
+      rec.severity,
+      rec.aws_region,
+      JSON.stringify(rec.metadata || {}),
+    ]
+  );
+  return result.rowCount || 0;
+}
+
+/** The region a statement for `issue` is limited to, or null for no region limit. */
+function regionLimitFor(issue: string, scope: CostReconcileScope | undefined): string | null {
+  return scope && HOME_REGION_SCOPED_ISSUES.has(issue) ? scope.homeRegion : null;
+}
 
 export class CostRecommendationsRepository {
   /**
@@ -164,10 +231,11 @@ export class CostRecommendationsRepository {
   }
 
   /**
-   * Create multiple recommendations in bulk. Used for Reserved Instance
-   * Opportunities (unconditional insert, no occurrence-lifecycle awareness
-   * -- see the NON_RI_ISSUES comment above) and by callers that don't need
-   * suppression logic. ON CONFLICT DO NOTHING guards against
+   * Create multiple recommendations in bulk (unconditional insert, no
+   * occurrence-lifecycle awareness), for callers that don't need suppression
+   * logic. Reserved Instance Opportunities are replaced through
+   * replaceReservedInstanceRecommendations() instead, whose delete and inserts
+   * share one transaction. ON CONFLICT DO NOTHING guards against
    * idx_cost_recommendations_active_identity without aborting the whole
    * batch on one incidental duplicate -- Postgres never raises an error to
    * the client for a DO NOTHING conflict, so no per-row try/catch or
@@ -185,29 +253,7 @@ export class CostRecommendationsRepository {
 
         let insertedCount = 0;
         for (const rec of recommendations) {
-          const query = `
-            INSERT INTO cost_recommendations (
-              organization_id, resource_id, resource_name, resource_type, issue, description,
-              potential_savings, severity, aws_region, metadata
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING
-          `;
-
-          const result = await client.query(query, [
-            organizationId,
-            rec.resource_id,
-            rec.resource_name,
-            rec.resource_type,
-            rec.issue,
-            rec.description,
-            rec.potential_savings,
-            rec.severity,
-            rec.aws_region,
-            JSON.stringify(rec.metadata || {}),
-          ]);
-
-          insertedCount += result.rowCount || 0;
+          insertedCount += await insertActiveRecommendation(client, organizationId, rec);
         }
 
         await client.query('COMMIT');
@@ -242,7 +288,14 @@ export class CostRecommendationsRepository {
    * left entirely untouched -- no rows ended, no ACTIVE rows deleted or
    * replaced -- exactly preserving whatever was true as of the last
    * successful scan, per the requirement that detector failure/timeout/
-   * AWS-not-connected must never be interpreted as disappearance.
+   * AWS-not-connected must never be interpreted as disappearance. The same
+   * holds, within a successful category, for each resource in the
+   * observation's unknownResourceIds (listed but not evaluated this scan):
+   * its occurrence is not ended and its ACTIVE row is not deleted.
+   *
+   * `scope` limits the home-listed issues (HOME_REGION_SCOPED_ISSUES) to the
+   * scan's home region; every scan passes it. Without it no region limit
+   * applies.
    *
    * Serialized per-organization via a session-level advisory lock
    * (hashtextextended keyspace, salt distinct from the migration runner's
@@ -255,7 +308,8 @@ export class CostRecommendationsRepository {
    */
   async reconcileActiveRecommendations(
     organizationId: string,
-    observations: DetectorObservation[]
+    observations: DetectorObservation[],
+    scope?: CostReconcileScope
   ): Promise<{ insertedCount: number }> {
     const successful = observations.filter((o) => o.success);
     if (successful.length === 0) {
@@ -275,10 +329,13 @@ export class CostRecommendationsRepository {
 
         for (const observation of successful) {
           const presentResourceIds = observation.recommendations.map((r) => r.resource_id);
+          const unknownResourceIds = observation.unknownResourceIds ?? [];
+          const regionLimit = regionLimitFor(observation.issue, scope);
 
           // `<> ALL($3)` over an empty array is vacuously true for every row --
           // correctly ends every open occurrence in this category when the
-          // detector completed successfully but found nothing at all.
+          // detector completed successfully but found nothing at all. A
+          // resource it could not evaluate ($4) is not "found nothing".
           await client.query(
             `UPDATE cost_recommendations
              SET occurrence_ended_at = NOW()
@@ -286,14 +343,18 @@ export class CostRecommendationsRepository {
                AND issue = $2
                AND status IN ('RESOLVED', 'DISMISSED')
                AND occurrence_ended_at IS NULL
-               AND resource_id <> ALL($3::varchar[])`,
-            [organizationId, observation.issue, presentResourceIds]
+               AND resource_id <> ALL($3::varchar[])
+               AND resource_id <> ALL($4::varchar[])
+               AND ($5::varchar IS NULL OR aws_region = $5 OR aws_region IS NULL)`,
+            [organizationId, observation.issue, presentResourceIds, unknownResourceIds, regionLimit]
           );
 
           await client.query(
             `DELETE FROM cost_recommendations
-             WHERE organization_id = $1 AND status = 'ACTIVE' AND issue = $2`,
-            [organizationId, observation.issue]
+             WHERE organization_id = $1 AND status = 'ACTIVE' AND issue = $2
+               AND resource_id <> ALL($3::varchar[])
+               AND ($4::varchar IS NULL OR aws_region = $4 OR aws_region IS NULL)`,
+            [organizationId, observation.issue, unknownResourceIds, regionLimit]
           );
 
           for (const rec of observation.recommendations) {
@@ -384,20 +445,55 @@ export class CostRecommendationsRepository {
   }
 
   /**
-   * Delete active recommendations for one issue category (used before
-   * re-analyzing). Scoped by issue rather than org-wide so a caller can
-   * clear exactly the category it just got fresh detector results for --
-   * e.g. Reserved Instance Opportunities, which are re-derived unconditionally
-   * every scan (see createBulk() above), independent of the occurrence
-   * lifecycle reconcileActiveRecommendations() applies to the other three.
+   * Replaces the scan's ACTIVE Reserved Instance Opportunities with this scan's
+   * findings (the RI check must have completed: the caller passes only a complete
+   * answer). Re-derived unconditionally every scan, independent of the occurrence
+   * lifecycle reconcileActiveRecommendations() applies to the other categories (see
+   * the NON_RI_ISSUES comment above).
+   *
+   * One transaction, under the same per-organization advisory lock as
+   * reconcileActiveRecommendations(): the delete and the inserts commit together or
+   * not at all, so a failed insert leaves the stored rows exactly as they were. Only
+   * the scan's home region (and rows with no region) is replaced: the RI check lists
+   * the home region only.
    */
-  async deleteActiveByIssue(organizationId: string, issue: string): Promise<number> {
+  async replaceReservedInstanceRecommendations(
+    organizationId: string,
+    scope: CostReconcileScope,
+    recommendations: CreateRecommendationRequest[]
+  ): Promise<{ deletedCount: number; insertedCount: number }> {
     return this.withOrgClient(organizationId, async (client) => {
-      const result = await client.query(
-        'DELETE FROM cost_recommendations WHERE status = $1 AND organization_id = $2 AND issue = $3',
-        ['ACTIVE', organizationId, issue]
+      await client.query(
+        `SELECT pg_advisory_lock(hashtextextended($1, ${RECONCILIATION_LOCK_SALT}))`,
+        [organizationId]
       );
-      return result.rowCount || 0;
+
+      try {
+        await client.query('BEGIN');
+
+        const deleted = await client.query(
+          `DELETE FROM cost_recommendations
+           WHERE organization_id = $1 AND status = 'ACTIVE' AND issue = $2
+             AND (aws_region = $3 OR aws_region IS NULL)`,
+          [organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, scope.homeRegion]
+        );
+
+        let insertedCount = 0;
+        for (const rec of recommendations) {
+          insertedCount += await insertActiveRecommendation(client, organizationId, rec);
+        }
+
+        await client.query('COMMIT');
+        return { deletedCount: deleted.rowCount || 0, insertedCount };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        await client.query(
+          `SELECT pg_advisory_unlock(hashtextextended($1, ${RECONCILIATION_LOCK_SALT}))`,
+          [organizationId]
+        );
+      }
     });
   }
 

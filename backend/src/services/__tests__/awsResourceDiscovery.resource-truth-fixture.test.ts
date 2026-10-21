@@ -194,7 +194,7 @@ function mockAws(scenario: Scenario) {
   } as any);
   jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true } as any);
   jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 } as any);
-  jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+  jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 });
   jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
   // HTTPS-only fails on two buckets; the policy and ACL checks pass on all three.
   jest.spyOn(ComplianceScannerService.prototype, 'evaluateS3Security').mockImplementation(async (resource) => {

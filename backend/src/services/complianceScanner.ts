@@ -23,13 +23,14 @@ import {
 } from '@aws-sdk/client-ec2';
 import {
   IAMClient,
-  paginateListUsers,
+  ListUsersCommand,
   ListMFADevicesCommand,
   ListAccessKeysCommand,
   GetLoginProfileCommand,
   NoSuchEntityException,
 } from '@aws-sdk/client-iam';
 import { computeSecurityGroupFindingKey, IpVersion } from '../utils/securityGroupFindingKey';
+import { listAllPages } from '../utils/awsCallPolicy';
 import { computeIamFindingKey } from '../utils/iamFindingKey';
 import {
   Observed,
@@ -607,7 +608,7 @@ export class ComplianceScannerService {
    * fail" but "how much did it see before failing," so a previously-active finding
    * that's genuinely still there isn't auto-resolved just because a later page of
    * a paginated scan errored out. `complete: false` (whether from an error or from
-   * NextToken remaining unconsumed) tells AccountSecurityFindingsRepository.reconcileScan
+   * NextToken remaining unconsumed at listAllPages' page limit) tells AccountSecurityFindingsRepository.reconcileScan
    * this observation must never be used to resolve stale findings — only a complete
    * observation may do that. `issues` collected before a failure are still returned
    * and may still be upserted (detecting a real problem is still real evidence, even
@@ -615,13 +616,14 @@ export class ComplianceScannerService {
    */
   async checkSecurityGroups(ec2Client: EC2Client, region: string, accountId?: string): Promise<CategoryObservation> {
     const issues: ComplianceIssue[] = [];
-    let nextToken: string | undefined;
     let complete = true;
 
     try {
-      do {
+      // Each page is evaluated as it is read, so the findings of the pages read before
+      // a failure are still returned.
+      const listing = await listAllPages('security groups: DescribeSecurityGroups', async (token) => {
         const { SecurityGroups, NextToken } = await ec2Client.send(
-          new DescribeSecurityGroupsCommand({ NextToken: nextToken })
+          new DescribeSecurityGroupsCommand({ NextToken: token })
         );
 
         for (const sg of SecurityGroups || []) {
@@ -650,8 +652,9 @@ export class ComplianceScannerService {
           }
         }
 
-        nextToken = NextToken;
-      } while (nextToken);
+        return { items: [], nextToken: NextToken };
+      });
+      if (!listing.complete) complete = false;
     } catch (error: any) {
       console.error('[Compliance] checkSecurityGroups failed (partial results may still be usable):', error.message);
       complete = false;
@@ -748,7 +751,10 @@ export class ComplianceScannerService {
     let complete = true;
 
     try {
-      for await (const page of paginateListUsers({ client: iamClient }, {})) {
+      // Each page's users are checked as it is read, so the findings of the users
+      // checked before a failure are still returned.
+      const listing = await listAllPages('IAM users: ListUsers', async (token) => {
+        const page = await iamClient.send(new ListUsersCommand({ Marker: token }));
         for (const user of page.Users || []) {
           if (!user.UserName || !user.Arn) continue;
 
@@ -762,7 +768,9 @@ export class ComplianceScannerService {
             complete = false;
           }
         }
-      }
+        return { items: [], nextToken: page.Marker };
+      });
+      if (!listing.complete) complete = false;
     } catch (error: any) {
       console.error('[Compliance] checkIAMSecurity failed (partial results may still be usable):', error.message);
       complete = false;
