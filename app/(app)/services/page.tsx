@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
@@ -16,7 +16,7 @@ import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notic
 import { statusNeedsAttention } from './statusAttention'
 import { connectedAccountsCaption } from './accountCaption'
 import { RegisteredServices } from './RegisteredServices'
-import { TYPE_DISPLAY } from './resourceTypes'
+import { TYPE_DISPLAY, RESOURCE_TYPE_CHIPS } from './resourceTypes'
 import { isServicesV2Enabled } from './servicesV2Flag'
 import { ServicesOverview } from './ServicesOverview'
 import { servicesDemoFixture } from './demo-fixture'
@@ -37,13 +37,6 @@ const DEMO_STATS: AWSServicesStats = { total: 5, healthy: 3, needs_attention: 2,
 // without a priority_severity is healthy and sorts after all of these.
 const SEVERITY_SORT_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
 const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
-
-const RESOURCE_TYPE_CHIPS = [
-  'all',
-  'ec2', 'ebs', 'ecs', 'lambda', 'rds', 's3', 'eks', 'dynamodb',
-  'cloudfront', 'api-gateway', 'elasticache', 'aurora', 'sqs', 'sns',
-  'load-balancer', 'vpc',
-]
 
 const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
   ec2:            { bg: '#F0FDF4', color: '#059669' },
@@ -164,7 +157,6 @@ export default function ServicesPage() {
   // The Phase 1 redesign (top half) behind NEXT_PUBLIC_SERVICES_V2; off renders today's page.
   const servicesV2    = isServicesV2Enabled()
   const v2Demo        = useMemo(() => (servicesV2 && isDemoActive ? servicesDemoFixture() : null), [servicesV2, isDemoActive])
-  const listRef       = useRef<HTMLDivElement>(null)
   const { tier }      = usePlan()
   // Every query below is keyed by organization and disabled until it is known,
   // so a response for one organization can never render for another: a late
@@ -232,8 +224,9 @@ export default function ServicesPage() {
         previousQuery && JSON.stringify(previousQuery.queryKey.slice(0, 4)) === JSON.stringify(queryKey.slice(0, 4)) ? previous : undefined,
     }
   }
-  const needsQuery   = useQuery(sectionQuery(true,  needsPage,   realMode))
-  const healthyQuery = useQuery(sectionQuery(false, healthyPage, realMode && !onlyNeedsAttention))
+  // With the redesign on, All resources replaces these two sections and makes its own request.
+  const needsQuery   = useQuery(sectionQuery(true,  needsPage,   realMode && !servicesV2))
+  const healthyQuery = useQuery(sectionQuery(false, healthyPage, realMode && !servicesV2 && !onlyNeedsAttention))
 
   // A page past the end (the inventory shrank after a discovery) goes back to the last page.
   useEffect(() => {
@@ -245,6 +238,8 @@ export default function ServicesPage() {
 
   // Discovery's error is cleared by the next filter change, as the list's own error is.
   useEffect(() => { setDiscoveryError(null) }, [pagingKey])
+  // The redesign's list clears it the same way, on its own filter changes.
+  const clearDiscoveryError = useCallback(() => setDiscoveryError(null), [])
 
   // A query disabled because the organization isn't known yet counts as loading,
   // so nothing renders as empty before it could be fetched.
@@ -394,13 +389,6 @@ export default function ServicesPage() {
 
   useEffect(() => { setHealthyExpanded(false) }, [envFilter, templateFilter, search, onlyNeedsAttention])
 
-  // Redesign only: "View all N" and "Show all resources" open the list below.
-  const openList = (needsAttentionOnly: boolean) => {
-    clearFilters()
-    setOnlyNeedsAttention(needsAttentionOnly)
-    listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
   const upgradePrompt = showUpgradePrompt && (
         <div className="flex items-center justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-4 flex-wrap">
           <div className="flex items-center gap-2.5">
@@ -433,9 +421,10 @@ export default function ServicesPage() {
           stats={{ loading: statsLoading, unavailable: statsUnavailable, stats: displayStats }}
           statusHeadline={statusHeadlineV2}
           discovery={{ isDiscovering, discoveryComplete, discoveryMsg, warnings: discoveryWarnings, onAutoDiscover: handleAutoDiscover }}
-          banners={<>{upgradePrompt}{errorBanner}</>}
-          onViewAllAttention={() => openList(true)}
-          onShowAllResources={() => openList(false)}
+          banners={upgradePrompt}
+          pageError={error}
+          knownNoAccount={knownNoAccount}
+          onFiltersChange={clearDiscoveryError}
         />
       ) : (<>
       {/* ── PAGE HEADER ── */}
@@ -605,8 +594,9 @@ export default function ServicesPage() {
       <RegisteredServices />
       </>)}
 
-      {/* ── SERVICES LIST ── */}
-      <div ref={listRef} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+      {/* ── SERVICES LIST (the redesign replaces it with All resources) ── */}
+      {!servicesV2 && (
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
 
         {/* Search — primary navigation method */}
         <div className="px-5 sm:px-7 py-5 border-b border-slate-100">
@@ -789,6 +779,7 @@ export default function ServicesPage() {
           </>
         )}
       </div>
+      )}
     </div>
   )
 }

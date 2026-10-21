@@ -72,11 +72,13 @@ const SEVERITY_CHIPS = [
 ] as const
 
 /** The five tiles (Q11): Needs attention, Unowned, Resources, Services, AWS spend. */
-export function SummaryTiles({ stats: statsState, coverage, registered, spend }: {
+export function SummaryTiles({ stats: statsState, coverage, registered, spend, onShowUnowned }: {
   stats: StatsState
   coverage: ServicesCoverage | undefined
   registered: RegisteredState
   spend: SpendState
+  /** "Show them": All resources with Show = Unowned. */
+  onShowUnowned?: () => void
 }) {
   const { stats } = statsState
   const ownership = stats?.ownership
@@ -111,6 +113,9 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend }:
         {!gap && unownedPercent !== null && !statsState.loading && (
           <p className="m-0 text-xs text-slate-600">
             {unownedPercent}% of resources whose tags we could read have neither an Owner nor a Team tag
+            {onShowUnowned && (ownership?.unowned ?? 0) > 0 && (
+              <> · <button type="button" onClick={onShowUnowned} className="font-semibold text-violet-700 hover:underline">Show them</button></>
+            )}
           </p>
         )}
       </Tile>
