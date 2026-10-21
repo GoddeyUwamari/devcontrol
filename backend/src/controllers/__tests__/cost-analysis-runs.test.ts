@@ -109,7 +109,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
       riSucceeded: true,
     });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 3 });
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue(fakeStats(42.5, 3));
 
@@ -133,7 +133,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
 
     jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 2 });
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue({
       ...fakeStats(12.4, 2), potential_savings_ceiling: 61.27, potential_savings_ceiling_by_resource_type: { DynamoDB: 20, S3: 41.27 },
@@ -203,7 +203,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
 
     jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue(fakeStats(0, 0));
 
@@ -230,7 +230,7 @@ describe('CostRecommendationsController.analyze -> cost_analysis_runs tracking',
       riRecommendations: [],
       riSucceeded: true,
     });
-    // reconcileActiveRecommendations, deleteActiveByIssue, createBulk, getStats
+    // reconcileActiveRecommendations, replaceReservedInstanceRecommendations, getStats
     // all run FOR REAL here (unmocked) -- this is what proves the existing
     // per-org pg_advisory_lock still safely serializes two concurrent manual
     // requests, not just two mocked calls.
@@ -301,7 +301,7 @@ describe('CostRecommendationsController.getAnalysisRuns', () => {
 
     jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
     jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
-    jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 });
     jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
     jest.spyOn(CostRecommendationsRepository.prototype, 'getStats').mockResolvedValue(fakeStats(0, 0));
 

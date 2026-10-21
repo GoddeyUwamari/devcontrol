@@ -10,7 +10,6 @@ import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../typ
 import { trackFunnelEventOnce } from '../services/analyticsEvents';
 import { aggregateEstimatedSavings, describeCeilings } from '../services/estimated-savings';
 import {
-  ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   getOptimizationRules,
   getOptimizationRuleSummary,
   OPTIMIZATION_RULE_PARAMETERS,
@@ -398,7 +397,10 @@ export class CostRecommendationsController {
       console.log(`Starting cost optimization analysis for org ${organizationId}...`);
 
       // Run the analysis against this org's connected AWS account
-      const { observations, riRecommendations, riSucceeded } = await costOptimizationService.analyzeAllResources(organizationId);
+      const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(organizationId);
+      // The home-listed detectors' rows are reconciled in the region they listed
+      // (no region when AWS is not connected: there is then nothing to reconcile).
+      const costScope = homeRegion ? { homeRegion } : undefined;
 
       // Occurrence-lifecycle reconciliation for the 3 resource-level detectors
       // (idle EC2, unused EIPs, EBS, S3, Lambda, DynamoDB; the retired oversized-RDS
@@ -408,17 +410,22 @@ export class CostRecommendationsController {
       // observes the condition is genuinely gone.
       const { insertedCount: nonRIInsertedCount } = await repository.reconcileActiveRecommendations(
         organizationId,
-        observations
+        observations,
+        costScope
       );
 
       // Reserved Instance Opportunities are excluded from the occurrence
       // lifecycle -- synthetic, fleet-level aggregate identity, not a
       // discrete resource -- and keep delete+recreate, but only when the RI
       // check completed: a failed check leaves the stored RI rows as they are.
+      // Delete and insert share one transaction.
       let riInsertedCount = 0;
-      if (riSucceeded) {
-        await repository.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
-        riInsertedCount = await repository.createBulk(riRecommendations, organizationId);
+      if (riSucceeded && costScope) {
+        ({ insertedCount: riInsertedCount } = await repository.replaceReservedInstanceRecommendations(
+          organizationId,
+          costScope,
+          riRecommendations
+        ));
       }
 
       const insertedCount = nonRIInsertedCount + riInsertedCount;

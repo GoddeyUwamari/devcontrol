@@ -174,6 +174,11 @@ export class AccountSecurityFindingsRepository {
    * requires a fresh user decision, per the recurrence semantics this repository
    * implements.
    *
+   * `homeRegion` (every scan passes it) limits the networking resolve to the region
+   * the security groups were listed in, plus rows with no region: a networking finding
+   * of another region is not this scan's to resolve (multi-region plan M4, §6.2). IAM
+   * is global and has no region limit. Without it no region limit applies.
+   *
    * Runs in a single transaction on the org-tagged client so a mid-scan failure
    * doesn't leave findings half-reconciled.
    */
@@ -181,7 +186,8 @@ export class AccountSecurityFindingsRepository {
     organizationId: string,
     scanStartedAt: Date,
     findings: NewAccountFinding[],
-    completeCategories: AccountFindingCategory[] = ['networking', 'iam']
+    completeCategories: AccountFindingCategory[] = ['networking', 'iam'],
+    homeRegion?: string
   ): Promise<{ active: number; resolved: number }> {
     const { resolvedIds, detectedIds } = await this.withOrgClient(organizationId, async (client) => {
       try {
@@ -235,8 +241,9 @@ export class AccountSecurityFindingsRepository {
             `UPDATE account_security_findings
              SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
              WHERE organization_id = $1 AND status = 'active' AND last_seen_at < $2 AND category = ANY($3::text[])
+               AND (category <> 'networking' OR $4::text IS NULL OR region = $4 OR region IS NULL)
              RETURNING id`,
-            [organizationId, scanStartedAt, completeCategories]
+            [organizationId, scanStartedAt, completeCategories, homeRegion ?? null]
           );
           resolvedIds = resolvedResult.rows.map((r) => r.id as string);
         }

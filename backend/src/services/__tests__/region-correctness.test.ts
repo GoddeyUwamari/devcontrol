@@ -216,7 +216,7 @@ describe('S3 lifecycle detector: each bucket in its own region', () => {
     expect(cw.sent).toEqual([{ region: 'eu-west-1', command: 'GetMetricStatisticsCommand' }]);
   });
 
-  it('a bucket whose region cannot be read is skipped, never read in the home region', async () => {
+  it('a bucket whose region cannot be read is skipped as unknown, never read in the home region', async () => {
     const homeSend = jest.fn(async (command: any) => {
       if (command.constructor.name === 'ListBucketsCommand') return { Buckets: [{ Name: 'unknown-region-bucket' }] };
       if (command.constructor.name === 'GetBucketLocationCommand') throw awsError('AccessDenied');
@@ -228,7 +228,8 @@ describe('S3 lifecycle detector: each bucket in its own region', () => {
 
     const result = await service.detectS3LifecycleOptimization(homeS3, homeCw, { s3ClientForRegion: s3.forRegion });
 
-    expect(result).toEqual({ success: true, issues: [] });
+    // Unknown this scan (multi-region plan M4, P-1): its stored recommendation is kept.
+    expect(result).toEqual({ success: true, issues: [], unknownResourceIds: ['unknown-region-bucket'] });
     expect(s3.sent).toEqual([]);
   });
 });

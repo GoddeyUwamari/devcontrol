@@ -3,27 +3,26 @@ import { requestContext } from '../config/database';
 import { trackFunnelEventOnce } from './analyticsEvents';
 import {
   EC2Client,
-  paginateDescribeInstances,
-  paginateDescribeVolumes,
-  paginateDescribeSecurityGroups,
+  DescribeInstancesCommand,
+  DescribeSecurityGroupsCommand,
   Instance,
   Volume,
   DescribeVolumesCommand,
 } from '@aws-sdk/client-ec2';
 import {
   RDSClient,
-  paginateDescribeDBInstances,
+  DescribeDBInstancesCommand,
   DBInstance,
 } from '@aws-sdk/client-rds';
 import {
   LambdaClient,
-  paginateListFunctions,
+  ListFunctionsCommand,
   ListTagsCommand,
   FunctionConfiguration,
 } from '@aws-sdk/client-lambda';
 import {
   ElasticLoadBalancingV2Client,
-  paginateDescribeLoadBalancers,
+  DescribeLoadBalancersCommand,
   DescribeTagsCommand as DescribeELBTagsCommand,
   LoadBalancer,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
@@ -37,7 +36,7 @@ import {
 } from '@aws-sdk/client-s3';
 import {
   CloudFrontClient,
-  paginateListDistributions,
+  ListDistributionsCommand,
   DistributionSummary,
 } from '@aws-sdk/client-cloudfront';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
@@ -65,7 +64,16 @@ import { ComplianceScannerService } from './complianceScanner';
 import { getBucketTags, regionFromLocationConstraint } from './s3-bucket-tags.util';
 import { NetworkExposure, SecurityGroupRules, evaluateNetworkExposure } from '../utils/adminPortExposure';
 import { NOT_APPLICABLE_STATUS, UNKNOWN_STATUS, storedStatusFor } from '../utils/resourceLifecycle';
-import { AwsCallPolicy, DEFAULT_AWS_CALL_POLICY, mapWithConcurrency, withCallPolicy } from '../utils/awsCallPolicy';
+import {
+  AwsCallPolicy,
+  DEFAULT_AWS_CALL_POLICY,
+  Listing,
+  MAX_LIST_FUNCTIONS_PAGES,
+  listAllPages,
+  mapWithConcurrency,
+  withCallPolicyOnClients,
+} from '../utils/awsCallPolicy';
+import { SourceOutcome, authorizesCleanup, failedSourceStatus } from './source-outcome';
 import { readBuiltInFrameworkSettings } from '../repositories/compliance-frameworks.repository';
 import { FrameworkApplicability, REGISTERED_FRAMEWORKS, resolveFrameworkApplicability } from '../utils/frameworkApplicability';
 import { FRAMEWORK_EVALUATOR_VERSION } from './framework-checks';
@@ -100,14 +108,19 @@ import { securityAuditService } from './securityAudit.service';
 import { PoolClient } from 'pg';
 import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry } from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
-import { ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY } from '../config/optimization-rules';
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
 import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 import { describeDynamoDBTable } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
 import { describeAuroraClusters } from './aurora-cluster.util';
-import { DISCOVERY_WARNING_TRUNCATED_INDEX, DiscoveryWarning, joinDiscoveryMessage } from './discovery-warnings';
+import {
+  DISCOVERY_WARNING_LISTING_TRUNCATED,
+  DISCOVERY_WARNING_TRUNCATED_INDEX,
+  DiscoveryWarning,
+  discoveryWarningsColumn,
+  joinDiscoveryMessage,
+} from './discovery-warnings';
 import {
   S3SecurityEvaluation,
   carryForwardUnverifiedS3Findings,
@@ -162,6 +175,12 @@ export function fatalDiscoveryErrorMessage(error: unknown): string {
   return isPlatformAwsCredentialsUnavailable(error) ? PLATFORM_AWS_UNAVAILABLE_MESSAGE : DISCOVERY_FAILED_MESSAGE;
 }
 
+/**
+ * Told how each listing a discovery method made ended: a listing cut off at its page
+ * limit (listAllPages) leaves the method's resources real but incomplete.
+ */
+type ListingObserver = (listing: Pick<Listing<unknown>, 'complete'>) => void;
+
 export class AWSResourceDiscoveryService {
   private resourceExplorer = new ResourceExplorerService();
   private reconciliation = new ResourceReconciliationService();
@@ -172,29 +191,18 @@ export class AWSResourceDiscoveryService {
   constructor(private pool: Pool) {}
 
   /**
-   * The clients discovery makes its per-resource calls with, each call under
-   * callPolicy (a time limit, and retries with backoff when throttled). Regional
-   * clients are built once per region and reused.
+   * The clients discovery makes its calls with: every client, the regional ones
+   * included, with each call under callPolicy (a time limit, and retries with
+   * backoff when throttled). Regional clients are built once per region and reused.
    */
   private applyCallPolicy(clients: AWSClients): AWSClients {
-    const regional = <T extends { send: (...args: any[]) => any }>(build?: (region: string) => T) => {
-      if (!build) return undefined;
-      const byRegion = new Map<string, T>();
-      return (region: string): T => {
-        let client = byRegion.get(region);
-        if (!client) {
-          client = withCallPolicy(build(region), this.callPolicy);
-          byRegion.set(region, client);
-        }
-        return client;
-      };
-    };
-    return {
-      ...clients,
-      ec2: withCallPolicy(clients.ec2, this.callPolicy),
-      s3: withCallPolicy(clients.s3, this.callPolicy),
-      backup: withCallPolicy(clients.backup, this.callPolicy),
-      getS3ClientForRegion: regional(clients.getS3ClientForRegion),
+    return withCallPolicyOnClients(clients, this.callPolicy);
+  }
+
+  /** Marks `outcome` truncated when a listing of its source stopped at its page limit. */
+  private observeListing(outcome: SourceOutcome): ListingObserver {
+    return (listing) => {
+      if (!listing.complete) outcome.status = 'truncated';
     };
   }
 
@@ -499,12 +507,25 @@ export class AWSResourceDiscoveryService {
       let totalUpdated = 0;
       let resourcesTerminated = 0;
       const skippedTypes: string[] = [];
+      // How each own listing fared (source-outcome.ts). Only a complete one may drive a
+      // reconcile; what any of them read is still upserted.
+      const sourceOutcome = (source: string): SourceOutcome => ({ source, status: 'skipped_tier' });
+      const ec2Outcome = sourceOutcome('ec2');
+      const ebsOutcome = sourceOutcome('ebs');
+      const rdsOutcome = sourceOutcome('rds');
+      const s3Outcome = sourceOutcome('s3');
+      const lambdaOutcome = sourceOutcome('lambda');
+      const loadBalancerOutcome = sourceOutcome('load-balancer');
+      const cloudFrontOutcome = sourceOutcome('cloudfront');
 
       // Discover EC2 instances
       if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EC2 instances...`);
         try {
-          const ec2Resources = await this.discoverEC2Instances(organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence);
+          ec2Outcome.status = 'complete';
+          const ec2Resources = await this.discoverEC2Instances(
+            organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence, this.observeListing(ec2Outcome)
+          );
           for (const resource of ec2Resources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -512,6 +533,7 @@ export class AWSResourceDiscoveryService {
           }
           console.log(`✅ [Discovery] Found ${ec2Resources.length} EC2 instances`);
         } catch (error: any) {
+          ec2Outcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] EC2 discovery failed:`, error.message);
           errors.push(`EC2: ${error.message}`);
         }
@@ -525,21 +547,23 @@ export class AWSResourceDiscoveryService {
       // generic Resource Explorer path -- EBS needs real per-volume metadata
       // (size, type, state) for the ebs_unattached analyzer, which the
       // generic path's ARN-only presence signal can't provide.
-      let ebsDiscoverySucceeded = false;
       const ebsArnsFound = new Set<string>();
       if (this.isResourceTypeAllowed('ebs', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering EBS volumes...`);
         try {
-          const ebsResources = await this.discoverEBSVolumes(organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence);
+          ebsOutcome.status = 'complete';
+          const ebsResources = await this.discoverEBSVolumes(
+            organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence, this.observeListing(ebsOutcome)
+          );
           for (const resource of ebsResources) {
             ebsArnsFound.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
           }
-          ebsDiscoverySucceeded = true;
           console.log(`✅ [Discovery] Found ${ebsResources.length} EBS volumes`);
         } catch (error: any) {
+          ebsOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] EBS discovery failed:`, error.message);
           errors.push(`EBS: ${error.message}`);
         }
@@ -552,7 +576,8 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('rds', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering RDS databases...`);
         try {
-          const rdsResources = await this.discoverRDSDatabases(organizationId, awsClients.rds!, awsClients.region);
+          rdsOutcome.status = 'complete';
+          const rdsResources = await this.discoverRDSDatabases(organizationId, awsClients.rds!, awsClients.region, this.observeListing(rdsOutcome));
           for (const resource of rdsResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -560,6 +585,7 @@ export class AWSResourceDiscoveryService {
           }
           console.log(`✅ [Discovery] Found ${rdsResources.length} RDS databases`);
         } catch (error: any) {
+          rdsOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] RDS discovery failed:`, error.message);
           errors.push(`RDS: ${error.message}`);
         }
@@ -574,14 +600,14 @@ export class AWSResourceDiscoveryService {
       // region's LOCAL index — see resourceExplorer.service.ts's OWN_DISCOVERY_CFN_TYPES
       // doc comment. s3ArnsFound feeds S3's own reconcile() call below instead of relying
       // on the (region-limited) Resource Explorer search for S3 presence.
-      let s3DiscoverySucceeded = false;
       const s3ArnsFound = new Set<string>();
       if (this.isResourceTypeAllowed('s3', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering S3 buckets...`);
         try {
+          s3Outcome.status = 'complete';
           const unlocatedBucketArns = new Set<string>();
           const s3Resources = await this.discoverS3Buckets(
-            organizationId, awsClients.s3!, awsClients.region, awsClients.getS3ClientForRegion, unlocatedBucketArns
+            organizationId, awsClients.s3!, awsClients.region, awsClients.getS3ClientForRegion, unlocatedBucketArns, this.observeListing(s3Outcome)
           );
           for (const resource of s3Resources) {
             // Listed, so present: never counted missing.
@@ -595,9 +621,9 @@ export class AWSResourceDiscoveryService {
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
           }
-          s3DiscoverySucceeded = true;
           console.log(`✅ [Discovery] Found ${s3Resources.length} S3 buckets`);
         } catch (error: any) {
+          s3Outcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] S3 discovery failed:`, error.message);
           errors.push(`S3: ${error.message}`);
         }
@@ -610,7 +636,10 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('lambda', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Lambda functions...`);
         try {
-          const lambdaResources = await this.discoverLambdaFunctions(organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region);
+          lambdaOutcome.status = 'complete';
+          const lambdaResources = await this.discoverLambdaFunctions(
+            organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region, this.observeListing(lambdaOutcome)
+          );
           for (const resource of lambdaResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -618,6 +647,7 @@ export class AWSResourceDiscoveryService {
           }
           console.log(`✅ [Discovery] Found ${lambdaResources.length} Lambda functions`);
         } catch (error: any) {
+          lambdaOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] Lambda discovery failed:`, error.message);
           errors.push(`Lambda: ${error.message}`);
         }
@@ -630,7 +660,8 @@ export class AWSResourceDiscoveryService {
       if (this.isResourceTypeAllowed('load-balancer', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering Load Balancers...`);
         try {
-          const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.elb, awsClients.region);
+          loadBalancerOutcome.status = 'complete';
+          const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.elb, awsClients.region, this.observeListing(loadBalancerOutcome));
           for (const resource of lbResources) {
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
@@ -638,6 +669,7 @@ export class AWSResourceDiscoveryService {
           }
           console.log(`✅ [Discovery] Found ${lbResources.length} Load Balancers`);
         } catch (error: any) {
+          loadBalancerOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] Load Balancer discovery failed:`, error.message);
           errors.push(`Load Balancer: ${error.message}`);
         }
@@ -653,27 +685,37 @@ export class AWSResourceDiscoveryService {
       // but not in an ap-southeast-1 search of the same account). A generic search scoped to
       // the org's own region would silently find zero CloudFront distributions for any org
       // whose configured region isn't us-east-1. See OWN_DISCOVERY_CFN_TYPES.
-      let cloudFrontDiscoverySucceeded = false;
       const cloudFrontArnsFound = new Set<string>();
       if (this.isResourceTypeAllowed('cloudfront', allowedTypes)) {
         console.log(`🔎 [Discovery] Discovering CloudFront distributions...`);
         try {
-          const cfResources = await this.discoverCloudFrontDistributions(organizationId, awsClients.cloudFront);
+          cloudFrontOutcome.status = 'complete';
+          const cfResources = await this.discoverCloudFrontDistributions(organizationId, awsClients.cloudFront, this.observeListing(cloudFrontOutcome));
           for (const resource of cfResources) {
             cloudFrontArnsFound.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
           }
-          cloudFrontDiscoverySucceeded = true;
           console.log(`✅ [Discovery] Found ${cfResources.length} CloudFront distributions`);
         } catch (error: any) {
+          cloudFrontOutcome.status = failedSourceStatus(error);
           console.error(`❌ [Discovery] CloudFront discovery failed:`, error.message);
           errors.push(`CloudFront: ${error.message}`);
         }
       } else {
         console.log(`⏭️  [Discovery] Skipping CloudFront distributions (not available in ${tier} tier)`);
         skippedTypes.push('cloudfront');
+      }
+
+      // An own listing cut off at its page limit: what it read was stored, but its
+      // source is not reconciled this cycle. Like a truncated index, a warning, not an
+      // error (an internal code, stored in the warnings column only).
+      const ownOutcomes = [ec2Outcome, ebsOutcome, rdsOutcome, s3Outcome, lambdaOutcome, loadBalancerOutcome, cloudFrontOutcome];
+      const truncatedSources = ownOutcomes.filter((outcome) => outcome.status === 'truncated').map((outcome) => outcome.source);
+      if (truncatedSources.length > 0) {
+        console.warn(`⚠️  [Discovery] Listing stopped at its page limit for: ${truncatedSources.join(', ')}; not reconciled this cycle`);
+        warnings.push(DISCOVERY_WARNING_LISTING_TRUNCATED);
       }
 
       // Generic resource inventory via AWS Resource Explorer (Phase 2B): replaces the old
@@ -767,7 +809,7 @@ export class AWSResourceDiscoveryService {
       // for why the Resource Explorer search above isn't a valid presence signal for them.
       // region: null because S3 buckets can each live in a different region than the org's
       // configured region, and CloudFront rows are always stored with region='global'.
-      if (s3DiscoverySucceeded) {
+      if (authorizesCleanup(s3Outcome)) {
         try {
           const s3Reconciliation = await this.reconciliation.reconcile(client, organizationId, null, s3ArnsFound, ['s3']);
           console.log(
@@ -781,7 +823,7 @@ export class AWSResourceDiscoveryService {
         }
       }
 
-      if (cloudFrontDiscoverySucceeded) {
+      if (authorizesCleanup(cloudFrontOutcome)) {
         try {
           const cfReconciliation = await this.reconciliation.reconcile(client, organizationId, null, cloudFrontArnsFound, ['cloudfront']);
           console.log(
@@ -795,7 +837,7 @@ export class AWSResourceDiscoveryService {
         }
       }
 
-      if (ebsDiscoverySucceeded) {
+      if (authorizesCleanup(ebsOutcome)) {
         try {
           const ebsReconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, ebsArnsFound, ['ebs']);
           console.log(
@@ -979,11 +1021,14 @@ export class AWSResourceDiscoveryService {
           ...(networkingObservation.complete ? (['networking'] as const) : []),
           ...(iamObservation.complete ? (['iam'] as const) : []),
         ];
+        // Networking findings are resolved in the region the security groups were
+        // listed in only (the repository's region limit).
         const { active, resolved } = await findingsRepo.reconcileScan(
           organizationId,
           scanStartedAt,
           findings,
-          completeCategories
+          completeCategories,
+          awsClients.region
         );
 
         const fullyComplete = networkingObservation.complete && iamObservation.complete;
@@ -1018,17 +1063,16 @@ export class AWSResourceDiscoveryService {
         const detector = new OrphanedResourceDetectorService(client);
         const orphaned = await detector.detectOrphaned(organizationId);
 
+        // One statement for the whole organization (multi-region plan M4, P-4): every
+        // row's flag and savings are set together, so no reader ever sees them all
+        // cleared, and a failure leaves every row as it was.
         await client.query(
-          `UPDATE aws_resources SET is_orphaned = false, orphaned_monthly_savings = 0 WHERE organization_id = $1`,
-          [organizationId]
+          `UPDATE aws_resources
+              SET is_orphaned = (id = ANY($2::uuid[])),
+                  orphaned_monthly_savings = COALESCE(($3::numeric[])[array_position($2::uuid[], id)], 0)
+            WHERE organization_id = $1`,
+          [organizationId, orphaned.map((o) => o.resource.id), orphaned.map((o) => o.potential_savings)]
         );
-
-        for (const o of orphaned) {
-          await client.query(
-            `UPDATE aws_resources SET is_orphaned = true, orphaned_monthly_savings = $1 WHERE id = $2`,
-            [o.potential_savings, o.resource.id]
-          );
-        }
 
         console.log(`✅ [Discovery] Orphaned-resource detection complete (${orphaned.length} found)`);
       } catch (error: any) {
@@ -1043,7 +1087,9 @@ export class AWSResourceDiscoveryService {
       let costAnalysisCompleted = false;
       try {
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
-        const { observations, riRecommendations, riSucceeded } = await costOptimizationService.analyzeAllResources(organizationId, scanContext);
+        const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(organizationId, scanContext);
+        // The home-listed detectors' rows are reconciled in the region they listed.
+        const costScope = { homeRegion: homeRegion ?? awsClients.region };
 
         const recommendationsRepo = new CostRecommendationsRepository();
 
@@ -1053,17 +1099,21 @@ export class AWSResourceDiscoveryService {
         // Resolve/Dismiss'd finding instead of resurrecting it every scan.
         const { insertedCount: nonRIInsertedCount } = await recommendationsRepo.reconcileActiveRecommendations(
           organizationId,
-          observations
+          observations,
+          costScope
         );
 
         // Reserved Instance Opportunities stay on delete+recreate -- excluded from
         // the occurrence lifecycle, see cost-optimization.service.ts -- but only
         // when the RI check completed: a failed check is no answer, and the stored
-        // RI rows stay as they are.
+        // RI rows stay as they are. Delete and insert share one transaction.
         let riInsertedCount = 0;
         if (riSucceeded) {
-          await recommendationsRepo.deleteActiveByIssue(organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
-          riInsertedCount = await recommendationsRepo.createBulk(riRecommendations, organizationId);
+          ({ insertedCount: riInsertedCount } = await recommendationsRepo.replaceReservedInstanceRecommendations(
+            organizationId,
+            costScope,
+            riRecommendations
+          ));
         }
 
         const insertedCount = nonRIInsertedCount + riInsertedCount;
@@ -1131,6 +1181,15 @@ export class AWSResourceDiscoveryService {
           jobId
         ]
       );
+      // The warnings column (multi-region M3) holds every code; error_message above still
+      // carries the legacy ones for one release (discovery-warnings.ts). A database
+      // without the column keeps working from error_message alone.
+      if (await this.discoveryWarningsColumnExists(client)) {
+        await client.query(
+          `UPDATE resource_discovery_jobs SET warnings = $1::jsonb WHERE id = $2`,
+          [discoveryWarningsColumn(warnings), jobId]
+        );
+      }
 
       if (errors.length > 0) {
         console.log(`⚠️  [Discovery] Completed with errors`);
@@ -1193,17 +1252,16 @@ export class AWSResourceDiscoveryService {
     ec2Client: EC2Client,
     region: string,
     accountId: string | undefined,
-    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>
+    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>,
+    onListing?: ListingObserver
   ): Promise<CreateAWSResourceInput[]> {
-    const instances: Instance[] = [];
-    let pageCount = 0;
-    for await (const page of paginateDescribeInstances({ client: ec2Client }, {})) {
-      pageCount++;
-      for (const reservation of page.Reservations || []) {
-        instances.push(...(reservation.Instances || []));
-      }
-    }
-    this.logIfPaginated('EC2 instances', pageCount, instances.length);
+    const listing = await listAllPages('EC2 instances: DescribeInstances', async (token) => {
+      const page = await ec2Client.send(new DescribeInstancesCommand({ NextToken: token }));
+      return { items: (page.Reservations || []).flatMap((reservation) => reservation.Instances || []), nextToken: page.NextToken };
+    });
+    onListing?.(listing);
+    const instances: Instance[] = listing.items;
+    this.logIfPaginated('EC2 instances', listing.pages, instances.length);
 
     const volumeEncryptionMap = await this.getVolumeEncryptionMap(ec2Client, instances);
     // One read for the region, and only when an instance has a group to look up.
@@ -1278,15 +1336,16 @@ export class AWSResourceDiscoveryService {
     ec2Client: EC2Client,
     region: string,
     accountId: string | undefined,
-    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>
+    checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>,
+    onListing?: ListingObserver
   ): Promise<CreateAWSResourceInput[]> {
-    const volumes: Volume[] = [];
-    let pageCount = 0;
-    for await (const page of paginateDescribeVolumes({ client: ec2Client }, {})) {
-      pageCount++;
-      volumes.push(...(page.Volumes || []));
-    }
-    this.logIfPaginated('EBS volumes', pageCount, volumes.length);
+    const listing = await listAllPages('EBS volumes: DescribeVolumes', async (token) => {
+      const page = await ec2Client.send(new DescribeVolumesCommand({ NextToken: token }));
+      return { items: page.Volumes || [], nextToken: page.NextToken };
+    });
+    onListing?.(listing);
+    const volumes: Volume[] = listing.items;
+    this.logIfPaginated('EBS volumes', listing.pages, volumes.length);
 
     // One unit of work per volume, a bounded number at a time (utils/awsCallPolicy.ts).
     const resources = await mapWithConcurrency(volumes, this.callPolicy.concurrency, async (volume): Promise<CreateAWSResourceInput | null> => {
@@ -1350,15 +1409,16 @@ export class AWSResourceDiscoveryService {
   private async discoverRDSDatabases(
     organizationId: string,
     rdsClient: RDSClient,
-    region: string
+    region: string,
+    onListing?: ListingObserver
   ): Promise<CreateAWSResourceInput[]> {
-    const dbInstances: DBInstance[] = [];
-    let pageCount = 0;
-    for await (const page of paginateDescribeDBInstances({ client: rdsClient }, {})) {
-      pageCount++;
-      dbInstances.push(...(page.DBInstances || []));
-    }
-    this.logIfPaginated('RDS instances', pageCount, dbInstances.length);
+    const listing = await listAllPages('RDS instances: DescribeDBInstances', async (token) => {
+      const page = await rdsClient.send(new DescribeDBInstancesCommand({ Marker: token }));
+      return { items: page.DBInstances || [], nextToken: page.Marker };
+    });
+    onListing?.(listing);
+    const dbInstances: DBInstance[] = listing.items;
+    this.logIfPaginated('RDS instances', listing.pages, dbInstances.length);
 
     const resources: CreateAWSResourceInput[] = [];
 
@@ -1410,22 +1470,19 @@ export class AWSResourceDiscoveryService {
     s3ClientForRegion?: (region: string) => S3Client,
     // Receives the ARN of every listed bucket whose GetBucketLocation failed: its
     // returned region is then the home region, a guess, not the bucket's region.
-    unlocatedBucketArns?: Set<string>
+    unlocatedBucketArns?: Set<string>,
+    onListing?: ListingObserver
   ): Promise<CreateAWSResourceInput[]> {
-    // No generated paginator for ListBuckets in this SDK version — manual
-    // ContinuationToken loop (added along with S3's 2023 quota increase to
-    // 10,000 buckets/account; older accounts never see a token and this loop
-    // runs exactly once, identical to the prior single call).
-    const buckets: Bucket[] = [];
-    let continuationToken: string | undefined;
-    let pageCount = 0;
-    do {
-      const response = await s3Client.send(new ListBucketsCommand({ ContinuationToken: continuationToken }));
-      pageCount++;
-      buckets.push(...(response.Buckets || []));
-      continuationToken = response.ContinuationToken;
-    } while (continuationToken);
-    this.logIfPaginated('S3 buckets', pageCount, buckets.length);
+    // ContinuationToken pages (added along with S3's 2023 quota increase to
+    // 10,000 buckets/account; older accounts never see a token and this reads
+    // exactly one page, identical to the prior single call).
+    const listing = await listAllPages('S3 buckets: ListBuckets', async (token) => {
+      const page = await s3Client.send(new ListBucketsCommand({ ContinuationToken: token }));
+      return { items: page.Buckets || [], nextToken: page.ContinuationToken };
+    });
+    onListing?.(listing);
+    const buckets: Bucket[] = listing.items;
+    this.logIfPaginated('S3 buckets', listing.pages, buckets.length);
 
     // One unit of work per bucket, a bounded number at a time (utils/awsCallPolicy.ts).
     const resources = await mapWithConcurrency(buckets, this.callPolicy.concurrency, async (bucket): Promise<CreateAWSResourceInput | null> => {
@@ -1531,6 +1588,17 @@ export class AWSResourceDiscoveryService {
     });
 
     return resources.filter((resource): resource is CreateAWSResourceInput => resource !== null);
+  }
+
+  /** Whether resource_discovery_jobs has the warnings column (added by the multi-region M3 admin migration). */
+  private async discoveryWarningsColumnExists(client: PoolClient): Promise<boolean> {
+    const { rows } = await client.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM pg_attribute
+          WHERE attrelid = to_regclass('resource_discovery_jobs') AND attname = 'warnings' AND NOT attisdropped
+       ) AS present`
+    );
+    return rows[0]?.present === true;
   }
 
   /** Whether this organization's inventory already holds a row for `resourceArn`. */
@@ -2082,11 +2150,15 @@ export class AWSResourceDiscoveryService {
    */
   private async readSecurityGroups(ec2Client: EC2Client, region: string): Promise<Map<string, SecurityGroupRules> | null> {
     try {
+      const listing = await listAllPages('security groups: DescribeSecurityGroups', async (token) => {
+        const page = await ec2Client.send(new DescribeSecurityGroupsCommand({ NextToken: token }));
+        return { items: page.SecurityGroups || [], nextToken: page.NextToken };
+      });
+      // A read cut off at its page limit cannot show that a rule is absent either.
+      if (!listing.complete) return null;
       const groups = new Map<string, SecurityGroupRules>();
-      for await (const page of paginateDescribeSecurityGroups({ client: ec2Client }, {})) {
-        for (const group of page.SecurityGroups || []) {
-          if (group.GroupId) groups.set(group.GroupId, group);
-        }
+      for (const group of listing.items) {
+        if (group.GroupId) groups.set(group.GroupId, group);
       }
       return groups;
     } catch (error: any) {
@@ -2174,18 +2246,23 @@ export class AWSResourceDiscoveryService {
     organizationId: string,
     lambdaClient: LambdaClient,
     cloudWatchClient: CloudWatchClient,
-    region: string
+    region: string,
+    onListing?: ListingObserver
   ): Promise<CreateAWSResourceInput[]> {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const functions: FunctionConfiguration[] = [];
-      let pageCount = 0;
-      for await (const page of paginateListFunctions({ client: lambdaClient }, {})) {
-        pageCount++;
-        functions.push(...(page.Functions || []));
-      }
-      this.logIfPaginated('Lambda functions', pageCount, functions.length);
+      const listing = await listAllPages(
+        'Lambda functions: ListFunctions',
+        async (token) => {
+          const page = await lambdaClient.send(new ListFunctionsCommand({ Marker: token }));
+          return { items: page.Functions || [], nextToken: page.NextMarker };
+        },
+        MAX_LIST_FUNCTIONS_PAGES
+      );
+      onListing?.(listing);
+      const functions: FunctionConfiguration[] = listing.items;
+      this.logIfPaginated('Lambda functions', listing.pages, functions.length);
 
       for (const func of functions) {
         if (!func.FunctionArn || !func.FunctionName) continue;
@@ -2270,18 +2347,19 @@ export class AWSResourceDiscoveryService {
   private async discoverLoadBalancers(
     organizationId: string,
     elbClient: ElasticLoadBalancingV2Client,
-    region: string
+    region: string,
+    onListing?: ListingObserver
   ): Promise<CreateAWSResourceInput[]> {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const loadBalancers: LoadBalancer[] = [];
-      let pageCount = 0;
-      for await (const page of paginateDescribeLoadBalancers({ client: elbClient }, {})) {
-        pageCount++;
-        loadBalancers.push(...(page.LoadBalancers || []));
-      }
-      this.logIfPaginated('Load Balancers', pageCount, loadBalancers.length);
+      const listing = await listAllPages('Load Balancers: DescribeLoadBalancers', async (token) => {
+        const page = await elbClient.send(new DescribeLoadBalancersCommand({ Marker: token }));
+        return { items: page.LoadBalancers || [], nextToken: page.NextMarker };
+      });
+      onListing?.(listing);
+      const loadBalancers: LoadBalancer[] = listing.items;
+      this.logIfPaginated('Load Balancers', listing.pages, loadBalancers.length);
 
       for (const lb of loadBalancers) {
         if (!lb.LoadBalancerArn || !lb.LoadBalancerName) continue;
@@ -2357,23 +2435,24 @@ export class AWSResourceDiscoveryService {
    */
   private async discoverCloudFrontDistributions(
     organizationId: string,
-    cfClient: CloudFrontClient
+    cfClient: CloudFrontClient,
+    onListing?: ListingObserver
   ): Promise<CreateAWSResourceInput[]> {
     const resources: CreateAWSResourceInput[] = [];
 
     try {
-      const distributions: DistributionSummary[] = [];
-      let pageCount = 0;
-      for await (const page of paginateListDistributions({ client: cfClient }, {})) {
-        pageCount++;
+      const listing = await listAllPages('CloudFront distributions: ListDistributions', async (token) => {
+        const page = await cfClient.send(new ListDistributionsCommand({ Marker: token }));
         // A page that says more follow but gives no marker to read them by ends the
         // listing early: what was read is not the account's list.
         if (page.DistributionList?.IsTruncated && !page.DistributionList.NextMarker) {
           throw new Error('ListDistributions returned a truncated page with no NextMarker');
         }
-        distributions.push(...(page.DistributionList?.Items || []));
-      }
-      this.logIfPaginated('CloudFront distributions', pageCount, distributions.length);
+        return { items: page.DistributionList?.Items || [], nextToken: page.DistributionList?.NextMarker };
+      });
+      onListing?.(listing);
+      const distributions: DistributionSummary[] = listing.items;
+      this.logIfPaginated('CloudFront distributions', listing.pages, distributions.length);
 
       for (const dist of distributions) {
         if (!dist.ARN || !dist.Id) continue;

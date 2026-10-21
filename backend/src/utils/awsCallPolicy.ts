@@ -122,6 +122,99 @@ export function withCallPolicy<T extends { send: (...args: any[]) => any }>(clie
   return wrapped;
 }
 
+const REGIONAL_FACTORY = /^get\w+ClientForRegion$/;
+
+/**
+ * Every client of `clients` (any property with a `send`) wrapped by withCallPolicy, and
+ * every regional factory (`get…ClientForRegion`) made to return wrapped clients, built
+ * once per region. Everything else is copied as it is. This is how discovery and the
+ * cost detectors get their clients, so none of their AWS calls runs without a time limit.
+ */
+export function withCallPolicyOnClients<T extends object>(clients: T, policy: AwsCallPolicy = DEFAULT_AWS_CALL_POLICY): T {
+  const wrapped: Record<string, unknown> = { ...(clients as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(clients)) {
+    if (value && typeof (value as { send?: unknown }).send === 'function') {
+      wrapped[key] = withCallPolicy(value as { send: (...args: any[]) => any }, policy);
+    } else if (typeof value === 'function' && REGIONAL_FACTORY.test(key)) {
+      const build = value as (region: string) => any;
+      const byRegion = new Map<string, unknown>();
+      wrapped[key] = (region: string) => {
+        if (!byRegion.has(region)) byRegion.set(region, withCallPolicy(build(region), policy));
+        return byRegion.get(region);
+      };
+    }
+  }
+  return wrapped as T;
+}
+
+
+/**
+ * The most pages one listing reads (listAllPages). Page size x pages is at least ten
+ * times the largest account plausible today: 100 pages of DescribeInstances,
+ * DescribeVolumes, ListBuckets and the like. ListFunctions answers at most 50
+ * functions a page, so it gets 200.
+ */
+export const MAX_LISTING_PAGES = 100;
+export const MAX_LIST_FUNCTIONS_PAGES = 200;
+
+/** One page of a listing: its items, and the token for the next page (none: the last page). */
+export interface ListingPage<T> {
+  items: readonly T[];
+  nextToken?: string | null;
+}
+
+/**
+ * Everything a listing read. `complete` is false when it stopped at its page limit
+ * with a next page still to read: the items are real, but an item missing from them
+ * is not evidence of absence, so an incomplete listing never authorizes a deletion,
+ * a termination, an occurrence end or any other stale reconciliation.
+ */
+export interface Listing<T> {
+  items: T[];
+  pages: number;
+  complete: boolean;
+}
+
+/**
+ * Reads every page of one listing, at most `maxPages`. A page that fails throws
+ * (the listing then has no answer at all: failed, never complete); a listing cut off
+ * at the limit is returned with `complete: false` and logged with its label and page
+ * count only. Every discovery and cost-detector listing goes through this.
+ */
+export async function listAllPages<T>(
+  label: string,
+  fetchPage: (token: string | undefined) => Promise<ListingPage<T>>,
+  maxPages: number = MAX_LISTING_PAGES
+): Promise<Listing<T>> {
+  const items: T[] = [];
+  let token: string | undefined;
+  for (let pages = 1; ; pages++) {
+    const page = await fetchPage(token);
+    items.push(...page.items);
+    token = page.nextToken || undefined;
+    if (!token) return { items, pages, complete: true };
+    if (pages >= maxPages) {
+      console.warn(`[listAllPages] ${label}: stopped at ${pages} pages with more to read; the listing is incomplete`);
+      return { items, pages, complete: false };
+    }
+  }
+}
+
+/** Whether an AWS error says "not allowed" (as opposed to "slow down", "not found" or "broken"). */
+export function isAccessDeniedError(error: any): boolean {
+  if (!error) return false;
+  const names = [error.name, error.Code, error.code];
+  return names.some((name) => typeof name === 'string' && ACCESS_DENIED_ERROR_NAMES.has(name)) || error.$metadata?.httpStatusCode === 403;
+}
+
+const ACCESS_DENIED_ERROR_NAMES = new Set([
+  'AccessDenied',
+  'AccessDeniedException',
+  'UnauthorizedOperation',
+  'AuthFailure',
+  'UnrecognizedClientException',
+]);
+
 /**
  * Runs `work` for every item, at most `concurrency` at a time, and returns the
  * results in the items' order. `work` is expected to settle every failure itself

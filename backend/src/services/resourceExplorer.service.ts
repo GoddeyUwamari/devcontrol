@@ -13,8 +13,9 @@
  * failed" — that distinction is what the conservative reconciliation state
  * machine (resourceReconciliation.service.ts) depends on.
  */
-import { ResourceExplorer2Client, paginateSearch, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
+import { ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { ResourceType, TagsState } from '../types/aws-resources.types';
+import { listAllPages } from '../utils/awsCallPolicy';
 
 /**
  * Resource types whose deep CloudWatch monitoring (see cloudwatch.service.ts's
@@ -118,7 +119,7 @@ export const SEARCH_RESULT_LIMIT = 1000;
 /**
  * `complete: false` means the search succeeded but may not hold every matching resource:
  * AWS reported its count as not exhaustive (Count.Complete false), or the result reached
- * SEARCH_RESULT_LIMIT. Its resources are real, but a resource missing from it is not
+ * SEARCH_RESULT_LIMIT, or the search stopped at listAllPages' page limit. Its resources are real, but a resource missing from it is not
  * evidence of absence, so it must never drive reconciliation.
  */
 export type SearchResult =
@@ -144,13 +145,14 @@ export class ResourceExplorerService {
    */
   async search(client: ResourceExplorer2Client, region: string): Promise<SearchResult> {
     try {
-      const resources: REResource[] = [];
       let countIncomplete = false;
-      for await (const page of paginateSearch({ client }, { QueryString: '' })) {
-        resources.push(...(page.Resources || []));
+      const listing = await listAllPages('Resource Explorer: Search', async (token) => {
+        const page = await client.send(new SearchCommand({ QueryString: '', NextToken: token }));
         if (page.Count?.Complete === false) countIncomplete = true;
-      }
-      const complete = !countIncomplete && resources.length < SEARCH_RESULT_LIMIT;
+        return { items: page.Resources || [], nextToken: page.NextToken };
+      });
+      const resources: REResource[] = listing.items;
+      const complete = listing.complete && !countIncomplete && resources.length < SEARCH_RESULT_LIMIT;
       if (!complete) {
         console.error(
           `[ResourceExplorer] Search in region ${region} may be truncated ` +

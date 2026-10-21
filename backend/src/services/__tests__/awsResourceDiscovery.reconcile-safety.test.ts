@@ -123,7 +123,7 @@ function mockAwsClients(overrides: Record<string, unknown> = {}) {
 function mockCostAnalysis() {
   jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true });
   jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
-  jest.spyOn(CostRecommendationsRepository.prototype, 'deleteActiveByIssue').mockResolvedValue(0);
+  jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations').mockResolvedValue({ deletedCount: 0, insertedCount: 0 });
   jest.spyOn(CostRecommendationsRepository.prototype, 'createBulk').mockResolvedValue(0);
 }
 
@@ -418,7 +418,7 @@ describe('Reserved Instance recommendations are replaced only when the RI check 
   ])('manual analyze: riSucceeded=%p leaves %p ACTIVE RI recommendation(s)', async (riSucceeded, expected) => {
     const orgId = await insertOrg();
     await insertActiveRiRecommendation(orgId);
-    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded });
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded, homeRegion: 'us-east-1' });
     const json = jest.fn();
     const req = { user: { organizationId: orgId, userId: 'test-user' }, query: {}, params: {}, body: {} } as unknown as Request;
     const res = { json, status: jest.fn().mockReturnValue({ json }) } as unknown as Response;

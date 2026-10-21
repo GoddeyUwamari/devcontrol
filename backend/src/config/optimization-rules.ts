@@ -9,7 +9,7 @@
  *     cost_recommendations rows. Its `issue` field is the exact, canonical
  *     `cost_recommendations.issue` string that detector emits/reconciles
  *     against (see CostRecommendationsRepository.reconcileActiveRecommendations()
- *     and deleteActiveByIssue()).
+ *     and replaceReservedInstanceRecommendations()).
  *   - 'planned': registered for product-roadmap/UI purposes only. No
  *     analyzer exists yet, no AWS calls are made for it, and it must never
  *     produce a cost_recommendations row. It intentionally has no `issue`
