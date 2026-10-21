@@ -517,6 +517,12 @@ export class AWSResourceDiscoveryService {
       const lambdaOutcome = sourceOutcome('lambda');
       const loadBalancerOutcome = sourceOutcome('load-balancer');
       const cloudFrontOutcome = sourceOutcome('cloudfront');
+      // Every EC2, RDS, Lambda and load-balancer ARN this scan's own listings returned.
+      // Resource Explorer is their reconcile source, and its index can lag behind the
+      // account: a resource just listed here is present, whatever the index says yet
+      // (multi-region plan M4, Q6). Only adds presence, so it can only prevent a
+      // termination, never cause one.
+      const ownListedArns = new Set<string>();
 
       // Discover EC2 instances
       if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
@@ -527,6 +533,7 @@ export class AWSResourceDiscoveryService {
             organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence, this.observeListing(ec2Outcome)
           );
           for (const resource of ec2Resources) {
+            ownListedArns.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
@@ -579,6 +586,7 @@ export class AWSResourceDiscoveryService {
           rdsOutcome.status = 'complete';
           const rdsResources = await this.discoverRDSDatabases(organizationId, awsClients.rds!, awsClients.region, this.observeListing(rdsOutcome));
           for (const resource of rdsResources) {
+            ownListedArns.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
@@ -641,6 +649,7 @@ export class AWSResourceDiscoveryService {
             organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region, this.observeListing(lambdaOutcome)
           );
           for (const resource of lambdaResources) {
+            ownListedArns.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
@@ -663,6 +672,7 @@ export class AWSResourceDiscoveryService {
           loadBalancerOutcome.status = 'complete';
           const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.elb, awsClients.region, this.observeListing(loadBalancerOutcome));
           for (const resource of lbResources) {
+            ownListedArns.add(resource.resource_arn);
             const result = await this.upsertResource(client, resource);
             if (result === 'created') totalDiscovered++;
             else if (result === 'updated') totalUpdated++;
@@ -785,7 +795,8 @@ export class AWSResourceDiscoveryService {
           warnings.push(DISCOVERY_WARNING_TRUNCATED_INDEX);
         } else {
           try {
-            const reconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, allArns, RE_RECONCILED_TYPES);
+            const presentArns = new Set([...allArns, ...ownListedArns]);
+            const reconciliation = await this.reconciliation.reconcile(client, organizationId, awsClients.region, presentArns, RE_RECONCILED_TYPES);
             console.log(
               `✅ [Discovery] Reconciliation complete (${reconciliation.resetCount} confirmed present, ` +
               `${reconciliation.incrementedCount} absent this scan, ${reconciliation.terminatedArns.length} newly terminated)`
