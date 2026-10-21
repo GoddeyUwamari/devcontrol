@@ -1,0 +1,141 @@
+{
+  "_note": "Real EC2 DescribeRegions {AllRegions: true} response (founder-captured 2026-10-21), region fields only: RegionName and OptInStatus. Nothing account-specific. It contains no 'opted-in' region; tests derive those variants and label them as derived.",
+  "Regions": [
+    {
+      "RegionName": "ap-south-2",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "ap-south-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "eu-south-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "eu-south-2",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "me-central-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "il-central-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "ca-central-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-east-2",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "mx-central-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "eu-central-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "eu-central-2",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "us-west-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "us-west-2",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "af-south-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "eu-north-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "eu-west-3",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "eu-west-2",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "eu-west-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-northeast-3",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-northeast-2",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "me-south-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "ap-northeast-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "sa-east-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-east-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "ca-west-1",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "ap-southeast-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-southeast-2",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-southeast-3",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "ap-southeast-4",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "us-east-1",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-southeast-5",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "ap-southeast-6",
+      "OptInStatus": "not-opted-in"
+    },
+    {
+      "RegionName": "us-east-2",
+      "OptInStatus": "opt-in-not-required"
+    },
+    {
+      "RegionName": "ap-southeast-7",
+      "OptInStatus": "not-opted-in"
+    }
+  ]
+}
