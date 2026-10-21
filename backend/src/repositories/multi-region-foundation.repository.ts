@@ -6,16 +6,19 @@
  *   aws_scan_leases, job_leases  leases with fencing tokens
  *   organization_feature_flags   per-organization flags, OFF unless a row says enabled
  *
- * Nothing calls these yet. Read-only on purpose: acquiring, renewing and
- * releasing leases (the fencing-token contract in the migration's header) is
- * implemented with the code that takes them.
+ * Reads, plus the one write discovery makes to aws_account_regions: the
+ * account's region list (recordRegionList, multi-region M5a). Acquiring,
+ * renewing and releasing leases (the fencing-token contract in the migration's
+ * header) is implemented with the code that takes them (scan-lease.ts).
  *
  * TENANT ISOLATION is enforced twice, independently: every statement carries an
  * explicit organization predicate, and the tables force row-level security, so
  * the caller's connection must carry app.current_organization_id. Every function
  * takes the caller's executor; none opens a connection of its own.
  */
-import { PoolClient } from 'pg';
+import { ClientBase, PoolClient } from 'pg';
+import { HeldLease, withFencedTransaction } from '../services/scan-lease';
+import type { ListedRegion } from '../services/region-list';
 
 /** A connection the caller has already tagged with the organization. */
 type Executor = Pick<PoolClient, 'query'>;
@@ -184,4 +187,52 @@ export async function getJobLease(
     jobName: row.job_name,
     lastCompletedAt: row.last_completed_at,
   };
+}
+
+/**
+ * Records the account's region list (multi-region plan M5a, m5-plan.md §2.5,
+ * §3): one row per listed region, in one transaction that starts with the
+ * scan lease's commit fence (token and account check, F17). The organization
+ * and the AWS account are the lease's, never values from the AWS response.
+ *
+ * Only the list columns are written: opt_in_status, enabled, last_listed_at
+ * (one value for every row of this list, the transaction's now()),
+ * disabled_at, updated_at; first_seen_at and every scan column keep their
+ * defaults on insert and their values on update. disabled_at is set when a
+ * region that was enabled is listed as not enabled, cleared when it is listed
+ * as enabled again, and otherwise kept.
+ *
+ * No row is ever deleted: a region missing from this list keeps its row and
+ * its older last_listed_at, which is how readers tell it is not in the
+ * latest list. Throws as the fence does (LeaseLostError, AwsAccountAmbiguousError);
+ * the transaction then writes nothing. Returns the number of rows written.
+ */
+export async function recordRegionList(client: ClientBase, lease: HeldLease, regions: readonly ListedRegion[]): Promise<number> {
+  if (lease.key.table !== 'aws_scan_leases') throw new Error('recordRegionList: a scan lease is required');
+  const { organizationId, awsAccountId } = lease.key;
+  return withFencedTransaction(client, lease, async () => {
+    const result = await client.query(
+      `INSERT INTO aws_account_regions (organization_id, aws_account_id, region, opt_in_status, enabled, last_listed_at)
+       SELECT $1, $2, r.region, r.opt_in_status, r.enabled, now()
+         FROM unnest($3::text[], $4::text[], $5::boolean[]) AS r(region, opt_in_status, enabled)
+       ON CONFLICT (organization_id, aws_account_id, region) DO UPDATE
+         SET opt_in_status = EXCLUDED.opt_in_status,
+             enabled = EXCLUDED.enabled,
+             last_listed_at = EXCLUDED.last_listed_at,
+             disabled_at = CASE
+               WHEN EXCLUDED.enabled THEN NULL
+               WHEN aws_account_regions.enabled THEN now()
+               ELSE aws_account_regions.disabled_at
+             END,
+             updated_at = now()`,
+      [
+        organizationId,
+        awsAccountId,
+        regions.map((r) => r.region),
+        regions.map((r) => r.optInStatus),
+        regions.map((r) => r.enabled),
+      ]
+    );
+    return result.rowCount ?? 0;
+  });
 }

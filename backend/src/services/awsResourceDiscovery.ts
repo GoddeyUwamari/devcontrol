@@ -75,6 +75,8 @@ import {
 } from '../utils/awsCallPolicy';
 import { SourceOutcome, authorizesCleanup, failedSourceStatus } from './source-outcome';
 import { LeaseLostError, isLeaseLost, linkScanLeaseJob } from './scan-lease';
+import { describeAccountRegions } from './region-list';
+import { recordRegionList } from '../repositories/multi-region-foundation.repository';
 import {
   DISCOVERY_INTERRUPTED_MESSAGE,
   DISCOVERY_LEASE_LOST_MESSAGE,
@@ -658,7 +660,9 @@ export class AWSResourceDiscoveryService {
           organizationId,
           'running' as DiscoveryJobStatus,
           allowedTypes,
-          [] // Will be populated during discovery
+          // The regions this scan lists resources in: the home region only until
+          // multi-region fan-out (M7). S3 and CloudFront are account-wide listings.
+          [scanContext.region]
         ]
       );
       jobId = jobResult.rows[0].id;
@@ -674,6 +678,12 @@ export class AWSResourceDiscoveryService {
 
       console.log(`✅ [Discovery] AWS clients created successfully`);
       console.log(`🌍 [Discovery] Target region: ${awsClients.region}`);
+
+      // The account's region list (multi-region M5a): recorded only, nothing more is
+      // scanned because of it. When it cannot be read the scan goes on exactly as
+      // before and the last stored list is kept; the server log is the only trace.
+      scan.checkpoint();
+      await this.recordAccountRegions(client, scan, awsClients.ec2!, awsClients.region, organizationId);
 
       // Security Truthfulness #41: one shared per-run AWS Backup evidence cache, so an
       // EC2 instance's own has_backup lookup and every attached EBS volume's
@@ -1459,6 +1469,45 @@ export class AWSResourceDiscoveryService {
       // Every path: the heartbeat stops and the lease is released (or expires).
       await session?.end();
       client.release();
+    }
+  }
+
+  /**
+   * Lists the account's regions and records them (multi-region plan M5a,
+   * m5-plan.md §2-3): one DescribeRegions call on the home-region EC2 client,
+   * then one fenced write (F17). Fail-soft: a denied, timed-out, failed or
+   * invalid listing, or a failed write, is logged (organization id and error
+   * type only) and the scan continues unchanged -- no job error, no warning
+   * code, nothing written, the last stored list kept. A lost lease or an
+   * ambiguous account still stops the scan, as at every other step.
+   */
+  private async recordAccountRegions(
+    client: PoolClient,
+    scan: LeaseSession,
+    ec2: EC2Client,
+    homeRegion: string,
+    organizationId: string
+  ): Promise<void> {
+    const listed = await describeAccountRegions(ec2, homeRegion);
+    if (!listed.ok) {
+      console.warn(
+        `⚠️  [Discovery] region_list_${listed.reason}: org ${organizationId} (${listed.detail}); the region list was not updated, the scan continues`
+      );
+      return;
+    }
+    if (listed.dropped > 0) {
+      // The count only: names AWS supplied are never logged.
+      console.warn(`⚠️  [Discovery] region_list_names_dropped: org ${organizationId}: ${listed.dropped} region name(s) not recorded`);
+    }
+    try {
+      scan.checkpoint();
+      const written = await scan.watch(() => recordRegionList(client, scan.lease, listed.regions));
+      console.log(`🗺️  [Discovery] Region list recorded (${written} regions, ${listed.regions.filter((r) => r.enabled).length} enabled)`);
+    } catch (error: unknown) {
+      abortIfLeaseLost(error);
+      console.warn(
+        `⚠️  [Discovery] region_list_write_failed: org ${organizationId} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
+      );
     }
   }
 
