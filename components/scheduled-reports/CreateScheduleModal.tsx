@@ -95,9 +95,7 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(1);
   const [timezone, setTimezone] = useState('UTC');
   const [deliveryEmail, setDeliveryEmail] = useState(true);
-  const [deliverySlack, setDeliverySlack] = useState(false);
   const [emailRecipients, setEmailRecipients] = useState('');
-  const [slackChannels, setSlackChannels] = useState('');
   const [format, setFormat] = useState<'pdf' | 'csv' | 'both'>('pdf');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -112,9 +110,7 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
       setScheduleDayOfMonth(initialData.schedule_day_of_month || 1);
       setTimezone(initialData.timezone);
       setDeliveryEmail(initialData.delivery_email);
-      setDeliverySlack(initialData.delivery_slack);
       setEmailRecipients(initialData.email_recipients.join(', '));
-      setSlackChannels(initialData.slack_channels.join(', '));
       setFormat(initialData.format);
       setName(initialData.name);
       setDescription(initialData.description || '');
@@ -133,9 +129,7 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
     setScheduleDayOfMonth(1);
     setTimezone('UTC');
     setDeliveryEmail(true);
-    setDeliverySlack(false);
     setEmailRecipients('');
-    setSlackChannels('');
     setFormat('pdf');
     setName('');
     setDescription('');
@@ -148,18 +142,13 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
       return;
     }
 
-    if (!deliveryEmail && !deliverySlack) {
+    if (!deliveryEmail) {
       alert('Please enable at least one delivery method');
       return;
     }
 
     if (deliveryEmail && !emailRecipients.trim()) {
       alert('Please enter email recipients');
-      return;
-    }
-
-    if (deliverySlack && !slackChannels.trim()) {
-      alert('Please enter Slack channels');
       return;
     }
 
@@ -173,9 +162,9 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
       schedule_day_of_month: scheduleType === 'monthly' ? scheduleDayOfMonth : undefined,
       timezone,
       delivery_email: deliveryEmail,
-      delivery_slack: deliverySlack,
+      delivery_slack: false,
       email_recipients: deliveryEmail ? emailRecipients.split(',').map(e => e.trim()).filter(Boolean) : [],
-      slack_channels: deliverySlack ? slackChannels.split(',').map(c => c.trim()).filter(Boolean) : [],
+      slack_channels: [],
       format,
     };
 
@@ -197,9 +186,8 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
       case 2:
         return true; // Schedule always valid
       case 3:
-        if (!deliveryEmail && !deliverySlack) return false;
+        if (!deliveryEmail) return false;
         if (deliveryEmail && !emailRecipients.trim()) return false;
-        if (deliverySlack && !slackChannels.trim()) return false;
         return true;
       case 4:
         return true; // Format and filters optional
@@ -408,25 +396,12 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
                     <MessageSquare className="h-5 w-5 text-green-600" />
                     <span className="font-semibold">Slack Delivery</span>
                   </div>
-                  <Checkbox checked={deliverySlack} onCheckedChange={(checked) => setDeliverySlack(!!checked)} />
+                  <Checkbox checked={false} disabled aria-describedby="slack-delivery-unavailable" />
                 </div>
-                {deliverySlack && (
-                  <div>
-                    <Label htmlFor="slack-channels">Channels (comma-separated)</Label>
-                    <Input
-                      id="slack-channels"
-                      type="text"
-                      placeholder="#reports, #alerts"
-                      value={slackChannels}
-                      onChange={(e) => setSlackChannels(e.target.value)}
-                      className="mt-1"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Include # prefix for each channel</p>
-                  </div>
-                )}
+                <p id="slack-delivery-unavailable" className="text-xs text-gray-500">Slack delivery isn&apos;t available yet</p>
               </div>
 
-              {!deliveryEmail && !deliverySlack && (
+              {!deliveryEmail && (
                 <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
                   Please enable at least one delivery method
                 </p>
@@ -516,7 +491,7 @@ export function CreateScheduleModal({ open, onClose, onSubmit, initialData, isEd
 
                   <div className="text-gray-600">Delivery:</div>
                   <div className="font-medium">
-                    {deliveryEmail && 'Email'}{deliveryEmail && deliverySlack && ' + '}{deliverySlack && 'Slack'}
+                    {deliveryEmail && 'Email'}
                   </div>
                 </div>
               </div>

@@ -119,13 +119,14 @@ router.patch(
   organizationController.updateUserRole.bind(organizationController)
 );
 
-// AWS credentials management (requires owner only)
-router.post(
-  '/:id/aws-credentials',
-  requireOwnOrg,
-  requireOwner,
-  organizationController.setAWSCredentials.bind(organizationController)
-);
+// Retired: AWS is connected with an IAM role (/api/aws/accounts). Every role
+// in the organization gets 410; the request body is never read.
+router.post('/:id/aws-credentials', requireOwnOrg, (_req: Request, res: Response): void => {
+  res.status(410).json({
+    success: false,
+    error: 'Access-key connections have been retired. Connect AWS with an IAM role at /connect-aws.',
+  });
+});
 
 router.get(
   '/:id/aws-credentials',

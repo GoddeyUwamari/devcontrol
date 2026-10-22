@@ -118,30 +118,6 @@ export class EncryptionService {
   }
 
   /**
-   * Encrypt AWS credentials object
-   */
-  encryptAWSCredentials(credentials: {
-    accessKeyId: string;
-    secretAccessKey: string;
-    region?: string;
-  }): string {
-    const json = JSON.stringify(credentials);
-    return this.encrypt(json);
-  }
-
-  /**
-   * Decrypt AWS credentials object
-   */
-  decryptAWSCredentials(encryptedCredentials: string): {
-    accessKeyId: string;
-    secretAccessKey: string;
-    region?: string;
-  } {
-    const json = this.decrypt(encryptedCredentials);
-    return JSON.parse(json);
-  }
-
-  /**
    * Hash a string using SHA-256 (for token blacklisting)
    */
   hash(data: string): string {
