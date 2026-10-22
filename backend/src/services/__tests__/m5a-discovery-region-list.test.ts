@@ -151,7 +151,7 @@ async function scanFootprint(orgId: string, result: any) {
 }
 
 /** The rows without the home row's scan columns (M5b writes them on every scan). */
-function withoutHomeScanColumns(rows: Record<string, any>): Record<string, any> {
+function withoutHomeScanColumns(rows: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> {
   const home = { ...rows[HOME] };
   for (const column of ['last_scan_started_at', 'last_scan_finished_at', 'last_success_at', 'last_scan_status', 'last_error_code', 'consecutive_failures', 'updated_at']) {
     delete home[column];

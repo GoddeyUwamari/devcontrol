@@ -1544,6 +1544,7 @@ export class AWSResourceDiscoveryService {
     if (!result) return;
     let written: number;
     try {
+      scan.checkpoint();
       written = await scan.watch(() => recordHomeRegionScanStatus(client, scan.lease, { region: homeRegion, jobId, result }));
     } catch (error: unknown) {
       abortIfLeaseLost(error);

@@ -386,7 +386,7 @@ describe('recordHomeRegionScanStatus (F18): only the home row\'s scan columns', 
     });
   });
 
-  it('the same scan written twice: the second write lands (idempotent per job)', async () => {
+  it('the same job may write again (equal start, allowed by the guard); consecutive_failures accumulates', async () => {
     await withSchema(async (env) => {
       const { org, db, held, jobId } = await scanned(env);
       await write(db, held, jobId, { status: 'failed', errorCode: null });
@@ -509,6 +509,37 @@ describe('recordHomeRegionScanStatus: two organizations under row-level security
       expect(update.rowCount).toBe(1);
       expect(await rowsOf(env, orgB)).toEqual(beforeB);
       expect((await dbA.query(`SELECT DISTINCT organization_id FROM aws_account_regions`)).rows).toEqual([{ organization_id: orgA }]);
+    });
+  });
+
+  it('RLS BYPASSED (superuser test connection): the explicit organization predicate alone keeps the write on the lease\'s organization', async () => {
+    await withSchema(async (env) => {
+      const orgA = await env.organization(ACCOUNT_A);
+      const orgB = await env.organization(ACCOUNT_A);
+      const dbA = await env.connection(orgA);
+      const dbB = await env.connection(orgB);
+      const leaseA = await lease(dbA, orgA);
+      await recordRegionList(dbA, leaseA, LIST);
+      await recordRegionList(dbB, await lease(dbB, orgB), LIST);
+      const jobA = await env.job(orgA);
+      const beforeB = await rowsOf(env, orgB);
+      expect(beforeB[HOME].last_scan_status).toBe('never_scanned');
+
+      // Deliberately NOT the app role: a superuser connection, so row-level security does not
+      // apply and only the statement's own organization predicates stand between orgs A and B.
+      const superuser = new Client(dbConfig());
+      await superuser.connect();
+      try {
+        await superuser.query(`SET search_path TO ${env.schema}`);
+        const role = (await superuser.query(ROLE_SQL)).rows[0];
+        expect(role.rolsuper || role.rolbypassrls).toBe(true);
+
+        expect(await write(superuser, leaseA, jobA, { status: 'ok', errorCode: null })).toBe(1);
+      } finally {
+        await superuser.end();
+      }
+      expect((await rowsOf(env, orgA))[HOME].last_scan_status).toBe('ok');
+      expect(await rowsOf(env, orgB)).toEqual(beforeB);
     });
   });
 

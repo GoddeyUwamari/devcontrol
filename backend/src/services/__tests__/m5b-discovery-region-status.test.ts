@@ -7,8 +7,9 @@
  *    partial with each truncation code); the security-group scan, S3 and
  *    CloudFront never count and never write a row (Q-B);
  *  - Q-E: a Resource Explorer search whose results failed to store makes the
- *    status failed, and nothing else: the job row, warnings and reconcile calls
- *    are the same as without the rule;
+ *    status failed, and nothing else: the job row (no warning, M4c's exact
+ *    text) and the reconcile calls are pinned to fixed values, and the flag's
+ *    references are counted;
  *  - fail-soft: no home row, or an ordinary failed write, is logged once and the
  *    scan is unchanged; a lost lease or an ambiguous account still stops it, and
  *    a scan that stops before its outcomes are known writes no status.
@@ -29,7 +30,8 @@ import { DISCOVERY_LEASE_LOST_MESSAGE, LeaseTiming, SCAN_KIND_DISCOVERY, onTagge
 import { AwsCallTimeoutError } from '../../utils/awsCallPolicy';
 import { DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX } from '../discovery-warnings';
 import * as foundation from '../../repositories/multi-region-foundation.repository';
-import * as regionScanStatus from '../region-scan-status';
+import { RE_RECONCILED_TYPES } from '../resourceExplorer.service';
+import { AwsAccountAmbiguousError, isAwsAccountAmbiguous } from '../../repositories/aws-accounts.repository';
 import { PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 
 const dbConfig = () => ({
@@ -108,7 +110,7 @@ interface Answers {
 }
 
 /** Every listing answers empty and complete unless `answers` says otherwise. */
-function mockAwsClients(answers: Answers = {}) {
+function mockAwsClients(answers: Answers = {}, home = HOME) {
   stubScanSource();
   const ec2 = fake({
     DescribeRegionsCommand: () => realResponse(),
@@ -124,14 +126,14 @@ function mockAwsClients(answers: Answers = {}) {
   const cloudFront = fake({ ListDistributionsCommand: () => ({ DistributionList: { Items: [] } }), ...answers.cloudFront });
   const iam = fake({ ListUsersCommand: () => ({ Users: [] }) });
   jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
-    enabled: true, region: HOME, accountId: ACCOUNT,
+    enabled: true, region: home, accountId: ACCOUNT,
     costExplorer: {}, ec2, rds, s3, s3Control: {}, cloudWatch: {}, lambda, ecs: {}, elb, eks: {}, dynamodb: {},
     cloudFront, apiGateway: {}, elastiCache: {}, sqs: {}, sns: {}, iam, backup: {},
     resourceExplorer: explorer(answers.resourceExplorer ?? (() => ({ Resources: [], Count: { TotalResources: 0, Complete: true } }))),
     getDynamoDBClientForRegion: () => ({}), getApplicationAutoScalingClientForRegion: () => ({}), getCloudWatchClientForRegion: () => ({}),
     getS3ClientForRegion: () => s3,
   } as any);
-  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: false, homeRegion: HOME });
+  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: false, homeRegion: home });
   return { ec2, rds, s3, lambda, elb, cloudFront, iam };
 }
 
@@ -295,6 +297,23 @@ describe('a scan records its home region\'s status from its listings', () => {
     expect(home.last_success_at.getTime()).toBeGreaterThan(okAt.getTime());
   }, 30_000);
 
+  it('a home region other than us-east-1 (eu-west-1): the status lands on that row; us-east-1 stays unscanned', async () => {
+    const orgId = await insertOrg();
+    await pool.query(`UPDATE aws_accounts SET region = $2 WHERE org_id = $1`, [orgId, BUCKET_REGION]);
+    mockAwsClients({}, BUCKET_REGION);
+    const writeSpy = jest.spyOn(foundation, 'recordHomeRegionScanStatus');
+    const result = await service().discoverAllResources(orgId);
+
+    expect(writeSpy.mock.calls.map((call) => call[2].region)).toEqual([BUCKET_REGION]);
+    const job = (await pool.query(`SELECT status, regions FROM resource_discovery_jobs WHERE id = $1`, [result.job_id])).rows[0];
+    expect(job).toEqual({ status: 'completed', regions: [BUCKET_REGION] });
+    const rows = await regionRows(orgId);
+    expect(rows[BUCKET_REGION]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    expect(rows[BUCKET_REGION].last_success_at).toBeInstanceOf(Date);
+    expect(scanColumns(rows[HOME])).toEqual(UNSCANNED);
+    for (const [region, row] of Object.entries(rows)) if (region !== BUCKET_REGION) expect(scanColumns(row)).toEqual(UNSCANNED);
+  });
+
   it('the list columns are not changed by the status write', async () => {
     const orgId = await insertOrg();
     mockAwsClients();
@@ -388,10 +407,17 @@ describe('what never counts and never writes a row (Q-B, S3, CloudFront)', () =>
 
 // ---------------------------------------------------------------------------
 describe('Q-E: Resource Explorer results that failed to store', () => {
-  /** A starter scan whose search finds one VPC that cannot be stored; reconcile calls recorded. */
-  async function storeFailureScan(withoutRule: boolean) {
+  /** M4c's own job text for this failure (awsResourceDiscovery.ts, the generic upsert's catch). */
+  const M4C_STORE_FAILURE_MESSAGE = 'Resource Explorer inventory: could not store';
+
+  it('the status is failed, and the job is exactly what M4c makes of it: no warning, the M4c text, the same reconciles', async () => {
     const orgId = await insertOrg('starter');
-    mockAwsClients({ resourceExplorer: () => ({ Resources: [{ Arn: VPC_ARN, Region: HOME, Service: 'ec2', CfnResourceType: 'AWS::EC2::VPC', Properties: [] }], Count: { TotalResources: 1, Complete: true } }) });
+    mockAwsClients({
+      resourceExplorer: () => ({
+        Resources: [{ Arn: VPC_ARN, Region: HOME, Service: 'ec2', CfnResourceType: 'AWS::EC2::VPC', Properties: [] }],
+        Count: { TotalResources: 1, Complete: true },
+      }),
+    });
     const svc = service();
     jest.spyOn(svc as any, 'upsertGenericResource').mockRejectedValue(Object.assign(new Error('could not store'), { name: 'StoreError' }));
     const reconciliation = (svc as any).reconciliation;
@@ -402,36 +428,39 @@ describe('Q-E: Resource Explorer results that failed to store', () => {
       reconcileCalls.push({ region, present: [...present].sort(), types: [...types].sort() });
       return realReconcile(...args);
     });
-    if (withoutRule) {
-      // The same scan as if the rule did not exist: the search counts as it ran.
-      const real = regionScanStatus.homeRegionScanStatus;
-      jest.spyOn(regionScanStatus, 'homeRegionScanStatus').mockImplementation((outcomes) =>
-        real(outcomes.map((o) => (o.source === regionScanStatus.RESOURCE_EXPLORER_SOURCE ? { ...o, status: 'complete' } : o)))
-      );
-    }
-    const result = await svc.discoverAllResources(orgId);
-    return { footprint: await scanFootprint(orgId, result), reconcileCalls, home: (await regionRows(orgId))[HOME] };
-  }
 
-  it('the status is failed', async () => {
-    const { home } = await storeFailureScan(false);
-    expect(home).toMatchObject({ last_scan_status: 'failed', last_error_code: null, last_success_at: null });
+    const result = await svc.discoverAllResources(orgId);
+
+    // Fixed values, not a comparison with a second run: a leak of the flag into the job shows here.
+    expect(result.errors).toEqual([M4C_STORE_FAILURE_MESSAGE]);
+    expect(result.warnings).toEqual([]);
+    const job = (
+      await pool.query(`SELECT status, error_message, to_jsonb(j) -> 'warnings' AS warnings FROM resource_discovery_jobs j WHERE id = $1`, [result.job_id])
+    ).rows[0];
+    expect(job).toEqual({ status: 'failed', error_message: M4C_STORE_FAILURE_MESSAGE, warnings: null }); // null = no warning (discoveryWarningsColumn)
+    // The search was complete, so M4c still reconciles from it (presence incl. the VPC), then S3, CloudFront and EBS.
+    expect(reconcileCalls).toEqual([
+      { region: HOME, present: [VPC_ARN], types: [...RE_RECONCILED_TYPES].sort() },
+      { region: null, present: [], types: ['s3'] },
+      { region: null, present: [], types: ['cloudfront'] },
+      { region: HOME, present: [], types: ['ebs'] },
+    ]);
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'failed', last_error_code: null, last_success_at: null });
   }, 30_000);
 
-  it('job row, errors, warnings and reconcile calls are identical with and without the rule; only the region status differs', async () => {
-    const withRule = await storeFailureScan(false);
-    resetMocks();
-    const withoutRule = await storeFailureScan(true);
-
-    expect(withRule.footprint).toEqual(withoutRule.footprint);
-    expect(withRule.reconcileCalls).toEqual(withoutRule.reconcileCalls);
-    // The search was complete, so M4c still reconciled from it (presence incl. the VPC).
-    expect(withRule.reconcileCalls).toContainEqual(expect.objectContaining({ region: HOME, present: expect.arrayContaining([VPC_ARN]) }));
-    expect(withRule.footprint.job[0].status).toBe('failed');
-    expect(withRule.footprint.job[0].error_message).toContain('Resource Explorer inventory');
-    expect(withRule.home.last_scan_status).toBe('failed');
-    expect(withoutRule.home.last_scan_status).toBe('ok');
-  }, 60_000);
+  it('static: the status-only Resource Explorer outcome is referenced exactly 3 times (declared, Q-E, the status write\'s input)', () => {
+    const discovery = fs
+      .readFileSync(path.join(__dirname, '..', 'awsResourceDiscovery.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const lines = discovery.split('\n').filter((line) => /\bresourceExplorerOutcome\b/.test(line)).map((line) => line.trim());
+    expect(discovery.match(/\bresourceExplorerOutcome\b/g)).toHaveLength(3);
+    expect(lines).toEqual([
+      'const resourceExplorerOutcome: SourceOutcome = {',
+      "resourceExplorerOutcome.status = 'failed';",
+      'await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, [...ownOutcomes, resourceExplorerOutcome]);',
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -540,8 +569,7 @@ describe('the lease: never caught, never an ok', () => {
   }, 30_000);
 
   it('the account row now names another account at the status write: not caught, nothing written, the scan stops', async () => {
-    // (A second eligible account is refused the same way: the repository's F2 test. The
-    // shared aws_accounts fixture holds one row per organization.)
+    // (A second eligible account: the next test, and the repository's F2 test.)
     const orgId = await insertOrg();
     mockAwsClients();
     const realWrite = foundation.recordHomeRegionScanStatus;
@@ -554,5 +582,18 @@ describe('the lease: never caught, never an ok', () => {
     expect(isLeaseLost(error)).toBe(true);
     expect(scanColumns((await regionRows(orgId))[HOME])).toEqual(UNSCANNED);
     expect(statusLines()).toEqual([]);
+  }, 30_000);
+
+  it('an ambiguous account at the status write: not caught (not fail-soft), nothing written, the scan stops', async () => {
+    const orgId = await insertOrg();
+    mockAwsClients();
+    jest.spyOn(foundation, 'recordHomeRegionScanStatus').mockRejectedValue(new AwsAccountAmbiguousError(orgId, 2));
+    const error = await service().discoverAllResources(orgId).catch((err) => err);
+
+    expect(isAwsAccountAmbiguous(error)).toBe(true);
+    expect(scanColumns((await regionRows(orgId))[HOME])).toEqual(UNSCANNED);
+    expect(statusLines()).toEqual([]);
+    const job = (await pool.query(`SELECT status FROM resource_discovery_jobs WHERE organization_id = $1`, [orgId])).rows;
+    expect(job).toEqual([{ status: 'failed' }]);
   }, 30_000);
 });
