@@ -37,6 +37,7 @@ import { SecurityHubClient } from '@aws-sdk/client-securityhub';
 import { pool } from '../config/database';
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable } from './platform-sts';
 import { homeRegionOf, requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
+import { parseAccountIdFromArn } from '../utils/awsAccountId';
 
 export interface AWSClients {
   costExplorer: CostExplorerClient;
@@ -105,10 +106,8 @@ export interface AWSClients {
   getS3ClientForRegion?: (region: string) => S3Client;
 }
 
-/** Extracts the 12-digit account ID from an IAM role/user ARN, e.g. arn:aws:iam::123456789012:role/x */
-export function parseAccountIdFromArn(arn: string): string | undefined {
-  return arn.match(/^arn:aws:iam::(\d{12}):/)?.[1];
-}
+// Defined in utils/awsAccountId.ts (no imports, so the coverage route can use it); re-exported for existing importers.
+export { parseAccountIdFromArn };
 
 /** The assumed role's temporary credentials, as every client is built with them. */
 export interface TemporaryCredentials {
