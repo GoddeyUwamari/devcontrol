@@ -399,19 +399,21 @@ describe('POST /api/organizations/:id/aws-credentials -- the request body is nev
     expectNotLogged(secret);
   });
 
-  // The parser's own message quotes the body for trailing garbage.
+  // V8 quotes up to about ten characters of the input in its SyntaxError
+  // message for the last two, so the value is short enough to appear whole.
   it.each([
-    ['truncated', (json: string) => json.slice(0, -1)],
-    ['trailing garbage', (json: string) => `${json} x`],
-  ])('malformed JSON body (%s): 400 and nothing logged', async (_label, malform) => {
+    ['truncated', (value: string) => `{"secretAccessKey":"${value}"`],
+    ['an unquoted value', (value: string) => `{"secretAccessKey":${value}}`],
+    ['not JSON at all', (value: string) => `${value}=1`],
+  ])('malformed JSON body (%s): 400 and nothing logged', async (_label, malformed) => {
     const orgId = await insertOrg();
     stubAuth(await insertMember(orgId, 'owner'), orgId);
-    const secret = sentinels();
+    const value = `Q${randomToken(8)}`;
 
-    const { status } = await post(orgId, malform(JSON.stringify(secret)), 'application/json');
+    const { status } = await post(orgId, malformed(value), 'application/json');
 
     expect(status).toBe(400);
-    expectNotLogged(secret);
+    expectNotLogged({ value });
   });
 
   it('a caller from another organization: 404 and nothing logged', async () => {
