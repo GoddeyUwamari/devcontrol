@@ -15,6 +15,7 @@ import { DELETION_DETECTION_PAUSED_TEXT, DISCOVERY_WARNING_TRUNCATED_INDEX } fro
 import { billed, emptyPage, OTHER_REGIONS, prodCoverage, region, renderPage, STATS, withoutM5c } from './m6-fixtures'
 import { SCAN_RUNNING_REFETCH_MS } from '../ServicesOverview'
 import { SCAN_RUNNING_HINT } from '../ServicesHeader'
+import { formatWhen } from '../regionCoverage'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -57,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs()
   focusManager.setFocused(undefined)
+  vi.useRealTimers()
 })
 
 const card = () => screen.getByRole('region', { name: 'Account and scan coverage' })
@@ -173,17 +175,31 @@ describe('R4 no raw error text and no consecutive_failures in the DOM', () => {
   })
 })
 
+const exactOf = (iso: string) => new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'long', timeZone: 'UTC' }).format(Date.parse(iso)).replace(/[\u202f\u00a0]/g, ' ')
+
 describe('R5 times: local, with the exact time on hover and keyboard focus', () => {
-  it('the time is focusable, named with the exact time, and focus opens the tooltip', async () => {
+  it('keyboard focus opens the tooltip (role=tooltip, not the phone layout\'s printed line)', async () => {
     await show(prodCoverage(NOW))
     const time = within(card()).getByText(/^today, /, { selector: 'time' })
     expect(time).toHaveAttribute('tabindex', '0')
     expect(time).toHaveAttribute('dateTime', hoursAgo(2))
-    const exact = new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'long', timeZone: 'UTC' }).format(Date.parse(hoursAgo(2))).replace(/[  ]/g, ' ')
-    expect(time).toHaveAttribute('aria-label', `${time.textContent} (${exact})`)
     expect(time).not.toHaveAttribute('title')
+    expect(screen.queryByRole('tooltip')).toBeNull()
     await act(async () => { fireEvent.focus(time) })
-    expect((await screen.findAllByText(exact)).length).toBeGreaterThan(0)
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent(exactOf(hoursAgo(2)))
+    expect(time.getAttribute('aria-describedby')).toBeTruthy()
+  })
+
+  it('the exact time is visually hidden text inside <time>, found by a screen-reader query', async () => {
+    await show(prodCoverage(NOW))
+    const time = within(card()).getByText(/^today, /, { selector: 'time' })
+    expect(time).not.toHaveAttribute('aria-label')
+    const hidden = within(time).getByText(`(${exactOf(hoursAgo(2))})`)
+    expect(hidden).toHaveClass('sr-only')
+    expect(hidden.closest('time')).toBe(time)
+    // What a screen reader reads for the element: the visible label, then the exact time.
+    expect(time.textContent).toBe(`${formatWhen(hoursAgo(2), Date.now())} (${exactOf(hoursAgo(2))})`)
   })
 })
 
@@ -278,12 +294,43 @@ describe('R8 coverage refetch while a scan runs (Q11)', () => {
     expect(mockGetCoverage).toHaveBeenCalledTimes(1)
   })
 
+  it('stops after unmount', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    mockGetCoverage.mockResolvedValue(running())
+    const { unmount } = renderPage()
+    await screen.findAllByRole('button', { name: /Scan running…/ })
+    expect(mockGetCoverage).toHaveBeenCalledTimes(1)
+    unmount()
+    await act(async () => { await vi.advanceTimersByTimeAsync(3 * SCAN_RUNNING_REFETCH_MS) })
+    expect(mockGetCoverage).toHaveBeenCalledTimes(1)
+  })
+
   it('an older backend (no M5c keys) is never polled', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     mockGetCoverage.mockResolvedValue(withoutM5c(running()))
     renderPage()
     await screen.findByText(/Scan in progress, started/)
     await act(async () => { await vi.advanceTimersByTimeAsync(5 * SCAN_RUNNING_REFETCH_MS) })
+    expect(mockGetCoverage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('R11 a tab left open past midnight (P2-3)', () => {
+  it('"today" becomes "yesterday" after local midnight, with no new request', async () => {
+    const start = Date.parse('2026-10-22T23:59:00Z') // TZ is UTC in this file
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: start })
+    mockGetCoverage.mockResolvedValue(prodCoverage(start)) // finished 2 h before: 9:59 PM
+    renderPage()
+    await screen.findByRole('region', { name: 'Region coverage' })
+    expect(card()).toHaveTextContent('Last scan finished today, 9:59 PM')
+    expect(within(table()).getAllByRole('row')[1]).toHaveTextContent('today, 9:59 PM')
+    await act(async () => { await vi.advanceTimersByTimeAsync(2 * 60_000) })
+    expect(card()).toHaveTextContent('Last scan finished yesterday, 9:59 PM')
+    expect(within(table()).getAllByRole('row')[1]).toHaveTextContent('yesterday, 9:59 PM')
+    expect(mockGetCoverage).toHaveBeenCalledTimes(1)
+    // And again the next night.
+    await act(async () => { await vi.advanceTimersByTimeAsync(24 * 3600_000) })
+    expect(card()).toHaveTextContent('Last scan finished Oct 22, 2026, 9:59 PM')
     expect(mockGetCoverage).toHaveBeenCalledTimes(1)
   })
 })

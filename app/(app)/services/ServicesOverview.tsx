@@ -19,6 +19,7 @@ import { type AllResourcesFilters, DEFAULT_FILTERS, allResourcesRequest, demoAll
 import { isServicesCoverageM6Enabled } from './servicesCoverageM6Flag'
 import { describeRegionCoverage } from './regionCoverage'
 import { RegionCoveragePanel } from './RegionCoveragePanel'
+import { useNowEachLocalDay } from './useNowEachLocalDay'
 
 /** While a scan is running, coverage is read again this often (M6 only). */
 export const SCAN_RUNNING_REFETCH_MS = 60_000
@@ -167,10 +168,10 @@ export function ServicesOverview({
     ? { loading: false, error: false, summary: demo.costSummary }
     : { loading: !orgId || costQuery.isPending, error: costQuery.isError, summary: costQuery.data }
 
-  // Times in the region coverage are read against the time the page mounted.
-  const [mountedAt] = useState(() => Date.now())
+  // "today" / "yesterday" in the region coverage, read again after each local midnight.
+  const now = useNowEachLocalDay(m6 && !demo)
   const regionView = m6 && !demo && coverageState.status === 'ready'
-    ? describeRegionCoverage(coverageState.coverage, mountedAt, discovery.warnings)
+    ? describeRegionCoverage(coverageState.coverage, now, discovery.warnings)
     : null
   const scanRunning = regionView?.scanRunning ?? false
 
@@ -201,6 +202,7 @@ export function ServicesOverview({
         inTabWarnings={discovery.warnings}
         storedResources={!stats.loading && (statsData?.total ?? 0) > 0}
         regionView={regionView}
+        now={regionView ? now : undefined}
       />
       <SummaryTiles
         stats={stats}
@@ -238,7 +240,7 @@ export function ServicesOverview({
           scanRunning={scanRunning}
         />
       </div>
-      {regionView && <RegionCoveragePanel view={regionView} now={mountedAt} />}
+      {regionView && <RegionCoveragePanel view={regionView} now={now} />}
       {coverageState.status === 'ready' && (
         <NotCheckedCard coverage={coverageState.coverage} stats={statsData} inTabWarnings={discovery.warnings} leaseRule={!!regionView} />
       )}

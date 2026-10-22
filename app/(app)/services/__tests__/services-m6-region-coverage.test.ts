@@ -122,7 +122,7 @@ describe('V2 scan in progress', () => {
   })
   it('no completed scan yet', () => {
     const w = view(prod({ scan_in_progress: { since: hoursAgo(0.25) }, last_completed_scan: null, last_successful_scan_at: null }))
-    expect(richText(w.scanLine, NOW, TZ)).toBe('Scan in progress since today, 2:45 PM · no completed scan yet')
+    expect(richText(w.scanLine, NOW, TZ)).toBe('Scan in progress since today, 2:45 PM · no scan has finished yet')
   })
 })
 
@@ -160,6 +160,15 @@ describe('V4 out of date: only the API flag', () => {
     expect(legend(v)).toEqual(['Out of date', 'Not scanned yet'])
     expect(notes(v)[0]).toBe(`These results may be out of date. us-east-1 was last scanned yesterday, 7:00 PM; ${SCAN_INTERVAL_TEXT}.`)
     expect(details(v, 'region-us-east-1')).toBe('Last scanned yesterday, 7:00 PM. Not scanned since; results may be out of date.')
+  })
+  it('a non-home region flagged stale: out of date in its row, chip and note, still checked', () => {
+    const others = OTHER_REGIONS.map((r) => r === 'us-west-2' ? region(r, { status: 'ok', stale: true, last_scan_finished_at: hoursAgo(20), last_success_at: hoursAgo(20) }) : region(r))
+    const v = view(prod({}, HOME_OK, others))
+    expect(row(v, 'region-us-west-2').status).toBe('Out of date')
+    expect(chips(v)).toContain('1 region out of date')
+    expect(notes(v)).toContain(`These results may be out of date. us-west-2 was last scanned yesterday, 7:00 PM; ${SCAN_INTERVAL_TEXT}.`)
+    expect(v.counts.checked).toBe(2)
+    expect(v.headline).toBe('2 of 17 enabled regions checked')
   })
   it('a 1-minute-old row flagged stale is out of date; a 3-day-old row not flagged is not', () => {
     expect(chips(view(prod({}, { ...HOME_OK, stale: true, last_scan_finished_at: hoursAgo(1 / 60) })))[0]).toMatch(/out of date/)
@@ -301,6 +310,14 @@ describe('V8 region list not known', () => {
     expect(row(v, 'region-us-east-1').status).toBe('Complete')
     expect(v.headline).toBe('us-east-1 checked')
   })
+  it('a warning this page does not know: "—", "with a warning", no cut-off claim', () => {
+    const v = view(unknown({ last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings: ['some_future_code'] }, last_completed_scan: completed(['some_future_code']) }))
+    expect(row(v, 'region-us-east-1').lastSuccess).toBe('—')
+    expect(details(v, 'region-us-east-1')).toBe('Last scan finished today, 1:00 PM with a warning.')
+    expect(JSON.stringify(v.rows)).not.toMatch(/cut off/)
+    const index = view(unknown({ last_completed_scan: completed(['some_future_code', DISCOVERY_WARNING_TRUNCATED_INDEX]) }))
+    expect(details(index, 'region-us-east-1')).toBe('Last scan finished today, 1:00 PM, but some listings were cut off.')
+  })
   it('no completed scan: "—" and nothing about cut-off listings', () => {
     const v = view(unknown({ last_scan: { status: 'failed', started_at: hoursAgo(1), completed_at: hoursAgo(1), warnings: [] }, last_completed_scan: null, last_successful_scan_at: null }))
     expect(row(v, 'region-us-east-1').lastSuccess).toBe('—')
@@ -383,6 +400,16 @@ describe('V13 the S3 / CloudFront footer and claims', () => {
     c.scope.s3.regions = []
     expect(footerText(c)).toMatch(/: no S3 buckets found; /)
   })
+  it('the chips keep Phase 1\'s "not in the last scan" when the newest completed scan left the type out', () => {
+    const c = prod()
+    c.scope.cloudfront = { in_last_scan: false, count: 4 }
+    c.scope.s3 = { in_last_scan: false, regions: [{ region: 'us-east-1', count: 3 }, { region: 'us-west-2', count: 5 }] }
+    expect(chips(view(c)).slice(-2)).toEqual(['global 4 · CloudFront · not in the last scan', 'S3 in other regions 5 · not in the last scan'])
+    // Same rule as Phase 1: only said about a completed newest scan.
+    const running = { ...c, scan_in_progress: { since: hoursAgo(0.1) }, last_scan: { status: 'running', started_at: hoursAgo(0.1), completed_at: null, warnings: [] } }
+    expect(chips(view(running)).slice(-2)).toEqual(['global 4 · CloudFront', 'S3 in other regions 5'])
+    expect(describeCoverage(c, NOW).chips.filter((x) => x.key === 'global' || x.key === 's3').map((x) => x.note)).toEqual(['4 · CloudFront · not in the last scan', '5 · not in the last scan'])
+  })
   it('CloudFront and S3-in-other-regions chips only when their count is above 0', () => {
     const c = prod()
     c.scope.cloudfront.count = 4
@@ -459,6 +486,11 @@ describe('V18 times', () => {
     expect(formatWhen('2026-10-22T01:00:00Z', now, 'America/Los_Angeles')).toBe('today, 6:00 PM')
     expect(formatWhen('2026-10-21T01:00:00Z', now, 'America/Los_Angeles')).toBe('yesterday, 6:00 PM')
     expect(formatWhen('2026-10-21T01:00:00Z', now, 'UTC')).toBe('yesterday, 1:00 AM')
+  })
+  it('yesterday across a month and a year boundary', () => {
+    expect(formatWhen('2026-10-31T10:00:00Z', Date.parse('2026-11-01T12:00:00Z'), 'UTC')).toBe('yesterday, 10:00 AM')
+    expect(formatWhen('2026-12-31T23:30:00Z', Date.parse('2027-01-01T08:00:00Z'), 'UTC')).toBe('yesterday, 11:30 PM')
+    expect(formatWhen('2026-02-28T09:00:00Z', Date.parse('2026-03-01T09:00:00Z'), 'UTC')).toBe('yesterday, 9:00 AM')
   })
   it('the exact time', () => {
     expect(formatExact('2026-10-22T13:00:07Z', 'UTC')).toBe('Thursday, October 22, 2026 at 1:00:07 PM UTC')

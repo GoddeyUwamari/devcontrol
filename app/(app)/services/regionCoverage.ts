@@ -24,7 +24,7 @@
  */
 import type { RegionCoverage, ServicesCoverage } from '@/lib/services/aws-services.service'
 import { DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
-import { DISCOVERY_WARNING_LISTING_TRUNCATED, shownWarnings, warningNotes } from './coverage'
+import { DISCOVERY_WARNING_LISTING_TRUNCATED, scopeIsCompleted, shownWarnings, warningNotes } from './coverage'
 
 // ── Counts ──
 
@@ -94,6 +94,8 @@ export function latestAttempt(coverage: ServicesCoverage): LatestAttempt {
  * home region. discovery_listing_truncated is also added by S3 and CloudFront
  * listings (account-wide), so its job note is kept.
  */
+const TRUNCATION_CODES: readonly string[] = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED]
+
 const WARNING_NOTE_KEY: Record<string, string> = {
   [DISCOVERY_WARNING_TRUNCATED_INDEX]: 'deletion-paused',
 }
@@ -156,6 +158,7 @@ export const REGION_COPY = {
   scanningDetail: 'Results shown are from the last scan that finished.',
   unfinishedDetail: "The most recent scan attempt didn't finish. Results shown are from an earlier scan.",
   cutOff: ', but some listings were cut off.',
+  withWarning: ' with a warning.',
 }
 
 // ── View ──
@@ -365,7 +368,7 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
 
   // ── Scan line ──
   const scanLine: Rich = running
-    ? ['Scan in progress since ', { iso: coverage.scan_in_progress!.since }, ...(lastSuccessIso ? [' · showing results from ', { iso: lastSuccessIso }] : [' · no completed scan yet'])]
+    ? ['Scan in progress since ', { iso: coverage.scan_in_progress!.since }, ...(lastSuccessIso ? [' · showing results from ', { iso: lastSuccessIso }] : [' · no scan has finished yet'])]
     : lastSuccessIso ? ['Last scan finished ', { iso: lastSuccessIso }] : ['No scan has finished yet']
 
   const chips: RegionChip[] = []
@@ -460,10 +463,13 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
 
     // "Last full scan": the newest completed scan, only when nothing was cut
     // off in it; otherwise not known (an older one may have been full).
+    // "Cut off" only for the two truncation codes; any other warning is not described.
     const lastDone = coverage.last_completed_scan
-    const lastDoneFull = !!lastDone && shownWarnings(lastDone.warnings).length === 0
+    const lastDoneWarnings = lastDone ? shownWarnings(lastDone.warnings) : []
+    const lastDoneFull = !!lastDone && lastDoneWarnings.length === 0
+    const cutOff = lastDoneWarnings.some((code) => TRUNCATION_CODES.includes(code))
     const homeDetails: Rich = homeState === 'scanning' ? [REGION_COPY.scanningDetail] : homeState === 'unfinished' ? [REGION_COPY.unfinishedDetail] : []
-    if (lastDone && !lastDoneFull) homeDetails.push(...(homeDetails.length > 0 ? [' '] : []), 'Last scan finished ', { iso: lastDone.completed_at }, REGION_COPY.cutOff)
+    if (lastDone && !lastDoneFull) homeDetails.push(...(homeDetails.length > 0 ? [' '] : []), 'Last scan finished ', { iso: lastDone.completed_at }, cutOff ? REGION_COPY.cutOff : REGION_COPY.withWarning)
     chips.push({ key: 'home', state: homeState, region: home.region, note: homeState === 'not_scanned' ? `home · ${CHIP_NOTE.not_scanned}` : `${home.count} · home · ${CHIP_NOTE[homeState]}` })
     rows.push({
       key: `region-${home.region}`, label: home.region, home: true, state: homeState, status: STATUS_LABEL[homeState],
@@ -475,11 +481,15 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
     notes.push({ key: 'not-listed', tone: 'info', parts: [REGION_COPY.notListed] })
   }
 
-  // Stored inventory outside the scanned regions, only when there is some (Q6).
+  // Stored inventory outside the scanned regions, only when there is some (Q6),
+  // with Phase 1's "not in the last scan" when the newest scan completed
+  // without that type (coverage.ts describeCoverage, same rule).
   const { cloudfront, s3 } = coverage.scope
-  if (cloudfront.count > 0) chips.push({ key: 'global', state: 'global', region: 'global', note: `${cloudfront.count} · CloudFront` })
+  const completed = scopeIsCompleted(coverage)
+  const notInLast = (inLastScan: boolean) => (completed && !inLastScan ? ' · not in the last scan' : '')
+  if (cloudfront.count > 0) chips.push({ key: 'global', state: 'global', region: 'global', note: `${cloudfront.count} · CloudFront${notInLast(cloudfront.in_last_scan)}` })
   const s3Elsewhere = s3.regions.filter((r) => r.region !== home.region).reduce((n, r) => n + r.count, 0)
-  if (s3Elsewhere > 0) chips.push({ key: 's3', state: 'global', region: 'S3 in other regions', note: `${s3Elsewhere}` })
+  if (s3Elsewhere > 0) chips.push({ key: 's3', state: 'global', region: 'S3 in other regions', note: `${s3Elsewhere}${notInLast(s3.in_last_scan)}` })
 
   // The job's warnings keep their Phase 1 notes, except the one the home
   // region's partial note already says (same truncation code, Q8).
