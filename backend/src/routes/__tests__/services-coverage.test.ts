@@ -16,7 +16,8 @@
  *     free plan's four types; resources only in the home region; S3 buckets
  *     in other regions and CloudFront as global.
  *   - The home region is the account's, or us-east-1 when none is recorded;
- *     enabled regions are reported as unknown, never as a number.
+ *     until a region list is stored, enabled regions are reported as
+ *     unknown, never as a number (M5c below: once one is, its count).
  *   - Counts agree with /api/services/stats; tags_unknown_by_type is its
  *     unknown_by_type.
  *   - 409 with a fixed message for more than one eligible account; any other
@@ -25,8 +26,8 @@
  *   - Multi-region M5c (m5c-plan.md): the enabled regions of the latest region
  *     list and each one's last scan status (codes on an allow-list only, never
  *     the stored message), staleness on the database clock, a scan in progress
- *     only while the discovery lease is held AND names a running job, and the
- *     newest completed scan. Read for the account the role ARN names; every
+ *     only while the discovery lease is held AND names a running or pending
+ *     job, and the newest completed scan (null when no job has completed). Read for the account the role ARN names; every
  *     test organization is on the same AWS account (the fixture ARN), so none
  *     sees another's rows by the explicit predicates (superuser run) or by RLS
  *     alone (devcontrol run). The pre-M5c keys are unchanged.
@@ -98,7 +99,7 @@ async function insertAccount(
 }
 
 interface JobFixture {
-  status: 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed';
   createdAt: string;
   completedAt?: string | null;
   resourceTypes?: string[] | null;
@@ -241,7 +242,7 @@ const NO_REGION_DATA = { region_status: [], scan_in_progress: null };
 type CoverageJson = Record<string, unknown> & { scope: Record<string, unknown> & { enabled_regions: Record<string, unknown> } };
 
 /** One region_status element of a response body. */
-interface RegionJson { region: string; home: boolean; status: string; stale: boolean }
+interface RegionJson { region: string; home: boolean; status: string; stale: boolean; last_error_code: string | null }
 
 /** The response as it was before M5c: the added keys removed. */
 function preM5c(coverage: CoverageJson) {
@@ -471,6 +472,9 @@ describe('last scan failed', () => {
     const { text, body } = await get(org);
     expect(body.coverage.last_scan.warnings).toEqual([DISCOVERY_WARNING_TRUNCATED_INDEX]);
     expect(text).not.toContain('AccessDenied');
+    // Only a failed job: no completed scan, and a failed one is never offered in its place.
+    expect(body.coverage.last_completed_scan).toBeNull();
+    expect(body.coverage.last_successful_scan_at).toBeNull();
   });
 });
 
@@ -657,7 +661,7 @@ describe('counts by scope', () => {
     expect(coverage.tags_unknown_by_type).toEqual({ cloudfront: 2, s3: 1 });
     expect(coverage.total).toBe(7);
     expect(m5c(coverage).enabled_regions).toEqual(M5C_REGIONS_UNKNOWN);
-    // No IAM claim, and no number of enabled regions anywhere.
+    // No IAM claim, and (no region list stored) no number of enabled regions anywhere.
     expect(JSON.stringify(coverage)).not.toMatch(/iam/i);
   });
 
@@ -944,7 +948,7 @@ const JUST_FRESH = 13 * HOUR - 60;   // 12 h 59 min
 const JUST_STALE = 13 * HOUR + 60;   // 13 h 01 min
 
 describe('M5c: enabled regions from the latest region list', () => {
-  it('counts the enabled regions of the latest list only: not a not-enabled region, not one missing from the latest list', async () => {
+  it('counts the enabled regions of the latest list only: not a not-enabled region, not one missing from the latest list, not one disabled in an older list', async () => {
     const org = await harness.buildOrg();
     await insertAccount(org.orgId, 'eu-west-1');
     const base = await dbNow();
@@ -952,6 +956,8 @@ describe('M5c: enabled regions from the latest region list', () => {
     await insertRegion(org.orgId, ACCOUNT, 'me-south-1', { enabled: false, listedAgo: 60 }, base);
     // Listed by an earlier list only (absent from the latest one).
     await insertRegion(org.orgId, ACCOUNT, 'eu-north-1', { listedAgo: 7 * 24 * HOUR }, base);
+    // Not enabled in an earlier list, and absent from the latest one.
+    await insertRegion(org.orgId, ACCOUNT, 'af-south-1', { enabled: false, listedAgo: 7 * 24 * HOUR }, base);
 
     const coverage = await coverageOf(org);
     expect(coverage.scope.enabled_regions).toEqual({
@@ -1031,6 +1037,36 @@ describe('M5c: each enabled region\'s last scan status', () => {
     ]);
   });
 
+  it('the home region changed after the latest list (absent from it): no entry is home, none is put first', async () => {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId, 'eu-west-1');
+    const base = await dbNow();
+    for (const region of ['us-east-1', 'ap-south-1']) await insertRegion(org.orgId, ACCOUNT, region, {}, base);
+    const coverage = await coverageOf(org);
+    expect(coverage.account.home_region).toBe('eu-west-1');
+    expect(coverage.region_status.map((r: RegionJson) => [r.region, r.home])).toEqual([
+      ['ap-south-1', false], ['us-east-1', false],
+    ]);
+  });
+
+  it('the allow-list is case-sensitive: an upper-case variant of an allowed code is returned as null', async () => {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId, 'eu-west-1');
+    const base = await dbNow();
+    await insertRegion(org.orgId, ACCOUNT, 'eu-west-1', {
+      status: 'partial', finishedAgo: 600, errorCode: DISCOVERY_WARNING_LISTING_TRUNCATED.toUpperCase(),
+    }, base);
+    await insertRegion(org.orgId, ACCOUNT, 'us-east-1', {
+      status: 'partial', finishedAgo: 600, errorCode: DISCOVERY_WARNING_TRUNCATED_INDEX.toUpperCase(),
+    }, base);
+    const { text, body } = await get(org);
+    expect(body.coverage.region_status.map((r: RegionJson) => [r.region, r.last_error_code])).toEqual([
+      ['eu-west-1', null], ['us-east-1', null],
+    ]);
+    expect(text).not.toContain(DISCOVERY_WARNING_LISTING_TRUNCATED.toUpperCase());
+    expect(text).not.toContain(DISCOVERY_WARNING_TRUNCATED_INDEX.toUpperCase());
+  });
+
   it('stale past 13 hours since the status was written (database clock); never_scanned is never stale', async () => {
     const org = await harness.buildOrg();
     await insertAccount(org.orgId, 'eu-west-1');
@@ -1071,7 +1107,7 @@ describe('M5c: each enabled region\'s last scan status', () => {
   });
 });
 
-describe('M5c: a scan in progress is the discovery lease held AND naming a running job', () => {
+describe('M5c: a scan in progress is the discovery lease held AND naming a running or pending job', () => {
   async function orgWithAccount() {
     const org = await harness.buildOrg();
     await insertAccount(org.orgId, 'eu-west-1');
@@ -1082,6 +1118,13 @@ describe('M5c: a scan in progress is the discovery lease held AND naming a runni
   it('held + its running job: since = the lease\'s acquisition', async () => {
     const org = await orgWithAccount();
     const acquiredAt = await insertLease(org.orgId, ACCOUNT, { jobId: await running(org.orgId) });
+    expect((await coverageOf(org)).scan_in_progress).toEqual({ since: acquiredAt.toISOString() });
+  });
+
+  it('held + its pending job: since = the lease\'s acquisition', async () => {
+    const org = await orgWithAccount();
+    const jobId = await insertJob(org.orgId, { status: 'pending', createdAt: '2026-03-01T10:00:00.000Z' });
+    const acquiredAt = await insertLease(org.orgId, ACCOUNT, { jobId });
     expect((await coverageOf(org)).scan_in_progress).toEqual({ since: acquiredAt.toISOString() });
   });
 
@@ -1097,7 +1140,12 @@ describe('M5c: a scan in progress is the discovery lease held AND naming a runni
       const org = await orgWithAccount();
       const jobId = await insertJob(org.orgId, { status, createdAt: '2026-03-01T10:00:00.000Z', completedAt: '2026-03-01T10:05:00.000Z' });
       await insertLease(org.orgId, ACCOUNT, { jobId });
-      expect((await coverageOf(org)).scan_in_progress).toBeNull();
+      const coverage = await coverageOf(org);
+      expect(coverage.scan_in_progress).toBeNull();
+      // The failed job is not a completed scan.
+      expect(coverage.last_completed_scan).toEqual(
+        status === 'failed' ? null : expect.objectContaining({ completed_at: '2026-03-01T10:05:00.000Z' })
+      );
     }
   });
 
