@@ -135,7 +135,7 @@ describe('R2 Auto Discover while a scan is running', () => {
 describe('R3 every state renders in the card and the panel', () => {
   const states: [string, () => ServicesCoverage, RegExp, RegExp][] = [
     ['latest attempt failed', () => prodCoverage(NOW, {}, { last_scan: { status: 'failed', started_at: hoursAgo(1.2), completed_at: hoursAgo(1), warnings: [] } }),
-      /The latest scan, at today, .*, didn't finish\. Results shown are from the last successful scan at today, /, /Complete/],
+      /The most recent scan attempt, at today, .*, didn't finish\. Results shown are from the scan that finished at today, /, /Complete/],
     ['out of date', () => prodCoverage(NOW, { stale: true, last_scan_finished_at: hoursAgo(20), last_success_at: hoursAgo(20) }),
       /These results may be out of date\. us-east-1 was last scanned .*; scans normally run every 6 hours\./, /Out of date/],
     ['partial', () => prodCoverage(NOW, { status: 'partial', last_error_code: DISCOVERY_WARNING_TRUNCATED_INDEX }),

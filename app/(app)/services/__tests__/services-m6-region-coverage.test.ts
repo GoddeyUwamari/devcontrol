@@ -74,6 +74,9 @@ describe('V1 today (the production response of Oct 22)', () => {
     expect(v.headlineSub).toBe('· us-east-1 (home), plus S3 in every region and CloudFront (global)')
     expect(richText(v.scanLine, NOW, TZ)).toBe('Last scan finished today, 1:00 PM')
     expect(v.scanRunning).toBe(false)
+    const none = view(prod({ last_completed_scan: null, last_successful_scan_at: null }))
+    expect(richText(none.scanLine, NOW, TZ)).toBe('No scan has finished yet')
+    expect(JSON.stringify(view(prod({ scan_in_progress: { since: hoursAgo(0.2) } }))) + JSON.stringify(v)).not.toMatch(/successful scan/)
   })
   it('chips: the home region and one grouped chip; no CloudFront or S3 chip at 0', () => {
     expect(chips(v)).toEqual(['us-east-1 9 · home · complete', '16 other regions not scanned yet'])
@@ -127,17 +130,17 @@ describe('V3 the latest attempt did not finish (from last_scan, not the region r
   it('failed: the home row keeps its status; the note gives both times', () => {
     const v = view(prod({ last_scan: { status: 'failed', started_at: hoursAgo(1.2), completed_at: hoursAgo(1), warnings: [] } }))
     expect(chips(v)[0]).toBe('us-east-1 9 · home · complete')
-    expect(notes(v)[0]).toBe("The latest scan, at today, 2:00 PM, didn't finish. Results shown are from the last successful scan at today, 1:00 PM.")
+    expect(notes(v)[0]).toBe("The most recent scan attempt, at today, 2:00 PM, didn't finish. Results shown are from the scan that finished at today, 1:00 PM.")
     expect(v.headline).toBe('1 of 17 enabled regions checked')
   })
   it('a running job with no held lease is abandoned at once (no one-hour rule)', () => {
     const c = prod({ last_scan: { status: 'running', started_at: hoursAgo(5 / 60), completed_at: null, warnings: [] } })
     expect(latestAttempt(c)).toBe('unfinished')
-    expect(notes(view(c))[0]).toBe("The latest scan, at today, 2:55 PM, didn't finish. Results shown are from the last successful scan at today, 1:00 PM.")
+    expect(notes(view(c))[0]).toBe("The most recent scan attempt, at today, 2:55 PM, didn't finish. Results shown are from the scan that finished at today, 1:00 PM.")
   })
   it('no scan ever completed', () => {
     const v = view(prod({ last_scan: { status: 'failed', started_at: null, completed_at: null, warnings: [] }, last_completed_scan: null, last_successful_scan_at: null }))
-    expect(notes(v)[0]).toBe("The latest scan didn't finish. No scan has completed yet.")
+    expect(notes(v)[0]).toBe("The most recent scan attempt didn't finish. No scan has finished yet.")
   })
   it("What we didn't check follows the same rule under M6", () => {
     const c = prod({ last_scan: { status: 'running', started_at: hoursAgo(5 / 60), completed_at: null, warnings: [] } })
@@ -184,22 +187,28 @@ describe('V5 partial', () => {
   })
   it('no complete scan yet: the column says so and the details give the partial scan time', () => {
     const v = partial(DISCOVERY_WARNING_TRUNCATED_INDEX, null)
-    expect(row(v, 'region-us-east-1').lastSuccess).toBe('No complete scan yet')
+    expect(row(v, 'region-us-east-1').lastSuccess).toBe('No full scan yet')
     expect(details(v, 'region-us-east-1')).toBe('Only partly scanned: its resource index has more than 1,000 items, so some resources here may be missing and deleted ones may still be listed until a complete scan. Last partly scanned today, 1:00 PM.')
   })
-  describe('Q8: the same truncation is said exactly once in the card', () => {
+  describe('Q8: the index truncation is said exactly once in the card', () => {
     const job = (warnings: string[]) => ({ last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings } })
     const once = (v: RegionCoverageView, pattern: RegExp) => notes(v).filter((n) => pattern.test(n)).length
 
-    it.each([
-      [DISCOVERY_WARNING_TRUNCATED_INDEX, /1,000/],
-      [DISCOVERY_WARNING_LISTING_TRUNCATED, /page limit|cut off/],
-    ])('%s: the region note only, the job note dropped', (code, pattern) => {
+    it('deletion_detection_paused_truncated_index: the region note only, the job note dropped', () => {
+      const code = DISCOVERY_WARNING_TRUNCATED_INDEX
       // From the job row and from this tab's discovery run alike.
       for (const v of [view(prod(job([code]), { ...HOME_OK, status: 'partial', last_error_code: code })), view(prod({}, { ...HOME_OK, status: 'partial', last_error_code: code }), [code])]) {
-        expect(once(v, pattern)).toBe(1)
+        expect(once(v, /1,000/)).toBe(1)
         expect(notes(v).filter((n) => n.startsWith('us-east-1 was only partly scanned'))).toHaveLength(1)
-        expect(notes(v)).not.toContain(code === DISCOVERY_WARNING_TRUNCATED_INDEX ? DELETION_DETECTION_PAUSED_TEXT : LISTING_TRUNCATED_TEXT)
+        expect(notes(v)).not.toContain(DELETION_DETECTION_PAUSED_TEXT)
+      }
+    })
+
+    it('discovery_listing_truncated: both notes kept (S3 and CloudFront listings add the same code)', () => {
+      const code = DISCOVERY_WARNING_LISTING_TRUNCATED
+      for (const v of [view(prod(job([code]), { ...HOME_OK, status: 'partial', last_error_code: code })), view(prod({}, { ...HOME_OK, status: 'partial', last_error_code: code }), [code])]) {
+        expect(notes(v)).toContain(LISTING_TRUNCATED_TEXT)
+        expect(notes(v)).toContain('us-east-1 was only partly scanned: some listings stopped at their page limit, so some resources there may be missing and deleted ones may still be listed until a complete scan.')
       }
     })
 
@@ -260,6 +269,42 @@ describe('V8 region list not known', () => {
     expect(never.headline).toBe('us-east-1: not scanned yet')
     expect(never.headlineSub).toBeNull()
     expect(chips(never)[0]).toBe('us-east-1 home · not scanned yet')
+  })
+
+  // "Last full scan" with no region list (review 622986c, F1).
+  const completed = (warnings: string[]) => ({ started_at: hoursAgo(2.1), completed_at: hoursAgo(2), resource_types: ['ec2', 's3', 'cloudfront'], warnings })
+  it('1. the newest completed scan had a cut-off listing: "—", the details say so, the headline has gaps', () => {
+    const v = view(unknown({ last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings: [DISCOVERY_WARNING_LISTING_TRUNCATED] }, last_completed_scan: completed([DISCOVERY_WARNING_LISTING_TRUNCATED]) }))
+    expect(row(v, 'region-us-east-1').status).toBe('Partial')
+    expect(row(v, 'region-us-east-1').lastSuccess).toBe('—')
+    expect(details(v, 'region-us-east-1')).toBe('Last scan finished today, 1:00 PM, but some listings were cut off.')
+    expect(v.headline).toBe('us-east-1 checked · with gaps')
+  })
+  it('2. no warnings: the time, as before, and no gaps', () => {
+    const v = view(unknown())
+    expect(row(v, 'region-us-east-1').lastSuccess).toEqual({ iso: hoursAgo(2) })
+    expect(details(v, 'region-us-east-1')).toBe('')
+    expect(v.headline).toBe('us-east-1 checked')
+  })
+  it('3. a newer failed attempt: the older completed scan decides', () => {
+    const failed = { status: 'failed', started_at: hoursAgo(1.2), completed_at: hoursAgo(1), warnings: [] }
+    const clean = view(unknown({ last_scan: failed, last_completed_scan: completed([]) }))
+    expect(row(clean, 'region-us-east-1').lastSuccess).toEqual({ iso: hoursAgo(2) })
+    expect(details(clean, 'region-us-east-1')).toBe(REGION_COPY.unfinishedDetail)
+    const cut = view(unknown({ last_scan: failed, last_completed_scan: completed([DISCOVERY_WARNING_TRUNCATED_INDEX]) }))
+    expect(row(cut, 'region-us-east-1').lastSuccess).toBe('—')
+    expect(details(cut, 'region-us-east-1')).toBe(`${REGION_COPY.unfinishedDetail} Last scan finished today, 1:00 PM, but some listings were cut off.`)
+  })
+  it('4. only the internal scan_lease_lost code: still full', () => {
+    const v = view(unknown({ last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings: ['scan_lease_lost'] }, last_completed_scan: completed(['scan_lease_lost']) }))
+    expect(row(v, 'region-us-east-1').lastSuccess).toEqual({ iso: hoursAgo(2) })
+    expect(row(v, 'region-us-east-1').status).toBe('Complete')
+    expect(v.headline).toBe('us-east-1 checked')
+  })
+  it('no completed scan: "—" and nothing about cut-off listings', () => {
+    const v = view(unknown({ last_scan: { status: 'failed', started_at: hoursAgo(1), completed_at: hoursAgo(1), warnings: [] }, last_completed_scan: null, last_successful_scan_at: null }))
+    expect(row(v, 'region-us-east-1').lastSuccess).toBe('—')
+    expect(details(v, 'region-us-east-1')).not.toMatch(/cut off/)
   })
 })
 

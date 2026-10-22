@@ -87,10 +87,15 @@ export function latestAttempt(coverage: ServicesCoverage): LatestAttempt {
   return last.status === 'completed' ? 'completed' : 'none'
 }
 
-/** The Phase 1 job-warning note (coverage.ts warningNotes) for each partial code. */
+/**
+ * The Phase 1 job-warning note (coverage.ts warningNotes) that the home
+ * region's partial note already says. Only the index truncation: the
+ * Resource Explorer search is a home source, so its code always means the
+ * home region. discovery_listing_truncated is also added by S3 and CloudFront
+ * listings (account-wide), so its job note is kept.
+ */
 const WARNING_NOTE_KEY: Record<string, string> = {
   [DISCOVERY_WARNING_TRUNCATED_INDEX]: 'deletion-paused',
-  [DISCOVERY_WARNING_LISTING_TRUNCATED]: 'listing-truncated',
 }
 
 // ── Times ──
@@ -148,8 +153,9 @@ export const REGION_COPY = {
   groupDetail: "Multi-region scanning is rolling out. Resources in these regions, other than S3 buckets, don't appear on this page or in any count yet.",
   notListed: "We haven't read this account's region list yet. It's read during each scan.",
   unavailable: "We can't show a status for this region yet.",
-  scanningDetail: 'Results shown are from the last successful scan.',
-  unfinishedDetail: "The latest scan didn't finish. Results shown are from an earlier scan.",
+  scanningDetail: 'Results shown are from the last scan that finished.',
+  unfinishedDetail: "The most recent scan attempt didn't finish. Results shown are from an earlier scan.",
+  cutOff: ', but some listings were cut off.',
 }
 
 // ── View ──
@@ -342,7 +348,7 @@ function rowDetails(row: RegionCoverage, state: RegionState): Rich {
 
 function lastSuccessCell(row: RegionCoverage): RegionRow['lastSuccess'] {
   if (row.last_success_at) return { iso: row.last_success_at }
-  return row.status === 'partial' ? 'No complete scan yet' : '—'
+  return row.status === 'partial' ? 'No full scan yet' : '—'
 }
 
 export function describeRegionCoverage(coverage: ServicesCoverage, now: number, inTabWarnings: readonly string[] = []): RegionCoverageView | null {
@@ -360,7 +366,7 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
   // ── Scan line ──
   const scanLine: Rich = running
     ? ['Scan in progress since ', { iso: coverage.scan_in_progress!.since }, ...(lastSuccessIso ? [' · showing results from ', { iso: lastSuccessIso }] : [' · no completed scan yet'])]
-    : lastSuccessIso ? ['Last scan finished ', { iso: lastSuccessIso }] : ['No successful scan yet']
+    : lastSuccessIso ? ['Last scan finished ', { iso: lastSuccessIso }] : ['No scan has finished yet']
 
   const chips: RegionChip[] = []
   const rows: RegionRow[] = []
@@ -373,8 +379,8 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
     notes.push({
       key: 'latest-unfinished', tone: 'warn',
       parts: [
-        ...(at ? ['The latest scan, at ', { iso: at }, ", didn't finish."] : ["The latest scan didn't finish."]),
-        ...(lastSuccessIso ? [' Results shown are from the last successful scan at ', { iso: lastSuccessIso }, '.'] : [' No scan has completed yet.']),
+        ...(at ? ['The most recent scan attempt, at ', { iso: at }, ", didn't finish."] : ["The most recent scan attempt didn't finish."]),
+        ...(lastSuccessIso ? [' Results shown are from the scan that finished at ', { iso: lastSuccessIso }, '.'] : [' No scan has finished yet.']),
       ],
     })
   }
@@ -439,22 +445,30 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
   } else {
     // No region list: no region rows exist, so the home state comes from the jobs.
     const lastSuccess = coverage.last_successful_scan_at
-    headline = lastSuccess ? `${home.region} checked`
+    const homeState: RegionState = running ? 'scanning'
+      : attempt === 'unfinished' ? 'unfinished'
+      : attempt === 'completed' ? (jobWarnings.length > 0 ? 'partial' : 'complete')
+      : 'not_scanned'
+    // "· with gaps" as the known-list headline gives it for a checked region with gaps.
+    const gaps = ['partial', 'failed', 'denied', 'timed_out'].includes(homeState) ? ' · with gaps' : ''
+    headline = lastSuccess ? `${home.region} checked${gaps}`
       : running ? `${home.region}: first scan in progress`
       : attempt === 'unfinished' ? `${home.region}: last scan failed`
       : `${home.region}: not scanned yet`
     const plus = lastSuccess ? plusParts(scope) : ''
     headlineSub = plus ? `· ${plus.slice(2)}` : null
 
-    const homeState: RegionState = running ? 'scanning'
-      : attempt === 'unfinished' ? 'unfinished'
-      : attempt === 'completed' ? (jobWarnings.length > 0 ? 'partial' : 'complete')
-      : 'not_scanned'
+    // "Last full scan": the newest completed scan, only when nothing was cut
+    // off in it; otherwise not known (an older one may have been full).
+    const lastDone = coverage.last_completed_scan
+    const lastDoneFull = !!lastDone && shownWarnings(lastDone.warnings).length === 0
+    const homeDetails: Rich = homeState === 'scanning' ? [REGION_COPY.scanningDetail] : homeState === 'unfinished' ? [REGION_COPY.unfinishedDetail] : []
+    if (lastDone && !lastDoneFull) homeDetails.push(...(homeDetails.length > 0 ? [' '] : []), 'Last scan finished ', { iso: lastDone.completed_at }, REGION_COPY.cutOff)
     chips.push({ key: 'home', state: homeState, region: home.region, note: homeState === 'not_scanned' ? `home · ${CHIP_NOTE.not_scanned}` : `${home.count} · home · ${CHIP_NOTE[homeState]}` })
     rows.push({
       key: `region-${home.region}`, label: home.region, home: true, state: homeState, status: STATUS_LABEL[homeState],
-      lastSuccess: lastSuccess ? { iso: lastSuccess } : '—',
-      details: homeState === 'scanning' ? [REGION_COPY.scanningDetail] : homeState === 'unfinished' ? [REGION_COPY.unfinishedDetail] : [],
+      lastSuccess: lastDoneFull ? { iso: lastDone!.completed_at } : '—',
+      details: homeDetails,
     })
     chips.push({ key: 'not-listed', state: 'not_listed', region: 'Other regions', note: CHIP_NOTE.not_listed })
     rows.push({ key: 'not-listed', label: 'Other regions', home: false, state: 'not_listed', status: STATUS_LABEL.not_listed, lastSuccess: '—', details: [REGION_COPY.notListed] })
