@@ -71,7 +71,11 @@ export interface AWSServicesStats {
  * - in_last_scan means the type was in the last scan's planned scope, not that
  *   it was scanned successfully: read it with last_scan.status.
  * - last_scan is the organization's newest discovery job, which can predate a
- *   reconnect, so it is not described as the connected account's scan.
+ *   reconnect, so it is not described as the connected account's scan. It is
+ *   the latest attempt: whether the latest scan worked is read here, not from
+ *   region_status (a scan that stopped early leaves a region's status as it was).
+ * - The multi-region keys (M5c) are optional: a backend before M5c does not send
+ *   them, and nothing may assume them. Nothing renders them before M6.
  */
 export interface ServicesCoverage {
   account: { connected: boolean; status: string | null; home_region: string | null }
@@ -79,8 +83,27 @@ export interface ServicesCoverage {
     home_region: { region: string; count: number } | null
     s3: { in_last_scan: boolean; regions: { region: string | null; count: number }[] }
     cloudfront: { in_last_scan: boolean; count: number }
-    enabled_regions: { known: boolean; count: number | null }
+    enabled_regions: {
+      known: boolean
+      /** Enabled regions in the latest region list; null while no list has been stored. */
+      count: number | null
+      /** When the latest region list was taken. */
+      listed_at?: string | null
+      /** The latest list is older than about 2 scan intervals (server clock); false while unknown. */
+      stale?: boolean
+    }
   }
+  /** The enabled regions of the latest region list, home first; [] with no account or no list. */
+  region_status?: RegionCoverage[]
+  /** Non-null only while a discovery scan holds the lease with its job running (a cost Analyze is not one). */
+  scan_in_progress?: { since: string } | null
+  /** The newest completed job; its completed_at equals last_successful_scan_at. */
+  last_completed_scan?: {
+    started_at: string | null
+    completed_at: string
+    resource_types: string[]
+    warnings: string[]
+  } | null
   last_successful_scan_at: string | null
   last_scan: {
     status: string
@@ -92,6 +115,40 @@ export interface ServicesCoverage {
   tags_unknown_by_type: Record<string, number>
   regions: { region: string | null; count: number }[]
   total: number
+}
+
+/**
+ * aws_account_regions.last_scan_status. Multi-region M5 writes ok, partial,
+ * failed, denied and timed_out (each failure means at least one home-region
+ * source, not the whole region); never_scanned is the default.
+ */
+export type RegionScanStatus =
+  | 'ok'
+  | 'partial'
+  | 'failed'
+  | 'denied'
+  | 'timed_out'
+  | 'never_scanned'
+  | 'skipped_locked'
+  | 'not_enabled'
+
+/** One enabled region of the latest region list (GET /api/services/coverage, M5c). */
+export interface RegionCoverage {
+  region: string
+  home: boolean
+  status: RegionScanStatus
+  last_scan_finished_at: string | null
+  last_success_at: string | null
+  /** A known code (today only partial's two truncation codes), never text; null otherwise. */
+  last_error_code: string | null
+  /**
+   * Scans in a row that reached the status write with a failed home-region
+   * source. A scan that stopped before the write is not counted: not "failed
+   * attempts in a row".
+   */
+  consecutive_failures: number
+  /** The status is older than about 2 scan intervals (server clock); never for never_scanned. */
+  stale: boolean
 }
 
 export interface DiscoverResult {
