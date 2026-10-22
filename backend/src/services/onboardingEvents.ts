@@ -63,28 +63,6 @@ onboardingEvents.on('deployment:created', async (data: { organizationId: string;
 });
 
 /**
- * Listen for AWS connection
- * Auto-completes "connect_aws" step
- */
-onboardingEvents.on('aws:connected', async (data: { organizationId: string; userId: string }) => {
-  try {
-    console.log(`[Onboarding] AWS connected for org ${data.organizationId}`);
-
-    await pool.query(
-      `UPDATE onboarding_progress
-       SET aws_connected_at = NOW(),
-           updated_at = NOW()
-       WHERE organization_id = $1 AND aws_connected_at IS NULL`,
-      [data.organizationId]
-    );
-
-    console.log(`[Onboarding] Step 'connect_aws' auto-completed for org ${data.organizationId}`);
-  } catch (error) {
-    console.error('[Onboarding] Error auto-completing AWS step:', error);
-  }
-});
-
-/**
  * Listen for resource discovery completion
  * Auto-completes "discover_resources" step
  */

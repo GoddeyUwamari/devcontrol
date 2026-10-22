@@ -56,13 +56,6 @@ export interface AcceptInvitationResult {
   role: string;
 }
 
-export interface AWSCredentials {
-  accessKeyId: string;
-  secretAccessKey: string;
-  region: string;
-  accountId?: string;
-}
-
 /**
  * Organization Service
  * Handles all organization-related API calls
@@ -180,46 +173,5 @@ export const organizationsService = {
    */
   async removeMember(organizationId: string, userId: string): Promise<void> {
     await api.delete(`/api/organizations/${organizationId}/members/${userId}`);
-  },
-
-  /**
-   * Save AWS credentials for the organization (encrypted)
-   */
-  async saveAWSCredentials(
-    organizationId: string,
-    credentials: AWSCredentials
-  ): Promise<void> {
-    await api.post(`/api/organizations/${organizationId}/aws-credentials`, {
-      credentials,
-    });
-  },
-
-  /**
-   * Test AWS credentials
-   */
-  async testAWSCredentials(credentials: AWSCredentials): Promise<{
-    success: boolean;
-    message: string;
-  }> {
-    const response = await api.post<{
-      success: boolean;
-      data: { success: boolean; message: string };
-    }>("/api/organizations/test-aws-credentials", { credentials });
-    return response.data.data;
-  },
-
-  /**
-   * Check if organization has AWS credentials configured
-   */
-  async hasAWSCredentials(organizationId: string): Promise<boolean> {
-    try {
-      const response = await api.get<{
-        success: boolean;
-        data: { hasCredentials: boolean };
-      }>(`/api/organizations/${organizationId}/aws-credentials/status`);
-      return response.data.data.hasCredentials;
-    } catch {
-      return false;
-    }
   },
 };

@@ -5,7 +5,6 @@
 
 import { Request, Response } from 'express';
 import { organizationService } from '../services/organization.service';
-import { trackFunnelEventOnce } from '../services/analyticsEvents';
 import { auditRequestContext } from '../services/auditEvents.service';
 import { OrganizationAccessError, OrganizationRole } from '../services/organization-authorization';
 import type { WebSocketServer } from '../websocket/server';
@@ -417,85 +416,18 @@ export class OrganizationController {
   }
 
   /**
-   * POST /api/organizations/:id/aws-credentials
-   * Set AWS credentials
-   */
-  async setAWSCredentials(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const { accessKeyId, secretAccessKey, region } = req.body;
-
-      if (!accessKeyId || !secretAccessKey) {
-        res.status(400).json({
-          success: false,
-          error: 'AWS access key ID and secret access key are required',
-        });
-        return;
-      }
-
-      await organizationService.setAWSCredentials(id, {
-        accessKeyId,
-        secretAccessKey,
-        region,
-      });
-
-      // Both of the following fire only after setAWSCredentials() has
-      // resolved -- i.e. after the encrypted credentials were durably
-      // persisted. Note this endpoint never calls AWS to validate the
-      // credentials, so these mark successful credential persistence /
-      // connection setup, not a verified AWS connection.
-      const user = (req as any).user;
-      if (user) {
-        const { emitOnboardingEvent } = require('../services/onboardingEvents');
-        emitOnboardingEvent('aws:connected', {
-          organizationId: id,
-          userId: user.userId || user.id,
-        });
-
-        // trackFunnelEventOnce (not trackFunnelEvent): this endpoint has no
-        // constraint preventing repeat calls for the same org -- each call
-        // just overwrites the previously stored credentials -- so a plain
-        // trackFunnelEvent would record a new "completion" on every
-        // resave/reconnect. Once-per-org matches the canonical primary AWS
-        // flow's semantics (aws.routes.ts) despite the different dedup
-        // mechanism underneath (DB unique constraint there, INSERT ... WHERE
-        // NOT EXISTS guard here).
-        await trackFunnelEventOnce({
-          organizationId: id,
-          userId: user.userId || user.id,
-          eventName: 'aws_connection_completed',
-          properties: { source: 'legacy_access_key' },
-        });
-      }
-
-      res.status(200).json({
-        success: true,
-        message: 'AWS credentials saved successfully',
-      });
-    } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        error: error.message || 'Failed to save AWS credentials',
-      });
-    }
-  }
-
-  /**
    * GET /api/organizations/:id/aws-credentials
-   * Get AWS credentials (returns only if exists, not the actual keys)
+   * Whether legacy AWS credentials are stored (never the keys themselves)
    */
   async getAWSCredentials(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
 
-      const credentials = await organizationService.getAWSCredentials(id);
+      const status = await organizationService.getAWSCredentialsStatus(id);
 
       res.status(200).json({
         success: true,
-        data: {
-          hasCredentials: !!credentials,
-          region: credentials?.region || null,
-        },
+        data: status,
       });
     } catch (error: any) {
       res.status(400).json({

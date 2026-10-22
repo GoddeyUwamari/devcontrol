@@ -269,10 +269,7 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
     // Funnel: this INSERT's own ON CONFLICT (org_id) DO NOTHING + non-empty
     // RETURNING already guarantees this branch executes exactly once per
     // org (a second attempt hits the 409 above instead), so no additional
-    // dedupe guard is needed. This replaces onboardingEvents.ts's
-    // 'aws:connected' emitter for funnel purposes -- that one is only ever
-    // fired from the legacy access-key endpoint (organization.controller.ts),
-    // never from this, the actual connection flow in use today.
+    // dedupe guard is needed.
     await trackFunnelEvent({
       organizationId: orgId,
       userId: req.user!.userId,

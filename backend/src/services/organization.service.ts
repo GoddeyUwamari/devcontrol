@@ -41,12 +41,6 @@ interface InviteUserData {
   invitedBy: string;
 }
 
-interface AWSCredentials {
-  accessKeyId: string;
-  secretAccessKey: string;
-  region?: string;
-}
-
 export class OrganizationService {
   /**
    * Create a new organization
@@ -955,40 +949,24 @@ export class OrganizationService {
   }
 
   /**
-   * Set AWS credentials for organization
+   * Whether the organization holds legacy stored AWS credentials. Reads
+   * presence only; the stored value is never decrypted.
    */
-  async setAWSCredentials(
-    organizationId: string,
-    credentials: AWSCredentials
-  ): Promise<void> {
-    const encrypted = encryptionService.encryptAWSCredentials(credentials);
-
-    await pool.query(
-      `UPDATE organizations
-       SET aws_credentials_encrypted = $1,
-           aws_region_default = $2,
-           updated_at = NOW()
-       WHERE id = $3`,
-      [encrypted, credentials.region || 'us-east-1', organizationId]
-    );
-  }
-
-  /**
-   * Get AWS credentials for organization
-   */
-  async getAWSCredentials(organizationId: string): Promise<AWSCredentials | null> {
+  async getAWSCredentialsStatus(
+    organizationId: string
+  ): Promise<{ hasCredentials: boolean; region: string | null }> {
     const result = await pool.query(
-      `SELECT aws_credentials_encrypted FROM organizations WHERE id = $1`,
+      `SELECT (aws_credentials_encrypted IS NOT NULL AND aws_credentials_encrypted <> '') AS has_credentials,
+              aws_region_default
+       FROM organizations WHERE id = $1`,
       [organizationId]
     );
 
-    if (result.rows.length === 0 || !result.rows[0].aws_credentials_encrypted) {
-      return null;
+    const row = result.rows[0];
+    if (!row?.has_credentials) {
+      return { hasCredentials: false, region: null };
     }
-
-    return encryptionService.decryptAWSCredentials(
-      result.rows[0].aws_credentials_encrypted
-    );
+    return { hasCredentials: true, region: row.aws_region_default ?? null };
   }
 
   /**
