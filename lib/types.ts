@@ -453,6 +453,10 @@ export interface CreateDeploymentPayload {
 export type ResourceType = 'ec2' | 'rds' | 'vpc' | 's3' | 'lambda' | 'cloudfront' | 'elb' | 'ecs' | 'eks' | 'dynamodb' | 'api-gateway' | 'elasticache' | 'aurora' | 'sqs' | 'sns';
 export type ResourceStatus = 'running' | 'stopped' | 'terminated' | 'pending';
 
+// An EBS volume's own AWS state, reported as-is: 'available' means not attached
+// to any instance, 'in-use' means attached. A volume is never 'running'.
+export type EbsVolumeState = 'available' | 'in-use' | 'creating' | 'deleting' | 'deleted' | 'error';
+
 export interface InfrastructureResource {
   id: string;
   serviceId: string;
@@ -461,8 +465,9 @@ export interface InfrastructureResource {
   awsId: string;
   awsRegion: string;
   // null means there is no lifecycle state to show: the resource type has none
-  // (S3, SNS, VPC) or it was not read. Never defaulted to 'running'.
-  status: ResourceStatus | null;
+  // (S3, SNS, VPC) or it was not read. Never defaulted to 'running'. An EBS
+  // volume carries its own state (EbsVolumeState).
+  status: ResourceStatus | EbsVolumeState | null;
   // null means the cost hasn't actually been calculated yet for this
   // resource (e.g. a Lambda function whose CloudWatch usage lookup failed
   // on its most recent discovery) -- never coerce to 0.

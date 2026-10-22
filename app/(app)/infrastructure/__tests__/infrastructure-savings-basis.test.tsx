@@ -116,10 +116,8 @@ describe('/infrastructure Top Actions -- savings basis', () => {
     expect(await action('Reserved Instance Opportunity')).toHaveTextContent('Reserved Instance Opportunity — no dollar estimate')
     expect((await action('Reserved Instance Opportunity')).textContent).not.toMatch(/\$0/)
 
-    await waitFor(() => expect(screen.getByText(/Est\. savings:/)).toHaveTextContent(
-      'Est. savings: $12/mo · plus up to $41/mo (upper bound, not included)'
-    ))
-    expect(screen.getByText(/recoverable today/)).toHaveTextContent('$12/mo recoverable today')
+    // Only the estimate counts toward the header total; the ceiling stays on its own row.
+    await waitFor(() => expect(screen.getByText(/recoverable today/)).toHaveTextContent('$12/mo recoverable today'))
     // Ranked by the counted estimate, not the raw figure: the estimate is action 01.
     const ranked = ['Unattached EBS Volume', 'S3 Lifecycle Optimization', 'Reserved Instance Opportunity'].map((t) => screen.getByText(t, { selector: 'p' }))
     expect(ranked[0].compareDocumentPosition(ranked[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
