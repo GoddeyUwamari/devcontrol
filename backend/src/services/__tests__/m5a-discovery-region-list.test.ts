@@ -150,6 +150,15 @@ async function scanFootprint(orgId: string, result: any) {
   };
 }
 
+/** The rows without the home row's scan columns (M5b writes them on every scan). */
+function withoutHomeScanColumns(rows: Record<string, any>): Record<string, any> {
+  const home = { ...rows[HOME] };
+  for (const column of ['last_scan_started_at', 'last_scan_finished_at', 'last_success_at', 'last_scan_status', 'last_error_code', 'consecutive_failures', 'updated_at']) {
+    delete home[column];
+  }
+  return { ...rows, [HOME]: home };
+}
+
 const warnLines = () => (console.warn as jest.Mock).mock.calls.map((args) => args.map(String).join(' '));
 
 beforeEach(() => {
@@ -192,7 +201,10 @@ describe('a scan records the region list', () => {
     const rows = await regionRows(orgId);
     expect(Object.keys(rows).sort()).toEqual(FIXTURE.Regions.map((r) => r.RegionName).sort());
     expect(Object.values(rows).filter((r) => r.enabled)).toHaveLength(ENABLED_IN_FIXTURE);
-    for (const row of Object.values(rows)) expect(row).toMatchObject({ aws_account_id: ACCOUNT, last_scan_status: 'never_scanned' });
+    // The home row's scan status is M5b's (m5b-discovery-region-status.test.ts); no other region is scanned.
+    for (const row of Object.values(rows)) {
+      expect(row).toMatchObject({ aws_account_id: ACCOUNT, last_scan_status: row.region === HOME ? 'ok' : 'never_scanned' });
+    }
 
     const job = (await pool.query(`SELECT status, regions FROM resource_discovery_jobs WHERE id = $1`, [result.job_id])).rows[0];
     expect(job).toEqual({ status: 'completed', regions: [HOME] });
@@ -333,7 +345,8 @@ describe('fail-soft: without a region list the scan is exactly as without M5a', 
     });
     const result = await service().discoverAllResources(orgId);
     expect(result.errors).toEqual([]);
-    expect(await regionRows(orgId)).toEqual(stored);
+    // The list is unchanged; the home row's scan columns are the second scan's status (M5b).
+    expect(withoutHomeScanColumns(await regionRows(orgId))).toEqual(withoutHomeScanColumns(stored));
   });
 });
 
