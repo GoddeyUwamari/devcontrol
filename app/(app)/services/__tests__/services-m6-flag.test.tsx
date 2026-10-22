@@ -5,9 +5,15 @@
  * M5c keys (older than M5c) and demo mode still render the Phase 1 strip,
  * byte for byte. The flag does nothing while NEXT_PUBLIC_SERVICES_V2 is off.
  *
- * `flag-off.snap.html` was written by the code before M6 (origin/main
- * 4c006a1) for the same fixtures and is compared byte for byte.
+ * `__snapshots__/m6-flag-off.*.html` were written by the code before M6
+ * (origin/main 4c006a1) for the same fixtures and are compared byte for byte.
+ *
+ * The rendered times are local times, so the zone is pinned to UTC for this
+ * file (set before anything formats a date): the snapshots are then the same
+ * on every machine and in CI.
  */
+process.env.TZ = 'UTC'
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
