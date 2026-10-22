@@ -70,7 +70,7 @@ export function RegionCoveragePanel({ view, now }: { view: RegionCoverageView; n
             <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-600">
               <th scope="col" className="px-4 py-2 font-semibold">Region</th>
               <th scope="col" className="px-4 py-2 font-semibold">Status</th>
-              <th scope="col" className="px-4 py-2 font-semibold">Last successful scan</th>
+              <th scope="col" className="px-4 py-2 font-semibold">Last full scan</th>
               <th scope="col" className="px-4 py-2 font-semibold">Details</th>
             </tr>
           </thead>
@@ -93,7 +93,7 @@ export function RegionCoveragePanel({ view, now }: { view: RegionCoverageView; n
             <div className="font-medium"><RegionName row={row} /></div>
             <dl className="m-0 mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
               <dt className="text-slate-600">Status</dt><dd className="m-0"><Status row={row} /></dd>
-              <dt className="text-slate-600">Last successful scan</dt><dd className="m-0"><LastSuccess row={row} now={now} exactLine /></dd>
+              <dt className="text-slate-600">Last full scan</dt><dd className="m-0"><LastSuccess row={row} now={now} exactLine /></dd>
               <dt className="text-slate-600">Details</dt><dd className="m-0 text-slate-700"><Details row={row} now={now} /></dd>
             </dl>
           </li>

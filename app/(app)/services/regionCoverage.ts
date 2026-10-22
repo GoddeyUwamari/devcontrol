@@ -87,6 +87,12 @@ export function latestAttempt(coverage: ServicesCoverage): LatestAttempt {
   return last.status === 'completed' ? 'completed' : 'none'
 }
 
+/** The Phase 1 job-warning note (coverage.ts warningNotes) for each partial code. */
+const WARNING_NOTE_KEY: Record<string, string> = {
+  [DISCOVERY_WARNING_TRUNCATED_INDEX]: 'deletion-paused',
+  [DISCOVERY_WARNING_LISTING_TRUNCATED]: 'listing-truncated',
+}
+
 // ── Times ──
 
 function clean(text: string): string {
@@ -225,7 +231,7 @@ export interface RegionRow {
   sublabel?: string
   state: RegionState
   status: string
-  /** The last successful (ok) scan, or the text shown instead. */
+  /** "Last full scan": the region's last scan with nothing missed (ok), or the text shown instead. */
   lastSuccess: { iso: string } | string
   details: Rich
 }
@@ -354,7 +360,7 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
   // ── Scan line ──
   const scanLine: Rich = running
     ? ['Scan in progress since ', { iso: coverage.scan_in_progress!.since }, ...(lastSuccessIso ? [' · showing results from ', { iso: lastSuccessIso }] : [' · no completed scan yet'])]
-    : lastSuccessIso ? ['Last successful scan ', { iso: lastSuccessIso }] : ['No successful scan yet']
+    : lastSuccessIso ? ['Last scan finished ', { iso: lastSuccessIso }] : ['No successful scan yet']
 
   const chips: RegionChip[] = []
   const rows: RegionRow[] = []
@@ -433,7 +439,7 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
   } else {
     // No region list: no region rows exist, so the home state comes from the jobs.
     const lastSuccess = coverage.last_successful_scan_at
-    headline = lastSuccess ? `${home.region} scanned`
+    headline = lastSuccess ? `${home.region} checked`
       : running ? `${home.region}: first scan in progress`
       : attempt === 'unfinished' ? `${home.region}: last scan failed`
       : `${home.region}: not scanned yet`
@@ -461,8 +467,12 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
   const s3Elsewhere = s3.regions.filter((r) => r.region !== home.region).reduce((n, r) => n + r.count, 0)
   if (s3Elsewhere > 0) chips.push({ key: 's3', state: 'global', region: 'S3 in other regions', note: `${s3Elsewhere}` })
 
-  // The job's warnings keep their Phase 1 notes (founder: Q8 not applied).
+  // The job's warnings keep their Phase 1 notes, except the one the home
+  // region's partial note already says (same truncation code, Q8).
+  const homeStatus = known ? coverage.region_status!.find((r) => r.home) : undefined
+  const saidByHome = homeStatus?.status === 'partial' && homeStatus.last_error_code ? WARNING_NOTE_KEY[homeStatus.last_error_code] : undefined
   for (const note of warningNotes(jobWarnings, inTabWarnings)) {
+    if (note.key === saidByHome) continue
     notes.push({ key: `warning-${note.key}`, tone: note.tone, title: note.title, parts: [note.body] })
   }
 

@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { focusManager } from '@tanstack/react-query'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
-import { DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
+import { DELETION_DETECTION_PAUSED_TEXT, DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
 import { billed, emptyPage, OTHER_REGIONS, prodCoverage, region, renderPage, STATS, withoutM5c } from './m6-fixtures'
 import { SCAN_RUNNING_REFETCH_MS } from '../ServicesOverview'
 import { SCAN_RUNNING_HINT } from '../ServicesHeader'
@@ -94,7 +94,7 @@ describe('R1 the production response of Oct 22', () => {
   it('panel: the table, home first, the 16 regions as one row with every name, and the footer', async () => {
     await show(prodCoverage(NOW))
     const t = within(table()).getByRole('table', { name: 'Scan status of each enabled region' })
-    expect(within(t).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Region', 'Status', 'Last successful scan', 'Details'])
+    expect(within(t).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Region', 'Status', 'Last full scan', 'Details'])
     const rows = within(t).getAllByRole('row').slice(1)
     expect(rows).toHaveLength(2)
     expect(within(rows[0]).getByRole('rowheader')).toHaveTextContent('us-east-1home')
@@ -195,7 +195,26 @@ describe('R6 phone width', () => {
     expect(table().className).toContain('hidden sm:block')
     const exact = new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'long', timeZone: 'UTC' }).format(Date.parse(hoursAgo(2))).replace(/[  ]/g, ' ')
     expect(list).toHaveTextContent(exact)
-    expect(within(list).getAllByRole('term').map((t) => t.textContent)).toEqual(['Status', 'Last successful scan', 'Details', 'Status', 'Last successful scan', 'Details'])
+    expect(within(list).getAllByRole('term').map((t) => t.textContent)).toEqual(['Status', 'Last full scan', 'Details', 'Status', 'Last full scan', 'Details'])
+  })
+})
+
+describe('R9 Q8 in the DOM', () => {
+  it('the index truncation is said once in the card, and still in What we didn\'t check', async () => {
+    await show(prodCoverage(NOW, { status: 'partial', last_error_code: DISCOVERY_WARNING_TRUNCATED_INDEX }, { last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings: [DISCOVERY_WARNING_TRUNCATED_INDEX] } }))
+    expect(within(card()).getAllByRole('note').filter((n) => /1,000/.test(n.textContent ?? ''))).toHaveLength(1)
+    expect(card()).not.toHaveTextContent(DELETION_DETECTION_PAUSED_TEXT)
+    const notChecked = screen.getByRole('region', { name: "What we didn't check" })
+    expect(notChecked).toHaveTextContent(DELETION_DETECTION_PAUSED_TEXT)
+  })
+})
+
+describe('R10 labels', () => {
+  it('card: "Last scan finished"; panel: "Last full scan"', async () => {
+    await show(prodCoverage(NOW))
+    expect(card()).toHaveTextContent(/Last scan finished today, /)
+    expect(card()).not.toHaveTextContent(/Last successful scan/)
+    expect(panel()).not.toHaveTextContent(/Last successful scan/)
   })
 })
 

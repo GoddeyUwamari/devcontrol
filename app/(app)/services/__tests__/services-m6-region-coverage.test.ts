@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RegionCoverage, ServicesCoverage } from '@/lib/services/aws-services.service'
 import { DELETION_DETECTION_PAUSED_TEXT, DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
-import { DISCOVERY_WARNING_LISTING_TRUNCATED, LISTING_TRUNCATED_TEXT } from '../coverage'
+import { describeCoverage, DISCOVERY_WARNING_LISTING_TRUNCATED, LISTING_TRUNCATED_TEXT } from '../coverage'
 import {
   describeRegionCoverage, footerText, formatExact, formatWhen, hasRegionCoverage, latestAttempt, regionCounts, richText,
   REGION_COPY, SCAN_INTERVAL_TEXT, type RegionCoverageView,
@@ -72,7 +72,7 @@ describe('V1 today (the production response of Oct 22)', () => {
   it('headline, sub-line and scan line', () => {
     expect(v.headline).toBe('1 of 17 enabled regions checked')
     expect(v.headlineSub).toBe('· us-east-1 (home), plus S3 in every region and CloudFront (global)')
-    expect(richText(v.scanLine, NOW, TZ)).toBe('Last successful scan today, 1:00 PM')
+    expect(richText(v.scanLine, NOW, TZ)).toBe('Last scan finished today, 1:00 PM')
     expect(v.scanRunning).toBe(false)
   })
   it('chips: the home region and one grouped chip; no CloudFront or S3 chip at 0', () => {
@@ -187,12 +187,39 @@ describe('V5 partial', () => {
     expect(row(v, 'region-us-east-1').lastSuccess).toBe('No complete scan yet')
     expect(details(v, 'region-us-east-1')).toBe('Only partly scanned: its resource index has more than 1,000 items, so some resources here may be missing and deleted ones may still be listed until a complete scan. Last partly scanned today, 1:00 PM.')
   })
-  it('the job-level warning note is kept beside the region note (Q8 not applied)', () => {
-    const v = view(prod({ last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings: [DISCOVERY_WARNING_TRUNCATED_INDEX] } }, { ...HOME_OK, status: 'partial', last_error_code: DISCOVERY_WARNING_TRUNCATED_INDEX }))
-    expect(notes(v)).toContain(DELETION_DETECTION_PAUSED_TEXT)
-    expect(notes(v).some((n) => n.startsWith('us-east-1 was only partly scanned'))).toBe(true)
-    const w = view(prod({}, HOME_OK), [DISCOVERY_WARNING_LISTING_TRUNCATED])
-    expect(notes(w)).toContain(LISTING_TRUNCATED_TEXT)
+  describe('Q8: the same truncation is said exactly once in the card', () => {
+    const job = (warnings: string[]) => ({ last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings } })
+    const once = (v: RegionCoverageView, pattern: RegExp) => notes(v).filter((n) => pattern.test(n)).length
+
+    it.each([
+      [DISCOVERY_WARNING_TRUNCATED_INDEX, /1,000/],
+      [DISCOVERY_WARNING_LISTING_TRUNCATED, /page limit|cut off/],
+    ])('%s: the region note only, the job note dropped', (code, pattern) => {
+      // From the job row and from this tab's discovery run alike.
+      for (const v of [view(prod(job([code]), { ...HOME_OK, status: 'partial', last_error_code: code })), view(prod({}, { ...HOME_OK, status: 'partial', last_error_code: code }), [code])]) {
+        expect(once(v, pattern)).toBe(1)
+        expect(notes(v).filter((n) => n.startsWith('us-east-1 was only partly scanned'))).toHaveLength(1)
+        expect(notes(v)).not.toContain(code === DISCOVERY_WARNING_TRUNCATED_INDEX ? DELETION_DETECTION_PAUSED_TEXT : LISTING_TRUNCATED_TEXT)
+      }
+    })
+
+    it('a different code on the job keeps its note', () => {
+      const v = view(prod(job([DISCOVERY_WARNING_LISTING_TRUNCATED]), { ...HOME_OK, status: 'partial', last_error_code: DISCOVERY_WARNING_TRUNCATED_INDEX }))
+      expect(notes(v)).toContain(LISTING_TRUNCATED_TEXT)
+      expect(once(v, /1,000/)).toBe(1)
+    })
+
+    it('kept when the home region is not partial, or partial with no code', () => {
+      expect(notes(view(prod(job([DISCOVERY_WARNING_TRUNCATED_INDEX]))))).toContain(DELETION_DETECTION_PAUSED_TEXT)
+      expect(notes(view(prod(job([DISCOVERY_WARNING_TRUNCATED_INDEX]), { ...HOME_OK, status: 'partial', last_error_code: null })))).toContain(DELETION_DETECTION_PAUSED_TEXT)
+      expect(notes(view(prod({}, HOME_OK), [DISCOVERY_WARNING_LISTING_TRUNCATED]))).toContain(LISTING_TRUNCATED_TEXT)
+    })
+
+    it("Phase 1 and What we didn't check keep the job note", () => {
+      const c = prod(job([DISCOVERY_WARNING_TRUNCATED_INDEX]), { ...HOME_OK, status: 'partial', last_error_code: DISCOVERY_WARNING_TRUNCATED_INDEX })
+      expect(describeCoverage(c, NOW).notes.map((n) => n.body)).toContain(DELETION_DETECTION_PAUSED_TEXT)
+      expect(notCheckedLines(c, undefined, NOW, [], true).map((l) => l.text)).toContain(DELETION_DETECTION_PAUSED_TEXT)
+    })
   })
 })
 
@@ -216,7 +243,7 @@ describe('V8 region list not known', () => {
   const unknown = (o: Partial<ServicesCoverage> = {}) => prod({ region_status: [], ...o, scope: { ...prod().scope, enabled_regions: { known: false, count: null, listed_at: null, stale: false } } })
   it('no "N of M"; the other regions are not listed yet', () => {
     const v = view(unknown())
-    expect(v.headline).toBe('us-east-1 scanned')
+    expect(v.headline).toBe('us-east-1 checked')
     expect(v.headlineSub).toBe('· plus S3 in every region and CloudFront (global)')
     expect(chips(v)).toEqual(['us-east-1 9 · home · complete', 'Other regions not listed yet'])
     expect(notes(v)).toEqual(["We haven't read this account's region list yet. It's read during each scan."])
