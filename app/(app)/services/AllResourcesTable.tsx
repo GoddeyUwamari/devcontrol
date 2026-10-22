@@ -94,7 +94,7 @@ function Row({ row }: { row: AWSService }) {
  */
 export function AllResourcesTable({
   state, filters, searchInput, onSearchInput, onFilters, onClearFilters, onPage,
-  stats, coverage, knownNoAccount, teamSelectRef, isDiscovering, onAutoDiscover,
+  stats, coverage, knownNoAccount, teamSelectRef, isDiscovering, onAutoDiscover, scanRunning = false,
 }: {
   state: AllResourcesState
   filters: AllResourcesFilters
@@ -110,6 +110,8 @@ export function AllResourcesTable({
   teamSelectRef: React.RefObject<HTMLSelectElement | null>
   isDiscovering: boolean
   onAutoDiscover: () => void
+  /** A discovery scan is running on the server (M6 only): Auto Discover is disabled. */
+  scanRunning?: boolean
 }) {
   const ids = useId()
   const id = (name: string) => `${ids}-${name}`
@@ -171,8 +173,8 @@ export function AllResourcesTable({
           <Layers size={18} className="text-slate-500 mx-auto mb-3" aria-hidden="true" />
           <p className="text-sm font-semibold text-slate-900 mb-1">No resources discovered yet</p>
           <p className="text-xs text-slate-600 mb-4 leading-relaxed">Run Auto Discover to scan your connected account.</p>
-          <button type="button" onClick={onAutoDiscover} disabled={isDiscovering} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5">
-            <Scan size={13} aria-hidden="true" /> Auto Discover
+          <button type="button" onClick={onAutoDiscover} disabled={isDiscovering || scanRunning} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5">
+            {scanRunning && !isDiscovering ? <><Scan size={13} aria-hidden="true" /> Scan running…</> : <><Scan size={13} aria-hidden="true" /> Auto Discover</>}
           </button>
         </div>
       )

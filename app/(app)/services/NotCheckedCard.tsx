@@ -8,13 +8,15 @@ import { notCheckedLines } from './notChecked'
  * What we didn't check (Phase 1, PR S1-D): the limits of what this page
  * covers, from coverage and /stats only. Not rendered when nothing applies.
  */
-export function NotCheckedCard({ coverage, stats, inTabWarnings }: {
+export function NotCheckedCard({ coverage, stats, inTabWarnings, leaseRule = false }: {
   coverage: ServicesCoverage
   stats: AWSServicesStats | undefined
   inTabWarnings: readonly string[]
+  /** Multi-region M6: "did not finish" from the scan lease (notCheckedLines). */
+  leaseRule?: boolean
 }) {
   const [now] = useState(() => Date.now())
-  const lines = notCheckedLines(coverage, stats, now, inTabWarnings)
+  const lines = notCheckedLines(coverage, stats, now, inTabWarnings, leaseRule)
   if (lines.length === 0) return null
   return (
     <section aria-labelledby="not-checked-heading" className="bg-white rounded-xl border border-slate-200 p-4 mb-6 flex flex-col gap-2.5">

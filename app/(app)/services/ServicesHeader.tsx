@@ -12,11 +12,15 @@ export const SERVICES_SUBTITLE = "What we found, what needs attention, who owns 
  * Title, subtitle (Q1) and the page actions: a plain Deployments link (Q2, the
  * old Deployments card), Auto Discover with today's states, + Add Service (Q10).
  */
-export function ServicesHeader({ isDiscovering, discoveryComplete, discoveryMsg, onAutoDiscover }: {
+export const SCAN_RUNNING_HINT = 'A scan is already running for this AWS account.'
+
+export function ServicesHeader({ isDiscovering, discoveryComplete, discoveryMsg, onAutoDiscover, scanRunning = false }: {
   isDiscovering: boolean
   discoveryComplete: boolean
   discoveryMsg: string | null
   onAutoDiscover: () => void
+  /** A discovery scan holds the account's lease (coverage scan_in_progress, M6 only). */
+  scanRunning?: boolean
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
@@ -34,20 +38,24 @@ export function ServicesHeader({ isDiscovering, discoveryComplete, discoveryMsg,
         <button
           type="button"
           onClick={onAutoDiscover}
-          disabled={isDiscovering}
+          disabled={isDiscovering || scanRunning}
+          aria-describedby={scanRunning && !isDiscovering ? 'scan-running-hint' : undefined}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
             discoveryComplete
               ? 'bg-green-700 text-white border-green-700'
               : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
-          } ${isDiscovering ? 'cursor-not-allowed opacity-70' : ''}`}
+          } ${isDiscovering || scanRunning ? 'cursor-not-allowed opacity-70' : ''}`}
         >
           {isDiscovering
             ? <><RefreshCw size={13} aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} /> Scanning...</>
+            : scanRunning
+              ? <><RefreshCw size={13} aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} /> Scan running…</>
             : discoveryComplete
               ? <><Check size={13} aria-hidden="true" /> {discoveryMsg ?? 'Complete'}</>
               : <><Scan size={13} aria-hidden="true" /> Auto Discover</>
           }
         </button>
+        {scanRunning && !isDiscovering && <span id="scan-running-hint" className="sr-only">{SCAN_RUNNING_HINT}</span>}
         <AddServiceButton />
       </div>
     </div>
