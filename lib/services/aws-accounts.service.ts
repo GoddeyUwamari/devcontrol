@@ -6,7 +6,8 @@ export interface AwsAccount {
   account_id: string
   role_arn: string
   nickname: string | null
-  external_id: string | null
+  /** Present for the organization owner only; absent for every other role. */
+  external_id?: string | null
   region: string
   connected_at: string
   status: 'active' | 'inactive'

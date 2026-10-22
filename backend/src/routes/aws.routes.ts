@@ -331,8 +331,24 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
   }
 })
 
+/**
+ * Whether the caller is the organization's owner, by the same current-membership
+ * check requireCurrentOwner applies. Only a 403 means "not the owner"; any other
+ * failure is rethrown.
+ */
+async function isCurrentOwner(req: Request): Promise<boolean> {
+  try {
+    await requireCurrentRole(pool, req.user!.organizationId, req.user!.userId, ['owner'])
+    return true
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAccessError && err.statusCode === 403) return false
+    throw err
+  }
+}
+
 // GET /api/aws/accounts
-// Returns only the accounts belonging to the calling org.
+// Returns only the accounts belonging to the calling org. external_id is
+// included for the owner only; for every other role the field is absent.
 router.get('/accounts', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
@@ -342,7 +358,11 @@ router.get('/accounts', async (req: Request, res: Response) => {
        ORDER BY connected_at DESC`,
       [req.user!.organizationId]
     )
-    return res.json({ success: true, data: result.rows })
+    const owner = await isCurrentOwner(req)
+    const data = owner
+      ? result.rows
+      : result.rows.map(({ external_id: _externalId, ...account }) => account)
+    return res.json({ success: true, data })
   } catch (err: any) {
     console.error('[aws/accounts GET]', err)
     return res.status(500).json({ success: false, message: 'Failed to retrieve AWS accounts.' })
