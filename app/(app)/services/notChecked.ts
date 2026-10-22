@@ -7,6 +7,7 @@
 import type { AWSServicesStats, ServicesCoverage } from '@/lib/services/aws-services.service'
 import { TYPE_DISPLAY } from './resourceTypes'
 import { isScanAbandoned, scopeIsCompleted, warningNotes } from './coverage'
+import { latestAttempt } from './regionCoverage'
 
 export interface NotCheckedLine { key: string; text: string }
 
@@ -38,7 +39,12 @@ export function unknownTagsText(count: number, byType: Record<string, number> | 
   return types.length > 0 ? `${head} By type: ${types.map(([t, n]) => `${typeName(t)} ${n}`).join(', ')}.` : head
 }
 
-export function notCheckedLines(coverage: ServicesCoverage, stats: AWSServicesStats | undefined, now: number, inTabWarnings: readonly string[] = []): NotCheckedLine[] {
+/**
+ * `leaseRule` (multi-region M6, only with the M5c keys): whether the last scan
+ * finished comes from last_scan and scan_in_progress, as in the region
+ * coverage, instead of the one-hour rule for running jobs.
+ */
+export function notCheckedLines(coverage: ServicesCoverage, stats: AWSServicesStats | undefined, now: number, inTabWarnings: readonly string[] = [], leaseRule = false): NotCheckedLine[] {
   const lines: NotCheckedLine[] = []
   const connected = coverage.account.connected && !!coverage.scope.home_region
   const last = coverage.last_scan
@@ -58,7 +64,8 @@ export function notCheckedLines(coverage: ServicesCoverage, stats: AWSServicesSt
 
   for (const note of warningNotes(last?.warnings ?? [], inTabWarnings)) lines.push({ key: `warning-${note.key}`, text: note.body })
 
-  if (connected && (last?.status === 'failed' || isScanAbandoned(last, now))) {
+  const unfinished = leaseRule ? latestAttempt(coverage) === 'unfinished' : last?.status === 'failed' || isScanAbandoned(last, now)
+  if (connected && unfinished) {
     lines.push({ key: 'last-scan-failed', text: NOT_CHECKED_COPY.lastScanFailed })
   } else if (connected && !last && !coverage.last_successful_scan_at) {
     lines.push({ key: 'never-scanned', text: NOT_CHECKED_COPY.neverScanned })

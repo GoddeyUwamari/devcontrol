@@ -16,6 +16,12 @@ import { SAMPLE_DATA_BANNER, type ServicesDemoFixture } from './demo-fixture'
 import { AllResourcesTable, type AllResourcesState } from './AllResourcesTable'
 import { NotCheckedCard } from './NotCheckedCard'
 import { type AllResourcesFilters, DEFAULT_FILTERS, allResourcesRequest, demoAllResourcesPage } from './allResources'
+import { isServicesCoverageM6Enabled } from './servicesCoverageM6Flag'
+import { describeRegionCoverage } from './regionCoverage'
+import { RegionCoveragePanel } from './RegionCoveragePanel'
+
+/** While a scan is running, coverage is read again this often (M6 only). */
+export const SCAN_RUNNING_REFETCH_MS = 60_000
 
 /** "Failed to load resources." (E9): the same banner as the current page's. */
 function LoadErrorBanner() {
@@ -61,10 +67,17 @@ export function ServicesOverview({
   /** A filter or organization change (the page clears the discovery error, as before). Must be stable. */
   onFiltersChange: () => void
 }) {
+  // Region coverage (multi-region M6), behind NEXT_PUBLIC_SERVICES_COVERAGE_M6.
+  const m6 = isServicesCoverageM6Enabled()
   const coverageQuery = useQuery<ServicesCoverage>({
     queryKey: ['services-coverage', orgId],
     queryFn: () => awsServicesService.getCoverage(),
     enabled: realMode, retry: false, refetchOnWindowFocus: false,
+    // M6: read again every minute only while a scan is running, and not while the tab is hidden.
+    ...(m6 ? {
+      refetchInterval: (query: { state: { data?: ServicesCoverage } }) => (query.state.data?.scan_in_progress ? SCAN_RUNNING_REFETCH_MS : false),
+      refetchIntervalInBackground: false,
+    } : {}),
   })
   const attentionQuery = useQuery<AWSServicesPage>({
     queryKey: ['services-attention', orgId],
@@ -154,6 +167,13 @@ export function ServicesOverview({
     ? { loading: false, error: false, summary: demo.costSummary }
     : { loading: !orgId || costQuery.isPending, error: costQuery.isError, summary: costQuery.data }
 
+  // Times in the region coverage are read against the time the page mounted.
+  const [mountedAt] = useState(() => Date.now())
+  const regionView = m6 && !demo && coverageState.status === 'ready'
+    ? describeRegionCoverage(coverageState.coverage, mountedAt, discovery.warnings)
+    : null
+  const scanRunning = regionView?.scanRunning ?? false
+
   const statsData = stats.stats
   // With no resources at all, the list below says why (no account, nothing
   // discovered); the attention and unowned cards have nothing to show.
@@ -171,6 +191,7 @@ export function ServicesOverview({
         discoveryComplete={discovery.discoveryComplete}
         discoveryMsg={discovery.discoveryMsg}
         onAutoDiscover={discovery.onAutoDiscover}
+        scanRunning={scanRunning}
       />
       {banners}
       {(pageError || listFailed) && <LoadErrorBanner />}
@@ -179,6 +200,7 @@ export function ServicesOverview({
         statusHeadline={!stats.loading && listFailed ? 'Resource data unavailable' : statusHeadline}
         inTabWarnings={discovery.warnings}
         storedResources={!stats.loading && (statsData?.total ?? 0) > 0}
+        regionView={regionView}
       />
       <SummaryTiles
         stats={stats}
@@ -213,10 +235,12 @@ export function ServicesOverview({
           teamSelectRef={teamSelectRef}
           isDiscovering={discovery.isDiscovering}
           onAutoDiscover={discovery.onAutoDiscover}
+          scanRunning={scanRunning}
         />
       </div>
+      {regionView && <RegionCoveragePanel view={regionView} now={mountedAt} />}
       {coverageState.status === 'ready' && (
-        <NotCheckedCard coverage={coverageState.coverage} stats={statsData} inTabWarnings={discovery.warnings} />
+        <NotCheckedCard coverage={coverageState.coverage} stats={statsData} inTabWarnings={discovery.warnings} leaseRule={!!regionView} />
       )}
     </>
   )
