@@ -23,6 +23,8 @@ import { formatSavingsCurrency } from '@/lib/utils'
 import { rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
 import { formatCalculatedAgo } from './calculatedAgo'
 import { describeAttentionCard } from './attentionCard'
+import { largestEstimatedCosts } from './costByResource'
+import { isRunningOrNormalState, isStoppedOrPendingState, lifecycleStateLabel } from './stateLabel'
 import { describeStatsSpend } from '../costs/cost-display'
 import { INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 
@@ -113,7 +115,7 @@ const DEMO_RESOURCES: InfrastructureResource[] = [
   { id: 'r4', serviceId: 'svc-4', serviceName: 'notification-service',resourceType: 'lambda', awsId: 'notify-fn-prod',     awsRegion: 'us-east-1', status: 'running', costPerMonth: 156.30, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'r5', serviceId: 'svc-5', serviceName: 'analytics-worker',    resourceType: 'ec2',    awsId: 'i-9z8y7x6w5v',      awsRegion: 'eu-west-1', status: 'running', costPerMonth: 312.80, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'r6', serviceId: 'svc-1', serviceName: 'api-gateway',         resourceType: 'rds',    awsId: 'rds-prod-01',        awsRegion: 'us-east-1', status: 'running', costPerMonth: 445.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r7', serviceId: 'svc-2', serviceName: 'auth-service',        resourceType: 's3',     awsId: 'auth-assets-bucket', awsRegion: 'us-east-1', status: 'running', costPerMonth: 23.40,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r7', serviceId: 'svc-2', serviceName: 'auth-service',        resourceType: 's3',     awsId: 'auth-assets-bucket', awsRegion: 'us-east-1', status: null,      costPerMonth: 23.40,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'r8', serviceId: 'svc-3', serviceName: 'payment-processor',   resourceType: 'rds',    awsId: 'rds-payments-01',    awsRegion: 'us-west-2', status: 'pending', costPerMonth: 398.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
 ]
 
@@ -145,7 +147,7 @@ async function fetchTopActions(): Promise<any[] | null> {
     const anomalyData = anomalyRes.ok ? await anomalyRes.json() : { anomalies: [] }
     const costActions = rankBySavings(recs)
       .slice(0, 3)
-      .map((r, i) => ({
+      .map((r) => ({
         id: r.id, title: r.issue || 'Cost optimization available',
         // Kept raw (not rounded per-item) so totalRecoverable below sums to the same
         // figure as the backend-aggregated intelWaste/recommendationStats total — round
@@ -155,7 +157,7 @@ async function fetchTopActions(): Promise<any[] | null> {
         // "Est. savings", a ceiling is shown apart as "up to", and a figure with
         // no basis is no dollar amount at all.
         savingsKind: savingsBasisKind(r) as SavingsBasisKind | null,
-        risk: 'zero' as const, urgency: i === 0 ? 'now' as const : 'today' as const,
+        // No risk or urgency label: nothing computes one. A rank is list order only.
         subtitle: `${r.resourceName ?? 'Resource'} · ${r.awsRegion ?? 'us-east-1'} · cost leakage active`,
         type: 'cost' as const,
       }))
@@ -164,7 +166,7 @@ async function fetchTopActions(): Promise<any[] | null> {
       .slice(0, 1)
       .map((a: any) => ({
         id: a.id ?? 'anomaly-0', title: a.title ?? a.message ?? 'Reliability issue detected',
-        savings: null, savingsKind: null, risk: 'review' as const, urgency: 'now' as const,
+        savings: null, savingsKind: null,
         subtitle: `${a.resourceName ?? a.resource ?? 'Resource'} · ${a.impact ?? 'potential downtime risk'}`,
         type: 'reliability' as const,
       }))
@@ -351,8 +353,8 @@ function InfrastructureContent() {
 
   const filteredResources = displayResources.filter((r: InfrastructureResource) => {
     if (selectedType && r.resourceType !== selectedType) return false
-    if (statusFilter === 'active')  return r.status === 'running'
-    if (statusFilter === 'warning') return r.status === 'pending' || r.status === 'stopped'
+    if (statusFilter === 'active')  return isRunningOrNormalState(r.resourceType, r.status)
+    if (statusFilter === 'warning') return isStoppedOrPendingState(r.resourceType, r.status)
     return true
   })
 
@@ -446,31 +448,28 @@ function InfrastructureContent() {
   const scoreOffset      = intelScore > 0 ? scoreCirc - (intelScore / 100) * scoreCirc : scoreCirc
   const scoreChip        = (score: number) => ({ color: score >= 80 ? '#065F46' : '#92400E', bg: score >= 80 ? '#D1FAE5' : '#FEF3C7' })
 
-  const DEMO_TOP_ACTIONS: { id: string; rank: string; urgency: 'now' | 'today'; risk: 'zero' | 'review'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; sub: string; isTop: boolean }[] = [
-    { id: 'demo-1', rank: '01', urgency: 'now'   as const, risk: 'zero'   as const, title: 'Downsize RDS cluster',                     savings: 740,  sub: 'production-postgres-primary · us-east-1 · cost leakage active',              isTop: true  },
-    { id: 'demo-2', rank: '02', urgency: 'now'   as const, risk: 'review' as const, title: 'Investigate CloudFront latency warnings',   savings: null, sub: 'production-cdn · potential downtime risk · degraded user experience',         isTop: false },
-    { id: 'demo-3', rank: '03', urgency: 'today' as const, risk: 'zero'   as const, title: 'Remove unused EBS volumes',                 savings: 320,  sub: '6 unattached volumes · us-east-1 · no impact to workloads',                  isTop: false },
-    { id: 'demo-4', rank: '04', urgency: 'today' as const, risk: 'zero'   as const, title: 'Rightsize idle EC2 instances',              savings: 580,  sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization',                  isTop: false },
+  const DEMO_TOP_ACTIONS: { id: string; rank: string; type: 'cost' | 'reliability'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; sub: string }[] = [
+    { id: 'demo-1', rank: '01', type: 'cost'        as const, title: 'Downsize RDS cluster',                     savings: 740,  sub: 'production-postgres-primary · us-east-1 · cost leakage active'      },
+    { id: 'demo-2', rank: '02', type: 'reliability' as const, title: 'Investigate CloudFront latency warnings',   savings: null, sub: 'production-cdn · potential downtime risk · degraded user experience' },
+    { id: 'demo-3', rank: '03', type: 'cost'        as const, title: 'Remove unused EBS volumes',                 savings: 320,  sub: '6 unattached volumes · us-east-1 · no impact to workloads'          },
+    { id: 'demo-4', rank: '04', type: 'cost'        as const, title: 'Rightsize idle EC2 instances',              savings: 580,  sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization'          },
   ]
 
   const displayTopActions = isDemoActive
     ? DEMO_TOP_ACTIONS
     : (topActionsData ?? []).map((a, i) => ({
         id: a.id, rank: String(i + 1).padStart(2, '0'),
-        urgency: a.urgency, risk: a.risk, title: a.title, savings: a.savings, savingsKind: a.savingsKind, sub: a.subtitle,
-        isTop: i === 0,
+        type: a.type, title: a.title, savings: a.savings, savingsKind: a.savingsKind, sub: a.subtitle,
       }))
 
   // Demo figures are illustrative estimates; a real action counts only as what its
   // savings_basis says. Ceilings never enter totalRecoverable.
   const actionKind = (a: { savings: number | null; savingsKind?: SavingsBasisKind | null }) => (isDemoActive ? 'estimate' : a.savingsKind ?? null)
   const totalRecoverable = displayTopActions.reduce((sum, a) => sum + (actionKind(a) === 'estimate' ? a.savings ?? 0 : 0), 0)
-  const recoverableCeiling = displayTopActions.reduce((sum, a) => sum + (actionKind(a) === 'ceiling' ? a.savings ?? 0 : 0), 0)
-  // Count of cost recommendations for the "Apply Recommended Fixes" caption — deliberately
-  // not the "zero-risk" classification above. Only Idle EC2 stop / unattached-volume delete
-  // have a real rollback path (remediation.service.ts); RDS downgrade, EIP delete, and RI
-  // purchase recommendations don't, so labeling the whole batch "zero-risk" is the same
-  // fabrication already fixed on dashboard/costs — this caption drops the risk claim entirely.
+  // Count of top actions with a dollar figure, for the Top Actions header. No action is
+  // labelled "zero-risk": only Idle EC2 stop / unattached-volume delete have a real rollback
+  // path (remediation.service.ts); RDS downgrade, EIP delete, and RI purchase
+  // recommendations don't, and nothing on this page changes AWS anyway.
   const optimizationCount = displayTopActions.filter(a => a.savings != null).length
   const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
   const formatSavings = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
@@ -479,39 +478,19 @@ function InfrastructureContent() {
     : savingsLoading ? '—'
     : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
 
-  const DEMO_COST_BY_SERVICE = [
-    { name: 'analytics-worker',  cost: 312.80, pct: 41, barWidth: 100 },
-    { name: 'api-gateway',       cost: 245.50, pct: 32, barWidth: 78  },
-    { name: 'auth-service',      cost: 178.00, pct: 23, barWidth: 57  },
-    { name: 'payment-processor', cost: 89.50,  pct: 12, barWidth: 29  },
-    { name: 'notification-svc',  cost: 34.00,  pct:  4, barWidth: 11  },
-  ]
-
-  const costByService = (() => {
-    if (isDemoActive) return DEMO_COST_BY_SERVICE
-    const map: Record<string, number> = {}
-    for (const r of allResources) {
-      const key = (r as any).serviceName || (r as any).service_name || r.serviceId || 'Unknown'
-      map[key] = (map[key] || 0) + (r.costPerMonth || 0)
-    }
-    const total = Object.values(map).reduce((s, v) => s + v, 0)
-    if (total === 0) return []
-    const maxCost = Math.max(...Object.values(map))
-    return Object.entries(map).sort(([, a], [, b]) => b - a).slice(0, 5).map(([name, cost]) => ({
-      name, cost, pct: Math.round((cost / total) * 100), barWidth: Math.round((cost / maxCost) * 100),
-    }))
-  })()
+  // Per-resource list-price estimates, one row per resource -- not billed spend
+  // and not per AWS service (see costByResource.ts).
+  const largestCosts = largestEstimatedCosts(isDemoActive ? DEMO_RESOURCES : allResources)
 
   const regionCount = new Set(displayResources.map((r: InfrastructureResource) => r.awsRegion)).size
 
   const tableResources = (() => {
     let rows = [...effectiveResources]
-    if (issueFilter === 'Cost Waste')       rows = rows.filter(r => (r.costPerMonth ?? 0) > 400)
-    else if (issueFilter === 'Reliability Risk') rows = rows.filter(r => r.status === 'pending' || r.status === 'stopped')
-    else if (issueFilter === 'Healthy')     rows = rows.filter(r => r.status === 'running' && (r.costPerMonth ?? 0) <= 400)
+    if (issueFilter === 'Reliability Risk') rows = rows.filter(r => isStoppedOrPendingState(r.resourceType, r.status))
+    else if (issueFilter === 'Healthy')     rows = rows.filter(r => r.status === 'running')
     if (sortOrder === 'impact') rows = rows.sort((a, b) => {
-      const aScore = (a.status === 'pending' || a.status === 'stopped') ? 999999 : (a.costPerMonth ?? 0)
-      const bScore = (b.status === 'pending' || b.status === 'stopped') ? 999999 : (b.costPerMonth ?? 0)
+      const aScore = isStoppedOrPendingState(a.resourceType, a.status) ? 999999 : (a.costPerMonth ?? 0)
+      const bScore = isStoppedOrPendingState(b.resourceType, b.status) ? 999999 : (b.costPerMonth ?? 0)
       return bScore - aScore
     })
     else if (sortOrder === 'cost-high') rows = rows.sort((a, b) => (b.costPerMonth ?? 0) - (a.costPerMonth ?? 0))
@@ -553,8 +532,9 @@ function InfrastructureContent() {
                 : syncComplete ? <><Check size={14} /> Done</>
                 : <><RefreshCw size={14} /> Sync AWS</>}
             </button>
+            {/* A link to the recommendations page, whose Resolve/Dismiss record a decision: nothing here changes AWS. */}
             <a href="/cost-optimization" className="flex-1 flex items-center justify-center gap-1.5 bg-violet-700 text-white px-3 py-2.5 rounded-lg text-xs font-bold no-underline">
-              <Check size={13} /> Apply Fixes
+              Review recommendations <ArrowRight size={13} />
             </a>
           </div>
         </div>
@@ -571,17 +551,9 @@ function InfrastructureContent() {
               : !isDemoActive && allResources.length === 0 ? <><RefreshCw size={15} /> Scan My AWS for Cost & Risk</>
               : <><RefreshCw size={15} /> Sync AWS</>}
           </button>
-          <div className="flex flex-col items-end gap-1">
-            <a href="/cost-optimization" className="flex items-center gap-1.5 bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline">
-              <Check size={13} /> Apply Recommended Fixes
-            </a>
-            {(isDemoActive || totalRecoverable > 0 || recoverableCeiling > 0) && (
-              <p className="text-xs text-slate-500 text-right">
-                Applies {optimizationCount} recommended optimization{optimizationCount !== 1 ? 's' : ''} · Est. savings: {formatSavingsCurrency(totalRecoverable)}/mo
-                {recoverableCeiling > 0 && <> · plus up to {formatSavingsCurrency(recoverableCeiling)}/mo (upper bound, not included)</>}
-              </p>
-            )}
-          </div>
+          <a href="/cost-optimization" className="flex items-center gap-1.5 bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-bold no-underline">
+            Review recommendations <ArrowRight size={13} />
+          </a>
         </div>
       </div>
 
@@ -688,28 +660,21 @@ function InfrastructureContent() {
         </a>
       </div>
 
-      {/* COST BY SERVICE */}
-      {costByService.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg px-5 py-4 mb-6">
+      {/* LARGEST ESTIMATED COSTS -- per-resource list-price estimates */}
+      {largestCosts.length > 0 && (
+        <div data-testid="largest-estimated-costs" className="bg-white border border-gray-200 rounded-lg px-5 py-4 mb-6">
           <div className="flex items-center justify-between mb-3.5">
-            <span className="text-xs font-semibold tracking-widest text-gray-500 uppercase">Cost by Service</span>
-            <span className="text-xs text-gray-500">Last 30 days</span>
+            <span className="text-xs font-semibold tracking-widest text-gray-500 uppercase">Largest estimated costs (by resource)</span>
+            <span className="text-xs text-gray-500">Est. monthly · list price</span>
           </div>
-          <p className="text-[13px] text-slate-500 mb-3.5">
-            Top concentration: <strong className="text-slate-900">{costByService[0].name} ({costByService[0].pct}%)</strong>
-            {costByService[1] && <> and <strong className="text-slate-900">{costByService[1].name} ({costByService[1].pct}%)</strong></>}
-            {' '}— primary rightsizing candidate{costByService[1] ? 's' : ''}
-            {totalRecoverable > 0 && <> driving <strong className="text-slate-900">{formatSavingsCurrency(totalRecoverable)}/mo</strong> in recoverable waste</>}.
-          </p>
           <div className="flex flex-col gap-2.5">
-            {costByService.map((row) => (
-              <div key={row.name} className="flex items-center gap-3 py-1">
+            {largestCosts.map((row) => (
+              <div key={row.id} className="flex items-center gap-3 py-1">
                 <span className="w-20 sm:w-40 text-xs sm:text-sm text-gray-900 overflow-hidden text-ellipsis whitespace-nowrap shrink-0">{row.name}</span>
                 <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                   <div className="h-full bg-violet-700 rounded-full" style={{ width: `${row.barWidth}%` }} />
                 </div>
                 <span className="w-16 sm:w-20 text-right text-xs sm:text-sm font-semibold text-gray-900 shrink-0">${row.cost.toFixed(2)}</span>
-                <span className="hidden sm:block w-11 text-right text-[13px] text-gray-500 shrink-0">{row.pct}%</span>
               </div>
             ))}
           </div>
@@ -792,15 +757,14 @@ function InfrastructureContent() {
               Ranked by impact · {optimizationCount} recommended changes ready · <strong className="text-emerald-600">{formatSavingsCurrency(totalRecoverable)}/mo recoverable today</strong>
             </p>
           </div>
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-red-600 text-white">Act Now</span>
         </div>
 
         <div className="flex flex-col gap-2.5">
           {displayTopActions.map((action) => (
             <div
               key={action.id}
-              className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 rounded-lg border-2 ${action.isTop ? 'py-3.5' : 'py-3'}`}
-              style={{ background: action.urgency === 'now' ? '#FFF8F8' : '#F8FAFC', borderColor: action.urgency === 'now' ? '#FECACA' : '#F1F5F9', borderWidth: action.isTop ? '2px' : '1px' }}
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 rounded-lg border"
+              style={{ background: '#F8FAFC', borderColor: '#F1F5F9' }}
             >
               <div className="flex items-center gap-3.5">
                 <span className="text-xs font-bold text-slate-500 min-w-[16px]">{action.rank}</span>
@@ -817,16 +781,8 @@ function InfrastructureContent() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
-                {action.risk === 'zero'
-                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-emerald-100 text-emerald-800">Zero Risk</span>
-                  : <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-amber-100 text-amber-800">Review Impact</span>}
-                {action.isTop && <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-violet-700 text-white">Highest Impact</span>}
-                {action.urgency === 'now'
-                  ? <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-red-600 text-white">Now</span>
-                  : <span className="inline-flex px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-emerald-100 text-emerald-800">Today</span>}
-                {action.risk === 'zero'
-                  ? <a href="/cost-optimization" className="bg-emerald-600 text-white rounded-md px-3 py-1 text-xs font-bold no-underline sm:w-auto w-full text-center">Fix →</a>
-                  : <a href="/anomalies" className="bg-transparent text-slate-500 border border-slate-200 rounded-md px-3 py-1 text-xs font-semibold no-underline sm:w-auto w-full text-center">Review →</a>}
+                {/* Both are links: a cost action opens the recommendations page, a reliability one the anomalies page. */}
+                <a href={action.type === 'cost' ? '/cost-optimization' : '/anomalies'} className="bg-transparent text-slate-500 border border-slate-200 rounded-md px-3 py-1 text-xs font-semibold no-underline sm:w-auto w-full text-center">Review →</a>
               </div>
             </div>
           ))}
@@ -849,8 +805,7 @@ function InfrastructureContent() {
           </div>
           <div className="flex gap-2 mb-3">
             <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="text-xs font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
-              <option value="all">View by Issue ▾</option>
-              <option value="Cost Waste">Cost Waste</option>
+              <option value="all">View by state ▾</option>
               <option value="Reliability Risk">Stopped or pending</option>
               <option value="Healthy">Running</option>
             </select>
@@ -895,8 +850,8 @@ function InfrastructureContent() {
         </div>
 
         {/* Column headers — desktop only */}
-        <div className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px_110px] px-7 py-2.5 bg-slate-50 border-b border-slate-100">
-          {['Resource', 'Type', 'AWS ID', 'Service', 'Region', 'Monthly Cost', 'Issue'].map(col => (
+        <div className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px] px-7 py-2.5 bg-slate-50 border-b border-slate-100">
+          {['Resource', 'Type', 'AWS ID', 'State', 'Region', 'Est. monthly (list price)'].map(col => (
             <span key={col} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{col}</span>
           ))}
         </div>
@@ -931,34 +886,24 @@ function InfrastructureContent() {
             const typeConf = resourceTypeConfig[r.resourceType?.toLowerCase() as string] || resourceTypeConfig.default
             const Icon = typeConf.icon
             const isReliabilityRisk = r.status === 'pending' || r.status === 'stopped'
-            const isCostWaste       = r.costPerMonth != null && r.costPerMonth > 400
             // The row's status is the resource's discovered AWS lifecycle state
-            // (running/stopped/pending...), shown as-is: this table has no
-            // health, error-rate, or availability evidence, so it never says
-            // "Healthy" or "Critical". A resource with no lifecycle state (an S3
-            // bucket, an SNS topic, a VPC, or one whose state was not read) has a
-            // null status and shows "—", never "running".
-            const statusLabel = isCostWaste && r.status === 'running' ? 'Cost Waste' : r.status ?? '—'
-            const statusColor = isReliabilityRisk ? '#fff' : statusLabel === 'Cost Waste' ? '#fff' : '#475569'
-            const statusBg    = isReliabilityRisk ? '#DC2626' : statusLabel === 'Cost Waste' ? '#D97706' : '#F1F5F9'
-            const rowBg       = isReliabilityRisk ? '#FFF5F5' : statusLabel === 'Cost Waste' ? '#FFFBEB' : '#FFFFFF'
-            const rowBorder   = isReliabilityRisk ? '#FEE2E2' : statusLabel === 'Cost Waste' ? '#FDE68A' : '#F8FAFC'
-            const issueLabel  = isReliabilityRisk
-              ? `⚠ Not running · AWS lifecycle state: ${r.status}`
-              : statusLabel === 'Cost Waste'
-                ? (isDemoActive
-                    ? `↑ Cost waste · $${Math.round((r.costPerMonth ?? 0) * 0.4).toLocaleString()}/mo recoverable · downsize candidate`
-                    // No per-resource cost_recommendations data is fetched on this page (only
-                    // aggregate stats via costRecommendationsService.getStats() above) — honest
-                    // label rather than a fabricated 40%-of-cost heuristic, matching the fix on
-                    // costs/efficiency (662e8ff).
-                    : '↑ Cost waste · downsize candidate')
-                : null
+            // (running/stopped/pending, or an EBS volume's own state), shown
+            // as-is in the State column: this table has no health, error-rate,
+            // availability, or findings evidence, so it never says "Healthy",
+            // "Critical", or "Cost Waste". A resource with no lifecycle state (an
+            // S3 bucket, an SNS topic, a VPC, or one whose state was not read)
+            // has a null status and shows "—", never "running".
+            const statusLabel = lifecycleStateLabel(r.resourceType as string, r.status)
+            const statusColor = isReliabilityRisk ? '#fff' : '#475569'
+            const statusBg    = isReliabilityRisk ? '#DC2626' : '#F1F5F9'
+            const rowBg       = isReliabilityRisk ? '#FFF5F5' : '#FFFFFF'
+            const rowBorder   = isReliabilityRisk ? '#FEE2E2' : '#F8FAFC'
+            const issueLabel  = isReliabilityRisk ? `⚠ Not running · AWS lifecycle state: ${r.status}` : null
 
             return (
               <div key={r.id} id={`resource-${r.id}`}>
                 {/* Mobile card */}
-                <div className="sm:hidden p-4 rounded-xl border mb-2.5" style={{ background: rowBg, borderColor: rowBorder }}>
+                <div data-testid="resource-card-mobile" className="sm:hidden p-4 rounded-xl border mb-2.5" style={{ background: rowBg, borderColor: rowBorder }}>
                   <div className={`flex items-center gap-2.5 ${issueLabel ? 'mb-1.5' : 'mb-2.5'}`}>
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: typeConf.bg }}>
                       <Icon size={14} style={{ color: typeConf.color }} />
@@ -967,7 +912,7 @@ function InfrastructureContent() {
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                   </div>
                   {issueLabel && (
-                    <p className="text-xs font-semibold mb-2.5" style={{ color: isReliabilityRisk ? '#DC2626' : '#D97706' }}>
+                    <p className="text-xs font-semibold mb-2.5" style={{ color: '#DC2626' }}>
                       {issueLabel}
                       {isReliabilityRisk && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline" style={{ color: '#DC2626' }}>Investigate →</a>}
                     </p>
@@ -975,13 +920,14 @@ function InfrastructureContent() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
                     <span className="text-xs text-slate-500 font-mono">{r.awsRegion || '—'}</span>
-                    <span className="ml-auto text-sm font-bold text-slate-900">{r.costPerMonth != null ? `$${r.costPerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
+                    <span className="ml-auto text-sm font-bold text-slate-900" title={r.costPerMonth == null ? 'Not estimated' : undefined}>{r.costPerMonth != null ? `est. $${r.costPerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
                   </div>
                 </div>
 
                 {/* Desktop row */}
                 <div
-                  className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px_110px] px-7 py-3.5 border-b items-center transition-colors mb-3"
+                  data-testid="resource-row-desktop"
+                  className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px] px-7 py-3.5 border-b items-center transition-colors mb-3"
                   style={{ background: rowBg, borderColor: rowBorder }}
                 >
                   <div className="flex items-center gap-2.5">
@@ -991,7 +937,7 @@ function InfrastructureContent() {
                     <div>
                       <p className="text-sm font-semibold text-slate-900 mb-0.5">{r.serviceName || r.serviceId?.slice(0, 8) || 'Unknown'}</p>
                       {issueLabel
-                        ? <p className="text-xs font-bold" style={{ color: isReliabilityRisk ? '#DC2626' : '#D97706' }}>
+                        ? <p className="text-xs font-bold" style={{ color: '#DC2626' }}>
                             {issueLabel}
                             {isReliabilityRisk && <a href={`/anomalies?resource=${r.awsId}`} className="ml-2 font-bold underline text-xs" style={{ color: '#DC2626' }}>Investigate →</a>}
                           </p>
@@ -1000,10 +946,9 @@ function InfrastructureContent() {
                   </div>
                   <span className="text-xs font-bold px-2 py-0.5 rounded w-fit" style={{ background: typeConf.bg, color: typeConf.color }}>{(r.resourceType as string)?.toUpperCase() ?? '—'}</span>
                   <span className="text-xs text-slate-500 font-mono overflow-hidden text-ellipsis whitespace-nowrap block">{r.awsId || '—'}</span>
-                  <span className="text-[13px] text-slate-500">{r.serviceName || '—'}</span>
-                  <span className="text-[13px] text-slate-500 font-mono">{r.awsRegion || '—'}</span>
-                  <span className="text-sm font-bold text-slate-900">{r.costPerMonth != null ? `$${r.costPerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                  <span className="text-[13px] text-slate-500 font-mono">{r.awsRegion || '—'}</span>
+                  <span className="text-sm font-bold text-slate-900" title={r.costPerMonth == null ? 'Not estimated' : undefined}>{r.costPerMonth != null ? `$${r.costPerMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
                 </div>
               </div>
             )

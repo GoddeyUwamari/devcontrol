@@ -4,7 +4,7 @@ import { InfrastructureRepository } from '../repositories/infrastructure.reposit
 import { CreateInfrastructureRequest, InfrastructureFilters, ApiResponse } from '../types';
 import awsCostService from '../services/aws-cost.service';
 import { pool } from '../config/database';
-import { lifecycleStateFor } from '../utils/resourceLifecycle';
+import { infrastructureCostFor, infrastructureStatusFor } from '../utils/infrastructureRow';
 
 const repository = new InfrastructureRepository();
 const awsRepository = new AWSResourcesRepository(pool);
@@ -52,27 +52,12 @@ export class InfrastructureController {
             '—',
           // null when there is no lifecycle state to show: the resource type has none
           // (S3, SNS, VPC -- stored as 'not_applicable') or it was not read ('unknown').
-          // Those used to be shown as 'running' and 'pending' respectively.
-          status:
-            (() => {
-              const state = lifecycleStateFor(r.resource_type || r.resourceType || '', r.status || r.resource_status)
-              if (state === null) return null
-              const s = state.toLowerCase()
-              return s === 'available' ||
-                s === 'running' ||
-                s === 'active' ||
-                s === 'in-use'
-                  ? 'running'
-                  : s === 'stopped'
-                    ? 'stopped'
-                    : 'pending'
-            })(),
-          // null (never 0) when the cost hasn't actually been calculated yet
-          // for this resource (e.g. a Lambda function whose CloudWatch usage
-          // lookup failed on its most recent discovery) -- estimated_monthly_cost
-          // is nullable precisely to distinguish "unknown" from "confirmed $0"
-          // (see awsResourceDiscovery.ts::discoverLambdaFunctions()).
-          costPerMonth: r.estimated_monthly_cost != null ? parseFloat(r.estimated_monthly_cost) : null,
+          // Those used to be shown as 'running' and 'pending' respectively. An EBS
+          // volume reports its own state ('available' / 'in-use'), never 'running'.
+          status: infrastructureStatusFor(r.resource_type || r.resourceType || '', r.status || r.resource_status),
+          // null when not calculated, and null for a placeholder figure (an S3
+          // bucket's fixed $5) -- see infrastructureCostFor.
+          costPerMonth: infrastructureCostFor(r.resource_type || r.resourceType || '', r.estimated_monthly_cost),
           metadata: r.metadata,
           createdAt: r.created_at || new Date().toISOString(),
           updatedAt: r.updated_at || new Date().toISOString(),

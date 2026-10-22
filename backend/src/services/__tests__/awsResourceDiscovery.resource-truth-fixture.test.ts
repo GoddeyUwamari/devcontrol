@@ -376,8 +376,9 @@ describe('the nine-resource account, measured', () => {
 
     // Status: stored, and shown, consistently.
     for (const key of NO_LIFECYCLE) expect(m.perResource[key]).toMatchObject({ storedStatus: 'not_applicable', shownStatus: null });
-    expect(m.perResource['vol-unattached']).toMatchObject({ storedStatus: 'available', shownStatus: 'running' });
-    expect(m.perResource['vol-attached']).toMatchObject({ storedStatus: 'in-use', shownStatus: 'running' });
+    // An EBS volume is shown in its own state: an unattached volume is never "running".
+    expect(m.perResource['vol-unattached']).toMatchObject({ storedStatus: 'available', shownStatus: 'available' });
+    expect(m.perResource['vol-attached']).toMatchObject({ storedStatus: 'in-use', shownStatus: 'in-use' });
     expect(m.perResource.instance).toMatchObject({ storedStatus: 'running', shownStatus: 'running' });
 
     // The rows first written on 2026-05-31 no longer carry the placeholders.
