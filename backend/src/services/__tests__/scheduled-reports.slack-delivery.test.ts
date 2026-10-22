@@ -246,10 +246,14 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(slackSkipLines()).toEqual([skipLine(orgId)]);
     const lines = runLinesWithoutStartLine(report);
-    expect(lines).toEqual([
-      skipLine(orgId),
-      expect.stringMatching(new RegExp(`^\\[ScheduledReports\\] Report ${report.id} completed with status: failed \\(`)),
-    ]);
+    // Grouped by console method, not in time order.
+    expect(lines).toHaveLength(2);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        skipLine(orgId),
+        expect.stringMatching(new RegExp(`^\\[ScheduledReports\\] Report ${report.id} completed with status: failed \\(`)),
+      ])
+    );
     expectNothingSensitive(lines, report, marker);
     const [execution] = await service.getExecutions(report.id, 1);
     expect(execution).toMatchObject({ status: 'failed', slack_sent: false, error_message: NOT_CONFIGURED });
@@ -265,10 +269,14 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
     await service.test(report.id, orgId);
 
     const lines = runLinesWithoutStartLine(report);
-    expect(lines).toEqual([
-      skipLine(orgId),
-      expect.stringMatching(new RegExp(`^\\[ScheduledReports\\] Report ${report.id} completed with status: partial \\(`)),
-    ]);
+    // Grouped by console method, not in time order.
+    expect(lines).toHaveLength(2);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        skipLine(orgId),
+        expect.stringMatching(new RegExp(`^\\[ScheduledReports\\] Report ${report.id} completed with status: partial \\(`)),
+      ])
+    );
     expectNothingSensitive(lines, report, marker);
 
     const [execution] = await service.getExecutions(report.id, 1);
