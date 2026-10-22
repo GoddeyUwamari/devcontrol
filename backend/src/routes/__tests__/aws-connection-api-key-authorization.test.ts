@@ -612,6 +612,7 @@ describe('AWS account connection -- connect-init trust policy names the configur
     const res = await as(org.owner, org.orgId).connectInit();
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     const { data } = (await res.json()) as {
       data: { platformAccountId: string; trustPolicy: { Statement: Array<{ Principal: { AWS: string } }> } };
     };
@@ -632,6 +633,7 @@ describe('AWS account connection -- connect-init trust policy names the configur
     const res = await as(org.owner, org.orgId).connectInit();
 
     expect(res.status).toBe(500);
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(await res.json()).toEqual({ success: false, message: 'Failed to initialise connect session.' });
     expect(logged).toHaveBeenCalledWith(expect.stringContaining('AWS_ACCOUNT_ID'));
     expect(await connectSession(org.orgId)).toBeNull();

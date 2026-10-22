@@ -114,6 +114,7 @@ router.get('/costs/monthly', async (req: Request, res: Response) => {
 // Generates and stores a per-org external_id for the connect flow.
 // Must be registered before GET /accounts to avoid shadowing.
 router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
   const orgId = req.user!.organizationId
 
   // Without the platform account there is no trust policy to show: fail
@@ -349,7 +350,9 @@ async function isCurrentOwner(req: Request): Promise<boolean> {
 // GET /api/aws/accounts
 // Returns only the accounts belonging to the calling org. external_id is
 // included for the owner only; for every other role the field is absent.
+// The response depends on the caller, so it is never stored.
 router.get('/accounts', async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
   try {
     const result = await pool.query(
       `SELECT id, org_id, account_id, role_arn, nickname, external_id, region, connected_at, status
