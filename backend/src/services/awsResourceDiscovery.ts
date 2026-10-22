@@ -76,7 +76,8 @@ import {
 import { SourceOutcome, authorizesCleanup, failedSourceStatus } from './source-outcome';
 import { LeaseLostError, isLeaseLost, linkScanLeaseJob } from './scan-lease';
 import { describeAccountRegions } from './region-list';
-import { recordRegionList } from '../repositories/multi-region-foundation.repository';
+import { recordHomeRegionScanStatus, recordRegionList } from '../repositories/multi-region-foundation.repository';
+import { RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
 import {
   DISCOVERY_INTERRUPTED_MESSAGE,
   DISCOVERY_LEASE_LOST_MESSAGE,
@@ -931,6 +932,12 @@ export class AWSResourceDiscoveryService {
       console.log(`🔎 [Discovery] Searching AWS Resource Explorer for generic inventory + reconciliation...`);
       scan.checkpoint();
       const searchResult = await this.resourceExplorer.search(awsClients.resourceExplorer, awsClients.region);
+      // How the search fared, for the home region's scan status only (M5b). Nothing
+      // below reads it: the reconcile still follows searchResult.
+      const resourceExplorerOutcome: SourceOutcome = {
+        source: RESOURCE_EXPLORER_SOURCE,
+        status: !searchResult.success ? 'failed' : searchResult.complete ? 'complete' : 'truncated',
+      };
 
       if (searchResult.success) {
         const { allArns, genericEntries } = this.resourceExplorer.normalize(searchResult.resources, awsClients.region);
@@ -941,6 +948,9 @@ export class AWSResourceDiscoveryService {
           console.log(`✅ [Discovery] Found ${allowedEntries.length} generic resources via Resource Explorer (${searchResult.resources.length} total indexed)`);
         } catch (error: any) {
           abortIfLeaseLost(error);
+          // What the search read was not stored: the home region was not inventoried
+          // (m5-plan.md §13, Q-E). The status only; the job and the reconcile are unchanged.
+          resourceExplorerOutcome.status = 'failed';
           console.error(`❌ [Discovery] Resource Explorer generic upsert failed:`, error.message);
           errors.push(`Resource Explorer inventory: ${error.message}`);
         }
@@ -1377,6 +1387,9 @@ export class AWSResourceDiscoveryService {
         console.log(`  - Warnings: ${warnings.join(', ')}`);
       }
 
+      // Every home-region listing has finished: its scan status (M5b, F18).
+      await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, [...ownOutcomes, resourceExplorerOutcome]);
+
       await client.query(
         `UPDATE resource_discovery_jobs
          SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, resources_deleted = $4, error_message = $5, compliance_scan_completed = $6, cost_analysis_completed = $7
@@ -1509,6 +1522,42 @@ export class AWSResourceDiscoveryService {
         `⚠️  [Discovery] region_list_write_failed: org ${organizationId} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
       );
     }
+  }
+
+  /**
+   * Records the home region's scan status (multi-region plan M5b, m5-plan.md
+   * §13) from the home region's listings, in one fenced write (F18). Nothing is
+   * written when no listing counts or the home region has no row (its list was
+   * never stored). Fail-soft: any other failed write is logged once (organization
+   * id and error type only) and the scan goes on unchanged. A lost lease or an
+   * ambiguous account still stops the scan, as at every other step.
+   */
+  private async recordHomeRegionStatus(
+    client: PoolClient,
+    scan: LeaseSession,
+    jobId: string,
+    homeRegion: string,
+    organizationId: string,
+    outcomes: readonly SourceOutcome[]
+  ): Promise<void> {
+    const result = homeRegionScanStatus(outcomes);
+    if (!result) return;
+    let written: number;
+    try {
+      scan.checkpoint();
+      written = await scan.watch(() => recordHomeRegionScanStatus(client, scan.lease, { region: homeRegion, jobId, result }));
+    } catch (error: unknown) {
+      abortIfLeaseLost(error);
+      console.warn(
+        `⚠️  [Discovery] region_status_write_failed: org ${organizationId} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
+      );
+      return;
+    }
+    if (written === 0) {
+      console.warn(`⚠️  [Discovery] region_status_not_recorded: org ${organizationId} (no home-region row, or a newer scan's status); the scan continues`);
+      return;
+    }
+    console.log(`🗺️  [Discovery] Home region scan status recorded (${result.status}${result.errorCode ? `, ${result.errorCode}` : ''})`);
   }
 
   /**

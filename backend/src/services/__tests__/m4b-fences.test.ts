@@ -459,6 +459,7 @@ const DESTRUCTIVE_METHODS: Record<string, number> = {
   computeAndPersistEvidence: 1,
   persistResourceEvaluation: 1, // the `lease` property of its input
   recordRegionList: 1, // multi-region M5a, F17
+  recordHomeRegionScanStatus: 1, // multi-region M5b, F18
 };
 
 /**
@@ -526,6 +527,7 @@ describe('L3 static: every destructive step of a scan is fenced', () => {
         'controllers/cost-recommendations.controller.ts replaceReservedInstanceRecommendations',
         'jobs/resourceDiscovery.job.ts computeAndPersistEvidence',
         'services/awsResourceDiscovery.ts persistResourceEvaluation',
+        'services/awsResourceDiscovery.ts recordHomeRegionScanStatus',
         'services/awsResourceDiscovery.ts recordRegionList',
         'services/awsResourceDiscovery.ts reconcileActiveRecommendations',
         'services/awsResourceDiscovery.ts reconcileScan',

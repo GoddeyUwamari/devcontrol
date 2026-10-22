@@ -6,8 +6,9 @@
  *   aws_scan_leases, job_leases  leases with fencing tokens
  *   organization_feature_flags   per-organization flags, OFF unless a row says enabled
  *
- * Reads, plus the one write discovery makes to aws_account_regions: the
- * account's region list (recordRegionList, multi-region M5a). Acquiring,
+ * Reads, plus the two writes discovery makes to aws_account_regions: the
+ * account's region list (recordRegionList, multi-region M5a) and the home
+ * region's scan status (recordHomeRegionScanStatus, M5b). Acquiring,
  * renewing and releasing leases (the fencing-token contract in the migration's
  * header) is implemented with the code that takes them (scan-lease.ts).
  *
@@ -19,6 +20,7 @@
 import { ClientBase, PoolClient } from 'pg';
 import { HeldLease, withFencedTransaction } from '../services/scan-lease';
 import type { ListedRegion } from '../services/region-list';
+import type { HomeRegionScanResult } from '../services/region-scan-status';
 
 /** A connection the caller has already tagged with the organization. */
 type Executor = Pick<PoolClient, 'query'>;
@@ -232,6 +234,57 @@ export async function recordRegionList(client: ClientBase, lease: HeldLease, reg
         regions.map((r) => r.optInStatus),
         regions.map((r) => r.enabled),
       ]
+    );
+    return result.rowCount ?? 0;
+  });
+}
+
+/**
+ * Records the home region's scan status (multi-region plan M5b, m5-plan.md
+ * §13) on its existing row, in one transaction that starts with the scan
+ * lease's commit fence (token and account check, F18). The organization and
+ * the AWS account are the lease's.
+ *
+ * Only the scan columns are written: last_scan_status, last_error_code,
+ * last_scan_started_at (the job's own started_at), last_scan_finished_at,
+ * last_success_at (now() for `ok`; every other status keeps the previous
+ * value), consecutive_failures (0 for `ok`, +1 for a failure, kept for
+ * `partial`), updated_at. The list columns and last_error_message are never
+ * written; no row is inserted or deleted. A row whose last scan started after
+ * this scan's job is left as it is, so an older scan never overwrites a newer
+ * one's status.
+ *
+ * Returns the number of rows written: 0 when the home region has no row (its
+ * list was never stored) or a newer scan's status is already there. Throws as
+ * the fence does (LeaseLostError, AwsAccountAmbiguousError); the transaction
+ * then writes nothing.
+ */
+export async function recordHomeRegionScanStatus(
+  client: ClientBase,
+  lease: HeldLease,
+  scan: { region: string; jobId: string; result: HomeRegionScanResult }
+): Promise<number> {
+  if (lease.key.table !== 'aws_scan_leases') throw new Error('recordHomeRegionScanStatus: a scan lease is required');
+  const { organizationId, awsAccountId } = lease.key;
+  return withFencedTransaction(client, lease, async () => {
+    const result = await client.query(
+      `UPDATE aws_account_regions r
+          SET last_scan_status = $5::text,
+              last_error_code = $6,
+              last_scan_started_at = j.started_at,
+              last_scan_finished_at = now(),
+              last_success_at = CASE WHEN $5::text = 'ok' THEN now() ELSE r.last_success_at END,
+              consecutive_failures = CASE
+                WHEN $5::text = 'ok' THEN 0
+                WHEN $5::text = 'partial' THEN r.consecutive_failures
+                ELSE r.consecutive_failures + 1
+              END,
+              updated_at = now()
+         FROM resource_discovery_jobs j
+        WHERE r.organization_id = $1 AND r.aws_account_id = $2 AND r.region = $3
+          AND j.id = $4 AND j.organization_id = $1
+          AND (r.last_scan_started_at IS NULL OR r.last_scan_started_at <= j.started_at)`,
+      [organizationId, awsAccountId, scan.region, scan.jobId, scan.result.status, scan.result.errorCode]
     );
     return result.rowCount ?? 0;
   });
