@@ -399,12 +399,16 @@ describe('POST /api/organizations/:id/aws-credentials -- the request body is nev
     expectNotLogged(secret);
   });
 
-  it('malformed JSON body: 400 and nothing logged', async () => {
+  // The parser's own message quotes the body for trailing garbage.
+  it.each([
+    ['truncated', (json: string) => json.slice(0, -1)],
+    ['trailing garbage', (json: string) => `${json} x`],
+  ])('malformed JSON body (%s): 400 and nothing logged', async (_label, malform) => {
     const orgId = await insertOrg();
     stubAuth(await insertMember(orgId, 'owner'), orgId);
     const secret = sentinels();
 
-    const { status } = await post(orgId, JSON.stringify(secret).slice(0, -1), 'application/json');
+    const { status } = await post(orgId, malform(JSON.stringify(secret)), 'application/json');
 
     expect(status).toBe(400);
     expectNotLogged(secret);
