@@ -3,9 +3,13 @@
  * webhook (organizations.settings.slack_webhook_url). Without one nothing is
  * posted anywhere, one line naming the organization is logged, and the run
  * records the delivery as not made: failed, or partial when email went out.
+ * Every line a skipped run writes is checked: none carries the organization's
+ * settings, a webhook URL, the channel or the report name. The one exception
+ * is the run's existing "Executing report: <name> (<id>)" line, pinned exactly.
  *
  * Real DB; fetch, email and report generation are stubbed.
  */
+import { inspect } from 'util';
 import { Pool } from 'pg';
 import { ScheduledReportsService } from '../scheduled-reports.service';
 import { ScheduledReport } from '../../repositories/scheduled-reports.repository';
@@ -27,6 +31,7 @@ const createdOrgIds: string[] = [];
 const PLATFORM_WEBHOOK = 'https://hooks.example.test/platform-sentinel';
 const NOT_CONFIGURED = 'Slack: no Slack webhook configured for this organization';
 const savedEnv = process.env.SLACK_WEBHOOK_URL;
+const savedOtherEnv = process.env.REPORTS_SLACK_WEBHOOK;
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -45,9 +50,10 @@ async function insertOrg(settings: Record<string, unknown> | null): Promise<stri
 }
 
 async function insertSchedule(orgId: string, opts: { email: boolean }): Promise<ScheduledReport> {
+  const suffix = uniqueSuffix();
   return service.create({
     organization_id: orgId,
-    name: `Slack schedule ${uniqueSuffix()}`,
+    name: `Slack schedule ${suffix}`,
     report_type: 'cost_summary',
     schedule_type: 'daily',
     schedule_time: '09:00:00',
@@ -55,19 +61,26 @@ async function insertSchedule(orgId: string, opts: { email: boolean }): Promise<
     delivery_email: opts.email,
     delivery_slack: true,
     email_recipients: opts.email ? ['ops@example.com'] : [],
-    slack_channels: ['#reports'],
+    slack_channels: [`#reports-${suffix}`],
     format: 'pdf',
   });
 }
 
 let fetchSpy: jest.SpyInstance;
-let warnSpy: jest.SpyInstance;
+let logSpies: jest.SpyInstance[];
+let otherEnvWebhook: string;
 
 beforeEach(() => {
   process.env.SLACK_WEBHOOK_URL = PLATFORM_WEBHOOK;
+  otherEnvWebhook = `https://hooks.example.test/env-sentinel-${uniqueSuffix()}`;
+  process.env.REPORTS_SLACK_WEBHOOK = otherEnvWebhook;
   fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
-  warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-  jest.spyOn(console, 'log').mockImplementation(() => {});
+  logSpies = [
+    ...(['log', 'info', 'warn', 'error', 'debug', 'trace'] as const).map((m) =>
+      jest.spyOn(console, m).mockImplementation(() => {})
+    ),
+    ...[process.stdout, process.stderr].map((stream) => jest.spyOn(stream, 'write').mockImplementation(() => true)),
+  ];
   jest.spyOn(service as any, 'generateReport').mockResolvedValue({
     pdf: Buffer.from('pdf'),
     recordsProcessed: 0,
@@ -79,6 +92,8 @@ afterEach(() => {
   jest.restoreAllMocks();
   if (savedEnv === undefined) delete process.env.SLACK_WEBHOOK_URL;
   else process.env.SLACK_WEBHOOK_URL = savedEnv;
+  if (savedOtherEnv === undefined) delete process.env.REPORTS_SLACK_WEBHOOK;
+  else process.env.REPORTS_SLACK_WEBHOOK = savedOtherEnv;
 });
 
 afterAll(async () => {
@@ -97,24 +112,71 @@ function deliver(report: ScheduledReport) {
   }>;
 }
 
+/** One entry per console call or stream write, every argument rendered in full. */
+function allLines(): string[] {
+  return logSpies
+    .flatMap((spy) => spy.mock.calls)
+    .map((args: unknown[]) =>
+      args.map((arg) => (typeof arg === 'string' ? arg : inspect(arg, { depth: 8, showHidden: true }))).join(' ')
+    );
+}
+
 function slackSkipLines(): string[] {
-  return warnSpy.mock.calls.map((args) => args.join(' ')).filter((line) => line.includes('Slack delivery skipped'));
+  return allLines().filter((line) => line.includes('Slack delivery skipped'));
+}
+
+/** Forget what setup logged; only the run under test is checked. */
+function clearLogs(): void {
+  for (const spy of logSpies) spy.mockClear();
+}
+
+/**
+ * Settings that hold a URL under a key delivery doesn't read, so the run
+ * still skips; none of it may reach a log line.
+ */
+function decoySettings() {
+  const marker = `settings-sentinel-${uniqueSuffix()}`;
+  return { marker, settings: { slack_webhook: `https://hooks.example.test/${marker}`, notes: marker } };
+}
+
+function skipLine(orgId: string): string {
+  return `[ScheduledReports] Slack delivery skipped: no Slack webhook configured for organization ${orgId}`;
+}
+
+/** Nothing about the schedule, the settings or any webhook appears in `lines`. */
+function expectNothingSensitive(lines: string[], report: ScheduledReport, marker: string): void {
+  const output = lines.join('\n');
+  for (const value of [report.name, marker, PLATFORM_WEBHOOK, otherEnvWebhook, ...report.slack_channels]) {
+    expect(output).not.toContain(value);
+  }
+}
+
+/**
+ * A full run's lines with its existing "Executing report" line removed. That
+ * line is pinned exactly, so it carries nothing beyond the name and id.
+ */
+function runLinesWithoutStartLine(report: ScheduledReport): string[] {
+  const start = `[ScheduledReports] Executing report: ${report.name} (${report.id})`;
+  const lines = allLines();
+  expect(lines.filter((line) => line.includes(report.name))).toEqual([start]);
+  return lines.filter((line) => line !== start);
 }
 
 describe('scheduled reports -- Slack delivery uses only the organization webhook', () => {
   it('no organization webhook: nothing is posted, one line names the org, the delivery is recorded as not made', async () => {
-    const orgId = await insertOrg(null);
+    const { marker, settings } = decoySettings();
+    const orgId = await insertOrg(settings);
     const report = await insertSchedule(orgId, { email: false });
+    clearLogs();
 
     const result = await deliver(report);
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ emailSuccess: false, slackSuccess: false, error: NOT_CONFIGURED });
-    const lines = slackSkipLines();
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain(orgId);
-    expect(lines[0]).not.toContain(PLATFORM_WEBHOOK);
-    expect(lines[0]).not.toContain(report.name);
+    // The skip line is the only thing written, and it names only the org.
+    expect(allLines()).toEqual([skipLine(orgId)]);
+    expect(allLines()[0]).not.toContain(report.id);
+    expectNothingSensitive(allLines(), report, marker);
   });
 
   it('the organization webhook is the only URL posted to', async () => {
@@ -135,14 +197,18 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
     ['whitespace', '   '],
     ['not a string', 42],
   ])('a %s organization value counts as not configured', async (_label, value) => {
-    const orgId = await insertOrg({ slack_webhook_url: value });
+    const { marker, settings } = decoySettings();
+    const orgId = await insertOrg({ ...settings, slack_webhook_url: value });
     const report = await insertSchedule(orgId, { email: false });
+    clearLogs();
 
     const result = await deliver(report);
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result.slackSuccess).toBe(false);
     expect(result.error).toBe(NOT_CONFIGURED);
+    expect(allLines()).toEqual([skipLine(orgId)]);
+    expectNothingSensitive(allLines(), report, marker);
   });
 
   it("another organization's webhook is never used", async () => {
@@ -170,23 +236,40 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
   });
 
   it('a manual test run records the run as failed with the reason, and posts nothing', async () => {
-    const orgId = await insertOrg(null);
+    const { marker, settings } = decoySettings();
+    const orgId = await insertOrg(settings);
     const report = await insertSchedule(orgId, { email: false });
+    clearLogs();
 
     await service.test(report.id, orgId);
 
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(slackSkipLines()).toHaveLength(1);
+    expect(slackSkipLines()).toEqual([skipLine(orgId)]);
+    const lines = runLinesWithoutStartLine(report);
+    expect(lines).toEqual([
+      skipLine(orgId),
+      expect.stringMatching(new RegExp(`^\\[ScheduledReports\\] Report ${report.id} completed with status: failed \\(`)),
+    ]);
+    expectNothingSensitive(lines, report, marker);
     const [execution] = await service.getExecutions(report.id, 1);
     expect(execution).toMatchObject({ status: 'failed', slack_sent: false, error_message: NOT_CONFIGURED });
   });
 
   it('a manual test run with email delivered records the run as partial', async () => {
-    const orgId = await insertOrg(null);
+    const { marker, settings } = decoySettings();
+    const orgId = await insertOrg(settings);
     const report = await insertSchedule(orgId, { email: true });
     jest.spyOn(service as any, 'deliverViaEmail').mockResolvedValue(undefined);
+    clearLogs();
 
     await service.test(report.id, orgId);
+
+    const lines = runLinesWithoutStartLine(report);
+    expect(lines).toEqual([
+      skipLine(orgId),
+      expect.stringMatching(new RegExp(`^\\[ScheduledReports\\] Report ${report.id} completed with status: partial \\(`)),
+    ]);
+    expectNothingSensitive(lines, report, marker);
 
     const [execution] = await service.getExecutions(report.id, 1);
     expect(execution).toMatchObject({ status: 'partial', email_sent: true, slack_sent: false, error_message: NOT_CONFIGURED });
