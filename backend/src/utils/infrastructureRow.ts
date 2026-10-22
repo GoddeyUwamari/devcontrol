@@ -28,7 +28,7 @@ export function infrastructureStatusFor(resourceType: string, storedStatus: stri
   const state = lifecycleStateFor(resourceType, storedStatus);
   if (state === null) return null;
   const s = state.toLowerCase();
-  if (resourceType === 'ebs') return s;
+  if (resourceType.toLowerCase() === 'ebs') return s;
   return s === 'available' ||
     s === 'running' ||
     s === 'active' ||

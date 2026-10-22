@@ -24,7 +24,7 @@ import { rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/sa
 import { formatCalculatedAgo } from './calculatedAgo'
 import { describeAttentionCard } from './attentionCard'
 import { largestEstimatedCosts } from './costByResource'
-import { lifecycleStateLabel } from './stateLabel'
+import { isRunningOrNormalState, isStoppedOrPendingState, lifecycleStateLabel } from './stateLabel'
 import { describeStatsSpend } from '../costs/cost-display'
 import { INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 
@@ -115,7 +115,7 @@ const DEMO_RESOURCES: InfrastructureResource[] = [
   { id: 'r4', serviceId: 'svc-4', serviceName: 'notification-service',resourceType: 'lambda', awsId: 'notify-fn-prod',     awsRegion: 'us-east-1', status: 'running', costPerMonth: 156.30, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'r5', serviceId: 'svc-5', serviceName: 'analytics-worker',    resourceType: 'ec2',    awsId: 'i-9z8y7x6w5v',      awsRegion: 'eu-west-1', status: 'running', costPerMonth: 312.80, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'r6', serviceId: 'svc-1', serviceName: 'api-gateway',         resourceType: 'rds',    awsId: 'rds-prod-01',        awsRegion: 'us-east-1', status: 'running', costPerMonth: 445.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'r7', serviceId: 'svc-2', serviceName: 'auth-service',        resourceType: 's3',     awsId: 'auth-assets-bucket', awsRegion: 'us-east-1', status: 'running', costPerMonth: 23.40,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'r7', serviceId: 'svc-2', serviceName: 'auth-service',        resourceType: 's3',     awsId: 'auth-assets-bucket', awsRegion: 'us-east-1', status: null,      costPerMonth: 23.40,  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'r8', serviceId: 'svc-3', serviceName: 'payment-processor',   resourceType: 'rds',    awsId: 'rds-payments-01',    awsRegion: 'us-west-2', status: 'pending', costPerMonth: 398.00, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
 ]
 
@@ -353,8 +353,8 @@ function InfrastructureContent() {
 
   const filteredResources = displayResources.filter((r: InfrastructureResource) => {
     if (selectedType && r.resourceType !== selectedType) return false
-    if (statusFilter === 'active')  return r.status === 'running'
-    if (statusFilter === 'warning') return r.status === 'pending' || r.status === 'stopped'
+    if (statusFilter === 'active')  return isRunningOrNormalState(r.resourceType, r.status)
+    if (statusFilter === 'warning') return isStoppedOrPendingState(r.resourceType, r.status)
     return true
   })
 
@@ -486,11 +486,11 @@ function InfrastructureContent() {
 
   const tableResources = (() => {
     let rows = [...effectiveResources]
-    if (issueFilter === 'Reliability Risk') rows = rows.filter(r => r.status === 'pending' || r.status === 'stopped')
+    if (issueFilter === 'Reliability Risk') rows = rows.filter(r => isStoppedOrPendingState(r.resourceType, r.status))
     else if (issueFilter === 'Healthy')     rows = rows.filter(r => r.status === 'running')
     if (sortOrder === 'impact') rows = rows.sort((a, b) => {
-      const aScore = (a.status === 'pending' || a.status === 'stopped') ? 999999 : (a.costPerMonth ?? 0)
-      const bScore = (b.status === 'pending' || b.status === 'stopped') ? 999999 : (b.costPerMonth ?? 0)
+      const aScore = isStoppedOrPendingState(a.resourceType, a.status) ? 999999 : (a.costPerMonth ?? 0)
+      const bScore = isStoppedOrPendingState(b.resourceType, b.status) ? 999999 : (b.costPerMonth ?? 0)
       return bScore - aScore
     })
     else if (sortOrder === 'cost-high') rows = rows.sort((a, b) => (b.costPerMonth ?? 0) - (a.costPerMonth ?? 0))
@@ -903,7 +903,7 @@ function InfrastructureContent() {
             return (
               <div key={r.id} id={`resource-${r.id}`}>
                 {/* Mobile card */}
-                <div className="sm:hidden p-4 rounded-xl border mb-2.5" style={{ background: rowBg, borderColor: rowBorder }}>
+                <div data-testid="resource-card-mobile" className="sm:hidden p-4 rounded-xl border mb-2.5" style={{ background: rowBg, borderColor: rowBorder }}>
                   <div className={`flex items-center gap-2.5 ${issueLabel ? 'mb-1.5' : 'mb-2.5'}`}>
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: typeConf.bg }}>
                       <Icon size={14} style={{ color: typeConf.color }} />
@@ -926,6 +926,7 @@ function InfrastructureContent() {
 
                 {/* Desktop row */}
                 <div
+                  data-testid="resource-row-desktop"
                   className="hidden sm:grid grid-cols-[2fr_90px_150px_150px_110px_110px] px-7 py-3.5 border-b items-center transition-colors mb-3"
                   style={{ background: rowBg, borderColor: rowBorder }}
                 >

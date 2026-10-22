@@ -20,6 +20,10 @@ describe('isNotRunning', () => {
     expect(isNotRunning({ status } as never)).toBe(false)
   })
 
+  it.each([['available'], ['in-use']])('an EBS volume that is %s (unattached / attached) is not idle', (status) => {
+    expect(isNotRunning({ resourceType: 'ebs', status } as never)).toBe(false)
+  })
+
   it('S3, SNS and VPC rows (no lifecycle state) never count as idle', () => {
     const inventory = [row('s3', null, 5), row('sns', null, 0.5), row('vpc', null, 0), row('ec2', 'stopped', 40), row('ec2', 'running', 60)]
     const idle = (inventory as Array<{ resourceType: string; costPerMonth: number }>).filter((r) => isNotRunning(r as never))

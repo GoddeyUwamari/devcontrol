@@ -17,6 +17,10 @@ describe('infrastructureStatusFor -- EBS volume state', () => {
     expect(infrastructureStatusFor('ebs', 'deleting')).toBe('deleting');
   });
 
+  it('recognises an EBS volume whatever the case of its type', () => {
+    expect(infrastructureStatusFor('EBS', 'available')).toBe('available');
+  });
+
   it('an EBS volume whose state was not read has none to show', () => {
     expect(infrastructureStatusFor('ebs', 'unknown')).toBeNull();
     expect(infrastructureStatusFor('ebs', null)).toBeNull();

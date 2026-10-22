@@ -122,6 +122,12 @@ const resource = (id: string, resourceType: string, status: string | null, costP
 
 const bodyText = () => document.body.textContent ?? ''
 
+/** The desktop table row's State cell (4th column) and the mobile card, read separately. */
+const desktopRow = (id: string) => document.getElementById(`resource-${id}`)!.querySelector('[data-testid="resource-row-desktop"]')!
+const desktopState = (id: string) => desktopRow(id).children[3].textContent
+const mobileCard = (id: string) => document.getElementById(`resource-${id}`)!.querySelector('[data-testid="resource-card-mobile"]')!
+const desktopRowCount = () => screen.queryAllByTestId('resource-row-desktop').length
+
 // ── Item 1: no risk badge ────────────────────────────────────────────────────
 
 describe('Top Actions -- no risk label', () => {
@@ -225,12 +231,12 @@ describe('resource table -- EBS volume state', () => {
     mockServicesStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0 })
     renderPage()
     await waitFor(() => expect(document.getElementById('resource-vol-free')).not.toBeNull())
-    const free = document.getElementById('resource-vol-free')!.textContent
-    const used = document.getElementById('resource-vol-used')!.textContent
-    expect(free).toContain('available (unattached)')
-    expect(used).toContain('in-use')
-    expect(free).not.toContain('running')
-    expect(used).not.toContain('running')
+    // Desktop State column and mobile card, each on its own.
+    expect(desktopState('vol-free')).toBe('available (unattached)')
+    expect(desktopState('vol-used')).toBe('in-use')
+    expect(mobileCard('vol-free').textContent).toContain('available (unattached)')
+    expect(mobileCard('vol-used').textContent).toContain('in-use')
+    for (const id of ['vol-free', 'vol-used']) expect(document.getElementById(`resource-${id}`)!.textContent).not.toContain('running')
     expect(bodyText()).not.toMatch(/Not running/)
   })
 })
@@ -295,7 +301,8 @@ describe('resource table -- State column, no Issue column, no $400 rule', () => 
     mockServicesStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0 })
     renderPage()
     await waitFor(() => expect(document.getElementById('resource-busy')).not.toBeNull())
-    expect(document.getElementById('resource-busy')!.textContent).toContain('running')
+    expect(desktopState('busy')).toBe('running')
+    expect(mobileCard('busy').textContent).toContain('running')
     expect(bodyText()).not.toMatch(/Cost Waste/i)
     expect(bodyText()).not.toMatch(/downsize candidate/)
   })
@@ -318,5 +325,71 @@ describe('resource table -- State column, no Issue column, no $400 rule', () => 
     expect(Array.from(select.options).map((o) => o.textContent)).not.toContain('Cost Waste')
     fireEvent.change(select, { target: { value: 'Healthy' } })
     expect(document.getElementById('resource-busy')).not.toBeNull()
+  })
+})
+
+// ── Review fixes: the cards and the page's filters agree ─────────────────────
+
+describe('Needs Attention / No Flagged Issues cards and the page filters agree, state by state', () => {
+  // Card counts as the backend computes them for one resource with no finding or
+  // cost recommendation (services.routes.ts mapStatus, pinned in
+  // services.routes.resource-status.test.ts): EBS in-use / available healthy,
+  // error critical, creating / deleting warning; EC2 stopped warning.
+  const CASES: [string, string, number][] = [
+    ['ebs', 'in-use', 0], ['ebs', 'available', 0], ['ebs', 'error', 1], ['ebs', 'creating', 1], ['ebs', 'deleting', 1],
+    ['ec2', 'stopped', 1], ['ec2', 'running', 0],
+  ]
+
+  const healthyCount = () => Number(screen.getByText('No Flagged Issues').nextElementSibling!.textContent)
+  const attentionCount = () => Number(screen.getByTestId('infrastructure-attention-count').textContent)
+
+  it.each(CASES)('T7.1 %s %s: each card count equals the rows its click filter and the "Stopped or pending" filter show', async (type, status, needsAttention) => {
+    vi.mocked(infrastructureService.getAll).mockResolvedValue([resource('res', type, status, 8)] as never)
+    mockServicesStats.mockResolvedValue({ total: 1, healthy: 1 - needsAttention, needs_attention: needsAttention })
+    renderPage()
+    await waitFor(() => expect(document.getElementById('resource-res')).not.toBeNull())
+    await waitFor(() => expect(attentionCount()).toBe(needsAttention))
+
+    fireEvent.click(screen.getByTestId('infrastructure-attention-label'))
+    expect(desktopRowCount()).toBe(attentionCount())
+
+    fireEvent.click(screen.getByText('No Flagged Issues'))
+    expect(desktopRowCount()).toBe(healthyCount())
+
+    fireEvent.click(screen.getByText('No Flagged Issues'))
+    fireEvent.change(screen.getByDisplayValue('View by state ▾'), { target: { value: 'Reliability Risk' } })
+    expect(desktopRowCount()).toBe(attentionCount())
+  })
+
+  it('T7.2 Sort: Impact puts an errored volume first, as before; an unattached one is sorted by its estimate', async () => {
+    vi.mocked(infrastructureService.getAll).mockResolvedValue([
+      resource('big', 'ec2', 'running', 900), resource('broken', 'ebs', 'error', 8), resource('spare', 'ebs', 'available', 8),
+    ] as never)
+    mockServicesStats.mockResolvedValue({ total: 3, healthy: 2, needs_attention: 1 })
+    renderPage()
+    await waitFor(() => expect(desktopRowCount()).toBe(3))
+    const order = screen.getAllByTestId('resource-row-desktop').map((row) => row.parentElement!.id)
+    expect(order).toEqual(['resource-broken', 'resource-big', 'resource-spare'])
+  })
+
+  it('T7.3 an attached or unattached volume is never under "Stopped or pending" or the Needs Attention filter', async () => {
+    vi.mocked(infrastructureService.getAll).mockResolvedValue([
+      resource('spare', 'ebs', 'available', 8), resource('used', 'ebs', 'in-use', 8), resource('halted', 'ec2', 'stopped', 8),
+    ] as never)
+    mockServicesStats.mockResolvedValue({ total: 3, healthy: 2, needs_attention: 1 })
+    renderPage()
+    await waitFor(() => expect(desktopRowCount()).toBe(3))
+    fireEvent.change(screen.getByDisplayValue('View by state ▾'), { target: { value: 'Reliability Risk' } })
+    expect(screen.getAllByTestId('resource-row-desktop').map((row) => row.parentElement!.id)).toEqual(['resource-halted'])
+    fireEvent.change(screen.getByDisplayValue('Stopped or pending'), { target: { value: 'all' } })
+    fireEvent.click(screen.getByTestId('infrastructure-attention-label'))
+    expect(screen.getAllByTestId('resource-row-desktop').map((row) => row.parentElement!.id)).toEqual(['resource-halted'])
+  })
+
+  it('T7.4 the demo bucket has no lifecycle state: "—", never "running"', async () => {
+    enableDemo()
+    renderPage()
+    await waitFor(() => expect(document.getElementById('resource-r7')).not.toBeNull())
+    expect(desktopState('r7')).toBe('—')
   })
 })
