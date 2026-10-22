@@ -25,7 +25,8 @@ import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import costOptimizationService from '../cost-optimization.service';
-import { HeldLease, acquireScanLease, isLeaseLost } from '../scan-lease';
+import { HeldLease, LeaseHeartbeat, LeaseLostError, acquireScanLease, isLeaseLost } from '../scan-lease';
+import * as regionScanStatus from '../region-scan-status';
 import { DISCOVERY_LEASE_LOST_MESSAGE, LeaseTiming, SCAN_KIND_DISCOVERY, onTaggedConnection } from '../scan-session';
 import { AwsCallTimeoutError } from '../../utils/awsCallPolicy';
 import { DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX } from '../discovery-warnings';
@@ -582,6 +583,49 @@ describe('the lease: never caught, never an ok', () => {
     expect(isLeaseLost(error)).toBe(true);
     expect(scanColumns((await regionRows(orgId))[HOME])).toEqual(UNSCANNED);
     expect(statusLines()).toEqual([]);
+  }, 30_000);
+
+  it('the session already knows its lease is lost while the database lease is still valid: the scan stops before the status write (R11 N1)', async () => {
+    // P2-4's scan.checkpoint() just before F18 (awsResourceDiscovery.ts recordHomeRegionStatus):
+    // the fence alone would still pass here, because the database lease has not expired.
+    const orgId = await insertOrg();
+    mockAwsClients();
+    let armedAt: Date | undefined;
+    let token: string | undefined;
+    const realStatus = regionScanStatus.homeRegionScanStatus;
+    jest.spyOn(regionScanStatus, 'homeRegionScanStatus').mockImplementation((outcomes) => {
+      const result = realStatus(outcomes);
+      armedAt = new Date();
+      return result;
+    });
+    const realCheckpoint = LeaseHeartbeat.prototype.checkpoint;
+    jest.spyOn(LeaseHeartbeat.prototype, 'checkpoint').mockImplementation(function (this: LeaseHeartbeat) {
+      if (!armedAt) return realCheckpoint.call(this);
+      // As the heartbeat does after MAX_CONSECUTIVE_RENEW_ERRORS failed renewals.
+      const lease = (this as unknown as { lease: HeldLease }).lease;
+      token = lease.fencingToken;
+      throw new LeaseLostError('lease_lost', lease.key);
+    });
+    const writeSpy = jest.spyOn(foundation, 'recordHomeRegionScanStatus');
+    const error = await service().discoverAllResources(orgId).catch((err) => err);
+
+    expect(armedAt).toBeDefined();
+    expect(isLeaseLost(error)).toBe(true);
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(scanColumns((await regionRows(orgId))[HOME])).toEqual(UNSCANNED);
+    const job = (await pool.query(`SELECT status, error_message FROM resource_discovery_jobs WHERE organization_id = $1`, [orgId])).rows;
+    expect(job).toEqual([{ status: 'failed', error_message: DISCOVERY_LEASE_LOST_MESSAGE }]);
+    expect(statusLines()).toEqual([]);
+    // The database lease was still this scan's and still valid when the session stopped:
+    // no other worker took it, and it was released (by this scan) before it expired.
+    const lease = (await pool.query(
+      `SELECT fencing_token::text AS token, released_at, expires_at FROM aws_scan_leases WHERE organization_id = $1`, [orgId]
+    )).rows;
+    expect(lease).toHaveLength(1);
+    expect(lease[0].token).toBe(token);
+    expect(lease[0].released_at).not.toBeNull();
+    expect(lease[0].released_at.getTime()).toBeGreaterThanOrEqual(armedAt!.getTime() - 1000);
+    expect(lease[0].expires_at.getTime()).toBeGreaterThan(lease[0].released_at.getTime());
   }, 30_000);
 
   it('an ambiguous account at the status write: not caught (not fail-soft), nothing written, the scan stops', async () => {
