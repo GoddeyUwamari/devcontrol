@@ -3,7 +3,9 @@
  * decided on the server from the caller's CURRENT membership (the same check
  * requireCurrentOwner uses). For every other role the field is absent, not
  * null, and its value appears nowhere in the response. A caller from another
- * organization never sees this organization's account.
+ * organization never sees this organization's account. The response depends
+ * on the caller, so it is sent with Cache-Control: private, no-store. If the
+ * owner check itself fails, the request fails with 500 and returns no data.
  *
  * Real route over an in-process HTTP server against live Postgres. Only
  * authService.verifyToken (to choose the caller and JWT claims) is stubbed.
@@ -14,6 +16,7 @@ import { Pool } from 'pg';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import awsRoutes from '../aws.routes';
 import { authService } from '../../services/auth.service';
+import * as organizationAuthorization from '../../services/organization-authorization';
 
 function dbConfig() {
   return {
@@ -131,16 +134,24 @@ async function listAs(userId: string, orgId: string, jwtRole = 'owner') {
   } as unknown as ReturnType<typeof authService.verifyToken>);
   const res = await fetch(`${baseUrl}/aws/accounts`, { headers: { Authorization: 'Bearer test-token' } });
   const text = await res.text();
-  return { status: res.status, text, body: JSON.parse(text) as { success: boolean; data: Record<string, unknown>[] } };
+  return {
+    status: res.status,
+    headers: res.headers,
+    text,
+    body: JSON.parse(text) as { success: boolean; data: Record<string, unknown>[] },
+  };
 }
+
+const NO_STORE = 'private, no-store';
 
 describe('GET /api/aws/accounts -- external_id for the owner only', () => {
   it('the owner gets the stored external_id', async () => {
     const org = await connectedOrg();
 
-    const { status, body } = await listAs(org.owner, org.orgId);
+    const { status, headers, body } = await listAs(org.owner, org.orgId);
 
     expect(status).toBe(200);
+    expect(headers.get('cache-control')).toBe(NO_STORE);
     expect(body.data).toHaveLength(1);
     expect(body.data[0]).toMatchObject({ account_id: org.accountId, external_id: org.externalId });
   });
@@ -150,9 +161,10 @@ describe('GET /api/aws/accounts -- external_id for the owner only', () => {
     async (role) => {
       const org = await connectedOrg();
 
-      const { status, text, body } = await listAs(org[role], org.orgId);
+      const { status, headers, text, body } = await listAs(org[role], org.orgId);
 
       expect(status).toBe(200);
+      expect(headers.get('cache-control')).toBe(NO_STORE);
       expect(body.data).toHaveLength(1);
       expect(body.data[0]).toMatchObject({ account_id: org.accountId, status: 'active' });
       expect(body.data[0]).not.toHaveProperty('external_id');
@@ -184,5 +196,42 @@ describe('GET /api/aws/accounts -- external_id for the owner only', () => {
     expect(claimed.status).toBe(401);
     expect(claimed.text).not.toContain(org.externalId);
     expect(claimed.text).not.toContain(org.accountId);
+  });
+});
+
+describe('GET /api/aws/accounts -- the owner check fails closed', () => {
+  const FAILED = { success: false, message: 'Failed to retrieve AWS accounts.' };
+
+  async function listWithOwnerCheckFailing(role: Role, error: Error) {
+    const org = await connectedOrg();
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(organizationAuthorization, 'requireCurrentRole').mockRejectedValue(error);
+    return { org, ...(await listAs(org[role], org.orgId)) };
+  }
+
+  it.each(['member', 'viewer', 'admin', 'owner'] as const)(
+    '%s: an error reading the membership answers 500 with no data',
+    async (role) => {
+      const sentinel = `owner-check-sentinel-${uniqueSuffix()}`;
+
+      const { org, status, headers, text, body } = await listWithOwnerCheckFailing(role, new Error(sentinel));
+
+      expect(status).toBe(500);
+      expect(headers.get('cache-control')).toBe(NO_STORE);
+      expect(body).toEqual(FAILED);
+      expect(text).not.toContain(org.externalId);
+      expect(text).not.toContain(org.accountId);
+      expect(text).not.toContain(sentinel);
+    }
+  );
+
+  it('only a 403 means "not the owner": any other access error answers 500', async () => {
+    const error = new organizationAuthorization.OrganizationAccessError('Membership lookup failed', 500);
+
+    const { org, status, text, body } = await listWithOwnerCheckFailing('member', error);
+
+    expect(status).toBe(500);
+    expect(body).toEqual(FAILED);
+    expect(text).not.toContain(org.externalId);
   });
 });

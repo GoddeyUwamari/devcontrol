@@ -1,7 +1,8 @@
 /**
  * Slack delivery is shown but disabled: the form never turns it on, and a
  * saved schedule is submitted without it, including an existing schedule
- * that had it enabled.
+ * that had it enabled. An existing Slack-only schedule can't be saved until
+ * email delivery and a recipient are added.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -86,5 +87,45 @@ describe('CreateScheduleModal -- Slack delivery unavailable', () => {
 
     expect(screen.getByText('Please enable at least one delivery method')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+  })
+
+  it('an existing Slack-only schedule cannot be saved until email delivery and a recipient are added', async () => {
+    const slackOnly: ScheduledReport = { ...slackSchedule, delivery_email: false, email_recipients: [] }
+    const onSubmit = vi.fn<(data: CreateScheduleRequest) => Promise<void>>().mockResolvedValue(undefined)
+    render(<CreateScheduleModal open isEditing initialData={slackOnly} onClose={() => {}} onSubmit={onSubmit} />)
+
+    goToStep(3)
+    const [emailBox] = screen.getAllByRole('checkbox')
+    const slackBox = document.querySelector('[aria-describedby="slack-delivery-unavailable"]') as HTMLButtonElement
+    expect(emailBox).toHaveAttribute('data-state', 'unchecked')
+    expect(slackBox).toBeDisabled()
+    expect(slackBox).toHaveAttribute('data-state', 'unchecked')
+    expect(screen.getByText('Please enable at least one delivery method')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+    // Still on step 3: Next does nothing.
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(screen.getByText('Please enable at least one delivery method')).toBeInTheDocument()
+
+    // Email on, but no recipient yet.
+    fireEvent.click(emailBox)
+    const recipients = screen.getByPlaceholderText('admin@example.com, team@example.com')
+    expect(recipients).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+    fireEvent.change(recipients, { target: { value: 'ops@example.com' } })
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled()
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    goToStep(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Update Schedule' }))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      delivery_email: true,
+      email_recipients: ['ops@example.com'],
+      delivery_slack: false,
+      slack_channels: [],
+    })
   })
 })
