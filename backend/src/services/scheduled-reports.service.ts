@@ -225,8 +225,13 @@ export class ScheduledReportsService {
     // Slack delivery
     if (report.delivery_slack && report.slack_channels.length > 0) {
       try {
-        await this.deliverViaSlack(report, reportData, executor);
-        results.slackSuccess = true;
+        const outcome = await this.deliverViaSlack(report, reportData, executor);
+        if (outcome === 'sent') {
+          results.slackSuccess = true;
+        } else {
+          const message = 'Slack: no Slack webhook configured for this organization';
+          results.error = results.error ? `${results.error}; ${message}` : message;
+        }
       } catch (error: any) {
         console.error('[ScheduledReports] Slack delivery failed:', error.message);
         results.error = results.error ? `${results.error}; Slack: ${error.message}` : `Slack: ${error.message}`;
@@ -297,30 +302,28 @@ export class ScheduledReportsService {
   }
 
   /**
-   * Deliver report via Slack
+   * Deliver report via Slack, only to the organization's own webhook.
+   * Without one nothing is sent: 'not_configured' is returned and the run
+   * records the delivery as not made.
    */
   private async deliverViaSlack(
     report: ScheduledReport,
     reportData: { pdf?: Buffer; csv?: Buffer },
     executor?: PoolClient
-  ): Promise<void> {
-    // Fetch organization's Slack webhook URL from alert_config
+  ): Promise<'sent' | 'not_configured'> {
     const webhookQuery = await (executor ?? this.pool).query(
       "SELECT settings FROM organizations WHERE id = $1 AND settings->>'slack_webhook_url' IS NOT NULL",
       [report.organization_id]
     );
 
-    let webhookUrl: string | null = null;
-    if (webhookQuery.rows.length > 0) {
-      webhookUrl = webhookQuery.rows[0].settings?.slack_webhook_url;
-    }
+    const configured = webhookQuery.rows[0]?.settings?.slack_webhook_url;
+    const webhookUrl = typeof configured === 'string' ? configured.trim() : '';
 
     if (!webhookUrl) {
-      webhookUrl = process.env.SLACK_WEBHOOK_URL || null;
-    }
-
-    if (!webhookUrl) {
-      throw new Error('Slack webhook URL not configured for organization');
+      console.warn(
+        `[ScheduledReports] Slack delivery skipped: no Slack webhook configured for organization ${report.organization_id}`
+      );
+      return 'not_configured';
     }
 
     const reportTypeLabel = this.getReportTypeLabel(report.report_type);
@@ -365,6 +368,7 @@ export class ScheduledReportsService {
     }
 
     console.log(`[ScheduledReports] Slack notification sent to ${report.slack_channels.join(', ')}`);
+    return 'sent';
   }
 
   /**
