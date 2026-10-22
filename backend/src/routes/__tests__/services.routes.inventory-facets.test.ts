@@ -585,7 +585,7 @@ describe('the inventory facets: rows, filters and /stats', () => {
         expect(role.rows[0]).toEqual({ name: 'devcontrol', rolsuper: false, rolbypassrls: false });
         const tables = await client.query(
           `SELECT relname, relrowsecurity, pg_get_userbyid(relowner) <> current_user AS not_owner
-             FROM pg_class WHERE relkind = 'r' AND relname = ANY($1) ORDER BY relname`,
+             FROM pg_class WHERE relkind = 'r' AND relname = ANY($1) AND relnamespace = 'public'::regnamespace ORDER BY relname`,
           [['aws_resources', 'cost_recommendations', 'services']]
         );
         expect(tables.rows).toEqual([

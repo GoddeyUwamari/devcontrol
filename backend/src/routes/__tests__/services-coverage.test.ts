@@ -654,6 +654,19 @@ describe('tenant isolation', () => {
       return stripped;
     }
 
+    // The tables the statement reads are public's. Other suites commit
+    // same-named copies in their own schemas (resource_discovery_jobs without
+    // RLS among them), so the lookup is pinned to public.
+    const PUBLIC_SCHEMA_PREDICATE = "AND relnamespace = 'public'::regnamespace ";
+    const TABLES_QUERY =
+      `SELECT relname, relrowsecurity, pg_get_userbyid(relowner) <> current_user AS not_owner
+         FROM pg_class WHERE relkind = 'r' AND relname = ANY($1) ${PUBLIC_SCHEMA_PREDICATE}ORDER BY relname`;
+    const TABLES = ['aws_resources', 'resource_discovery_jobs'];
+    const EXPECTED_TABLES = [
+      { relname: 'aws_resources', relrowsecurity: true, not_owner: true },
+      { relname: 'resource_discovery_jobs', relrowsecurity: true, not_owner: true },
+    ];
+
     it('returns only the tagged organization\'s jobs and counts, whatever organization is asked for', async () => {
       const [statementA] = await statementsDuring(() => get(a), /WITH last_job AS/);
       const statement = withoutOrganizationPredicate(statementA.text);
@@ -669,15 +682,8 @@ describe('tenant isolation', () => {
           'SELECT current_user AS name, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'
         );
         expect(role.rows[0]).toEqual({ name: 'devcontrol', rolsuper: false, rolbypassrls: false });
-        const tables = await client.query(
-          `SELECT relname, relrowsecurity, pg_get_userbyid(relowner) <> current_user AS not_owner
-             FROM pg_class WHERE relkind = 'r' AND relname = ANY($1) ORDER BY relname`,
-          [['aws_resources', 'resource_discovery_jobs']]
-        );
-        expect(tables.rows).toEqual([
-          { relname: 'aws_resources', relrowsecurity: true, not_owner: true },
-          { relname: 'resource_discovery_jobs', relrowsecurity: true, not_owner: true },
-        ]);
+        const tables = await client.query(TABLES_QUERY, [TABLES]);
+        expect(tables.rows).toEqual(EXPECTED_TABLES);
 
         // Tagged for A, asking for B: A's job and counts.
         await client.query("SELECT set_config('app.current_organization_id', $1, true)", [a.orgId]);
@@ -711,6 +717,35 @@ describe('tenant isolation', () => {
         await client.query('ROLLBACK');
         client.release();
       }
+    });
+
+    it('the table lookup reads public\'s tables even when a same-named table without RLS exists in another schema', async () => {
+      const unqualified = TABLES_QUERY.split(PUBLIC_SCHEMA_PREDICATE).join('');
+      expect(unqualified).not.toContain('relnamespace');
+      const schema = `cov_rls_decoy_${process.pid}_${Date.now()}`;
+
+      const client = await pool.connect();
+      try {
+        // Rolled back: the decoy schema is never visible to any other connection.
+        await client.query('BEGIN');
+        await client.query(`CREATE SCHEMA ${schema}`);
+        await client.query(`CREATE TABLE ${schema}.resource_discovery_jobs (id UUID)`);
+        await client.query('GRANT SELECT ON aws_resources, resource_discovery_jobs TO devcontrol');
+        await client.query('SET LOCAL ROLE devcontrol');
+
+        // Not vacuous: without the schema predicate, the decoy is selected too.
+        const loose = await client.query(unqualified, [TABLES]);
+        expect(loose.rows).toContainEqual({ relname: 'resource_discovery_jobs', relrowsecurity: false, not_owner: true });
+        expect(loose.rows).not.toEqual(EXPECTED_TABLES);
+
+        const tables = await client.query(TABLES_QUERY, [TABLES]);
+        expect(tables.rows).toEqual(EXPECTED_TABLES);
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+      const gone = await pool.query('SELECT to_regnamespace($1) AS ns', [schema]);
+      expect(gone.rows[0].ns).toBeNull();
     });
   });
 });
