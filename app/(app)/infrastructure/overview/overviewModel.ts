@@ -76,6 +76,9 @@ export const OVERVIEW_COPY = {
   attentionTitle: 'What needs attention',
   attentionDescription: 'Critical and high findings, cost recommendations of $100/mo or more (est.), stopped or failed resources.',
   attentionEmpty: 'Nothing needs review from the last scan.',
+  attentionEmptyAccountError: "No resources need review. Account-level findings (security groups, IAM users) couldn't be loaded.",
+  attentionEmptyResourceError: "No account-level findings need review. The resources that need attention couldn't be loaded.",
+  resourcesError: "The resources that need attention couldn't be loaded.",
   attentionError: "The list of items that need attention couldn't be loaded",
   accountFindingsError: "Account-level findings (security groups, IAM users) couldn't be loaded.",
   firstHundred: 'Showing the highest-severity items of the first 100.',
@@ -131,6 +134,8 @@ export interface DisplaySeverity { kind: 'badge'; severity: SeverityLevel; label
 export interface AttentionRow {
   key: string
   source: 'resource' | 'account'
+  /** What put the row on the list: a finding (on a resource or account-level), a cost recommendation, or the resource's status. */
+  cause: 'finding' | 'cost' | 'status'
   severity: DisplaySeverity
   issue: string
   resource: string
@@ -187,6 +192,7 @@ export function rankAttention(resources: AWSService[], accountFindings: AccountS
       row: {
         key: `resource-${r.id}`,
         source: 'resource',
+        cause: cause === 'finding' ? 'finding' : cause === 'cost_recommendation' ? 'cost' : 'status',
         severity: displaySeverity(r),
         issue: r.reason ?? '—',
         resource: r.name ?? '—',
@@ -211,6 +217,7 @@ export function rankAttention(resources: AWSService[], accountFindings: AccountS
       row: {
         key: `account-${f.id}`,
         source: 'account',
+        cause: 'finding',
         severity: accountSeverity(f),
         issue: f.title,
         resource: f.resource_identifier,
@@ -242,14 +249,19 @@ export type AttentionView =
   | {
     status: 'ready'
     rows: AttentionRow[]
-    /** The resources that need attention (the list's own total) and the open critical/high account findings, never added. */
-    resourceTotal: number
-    accountTotal: number | null
+    /**
+     * "N resources · M account-level findings": the list's own total and the open
+     * critical/high account findings, each said on its own and never added; a
+     * source that failed says so instead of a number.
+     */
+    counts: string
+    resourceError: boolean
     accountError: boolean
     viewAll: number | null
     securityLink: boolean
     firstHundred: boolean
-    empty: { scope: string } | null
+    /** Only with no rows: what is known, per source (never "nothing" while a source is unknown). */
+    empty: { text: string; scope: string | null } | null
   }
 
 // ── View ──
@@ -281,7 +293,8 @@ export interface FindingsTile {
 export interface CostByServiceView {
   status: 'loading' | 'unavailable' | 'ready'
   sub: string | null
-  rows: { service: string; amount: string; share: string | null }[]
+  /** share: the server's sharePercent as sent (a raw ratio, unrounded); the component rounds it for display. */
+  rows: { service: string; amount: string; share: number | null }[]
   unavailable: string | null
 }
 
@@ -346,7 +359,20 @@ function sourceFragment(counts: SeverityCounts | null, severity: 'critical' | 'h
 }
 
 /** The headline and reason (§6.2 as amended by §18.2: per source, never one total). */
+/** 'findings': critical/high findings; 'items': stopped, failed or cost items; 'other': anything else (no "Top:" line). */
+type HeadlineKind = 'findings' | 'items' | 'other'
+
 function statusHeadline(
+  r: SeverityCounts | null, a: SeverityCounts | null, stats: Loadable<AWSServicesStats>, coverage: ServicesCoverage | null,
+): { text: string; kind: HeadlineKind } {
+  const text = statusHeadlineText(r, a, stats, coverage)
+  const kind: HeadlineKind = /^(Critical|High)-severity findings need review/.test(text) ? 'findings'
+    : /^\d+ resources? needs? review/.test(text) ? 'items'
+    : 'other'
+  return { text, kind }
+}
+
+function statusHeadlineText(
   r: SeverityCounts | null, a: SeverityCounts | null, stats: Loadable<AWSServicesStats>, coverage: ServicesCoverage | null,
 ): string {
   const res = (s: 'critical' | 'high') => sourceFragment(r, s, 'on resources', "resource findings couldn't be loaded")
@@ -467,30 +493,40 @@ function ownershipTile(i: OverviewInputs, coverage: ServicesCoverage | null): Ti
 }
 
 function attentionView(i: OverviewInputs, coverage: ServicesCoverage | null): AttentionView {
-  if (i.attention.status === 'loading') return { status: 'loading' }
-  if (i.attention.status === 'error') return { status: 'error' }
-  const page = i.attention.data
-  const accounts = i.accountFindings.status === 'ready' ? i.accountFindings.data : []
+  const res = i.attention
+  const acc = i.accountFindings
+  if (res.status === 'loading' || acc.status === 'loading') return { status: 'loading' }
+  if (res.status === 'error' && acc.status === 'error') return { status: 'error' }
+  const page = res.status === 'ready' ? res.data : null
+  const accounts = acc.status === 'ready' ? acc.data : []
   const foundAt = coverage ? lastCompletedIso(coverage) : null
-  const rows = rankAttention(page.services, accounts, foundAt)
-  const accountTotal = i.accountFindings.status === 'ready'
+  const rows = rankAttention(page?.services ?? [], accounts, foundAt)
+  const accountTotal = acc.status === 'ready'
     ? accounts.filter((f) => isOpenAccountFinding(f) && (f.severity === 'critical' || f.severity === 'high')).length
     : null
-  let empty: { scope: string } | null = null
-  if (rows.length === 0 && i.accountFindings.status === 'ready' && coverage) {
-    const home = coverage.account.home_region ?? coverage.scope.home_region?.region ?? '—'
-    const counts = hasRegionCoverage(coverage) ? regionCounts(coverage) : null
-    empty = { scope: counts && counts.enabled !== null ? `Checked: ${home} (${counts.checked} of ${counts.enabled} enabled regions).` : `Checked: ${home}.` }
+  const resourceText = page ? `${page.pagination.total} ${plural(page.pagination.total, 'resource', 'resources')}` : "resources couldn't be loaded"
+  const accountText = accountTotal !== null ? `${accountTotal} account-level ${plural(accountTotal, 'finding', 'findings')}` : "account-level findings couldn't be loaded"
+  let empty: { text: string; scope: string | null } | null = null
+  if (rows.length === 0) {
+    if (!page) empty = { text: OVERVIEW_COPY.attentionEmptyResourceError, scope: null }
+    else if (accountTotal === null) empty = { text: OVERVIEW_COPY.attentionEmptyAccountError, scope: null }
+    else {
+      const home = coverage ? coverage.account.home_region ?? coverage.scope.home_region?.region ?? '—' : null
+      const counts = coverage && hasRegionCoverage(coverage) ? regionCounts(coverage) : null
+      const scope = home === null ? null : counts && counts.enabled !== null ? `Checked: ${home} (${counts.checked} of ${counts.enabled} enabled regions).` : `Checked: ${home}.`
+      empty = { text: OVERVIEW_COPY.attentionEmpty, scope }
+    }
   }
+  const total = page?.pagination.total ?? 0
   return {
     status: 'ready',
     rows: rows.slice(0, ATTENTION_SHOWN),
-    resourceTotal: page.pagination.total,
-    accountTotal,
-    accountError: i.accountFindings.status === 'error',
-    viewAll: page.pagination.total > ATTENTION_SHOWN ? page.pagination.total : null,
+    counts: `${resourceText} · ${accountText}`,
+    resourceError: !page,
+    accountError: acc.status === 'error',
+    viewAll: total > ATTENTION_SHOWN ? total : null,
     securityLink: (accountTotal ?? 0) > 0,
-    firstHundred: page.pagination.total > page.services.length,
+    firstHundred: !!page && page.pagination.total > page.services.length,
     empty,
   }
 }
@@ -549,7 +585,7 @@ export function costByService(cost: Loadable<CostSummary>): CostByServiceView {
     return { status: 'unavailable', sub: null, rows: [], unavailable: `${OVERVIEW_COPY.costByServiceUnavailable}${reason}` }
   }
   const data = summary!.spend.data!
-  const rows = top.map((s) => ({ service: s.service, amount: formatUsd(s.amount), share: typeof s.sharePercent === 'number' ? `${s.sharePercent}%` : null }))
+  const rows = top.map((s) => ({ service: s.service, amount: formatUsd(s.amount), share: typeof s.sharePercent === 'number' && Number.isFinite(s.sharePercent) ? s.sharePercent : null }))
   const cents = (n: number) => Math.round(n * 100)
   const rest = (cents(data.amount) - top.reduce((sum, s) => sum + cents(s.amount), 0)) / 100
   if (Math.abs(rest) >= 0.01) rows.push({ service: rest < 0 ? 'All other services and credits' : 'All other services', amount: formatUsd(rest), share: null })
@@ -584,12 +620,16 @@ export function describeOverview(i: OverviewInputs, now: number): OverviewView {
   } else if (i.stats.status === 'loading' || i.accountFindings.status === 'loading') {
     status = { headline: 'Loading findings…', reason: null, notChecked: coverage ? notCheckedText(coverage) : null, notes: coverage ? statusNotes(coverage) : [] }
   } else {
-    const headline = statusHeadline(r, a, i.stats, coverage)
-    const caseWithItems = headline !== OVERVIEW_COPY.noCriticalHigh && headline !== `${OVERVIEW_COPY.noScanYet}.` && headline !== OVERVIEW_COPY.findingsError && headline !== OVERVIEW_COPY.coverageError
-    const top = attention.status === 'ready' && attention.rows.length > 0 ? attention.rows[0].issue : null
+    const { text: headline, kind } = statusHeadline(r, a, i.stats, coverage)
+    // "Top:" names the first row of the kind the headline is about: a finding under a
+    // findings headline, a stopped/failed or cost item under an items headline.
+    const rows = attention.status === 'ready' ? attention.rows : []
+    const top = kind === 'findings' ? rows.find((row) => row.cause === 'finding')
+      : kind === 'items' ? rows.find((row) => row.cause !== 'finding')
+      : undefined
     status = {
       headline,
-      reason: caseWithItems && top ? `Top: ${top}` : null,
+      reason: top ? `Top: ${top.issue}` : null,
       notChecked: coverage ? notCheckedText(coverage) : null,
       notes: coverage ? statusNotes(coverage) : headline === OVERVIEW_COPY.coverageError ? [] : [[OVERVIEW_COPY.coverageError]],
     }

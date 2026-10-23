@@ -2,6 +2,14 @@
 
 import { OVERVIEW_COPY, type CostByServiceView } from './overviewModel'
 
+const SHARE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
+
+/** The server's sharePercent, rounded to one decimal for display only ("33.3%"); a non-zero share under 0.05 is never shown as 0. */
+export function formatShare(percent: number): string {
+  if (percent !== 0 && Math.abs(percent) < 0.05) return percent > 0 ? '<0.1%' : '>-0.1%'
+  return `${SHARE.format(percent)}%`
+}
+
 /** Billed month-to-date spend by AWS service: the cost summary's top 5 plus everything else. */
 export function CostByService({ view }: { view: CostByServiceView }) {
   return (
@@ -20,7 +28,7 @@ export function CostByService({ view }: { view: CostByServiceView }) {
               <tr className="text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
                 <th scope="col" className="py-2">Service</th>
                 <th scope="col" className="py-2 text-right">Billed</th>
-                {view.rows.some((r) => r.share) && <th scope="col" className="py-2 text-right">Share</th>}
+                {view.rows.some((r) => r.share !== null) && <th scope="col" className="py-2 text-right">Share</th>}
               </tr>
             </thead>
             <tbody>
@@ -28,7 +36,7 @@ export function CostByService({ view }: { view: CostByServiceView }) {
                 <tr key={r.service} className="border-t border-slate-100">
                   <th scope="row" className="break-words py-2 pr-3 text-left font-normal text-slate-900">{r.service}</th>
                   <td className="whitespace-nowrap py-2 text-right font-semibold text-slate-900">{r.amount}</td>
-                  {view.rows.some((x) => x.share) && <td className="whitespace-nowrap py-2 pl-3 text-right text-slate-600">{r.share ?? ''}</td>}
+                  {view.rows.some((x) => x.share !== null) && <td className="whitespace-nowrap py-2 pl-3 text-right text-slate-600">{r.share !== null ? formatShare(r.share) : ''}</td>}
                 </tr>
               ))}
             </tbody>

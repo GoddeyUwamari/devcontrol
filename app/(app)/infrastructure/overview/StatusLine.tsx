@@ -8,7 +8,8 @@ export function StatusLine({ status, now }: { status: StatusLineView; now: numbe
   return (
     <section aria-labelledby="infra-status-heading" className="flex flex-col gap-1">
       <h2 id="infra-status-heading" className="m-0 text-base font-bold text-slate-900">{status.headline}</h2>
-      {status.reason && <p className="m-0 truncate text-sm text-slate-700" title={status.reason}>{status.reason}</p>}
+      {/* Wraps on a phone (no hover there to read a cut-off line); one line from sm up, full text in the title. */}
+      {status.reason && <p data-testid="infra-status-reason" className="m-0 break-words text-sm text-slate-700 sm:truncate" title={status.reason}>{status.reason}</p>}
       {status.notChecked && <p className="m-0 text-sm text-slate-600">{status.notChecked}</p>}
       {status.notes.map((parts, i) => (
         <p key={i} className="m-0 text-xs text-slate-600"><RichText parts={parts} now={now} /></p>

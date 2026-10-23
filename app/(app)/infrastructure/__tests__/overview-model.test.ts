@@ -12,7 +12,9 @@ import {
   describeOverview, displaySeverity, rankAttention, costByService, isOpenAccountFinding, OVERVIEW_COPY, type OverviewInputs,
 } from '../overview/overviewModel'
 import { STATUS_LABEL } from '../../services/AttentionTable'
+import { footerText } from '../../services/regionCoverage'
 import { region, withoutM5c } from '../../services/__tests__/m6-fixtures'
+import { formatShare } from '../overview/CostByService'
 import {
   NOW, hoursAgo, ready, LOADING, ERROR, coverage, noAccountCoverage, STATS, QUIET_STATS, service, ATTENTION_ROWS, attentionPage,
   finding, ACCOUNT_FINDINGS, billedSummary, estimatedSummary, NO_SAVINGS, inputs,
@@ -28,8 +30,11 @@ function strings(value: unknown, out: string[] = []): string[] {
   return out
 }
 const text = (o: Partial<OverviewInputs> = {}) => strings(view(o)).join('\n')
-/** The one sentence allowed to say "every region": S3 / CloudFront, claimed only from the last completed scan (regionCoverage.ts footerText). */
-const GLOBAL_LINE = /^S3 (and CloudFront )?is checked in every region|^S3 and CloudFront are checked in every region/
+/** The one sentence allowed to say "every region": exactly regionCoverage.ts footerText for that coverage (claimed only from the last completed scan). */
+function approvedGlobal(o: Partial<OverviewInputs>): string | null {
+  const c = inputs(o).coverage
+  return c.status === 'ready' ? footerText(c.data) : null
+}
 
 /** Every state the page has: each fixture is checked for invented claims (O-S9). */
 const STATES: Record<string, Partial<OverviewInputs>> = {
@@ -190,7 +195,7 @@ describe('O-A attention rows', () => {
     const a = view({ attention: ready(attentionPage(many, 140)) }).attention
     if (a?.status !== 'ready') throw new Error('not ready')
     expect(a.rows).toHaveLength(10)
-    expect(a).toMatchObject({ viewAll: 140, resourceTotal: 140, accountTotal: 2, securityLink: true, firstHundred: true })
+    expect(a).toMatchObject({ viewAll: 140, counts: '140 resources · 2 account-level findings', securityLink: true, firstHundred: true })
   })
   it('O-A7 a status row carrying a cost reason keeps the status label and the server text', () => {
     const edge = service('edge', { status: 'warning', priority_severity: 'medium', attention_cause: 'status', reason: 'Unattached EBS volume (est. $60/mo)' })
@@ -207,16 +212,52 @@ describe('O-A attention rows', () => {
   })
   it('empty: the scope it covers, never "healthy"', () => {
     const a = view(STATES['no-findings']).attention
-    expect(a).toMatchObject({ status: 'ready', rows: [], empty: { scope: 'Checked: us-east-1 (1 of 17 enabled regions).' } })
+    expect(a).toMatchObject({ status: 'ready', rows: [], empty: { text: 'Nothing needs review from the last scan.', scope: 'Checked: us-east-1 (1 of 17 enabled regions).' } })
   })
-  it('O-H1 the cost used for ordering is in no row', () => {
+  describe('empty and partial states, per source (loaded / failed)', () => {
+    const noRows = { attention: ready(attentionPage([])), accountFindings: ready([]) }
+    it('both loaded, no rows: "Nothing needs review" with its scope', () => {
+      expect(view(noRows).attention).toMatchObject({ status: 'ready', counts: '0 resources · 0 account-level findings', empty: { text: OVERVIEW_COPY.attentionEmpty } })
+    })
+    it('resources loaded (none), account findings failed: never "Nothing needs review"', () => {
+      const a = view({ ...noRows, accountFindings: ERROR }).attention
+      expect(a).toMatchObject({ status: 'ready', accountError: true, resourceError: false, counts: "0 resources · account-level findings couldn't be loaded", empty: { text: OVERVIEW_COPY.attentionEmptyAccountError, scope: null } })
+      expect(JSON.stringify(a)).not.toMatch(/Nothing needs review/)
+    })
+    it('resources failed, account findings loaded (none): never "Nothing needs review"', () => {
+      const a = view({ ...noRows, attention: ERROR }).attention
+      expect(a).toMatchObject({ status: 'ready', resourceError: true, accountError: false, counts: "resources couldn't be loaded · 0 account-level findings", empty: { text: OVERVIEW_COPY.attentionEmptyResourceError, scope: null } })
+      expect(JSON.stringify(a)).not.toMatch(/Nothing needs review/)
+    })
+    it('both failed: the error state', () => {
+      expect(view({ attention: ERROR, accountFindings: ERROR }).attention).toEqual({ status: 'error' })
+    })
+    it('resources failed, account findings loaded: the account rows, and the failure said', () => {
+      const a = view({ attention: ERROR }).attention
+      if (a?.status !== 'ready') throw new Error('not ready')
+      expect(a.rows.map((r) => r.key)).toEqual(['account-sg-open', 'account-iam-mfa'])
+      expect(a).toMatchObject({ resourceError: true, empty: null, viewAll: null })
+    })
+    it('resources loaded, account findings failed: the resource rows, and the failure said', () => {
+      const a = view({ accountFindings: ERROR }).attention
+      if (a?.status !== 'ready') throw new Error('not ready')
+      expect(a.rows.every((r) => r.source === 'resource')).toBe(true)
+      expect(a).toMatchObject({ accountError: true, empty: null })
+    })
+    it('either still loading: loading, never an empty claim', () => {
+      expect(view({ ...noRows, accountFindings: LOADING }).attention).toEqual({ status: 'loading' })
+      expect(view({ ...noRows, attention: LOADING }).attention).toEqual({ status: 'loading' })
+    })
+  })
+  it('O-H1 the cost used for ordering is in no row, in any format', () => {
     const rows = rankAttention(ATTENTION_ROWS, ACCOUNT_FINDINGS, null)
-    expect(JSON.stringify(rows)).not.toMatch(/\b(200|50|30)\b|\$5\b|\$8\b|monthly_cost/)
+    expect(JSON.stringify(rows)).not.toMatch(/\b(200|50|30)\b|5[.,]37|\b537\b|\$8\b|monthly_cost/)
+    expect(JSON.stringify(view())).not.toMatch(/5[.,]37|\b537\b/)
   })
-  it('C3: an S3 placeholder ($5) orders the row within its severity and is never shown', () => {
+  it('C3: an S3 placeholder orders the row within its severity and is never shown', () => {
     const rows = rankAttention(ATTENTION_ROWS, [], null).map((r) => r.resource)
     expect(rows.indexOf('bucket-a')).toBeLessThan(rows.indexOf('worker'))
-    expect(JSON.stringify(rankAttention(ATTENTION_ROWS, [], null))).not.toMatch(/\$5/)
+    expect(JSON.stringify(rankAttention(ATTENTION_ROWS, [], null))).not.toMatch(/5[.,]37/)
   })
 })
 
@@ -255,6 +296,38 @@ describe('O-S status line', () => {
     expect(s.notChecked).toBe('Not checked yet: 16 regions · IAM roles and policies')
     expect(s.reason).toBe('Top: RDS instance is publicly accessible')
   })
+  describe('"Top:" matches the headline', () => {
+    it('a findings headline never names a stopped/failed or cost row, even when one ranks first', () => {
+      // The failed RDS outranks the finding by its hidden cost.
+      const rows = ATTENTION_ROWS.map((r) => (r.id === 'db-stopped' ? { ...r, monthly_cost: 900 } : r))
+      const v = view({ attention: ready(attentionPage(rows)) })
+      expect(v.attention!.status === 'ready' && v.attention!.rows[0].resource).toBe('db-stopped')
+      expect(v.status.headline).toMatch(/^Critical-severity findings need review/)
+      expect(v.status.reason).toBe('Top: RDS instance is publicly accessible')
+    })
+    it('a findings headline with only an account finding names it', () => {
+      const s = { ...QUIET_STATS, findings_by_severity: { critical: 0, high: 0, medium: 0, low: 0 } }
+      const v = view({ stats: ready(s), attention: ready(attentionPage([ATTENTION_ROWS[1], ATTENTION_ROWS[5]])) })
+      expect(v.status.headline).toMatch(/^Critical-severity findings need review/)
+      expect(v.status.reason).toBe('Top: SSH open to the world')
+    })
+    it('a findings headline with no finding row in the list: no "Top:" line', () => {
+      const v = view({ attention: ready(attentionPage([ATTENTION_ROWS[1], ATTENTION_ROWS[3]])), accountFindings: ready([]) })
+      expect(v.status.headline).toMatch(/^Critical-severity findings need review/)
+      expect(v.status.reason).toBeNull()
+    })
+    it('a stopped/failed/cost headline names a stopped, failed or cost row', () => {
+      const s = { ...QUIET_STATS, needs_attention: 2, attention_reasons: { with_finding: 0, with_cost_recommendation: 1, stopped_or_degraded: 1, failed: 0 } }
+      const v = view({ stats: ready(s), accountFindings: ready([]), attention: ready(attentionPage([ATTENTION_ROWS[3], ATTENTION_ROWS[5]])) })
+      expect(v.status.headline).toMatch(/^2 resources need review/)
+      expect(v.status.reason).toBe('Top: Unattached EBS volume')
+    })
+    it('a partial-error headline and "nothing found" get no "Top:" line', () => {
+      const quiet = { ...QUIET_STATS }
+      expect(view({ stats: ready(quiet), accountFindings: ERROR }).status).toMatchObject({ headline: expect.stringMatching(/couldn't be loaded; no critical/), reason: null })
+      expect(view(STATES['no-findings']).status.reason).toBeNull()
+    })
+  })
   it('O-S7 unknown region list and an older backend: no "N of M"', () => {
     expect(view(STATES['unknown-list']).status.notChecked).toBe('Not checked yet: other regions (region list not read yet) · IAM roles and policies')
     expect(view(STATES['older-backend']).status.notChecked).toBe('Not checked yet: other regions (region list not read yet) · IAM roles and policies')
@@ -278,11 +351,13 @@ describe('O-S status line', () => {
     expect(v.status.headline).toContain('1 on resources, 1 account-level · High: 2 on resources, 1 account-level')
   })
   it.each(Object.keys(STATES))('O-S9 no invented claims (%s)', (state) => {
-    const printed = strings(view(STATES[state])).filter((line) => !GLOBAL_LINE.test(line))
+    // Exempt only the exact approved sentence, never a line that merely starts with it.
+    const approved = approvedGlobal(STATES[state])
+    const printed = strings(view(STATES[state])).filter((line) => line !== approved)
     expect(printed.join('\n')).not.toMatch(/healthy|all good|secure\b|no issues|real-time|every region|all regions|complete coverage|zero risk|act now|recoverable|nothing to worry|fully/i)
   })
   it('O-S9 "every region" only in the S3/CloudFront line, and only when the last completed scan listed them', () => {
-    expect(strings(view()).filter((l) => /every region/.test(l))).toEqual([expect.stringMatching(GLOBAL_LINE)])
+    expect(strings(view()).filter((l) => /every region/.test(l))).toEqual([footerText(coverage())])
     const notListed = coverage({ last_completed_scan: { ...coverage().last_completed_scan!, resource_types: ['ec2'] } })
     expect(text({ coverage: ready(notListed) })).not.toMatch(/every region/)
   })
@@ -295,11 +370,11 @@ describe('O-C cost by AWS service', () => {
     const c = costByService(ready(billedSummary()))
     expect(c.sub).toBe('This month, billed · billed through Oct 21')
     expect(c.rows.map((r) => [r.service, r.amount, r.share])).toEqual([
-      ['Amazon Elastic Compute Cloud - Compute', '$400.00', '40%'],
-      ['Amazon Relational Database Service', '$300.00', '30%'],
-      ['Amazon Simple Storage Service', '$100.00', '10%'],
-      ['AWS Lambda', '$50.00', '5%'],
-      ['Amazon CloudFront', '$25.00', '2.5%'],
+      ['Amazon Elastic Compute Cloud - Compute', '$400.00', 40],
+      ['Amazon Relational Database Service', '$300.00', 30],
+      ['Amazon Simple Storage Service', '$100.00', 10],
+      ['AWS Lambda', '$50.00', 5],
+      ['Amazon CloudFront', '$25.00', 2.5],
       ['All other services', '$125.00', null],
     ])
     const sum = c.rows.reduce((n, r) => n + Number(r.amount.replace(/[$,]/g, '')), 0)
@@ -310,6 +385,17 @@ describe('O-C cost by AWS service', () => {
     expect(credits.rows.at(-1)).toEqual({ service: 'All other services and credits', amount: '-$100.00', share: null })
     const exact = costByService(ready(billedSummary({ amount: 900.004, top: [{ service: 'EC2', amount: 900, sharePercent: 100 }] })))
     expect(exact.rows).toHaveLength(1)
+  })
+  it('O-C5 a non-round share: the raw ratio in the model, one decimal only for display', () => {
+    const third = 100 / 3
+    const c = costByService(ready(billedSummary({ amount: 300, top: [
+      { service: 'EC2', amount: 100, sharePercent: third },
+      { service: 'RDS', amount: 199.88, sharePercent: 66.62666666666667 },
+      { service: 'KMS', amount: 0.12, sharePercent: 0.04 },
+    ] })))
+    expect(c.rows.map((r) => r.share)).toEqual([third, 66.62666666666667, 0.04])
+    expect(c.rows.map((r) => (r.share === null ? null : formatShare(r.share)))).toEqual(['33.3%', '66.6%', '<0.1%'])
+    expect([formatShare(40), formatShare(2.5), formatShare(12.499367185743936), formatShare(0), formatShare(-0.01)]).toEqual(['40%', '2.5%', '12.5%', '0%', '>-0.1%'])
   })
   it('O-C2 no share from the server: none shown, none computed', () => {
     const c = costByService(ready(billedSummary({ amount: 0, top: [{ service: 'EC2', amount: 0, sharePercent: null }] })))
@@ -352,7 +438,8 @@ describe('O-R regions and what we checked', () => {
   it('O-R2 IAM and alarm lines exact; S3/CloudFront only from the last completed scan', () => {
     const lines = Object.fromEntries(view().checked.map((l) => [l.key, l]))
     expect(lines.iam.parts).toEqual(['IAM roles and policies: not checked. IAM users are checked for MFA and old access keys.'])
-    expect(lines.global.parts[0]).toMatch(/^S3 and CloudFront are checked in every region on each scan/)
+    expect(lines.global.parts).toEqual([footerText(coverage())])
+    expect(footerText(coverage())).toMatch(/^S3 and CloudFront are checked in every region on each scan/)
     const noTypes = coverage({ last_completed_scan: { ...coverage().last_completed_scan!, resource_types: ['ec2'] } })
     expect(view({ coverage: ready(noTypes) }).checked.find((l) => l.key === 'global')).toBeUndefined()
     expect(text()).not.toMatch(/IAM not checked/)

@@ -17,7 +17,9 @@ const m = vi.hoisted(() => {
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { emptyPage, prodCoverage, renderPage, billed, STATS } from './m6-fixtures'
-import { STATUS_LABEL } from '../AttentionTable'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { lastSeenText, STATUS_LABEL } from '../AttentionTable'
 import { RESOURCE_NOT_FOUND_TEXT } from '../ResourceFocus'
 
 vi.mock('next/navigation', () => ({
@@ -85,6 +87,12 @@ describe.each(['false', 'true'])('NEXT_PUBLIC_SERVICES_V2=%s', (flag) => {
       'Last seen': 'Oct 22, 1:00 PM (2 h ago)', 'Lifecycle state': STATUS_LABEL.critical,
     })
     expect(el.textContent).not.toMatch(/\$|healthy|warning|critical/)
+  })
+  it('renders below the page\'s main heading', async () => {
+    renderPage()
+    const el = await card()
+    const h1 = screen.getByRole('heading', { level: 1 })
+    expect(h1.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
   it('DL-8 Close replaces the URL with /services', async () => {
     renderPage()
@@ -158,5 +166,17 @@ describe('no parameter', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument())
     expect(screen.queryByTestId('resource-focus')).toBeNull()
     expect(m.getResource).not.toHaveBeenCalled()
+  })
+})
+
+describe('"Last seen": one shared formatter', () => {
+  it('the card and the Services detail row use lastSeenText; the card does not format dates itself', () => {
+    expect(lastSeenText(new Date(m.now - 2 * 3600_000).toISOString(), m.now)).toBe('Oct 22, 1:00 PM (2 h ago)')
+    const dir = join(process.cwd(), 'app/(app)/services')
+    const card = readFileSync(join(dir, 'ResourceFocus.tsx'), 'utf8')
+    const table = readFileSync(join(dir, 'AttentionTable.tsx'), 'utf8')
+    expect(card).toMatch(/lastSeenText\(row\.last_synced_at, now\)/)
+    expect(card).not.toMatch(/toLocaleString|timeAgo/)
+    expect(table).toMatch(/\['Last seen', row\.last_seen_at \? lastSeenText\(row\.last_seen_at, now\)/)
   })
 })

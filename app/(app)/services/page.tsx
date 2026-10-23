@@ -410,11 +410,12 @@ export default function ServicesPage() {
         </div>
   )
 
+  // /services?resource=<id> only (§17.4), below the page's heading; renders nothing without it.
+  const resourceFocus = <Suspense fallback={null}><ResourceFocus orgId={orgId} isDemoActive={isDemoActive} /></Suspense>
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans">
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-      {/* /services?resource=<id> only (§17.4); renders nothing without it. */}
-      <Suspense fallback={null}><ResourceFocus orgId={orgId} isDemoActive={isDemoActive} /></Suspense>
 
       {servicesV2 ? (
         <ServicesOverview
@@ -424,7 +425,7 @@ export default function ServicesPage() {
           stats={{ loading: statsLoading, unavailable: statsUnavailable, stats: displayStats }}
           statusHeadline={statusHeadlineV2}
           discovery={{ isDiscovering, discoveryComplete, discoveryMsg, warnings: discoveryWarnings, onAutoDiscover: handleAutoDiscover }}
-          banners={upgradePrompt}
+          banners={<>{resourceFocus}{upgradePrompt}</>}
           pageError={error}
           knownNoAccount={knownNoAccount}
           onFiltersChange={clearDiscoveryError}
@@ -455,6 +456,7 @@ export default function ServicesPage() {
           </button>
         </div>
       </div>
+      {resourceFocus}
 
       <DiscoveryWarningNotice warnings={discoveryWarnings} className="mb-4" />
 

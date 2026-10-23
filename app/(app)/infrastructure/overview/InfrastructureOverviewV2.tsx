@@ -167,7 +167,7 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
       )}
       <StatusLine status={view.status} now={now} />
       {connectedish && view.tiles && <KpiTiles tiles={view.tiles} now={now} />}
-      {connectedish && view.attention && <AttentionReview view={view.attention} now={now} onRetry={() => attentionQuery.refetch()} />}
+      {connectedish && view.attention && <AttentionReview view={view.attention} now={now} onRetry={() => { attentionQuery.refetch(); accountFindingsQuery.refetch() }} />}
       <WhatWeChecked lines={view.checked} now={now} />
       {connectedish && view.costByService && <CostByService view={view.costByService} />}
       {connectedish && view.ownership && <OwnershipGaps ownership={view.ownership} />}

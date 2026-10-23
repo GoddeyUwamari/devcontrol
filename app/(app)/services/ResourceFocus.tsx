@@ -4,8 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import awsServicesService, { type InventoryResource } from '@/lib/services/aws-services.service'
-import { STATUS_LABEL, typeLabel } from './AttentionTable'
-import { timeAgo } from './coverage'
+import { lastSeenText, STATUS_LABEL, typeLabel } from './AttentionTable'
 
 export const RESOURCE_NOT_FOUND_TEXT = "This resource isn't in your current inventory. It may have been removed, belong to another organization, or the link may be wrong."
 
@@ -49,7 +48,7 @@ function ResourceCard({ orgId, resourceId }: { orgId: string | null; resourceId:
       ['Type', typeLabel(row.resource_type)],
       ['Region', row.region ?? '—'],
       ['AWS ID', row.resource_id ?? '—'],
-      ['Last seen', row.last_synced_at ? `${new Date(row.last_synced_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} (${timeAgo(row.last_synced_at, now)})` : '—'],
+      ['Last seen', row.last_synced_at ? lastSeenText(row.last_synced_at, now) : '—'],
       ['Lifecycle state', STATUS_LABEL[row.status] ?? '—'],
     ]
     body = (

@@ -58,7 +58,7 @@ export function service(id: string, o: Partial<AWSService>): AWSService {
 export const ATTENTION_ROWS: AWSService[] = [
   service('db-prod', { type: 'rds', priority_severity: 'critical', attention_cause: 'finding', reason: 'RDS instance is publicly accessible', monthly_cost: 50 }),
   service('db-stopped', { type: 'rds', status: 'critical', priority_severity: 'critical', attention_cause: 'status', reason: 'Resource in a failed or terminated state', monthly_cost: 30 }),
-  service('bucket-a', { type: 's3', aws_region: 'us-east-1', priority_severity: 'high', attention_cause: 'finding', reason: 'S3 bucket allows public read', monthly_cost: 5 }),
+  service('bucket-a', { type: 's3', aws_region: 'us-east-1', priority_severity: 'high', attention_cause: 'finding', reason: 'S3 bucket allows public read', monthly_cost: 5.37 }),
   service('vol-x', { type: 'ebs', priority_severity: 'high', attention_cause: 'cost_recommendation', reason: 'Unattached EBS volume', monthly_cost: 8 }),
   service('web-1', { priority_severity: 'high', attention_cause: 'finding', reason: 'Security group open to the internet', monthly_cost: 200 }),
   service('worker', { status: 'warning', priority_severity: 'medium', attention_cause: 'status', reason: 'Resource is stopped or degraded', monthly_cost: null }),

@@ -13,6 +13,8 @@ const m = vi.hoisted(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-23T15:00:00Z') })
   return {
     log: [] as string[],
+    /** Each request with its arguments. */
+    calls: [] as { endpoint: string; args: unknown[] }[],
     demo: false,
     salesDemo: false,
     plan: { isFree: false, isStarter: true, isPro: true, tier: 'pro' } as Record<string, unknown>,
@@ -24,6 +26,7 @@ const m = vi.hoisted(() => {
 /** Each client method stands for one endpoint; every call is logged as "METHOD path". */
 const call = vi.hoisted(() => (endpoint: string) => (...args: unknown[]) => {
   m.log.push(endpoint)
+  m.calls.push({ endpoint, args })
   const respond = m.responses[endpoint]
   if (!respond) return Promise.reject(new Error(`unexpected request: ${endpoint} ${JSON.stringify(args)}`))
   return respond()
@@ -34,6 +37,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
+import { focusManager } from '@tanstack/react-query'
+import { footerText } from '../../services/regionCoverage'
+import { OVERVIEW_COPY } from '../overview/overviewModel'
 import { renderInfrastructure, settled } from './overview-harness'
 import {
   NOW, hoursAgo, coverage, noAccountCoverage, STATS, QUIET_STATS, service, attentionPage, ACCOUNT_FINDINGS,
@@ -135,6 +141,7 @@ const fetchSpy = vi.fn()
 beforeEach(() => {
   vi.setSystemTime(NOW)
   m.log.length = 0
+  m.calls.length = 0
   m.demo = false
   m.salesDemo = false
   m.plan = { isFree: false, isStarter: true, isPro: true, tier: 'pro' }
@@ -221,8 +228,13 @@ describe('R2 Review', () => {
     expect(detail).toHaveTextContent("DevControl only reads your account and won't change anything.")
     expect(within(detail).getByRole('link', { name: 'Review on the Security page →' })).toHaveAttribute('href', '/security')
     expect(detail).not.toHaveTextContent(/Why it matters|Risk of the fix/)
+    // The accessible name follows the visible label (WCAG 2.5.3).
+    expect(button).toHaveAccessibleName('Hide db-prod')
+    expect(button).toHaveTextContent('Hide')
     fireEvent.click(button)
     expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(button).toHaveAccessibleName('Review db-prod')
+    expect(button).toHaveTextContent('Review')
     expect(document.getElementById(`${'resource-db-prod'}-detail`)).toBeNull()
     expect(m.log.slice(before)).toEqual([])
     expect(fetchSpy).not.toHaveBeenCalled()
@@ -271,7 +283,9 @@ describe('R4 states', () => {
     const pending = state === 'loading' ? 7 : state === 'coverage loading' ? 1 : 0
     await renderSettled(pending)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Infrastructure Overview')
-    expect(document.body.textContent).not.toMatch(/healthy|all good|zero risk|act now/i)
+    // O-S9 over the page: only the exact approved S3/CloudFront sentence may say "every region".
+    const text = (document.body.textContent ?? '').split(footerText(coverage()) ?? '\u0000').join(' ')
+    expect(text).not.toMatch(/healthy|all good|secure\b|no issues|real-time|every region|all regions|complete coverage|zero risk|act now|recoverable|nothing to worry|fully/i)
   })
   it('loading: no zeros are printed', async () => {
     CONNECTED_STATES.loading()
@@ -473,5 +487,175 @@ describe('PB-1 plan banners and the limit prompt: the same text and links as the
     const { off, on } = await both(/reached your resource limit/)
     expect(on).toEqual(off)
     expect(on.hrefs).toEqual(['/settings/billing/upgrade'])
+  })
+})
+
+// ── P1-2: never summed, in the page ──
+
+describe('O-K2c never summed, as rendered', () => {
+  it('the Open findings tile, the status headline and the attention description never add the two sources', async () => {
+    // Resource findings 8, open account findings 4 (sum 12); 23 resources and 2 critical/high account findings in the table (sum 25).
+    m.responses['GET /api/services'] = ok(attentionPage(undefined, 23))
+    await renderSettled()
+    const tile = screen.getByTestId('infra-tile-findings')
+    expect(within(tile).getByTestId('infra-findings-resources')).toHaveTextContent(/^On resources8/)
+    expect(within(tile).getByTestId('infra-findings-account')).toHaveTextContent(/^Account-level \(security groups, IAM users\)4/)
+    const description = screen.getByTestId('infra-attention-description')
+    expect(description).toHaveTextContent('23 resources · 2 account-level findings.')
+    const status = screen.getByRole('heading', { level: 2, name: /findings need review/ })
+    // Text node by text node, so adjacent elements ("Low 1" + "2 dismissed") don't run together into a false "12".
+    const words = (el: Element) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      const parts: string[] = []
+      while (walker.nextNode()) parts.push(walker.currentNode.textContent ?? '')
+      return parts.join(' ')
+    }
+    for (const el of [tile, description, status]) {
+      expect(words(el)).not.toMatch(/\b(12|25)\b/)
+      expect(words(el)).not.toMatch(/total|in all|combined|altogether/i)
+    }
+    const region = screen.getByRole('region', { name: 'What needs attention' })
+    expect(words(region)).not.toMatch(/\b25\b|in all|combined/i)
+  })
+})
+
+// ── P2-1: the empty state says what is known ──
+
+describe('the attention empty state, per source', () => {
+  const none = () => { m.responses['GET /api/services'] = ok(attentionPage([])); m.responses['GET /api/security/account-findings'] = ok([]) }
+  it('both loaded, nothing found: "Nothing needs review" with its scope', async () => {
+    none()
+    await renderSettled()
+    expect(screen.getByTestId('infra-attention-empty')).toHaveTextContent('Nothing needs review from the last scan.Checked: us-east-1 (1 of 17 enabled regions).')
+  })
+  it('account findings failed: never "Nothing needs review"', async () => {
+    none()
+    m.responses['GET /api/security/account-findings'] = fail()
+    await renderSettled()
+    const region = screen.getByRole('region', { name: 'What needs attention' })
+    expect(screen.getByTestId('infra-attention-empty')).toHaveTextContent(OVERVIEW_COPY.attentionEmptyAccountError)
+    expect(region.textContent).not.toMatch(/Nothing needs review/)
+    expect(within(region).getByRole('alert')).toHaveTextContent(OVERVIEW_COPY.accountFindingsError)
+  })
+  it('the resource list failed: never "Nothing needs review"; the account rows still show', async () => {
+    m.responses['GET /api/services'] = fail()
+    await renderSettled()
+    const region = screen.getByRole('region', { name: 'What needs attention' })
+    expect(region.textContent).not.toMatch(/Nothing needs review/)
+    expect(within(region).getAllByRole('alert')[0]).toHaveTextContent(OVERVIEW_COPY.resourcesError)
+    expect(within(region.querySelector('table')!).getAllByRole('rowheader').map((r) => r.textContent)).toEqual(['SSH open to the world', 'Console user without MFA'])
+  })
+  it('the resource list failed and no account findings: says which side is known', async () => {
+    m.responses['GET /api/services'] = fail()
+    m.responses['GET /api/security/account-findings'] = ok([])
+    await renderSettled()
+    expect(screen.getByTestId('infra-attention-empty')).toHaveTextContent(OVERVIEW_COPY.attentionEmptyResourceError)
+  })
+  it('both failed: the error card, nothing else; Retry reads both lists again', async () => {
+    m.responses['GET /api/services'] = fail()
+    m.responses['GET /api/security/account-findings'] = fail()
+    const { client } = await renderSettled()
+    const region = screen.getByRole('region', { name: 'What needs attention' })
+    expect(within(region).getByRole('alert')).toHaveTextContent(OVERVIEW_COPY.attentionError)
+    expect(region.textContent).not.toMatch(/Nothing needs review/)
+    const n = m.log.length
+    fireEvent.click(within(region).getByRole('button', { name: /Retry/ }))
+    await settled(client)
+    expect(m.log.slice(n).sort()).toEqual(['GET /api/security/account-findings', 'GET /api/services'])
+  })
+})
+
+// ── O-AC in the page ──
+
+describe('O-AC the alarm line, as rendered', () => {
+  it('exactly the constant and its link: no count, no percent', async () => {
+    await renderSettled()
+    const line = screen.getByTestId('infra-checked-alarms')
+    expect(line.textContent).toBe(`${OVERVIEW_COPY.alarms} ${OVERVIEW_COPY.alarmsLink}`)
+    expect((line.textContent ?? '').replace(/\bEC2\b/g, '')).not.toMatch(/[0-9%]/)
+    expect(within(line).getByRole('link', { name: OVERVIEW_COPY.alarmsLink })).toHaveAttribute('href', '/observability/alert-history')
+  })
+})
+
+// ── P2-3: polling, observed ──
+
+describe('polling, observed on a fake clock', () => {
+  /** Timers faked from the start (Date included), advancing with real time so the waits still work. */
+  async function withFakeClock(run: () => Promise<void>) {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'], shouldAdvanceTime: true, now: NOW })
+    try { await run() } finally {
+      focusManager.setFocused(undefined)
+      vi.useRealTimers()
+      vi.useFakeTimers({ toFake: ['Date'], now: NOW })
+    }
+  }
+  it('no scan running: nothing is requested again over 5 minutes', async () => {
+    await withFakeClock(async () => {
+      const { client } = await renderSettled()
+      const n = m.log.length
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+      await settled(client)
+      expect(m.log.slice(n)).toEqual([])
+    })
+  })
+  it('a scan running: only coverage, once a minute; nothing while the tab is hidden', async () => {
+    m.responses['GET /api/services/coverage'] = ok(coverage({ scan_in_progress: { since: hoursAgo(0.25) } }))
+    await withFakeClock(async () => {
+      const { client } = await renderSettled()
+      const n = m.log.length
+      await vi.advanceTimersByTimeAsync(5 * 60_000 + 1_000)
+      await settled(client)
+      expect(m.log.slice(n)).toEqual(Array(5).fill('GET /api/services/coverage'))
+      focusManager.setFocused(false)
+      const hidden = m.log.length
+      await vi.advanceTimersByTimeAsync(3 * 60_000)
+      expect(m.log.slice(hidden)).toEqual([])
+    })
+  })
+  it('every V2 query: only coverage has a refetch interval; none refetches on focus', async () => {
+    const { client } = await renderSettled()
+    const queries = client.getQueryCache().getAll()
+    expect(queries.map((q) => q.queryKey[0]).sort()).toEqual([
+      'account-security-findings', 'cost-recommendations-stats', 'infra-overview-attention', 'infra-overview-limit',
+      'platform-cost-summary', 'services-coverage', 'services-stats',
+    ])
+    for (const q of queries) {
+      const o = q.options as { refetchInterval?: unknown; refetchOnWindowFocus?: unknown }
+      if (q.queryKey[0] === 'services-coverage') expect(typeof o.refetchInterval).toBe('function')
+      else expect(o.refetchInterval, String(q.queryKey[0])).toBeUndefined()
+      expect(o.refetchOnWindowFocus, String(q.queryKey[0])).toBe(false)
+    }
+  })
+  it('account findings are read in full: getActive() with no limit', async () => {
+    await renderSettled()
+    expect(m.calls.filter((c) => c.endpoint === 'GET /api/security/account-findings').map((c) => c.args)).toEqual([[]])
+  })
+})
+
+// ── P1-1: share, as rendered ──
+
+describe('cost by service share, as rendered', () => {
+  it('one decimal for display; the raw ratio never printed', async () => {
+    m.responses['GET /api/platform/costs/summary'] = ok(billedSummary({ amount: 300, top: [
+      { service: 'EC2', amount: 100, sharePercent: 100 / 3 },
+      { service: 'KMS', amount: 0.12, sharePercent: 0.04 },
+    ] }))
+    await renderSettled()
+    const table = screen.getByRole('region', { name: 'Cost by AWS service' }).querySelector('table')!
+    const shares = [...table.querySelectorAll('tbody tr')].map((tr) => tr.lastElementChild!.textContent)
+    expect(shares).toEqual(['33.3%', '<0.1%', ''])
+    expect(table.textContent).not.toMatch(/33\.33/)
+  })
+})
+
+// ── P2-7: the reason line wraps on a phone ──
+
+describe('the status reason line', () => {
+  it('wraps below sm and is one line from sm up', async () => {
+    await renderSettled()
+    const classes = screen.getByTestId('infra-status-reason').className.split(' ')
+    expect(classes).toContain('break-words')
+    expect(classes).toContain('sm:truncate')
+    expect(classes).not.toContain('truncate')
   })
 })

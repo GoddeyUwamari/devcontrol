@@ -44,7 +44,7 @@ function ReviewButton({ row, open, controls, onToggle, full = false }: { row: At
       onClick={onToggle}
       aria-expanded={open}
       aria-controls={open ? controls : undefined}
-      aria-label={`Review ${row.resource}`}
+      aria-label={`${open ? 'Hide' : 'Review'} ${row.resource}`}
       className={`${full ? 'w-full justify-center' : ''} inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300`}
     >
       {open ? 'Hide' : 'Review'}
@@ -70,10 +70,11 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
       </div>
     )
   } else if (view.rows.length === 0) {
+    // The model's sentence for what is known: "Nothing needs review" only when both sources loaded.
     body = (
-      <div className="flex flex-col gap-1 px-4 py-8 text-center">
-        <p className="m-0 text-sm font-semibold text-slate-900">{OVERVIEW_COPY.attentionEmpty}</p>
-        {view.empty && <p className="m-0 text-xs text-slate-600">{view.empty.scope}</p>}
+      <div data-testid="infra-attention-empty" className="flex flex-col gap-1 px-4 py-8 text-center">
+        <p className="m-0 text-sm font-semibold text-slate-900">{view.empty?.text}</p>
+        {view.empty?.scope && <p className="m-0 text-xs text-slate-600">{view.empty.scope}</p>}
       </div>
     )
   } else {
@@ -142,10 +143,18 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
     <section aria-labelledby="infra-attention-heading" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-col gap-1 border-b border-slate-100 px-4 py-3">
         <h2 id="infra-attention-heading" className="m-0 text-base font-bold text-slate-900">{OVERVIEW_COPY.attentionTitle}</h2>
-        <p className="m-0 text-sm text-slate-600">
+        <p data-testid="infra-attention-description" className="m-0 text-sm text-slate-600">
           {OVERVIEW_COPY.attentionDescription}
-          {ready && ` ${ready.resourceTotal} ${ready.resourceTotal === 1 ? 'resource' : 'resources'}${ready.accountTotal !== null ? ` · ${ready.accountTotal} account-level ${ready.accountTotal === 1 ? 'finding' : 'findings'}` : ''}.`}
+          {ready && ` ${ready.counts}.`}
         </p>
+        {ready?.resourceError && (
+          <p role="alert" className="m-0 flex flex-wrap items-center gap-2 text-xs text-slate-700">
+            {OVERVIEW_COPY.resourcesError}
+            <button type="button" onClick={onRetry} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-700">
+              <RefreshCw size={12} aria-hidden="true" /> Retry
+            </button>
+          </p>
+        )}
         {ready?.accountError && <p role="alert" className="m-0 text-xs text-slate-700">{OVERVIEW_COPY.accountFindingsError}</p>}
         {ready?.firstHundred && <p className="m-0 text-xs text-slate-600">{OVERVIEW_COPY.firstHundred}</p>}
       </div>
