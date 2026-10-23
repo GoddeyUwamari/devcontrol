@@ -31,6 +31,11 @@ interface AlertConfig {
   };
 }
 
+export interface ChannelResult {
+  channel: 'email' | 'slack' | 'webhook' | 'jira';
+  ok: boolean;
+}
+
 interface Alert {
   severity: 'critical' | 'warning' | 'info';
   title: string;
@@ -38,6 +43,13 @@ interface Alert {
   source: string;
   timestamp: Date;
   metadata?: Record<string, any>;
+}
+
+/** A non-2xx answer is a failed delivery. The body is not read. */
+async function assertDelivered(response: Response, label: string): Promise<void> {
+  if (response.ok) return;
+  await response.body?.cancel().catch(() => {});
+  throw new Error(`${label} returned ${response.status}`);
 }
 
 export class AlertNotificationService {
@@ -71,30 +83,32 @@ export class AlertNotificationService {
     }
   }
 
-  async sendAlert(alert: Alert): Promise<void> {
-    const promises: Promise<any>[] = [];
+  /** Sends to every enabled channel; one result per channel attempted. */
+  async sendAlert(alert: Alert): Promise<ChannelResult[]> {
+    const attempts: { channel: ChannelResult['channel']; promise: Promise<void> }[] = [];
 
     // Send email notification
     if (this.config.email?.enabled && this.emailTransporter) {
-      promises.push(this.sendEmailAlert(alert));
+      attempts.push({ channel: 'email', promise: this.sendEmailAlert(alert) });
     }
 
     // Send Slack notification
     if (this.config.slack?.enabled && this.slackClient) {
-      promises.push(this.sendSlackAlert(alert));
+      attempts.push({ channel: 'slack', promise: this.sendSlackAlert(alert) });
     }
 
     // Send webhook notification
     if (this.config.webhook?.enabled) {
-      promises.push(this.sendWebhookAlert(alert));
+      attempts.push({ channel: 'webhook', promise: this.sendWebhookAlert(alert) });
     }
 
     // Send Jira notification
     if (this.config.jira?.enabled && this.jiraClient) {
-      promises.push(this.sendJiraAlert(alert));
+      attempts.push({ channel: 'jira', promise: this.sendJiraAlert(alert) });
     }
 
-    await Promise.allSettled(promises);
+    const settled = await Promise.allSettled(attempts.map((attempt) => attempt.promise));
+    return settled.map((outcome, i) => ({ channel: attempts[i].channel, ok: outcome.status === 'fulfilled' }));
   }
 
   private async sendEmailAlert(alert: Alert): Promise<void> {
@@ -150,7 +164,7 @@ export class AlertNotificationService {
       info: '#3b82f6',
     };
 
-    await fetch(this.config.slack.webhookUrl, {
+    const response = await fetch(this.config.slack.webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -198,12 +212,13 @@ export class AlertNotificationService {
         ],
       }),
     });
+    await assertDelivered(response, 'Slack webhook');
   }
 
   private async sendWebhookAlert(alert: Alert): Promise<void> {
     if (!this.config.webhook) return;
 
-    await fetch(this.config.webhook.url, {
+    const response = await fetch(this.config.webhook.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -219,6 +234,7 @@ export class AlertNotificationService {
         metadata: alert.metadata,
       }),
     });
+    await assertDelivered(response, 'Webhook');
   }
 
   private async sendJiraAlert(alert: Alert): Promise<void> {

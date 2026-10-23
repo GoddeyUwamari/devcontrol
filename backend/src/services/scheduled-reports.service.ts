@@ -364,7 +364,9 @@ export class ScheduledReportsService {
     });
 
     if (!response.ok) {
-      throw new Error(`Slack webhook returned ${response.status}: ${await response.text()}`);
+      // The status only; the response body is not read.
+      await response.body?.cancel().catch(() => {});
+      throw new Error(`Slack webhook returned ${response.status}`);
     }
 
     console.log(`[ScheduledReports] Slack notification sent to ${report.slack_channels.join(', ')}`);

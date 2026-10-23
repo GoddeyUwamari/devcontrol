@@ -20,6 +20,10 @@ import {
 import { toast } from 'sonner';
 import { alertConfigService } from '@/lib/services/alert-config.service';
 import { logError } from '@/lib/safe-log';
+import { useCurrentRole } from '@/lib/hooks/use-current-role';
+
+// Saved credentials are never sent back by the server; the inputs start empty.
+const SAVED_PLACEHOLDER = '••• saved — leave blank to keep';
 
 // Alert type definitions
 interface AlertType {
@@ -79,15 +83,18 @@ export default function AlertSettingsPage() {
       smtpPort: 587,
       smtpUser: '',
       smtpPass: '',
+      smtpPassSet: false,
     },
     slack: {
       enabled: false,
       webhookUrl: '',
+      webhookUrlSet: false,
       channel: '#devcontrol-alerts',
     },
     webhook: {
       enabled: false,
       url: '',
+      urlSet: false,
       headers: {} as Record<string, string>,
     },
     jira: {
@@ -95,6 +102,7 @@ export default function AlertSettingsPage() {
       baseUrl: '',
       email: '',
       apiToken: '',
+      apiTokenSet: false,
       projectKey: '',
       issueType: 'Task',
     },
@@ -107,22 +115,30 @@ export default function AlertSettingsPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  // Saved credentials to remove on the next save, by path (e.g. 'slack.webhookUrl').
+  const [clearSecrets, setClearSecrets] = useState<string[]>([]);
+  const role = useCurrentRole();
+  // Unknown (null) is treated as not allowed; the server enforces the same rule.
+  const canEdit = role === 'owner' || role === 'admin';
 
   useEffect(() => {
     fetchConfig();
   }, []);
 
-  const fetchConfig = async () => {
+  const fetchConfig = async ({ silent = false } = {}) => {
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       const data = await alertConfigService.getConfig();
       if (data) {
         setConfig({
-          email: data.email || config.email,
-          slack: data.slack || config.slack,
-          webhook: data.webhook ? { ...data.webhook, headers: data.webhook.headers ?? {} } : config.webhook,
-          jira: data.jira || config.jira,
+          email: data.email ? { ...data.email, smtpPassSet: !!data.email.smtpPassSet } : config.email,
+          slack: data.slack ? { ...data.slack, webhookUrlSet: !!data.slack.webhookUrlSet } : config.slack,
+          webhook: data.webhook
+            ? { ...data.webhook, urlSet: !!data.webhook.urlSet, headers: data.webhook.headers ?? {} }
+            : config.webhook,
+          jira: data.jira ? { ...data.jira, apiTokenSet: !!data.jira.apiTokenSet } : config.jira,
         });
+        setClearSecrets([]);
         // Merge saved alertTypes with defaults to preserve icons
         if (data.alertTypes) {
           setAlertTypes(alertTypes.map(at => {
@@ -134,21 +150,66 @@ export default function AlertSettingsPage() {
     } catch (err) {
       logError('Failed to fetch config', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
+  /** Blank credential inputs keep the saved values; clearSecrets removes them. */
+  const saveConfig = async () => {
+    // Strip icons before saving (they can't be serialized)
+    const alertTypesForSave = alertTypes.map(({ icon, ...rest }) => rest);
+    await alertConfigService.updateConfig({
+      ...config,
+      alertTypes: alertTypesForSave,
+      clearSecrets,
+    });
+  };
+
+  /** Removes a saved credential on the next save. */
+  const removeSecret = (path: 'email.smtpPass' | 'slack.webhookUrl' | 'webhook.url' | 'jira.apiToken') => {
+    setClearSecrets((paths) => (paths.includes(path) ? paths : [...paths, path]));
+    switch (path) {
+      case 'email.smtpPass':
+        setConfig({ ...config, email: { ...config.email, smtpPass: '', smtpPassSet: false } });
+        break;
+      case 'slack.webhookUrl':
+        setConfig({ ...config, slack: { ...config.slack, webhookUrl: '', webhookUrlSet: false } });
+        break;
+      case 'webhook.url':
+        setConfig({ ...config, webhook: { ...config.webhook, url: '', urlSet: false } });
+        break;
+      case 'jira.apiToken':
+        setConfig({ ...config, jira: { ...config.jira, apiToken: '', apiTokenSet: false } });
+        break;
+    }
+  };
+
+  const secretPlaceholder = (saved: boolean, fallback: string) => (saved ? SAVED_PLACEHOLDER : fallback);
+
+  const removeSecretButton = (
+    saved: boolean,
+    path: 'email.smtpPass' | 'slack.webhookUrl' | 'webhook.url' | 'jira.apiToken',
+    label: string
+  ) =>
+    saved && canEdit ? (
+      <button
+        type="button"
+        onClick={() => removeSecret(path)}
+        className="text-xs text-red-600 underline hover:text-red-800"
+        aria-label={`Remove saved ${label}`}
+      >
+        Remove saved {label}
+      </button>
+    ) : null;
+
   const handleSave = async () => {
+    if (!canEdit) return;
     setIsSaving(true);
     setError('');
 
     try {
-      // Strip icons before saving (they can't be serialized)
-      const alertTypesForSave = alertTypes.map(({ icon, ...rest }) => rest);
-      await alertConfigService.updateConfig({
-        ...config,
-        alertTypes: alertTypesForSave,
-      });
+      await saveConfig();
+      await fetchConfig({ silent: true });
       setShowSuccess(true);
       toast.success('Alert configuration saved successfully');
       setTimeout(() => setShowSuccess(false), 3000);
@@ -162,16 +223,14 @@ export default function AlertSettingsPage() {
   };
 
   const handleTest = async (type: string) => {
+    if (!canEdit) return;
     setTestingChannel(type);
     setError('');
 
     try {
       // First save the current config
-      const alertTypesForSave = alertTypes.map(({ icon, ...rest }) => rest);
-      await alertConfigService.updateConfig({
-        ...config,
-        alertTypes: alertTypesForSave,
-      });
+      await saveConfig();
+      await fetchConfig({ silent: true });
 
       // Then test the channel
       await alertConfigService.testChannel(type as 'email' | 'slack' | 'jira' | 'webhook');
@@ -237,11 +296,13 @@ export default function AlertSettingsPage() {
       case 'email':
         return config.email.recipients.length > 0 && config.email.smtpHost ? 'configured' : 'incomplete';
       case 'slack':
-        return config.slack.webhookUrl ? 'configured' : 'incomplete';
+        return config.slack.webhookUrlSet || config.slack.webhookUrl ? 'configured' : 'incomplete';
       case 'jira':
-        return config.jira.baseUrl && config.jira.apiToken && config.jira.projectKey ? 'configured' : 'incomplete';
+        return config.jira.baseUrl && (config.jira.apiTokenSet || config.jira.apiToken) && config.jira.projectKey
+          ? 'configured'
+          : 'incomplete';
       case 'webhook':
-        return config.webhook.url ? 'configured' : 'incomplete';
+        return config.webhook.urlSet || config.webhook.url ? 'configured' : 'incomplete';
       default:
         return 'disabled';
     }
@@ -323,6 +384,15 @@ export default function AlertSettingsPage() {
           </Alert>
         )}
 
+        {!canEdit && (
+          <Alert className="bg-gray-50 border-gray-200">
+            <AlertCircle className="h-4 w-4 text-gray-600" />
+            <AlertDescription className="text-gray-700">
+              Only owners and admins can change alert settings.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Alert Types Section */}
         <Card>
           <CardHeader>
@@ -335,7 +405,7 @@ export default function AlertSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2">
+            <fieldset disabled={!canEdit} className="grid gap-4 md:grid-cols-2 min-w-0">
               {alertTypes.map((alertType) => {
                 const Icon = alertType.icon;
                 return (
@@ -400,7 +470,7 @@ export default function AlertSettingsPage() {
                   </div>
                 );
               })}
-            </div>
+            </fieldset>
           </CardContent>
         </Card>
 
@@ -491,7 +561,7 @@ export default function AlertSettingsPage() {
 
               {/* Email Tab */}
               <TabsContent value="email">
-                <div className="space-y-6 max-w-2xl">
+                <fieldset disabled={!canEdit} className="space-y-6 max-w-2xl min-w-0">
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>
                       <Label className="text-base font-medium">Enable Email Alerts</Label>
@@ -604,15 +674,16 @@ export default function AlertSettingsPage() {
                                 email: { ...config.email, smtpPass: e.target.value },
                               })
                             }
-                            placeholder="Your app password"
+                            placeholder={secretPlaceholder(config.email.smtpPassSet, 'Your app password')}
                           />
+                          {removeSecretButton(config.email.smtpPassSet, 'email.smtpPass', 'SMTP password')}
                         </div>
                       </div>
 
                       <Button
                         variant="outline"
                         onClick={() => handleTest('email')}
-                        disabled={testingChannel === 'email'}
+                        disabled={testingChannel === 'email' || !canEdit}
                         className="gap-2"
                       >
                         {testingChannel === 'email' ? (
@@ -624,12 +695,12 @@ export default function AlertSettingsPage() {
                       </Button>
                     </div>
                   )}
-                </div>
+                </fieldset>
               </TabsContent>
 
               {/* Slack Tab */}
               <TabsContent value="slack">
-                <div className="space-y-6 max-w-2xl">
+                <fieldset disabled={!canEdit} className="space-y-6 max-w-2xl min-w-0">
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>
                       <Label className="text-base font-medium">Enable Slack Alerts</Label>
@@ -675,8 +746,12 @@ export default function AlertSettingsPage() {
                               slack: { ...config.slack, webhookUrl: e.target.value },
                             })
                           }
-                          placeholder="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXX"
+                          placeholder={secretPlaceholder(
+                            config.slack.webhookUrlSet,
+                            'https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXX'
+                          )}
                         />
+                        {removeSecretButton(config.slack.webhookUrlSet, 'slack.webhookUrl', 'webhook URL')}
                       </div>
 
                       <div className="space-y-2">
@@ -699,7 +774,7 @@ export default function AlertSettingsPage() {
                       <Button
                         variant="outline"
                         onClick={() => handleTest('slack')}
-                        disabled={testingChannel === 'slack'}
+                        disabled={testingChannel === 'slack' || !canEdit}
                         className="gap-2"
                       >
                         {testingChannel === 'slack' ? (
@@ -711,12 +786,12 @@ export default function AlertSettingsPage() {
                       </Button>
                     </div>
                   )}
-                </div>
+                </fieldset>
               </TabsContent>
 
               {/* Jira Tab */}
               <TabsContent value="jira">
-                <div className="space-y-6 max-w-2xl">
+                <fieldset disabled={!canEdit} className="space-y-6 max-w-2xl min-w-0">
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>
                       <Label className="text-base font-medium">Enable Jira Integration</Label>
@@ -786,8 +861,9 @@ export default function AlertSettingsPage() {
                               jira: { ...config.jira, apiToken: e.target.value },
                             })
                           }
-                          placeholder="Your Jira API token"
+                          placeholder={secretPlaceholder(config.jira.apiTokenSet, 'Your Jira API token')}
                         />
+                        {removeSecretButton(config.jira.apiTokenSet, 'jira.apiToken', 'API token')}
                         <p className="text-xs text-gray-500">
                           Generate from{' '}
                           <a
@@ -843,7 +919,7 @@ export default function AlertSettingsPage() {
                       <Button
                         variant="outline"
                         onClick={() => handleTest('jira')}
-                        disabled={testingChannel === 'jira'}
+                        disabled={testingChannel === 'jira' || !canEdit}
                         className="gap-2"
                       >
                         {testingChannel === 'jira' ? (
@@ -855,12 +931,12 @@ export default function AlertSettingsPage() {
                       </Button>
                     </div>
                   )}
-                </div>
+                </fieldset>
               </TabsContent>
 
               {/* Webhook Tab */}
               <TabsContent value="webhook">
-                <div className="space-y-6 max-w-2xl">
+                <fieldset disabled={!canEdit} className="space-y-6 max-w-2xl min-w-0">
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>
                       <Label className="text-base font-medium">Enable Custom Webhooks</Label>
@@ -891,8 +967,9 @@ export default function AlertSettingsPage() {
                               webhook: { ...config.webhook, url: e.target.value },
                             })
                           }
-                          placeholder="https://your-api.com/webhooks/devcontrol"
+                          placeholder={secretPlaceholder(config.webhook.urlSet, 'https://your-api.com/webhooks/devcontrol')}
                         />
+                        {removeSecretButton(config.webhook.urlSet, 'webhook.url', 'webhook URL')}
                         <p className="text-xs text-gray-500">
                           We&apos;ll POST JSON data with alert details to this URL
                         </p>
@@ -916,7 +993,7 @@ export default function AlertSettingsPage() {
                       <Button
                         variant="outline"
                         onClick={() => handleTest('webhook')}
-                        disabled={testingChannel === 'webhook'}
+                        disabled={testingChannel === 'webhook' || !canEdit}
                         className="gap-2"
                       >
                         {testingChannel === 'webhook' ? (
@@ -928,7 +1005,7 @@ export default function AlertSettingsPage() {
                       </Button>
                     </div>
                   )}
-                </div>
+                </fieldset>
               </TabsContent>
             </Tabs>
           </CardContent>
@@ -946,7 +1023,7 @@ export default function AlertSettingsPage() {
           </div>
           <Button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || !canEdit}
             size="lg"
             className="gap-2"
             style={{ background: '#534AB7', color: 'white', borderRadius: 6, fontWeight: 500 }}

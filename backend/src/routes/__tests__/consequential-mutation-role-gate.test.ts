@@ -217,7 +217,9 @@ beforeEach(() => {
     toggle: jest.spyOn(ScheduledReportsService.prototype, 'toggle').mockResolvedValue({ id: SCHEDULE_ID } as never),
     test: jest.spyOn(ScheduledReportsService.prototype, 'test').mockResolvedValue(undefined as never),
   };
-  sendAlertSpy = jest.spyOn(AlertNotificationService.prototype, 'sendAlert').mockResolvedValue(undefined);
+  sendAlertSpy = jest
+    .spyOn(AlertNotificationService.prototype, 'sendAlert')
+    .mockResolvedValue([{ channel: 'slack', ok: true }]);
   jest.spyOn(stripeService, 'getPriceIdForPlan').mockReturnValue('price_role_gate');
   stripeCustomerSpy = jest.spyOn(stripeService, 'createCustomer').mockResolvedValue({ id: 'cus_role_gate' } as never);
   stripeSessionSpy = jest
@@ -497,13 +499,30 @@ describe('POST /api/anomalies/scan is the route server.ts serves', () => {
 });
 
 describe('routes this change leaves alone', () => {
-  it.each(['viewer', 'member'] as const)('a %s can still read scheduled reports, webhooks, alert configuration and anomalies', async (role) => {
+  // Alert configuration stays readable by every role, but its credentials are
+  // write-only: the read succeeds and carries none of them, only set/not-set flags.
+  it.each(['viewer', 'member'] as const)('a %s can still read scheduled reports, webhooks, alert configuration (without its credentials) and anomalies', async (role) => {
     jest.spyOn(ScheduledReportsService.prototype, 'list').mockResolvedValue({ schedules: [], total: 0 } as never);
     jest.spyOn(AnomalyRepository.prototype, 'getActiveAnomalies').mockResolvedValue([] as never);
     jest.spyOn(AnomalyRepository.prototype, 'getStats').mockResolvedValue({} as never);
+    const secrets = ['smtp', 'slack', 'hook', 'header', 'jira'].map((name) => `${name}-role-gate-${uniqueSuffix()}`);
+    alertConfigs.set(org.orgId, {
+      email: { enabled: true, recipients: ['ops@example.com'], smtpHost: 'smtp.example.com', smtpPort: 587, smtpUser: 'u', smtpPass: secrets[0] },
+      slack: { enabled: true, webhookUrl: `https://hooks.example/${secrets[1]}`, channel: '#alerts' },
+      webhook: { enabled: true, url: `https://hooks.example/${secrets[2]}`, headers: { 'X-Auth': secrets[3] } },
+      jira: { enabled: true, baseUrl: 'https://example.atlassian.net', email: 'j@example.com', apiToken: secrets[4], projectKey: 'OPS', issueType: 'Task' },
+    });
 
     expect((await sendAs(org.orgId, org[role], 'GET', '/scheduled-reports')).status).toBe(200);
-    expect((await sendAs(org.orgId, org[role], 'GET', '/alert-config/config')).status).toBe(200);
+    const alertConfig = await sendAs(org.orgId, org[role], 'GET', '/alert-config/config');
+    expect(alertConfig.status).toBe(200);
+    const alertConfigText = await alertConfig.text();
+    for (const secret of secrets) expect(alertConfigText).not.toContain(secret);
+    const { data } = JSON.parse(alertConfigText);
+    expect(data.email).toMatchObject({ smtpHost: 'smtp.example.com', smtpPassSet: true });
+    expect(data.slack).toMatchObject({ channel: '#alerts', webhookUrlSet: true });
+    expect(data.webhook).toMatchObject({ urlSet: true, headersSet: ['X-Auth'] });
+    expect(data.jira).toMatchObject({ baseUrl: 'https://example.atlassian.net', projectKey: 'OPS', apiTokenSet: true });
     expect((await sendAs(org.orgId, org[role], 'GET', '/webhooks')).status).toBe(hasWebhookTable ? 200 : 500);
     expect((await sendAs(org.orgId, org[role], 'GET', '/anomalies')).status).toBe(200);
     expect((await sendAs(org.orgId, org[role], 'GET', '/anomalies/stats')).status).toBe(200);

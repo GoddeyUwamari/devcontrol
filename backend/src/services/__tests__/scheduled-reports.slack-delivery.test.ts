@@ -9,10 +9,18 @@
  *
  * Real DB; fetch, email and report generation are stubbed.
  */
+import http from 'http';
 import { inspect } from 'util';
+import express from 'express';
 import { Pool } from 'pg';
 import { ScheduledReportsService } from '../scheduled-reports.service';
 import { ScheduledReport } from '../../repositories/scheduled-reports.repository';
+import scheduledReportsRoutes from '../../routes/scheduled-reports.routes';
+import { authService } from '../auth.service';
+import { pool as appPool } from '../../config/database';
+
+// Listeners issue their own fire-and-forget queries; irrelevant here.
+jest.mock('../onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
 
 function dbConfig() {
   return {
@@ -96,12 +104,20 @@ afterEach(() => {
   else process.env.REPORTS_SLACK_WEBHOOK = savedOtherEnv;
 });
 
+const createdUserIds: string[] = [];
+
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM scheduled_reports WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await pool.query(
+      'DELETE FROM organization_memberships WHERE organization_id = ANY($1) OR user_id = ANY($2)',
+      [createdOrgIds, createdUserIds]
+    );
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
+  if (createdUserIds.length > 0) await pool.query('DELETE FROM users WHERE id = ANY($1)', [createdUserIds]);
   await pool.end();
+  await appPool.end();
 });
 
 function deliver(report: ScheduledReport) {
@@ -282,5 +298,75 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
     const [execution] = await service.getExecutions(report.id, 1);
     expect(execution).toMatchObject({ status: 'partial', email_sent: true, slack_sent: false, error_message: NOT_CONFIGURED });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('scheduled reports -- a failed Slack delivery records only the status', () => {
+  async function viewerOf(orgId: string): Promise<string> {
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, password_hash, full_name) VALUES ($1, 'x', 'Slack Viewer') RETURNING id`,
+      [`slack-viewer-${uniqueSuffix()}@example.com`]
+    );
+    createdUserIds.push(rows[0].id);
+    await pool.query(
+      `INSERT INTO organization_memberships (organization_id, user_id, role, joined_at, is_active)
+       VALUES ($1, $2, 'viewer', NOW(), true)`,
+      [orgId, rows[0].id]
+    );
+    return rows[0].id as string;
+  }
+
+  /** GET /api/scheduled-reports/<path> as `userId`, over a real HTTP server. */
+  async function getAs(orgId: string, userId: string, path: string): Promise<{ status: number; text: string }> {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/scheduled-reports', scheduledReportsRoutes);
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    try {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      jest.spyOn(authService, 'verifyToken').mockReturnValue({
+        userId,
+        email: 'slack-viewer@example.com',
+        organizationId: orgId,
+        role: 'owner',
+        type: 'access',
+      } as unknown as ReturnType<typeof authService.verifyToken>);
+      // The stub above answers outbound posts; this request goes to the local server.
+      fetchSpy.mockRestore();
+      const response = await fetch(`http://127.0.0.1:${port}/api/scheduled-reports/${path}`, {
+        headers: { Authorization: 'Bearer test-token' },
+      });
+      return { status: response.status, text: await response.text() };
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
+  it('the response body is neither stored, returned to members, nor logged', async () => {
+    const body = `BODY-SENT-${uniqueSuffix()}`;
+    const orgId = await insertOrg({ slack_webhook_url: 'https://hooks.example.test/org-own' });
+    const report = await insertSchedule(orgId, { email: false });
+    fetchSpy.mockResolvedValue(new Response(body, { status: 500 }));
+    clearLogs();
+
+    await service.test(report.id, orgId);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [execution] = await service.getExecutions(report.id, 1);
+    expect(execution).toMatchObject({ status: 'failed', slack_sent: false, error_message: 'Slack: Slack webhook returned 500' });
+    const { rows } = await pool.query('SELECT last_run_error FROM scheduled_reports WHERE id = $1', [report.id]);
+    expect(rows[0].last_run_error).toBe('Slack: Slack webhook returned 500');
+    expect(allLines().join('\n')).not.toContain(body);
+
+    const viewer = await viewerOf(orgId);
+    const executions = await getAs(orgId, viewer, `${report.id}/executions`);
+    expect(executions.status).toBe(200);
+    expect(executions.text).toContain('Slack webhook returned 500');
+    expect(executions.text).not.toContain(body);
+    const schedule = await getAs(orgId, viewer, report.id);
+    expect(schedule.status).toBe(200);
+    expect(schedule.text).not.toContain(body);
   });
 });
