@@ -78,17 +78,33 @@ let fetchSpy: jest.SpyInstance;
 let logSpies: jest.SpyInstance[];
 let otherEnvWebhook: string;
 
+/**
+ * Every console method (own and anywhere up the prototype chain) plus both
+ * output streams. Under workers console is buffered and never reaches the
+ * streams, so each method has to be caught itself.
+ */
+function captureLogs(): jest.SpyInstance[] {
+  const names = new Set<string>();
+  for (let level: object | null = console; level && level !== Object.prototype; level = Object.getPrototypeOf(level)) {
+    for (const name of Object.getOwnPropertyNames(level)) names.add(name);
+  }
+  const spies: jest.SpyInstance[] = [];
+  for (const name of names) {
+    if (name === 'constructor' || typeof (console as any)[name] !== 'function') continue;
+    spies.push(jest.spyOn(console as any, name).mockImplementation(() => {}));
+  }
+  for (const stream of [process.stdout, process.stderr]) {
+    spies.push(jest.spyOn(stream, 'write').mockImplementation(() => true));
+  }
+  return spies;
+}
+
 beforeEach(() => {
   process.env.SLACK_WEBHOOK_URL = PLATFORM_WEBHOOK;
   otherEnvWebhook = `https://hooks.example.test/env-sentinel-${uniqueSuffix()}`;
   process.env.REPORTS_SLACK_WEBHOOK = otherEnvWebhook;
   fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
-  logSpies = [
-    ...(['log', 'info', 'warn', 'error', 'debug', 'trace'] as const).map((m) =>
-      jest.spyOn(console, m).mockImplementation(() => {})
-    ),
-    ...[process.stdout, process.stderr].map((stream) => jest.spyOn(stream, 'write').mockImplementation(() => true)),
-  ];
+  logSpies = captureLogs();
   jest.spyOn(service as any, 'generateReport').mockResolvedValue({
     pdf: Buffer.from('pdf'),
     recordsProcessed: 0,
@@ -344,16 +360,32 @@ describe('scheduled reports -- a failed Slack delivery records only the status',
     }
   }
 
-  it('the response body is neither stored, returned to members, nor logged', async () => {
+  it('the response body is never read: not stored, returned to members, nor logged', async () => {
     const body = `BODY-SENT-${uniqueSuffix()}`;
     const orgId = await insertOrg({ slack_webhook_url: 'https://hooks.example.test/org-own' });
     const report = await insertSchedule(orgId, { email: false });
-    fetchSpy.mockResolvedValue(new Response(body, { status: 500 }));
+    // Records whether anything pulled the body or cancelled it.
+    const seen = { pulled: false, cancelled: false };
+    const stream = new ReadableStream(
+      {
+        pull(controller) {
+          seen.pulled = true;
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        },
+        cancel() {
+          seen.cancelled = true;
+        },
+      },
+      { highWaterMark: 0 }
+    );
+    fetchSpy.mockResolvedValue(new Response(stream, { status: 500 }));
     clearLogs();
 
     await service.test(report.id, orgId);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual({ pulled: false, cancelled: true });
     const [execution] = await service.getExecutions(report.id, 1);
     expect(execution).toMatchObject({ status: 'failed', slack_sent: false, error_message: 'Slack: Slack webhook returned 500' });
     const { rows } = await pool.query('SELECT last_run_error FROM scheduled_reports WHERE id = $1', [report.id]);

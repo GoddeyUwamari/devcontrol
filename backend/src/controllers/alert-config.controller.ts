@@ -9,18 +9,19 @@ type Channel = 'email' | 'slack' | 'webhook' | 'jira';
 const CHANNELS: Channel[] = ['email', 'slack', 'webhook', 'jira'];
 
 /**
- * Credential fields. They are write-only: never returned to any caller, only
- * reported as set or not set. A blank or omitted value on save keeps the
- * stored one; clearSecrets removes it. Each webhook header value is treated
- * the same way ('webhook.headers.<name>').
+ * Credential fields, one per channel. They are write-only: never returned to
+ * any caller, only reported as set or not set. A blank or omitted value on
+ * save keeps the stored one; clearSecrets removes it. Each webhook header
+ * value is treated the same way, by the path 'webhook.headers.<name>'.
  */
-export const ALERT_CONFIG_SECRET_PATHS = ['email.smtpPass', 'slack.webhookUrl', 'webhook.url', 'jira.apiToken'] as const;
 const SECRET_FIELD: Record<Channel, string> = {
   email: 'smtpPass',
   slack: 'webhookUrl',
   webhook: 'url',
   jira: 'apiToken',
 };
+/** The clearSecrets paths for SECRET_FIELD; header paths are HEADER_PATH_PREFIX + name. */
+export const ALERT_CONFIG_SECRET_PATHS: readonly string[] = CHANNELS.map((channel) => `${channel}.${SECRET_FIELD[channel]}`);
 const HEADER_PATH_PREFIX = 'webhook.headers.';
 
 // The non-credential fields each channel stores; anything else sent is dropped.
@@ -100,12 +101,38 @@ function redactConfig(config: any): any {
 }
 
 /**
+ * `config` with the credentials named in `clear` removed. Throws on a path
+ * that names no credential.
+ */
+function clearCredentials(config: Record<string, any>, clear: unknown): Record<string, any> {
+  if (clear === undefined) return config;
+  if (!Array.isArray(clear)) throw new ConfigValidationError('Invalid clearSecrets');
+  const cleared: Record<string, any> = { ...config };
+  const channelOf = (channel: Channel): Record<string, any> => (isObject(cleared[channel]) ? cleared[channel] : defaultConfig()[channel]);
+  for (const path of clear) {
+    if (ALERT_CONFIG_SECRET_PATHS.includes(path)) {
+      const [channel, field] = (path as string).split('.') as [Channel, string];
+      cleared[channel] = { ...channelOf(channel), [field]: '' };
+    } else if (typeof path === 'string' && path.startsWith(HEADER_PATH_PREFIX) && path.length > HEADER_PATH_PREFIX.length) {
+      const webhook = channelOf('webhook');
+      const headers = { ...(isObject(webhook.headers) ? webhook.headers : {}) };
+      delete headers[path.slice(HEADER_PATH_PREFIX.length)];
+      cleared.webhook = { ...webhook, headers };
+    } else {
+      throw new ConfigValidationError('Unknown credential in clearSecrets');
+    }
+  }
+  return cleared;
+}
+
+/**
  * The stored configuration with `body` applied: channels the body leaves out
  * are kept, a channel's sent fields replace the stored ones, and a blank or
- * omitted credential keeps the stored value. clearSecrets is applied last.
+ * omitted credential keeps the stored value. clearSecrets is applied first, so
+ * a new value sent for a cleared credential is the one kept.
  */
 function mergeConfig(stored: any, body: Record<string, any>): any {
-  const base = isObject(stored) ? stored : defaultConfig();
+  const base = clearCredentials(isObject(stored) ? stored : defaultConfig(), body.clearSecrets);
   const merged: Record<string, any> = {};
 
   for (const channel of CHANNELS) {
@@ -142,23 +169,6 @@ function mergeConfig(stored: any, body: Record<string, any>): any {
     throw new ConfigValidationError('Invalid alert types');
   }
   merged.alertTypes = Array.isArray(body.alertTypes) ? body.alertTypes : storedTypes;
-
-  const clear = body.clearSecrets;
-  if (clear !== undefined) {
-    if (!Array.isArray(clear)) throw new ConfigValidationError('Invalid clearSecrets');
-    for (const path of clear) {
-      if ((ALERT_CONFIG_SECRET_PATHS as readonly unknown[]).includes(path)) {
-        const [channel, field] = (path as string).split('.');
-        merged[channel] = { ...merged[channel], [field]: '' };
-      } else if (typeof path === 'string' && path.startsWith(HEADER_PATH_PREFIX) && path.length > HEADER_PATH_PREFIX.length) {
-        const headers = { ...merged.webhook.headers };
-        delete headers[path.slice(HEADER_PATH_PREFIX.length)];
-        merged.webhook = { ...merged.webhook, headers };
-      } else {
-        throw new ConfigValidationError('Unknown credential in clearSecrets');
-      }
-    }
-  }
 
   return merged;
 }
@@ -210,7 +220,7 @@ export class AlertConfigController {
       const config = alertConfigs.get(organizationId) || defaultConfig();
 
       res.json({ success: true, data: redactConfig(config) });
-    } catch (error: any) {
+    } catch {
       res.status(500).json({ success: false, error: 'Failed to load alert configuration' });
     }
   }
@@ -299,7 +309,7 @@ export class AlertConfigController {
       }
 
       res.json({ success: true, message: `Test alert sent successfully to ${type}` });
-    } catch (error: any) {
+    } catch {
       res.status(500).json({ success: false, error: 'Failed to send test alert' });
     }
   }

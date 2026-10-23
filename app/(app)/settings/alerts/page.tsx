@@ -25,6 +25,14 @@ import { useCurrentRole } from '@/lib/hooks/use-current-role';
 // Saved credentials are never sent back by the server; the inputs start empty.
 const SAVED_PLACEHOLDER = '••• saved — leave blank to keep';
 
+type SecretPath = 'email.smtpPass' | 'slack.webhookUrl' | 'webhook.url' | 'jira.apiToken';
+
+/** The server's own error text when it sent one; never the HTTP client's status line. */
+function serverErrorMessage(err: any, fallback: string): string {
+  const message = err?.response?.data?.error;
+  return typeof message === 'string' && message ? message : fallback;
+}
+
 // Alert type definitions
 interface AlertType {
   id: string;
@@ -116,7 +124,7 @@ export default function AlertSettingsPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   // Saved credentials to remove on the next save, by path (e.g. 'slack.webhookUrl').
-  const [clearSecrets, setClearSecrets] = useState<string[]>([]);
+  const [clearSecrets, setClearSecrets] = useState<SecretPath[]>([]);
   const role = useCurrentRole();
   // Unknown (null) is treated as not allowed; the server enforces the same rule.
   const canEdit = role === 'owner' || role === 'admin';
@@ -154,19 +162,35 @@ export default function AlertSettingsPage() {
     }
   };
 
-  /** Blank credential inputs keep the saved values; clearSecrets removes them. */
+  const secretValue = (path: SecretPath): string => {
+    switch (path) {
+      case 'email.smtpPass':
+        return config.email.smtpPass;
+      case 'slack.webhookUrl':
+        return config.slack.webhookUrl;
+      case 'webhook.url':
+        return config.webhook.url;
+      case 'jira.apiToken':
+        return config.jira.apiToken;
+    }
+  };
+
+  /**
+   * Blank credential inputs keep the saved values; clearSecrets removes them.
+   * A credential removed and then typed again is saved, not removed.
+   */
   const saveConfig = async () => {
     // Strip icons before saving (they can't be serialized)
     const alertTypesForSave = alertTypes.map(({ icon, ...rest }) => rest);
     await alertConfigService.updateConfig({
       ...config,
       alertTypes: alertTypesForSave,
-      clearSecrets,
+      clearSecrets: clearSecrets.filter((path) => !secretValue(path)),
     });
   };
 
   /** Removes a saved credential on the next save. */
-  const removeSecret = (path: 'email.smtpPass' | 'slack.webhookUrl' | 'webhook.url' | 'jira.apiToken') => {
+  const removeSecret = (path: SecretPath) => {
     setClearSecrets((paths) => (paths.includes(path) ? paths : [...paths, path]));
     switch (path) {
       case 'email.smtpPass':
@@ -188,7 +212,7 @@ export default function AlertSettingsPage() {
 
   const removeSecretButton = (
     saved: boolean,
-    path: 'email.smtpPass' | 'slack.webhookUrl' | 'webhook.url' | 'jira.apiToken',
+    path: SecretPath,
     label: string
   ) =>
     saved && canEdit ? (
@@ -214,7 +238,7 @@ export default function AlertSettingsPage() {
       toast.success('Alert configuration saved successfully');
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (err: any) {
-      const errorMsg = err.message || 'Failed to save configuration';
+      const errorMsg = serverErrorMessage(err, 'Failed to save configuration');
       setError(errorMsg);
       toast.error(errorMsg);
     } finally {
@@ -236,7 +260,7 @@ export default function AlertSettingsPage() {
       await alertConfigService.testChannel(type as 'email' | 'slack' | 'jira' | 'webhook');
       toast.success(`Test alert sent to ${type}! Check your ${type === 'jira' ? 'Jira board' : type}.`);
     } catch (err: any) {
-      const errorMsg = err.message || 'Failed to send test alert';
+      const errorMsg = serverErrorMessage(err, 'Failed to send test alert');
       setError(errorMsg);
       toast.error(errorMsg);
     } finally {

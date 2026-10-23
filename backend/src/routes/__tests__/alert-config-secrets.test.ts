@@ -4,12 +4,14 @@
  *   - GET returns every non-credential field, and for each credential only
  *     whether one is saved, to every role (owner and admin included).
  *   - PUT merges into the saved configuration: a blank or omitted credential
- *     keeps the saved one, a new value replaces it, clearSecrets removes it,
- *     and channels the body leaves out are kept. Validation runs on the
- *     merged result; a rejected save changes nothing.
+ *     keeps the saved one, a new value replaces it, clearSecrets removes it
+ *     (a new value sent with it wins), and channels the body leaves out are
+ *     kept. Validation runs on the merged result; a rejected save changes
+ *     nothing. The answer never carries the configuration.
  *   - POST /test sends only to the channel under test and reports whether it
- *     was delivered, with a fixed message. Neither the answer nor any log line
- *     carries a credential or the underlying error.
+ *     was delivered, with a fixed message. A non-2xx answer is a failure, and
+ *     its body is not read. Neither the answer nor any log line carries a
+ *     credential or the underlying error.
  *
  * Real routes over an in-process HTTP server against live Postgres, in a Pro
  * organization. Stubbed: authService.verifyToken (to choose the caller) and
@@ -53,8 +55,9 @@ const S_SMTP = `smtp-pass-SENT-${run}`;
 const S_SLACK = `https://hooks.slack.com/services/SENT-${run}`;
 const S_HOOK = `https://hooks.example/SENT-${run}`;
 const S_HDR = `hdr-SENT-${run}`;
+const S_HDR2 = `hdr2-SENT-${run}`;
 const S_JIRA = `jira-token-SENT-${run}`;
-const SENTINELS = [S_SMTP, S_SLACK, S_HOOK, S_HDR, S_JIRA];
+const SENTINELS = [S_SMTP, S_SLACK, S_HOOK, S_HDR, S_HDR2, S_JIRA];
 
 const ALERT_TYPES = [{ id: 'cost_threshold', name: 'Cost', description: 'Cost alerts', enabled: true, severities: ['critical'] }];
 
@@ -152,12 +155,12 @@ beforeAll(async () => {
   baseUrl = `http://127.0.0.1:${port}/api`;
 });
 
-/** Every console method (own and inherited) plus both output streams. */
+/** Every console method (own and anywhere up the prototype chain) plus both output streams. */
 function captureLogs(): jest.SpyInstance[] {
-  const names = new Set<string>([
-    ...Object.keys(console),
-    ...Object.getOwnPropertyNames(Object.getPrototypeOf(console)),
-  ]);
+  const names = new Set<string>();
+  for (let level: object | null = console; level && level !== Object.prototype; level = Object.getPrototypeOf(level)) {
+    for (const name of Object.getOwnPropertyNames(level)) names.add(name);
+  }
   const spies: jest.SpyInstance[] = [];
   for (const name of names) {
     if (name === 'constructor' || typeof (console as any)[name] !== 'function') continue;
@@ -243,7 +246,13 @@ async function sendAs(role: Role, method: string, route: string, body?: unknown)
   return { status: response.status, text, body: text ? JSON.parse(text) : undefined };
 }
 
-const save = (body: unknown, role: Role = 'admin') => sendAs(role, 'PUT', '/alert-config/config', body);
+/** A save; an accepted one answers with a fixed message and never the configuration. */
+async function save(body: unknown, role: Role = 'admin') {
+  const res = await sendAs(role, 'PUT', '/alert-config/config', body);
+  if (res.status === 200) expect(res.body).toEqual({ success: true, message: 'Alert configuration updated' });
+  expectNoSentinel(res.text);
+  return res;
+}
 const read = (role: Role = 'admin') => sendAs(role, 'GET', '/alert-config/config');
 const test = (type: string, role: Role = 'admin') => sendAs(role, 'POST', '/alert-config/test', { type });
 
@@ -378,6 +387,53 @@ describe('PUT /api/alert-config/config -- merge on save', () => {
     expect(outbound).toHaveLength(0);
   });
 
+  it.each([
+    ['clearSecrets first', (values: Record<string, any>, clearSecrets: string[]) => ({ clearSecrets, ...values })],
+    ['clearSecrets last', (values: Record<string, any>, clearSecrets: string[]) => ({ ...values, clearSecrets })],
+  ])('a new value sent with a clear of the same credential is saved (%s)', async (_order, body) => {
+    expect((await save(fullConfig())).status).toBe(200);
+    const values = {
+      slack: { webhookUrl: `${S_SLACK}-new` },
+      webhook: { headers: { 'X-Auth': `${S_HDR}-new` } },
+    };
+
+    expect((await save(body(values, ['slack.webhookUrl', 'webhook.headers.X-Auth']))).status).toBe(200);
+
+    const data = (await read()).body.data;
+    expect(data.slack.webhookUrlSet).toBe(true);
+    expect(data.webhook.headersSet).toEqual(['X-Auth']);
+    const used = await credentialsUsed();
+    expect(used.slackUrl).toEqual([`${S_SLACK}-new`]);
+    expect(used.webhook).toEqual([{ url: S_HOOK, auth: `${S_HDR}-new` }]);
+  });
+
+  it('clearing one webhook header keeps the others', async () => {
+    const config = fullConfig();
+    config.webhook.headers = { 'X-Auth': S_HDR, 'X-Other': S_HDR2 } as any;
+    expect((await save(config)).status).toBe(200);
+
+    expect((await save({ clearSecrets: ['webhook.headers.X-Auth'] })).status).toBe(200);
+
+    const data = (await read()).body.data;
+    expect(data.webhook.headersSet).toEqual(['X-Other']);
+    expect(data.webhook.headers).toEqual({ 'X-Other': '' });
+    expect((await test('webhook')).status).toBe(200);
+    expect(outbound).toHaveLength(1);
+    expect(outbound[0].headers['X-Other']).toBe(S_HDR2);
+    expect(outbound[0].headers).not.toHaveProperty('X-Auth');
+  });
+
+  it('a Jira token that is too short is refused without echoing it', async () => {
+    const config = fullConfig();
+    config.jira.apiToken = 'short-SENT-token';
+
+    const res = await save(config);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ success: false, error: 'Valid API token required' });
+    expect(res.text).not.toContain('short-SENT-token');
+  });
+
   it('a body with only alert types keeps every channel', async () => {
     expect((await save(fullConfig())).status).toBe(200);
     const types = [{ ...ALERT_TYPES[0], enabled: false }];
@@ -430,18 +486,45 @@ describe('POST /api/alert-config/test -- real outcome, fixed message', () => {
     expect(sendMail).not.toHaveBeenCalled();
   });
 
+  /** A non-2xx answer whose body records whether anything read or cancelled it. */
+  let answerBody: { pulled: boolean; cancelled: boolean } | undefined;
+  function unreadAnswer(status: number): Response {
+    const seen = { pulled: false, cancelled: false };
+    answerBody = seen;
+    const stream = new ReadableStream(
+      {
+        pull(controller) {
+          seen.pulled = true;
+          controller.enqueue(new TextEncoder().encode(`body ${S_HOOK}`));
+          controller.close();
+        },
+        cancel() {
+          seen.cancelled = true;
+        },
+      },
+      { highWaterMark: 0 }
+    );
+    return new Response(stream, { status });
+  }
+
+  beforeEach(() => {
+    answerBody = undefined;
+  });
+
   it.each([
-    ['slack', () => { outboundAnswer = async () => new Response(`body ${S_HOOK}`, { status: 500 }); }],
-    ['webhook', () => { outboundAnswer = async () => { throw new Error(`connect failed ${S_HOOK} ${S_HDR}`); }; }],
-    ['email', () => { sendMail.mockRejectedValue(new Error(`535 auth failed ${S_SMTP}`)); }],
-    ['jira', () => { testConnection.mockRejectedValue(new Error(`timeout ${S_JIRA}`)); }],
-  ])('a %s failure answers 502 with a fixed message and logs only the org and channel', async (channel, fail) => {
+    ['slack 500', 'slack', () => { outboundAnswer = async () => unreadAnswer(500); }],
+    ['webhook 500', 'webhook', () => { outboundAnswer = async () => unreadAnswer(500); }],
+    ['webhook unreachable', 'webhook', () => { outboundAnswer = async () => { throw new Error(`connect failed ${S_HOOK} ${S_HDR}`); }; }],
+    ['email', 'email', () => { sendMail.mockRejectedValue(new Error(`535 auth failed ${S_SMTP}`)); }],
+    ['jira', 'jira', () => { testConnection.mockRejectedValue(new Error(`timeout ${S_JIRA}`)); }],
+  ])('a %s failure answers 502 with a fixed message and logs only the org and channel', async (_label, channel, fail) => {
     expect((await save(fullConfig())).status).toBe(200);
     fail();
     for (const spy of logSpies) spy.mockClear();
 
     const res = await test(channel);
 
+    if (answerBody) expect(answerBody).toEqual({ pulled: false, cancelled: true });
     expect(res.status).toBe(502);
     expect(res.body).toEqual(failed(channel));
     expectNoSentinel(res.text);

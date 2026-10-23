@@ -515,6 +515,7 @@ describe('routes this change leaves alone', () => {
 
     expect((await sendAs(org.orgId, org[role], 'GET', '/scheduled-reports')).status).toBe(200);
     const alertConfig = await sendAs(org.orgId, org[role], 'GET', '/alert-config/config');
+    alertConfigs.delete(org.orgId);
     expect(alertConfig.status).toBe(200);
     const alertConfigText = await alertConfig.text();
     for (const secret of secrets) expect(alertConfigText).not.toContain(secret);
