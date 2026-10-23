@@ -386,9 +386,12 @@ describe('PB-2 / PB-2b the resource-limit prompt', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Sync now/ })[1])
     expect(await screen.findByTestId('infra-limit-prompt')).toBeInTheDocument()
   })
-  it('200: none; GET /api/infrastructure is read once per mount and its body never reaches the page', async () => {
-    const { container } = await renderSettled()
+  it('200: none; GET /api/infrastructure is read once per mount (not polled) and its body never reaches the page', async () => {
+    const { container, client } = await renderSettled()
     expect(screen.queryByTestId('infra-limit-prompt')).toBeNull()
+    const options = client.getQueryCache().find({ queryKey: ['infra-overview-limit', 'org-test'] })!.options as { refetchInterval?: unknown }
+    expect(options.refetchInterval).toBeUndefined()
+    await new Promise((r) => setTimeout(r, 300))
     expect(m.log.filter((l) => l === 'GET /api/infrastructure')).toHaveLength(1)
     expect(container.innerHTML).not.toMatch(/SENTINEL|9876/)
   })
