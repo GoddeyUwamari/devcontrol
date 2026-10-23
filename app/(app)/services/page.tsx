@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Suspense, useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
@@ -19,6 +19,7 @@ import { RegisteredServices } from './RegisteredServices'
 import { TYPE_DISPLAY, RESOURCE_TYPE_CHIPS } from './resourceTypes'
 import { isServicesV2Enabled } from './servicesV2Flag'
 import { ServicesOverview } from './ServicesOverview'
+import { ResourceFocus } from './ResourceFocus'
 import { servicesDemoFixture } from './demo-fixture'
 
 const _now = Date.now()
@@ -412,6 +413,8 @@ export default function ServicesPage() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans">
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      {/* /services?resource=<id> only (§17.4); renders nothing without it. */}
+      <Suspense fallback={null}><ResourceFocus orgId={orgId} isDemoActive={isDemoActive} /></Suspense>
 
       {servicesV2 ? (
         <ServicesOverview

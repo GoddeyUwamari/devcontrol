@@ -22,7 +22,7 @@ export type AttentionState =
 export const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
 
 // The lifecycle state as the list reports it, without calling anything healthy.
-const STATUS_LABEL: Record<AWSService['status'], string> = {
+export const STATUS_LABEL: Record<AWSService['status'], string> = {
   healthy: 'Not stopped or failed',
   warning: 'Stopped or degraded',
   critical: 'Failed or terminated',

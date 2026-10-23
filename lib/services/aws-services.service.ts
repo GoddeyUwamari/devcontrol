@@ -270,6 +270,29 @@ const awsServicesService = {
     if (!res.data.success) throw new Error(res.data.error || 'Service not found')
     return res.data.service
   },
+
+  /**
+   * One inventoried AWS resource (GET /api/services/:id, org-scoped, not
+   * terminated). The route falls through to the registered-services table
+   * when no aws_resources row matches; that answer ({ data }) and a row
+   * without a resource_type are not an AWS resource, so they read as not found.
+   */
+  async getResource(id: string): Promise<InventoryResource | null> {
+    const res = await api.get<{ success: boolean; service?: InventoryResource }>(`/api/services/${encodeURIComponent(id)}`)
+    const row = res.data?.success ? res.data.service : undefined
+    return row && typeof row.resource_type === 'string' ? row : null
+  },
+}
+
+/** The aws_resources row GET /api/services/:id returns; status is the mapped one (as on the list). */
+export interface InventoryResource {
+  id: string
+  resource_type: string
+  resource_id: string | null
+  resource_name: string | null
+  region: string | null
+  status: AWSService['status']
+  last_synced_at: string | null
 }
 
 export default awsServicesService
