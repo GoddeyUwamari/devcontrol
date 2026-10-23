@@ -45,11 +45,14 @@ vi.mock('@/lib/services/aws-services.service', () => ({
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts: async () => [{ id: 'acct-1' }] } }))
 vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getCostSummary: async () => billed() } }))
 
-const NOW = Date.now()
+// A fixed clock on the fixtures' day, so "today" means Oct 22 whatever the
+// real date is. Tests that fake timers themselves start from this instant.
+const NOW = Date.parse('2026-10-22T15:00:00Z')
 const hoursAgo = (h: number) => new Date(NOW - h * 3600_000).toISOString()
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW })
   vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
   vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'true')
   mockGetServices.mockImplementation(async (req: any = {}) => emptyPage(req.limit ?? 50))
