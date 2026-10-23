@@ -39,7 +39,7 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
 vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService: { getAll: logged('infrastructure') } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-const UUID = '3f2b8c4e-9a1d-4e5f-8b7c-6d5e4f3a2b1c'
+const UUID = '550e8400-e29b-41d4-a716-446655440000'
 
 beforeEach(() => {
   m.param = null

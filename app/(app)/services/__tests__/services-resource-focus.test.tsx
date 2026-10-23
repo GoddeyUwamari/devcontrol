@@ -51,7 +51,7 @@ vi.mock('@/lib/api', () => ({ default: { get: (...args: unknown[]) => m.apiGet(.
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts: async () => [{ id: 'acct-1' }] } }))
 vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getCostSummary: async () => billed() } }))
 
-const UUID = '3f2b8c4e-9a1d-4e5f-8b7c-6d5e4f3a2b1c'
+const UUID = '550e8400-e29b-41d4-a716-446655440000'
 const ROW = {
   id: UUID, resource_type: 'rds', resource_id: 'orders-db', resource_name: 'orders-db', region: 'us-east-1',
   status: 'critical' as const, last_synced_at: new Date(m.now - 2 * 3600_000).toISOString(), estimated_monthly_cost: '5.00',
