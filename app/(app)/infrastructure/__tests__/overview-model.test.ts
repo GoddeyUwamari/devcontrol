@@ -15,7 +15,7 @@ import { STATUS_LABEL } from '../../services/AttentionTable'
 import { region, withoutM5c } from '../../services/__tests__/m6-fixtures'
 import {
   NOW, hoursAgo, ready, LOADING, ERROR, coverage, noAccountCoverage, STATS, QUIET_STATS, service, ATTENTION_ROWS, attentionPage,
-  finding, ACCOUNT_FINDINGS, billedSummary, estimatedSummary, SAVINGS, NO_SAVINGS, inputs,
+  finding, ACCOUNT_FINDINGS, billedSummary, estimatedSummary, NO_SAVINGS, inputs,
 } from './overview-fixtures'
 
 const view = (o: Partial<OverviewInputs> = {}) => describeOverview(inputs(o), NOW)

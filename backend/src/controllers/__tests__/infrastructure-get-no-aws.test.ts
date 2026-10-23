@@ -37,7 +37,7 @@ jest.mock('../../config/database', () => ({
 }));
 
 jest.mock('../../middleware/auth.middleware', () => {
-  const authenticate = (req: any, _res: unknown, next: () => void) => {
+  const authenticate = (req: { user?: unknown; organizationId?: string }, _res: unknown, next: () => void) => {
     req.user = { id: 'user-1', organizationId: ORG_ID };
     req.organizationId = ORG_ID;
     next();
@@ -52,7 +52,7 @@ jest.mock('../../services/aws-cost.service', () => {
   const service = new Proxy({}, {
     get: (_target, prop: string) => {
       if (prop === 'then') return undefined;
-      if (!spies.has(prop)) spies.set(prop, jest.fn((..._args: unknown[]) => { costCalls.push(prop); return Promise.resolve(undefined); }));
+      if (!spies.has(prop)) spies.set(prop, jest.fn(() => { costCalls.push(prop); return Promise.resolve(undefined); }));
       return spies.get(prop);
     },
   });
