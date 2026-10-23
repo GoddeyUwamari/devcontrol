@@ -6,26 +6,37 @@ export interface EmailConfig {
   smtpHost: string;
   smtpPort: number;
   smtpUser: string;
+  /** Write-only: always '' from the server. Send '' to keep the saved value. */
   smtpPass: string;
+  smtpPassSet?: boolean;
 }
 
 export interface SlackConfig {
   enabled: boolean;
+  /** Write-only: always '' from the server. Send '' to keep the saved value. */
   webhookUrl: string;
+  webhookUrlSet?: boolean;
   channel: string;
 }
 
 export interface WebhookConfig {
   enabled: boolean;
+  /** Write-only: always '' from the server. Send '' to keep the saved value. */
   url: string;
+  urlSet?: boolean;
+  /** Header names with '' values from the server; '' keeps the saved value. */
   headers?: Record<string, string>;
+  /** Names of headers that have a saved value. */
+  headersSet?: string[];
 }
 
 export interface JiraConfig {
   enabled: boolean;
   baseUrl: string;
   email: string;
+  /** Write-only: always '' from the server. Send '' to keep the saved value. */
   apiToken: string;
+  apiTokenSet?: boolean;
   projectKey: string;
   issueType: string;
 }
@@ -49,6 +60,11 @@ export interface AlertConfiguration {
   alertTypes?: AlertType[];
 }
 
+/** A save: the configuration plus saved credentials to remove, by path (e.g. 'slack.webhookUrl'). */
+export interface AlertConfigurationUpdate extends AlertConfiguration {
+  clearSecrets?: string[];
+}
+
 export const alertConfigService = {
   /**
    * Get current alert configuration
@@ -61,7 +77,7 @@ export const alertConfigService = {
   /**
    * Update alert configuration
    */
-  updateConfig: async (config: AlertConfiguration): Promise<void> => {
+  updateConfig: async (config: AlertConfigurationUpdate): Promise<void> => {
     const response = await api.put('/api/alert-config/config', config);
     return handleApiResponse(response);
   },
