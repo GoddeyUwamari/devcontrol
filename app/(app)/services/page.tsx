@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Suspense, useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
@@ -19,6 +19,7 @@ import { RegisteredServices } from './RegisteredServices'
 import { TYPE_DISPLAY, RESOURCE_TYPE_CHIPS } from './resourceTypes'
 import { isServicesV2Enabled } from './servicesV2Flag'
 import { ServicesOverview } from './ServicesOverview'
+import { ResourceFocus } from './ResourceFocus'
 import { servicesDemoFixture } from './demo-fixture'
 
 const _now = Date.now()
@@ -409,6 +410,9 @@ export default function ServicesPage() {
         </div>
   )
 
+  // /services?resource=<id> only (§17.4), below the page's heading; renders nothing without it.
+  const resourceFocus = <Suspense fallback={null}><ResourceFocus orgId={orgId} isDemoActive={isDemoActive} /></Suspense>
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans">
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
@@ -421,7 +425,7 @@ export default function ServicesPage() {
           stats={{ loading: statsLoading, unavailable: statsUnavailable, stats: displayStats }}
           statusHeadline={statusHeadlineV2}
           discovery={{ isDiscovering, discoveryComplete, discoveryMsg, warnings: discoveryWarnings, onAutoDiscover: handleAutoDiscover }}
-          banners={upgradePrompt}
+          banners={<>{resourceFocus}{upgradePrompt}</>}
           pageError={error}
           knownNoAccount={knownNoAccount}
           onFiltersChange={clearDiscoveryError}
@@ -452,6 +456,7 @@ export default function ServicesPage() {
           </button>
         </div>
       </div>
+      {resourceFocus}
 
       <DiscoveryWarningNotice warnings={discoveryWarnings} className="mb-4" />
 

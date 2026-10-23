@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
@@ -27,6 +28,10 @@ import { largestEstimatedCosts } from './costByResource'
 import { isRunningOrNormalState, isStoppedOrPendingState, lifecycleStateLabel } from './stateLabel'
 import { describeStatsSpend } from '../costs/cost-display'
 import { INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
+import { isInfraOverviewV2Enabled } from './infraOverviewV2Flag'
+
+// Loaded only when the flag is on, so the legacy page never loads it.
+const InfrastructureOverviewV2 = dynamic(() => import('./overview/InfrastructureOverviewV2'))
 
 const resourceTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
   ec2:        { icon: Server,    color: '#3B82F6', bg: '#EFF6FF' },
@@ -175,11 +180,13 @@ async function fetchTopActions(): Promise<any[] | null> {
 }
 
 export default function InfrastructurePage() {
-  return (
+  const legacy = (
     <Suspense fallback={<div className="py-12 text-center text-sm text-gray-500">Loading...</div>}>
       <InfrastructureContent />
     </Suspense>
   )
+  if (!isInfraOverviewV2Enabled()) return legacy
+  return <InfrastructureOverviewV2 demoFallback={legacy} />
 }
 
 function InfrastructureContent() {

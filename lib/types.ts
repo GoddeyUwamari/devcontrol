@@ -557,6 +557,12 @@ export interface CostSpendEvidence {
    * absent from responses of a backend that predates it.
    */
   finishedThrough?: string | null;
+  /**
+   * Billed spend: the top 5 AWS services by month-to-date spend, largest
+   * first; sharePercent is null when the total is not positive. null for
+   * estimates; absent from responses of a backend that predates it.
+   */
+  topServices?: Array<{ service: string; amount: number; sharePercent: number | null }> | null;
 }
 
 /** MonthOverMonthEvidence in backend/src/services/cost-context-sections.ts. */

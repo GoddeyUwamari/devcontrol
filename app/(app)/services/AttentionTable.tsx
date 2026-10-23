@@ -22,7 +22,7 @@ export type AttentionState =
 export const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
 
 // The lifecycle state as the list reports it, without calling anything healthy.
-const STATUS_LABEL: Record<AWSService['status'], string> = {
+export const STATUS_LABEL: Record<AWSService['status'], string> = {
   healthy: 'Not stopped or failed',
   warning: 'Stopped or degraded',
   critical: 'Failed or terminated',
@@ -61,6 +61,11 @@ export function environmentLabel(row: AWSService): string {
   return row.environment ?? (row.ownership === 'unknown' ? '—' : 'Untagged')
 }
 
+/** "Oct 22, 1:00 PM (2 h ago)": when a discovery last listed the resource. */
+export function lastSeenText(iso: string, now: number): string {
+  return `${new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} (${timeAgo(iso, now)})`
+}
+
 /** The expanded row (Q5): fields the list already returned. Nothing is fetched. */
 export function Details({ row }: { row: AWSService }) {
   const [now] = useState(() => Date.now())
@@ -74,7 +79,7 @@ export function Details({ row }: { row: AWSService }) {
     ['Owner', owner.kind === 'owner' ? owner.label : owner.kind === 'team-only' ? 'No Owner tag' : owner.label],
     ['Team', owner.kind === 'unknown' ? '—' : row.team ?? '—'],
     ['Ownership', row.ownership ? OWNERSHIP_LABEL[row.ownership] : '—'],
-    ['Last seen', row.last_seen_at ? `${new Date(row.last_seen_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} (${timeAgo(row.last_seen_at, now)})` : '—'],
+    ['Last seen', row.last_seen_at ? lastSeenText(row.last_seen_at, now) : '—'],
     ['Lifecycle state', STATUS_LABEL[row.status] ?? '—'],
   ]
   return (
