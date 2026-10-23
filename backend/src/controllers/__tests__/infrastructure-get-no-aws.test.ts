@@ -72,7 +72,8 @@ import infrastructureRoutes from '../../routes/infrastructure.routes';
 
 let server: Server;
 let base: string;
-const send = jest.spyOn(Client.prototype, 'send');
+// Never calls through: an SDK call here fails instead of reaching AWS.
+const send = jest.spyOn(Client.prototype, 'send').mockImplementation(() => Promise.reject(new Error('no AWS in this test')));
 
 beforeAll(async () => {
   const app = express();

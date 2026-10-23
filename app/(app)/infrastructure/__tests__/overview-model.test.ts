@@ -335,6 +335,12 @@ describe('O-R regions and what we checked', () => {
     gaps.scope.enabled_regions.count = 2
     expect(view({ coverage: ready(gaps) }).account!.items[3].value).toBe('1 of 2 · 1 with gaps')
   })
+  it('O-R1 the denominator is the enabled count, not the rows returned', () => {
+    const c = coverage()
+    c.scope.enabled_regions.count = 20
+    expect(view({ coverage: ready(c) }).account!.items[3].value).toBe('1 of 20')
+    expect(view({ coverage: ready(c) }).status.notChecked).toBe('Not checked yet: 19 regions · IAM roles and policies')
+  })
   it('O-R1 unknown list and older backend: no "N of M" anywhere in the strip', () => {
     for (const state of ['unknown-list', 'older-backend']) {
       const strip = JSON.stringify(view(STATES[state]).account)
