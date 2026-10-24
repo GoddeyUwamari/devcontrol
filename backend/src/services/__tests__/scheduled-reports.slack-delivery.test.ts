@@ -7,7 +7,9 @@
  * settings, a webhook URL, the channel or the report name. The one exception
  * is the run's existing "Executing report: <name> (<id>)" line, pinned exactly.
  *
- * Real DB; fetch, email and report generation are stubbed.
+ * Real DB; DNS and https.request (fake-outbound), email and report
+ * generation are stubbed, and the network guard fails any connect that would
+ * leave the machine. Posts go through the real safeHttpsPost.
  */
 import http from 'http';
 import { inspect } from 'util';
@@ -18,6 +20,8 @@ import { ScheduledReport } from '../../repositories/scheduled-reports.repository
 import scheduledReportsRoutes from '../../routes/scheduled-reports.routes';
 import { authService } from '../auth.service';
 import { pool as appPool } from '../../config/database';
+import * as safeOutbound from '../../utils/safe-outbound';
+import { NetworkGuard, PUBLIC_V4, fakeHttpsRequest, guardNetwork, stubDns } from '../../__tests__/helpers/fake-outbound';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
 jest.mock('../onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
@@ -74,7 +78,9 @@ async function insertSchedule(orgId: string, opts: { email: boolean }): Promise<
   });
 }
 
-let fetchSpy: jest.SpyInstance;
+let postSpy: jest.SpyInstance;
+let outbound: ReturnType<typeof fakeHttpsRequest>;
+let guard: NetworkGuard;
 let logSpies: jest.SpyInstance[];
 let otherEnvWebhook: string;
 
@@ -103,7 +109,10 @@ beforeEach(() => {
   process.env.SLACK_WEBHOOK_URL = PLATFORM_WEBHOOK;
   otherEnvWebhook = `https://hooks.example.test/env-sentinel-${uniqueSuffix()}`;
   process.env.REPORTS_SLACK_WEBHOOK = otherEnvWebhook;
-  fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response('ok', { status: 200 }));
+  guard = guardNetwork();
+  stubDns({ 'hooks.slack.com': [PUBLIC_V4] });
+  outbound = fakeHttpsRequest({ status: 200, body: 'ok' });
+  postSpy = jest.spyOn(safeOutbound, 'safeHttpsPost');
   logSpies = captureLogs();
   jest.spyOn(service as any, 'generateReport').mockResolvedValue({
     pdf: Buffer.from('pdf'),
@@ -114,6 +123,8 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  guard.restore();
+  expect(guard.attempts).toEqual([]);
   if (savedEnv === undefined) delete process.env.SLACK_WEBHOOK_URL;
   else process.env.SLACK_WEBHOOK_URL = savedEnv;
   if (savedOtherEnv === undefined) delete process.env.REPORTS_SLACK_WEBHOOK;
@@ -203,7 +214,7 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
 
     const result = await deliver(report);
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ emailSuccess: false, slackSuccess: false, error: NOT_CONFIGURED });
     // The skip line is the only thing written, and it names only the org.
     expect(allLines()).toEqual([skipLine(orgId)]);
@@ -212,14 +223,15 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
   });
 
   it('the organization webhook is the only URL posted to', async () => {
-    const own = 'https://hooks.example.test/org-own';
+    const own = 'https://hooks.slack.com/services/org-own';
     const orgId = await insertOrg({ slack_webhook_url: own });
     const report = await insertSchedule(orgId, { email: false });
 
     const result = await deliver(report);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toBe(own);
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(postSpy.mock.calls[0][0]).toBe(own);
+    expect(outbound.calls.map((call) => call.url())).toEqual([own]);
     expect(result).toEqual({ emailSuccess: false, slackSuccess: true, error: undefined });
     expect(slackSkipLines()).toHaveLength(0);
   });
@@ -236,7 +248,7 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
 
     const result = await deliver(report);
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
     expect(result.slackSuccess).toBe(false);
     expect(result.error).toBe(NOT_CONFIGURED);
     expect(allLines()).toEqual([skipLine(orgId)]);
@@ -244,14 +256,14 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
   });
 
   it("another organization's webhook is never used", async () => {
-    const otherOwn = 'https://hooks.example.test/other-org';
+    const otherOwn = 'https://hooks.slack.com/services/other-org';
     await insertOrg({ slack_webhook_url: otherOwn });
     const orgId = await insertOrg(null);
     const report = await insertSchedule(orgId, { email: false });
 
     await deliver(report);
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
   });
 
   it('email still goes out and the delivery result is partial', async () => {
@@ -262,7 +274,7 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
     const result = await deliver(report);
 
     expect(emailSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ emailSuccess: true, slackSuccess: false, error: NOT_CONFIGURED });
     expect((service as any).determineExecutionStatus(result)).toBe('partial');
   });
@@ -275,7 +287,7 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
 
     await service.test(report.id, orgId);
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
     expect(slackSkipLines()).toEqual([skipLine(orgId)]);
     const lines = runLinesWithoutStartLine(report);
     // Grouped by console method, not in time order.
@@ -313,7 +325,7 @@ describe('scheduled reports -- Slack delivery uses only the organization webhook
 
     const [execution] = await service.getExecutions(report.id, 1);
     expect(execution).toMatchObject({ status: 'partial', email_sent: true, slack_sent: false, error_message: NOT_CONFIGURED });
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -349,8 +361,6 @@ describe('scheduled reports -- a failed Slack delivery records only the status',
         role: 'owner',
         type: 'access',
       } as unknown as ReturnType<typeof authService.verifyToken>);
-      // The stub above answers outbound posts; this request goes to the local server.
-      fetchSpy.mockRestore();
       const response = await fetch(`http://127.0.0.1:${port}/api/scheduled-reports/${path}`, {
         headers: { Authorization: 'Bearer test-token' },
       });
@@ -362,30 +372,21 @@ describe('scheduled reports -- a failed Slack delivery records only the status',
 
   it('the response body is never read: not stored, returned to members, nor logged', async () => {
     const body = `BODY-SENT-${uniqueSuffix()}`;
-    const orgId = await insertOrg({ slack_webhook_url: 'https://hooks.example.test/org-own' });
+    const orgId = await insertOrg({ slack_webhook_url: 'https://hooks.slack.com/services/org-own' });
     const report = await insertSchedule(orgId, { email: false });
-    // Records whether anything pulled the body or cancelled it.
-    const seen = { pulled: false, cancelled: false };
-    const stream = new ReadableStream(
-      {
-        pull(controller) {
-          seen.pulled = true;
-          controller.enqueue(new TextEncoder().encode(body));
-          controller.close();
-        },
-        cancel() {
-          seen.cancelled = true;
-        },
-      },
-      { highWaterMark: 0 }
-    );
-    fetchSpy.mockResolvedValue(new Response(stream, { status: 500 }));
+    outbound.answer({ status: 500, body });
     clearLogs();
 
     await service.test(report.id, orgId);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(seen).toEqual({ pulled: false, cancelled: true });
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    // The answer's body was never pulled, and the response was closed.
+    const answered = outbound.calls[0].res!;
+    expect({ pulled: answered.pulled, data: answered.dataListened, destroyed: answered.destroyed }).toEqual({
+      pulled: false,
+      data: false,
+      destroyed: true,
+    });
     const [execution] = await service.getExecutions(report.id, 1);
     expect(execution).toMatchObject({ status: 'failed', slack_sent: false, error_message: 'Slack: Slack webhook returned 500' });
     const { rows } = await pool.query('SELECT last_run_error FROM scheduled_reports WHERE id = $1', [report.id]);
@@ -400,5 +401,22 @@ describe('scheduled reports -- a failed Slack delivery records only the status',
     const schedule = await getAs(orgId, viewer, report.id);
     expect(schedule.status).toBe(200);
     expect(schedule.text).not.toContain(body);
+  });
+
+  it.each([
+    ['a redirect', () => outbound.answer({ status: 302, headers: { location: 'http://127.0.0.1/' } }), 'Slack: Slack webhook returned 302'],
+    ['a connection failure', () => outbound.answer({ error: new Error(`connect ECONNREFUSED ${PUBLIC_V4}:443`) }), 'Slack: Slack webhook request failed'],
+  ])('%s is recorded with a fixed message', async (_label, answer, expected) => {
+    const orgId = await insertOrg({ slack_webhook_url: 'https://hooks.slack.com/services/org-own' });
+    const report = await insertSchedule(orgId, { email: false });
+    answer();
+    clearLogs();
+
+    const result = await deliver(report);
+
+    expect(outbound.calls).toHaveLength(1);
+    expect(result).toEqual({ emailSuccess: false, slackSuccess: false, error: expected });
+    expect(allLines().join('\n')).not.toContain(PUBLIC_V4);
+    expect(allLines().join('\n')).not.toContain('hooks.slack.com');
   });
 });

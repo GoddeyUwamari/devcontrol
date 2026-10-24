@@ -15,7 +15,9 @@
  *
  * Real routes over an in-process HTTP server against live Postgres, in a Pro
  * organization. Stubbed: authService.verifyToken (to choose the caller) and
- * every outbound channel (fetch to non-local URLs, nodemailer, the Jira client).
+ * every outbound channel (DNS and https.request via the fake-outbound helper,
+ * nodemailer, the Jira client). The network guard fails any connect that
+ * would leave the machine.
  */
 import http from 'http';
 import { inspect } from 'util';
@@ -28,6 +30,7 @@ import { authService } from '../../services/auth.service';
 import { JiraClient } from '../../services/jira-client.service';
 import { alertConfigs } from '../../controllers/alert-config.controller';
 import { pool as appPool } from '../../config/database';
+import { FakeAnswer, NetworkGuard, PUBLIC_V4, fakeHttpsRequest, guardNetwork, stubDns } from '../../__tests__/helpers/fake-outbound';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
 jest.mock('../../services/onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
@@ -128,14 +131,15 @@ type Org = Awaited<ReturnType<typeof buildOrg>>;
 let server: http.Server;
 let baseUrl: string;
 let org: Org;
-const realFetch = global.fetch;
 
 interface OutboundCall {
   url: string;
   headers: Record<string, string>;
 }
 let outbound: OutboundCall[];
-let outboundAnswer: (url: string) => Promise<Response>;
+let outboundAnswer: FakeAnswer;
+let outboundFake: ReturnType<typeof fakeHttpsRequest>;
+let guard: NetworkGuard;
 let transportOptions: any[];
 let sendMail: jest.Mock;
 let jiraTokens: string[];
@@ -182,31 +186,38 @@ function loggedLines(): string[] {
 
 beforeEach(() => {
   logSpies = captureLogs();
+  guard = guardNetwork();
+  stubDns({
+    'hooks.slack.com': [PUBLIC_V4],
+    'hooks.example': [PUBLIC_V4],
+    'smtp.example.com': [PUBLIC_V4],
+    'example.atlassian.net': [PUBLIC_V4],
+  });
   outbound = [];
-  outboundAnswer = async () => new Response('ok', { status: 200 });
-  jest.spyOn(global, 'fetch').mockImplementation(async (input: any, init?: any) => {
-    const url = typeof input === 'string' ? input : String(input?.url ?? input);
-    if (url.startsWith(baseUrl)) return realFetch(input, init);
-    outbound.push({ url, headers: { ...(init?.headers ?? {}) } });
-    return outboundAnswer(url);
+  outboundAnswer = { status: 200, body: 'ok' };
+  outboundFake = fakeHttpsRequest((options: any) => {
+    outbound.push({ url: `https://${options.hostname}${options.path}`, headers: { ...(options.headers ?? {}) } });
+    return outboundAnswer;
   });
   transportOptions = [];
   sendMail = jest.fn().mockResolvedValue({ messageId: 'stub' });
   jest.spyOn(nodemailer, 'createTransport').mockImplementation(((options: any) => {
     transportOptions.push(options);
-    return { sendMail } as any;
+    return { sendMail, close: jest.fn() } as any;
   }) as any);
   jiraTokens = [];
   testConnection = jest.spyOn(JiraClient.prototype, 'testConnection').mockImplementation(async function (this: any) {
     jiraTokens.push(this.apiToken);
     return true;
   });
-  jest.spyOn(JiraClient.prototype, 'createIssue').mockResolvedValue({ key: 'OPS-1' });
+  jest.spyOn(JiraClient.prototype, 'createIssue').mockResolvedValue({ key: 'OPS-1', url: 'https://example.atlassian.net/browse/OPS-1' });
   alertConfigs.delete(org.orgId);
 });
 
 afterEach(async () => {
   jest.restoreAllMocks();
+  guard.restore();
+  expect(guard.attempts).toEqual([]);
   // No credential reaches the audit trail either.
   const { rows } = await pool.query(
     `SELECT metadata::text AS m FROM audit_logs WHERE organization_id = $1`,
@@ -453,7 +464,7 @@ describe('PUT /api/alert-config/config -- merge on save', () => {
     const res = await save(invalid);
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ success: false, error: 'Jira URL must be HTTPS' });
+    expect(res.body).toEqual({ success: false, error: 'Jira URL must be a public https:// address.' });
     expect((await read()).body.data.jira.baseUrl).toBe('https://example.atlassian.net');
     expect(await credentialsUsed()).toEqual(ORIGINAL);
   });
@@ -486,35 +497,21 @@ describe('POST /api/alert-config/test -- real outcome, fixed message', () => {
     expect(sendMail).not.toHaveBeenCalled();
   });
 
-  /** A non-2xx answer whose body records whether anything read or cancelled it. */
-  let answerBody: { pulled: boolean; cancelled: boolean } | undefined;
-  function unreadAnswer(status: number): Response {
-    const seen = { pulled: false, cancelled: false };
-    answerBody = seen;
-    const stream = new ReadableStream(
-      {
-        pull(controller) {
-          seen.pulled = true;
-          controller.enqueue(new TextEncoder().encode(`body ${S_HOOK}`));
-          controller.close();
-        },
-        cancel() {
-          seen.cancelled = true;
-        },
-      },
-      { highWaterMark: 0 }
-    );
-    return new Response(stream, { status });
+  /** A non-2xx answer whose body would carry a sentinel if anything read it. */
+  let expectUnread: boolean;
+  function unreadAnswer(status: number): FakeAnswer {
+    expectUnread = true;
+    return { status, body: `body ${S_HOOK}` };
   }
 
   beforeEach(() => {
-    answerBody = undefined;
+    expectUnread = false;
   });
 
   it.each([
-    ['slack 500', 'slack', () => { outboundAnswer = async () => unreadAnswer(500); }],
-    ['webhook 500', 'webhook', () => { outboundAnswer = async () => unreadAnswer(500); }],
-    ['webhook unreachable', 'webhook', () => { outboundAnswer = async () => { throw new Error(`connect failed ${S_HOOK} ${S_HDR}`); }; }],
+    ['slack 500', 'slack', () => { outboundAnswer = unreadAnswer(500); }],
+    ['webhook 500', 'webhook', () => { outboundAnswer = unreadAnswer(500); }],
+    ['webhook unreachable', 'webhook', () => { outboundAnswer = { error: new Error(`connect failed ${S_HOOK} ${S_HDR}`) }; }],
     ['email', 'email', () => { sendMail.mockRejectedValue(new Error(`535 auth failed ${S_SMTP}`)); }],
     ['jira', 'jira', () => { testConnection.mockRejectedValue(new Error(`timeout ${S_JIRA}`)); }],
   ])('a %s failure answers 502 with a fixed message and logs only the org and channel', async (_label, channel, fail) => {
@@ -524,7 +521,10 @@ describe('POST /api/alert-config/test -- real outcome, fixed message', () => {
 
     const res = await test(channel);
 
-    if (answerBody) expect(answerBody).toEqual({ pulled: false, cancelled: true });
+    if (expectUnread) {
+      const answered = outboundFake.calls[outboundFake.calls.length - 1].res!;
+      expect({ pulled: answered.pulled, destroyed: answered.destroyed }).toEqual({ pulled: false, destroyed: true });
+    }
     expect(res.status).toBe(502);
     expect(res.body).toEqual(failed(channel));
     expectNoSentinel(res.text);

@@ -11,6 +11,7 @@ import {
 } from '../repositories/scheduled-reports.repository';
 import { ReportGeneratorService } from './report-generator.service';
 import { ResourceFilters } from '../types/aws-resources.types';
+import { OutboundRefused, safeHttpsPost } from '../utils/safe-outbound';
 
 export class ScheduledReportsService {
   private repository: ScheduledReportsRepository;
@@ -357,16 +358,22 @@ export class ScheduledReportsService {
       ],
     };
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message),
-    });
+    let status: number;
+    try {
+      ({ status } = await safeHttpsPost(webhookUrl, {
+        policy: 'slack-webhook',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message),
+      }));
+    } catch (error) {
+      const code = error instanceof OutboundRefused ? error.code : 'failed';
+      console.warn('[SafeOutbound] refused', { organizationId: report.organization_id, channel: 'slack', code });
+      throw new Error(code === 'not_allowed' ? 'Slack webhook destination not allowed' : 'Slack webhook request failed');
+    }
 
-    if (!response.ok) {
-      // The status only; the response body is not read.
-      await response.body?.cancel().catch(() => {});
-      throw new Error(`Slack webhook returned ${response.status}`);
+    if (status < 200 || status > 299) {
+      // The status only; the response body is never read.
+      throw new Error(`Slack webhook returned ${status}`);
     }
 
     console.log(`[ScheduledReports] Slack notification sent to ${report.slack_channels.join(', ')}`);

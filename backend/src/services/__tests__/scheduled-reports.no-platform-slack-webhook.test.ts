@@ -6,6 +6,10 @@
  *   - no non-test source names a SLACK environment variable, except the local
  *     stack's deny-list (config/local-stack-guard.ts);
  *   - no non-test source hard-codes a Slack webhook host;
+ *   - the one exception to both: the allow-list of Slack webhook hosts an
+ *     organization's own webhook may use, and the save error that names
+ *     them (utils/safe-outbound.ts), by exact line. They name hosts to
+ *     accept, not a destination to send to;
  *   - the report-delivery files read only the SMTP settings from the
  *     environment, by name, and import no config module but the database.
  * A static scan can't prove behaviour; scheduled-reports.slack-delivery.test.ts
@@ -13,6 +17,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { COMMENT_FIXTURE, codeLines as scanLines, codeLinesOf } from '../../__tests__/helpers/source-scan';
 
 const SRC = path.join(__dirname, '..', '..');
 const DENY_LIST = path.join('config', 'local-stack-guard.ts');
@@ -35,23 +40,17 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-/** The file's lines without comment-only lines (line and block comments). */
-function codeLines(file: string): string[] {
-  return fs
-    .readFileSync(file, 'utf-8')
-    .split('\n')
-    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line));
-}
-
 function read(relative: string): string {
-  return codeLines(path.join(SRC, relative)).join('\n');
+  return scanLines(path.join(SRC, relative))
+    .map(({ text }) => text)
+    .join('\n');
 }
 
-/** "file:line: text" for every code line matching `pattern`. */
+/** "file:line: text" for every code line (comments removed) matching `pattern`. */
 function matches(files: string[], pattern: RegExp): string[] {
   return files.flatMap((file) =>
-    codeLines(file).flatMap((line, i) =>
-      pattern.test(line) ? [`${path.relative(SRC, file)}:${i + 1}: ${line.trim()}`] : []
+    scanLines(file).flatMap(({ line, text }) =>
+      pattern.test(text) ? [`${path.relative(SRC, file)}:${line}: ${text.trim()}`] : []
     )
   );
 }
@@ -62,16 +61,27 @@ function envNames(source: string): string[] {
 
 const allFiles = sourceFiles(SRC);
 const SLACK_NAME = /SLACK/;
+const SLACK_HOST = /hooks\.slack(-gov)?\.com/i;
+
+const OUTBOUND = path.join('utils', 'safe-outbound.ts');
+/** The only code lines either scan may find, as "file: text". Any other line, in that file too, fails. */
+const SLACK_HOST_ALLOW_LIST = [
+  `${OUTBOUND}: export const SLACK_WEBHOOK_HOSTS = ['hooks.slack.com', 'hooks.slack-gov.com'] as const;`,
+  `${OUTBOUND}: export const slackWebhookUrlError = 'Slack webhook URL must be an https://hooks.slack.com/ or https://hooks.slack-gov.com/ address.';`,
+  `${OUTBOUND}: if (!(SLACK_WEBHOOK_HOSTS as readonly string[]).includes(host)) throw notAllowed();`,
+];
+const withoutLineNumber = (match: string) => match.replace(/:\d+: /, ': ');
+const outsideAllowList = (found: string[]) => found.filter((match) => !SLACK_HOST_ALLOW_LIST.includes(withoutLineNumber(match)));
 
 describe('no platform-level Slack webhook for report delivery', () => {
   it('no source outside the local-stack deny-list names a SLACK environment variable', () => {
     const scanned = allFiles.filter((file) => path.relative(SRC, file) !== DENY_LIST);
 
-    expect(matches(scanned, SLACK_NAME)).toEqual([]);
+    expect(outsideAllowList(matches(scanned, SLACK_NAME))).toEqual([]);
   });
 
-  it('no source hard-codes a Slack webhook host', () => {
-    expect(matches(allFiles, /hooks\.slack\.com/i)).toEqual([]);
+  it('no source hard-codes a Slack webhook host (commercial or government)', () => {
+    expect(outsideAllowList(matches(allFiles, SLACK_HOST))).toEqual([]);
   });
 
   it.each(REPORT_DELIVERY_FILES)('%s reads only the SMTP settings from the environment', (relative) => {
@@ -102,9 +112,29 @@ describe('no platform-level Slack webhook for report delivery', () => {
       expect([...new Set(envNames(read('services/scheduled-reports.service.ts')))].sort()).toEqual(ALLOWED_ENV);
     });
 
+    it('the allow-list exception covers exactly the host allow-list lines, which are still found', () => {
+      const outbound = [path.join(SRC, OUTBOUND)];
+      expect(matches(outbound, SLACK_NAME).map(withoutLineNumber)).toEqual([SLACK_HOST_ALLOW_LIST[0], SLACK_HOST_ALLOW_LIST[2]]);
+      expect(matches(outbound, SLACK_HOST).map(withoutLineNumber)).toEqual(SLACK_HOST_ALLOW_LIST.slice(0, 2));
+    });
+
+    it('it matches both Slack webhook hosts', () => {
+      for (const line of ["'https://hooks.slack.com/services/x'", "'https://hooks.slack-gov.com/services/x'", "'HOOKS.SLACK-GOV.COM'"]) {
+        expect(SLACK_HOST.test(line)).toBe(true);
+      }
+      expect(SLACK_HOST.test("'https://slack.example/x'")).toBe(false);
+    });
+
+    it('it ignores comments but not code that shares a line with one', () => {
+      const found = codeLinesOf(COMMENT_FIXTURE.source)
+        .filter(({ text }) => /a\.example\/[0-9]/.test(text))
+        .map(({ line }) => line);
+      expect(found).toEqual([1, 7, 8, 9]);
+    });
+
     it('it walks the whole source tree', () => {
       const relative = allFiles.map((file) => path.relative(SRC, file));
-      for (const file of [...REPORT_DELIVERY_FILES, DENY_LIST, 'server.ts']) expect(relative).toContain(file);
+      for (const file of [...REPORT_DELIVERY_FILES, DENY_LIST, OUTBOUND, 'server.ts']) expect(relative).toContain(file);
     });
   });
 });
