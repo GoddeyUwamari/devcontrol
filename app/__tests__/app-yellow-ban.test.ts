@@ -8,6 +8,11 @@ import { APP_CLOSURE, NON_APP_CLOSURE, SOURCE_FILES } from './surface-scope'
 // silently renders as something else, or not, depending on its shade. The app uses none: warning text and
 // surfaces use the ink-warning tokens and amber (typography plan T1). Marketing and sign-in pages keep
 // theirs (the override still applies there), as does code nothing imports.
+//
+// Files shared by the app and the marketing or sign-in pages (in both import closures, e.g. lib/utils.ts)
+// are skipped on purpose: whatever they render also appears on marketing and sign-in pages, which T1 must
+// leave exactly as they are, so a yellow class there is a marketing decision, not an app one. None of them
+// uses a yellow class today.
 const YELLOW = /(?<![\w-])(?:[\w-]+:)*(?:bg|text|border(?:-[trblxyse])?|ring|ring-offset|outline|fill|stroke|from|via|to|divide|decoration|placeholder|caret|accent|shadow)-yellow-\d{2,3}(?:\/\d+)?(?![\w-])/
 
 const APP_ONLY = (file: string) => APP_CLOSURE.has(file) && !NON_APP_CLOSURE.has(file)

@@ -5,19 +5,23 @@ import { describe, expect, it } from 'vitest'
 // Pages already on the app type scale (typography plan T1) may not drift back: every size and weight comes
 // from the role tokens (text-title ... text-label), and text colours are the ink tokens or pass AA on their
 // own surface. The full guard for every app file is its own PR (TG); this covers the files moved so far.
-// dark: variants are exempt (dark mode is not wired up; typography plan Q3).
+// Variants count, bracketed ones included ([&_p]:, data-[state=open]:, group-[.x]:); dark: variants are
+// exempt (dark mode is not wired up; typography plan Q3). Inline style colours and sizes count too.
 const STRICT = [
   'app/(app)/connect-aws/page.tsx',
   'components/dashboard/dashboard-unconnected-preview.tsx',
   'components/ui/typography.tsx',
 ]
 
-const V = '(?<![\\w:-])(?:(?!dark:)[\\w-]+:)*'
+// Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
+const VARIANT = '(?:[\\w-]+(?:-\\[[^\\]\\s]*\\])?|\\[[^\\]\\s]*\\])'
+const V = `(?<![\\w:\\]-])(?:(?!dark:)${VARIANT}:)*`
 const RULES: Record<string, RegExp> = {
   'Tailwind size scale (use a role token)': new RegExp(`${V}text-(?:xs|sm|base|lg|xl|[2-9]xl)(?![\\w-])`, 'g'),
   'arbitrary font size': new RegExp(`${V}text-\\[(?:\\d|\\.\\d|calc|clamp|length:)[^\\]]*\\]`, 'g'),
   'bold weight (roles carry 600)': new RegExp(`${V}font-(?:bold|extrabold|black)(?![\\w-])`, 'g'),
-  'inline font style': /\bfont(?:Size|Family|Weight)\s*:/g,
+  'arbitrary text property': new RegExp(`${V}\\[(?:font-size|font-weight|font-family|line-height|letter-spacing|color|opacity|-webkit-text-fill-color):[^\\]]*\\]`, 'g'),
+  'inline text style': /(?<![\w[-])(?:fontSize|fontFamily|fontWeight|lineHeight|letterSpacing|color|opacity|WebkitTextFillColor)\s*:\s*(?:'[^']*'|"[^"]*"|`[^`]*`|[\w.$]+(?:\([^)]*\))?)/g,
   'text colour below AA on light surfaces': new RegExp(
     `${V}text-(?:(?:slate|gray|zinc|neutral|stone)-(?:50|100|200|300|400|500)|(?:green|emerald|teal|cyan|lime|amber|yellow|orange)-(?:300|400|500|600)|(?:red|blue|sky|rose|pink)-(?:300|400|500)|red-600)(?:\\/\\d+)?(?![\\w-])`,
     'g'
@@ -26,25 +30,45 @@ const RULES: Record<string, RegExp> = {
   'opacity on content': new RegExp(`${V}opacity-\\d+(?![\\w-])`, 'g'),
 }
 
-/** Reviewed exceptions: each names the exact class, why it is fine, and must still occur (no stale entries). */
-const ALLOWED: { file: string; match: string; rule: string; reason: string }[] = [
+/**
+ * Reviewed exceptions: each names the exact class or style, how many times it may occur (an extra
+ * occurrence fails, and so does a missing one), and why it is fine.
+ */
+const ALLOWED: { file: string; match: string; rule: string; count: number; reason: string }[] = [
   {
     file: 'app/(app)/connect-aws/page.tsx',
     match: 'text-slate-200',
     rule: 'text colour below AA on light surfaces',
+    count: 1,
     reason: 'Light text on the dark code block: the trust policy sits on bg-slate-900, well above 4.5:1.',
   },
   {
     file: 'components/dashboard/dashboard-unconnected-preview.tsx',
     match: 'text-[#D6D3E8]',
     rule: 'arbitrary text colour',
+    count: 1,
     reason: 'The band is dark in both themes (#1A1730); dashboard-unconnected-preview.test.tsx checks this line is at least 4.5:1 on it.',
   },
   {
     file: 'components/dashboard/dashboard-unconnected-preview.tsx',
     match: 'text-[#1A1730]',
     rule: 'arbitrary text colour',
+    count: 1,
     reason: "The band's white button: dark text on white, checked in dashboard-unconnected-preview.test.tsx.",
+  },
+  {
+    file: 'components/dashboard/dashboard-unconnected-preview.tsx',
+    match: "color: 'var(--text-accent)'",
+    rule: 'inline text style',
+    count: 4,
+    reason: 'The accent token on its own tint (card tags, the sample tag, the sample total, step numbers); dashboard-unconnected-preview.test.tsx checks 4.5:1 on --bg-accent in light and dark.',
+  },
+  {
+    file: 'components/dashboard/dashboard-unconnected-preview.tsx',
+    match: "color: 'var(--text-success)'",
+    rule: 'inline text style',
+    count: 1,
+    reason: 'The aria-hidden check icon in each card line: a decorative icon, not text (green-700 in the app).',
   },
 ]
 
@@ -53,7 +77,9 @@ function findings(file: string): { rule: string; match: string; line: number }[]
   const out: { rule: string; match: string; line: number }[] = []
   for (const [rule, re] of Object.entries(RULES)) {
     for (const m of source.matchAll(re)) {
-      out.push({ rule, match: m[0].replace(/^.*:(?=text-|font-|opacity-)/, ''), line: source.slice(0, m.index).split('\n').length })
+      // Classes are reported without their variants; inline styles with their spacing normalised.
+      const match = rule === 'inline text style' ? m[0].replace(/\s+/g, ' ') : m[0].replace(new RegExp(`^(?:${VARIANT}:)+`), '')
+      out.push({ rule, match, line: source.slice(0, m.index).split('\n').length })
     }
   }
   return out
@@ -69,7 +95,17 @@ describe('strict typography for the pages on the app type scale', () => {
       [`${t}-[13px]`, 'arbitrary font size'],
       [`${t}-[0.75rem]`, 'arbitrary font size'],
       ['font-bold', 'bold weight (roles carry 600)'],
-      ['style={{ fontSize: 12 }}', 'inline font style'],
+      ['style={{ fontSize: 12 }}', 'inline text style'],
+      ["style={{ color: '#94A3B8' }}", 'inline text style'],
+      ["style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}", 'inline text style'],
+      ['style={{ lineHeight: 1.1 }}', 'inline text style'],
+      [`[&_p]:${t}-sm`, 'Tailwind size scale (use a role token)'],
+      [`data-[state=open]:${t}-xs`, 'Tailwind size scale (use a role token)'],
+      [`[&_span]:${t}-[13px]`, 'arbitrary font size'],
+      [['group-[.is-x]', 'font-bold'].join(':'), 'bold weight (roles carry 600)'],
+      [`[&>p]:${t}-slate-400`, 'text colour below AA on light surfaces'],
+      [['[font-size', '12px]'].join(':'), 'arbitrary text property'],
+      [['md:[color', '#999]'].join(':'), 'arbitrary text property'],
       [`${t}-slate-500`, 'text colour below AA on light surfaces'],
       [`hover:${t}-gray-400`, 'text colour below AA on light surfaces'],
       [`${t}-green-600`, 'text colour below AA on light surfaces'],
@@ -81,22 +117,28 @@ describe('strict typography for the pages on the app type scale', () => {
       const re = new RegExp(RULES[rule].source)
       expect(`className="${cls}"`, `${cls} -> ${rule}`).toMatch(re)
     }
-    const fine = [`${t}-ui`, `${t}-ink-muted`, `${t}-slate-600`, `${t}-green-700`, `${t}-[var(--text-accent)]`, `dark:${t}-slate-400`, 'font-semibold', 'disabled:cursor-not-allowed']
+    const fine = [`${t}-ui`, `${t}-ink-muted`, `${t}-slate-600`, `${t}-green-700`, `${t}-[var(--text-accent)]`, `dark:${t}-slate-400`, `[&_p]:${t}-ui`, 'font-semibold', 'disabled:cursor-not-allowed', "style={{ background: 'var(--bg-accent)' }}"]
     for (const cls of fine) {
       for (const [rule, re] of Object.entries(RULES)) expect(`className="${cls}"`, `${cls} vs ${rule}`).not.toMatch(new RegExp(re.source))
     }
   })
 
   it.each(STRICT)('%s has no drift outside the reviewed exceptions', (file) => {
-    const unexpected = findings(file).filter((f) => !ALLOWED.some((a) => a.file === file && a.match === f.match && a.rule === f.rule))
+    const all = findings(file)
+    const unexpected = all.filter((f) => !ALLOWED.some((a) => a.file === file && a.match === f.match && a.rule === f.rule))
     expect(unexpected.map((f) => `${file}:${f.line} ${f.match} (${f.rule})`)).toEqual([])
+    // An allowed class or style may occur exactly as often as reviewed: one more is drift too.
+    for (const entry of ALLOWED.filter((a) => a.file === file)) {
+      const found = all.filter((f) => f.match === entry.match && f.rule === entry.rule)
+      expect(found.map((f) => `${file}:${f.line} ${f.match}`), `${entry.match} may occur ${entry.count}x`).toHaveLength(entry.count)
+    }
   })
 
-  it('every exception still occurs (stale entries fail) and gives a reason', () => {
+  it('every exception names a strict file, a count of at least 1 and a reason', () => {
     for (const entry of ALLOWED) {
       expect(STRICT, entry.file).toContain(entry.file)
+      expect(entry.count, entry.match).toBeGreaterThanOrEqual(1)
       expect(entry.reason.length, entry.match).toBeGreaterThan(20)
-      expect(findings(entry.file).some((f) => f.match === entry.match && f.rule === entry.rule), `${entry.file}: ${entry.match}`).toBe(true)
     }
   })
 })

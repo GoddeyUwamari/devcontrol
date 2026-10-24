@@ -306,7 +306,7 @@ export function ServiceHealthTable({ services, loading = false, rangeLabel }: Se
               {service.recentIncidents !== undefined && (
                 <div className={`mt-2 ml-7 text-xs rounded px-2 py-1 inline-block ${
                   service.recentIncidents > 0
-                    ? 'text-ink-warning bg-amber-50'
+                    ? 'text-ink-warning-strong bg-amber-50'
                     : 'text-gray-400 bg-gray-50'
                 }`}>
                   {service.recentIncidents === 0

@@ -160,3 +160,22 @@ describe('checkResultLabel — names the check that produced each status', () =>
     expect(screen.getByTestId('check-result')).toHaveTextContent('Status checks passing')
   })
 })
+
+// Warning chips on an amber tint use the strong warning ink (typography plan T1), like the app's other
+// warning chips; the quiet zero state keeps its grey.
+describe('ServiceHealthTable — recent incidents chip', () => {
+  const withIncidents = (recentIncidents: number) =>
+    [{ name: 'i-123', description: 'EC2 · i-123', status: 'degraded' as const, uptime: '99.0%', responseTime: '300ms', errorRate: 1, monitored: true, resourceType: 'ec2', recentIncidents }]
+
+  it('incidents: strong warning text on the amber tint', () => {
+    render(<ServiceHealthTable services={withIncidents(2)} rangeLabel="1h" />)
+    const chip = screen.getByText('2 incidents in last 24h')
+    expect(chip.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-ink-warning-strong', 'bg-amber-50']))
+    expect(chip.className).not.toMatch(/yellow/)
+  })
+
+  it('no incidents: unchanged neutral chip', () => {
+    render(<ServiceHealthTable services={withIncidents(0)} rangeLabel="1h" />)
+    expect(screen.getByText('0 incidents in last 24h').className.split(/\s+/)).toEqual(expect.arrayContaining(['bg-gray-50']))
+  })
+})
