@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils"
 
 /**
  * App type roles (typography plan §4.1) as components, for the signed-in app
- * only: the text-* and ink-* tokens they use have values only inside
- * [data-surface="app"] (app/globals.css, APP SURFACE block).
+ * only: the text-* and ink-* tokens they use have values only on the app
+ * surface (app/globals.css, APP SURFACE block).
  */
 
 interface PageHeaderProps {
