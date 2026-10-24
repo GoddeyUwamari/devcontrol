@@ -304,7 +304,10 @@ function expectPreviewAndSteps() {
   // The hero: the copy, then the sample panel (shown to every role), exactly as approved.
   const hero = within(preview).getByTestId('preview-hero')
   expect([...hero.children].map((child) => child.getAttribute('data-testid'))).toEqual(['preview-hero-copy', 'sample-panel'])
-  expect(hero.nextElementSibling).toBe(within(preview).getByTestId('preview-cards'))
+  // Then the cards' section: its heading and lead, then the cards.
+  const covers = within(preview).getByTestId('preview-covers')
+  expect(hero.nextElementSibling).toBe(covers)
+  expect([...covers.children].map((child) => child.tagName + (child.getAttribute('data-testid') ? `#${child.getAttribute('data-testid')}` : ''))).toEqual(['H2', 'P', 'UL#preview-cards'])
   expectApprovedSamplePanel(document.body)
   expect(heroWords(hero)).not.toMatch(HERO_FORBIDDEN)
   // No ::before / ::after or CSS content anywhere in the preview: no text the word guards cannot see.
@@ -341,7 +344,7 @@ function expectPreviewAndSteps() {
     expect(card.closest('a, button, [role="button"], [role="link"]')).toBeNull()
     expect(card.querySelector('a, button, [role="button"], [role="link"], [tabindex], [role="progressbar"], svg:not(.lucide)')).toBeNull()
     expect(card.className).not.toMatch(/hover:|cursor-pointer|focus|opacity/)
-    expect(within(card).getByRole('heading', { level: 2 })).toBe(within(card).getByTestId('preview-title'))
+    expect(within(card).getByRole('heading', { level: 3 })).toBe(within(card).getByTestId('preview-title'))
     // Nothing sets a fixed or minimum width that could force horizontal scrolling on a phone.
     for (const node of [card, ...card.querySelectorAll('*')]) {
       expect(node.getAttribute('class') ?? '').not.toMatch(/(^|\s)(min-w-\[|w-\[|whitespace-nowrap|overflow-x)/)
@@ -368,11 +371,13 @@ function expectPreviewAndSteps() {
   expect(items[0].parentElement?.className).toMatch(/\bgrid-cols-1\b.*\bmd:grid-cols-3\b/)
   expect(steps.querySelector('a, button, [role="button"], [role="link"], [tabindex], [role="progressbar"], svg:not(.lucide)')).toBeNull()
 
-  // Heading order: the h1, then the sample panel, every card, the band and the strip as h2 -- no level skipped.
+  // Heading order: the h1, then the sample panel and the cards' section as h2 with every card under it as h3,
+  // then the band and the strip as h2 -- no level skipped.
   expect(screen.getAllByRole('heading').map((h) => [h.tagName, h.textContent])).toEqual([
     ['H1', HEADLINE],
     ['H2', SAMPLE_PANEL_TITLE],
-    ...PREVIEW_CARDS.map(([, title]) => ['H2', title]),
+    ['H2', 'What DevControl covers'],
+    ...PREVIEW_CARDS.map(([, title]) => ['H3', title]),
     ['H2', BAND_HEADLINE],
     ['H2', 'How connecting works'],
   ])

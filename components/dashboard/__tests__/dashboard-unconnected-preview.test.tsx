@@ -236,7 +236,7 @@ describe('responsive behaviour', () => {
     renderPreview()
     const hero = screen.getByTestId('preview-hero')
     expect(hero.parentElement).toBe(screen.getByTestId('dashboard-preview'))
-    expect([...hero.parentElement!.children].map((child) => child.getAttribute('data-testid'))).toEqual(['preview-hero', 'preview-cards', 'preview-band'])
+    expect([...hero.parentElement!.children].map((child) => child.getAttribute('data-testid'))).toEqual(['preview-hero', 'preview-covers', 'preview-band'])
     for (const id of ['preview-cards', 'preview-band', 'connecting-steps']) expect(hero.contains(screen.getByTestId(id))).toBe(false)
   })
 
@@ -303,15 +303,34 @@ describe('responsive behaviour', () => {
     renderPreview()
     for (const card of screen.getAllByTestId('preview-card')) expect(card.className).toMatch(/\bp-7\b/)
   })
+
+  it.each([true, false])('the cards have their own heading and lead, in the section and body roles, spaced like the rest of the page (owner: %s)', (owner) => {
+    renderPreview(owner)
+    const covers = screen.getByTestId('preview-covers')
+    expect(covers.tagName).toBe('SECTION')
+    // The heading, the lead, then the cards: nothing else in the section.
+    expect([...covers.children].map((child) => child.tagName + (child.getAttribute('data-testid') ? `#${child.getAttribute('data-testid')}` : ''))).toEqual(['H2', 'P', 'UL#preview-cards'])
+    const [heading, lead] = [...covers.children] as HTMLElement[]
+    expect(heading.textContent).toBe('What DevControl covers')
+    expect(lead.textContent).toBe('Explore the cost, security, and infrastructure insights available in DevControl.')
+    // Not the sample panel's title, which names the panel only.
+    expect(heading.textContent).not.toBe(SAMPLE_PANEL_TITLE)
+    expect(heading.className.split(/\s+/)).toEqual(['text-section', 'text-ink', 'mt-0', 'mb-1.5'])
+    expect(lead.className.split(/\s+/)).toEqual(['text-body', 'text-ink-muted', 'mt-0', 'mb-5'])
+    // 40px above (collapsing with the hero's mb-6), as above "How connecting works"; 6px to the lead, as in the band; 20px to the cards.
+    expect(covers.className.split(/\s+/)).toEqual(['mt-10'])
+    expect(screen.getByTestId('dashboard-preview').className).toContain('mb-10')
+  })
 })
 
 describe('accessibility', () => {
-  it.each([true, false])('heading order: one h1, then the sample panel, every card, the band and the steps as h2 -- no level skipped (owner: %s)', (owner) => {
+  it.each([true, false])('heading order: one h1; the sample panel, the cards\' section, the band and the steps as h2; every card as h3 under its section -- no level skipped (owner: %s)', (owner) => {
     renderPreview(owner)
     expect(screen.getAllByRole('heading').map((h) => [h.tagName, h.textContent])).toEqual([
       ['H1', 'AI-Powered Cloud Operations & Infrastructure Intelligence'],
       ['H2', SAMPLE_PANEL_TITLE],
-      ...CARD_ORDER.map(([, title]) => ['H2', title]),
+      ['H2', 'What DevControl covers'],
+      ...CARD_ORDER.map(([, title]) => ['H3', title]),
       ['H2', 'See where your AWS money is going'],
       ['H2', 'How connecting works'],
     ])
@@ -325,6 +344,9 @@ describe('accessibility', () => {
     expect(panel).toHaveAccessibleDescription(SAMPLE_CAPTION)
     expect(within(panel).getAllByTestId('sample-panel-row').every((row) => row.tagName === 'LI' && row.parentElement?.tagName === 'UL')).toBe(true)
     expect(screen.getByRole('region', { name: 'How connecting works' })).toBe(screen.getByTestId('connecting-steps'))
+    const covers = screen.getByRole('region', { name: 'What DevControl covers' })
+    expect(covers).toBe(screen.getByTestId('preview-covers'))
+    expect(covers.contains(screen.getByTestId('preview-cards'))).toBe(true)
     expect(screen.getByTestId('preview-cards').tagName).toBe('UL')
     expect(screen.getAllByTestId('preview-card').every((card) => card.tagName === 'LI')).toBe(true)
     expect(screen.getAllByTestId('connecting-step')[0].parentElement?.tagName).toBe('OL')

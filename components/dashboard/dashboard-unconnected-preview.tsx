@@ -166,7 +166,7 @@ function PreviewCard({ tag, title, subtitle, shows, planLabel }: PreviewItem) {
           </span>
         )}
       </div>
-      <h2 className="text-card-title text-ink mt-0 mb-1.5" data-testid="preview-title">{title}</h2>
+      <h3 className="text-card-title text-ink mt-0 mb-1.5" data-testid="preview-title">{title}</h3>
       <p className="text-body text-ink-muted m-0" data-testid="preview-subtitle">{subtitle}</p>
       <ul className="list-none p-0 mt-5 mb-0 flex flex-col gap-3">
         {shows.map((line) => (
@@ -294,9 +294,14 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
           <SamplePanel />
         </div>
 
-        <ul className="list-none p-0 mt-0 mb-5 grid grid-cols-1 md:grid-cols-2 gap-5" data-testid="preview-cards">
-          {CARDS.map((item) => <PreviewCard key={item.title} {...item} />)}
-        </ul>
+        {/* The cards' own heading, so their titles sit under it (h3) in the page outline. */}
+        <section className="mt-10" aria-labelledby="preview-covers-title" data-testid="preview-covers">
+          <h2 id="preview-covers-title" className="text-section text-ink mt-0 mb-1.5">What DevControl covers</h2>
+          <p className="text-body text-ink-muted mt-0 mb-5">Explore the cost, security, and infrastructure insights available in DevControl.</p>
+          <ul className="list-none p-0 mt-0 mb-5 grid grid-cols-1 md:grid-cols-2 gap-5" data-testid="preview-cards">
+            {CARDS.map((item) => <PreviewCard key={item.title} {...item} />)}
+          </ul>
+        </section>
 
         {/* Dark in both themes, so its colours are fixed rather than taken from the theme tokens. */}
         <div
