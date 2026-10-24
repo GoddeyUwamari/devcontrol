@@ -1,6 +1,6 @@
 import { AlertTriangle, Activity } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EvidenceBadge, NEUTRAL_COLOR } from './evidence-badge'
+import { EvidenceBadge, NEUTRAL_COLOR, toneText } from './evidence-badge'
 import { EvidenceInfo } from './evidence-info'
 import { CardArrowLink } from './card-arrow-link'
 
@@ -75,7 +75,7 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <p className="text-sm font-semibold m-0" style={{ color: severity ? style.color : 'var(--foreground)' }}>Top Risk</p>
+            <p className="text-sm font-semibold m-0" style={{ color: severity ? toneText(style.color) : 'var(--foreground)' }}>Top Risk</p>
             {severity && <EvidenceBadge label={SEVERITY_STYLE[severity].label} color={style.color} testId="top-risk-severity" />}
           </div>
           {/* Only an identified risk links to the findings, as before. */}

@@ -1,4 +1,5 @@
 import { PuzzleIcon, Sparkles } from 'lucide-react'
+import { toneText } from './evidence-badge'
 
 /**
  * The latest cost analysis's state, mapped from the shared
@@ -111,7 +112,7 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
             )}
             <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-2.5">{description}</p>
             {count > 0 && priorityBadge && (
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full inline-block" style={{ color: priorityBadge.color, background: priorityBadge.background }}>
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full inline-block" style={{ color: toneText(priorityBadge.color), background: priorityBadge.background }}>
                 {priorityBadge.label}
               </span>
             )}

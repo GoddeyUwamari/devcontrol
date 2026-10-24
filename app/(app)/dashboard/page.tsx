@@ -616,7 +616,7 @@ export default function DashboardPage() {
           {(hasServicesOnly || isBillingSyncing) && (
             <div className="bg-[var(--bg-warning)] border border-[var(--border-warning)] rounded-xl px-5 py-3 mb-6 flex items-center gap-3">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--fill-warning)' }} />
-              <span className="text-[13px]" style={{ color: 'var(--text-warning)' }}>
+              <span className="text-[13px]" style={{ color: 'var(--app-color-ink-warning-strong)' }}>
                 {hasServicesOnly
                   ? 'Historical billing data is still syncing. Infrastructure scanning and security analysis are fully operational — cost totals will be available within 24–48 hours.'
                   : 'Billing sync in progress (24–48h) — infrastructure and security data are ready now.'}

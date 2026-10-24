@@ -33,7 +33,7 @@ export function ProviderPills({ awsConnection, canConnectAws }: { awsConnection:
       {awsConnection === 'connected' ? (
         <span
           className={`${PILL} border`}
-          style={{ background: 'var(--bg-success)', borderColor: 'var(--border-success)', color: 'var(--text-success)' }}
+          style={{ background: 'var(--bg-success)', borderColor: 'var(--border-success)', color: 'var(--app-color-ink-success-strong)' }}
           data-testid="provider-pill-aws"
           data-state="connected"
         >

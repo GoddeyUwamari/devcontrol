@@ -189,6 +189,8 @@ describe('connection gates and the connection state ignore the cost evidence', (
     expect(router.replace).not.toHaveBeenCalled()
     // isBillingSyncing comes from computeDashboardAwsGates(stats) alone.
     expect(screen.getByText(BILLING_SYNC_BANNER)).toBeInTheDocument()
+    // On the warning tint, the text is the -strong ink (typography plan T1).
+    expect(screen.getByText(BILLING_SYNC_BANNER).style.color).toBe('var(--app-color-ink-warning-strong)')
     expect(screen.queryByText(SYNCING_BANNER)).not.toBeInTheDocument()
   })
 
