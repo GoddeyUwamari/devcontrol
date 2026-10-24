@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { AuthGate } from '@/components/auth/auth-gate';
 import { TopNav } from '@/components/layout/top-nav';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -19,11 +19,27 @@ import { SiteAnalytics } from '@/components/analytics/site-analytics';
 
 // Every app route is signed-in only: the shell, and every hook in it, mounts
 // only once AuthGate has a signed-in user.
+//
+// data-surface="app" scopes the app-only styles in app/globals.css (the APP
+// SURFACE block). It sits outside AuthGate so the sign-in loader is covered,
+// on this wrapper for the first paint and on <html> so content portalled to
+// <body> (dialogs, menus, tooltips) is covered too. Leaving the app removes
+// it from <html>; the marketing and sign-in pages never set it.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.dataset.surface = 'app';
+    return () => {
+      delete root.dataset.surface;
+    };
+  }, []);
+
   return (
-    <AuthGate>
-      <AppShell>{children}</AppShell>
-    </AuthGate>
+    <div data-surface="app">
+      <AuthGate>
+        <AppShell>{children}</AppShell>
+      </AuthGate>
+    </div>
   );
 }
 
