@@ -12,6 +12,9 @@ const block = css.slice(css.indexOf('/* === APP SURFACE (typography plan) === */
 const theme = block.slice(block.indexOf('@theme inline {'), block.indexOf('}', block.indexOf('@theme inline {')))
 const themeNames = (prefix: string) =>
   [...new Set([...theme.matchAll(new RegExp(`^\\s*--${prefix}-([a-z-]+?): `, 'gm'))].map((m) => m[1]).filter((n) => !n.includes('--')))]
+// The roles as the stylesheet defines them, not as lib/utils.ts lists them, so a role missing from the
+// merger's list fails the merge checks too.
+const ROLES = themeNames('text')
 
 describe('cn() and the app type roles', () => {
   it('knows exactly the roles and spacing the APP SURFACE block defines', () => {
@@ -21,7 +24,8 @@ describe('cn() and the app type roles', () => {
 
   it('keeps a role size next to an ink colour (stock tailwind-merge drops the size as a colour)', () => {
     expect(twMerge('text-ui text-ink-success')).toBe('text-ink-success')
-    for (const role of APP_TEXT_ROLES) {
+    expect(ROLES).toHaveLength(9)
+    for (const role of ROLES) {
       expect(cn(`text-${role}`, 'text-ink-muted'), role).toBe(`text-${role} text-ink-muted`)
       expect(cn(`text-${role} text-white`), role).toBe(`text-${role} text-white`)
     }
