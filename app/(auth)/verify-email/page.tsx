@@ -5,15 +5,15 @@ import Link from "next/link";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { authService } from "@/lib/services/auth.service";
 import { takeUrlCredentials } from "@/lib/url-credentials";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/marketing-ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+} from "@/components/marketing-ui/card";
+import { Alert, AlertDescription } from "@/components/marketing-ui/alert";
 
 type VerificationState =
   | "verifying"
