@@ -6,10 +6,11 @@ import tailwind from '@tailwindcss/postcss'
 import postcss, { type Root, type Rule } from 'postcss'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { contrast } from './contrast'
+import { isAppScopedSelector } from './surface-scope'
 
 // What Tailwind really generates from the APP SURFACE block in app/globals.css: each app utility
-// reads an --app-* value, and those values exist only under [data-surface="app"], so the utilities
-// do nothing on the marketing and sign-in pages. Compiled with the same @tailwindcss/postcss plugin
+// reads an --app-* value, and those values exist only under [data-surface="app"], so on the
+// marketing and sign-in pages the utilities get no value from the block. Compiled with the same @tailwindcss/postcss plugin
 // the Next.js build uses, from the block alone (no source scan; the candidates are listed inline).
 const css = readFileSync(join(process.cwd(), 'app/globals.css'), 'utf8')
 const START = '/* === APP SURFACE (typography plan) === */'
@@ -84,7 +85,7 @@ describe('generated CSS for the app tokens', () => {
     out.walkDecls(/^--app-/, (decl) => {
       const rule = decl.parent as Rule
       expect(rule.type, decl.prop).toBe('rule')
-      for (const selector of rule.selectors) expect(selector, decl.prop).toMatch(/^\[data-surface=["']?app["']?\]/)
+      for (const selector of rule.selectors) expect(isAppScopedSelector(selector), `${decl.prop} in ${selector}`).toBe(true)
       defined.push(decl.prop)
     })
     expect(defined).toContain('--app-spacing-page-top')

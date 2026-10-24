@@ -3,6 +3,7 @@ import { createRequire } from 'module'
 import { join } from 'path'
 import postcss, { type AtRule, type Root, type Rule } from 'postcss'
 import { describe, expect, it } from 'vitest'
+import { isAppScopedSelector } from './surface-scope'
 
 // app/globals.css styles the marketing and sign-in pages as well as the app. The app-only
 // typography work adds CSS in exactly one delimited block at the end of the file; everything
@@ -45,9 +46,9 @@ describe('app/globals.css outside the app block', () => {
   })
 })
 
-// Every selector in the block is scoped to the app surface; the block's @theme only aliases new
-// names to --app-* values, with no fallback, so its utilities do nothing outside the app.
-const SCOPED_SELECTOR = /^(:root)?\[data-surface="app"\](?=$|[\s>+~:.[#])/
+// Every selector in the block can match only the app surface element or its descendants; the
+// block's @theme only aliases new names to --app-* values, with no fallback, so outside the app its
+// utilities get no value from the block (and the source scan keeps them out of non-app files).
 const APP_VALUE = /^var\((--app-[\w-]+)\)$/
 
 function appBlock(): Root {
@@ -96,14 +97,14 @@ describe('the APP SURFACE block in app/globals.css', () => {
       selectors.push(...rule.selectors)
     })
     expect(selectors.length).toBeGreaterThan(0)
-    for (const selector of selectors) expect(selector, selector).toMatch(SCOPED_SELECTOR)
+    for (const selector of selectors) expect(isAppScopedSelector(selector), selector).toBe(true)
   })
 
   it('every --app-* value is defined only inside scoped rules', () => {
     const defined = new Set<string>()
     appBlock().walkDecls(/^--app-/, (decl) => {
       expect(decl.parent?.type, decl.prop).toBe('rule')
-      for (const selector of (decl.parent as Rule).selectors) expect(selector, decl.prop).toMatch(SCOPED_SELECTOR)
+      for (const selector of (decl.parent as Rule).selectors) expect(isAppScopedSelector(selector), `${decl.prop} in ${selector}`).toBe(true)
       defined.add(decl.prop)
     })
     expect(defined.size).toBeGreaterThan(0)
@@ -129,6 +130,15 @@ describe('the APP SURFACE block in app/globals.css', () => {
     expect(names).toContain('--text-title')
     expect(names).toContain('--color-ink-muted')
     expect(names).toContain('--spacing-page-top')
+  })
+
+  it('the selector rule rejects sibling and column combinators (self-check)', () => {
+    for (const ok of ['[data-surface="app"]', ':root[data-surface="app"]', '[data-surface="app"] ::placeholder', '[data-surface="app"] > .x', '[data-surface=app] [title="a+b"]']) {
+      expect(isAppScopedSelector(ok), ok).toBe(true)
+    }
+    for (const bad of ['body', '.x [data-surface="app"]', '[data-surface="app"] + body', '[data-surface="app"] ~ *', '[data-surface="app"]+p', '[data-surface="app"] || td', '[data-surface="application"]']) {
+      expect(isAppScopedSelector(bad), bad).toBe(false)
+    }
   })
 
   it('no value in the block has a fallback', () => {

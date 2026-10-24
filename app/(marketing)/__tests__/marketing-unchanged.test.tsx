@@ -8,12 +8,20 @@
  * their layout from window.innerWidth) and compared with an HTML fixture in
  * __fixtures__/, generated once from the code before that work began.
  *
+ * Pages that respond to width only through CSS classes (sm:, lg:) give the
+ * same markup at both widths, so their two fixtures are identical; pages that
+ * read window.innerWidth give different markup.
+ *
  * UPDATING A FIXTURE NEEDS FOUNDER SIGN-OFF IN THE PR. A fixture that no longer
  * matches means a marketing or sign-in page changed; never regenerate one to
- * make this test pass.
+ * make this test pass. Each fixture is read and compared directly: a missing or
+ * different fixture fails, with or without CI or `vitest -u`. Fixtures are
+ * written only with UPDATE_MARKETING_FIXTURES=1, which is refused when CI is set.
  */
 process.env.TZ = 'UTC'
 
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -185,6 +193,22 @@ const PAGES: Page[] = [
   },
 ]
 
+const FIXTURES = join(__dirname, '__fixtures__')
+const fixtureName = (page: Page, width: number) => `${page.name}-${width}.html`
+const UPDATE = process.env.UPDATE_MARKETING_FIXTURES === '1'
+
+describe('marketing fixtures', () => {
+  it('UPDATE_MARKETING_FIXTURES is never honoured in CI', () => {
+    if (UPDATE) expect(process.env.CI, 'UPDATE_MARKETING_FIXTURES=1 is refused when CI is set').toBeFalsy()
+  })
+
+  it('the fixture folder holds exactly the 12 expected files', () => {
+    const expected = PAGES.flatMap((page) => WIDTHS.map((width) => fixtureName(page, width))).sort()
+    expect(expected).toHaveLength(12)
+    expect(readdirSync(FIXTURES).sort()).toEqual(expected)
+  })
+})
+
 describe('marketing and sign-in pages are unchanged', () => {
   for (const page of PAGES) {
     for (const width of WIDTHS) {
@@ -197,7 +221,14 @@ describe('marketing and sign-in pages are unchanged', () => {
         expect(window.innerWidth).toBe(width)
         expect(text(container)).not.toMatch(/something went wrong/i)
         page.check(container)
-        await expect(format(container.innerHTML)).toMatchFileSnapshot(`./__fixtures__/${page.name}-${width}.html`)
+        const html = format(container.innerHTML)
+        const fixture = join(FIXTURES, fixtureName(page, width))
+        if (UPDATE) {
+          expect(process.env.CI, 'UPDATE_MARKETING_FIXTURES=1 is refused when CI is set').toBeFalsy()
+          writeFileSync(fixture, html)
+        }
+        expect(existsSync(fixture), `${fixtureName(page, width)} is missing`).toBe(true)
+        expect(html).toBe(readFileSync(fixture, 'utf8'))
       })
     }
   }

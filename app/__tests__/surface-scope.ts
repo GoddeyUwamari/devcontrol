@@ -90,3 +90,18 @@ export const NON_APP_CLOSURE = closure(
       f === 'app/providers.tsx'
   )
 )
+
+/**
+ * True when a CSS selector can only match the app surface element or something inside it: it
+ * starts with [data-surface="app"] (or :root[data-surface="app"]) and contains no sibling (+, ~)
+ * or column (||) combinator anywhere, since those reach elements outside the wrapper. Attribute
+ * value quotes are optional (minifiers drop them). Conservative: `+` inside :nth-child(2n+1) is
+ * rejected too.
+ */
+export function isAppScopedSelector(selector: string): boolean {
+  const s = selector.trim()
+  const prefix = s.match(/^(?::root)?\[data-surface=(?:"app"|'app'|app)\](?=$|[\s>:.[#])/)
+  if (!prefix) return false
+  const rest = s.slice(prefix[0].length).replace(/"[^"]*"|'[^']*'/g, '""')
+  return !/[+~]|\|\|/.test(rest)
+}

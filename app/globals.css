@@ -737,11 +737,15 @@ body { overflow-x: hidden; }
 /* === APP SURFACE (typography plan) === */
 /*
  * App-only type, colour and spacing tokens. The utilities they create
- * (text-title, text-ink-muted, pt-page-top, ...) resolve only inside
+ * (text-title, text-ink-muted, pt-page-top, ...) get their values only inside
  * [data-surface="app"], which app/(app)/layout.tsx sets on <html> and on its
- * wrapper; outside the app their values are undefined and they do nothing.
- * The @theme names are inline aliases with no fallback, so Tailwind writes
- * var(--app-...) into each utility and defines nothing on :root.
+ * wrapper. The @theme names are inline aliases with no fallback, so Tailwind
+ * writes var(--app-...) into each utility and defines nothing on :root.
+ * Outside the app that var() is undefined, so the property falls back to its
+ * initial value (inherited properties such as font-size and color inherit
+ * instead): the utility still overrides other classes, for example
+ * pt-page-top would reset padding-top to 0. That is why
+ * app/__tests__/app-token-scope.test.ts bans these names outside app files.
  * Everything above this block is frozen (app/__tests__/globals-marketing-scope.test.ts).
  */
 @theme inline {
