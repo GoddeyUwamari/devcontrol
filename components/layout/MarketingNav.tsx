@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/marketing-ui/button'
 import {
   ChevronDown, Menu, X,
   Server, TrendingDown, Shield, BarChart2, Search, Activity,

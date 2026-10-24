@@ -13,9 +13,9 @@ import {
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { takeUrlCredentials } from "@/lib/url-credentials";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/marketing-ui/button";
+import { Input } from "@/components/marketing-ui/input";
+import { Label } from "@/components/marketing-ui/label";
 import {
   Card,
   CardContent,
@@ -23,8 +23,8 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+} from "@/components/marketing-ui/card";
+import { Checkbox } from "@/components/marketing-ui/checkbox";
 import { cn } from "@/lib/utils";
 
 // The form's field names: what a native GET submit before hydration would

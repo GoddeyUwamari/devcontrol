@@ -6,15 +6,15 @@ import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2, AlertCircle, Mail } from "lucide-react";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { organizationsService } from "@/lib/services/organizations.service";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/marketing-ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+} from "@/components/marketing-ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/marketing-ui/alert";
 import { logError } from "@/lib/safe-log";
 import { takeUrlCredentials } from "@/lib/url-credentials";
 import {

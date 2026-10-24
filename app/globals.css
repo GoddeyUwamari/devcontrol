@@ -733,3 +733,115 @@ html {
 }
 
 body { overflow-x: hidden; }
+
+/* === APP SURFACE (typography plan) === */
+/*
+ * App-only type, colour and spacing tokens. The utilities they create
+ * (text-title, text-ink-muted, pt-page-top, ...) get their values only inside
+ * [data-surface="app"], which app/(app)/layout.tsx sets on <html> and on its
+ * wrapper. The @theme names are inline aliases with no fallback, so Tailwind
+ * writes var(--app-...) into each utility and defines nothing on :root.
+ * Outside the app that var() is undefined, so the property falls back to its
+ * initial value (inherited properties such as font-size and color inherit
+ * instead): the utility still overrides other classes, for example
+ * pt-page-top would reset padding-top to 0. That is why
+ * app/__tests__/app-token-scope.test.ts bans these names outside app files.
+ * Everything above this block is frozen (app/__tests__/globals-marketing-scope.test.ts).
+ */
+@theme inline {
+  --text-title: var(--app-text-title);
+  --text-title--line-height: var(--app-text-title--line-height);
+  --text-title--font-weight: var(--app-text-title--font-weight);
+  --text-title--letter-spacing: var(--app-text-title--letter-spacing);
+  --text-subtitle: var(--app-text-subtitle);
+  --text-subtitle--line-height: var(--app-text-subtitle--line-height);
+  --text-section: var(--app-text-section);
+  --text-section--line-height: var(--app-text-section--line-height);
+  --text-section--font-weight: var(--app-text-section--font-weight);
+  --text-card-title: var(--app-text-card-title);
+  --text-card-title--line-height: var(--app-text-card-title--line-height);
+  --text-card-title--font-weight: var(--app-text-card-title--font-weight);
+  --text-body: var(--app-text-body);
+  --text-body--line-height: var(--app-text-body--line-height);
+  --text-ui: var(--app-text-ui);
+  --text-ui--line-height: var(--app-text-ui--line-height);
+  --text-meta: var(--app-text-meta);
+  --text-meta--line-height: var(--app-text-meta--line-height);
+  --text-label: var(--app-text-label);
+  --text-label--line-height: var(--app-text-label--line-height);
+  --text-label--font-weight: var(--app-text-label--font-weight);
+  --text-kpi: var(--app-text-kpi);
+  --text-kpi--line-height: var(--app-text-kpi--line-height);
+  --text-kpi--font-weight: var(--app-text-kpi--font-weight);
+  --text-kpi--letter-spacing: var(--app-text-kpi--letter-spacing);
+
+  --color-ink: var(--app-color-ink);
+  --color-ink-body: var(--app-color-ink-body);
+  --color-ink-muted: var(--app-color-ink-muted);
+  --color-ink-success: var(--app-color-ink-success);
+  --color-ink-success-strong: var(--app-color-ink-success-strong);
+  --color-ink-warning: var(--app-color-ink-warning);
+  --color-ink-warning-strong: var(--app-color-ink-warning-strong);
+  --color-ink-danger: var(--app-color-ink-danger);
+  --color-ink-danger-strong: var(--app-color-ink-danger-strong);
+  --color-ink-info: var(--app-color-ink-info);
+  --color-ink-accent: var(--app-color-ink-accent);
+
+  --spacing-page-top: var(--app-spacing-page-top);
+}
+
+[data-surface="app"] {
+  --app-text-title: 1.75rem;
+  --app-text-title--line-height: 2.25rem;
+  --app-text-title--font-weight: 600;
+  --app-text-title--letter-spacing: -0.01em;
+  --app-text-subtitle: 0.9375rem;
+  --app-text-subtitle--line-height: 1.375rem;
+  --app-text-section: 1.125rem;
+  --app-text-section--line-height: 1.625rem;
+  --app-text-section--font-weight: 600;
+  --app-text-card-title: 0.9375rem;
+  --app-text-card-title--line-height: 1.375rem;
+  --app-text-card-title--font-weight: 600;
+  --app-text-body: 0.9375rem;
+  --app-text-body--line-height: 1.375rem;
+  --app-text-ui: 0.875rem;
+  --app-text-ui--line-height: 1.25rem;
+  --app-text-meta: 0.8125rem;
+  --app-text-meta--line-height: 1.125rem;
+  --app-text-label: 0.75rem;
+  --app-text-label--line-height: 1rem;
+  --app-text-label--font-weight: 600;
+  --app-text-kpi: 1.875rem;
+  --app-text-kpi--line-height: 2.25rem;
+  --app-text-kpi--font-weight: 600;
+  --app-text-kpi--letter-spacing: -0.01em;
+
+  --app-color-ink: var(--color-slate-900);
+  --app-color-ink-body: var(--color-slate-800);
+  --app-color-ink-muted: var(--color-slate-600);
+  --app-color-ink-success: var(--color-green-700);
+  --app-color-ink-success-strong: var(--color-green-800);
+  --app-color-ink-warning: var(--color-amber-700);
+  --app-color-ink-warning-strong: var(--color-amber-800);
+  --app-color-ink-danger: var(--color-red-700);
+  --app-color-ink-danger-strong: var(--color-red-800);
+  --app-color-ink-info: var(--color-blue-700);
+  --app-color-ink-accent: var(--color-violet-700);
+
+  /* Space between the nav (and breadcrumb bar) and a page's title: 24 / 32 / 40 px. */
+  --app-spacing-page-top: 1.5rem;
+}
+
+@media (width >= 40rem) {
+  [data-surface="app"] {
+    --app-spacing-page-top: 2rem;
+  }
+}
+
+@media (width >= 64rem) {
+  [data-surface="app"] {
+    --app-spacing-page-top: 2.5rem;
+  }
+}
+/* === END APP SURFACE === */

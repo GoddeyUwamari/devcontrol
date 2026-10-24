@@ -10,7 +10,7 @@ import {
   Youtube,
   CheckCircle2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/marketing-ui/button';
 import { cn } from '@/lib/utils';
 
 interface FooterLink {

@@ -10,11 +10,11 @@ import { loginSchema, type LoginFormData } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { takeUrlCredentials } from "@/lib/url-credentials";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/marketing-ui/button";
+import { Input } from "@/components/marketing-ui/input";
+import { Label } from "@/components/marketing-ui/label";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/marketing-ui/card";
+import { Checkbox } from "@/components/marketing-ui/checkbox";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 

@@ -11,17 +11,17 @@ import {
 } from "@/lib/validations/auth.schema";
 import { authService } from "@/lib/services/auth.service";
 import { useHydrated } from "@/lib/hooks/useHydrated";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/marketing-ui/button";
+import { Input } from "@/components/marketing-ui/input";
+import { Label } from "@/components/marketing-ui/label";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+} from "@/components/marketing-ui/card";
+import { Alert, AlertDescription } from "@/components/marketing-ui/alert";
 import { toast } from "sonner";
 import { logError } from "@/lib/safe-log";
 

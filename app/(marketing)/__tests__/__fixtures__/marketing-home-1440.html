@@ -1,0 +1,1168 @@
+<div class="min-h-screen bg-white" style="overflow-x: hidden;">
+<header style="position: fixed; top: 0px; left: 0px; right: 0px; z-index: 50;">
+<style>
+        @keyframes megaFadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      </style>
+<div style="width: 100%; padding: 10px 0px; text-align: center; background: linear-gradient(to right, rgb(124, 58, 237), rgb(109, 40, 217)); overflow: hidden;">
+<p style="color: rgb(255, 255, 255); font-size: 0.875rem; font-weight: 500; letter-spacing: 0.01em; margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span style="margin-right: 8px;">🚀</span>⚡ New: Auto-detection for idle RDS, EBS, and snapshot waste! <a href="/platform/infrastructure" style="color: rgb(255, 255, 255); font-size: 0.875rem; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; margin-left: 4px;">See what's new →</a>
+</p>
+</div>
+<nav style="background-color: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border-bottom: 1px solid rgb(243, 244, 246); height: 64px; display: flex; align-items: center;">
+<div style="max-width: 1400px; margin: 0px auto; padding: 0px 32px; display: flex; align-items: center; justify-content: space-between; width: 100%;">
+<div style="display: flex; align-items: center; gap: 32px;">
+<a style="display: flex; align-items: center; gap: 8px; text-decoration: none;" href="/">
+<div style="display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 8px; background: linear-gradient(135deg, rgb(124, 58, 237), rgb(91, 33, 182));">
+<span style="font-size: 18px; font-weight: 800; color: rgb(255, 255, 255);">DC</span>
+</div>
+<span style="font-size: 18px; font-weight: 700; color: rgb(17, 24, 39);">DevControl</span>
+</a>
+<div class="hidden lg:flex" style="align-items: center; gap: 4px;">
+<div style="position: relative;">
+<button style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; font-size: 0.95rem; font-weight: 500; color: rgb(30, 27, 75); letter-spacing: -0.01em; background: none; border: medium; cursor: pointer; border-radius: 8px; transition: color 0.15s ease;">Platform<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down" aria-hidden="true" style="width: 14px; height: 14px; transition: transform 0.2s ease; transform: rotate(0deg);">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+<div style="position: relative;">
+<button style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; font-size: 0.95rem; font-weight: 500; color: rgb(30, 27, 75); letter-spacing: -0.01em; background: none; border: medium; cursor: pointer; border-radius: 8px; transition: color 0.15s ease;">Solutions<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down" aria-hidden="true" style="width: 14px; height: 14px; transition: transform 0.2s ease; transform: rotate(0deg);">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+<div style="position: relative;">
+<button style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; font-size: 0.95rem; font-weight: 500; color: rgb(30, 27, 75); letter-spacing: -0.01em; background: none; border: medium; cursor: pointer; border-radius: 8px; transition: color 0.15s ease;">Resources<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down" aria-hidden="true" style="width: 14px; height: 14px; transition: transform 0.2s ease; transform: rotate(0deg);">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+<a style="padding: 6px 12px; font-size: 0.95rem; font-weight: 500; letter-spacing: -0.01em; color: rgb(30, 27, 75); text-decoration: none; border-radius: 8px; transition: color 0.15s ease;" href="/pricing">Pricing</a>
+<a style="padding: 6px 12px; font-size: 0.95rem; font-weight: 500; letter-spacing: -0.01em; color: rgb(30, 27, 75); text-decoration: none; border-radius: 8px; transition: color 0.15s ease;" href="/solutions/enterprise">Enterprise</a>
+<a style="padding: 6px 12px; font-size: 0.95rem; font-weight: 500; letter-spacing: -0.01em; color: rgb(30, 27, 75); text-decoration: none; border-radius: 8px; transition: color 0.15s ease;" href="/docs">Developers</a>
+</div>
+</div>
+<div class="hidden md:flex" style="align-items: center; gap: 8px;">
+<a style="color: rgb(30, 27, 75); font-weight: 500; font-size: 0.95rem; padding: 8px 16px; text-decoration: none; border-radius: 8px; transition: color 0.15s ease;" href="/login">Sign In</a>
+<a style="padding: 8px 18px; border-radius: 8px; border: 1.5px solid rgb(124, 58, 237); color: rgb(124, 58, 237); font-weight: 600; font-size: 0.875rem; text-decoration: none; display: inline-flex; align-items: center;" href="/contact">Contact Sales</a>
+<a style="background-color: rgb(124, 58, 237); color: rgb(255, 255, 255); font-weight: 600; font-size: 0.875rem; letter-spacing: -0.01em; padding: 10px 20px; border-radius: 8px; text-decoration: none; transition: opacity 0.15s ease, transform 0.15s ease; display: inline-block;" href="/register">Get Started Free</a>
+</div>
+<div style="display: flex; align-items: center; gap: 8px;">
+<a class="flex md:hidden" style="padding: 6px 12px; border-radius: 8px; border: 1.5px solid rgb(124, 58, 237); color: rgb(124, 58, 237); font-weight: 600; font-size: 0.8125rem; text-decoration: none; white-space: nowrap;" href="/login">Sign In</a>
+<button class="lg:hidden" style="padding: 8px; color: rgb(55, 65, 81); background: none; border: medium; cursor: pointer;" aria-label="Toggle menu">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-menu" aria-hidden="true" style="width: 24px; height: 24px;">
+<path d="M4 5h16">
+</path>
+<path d="M4 12h16">
+</path>
+<path d="M4 19h16">
+</path>
+</svg>
+</button>
+</div>
+</div>
+</nav>
+</header>
+<main style="padding-top: 104px;">
+<section class="bg-violet-50 pt-10 pb-16 sm:pt-14 lg:pb-20" data-testid="hero-section">
+<div class="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+<div class="grid grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14" data-testid="hero-columns">
+<div data-testid="hero-copy">
+<p class="m-0 text-sm font-medium text-[#7c3aed]">AI-powered cloud operations &amp; infrastructure intelligence</p>
+<h1 class="mt-4 text-4xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">Find the <span class="text-[#7c3aed]">AWS waste</span> hiding in your bill.</h1>
+<p class="mt-6 max-w-xl text-lg leading-relaxed text-slate-700">Connect read-only and see idle resources, security risks and cost drivers across your AWS account. No agents. No code changes.</p>
+<div class="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+<a href="/register" class="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#7c3aed] px-7 py-4 font-semibold text-white shadow-lg shadow-[#7c3aed]/30 transition-[opacity,transform,translate] duration-150 motion-safe:hover:-translate-y-px hover:opacity-90 motion-reduce:transform-none motion-reduce:transition-none sm:w-auto">Find My AWS Waste<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+<a href="/tour" class="inline-flex min-h-11 items-center justify-center gap-2 font-semibold text-[#7c3aed] hover:text-violet-800 hover:underline">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play h-4 w-4" aria-hidden="true">
+<path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z">
+</path>
+</svg>Take a product tour</a>
+</div>
+<p class="mt-6 text-sm text-slate-600">Read-only access · Takes a few minutes · Delete the role anytime</p>
+<ul class="mt-5 flex list-none flex-wrap gap-3 p-0" aria-label="Trust badges">
+<li class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm" data-testid="hero-trust-badge">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 text-[#7c3aed]" aria-hidden="true">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Read-only access</li>
+<li class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm" data-testid="hero-trust-badge">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 text-[#7c3aed]" aria-hidden="true">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>No agents</li>
+<li class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm" data-testid="hero-trust-badge">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 text-[#7c3aed]" aria-hidden="true">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>AES-256 encryption</li>
+</ul>
+</div>
+<div data-testid="hero-sample">
+<section class="rounded-2xl border border-slate-200 bg-white shadow-[0_12px_32px_-12px_rgba(17,24,39,0.18)]" aria-labelledby="hero-sample-panel-title hero-sample-panel-tag" aria-describedby="hero-sample-panel-caption" data-testid="hero-sample-panel">
+<div class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+<h2 id="hero-sample-panel-title" class="m-0 text-lg font-bold leading-tight tracking-tight text-slate-900">Cost optimization</h2>
+<span id="hero-sample-panel-tag" class="shrink-0 rounded-md bg-violet-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-violet-800" data-testid="hero-sample-panel-tag">Sample data</span>
+</div>
+<ul class="m-0 list-none p-0">
+<li class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-4" data-testid="hero-sample-panel-row">
+<div class="min-w-0">
+<p class="m-0 text-base font-semibold leading-snug text-slate-900">Server running but idle</p>
+<p class="m-0 text-sm leading-snug text-slate-600">Idle EC2 instance</p>
+</div>
+<span class="shrink-0 text-lg font-bold text-[#047857]" data-testid="hero-sample-panel-row-value">$142/mo</span>
+</li>
+<li class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-4" data-testid="hero-sample-panel-row">
+<div class="min-w-0">
+<p class="m-0 text-base font-semibold leading-snug text-slate-900">Storage attached to nothing</p>
+<p class="m-0 text-sm leading-snug text-slate-600">Unattached EBS volume</p>
+</div>
+<span class="shrink-0 text-lg font-bold text-[#047857]" data-testid="hero-sample-panel-row-value">$38/mo</span>
+</li>
+<li class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-4" data-testid="hero-sample-panel-row">
+<div class="min-w-0">
+<p class="m-0 text-base font-semibold leading-snug text-slate-900">Old storage type, cheaper one exists</p>
+<p class="m-0 text-sm leading-snug text-slate-600">gp2 to gp3 upgrade</p>
+</div>
+<span class="shrink-0 text-lg font-bold text-[#047857]" data-testid="hero-sample-panel-row-value">$21/mo</span>
+</li>
+<li class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-4" data-testid="hero-sample-panel-row">
+<div class="min-w-0">
+<p class="m-0 text-base font-semibold leading-snug text-slate-900">Old database backup nobody uses</p>
+<p class="m-0 text-sm leading-snug text-slate-600">Idle RDS snapshot</p>
+</div>
+<span class="shrink-0 text-lg font-bold text-[#047857]" data-testid="hero-sample-panel-row-value">$64/mo</span>
+</li>
+</ul>
+<div class="mx-6 my-5 flex items-center justify-between gap-4 rounded-xl bg-violet-100 px-5 py-4" data-testid="hero-sample-panel-total">
+<p class="m-0 text-base font-medium leading-snug text-slate-900">Estimated monthly saving</p>
+<span class="shrink-0 text-2xl font-bold leading-none text-violet-800" data-testid="hero-sample-panel-total-value">$265/mo</span>
+</div>
+</section>
+<p id="hero-sample-panel-caption" class="m-0 mt-3 px-1 text-sm leading-normal text-slate-600" data-testid="hero-sample-panel-caption">Illustrative example. Your own findings appear after your first scan.</p>
+</div>
+</div>
+<div class="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="hero-cards">
+<div class="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-outcome-card">
+<p class="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">Recent client outcome</p>
+<p class="m-0 mt-2 text-4xl font-bold tracking-tight text-[#7c3aed]">$8,000/mo</p>
+<p class="m-0 mt-3 text-base leading-relaxed text-slate-700">in unnecessary AWS spend identified in under 60 seconds, with no agent and no code changes.</p>
+</div>
+<div class="rounded-2xl bg-slate-900 p-7" data-testid="hero-audit-card">
+<h2 class="m-0 text-2xl font-bold tracking-tight text-white">Rather talk it through?</h2>
+<p class="m-0 mt-3 text-base leading-relaxed text-slate-300">Book a free 15-minute AWS audit with our team. No commitment.</p>
+<a href="/contact" class="mt-6 inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 font-semibold text-slate-900 transition-colors hover:bg-slate-100">Book a free audit</a>
+</div>
+</div>
+</div>
+</section>
+<section style="width: 100%; background: linear-gradient(rgb(237, 233, 254), rgb(255, 255, 255)); padding: 56px 48px 72px;">
+<div style="max-width: 1300px; margin: 0px auto; width: 100%;">
+<img alt="DevControl Dashboard" style="width: 100%; border-radius: 20px; box-shadow: 0 32px 80px rgba(0,0,0,0.5); display: block;" src="/landing/dashboard-preview.png">
+</div>
+</section>
+<section class="w-full bg-white pt-8 pb-16 sm:pt-10 sm:pb-20">
+<div class="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
+<div class="text-center mb-8 sm:mb-12">
+<span class="inline-block bg-violet-600 text-white px-4 py-1.5 text-xs font-semibold tracking-widest rounded-full uppercase">AI-Powered Intelligence</span>
+<h2 class="text-violet-600 font-bold text-3xl sm:text-4xl leading-tight mt-4 pt-3 text-center">Make Better AWS Decisions with Full Visibility</h2>
+</div>
+<div class="grid lg:grid-cols-[65%_35%] gap-8 lg:gap-16 items-center">
+<div>
+<img alt="DevControl AI Weekly Summary and Cost Analysis Dashboard" loading="lazy" width="1200" height="675" decoding="async" data-nimg="1" class="w-full h-auto rounded-2xl shadow-2xl" style="color: transparent;" srcset="/_next/image?url=%2Flanding%2Fai-analyst-preview.png&amp;w=1200&amp;q=75 1x, /_next/image?url=%2Flanding%2Fai-analyst-preview.png&amp;w=3840&amp;q=75 2x" src="/_next/image?url=%2Flanding%2Fai-analyst-preview.png&amp;w=3840&amp;q=75">
+</div>
+<div class="pr-4">
+<p class="text-slate-600 text-lg leading-relaxed">DevControl continuously monitors your AWS environment, surfaces cost anomalies before they become budget surprises, and delivers plain-English explanations of what's happening — without dashboards, spreadsheets, or manual investigation.</p>
+<ul class="space-y-4 mt-6">
+<li class="flex items-start gap-3">
+<span class="rounded-full bg-violet-600 h-2 w-2 mt-2 flex-shrink-0">
+</span>
+<span class="text-slate-700 text-base leading-relaxed">Weekly AI cost and risk summaries auto-delivered every Monday</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="rounded-full bg-violet-600 h-2 w-2 mt-2 flex-shrink-0">
+</span>
+<span class="text-slate-700 text-base leading-relaxed">Anomaly detection before incidents impact customers or revenue</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="rounded-full bg-violet-600 h-2 w-2 mt-2 flex-shrink-0">
+</span>
+<span class="text-slate-700 text-base leading-relaxed">Natural language answers about your infrastructure in seconds</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="rounded-full bg-violet-600 h-2 w-2 mt-2 flex-shrink-0">
+</span>
+<span class="text-slate-700 text-base leading-relaxed">Executive reports generated automatically — no manual work</span>
+</li>
+</ul>
+<div class="mt-8">
+<a class="group inline-flex items-center gap-2 bg-violet-600 text-white font-bold px-8 py-4 rounded-lg hover:bg-violet-500 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-violet-600/25 transition-all duration-300 ease-out motion-reduce:transform-none motion-reduce:transition-none" href="/register">Run Your First AI Analysis<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right group-hover:translate-x-1 transition-transform duration-300 motion-reduce:transform-none" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section style="width: 100%; padding: 64px 0px; background: rgb(249, 250, 251);">
+<div style="max-width: 1400px; margin: 0px auto; padding: 0px 24px;">
+<div style="text-align: center; margin-bottom: 56px;">
+<div style="display: inline-flex; align-items: center; gap: 8px; background: rgb(124, 58, 237); color: rgb(255, 255, 255); padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 16px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles" aria-hidden="true">
+<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z">
+</path>
+<path d="M20 2v4">
+</path>
+<path d="M22 4h-4">
+</path>
+<circle cx="4" cy="20" r="2">
+</circle>
+</svg>ALWAYS ON</div>
+<h2 style="font-weight: 700; color: rgb(124, 58, 237); margin-bottom: 0px; line-height: 1.2;">What DevControl Does While You Sleep</h2>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
+<div style="background: rgb(255, 255, 255); border-radius: 18px; padding: 32px; border: 2px solid rgb(229, 231, 235); box-shadow: none; transition: all 0.2s ease;">
+<div style="font-size: 0.7rem; font-weight: 700; color: rgb(124, 58, 237); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.08em;">Highest Impact</div>
+<div style="background: rgb(124, 58, 237); border-radius: 12px; padding: 10px; display: inline-flex; margin-bottom: 16px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-dollar-sign" aria-hidden="true">
+<line x1="12" x2="12" y1="2" y2="22">
+</line>
+<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6">
+</path>
+</svg>
+</div>
+<h3 style="font-size: 1.15rem; font-weight: 700; color: rgb(30, 27, 75); margin-bottom: 8px;">Find Hidden AWS Waste Before It Becomes a Budget Problem</h3>
+<p style="font-size: 0.95rem; color: rgb(31, 41, 55); line-height: 1.6;">Understand what caused cost spikes and uncover hidden waste — with clear actions to reduce spend immediately.</p>
+</div>
+<div style="background: rgb(255, 255, 255); border-radius: 18px; padding: 32px; border: 2px solid rgb(229, 231, 235); box-shadow: none; transition: all 0.2s ease;">
+<div style="background: rgb(124, 58, 237); border-radius: 12px; padding: 10px; display: inline-flex; margin-bottom: 16px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert" aria-hidden="true">
+<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+</path>
+<path d="M12 9v4">
+</path>
+<path d="M12 17h.01">
+</path>
+</svg>
+</div>
+<h3 style="font-size: 1.15rem; font-weight: 700; color: rgb(30, 27, 75); margin-bottom: 8px;">Detect Infrastructure Risk Before Customers Feel It</h3>
+<p style="font-size: 0.95rem; color: rgb(31, 41, 55); line-height: 1.6;">Automatically surface anomalies, misconfigurations, and unusual activity before they impact customers or revenue.</p>
+</div>
+<div style="background: rgb(255, 255, 255); border-radius: 18px; padding: 32px; border: 2px solid rgb(229, 231, 235); box-shadow: none; transition: all 0.2s ease;">
+<div style="background: rgb(124, 58, 237); border-radius: 12px; padding: 10px; display: inline-flex; margin-bottom: 16px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up" aria-hidden="true">
+<path d="M16 7h6v6">
+</path>
+<path d="m22 7-8.5 8.5-5-5L2 17">
+</path>
+</svg>
+</div>
+<h3 style="font-size: 1.15rem; font-weight: 700; color: rgb(30, 27, 75); margin-bottom: 8px;">Forecast Cloud Spend Before Surprises Hit</h3>
+<p style="font-size: 0.95rem; color: rgb(31, 41, 55); line-height: 1.6;">Forecast your AWS spend and prevent budget surprises with accurate forward-looking insights.</p>
+</div>
+<div style="background: rgb(255, 255, 255); border-radius: 18px; padding: 32px; border: 2px solid rgb(229, 231, 235); box-shadow: none; transition: all 0.2s ease;">
+<div style="background: rgb(124, 58, 237); border-radius: 12px; padding: 10px; display: inline-flex; margin-bottom: 16px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square" aria-hidden="true">
+<path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z">
+</path>
+</svg>
+</div>
+<h3 style="font-size: 1.15rem; font-weight: 700; color: rgb(30, 27, 75); margin-bottom: 8px;">Ask Anything, Get Infrastructure Intelligence</h3>
+<p style="font-size: 0.95rem; color: rgb(31, 41, 55); line-height: 1.6;">Query your entire AWS environment in plain English — discover costs, risks, and optimization opportunities without digging through dashboards or writing queries.</p>
+</div>
+<div style="background: rgb(255, 255, 255); border-radius: 18px; padding: 32px; border: 2px solid rgb(229, 231, 235); box-shadow: none; transition: all 0.2s ease;">
+<div style="background: rgb(124, 58, 237); border-radius: 12px; padding: 10px; display: inline-flex; margin-bottom: 16px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-text" aria-hidden="true">
+<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z">
+</path>
+<path d="M14 2v4a2 2 0 0 0 2 2h4">
+</path>
+<path d="M10 9H8">
+</path>
+<path d="M16 13H8">
+</path>
+<path d="M16 17H8">
+</path>
+</svg>
+</div>
+<h3 style="font-size: 1.15rem; font-weight: 700; color: rgb(30, 27, 75); margin-bottom: 8px;">Generate Executive-Ready Cloud Reports Instantly</h3>
+<p style="font-size: 0.95rem; color: rgb(31, 41, 55); line-height: 1.6;">Create clear, decision-ready reports for engineering leaders, finance teams, audits, and cost reviews in seconds.</p>
+</div>
+<div style="background: rgb(255, 255, 255); border-radius: 18px; padding: 32px; border: 2px solid rgb(229, 231, 235); box-shadow: none; transition: all 0.2s ease;">
+<div style="background: rgb(124, 58, 237); border-radius: 12px; padding: 10px; display: inline-flex; margin-bottom: 16px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search" aria-hidden="true">
+<path d="m21 21-4.34-4.34">
+</path>
+<circle cx="11" cy="11" r="8">
+</circle>
+</svg>
+</div>
+<h3 style="font-size: 1.15rem; font-weight: 700; color: rgb(30, 27, 75); margin-bottom: 8px;">Find Anything Across Your AWS Environment</h3>
+<p style="font-size: 0.95rem; color: rgb(31, 41, 55); line-height: 1.6;">Instantly locate resources, costs, or risks using natural language — no filters or manual digging.</p>
+</div>
+</div>
+<div style="text-align: center; margin-top: 48px;">
+<a style="background-color: rgb(124, 58, 237); color: rgb(255, 255, 255); padding: 16px 36px; border-radius: 12px; font-weight: 700; text-decoration: none; box-shadow: 0 8px 28px rgba(124,58,237,0.35); display: inline-flex; align-items: center; gap: 8px;" href="/register">Run Your First AI Analysis<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+<p style="margin-top: 12px; font-size: 0.9rem; color: rgb(31, 41, 55);">No setup. No risk. First insights in 15 minutes.</p>
+</div>
+</div>
+</section>
+<section id="personas" class="w-full bg-white py-16 sm:py-24">
+<div class="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
+<div class="mb-10 text-center">
+<p class="mb-3 text-xs font-bold uppercase tracking-widest text-violet-600">Built for Every Team</p>
+<h2 class="text-3xl font-extrabold leading-tight tracking-tight text-violet-600 sm:text-4xl lg:text-5xl">One Infrastructure View. Every Team Sees What Matters.</h2>
+<p class="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-slate-600">DevControl turns complex AWS data into clear decisions for every team — from engineering efficiency to financial control.</p>
+</div>
+<div class="mb-8 flex flex-wrap justify-center gap-2">
+<button class="rounded-full border px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2 motion-reduce:transition-none border-violet-600 bg-violet-600 text-white shadow-md shadow-violet-600/25">Eng Leaders</button>
+<button class="rounded-full border px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2 motion-reduce:transition-none border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700">Eng Managers</button>
+<button class="rounded-full border px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2 motion-reduce:transition-none border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700">Platform Eng</button>
+<button class="rounded-full border px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2 motion-reduce:transition-none border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700">Product Leaders</button>
+<button class="rounded-full border px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2 motion-reduce:transition-none border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700">Finance Teams</button>
+<button class="rounded-full border px-5 py-2 text-sm font-semibold transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 focus-visible:ring-offset-2 motion-reduce:transition-none border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700">Developers</button>
+</div>
+<div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:grid lg:grid-cols-2">
+<div class="flex flex-col justify-center gap-6 bg-gradient-to-br from-violet-700 to-violet-500 p-8 sm:p-10 lg:p-12">
+<div>
+<h3 class="mb-3 text-2xl font-extrabold leading-tight text-white sm:text-3xl">Ship Faster Without Losing Control</h3>
+<p class="mb-6 text-base leading-relaxed text-violet-100 sm:text-lg">Understand infrastructure health and cost impact.</p>
+<ul class="flex flex-col gap-3">
+<li class="flex items-start gap-3 text-white">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check mt-0.5 h-5 w-5 flex-shrink-0 text-violet-200 motion-reduce:transition-none" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span class="text-sm leading-relaxed sm:text-base">Executive AI Reports auto-delivered monthly</span>
+</li>
+<li class="flex items-start gap-3 text-white">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check mt-0.5 h-5 w-5 flex-shrink-0 text-violet-200 motion-reduce:transition-none" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span class="text-sm leading-relaxed sm:text-base">Risk score and trends at a glance</span>
+</li>
+<li class="flex items-start gap-3 text-white">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check mt-0.5 h-5 w-5 flex-shrink-0 text-violet-200 motion-reduce:transition-none" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span class="text-sm leading-relaxed sm:text-base">Make confident scaling decisions</span>
+</li>
+</ul>
+</div>
+</div>
+<div class="flex flex-col gap-6 bg-violet-50/40 p-6 sm:p-8 lg:p-10">
+<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+<img alt="Eng Leaders dashboard view" width="1024" height="576" decoding="async" data-nimg="1" class="h-auto w-full object-cover" style="color: transparent;" srcset="/_next/image?url=%2Flanding%2Fpersonas%2Feng-leaders.png&amp;w=1080&amp;q=75 1x, /_next/image?url=%2Flanding%2Fpersonas%2Feng-leaders.png&amp;w=2048&amp;q=75 2x" src="/_next/image?url=%2Flanding%2Fpersonas%2Feng-leaders.png&amp;w=2048&amp;q=75">
+</div>
+<div class="rounded-2xl border-2 border-dashed border-violet-200 bg-white/60 p-5">
+<div class="mb-3 flex items-center gap-3">
+<div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">JE</div>
+<div>
+<p class="text-sm font-semibold text-slate-800">Jordan Ellis</p>
+<p class="text-xs text-slate-500">VP Engineering, SaaS Co.</p>
+</div>
+</div>
+<p class="text-sm italic leading-relaxed text-slate-600">“DevControl gives me the numbers I need for every board update without bugging my engineers or digging through AWS myself.”</p>
+<p class="mt-2 text-[10px] font-semibold uppercase tracking-wider text-violet-400">
+</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="bg-[#0f0b2e] py-20 sm:py-24">
+<div class="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
+<div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+<div class="flex justify-center lg:justify-start">
+<div class="relative">
+<img alt="Goddey Uwamari, Founder of DevControl" width="480" height="560" decoding="async" data-nimg="1" class="rounded-2xl object-cover ring-2 ring-violet-500/30" style="color: transparent;" srcset="/_next/image?url=%2Flanding%2Fgoddey.jpg&amp;w=640&amp;q=75 1x, /_next/image?url=%2Flanding%2Fgoddey.jpg&amp;w=1080&amp;q=75 2x" src="/_next/image?url=%2Flanding%2Fgoddey.jpg&amp;w=1080&amp;q=75">
+<div class="mt-6 text-center lg:text-left">
+<p class="text-xl font-bold text-white">Goddey Uwamari</p>
+<p class="mt-1 text-sm text-violet-300">Founder, DevControl &amp; WayUP Technology</p>
+<a href="https://linkedin.com/in/goddey-uwamari" target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex items-center gap-2 text-violet-400 transition-colors duration-300 hover:text-violet-200 motion-reduce:transition-none">
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-external-link" aria-hidden="true">
+<path d="M15 3h6v6">
+</path>
+<path d="M10 14 21 3">
+</path>
+<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6">
+</path>
+</svg>
+<span class="text-sm font-medium">Connect on LinkedIn</span>
+</a>
+</div>
+</div>
+</div>
+<div class="space-y-8">
+<div class="inline-block rounded-full bg-violet-900/60 px-4 py-1.5 text-xs font-semibold tracking-widest text-violet-300">WHY I BUILT THIS</div>
+<h2 class="text-3xl font-bold leading-tight text-white sm:text-4xl">AWS Doesn't Tell You When You're Wasting Money. DevControl Does.</h2>
+<div class="space-y-5 text-lg leading-relaxed text-slate-300">
+<p>After 16 years building production systems for SaaS companies, I kept seeing the same pattern — engineering teams with no idea where their AWS money was actually going.</p>
+<p>Bills that looked normal until you dug in and found idle RDS instances, forgotten staging environments, snapshots piling up for months, EC2 instances running 24/7 for deprecated features. Nobody was being negligent — they were just busy shipping. AWS doesn't tell you when something becomes wasteful. It just keeps charging.</p>
+<p>I built DevControl because I wanted to give SaaS teams the visibility layer that AWS never provides — real-time, tenant-level, no code changes, no agents, just clarity.</p>
+</div>
+<div class="flex flex-col gap-4 pt-4 sm:flex-row">
+<a href="/register" class="group inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-8 py-4 font-bold text-white transition-all duration-300 ease-out hover:bg-violet-500 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-violet-600/25 motion-reduce:transform-none motion-reduce:transition-none">Find My AWS Waste<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right transition-transform duration-300 group-hover:translate-x-1 motion-reduce:transform-none" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+<a href="https://calendly.com/uwamarigoddey/15min" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-violet-500 px-8 py-4 font-semibold text-violet-300 transition-all duration-300 ease-out hover:border-violet-300 hover:bg-violet-900/40 hover:text-white motion-reduce:transition-none">
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar" aria-hidden="true">
+<path d="M8 2v4">
+</path>
+<path d="M16 2v4">
+</path>
+<rect width="18" height="18" x="3" y="4" rx="2">
+</rect>
+<path d="M3 10h18">
+</path>
+</svg>Book a Free 15-min AWS Audit</a>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="integrations" style="width: 100%; padding: 64px 0px; background-color: rgb(248, 248, 248);">
+<div style="max-width: 1400px; margin: 0px auto; padding: 0px 32px;">
+<div style="text-align: center; max-width: 640px; margin: 0px auto 40px;">
+<div style="margin-bottom: 16px;">
+<span style="display: inline-block; background-color: rgb(124, 58, 237); color: rgb(255, 255, 255); padding: 6px 14px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;">Integrations</span>
+</div>
+<h2 class="font-extrabold" style="color: rgb(124, 58, 237); font-weight: 800; margin-bottom: 14px; line-height: 1.15; letter-spacing: -0.02em;">Your Infrastructure Data, Unified in One Place</h2>
+<p style="font-size: 1.2rem; color: rgb(31, 41, 55); line-height: 1.75;">DevControl connects with the tools your engineering teams already use — bringing cloud costs, reliability signals, and operational insights together without replacing your workflow.</p>
+</div>
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-5" style="margin-bottom: 32px;">
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-cloud h-9 w-9" aria-hidden="true" style="color: rgb(249, 115, 22); flex-shrink: 0;">
+<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z">
+</path>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">AWS</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Cloud cost, resources, and infrastructure intelligence</div>
+</div>
+</div>
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-container h-9 w-9" aria-hidden="true" style="color: rgb(124, 58, 237); flex-shrink: 0;">
+<path d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z">
+</path>
+<path d="M10 21.9V14L2.1 9.1">
+</path>
+<path d="m10 14 11.9-6.9">
+</path>
+<path d="M14 19.8v-8.1">
+</path>
+<path d="M18 17.5V9.4">
+</path>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">Kubernetes</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Cluster visibility and workload efficiency</div>
+</div>
+</div>
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layers h-9 w-9" aria-hidden="true" style="color: rgb(109, 40, 217); flex-shrink: 0;">
+<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z">
+</path>
+<path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12">
+</path>
+<path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17">
+</path>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">Terraform</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Infrastructure changes and resource tracking</div>
+</div>
+</div>
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-git-branch h-9 w-9" aria-hidden="true" style="color: rgb(31, 41, 55); flex-shrink: 0;">
+<line x1="6" x2="6" y1="3" y2="15">
+</line>
+<circle cx="18" cy="6" r="3">
+</circle>
+<circle cx="6" cy="18" r="3">
+</circle>
+<path d="M18 9a9 9 0 0 1-9 9">
+</path>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">GitHub</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Code ownership and deployment context</div>
+</div>
+</div>
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chart-no-axes-column h-9 w-9" aria-hidden="true" style="color: rgb(168, 85, 247); flex-shrink: 0;">
+<path d="M5 21v-6">
+</path>
+<path d="M12 21V3">
+</path>
+<path d="M19 21V9">
+</path>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">Datadog</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Observability signals and system health</div>
+</div>
+</div>
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-alert h-9 w-9" aria-hidden="true" style="color: rgb(22, 163, 74); flex-shrink: 0;">
+<circle cx="12" cy="12" r="10">
+</circle>
+<line x1="12" x2="12" y1="8" y2="12">
+</line>
+<line x1="12" x2="12.01" y1="16" y2="16">
+</line>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">PagerDuty</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Incident context and operational risk</div>
+</div>
+</div>
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square h-9 w-9" aria-hidden="true" style="color: rgb(124, 58, 237); flex-shrink: 0;">
+<path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z">
+</path>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">Slack</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Alerts and insights where your team works</div>
+</div>
+</div>
+<div class="flex flex-col items-center bg-white rounded-2xl cursor-pointer" style="padding: 24px 16px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease; text-align: center; gap: 10px;">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-9 w-9" aria-hidden="true" style="color: rgb(124, 58, 237); flex-shrink: 0;">
+<ellipse cx="12" cy="5" rx="9" ry="3">
+</ellipse>
+<path d="M3 5V19A9 3 0 0 0 21 19V5">
+</path>
+<path d="M3 12A9 3 0 0 0 21 12">
+</path>
+</svg>
+<div>
+<div class="font-bold" style="font-size: 14px; color: rgb(30, 27, 75); margin-bottom: 4px;">Jira</div>
+<div style="font-size: 11px; color: rgb(55, 65, 81); line-height: 1.4;">Engineering priorities and ownership</div>
+</div>
+</div>
+</div>
+<div style="text-align: center;">
+<a class="inline-flex items-center gap-2 font-semibold" style="color: rgb(124, 58, 237); font-size: 15px; text-decoration: none; transition: all 0.15s ease;" href="/platform/infrastructure">View All Integrations<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right h-4 w-4" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+</div>
+</div>
+</section>
+<section id="security" style="width: 100%; padding: 64px 0px; background-color: rgb(249, 247, 255);">
+<div style="max-width: 1400px; margin: 0px auto; padding: 0px 32px;">
+<div style="text-align: center; max-width: 600px; margin: 0px auto 48px;">
+<div style="margin-bottom: 16px;">
+<span class="inline-flex items-center gap-2" style="background-color: rgb(124, 58, 237); color: rgb(255, 255, 255); padding: 6px 14px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;">
+<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield-check" aria-hidden="true">
+<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z">
+</path>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>Security &amp; Trust</span>
+</div>
+<h2 class="font-extrabold" style="color: rgb(124, 58, 237); font-weight: 800; margin-bottom: 14px; line-height: 1.15; letter-spacing: -0.02em;">Your data is safe with us</h2>
+<p style="font-size: 1.2rem; color: rgb(31, 41, 55); line-height: 1.75; margin-bottom: 12px;">We built DevControl with a security-first mindset. Enterprise-grade protections out of the box — no add-ons required.</p>
+<p style="font-size: 15px; font-weight: 600; color: rgb(124, 58, 237);">We never store your AWS credentials. Ever.</p>
+</div>
+<div class="grid sm:grid-cols-2 gap-6">
+<div class="flex items-start gap-5 bg-white rounded-2xl" style="padding: 32px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease;">
+<div style="background-color: rgb(124, 58, 237); border-radius: 14px; padding: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield-check" aria-hidden="true" style="color: rgb(255, 255, 255);">
+<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z">
+</path>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+</div>
+<div>
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 8px; line-height: 1.3;">Read-Only by Default</h3>
+<p style="color: rgb(31, 41, 55); font-size: 1.05rem; line-height: 1.65;">Standard onboarding only requests read-only permissions. Optional remediation actions require separate, explicit permission and your approval — your infrastructure stays under your control.</p>
+</div>
+</div>
+<div class="flex items-start gap-5 bg-white rounded-2xl" style="padding: 32px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease;">
+<div style="background-color: rgb(124, 58, 237); border-radius: 14px; padding: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-lock" aria-hidden="true" style="color: rgb(255, 255, 255);">
+<rect width="18" height="11" x="3" y="11" rx="2" ry="2">
+</rect>
+<path d="M7 11V7a5 5 0 0 1 10 0v4">
+</path>
+</svg>
+</div>
+<div>
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 8px; line-height: 1.3;">End-to-End Encryption</h3>
+<p style="color: rgb(31, 41, 55); font-size: 1.05rem; line-height: 1.65;">All data is encrypted in transit with TLS 1.3 and at rest with AES-256. Your cloud metadata never leaves our secure environment unencrypted.</p>
+</div>
+</div>
+<div class="flex items-start gap-5 bg-white rounded-2xl" style="padding: 32px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease;">
+<div style="background-color: rgb(124, 58, 237); border-radius: 14px; padding: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye" aria-hidden="true" style="color: rgb(255, 255, 255);">
+<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0">
+</path>
+<circle cx="12" cy="12" r="3">
+</circle>
+</svg>
+</div>
+<div>
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 8px; line-height: 1.3;">Zero Data Selling</h3>
+<p style="color: rgb(31, 41, 55); font-size: 1.05rem; line-height: 1.65;">Your infrastructure data is yours. We never sell, share, or use it to train models beyond your own account's AI features.</p>
+</div>
+</div>
+<div class="flex items-start gap-5 bg-white rounded-2xl" style="padding: 32px; border: 2px solid rgb(229, 231, 235); transition: all 0.2s ease;">
+<div style="background-color: rgb(124, 58, 237); border-radius: 14px; padding: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-check" aria-hidden="true" style="color: rgb(255, 255, 255);">
+<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z">
+</path>
+<path d="M14 2v4a2 2 0 0 0 2 2h4">
+</path>
+<path d="m9 15 2 2 4-4">
+</path>
+</svg>
+</div>
+<div>
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 8px; line-height: 1.3;">SOC 2 Readiness Planned</h3>
+<p style="color: rgb(31, 41, 55); font-size: 1.05rem; line-height: 1.65;">SOC 2 readiness planning underway (not an independent audit or certification), built from the ground up with compliance in mind.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="pricing" style="width: 100%; padding: 64px 0px; background-color: rgb(255, 255, 255);">
+<div style="max-width: 1400px; margin: 0px auto; padding: 0px 32px;">
+<div style="text-align: center; max-width: 600px; margin: 0px auto 48px;">
+<div style="margin-bottom: 16px;">
+<span style="display: inline-block; background-color: rgb(124, 58, 237); color: rgb(255, 255, 255); padding: 6px 14px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;">Pricing</span>
+</div>
+<h2 class="font-extrabold" style="color: rgb(124, 58, 237); font-weight: 800; margin-bottom: 14px; line-height: 1.15; letter-spacing: -0.02em;">Start free. Scale as you grow.</h2>
+<p style="font-size: 1.2rem; color: rgb(31, 41, 55); line-height: 1.75;">Starter and Pro include a 14-day free trial. Free plan available forever. No credit card required.</p>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 36px;">
+<div class="relative bg-white rounded-2xl flex flex-col" style="border: 2px solid rgb(229, 231, 235); box-shadow: none; transform: none; padding: 32px 24px;">
+<div style="margin-bottom: 24px;">
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 4px; line-height: 1.3;">Free</h3>
+<p style="font-size: 12px; color: rgb(31, 41, 55); margin-bottom: 16px;">For personal projects</p>
+<div class="flex items-baseline gap-1">
+<span class="font-extrabold" style="font-size: 2.25rem; color: rgb(17, 24, 39);">$0</span>
+<span style="color: rgb(107, 114, 128); font-size: 14px;">forever</span>
+</div>
+</div>
+<ul style="margin-bottom: 24px; flex: 1 1 0%;" class="space-y-3">
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>20 AWS resources</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Basic cost dashboard</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>7-day data history</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Email alerts</li>
+</ul>
+<a class="block text-center rounded-xl font-semibold" style="padding: 12px 16px; font-size: 14px; text-decoration: none; transition: all 0.15s ease; background-color: rgb(243, 244, 246); color: rgb(31, 41, 55);" href="/register">Start Free Forever</a>
+</div>
+<div class="relative bg-white rounded-2xl flex flex-col" style="border: 2px solid rgb(229, 231, 235); box-shadow: none; transform: none; padding: 32px 24px;">
+<div style="margin-bottom: 24px;">
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 4px; line-height: 1.3;">Starter</h3>
+<p style="font-size: 12px; color: rgb(31, 41, 55); margin-bottom: 16px;">For small teams</p>
+<div class="flex items-baseline gap-1">
+<span class="font-extrabold" style="font-size: 2.25rem; color: rgb(17, 24, 39);">$49</span>
+<span style="color: rgb(107, 114, 128); font-size: 14px;">/month</span>
+</div>
+</div>
+<ul style="margin-bottom: 24px; flex: 1 1 0%;" class="space-y-3">
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>60 AWS resources</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>AI cost insights</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>30-day history</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Slack alerts</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>3 team members</li>
+</ul>
+<a class="block text-center rounded-xl font-semibold" style="padding: 12px 16px; font-size: 14px; text-decoration: none; transition: all 0.15s ease; background-color: rgb(243, 244, 246); color: rgb(31, 41, 55);" href="/register">Start Free Trial</a>
+</div>
+<div class="relative bg-white rounded-2xl flex flex-col" style="border: 2px solid rgb(124, 58, 237); box-shadow: 0 8px 30px rgba(124,58,237,0.15); transform: scale(1.03); padding: 32px 24px;">
+<div class="absolute left-1/2 -translate-x-1/2 rounded-full text-white font-bold whitespace-nowrap" style="top: -14px; background-color: rgb(124, 58, 237); padding: 4px 16px; font-size: 12px;">Most Popular</div>
+<div style="margin-bottom: 24px;">
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 4px; line-height: 1.3;">Pro</h3>
+<p style="font-size: 12px; color: rgb(31, 41, 55); margin-bottom: 16px;">Most Popular</p>
+<div class="flex items-baseline gap-1">
+<span class="font-extrabold" style="font-size: 2.25rem; color: rgb(17, 24, 39);">$199</span>
+<span style="color: rgb(107, 114, 128); font-size: 14px;">/month</span>
+</div>
+<div style="margin-top: 12px;">
+<span style="display: inline-block; margin-bottom: 16px; font-size: 12px; font-weight: 600; color: rgb(5, 150, 105); background: rgb(236, 253, 245); border: 1px solid rgb(167, 243, 208); padding: 3px 10px; border-radius: 99px;">Potential savings: $800–$8,000+/mo</span>
+</div>
+</div>
+<ul style="margin-bottom: 24px; flex: 1 1 0%;" class="space-y-3">
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>500 AWS resources</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>All 8 AI features</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>90-day history</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>DORA metrics</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Up to 10 members</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Priority support</li>
+</ul>
+<a class="block text-center rounded-xl font-semibold" style="padding: 12px 16px; font-size: 14px; text-decoration: none; transition: all 0.15s ease; background-color: rgb(124, 58, 237); color: rgb(255, 255, 255);" href="/register">Start Free Trial</a>
+</div>
+<div class="relative bg-white rounded-2xl flex flex-col" style="border: 2px solid rgb(229, 231, 235); box-shadow: none; transform: none; padding: 32px 24px;">
+<div style="margin-bottom: 24px;">
+<h3 class="font-bold" style="font-size: 1.2rem; color: rgb(30, 27, 75); margin-bottom: 4px; line-height: 1.3;">Enterprise</h3>
+<p style="font-size: 12px; color: rgb(31, 41, 55); margin-bottom: 16px;">For large orgs</p>
+<div class="flex items-baseline gap-1">
+<span class="font-extrabold" style="font-size: 2.25rem; color: rgb(17, 24, 39);">Custom</span>
+</div>
+</div>
+<ul style="margin-bottom: 24px; flex: 1 1 0%;" class="space-y-3">
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Unlimited resources</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Custom integrations</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Unlimited history</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>SSO / SAML</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Dedicated CSM</li>
+<li class="flex items-center gap-2" style="font-size: 14px; color: rgb(31, 41, 55);">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4 flex-shrink-0" aria-hidden="true" style="color: rgb(124, 58, 237);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>SLA guarantee</li>
+</ul>
+<a class="block text-center rounded-xl font-semibold" style="padding: 12px 16px; font-size: 14px; text-decoration: none; transition: all 0.15s ease; background-color: rgb(243, 244, 246); color: rgb(31, 41, 55);" href="/contact">Talk to Sales</a>
+</div>
+</div>
+<div style="text-align: center; margin-bottom: 24px;">
+<a class="inline-flex items-center gap-2 font-semibold" style="color: rgb(124, 58, 237); text-decoration: none; font-size: 15px; transition: all 0.15s ease;" href="/pricing">See full pricing comparison<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right h-4 w-4" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+</div>
+<div class="flex flex-wrap items-center justify-center" style="gap: 24px; font-size: 14px; color: rgb(107, 114, 128);">
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4" aria-hidden="true" style="color: rgb(22, 163, 74);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>
+<span>14-day free trial</span>
+</div>
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4" aria-hidden="true" style="color: rgb(22, 163, 74);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>
+<span>No credit card required</span>
+</div>
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4" aria-hidden="true" style="color: rgb(22, 163, 74);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>
+<span>Cancel anytime</span>
+</div>
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4" aria-hidden="true" style="color: rgb(22, 163, 74);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>
+<span>No hidden fees</span>
+</div>
+<div class="flex items-center gap-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check h-4 w-4" aria-hidden="true" style="color: rgb(22, 163, 74);">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>
+<span>SOC 2 Readiness Planned</span>
+</div>
+</div>
+</div>
+</section>
+<section style="width: 100%; padding: 64px 0px; background: linear-gradient(135deg, rgb(124, 58, 237) 0%, rgb(109, 40, 217) 50%, rgb(91, 33, 182) 100%);">
+<div style="max-width: 1400px; margin: 0px auto; padding: 0px 32px;">
+<div style="max-width: 640px; margin: 0px auto; text-align: center; color: rgb(255, 255, 255);">
+<h2 class="font-extrabold" style="margin-bottom: 16px; line-height: 1.2;">Your AWS bill is too high.<br>Let's fix that.</h2>
+<p style="font-size: 1.125rem; color: rgb(221, 214, 254); margin-bottom: 36px; line-height: 1.7;">Connect your AWS account and find your own savings opportunities in minutes.</p>
+<div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+<a data-slot="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-white hover:shadow-md h-12 rounded-lg has-[>svg]:px-6 text-lg px-8 py-6 bg-white hover:bg-gray-100 hover:scale-105 transition-all shadow-lg font-bold" style="color: rgb(124, 58, 237);" href="/register">Scan My AWS for Waste<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right ml-2 h-5 w-5" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+<a data-slot="button" class="inline-flex items-center justify-center gap-2 whitespace-nowrap disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive shadow-xs h-12 rounded-lg has-[>svg]:px-6 text-lg px-8 py-6 bg-white/10 border-2 border-white/30 text-white hover:bg-white/20 hover:scale-105 transition-all font-bold" href="/contact">Talk to Sales</a>
+</div>
+<p style="font-size: 13px; color: rgb(196, 181, 253); margin-top: 24px;">No credit card required · 14-day free trial · Cancel anytime</p>
+</div>
+</div>
+</section>
+</main>
+<footer class="bg-gray-950 text-gray-400 border-t border-gray-800">
+<div class="border-b border-gray-800">
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+<div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+<div class="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+<div class="flex items-center gap-2 text-sm">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check h-4 w-4 text-green-500" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span class="text-gray-300">All Systems Operational</span>
+</div>
+<div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+<a data-slot="button" class="inline-flex items-center justify-center whitespace-nowrap font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 shadow-xs h-8 rounded-md gap-1.5 px-3 text-xs has-[>svg]:px-2.5 flex-1 sm:flex-initial" href="/contact">Book a Demo</a>
+<a data-slot="button" class="inline-flex items-center justify-center whitespace-nowrap font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive bg-purple-600 text-white hover:bg-purple-700 shadow-sm hover:shadow-md h-8 rounded-md gap-1.5 px-3 text-xs has-[>svg]:px-2.5 flex-1 sm:flex-initial" href="/register">Start Free Trial</a>
+</div>
+</div>
+<div class="hidden lg:block">
+</div>
+</div>
+</div>
+</div>
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 lg:py-16">
+<div class="hidden md:grid md:grid-cols-3 lg:grid-cols-5 gap-8 lg:gap-12">
+<div class="space-y-4">
+<h3 class="text-sm font-semibold uppercase tracking-wider text-gray-200">Platform</h3>
+<div class="space-y-3">
+<ul class="space-y-2">
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/platform/infrastructure">Infrastructure Management</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/platform/costs">Cost Optimization</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/security">Security &amp; Compliance</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/dora-metrics">DORA Metrics</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/aws-resources">Resource Discovery</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/platform/service-health">Service Health</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/changelog">What's New</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/tour">Product Tour</a>
+</li>
+</ul>
+</div>
+</div>
+<div class="space-y-4">
+<h3 class="text-sm font-semibold uppercase tracking-wider text-gray-200">Solutions</h3>
+<div class="space-y-3">
+<h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">By Company Size</h4>
+<ul class="space-y-2">
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/startups">For Startups</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/mid-market">For Mid-Market</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/scaleups">For Scale-ups</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/enterprise">For Enterprise</a>
+</li>
+</ul>
+</div>
+<div class="space-y-3">
+<h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">By Role</h4>
+<ul class="space-y-2">
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/platform-engineers">For Platform Engineers</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/devops">For DevOps Teams</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/solutions/finops">For FinOps Teams</a>
+</li>
+</ul>
+</div>
+</div>
+<div class="space-y-4">
+<h3 class="text-sm font-semibold uppercase tracking-wider text-gray-200">Developers</h3>
+<div class="space-y-3">
+<ul class="space-y-2">
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/docs">Documentation</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/docs/api">API Reference</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/changelog">Changelog</a>
+</li>
+<li>
+<a target="_blank" rel="noopener noreferrer" class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="https://github.com/GoddeyUwamari">GitHub</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/community">Community</a>
+</li>
+</ul>
+</div>
+</div>
+<div class="space-y-4">
+<h3 class="text-sm font-semibold uppercase tracking-wider text-gray-200">Resources</h3>
+<div class="space-y-3">
+<ul class="space-y-2">
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/blog">Blog</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/case-studies">Case Studies</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/pricing">Pricing</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/community">Community</a>
+</li>
+</ul>
+</div>
+</div>
+<div class="space-y-4">
+<h3 class="text-sm font-semibold uppercase tracking-wider text-gray-200">Company</h3>
+<div class="space-y-3">
+<ul class="space-y-2">
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/contact">Contact Us</a>
+</li>
+<li>
+<a target="_blank" rel="noopener noreferrer" class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="https://www.wayuptechn.com/">WayUP Technology</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/legal/privacy">Privacy Policy</a>
+</li>
+<li>
+<a class="text-sm text-gray-400 hover:text-purple-400 transition-colors duration-200 inline-block" href="/legal/terms">Terms of Service</a>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="md:hidden">
+<div class="border-b border-gray-800">
+<button class="flex w-full items-center justify-between py-5 text-left" aria-expanded="false">
+<span class="text-sm font-semibold uppercase tracking-wider text-gray-200">Platform</span>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-5 w-5 text-gray-400 transition-transform duration-200" aria-hidden="true">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+<div class="border-b border-gray-800">
+<button class="flex w-full items-center justify-between py-5 text-left" aria-expanded="false">
+<span class="text-sm font-semibold uppercase tracking-wider text-gray-200">Solutions</span>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-5 w-5 text-gray-400 transition-transform duration-200" aria-hidden="true">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+<div class="border-b border-gray-800">
+<button class="flex w-full items-center justify-between py-5 text-left" aria-expanded="false">
+<span class="text-sm font-semibold uppercase tracking-wider text-gray-200">Developers</span>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-5 w-5 text-gray-400 transition-transform duration-200" aria-hidden="true">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+<div class="border-b border-gray-800">
+<button class="flex w-full items-center justify-between py-5 text-left" aria-expanded="false">
+<span class="text-sm font-semibold uppercase tracking-wider text-gray-200">Resources</span>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-5 w-5 text-gray-400 transition-transform duration-200" aria-hidden="true">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+<div class="border-b border-gray-800">
+<button class="flex w-full items-center justify-between py-5 text-left" aria-expanded="false">
+<span class="text-sm font-semibold uppercase tracking-wider text-gray-200">Company</span>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down h-5 w-5 text-gray-400 transition-transform duration-200" aria-hidden="true">
+<path d="m6 9 6 6 6-6">
+</path>
+</svg>
+</button>
+</div>
+</div>
+</div>
+<div class="border-t border-gray-800">
+<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+<div class="flex flex-col lg:flex-row items-center justify-between gap-6">
+<div class="flex flex-col items-center lg:items-start gap-3">
+<div class="flex items-center gap-2">
+<div class="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
+<span class="text-white font-bold text-sm">DC</span>
+</div>
+<div class="text-left">
+<div class="text-white font-semibold text-sm">DevControl</div>
+<div class="text-xs text-gray-500">AWS Infrastructure Command Center</div>
+</div>
+</div>
+<p class="text-xs text-gray-500">© 2026 DevControl. All rights reserved.</p>
+</div>
+<div class="flex flex-wrap items-center justify-center gap-2 text-xs">
+<a class="text-gray-400 hover:text-purple-400 transition-colors duration-200" href="/legal/privacy">Privacy</a>
+<span class="text-gray-600">·</span>
+<a class="text-gray-400 hover:text-purple-400 transition-colors duration-200" href="/legal/terms">Terms</a>
+<span class="text-gray-600">·</span>
+<a class="text-gray-400 hover:text-purple-400 transition-colors duration-200" href="/company/security">Security</a>
+<span class="text-gray-600">·</span>
+<a class="text-gray-400 hover:text-purple-400 transition-colors duration-200" href="/legal/cookies">Cookies</a>
+</div>
+<div class="flex items-center gap-5">
+<a href="https://www.linkedin.com/in/goddey-uwamari/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" class="text-gray-400 hover:text-purple-400 transition-colors duration-200">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-linkedin h-5 w-5" aria-hidden="true">
+<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z">
+</path>
+<rect width="4" height="12" x="2" y="9">
+</rect>
+<circle cx="4" cy="4" r="2">
+</circle>
+</svg>
+</a>
+<a href="https://twitter.com/devcontrol" target="_blank" rel="noopener noreferrer" aria-label="Twitter" class="text-gray-400 hover:text-purple-400 transition-colors duration-200">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-twitter h-5 w-5" aria-hidden="true">
+<path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z">
+</path>
+</svg>
+</a>
+<a href="https://github.com/GoddeyUwamari" target="_blank" rel="noopener noreferrer" aria-label="GitHub" class="text-gray-400 hover:text-purple-400 transition-colors duration-200">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-github h-5 w-5" aria-hidden="true">
+<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4">
+</path>
+<path d="M9 18c-4.51 2-5-2-7-2">
+</path>
+</svg>
+</a>
+<a href="https://youtube.com/@devcontrol" target="_blank" rel="noopener noreferrer" aria-label="YouTube" class="text-gray-400 hover:text-purple-400 transition-colors duration-200">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-youtube h-5 w-5" aria-hidden="true">
+<path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17">
+</path>
+<path d="m10 15 5-3-5-3z">
+</path>
+</svg>
+</a>
+</div>
+</div>
+</div>
+</div>
+</footer>
+</div>
