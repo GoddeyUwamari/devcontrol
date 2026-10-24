@@ -47,4 +47,9 @@ describe('Num', () => {
     expect(n.className.split(/\s+/)).toEqual(expect.arrayContaining(['tabular-nums', 'font-semibold']))
     expect(n).toHaveTextContent('$1,234.50')
   })
+
+  it('keeps a role size and an ink colour together (tailwind-merge would drop the size as a colour)', () => {
+    render(<Num className="text-ui font-semibold text-ink-success" data-testid="n">$142/mo</Num>)
+    expect(screen.getByTestId('n').className).toBe('tabular-nums text-ui font-semibold text-ink-success')
+  })
 })

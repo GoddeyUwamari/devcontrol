@@ -36,9 +36,14 @@ function PageHeader({ title, subtitle, actions, titleId, className }: PageHeader
   )
 }
 
-/** Costs, counts and percentages in running text: tabular figures, so digits line up and don't jitter. */
+/**
+ * Costs, counts and percentages in running text: tabular figures, so digits
+ * line up and don't jitter. Classes are joined, not passed through cn():
+ * tailwind-merge does not know the role sizes (text-ui, text-section, ...) and
+ * drops them as colours when a text-ink-* colour is also given.
+ */
 function Num({ className, ...props }: React.ComponentProps<"span">) {
-  return <span data-slot="num" className={cn("tabular-nums", className)} {...props} />
+  return <span data-slot="num" className={className ? `tabular-nums ${className}` : "tabular-nums"} {...props} />
 }
 
 export { PageHeader, Num }

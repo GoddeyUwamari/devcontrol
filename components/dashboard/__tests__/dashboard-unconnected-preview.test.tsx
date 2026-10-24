@@ -251,15 +251,23 @@ describe('responsive behaviour', () => {
     expect(steps.className).toMatch(/\bmd:grid-cols-3\b/)
   })
 
-  it('the headline is smaller on a phone, and the type scale is only 13/16/18/24/44 (plus the mobile headline)', () => {
+  it('the app type scale: the 28px page title at every width, and every size from the role tokens', () => {
     const { container } = renderPreview()
-    expect(screen.getByRole('heading', { level: 1 }).className).toMatch(/\btext-\[30px\]\s.*\bmd:text-\[44px\]/)
-    const sizes = new Set<string>()
-    for (const node of container.querySelectorAll('[class]')) {
-      for (const size of (node.getAttribute('class') ?? '').match(/(?<![\w-])(?:md:)?text-(?:\[\d+px\]|xs|sm|base|lg|xl|\dxl)(?![\w-])/g) ?? []) sizes.add(size)
+    expect(screen.getByRole('heading', { level: 1 }).className.split(/\s+/)).toEqual(expect.arrayContaining(['text-title', 'text-ink']))
+    const tokens = [...container.querySelectorAll('[class]')].flatMap((node) => (node.getAttribute('class') ?? '').split(/\s+/))
+    // No Tailwind size scale, no pixel sizes (the old 30 / 44 px headline), no bold: sizes and weights come from the roles.
+    expect(tokens.filter((c) => /^(?:[\w-]+:)?text-(?:xs|sm|base|lg|xl|\dxl|\[\d[^\]]*\])$/.test(c))).toEqual([])
+    expect(tokens.filter((c) => /^(?:[\w-]+:)?font-(?:bold|extrabold|black)$/.test(c))).toEqual([])
+    // title 28, section 18, card title 15, subtitle 15, body 15, controls and rows 14, caption 13, labels 12.
+    const roles = new Set(tokens.filter((c) => /^text-(?:title|subtitle|section|card-title|body|ui|meta|label|kpi)$/.test(c)))
+    expect([...roles].sort()).toEqual(['text-body', 'text-card-title', 'text-label', 'text-meta', 'text-section', 'text-subtitle', 'text-title', 'text-ui'])
+  })
+
+  it('the sample amounts and total use tabular figures', () => {
+    renderPreview()
+    for (const value of [...screen.getAllByTestId('sample-panel-row-value').slice(0, 3), screen.getByTestId('sample-panel-total-value')]) {
+      expect(value.className).toContain('tabular-nums')
     }
-    // text-base = 16px, text-lg = 18px, text-2xl = 24px.
-    expect([...sizes].sort()).toEqual(['md:text-[44px]', 'text-2xl', 'text-[13px]', 'text-[30px]', 'text-base', 'text-lg'])
   })
 
   it('buttons are full width on a phone, the band stacks, and nothing forces horizontal scrolling', () => {
@@ -388,23 +396,21 @@ describe('accessibility', () => {
     expect(panel.className).toContain('bg-[var(--surface-2)]')
     const fixed = (node: Element, prefix: '' | 'dark:') => node.className.match(new RegExp(`(?:^|\\s)${prefix}text-\\[(#[0-9A-Fa-f]{6})\\]`))?.[1]
 
-    // Green amounts: fixed colours (the light success token is too pale on white).
+    // Green amounts: the success ink (4.5:1 on white and the 50-tints: app/__tests__/app-surface-tokens.test.ts),
+    // and a fixed colour in dark mode.
     const amounts = within(panel).getAllByTestId('sample-panel-row-value').slice(0, 3)
     for (const amount of amounts) {
-      expect(fixed(amount, '')).toBe('#047857')
+      expect(amount.className.split(/\s+/)).toContain('text-ink-success')
       expect(fixed(amount, 'dark:')).toBe('#34D399')
     }
-    expect(contrast('#047857', light['--surface-2'])).toBeGreaterThanOrEqual(4.5)
     expect(contrast('#34D399', dark['--surface-2'])).toBeGreaterThanOrEqual(4.5)
-    // The token it replaces would not pass in light mode.
-    expect(contrast(light['--text-success'], light['--surface-2'])).toBeLessThan(4.5)
 
-    // High badge: fixed text colours on the danger tint (translucent in dark, so over the surface).
+    // High badge: the strong danger ink on the danger tint (4.5:1 on every tint in use, same test file),
+    // and a fixed colour in dark mode (the tint is translucent there, so over the surface).
     const badge = within(panel).getAllByTestId('sample-panel-row-value')[3]
     expect(badge.className).toContain('bg-[var(--bg-danger)]')
-    expect(fixed(badge, '')).toBe('#B91C1C')
+    expect(badge.className.split(/\s+/)).toContain('text-ink-danger-strong')
     expect(fixed(badge, 'dark:')).toBe('#F87171')
-    expect(contrast('#B91C1C', light['--bg-danger'])).toBeGreaterThanOrEqual(4.5)
     expect(dark['--bg-danger']).toMatch(/^#[0-9A-Fa-f]{8}$/)
     expect(contrast('#F87171', over(dark['--bg-danger'], dark['--surface-2']))).toBeGreaterThanOrEqual(4.5)
 
@@ -419,9 +425,9 @@ describe('accessibility', () => {
     expect(contrast(light['--text-accent'], light['--bg-accent'])).toBeGreaterThanOrEqual(4.5)
     expect(contrast(dark['--text-accent'], over(dark['--bg-accent'], dark['--surface-2']))).toBeGreaterThanOrEqual(4.5)
 
-    // Subtitles and the caption: secondary text on the panel surface.
+    // Subtitles and the caption: muted text on the panel surface.
     for (const node of [...within(panel).getAllByTestId('sample-panel-row-subtitle'), screen.getByTestId('sample-panel-caption')]) {
-      expect(node.className).toContain('text-[var(--text-secondary)]')
+      expect(node.className.split(/\s+/)).toContain('text-ink-muted')
     }
     for (const theme of [light, dark]) expect(contrast(theme['--text-secondary'], theme['--surface-2'])).toBeGreaterThanOrEqual(4.5)
   })

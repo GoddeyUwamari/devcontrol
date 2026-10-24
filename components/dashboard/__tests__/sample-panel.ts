@@ -63,15 +63,15 @@ const CHAIN_ATTRIBUTES: Record<'preview' | 'hero' | 'heroCopy', Record<string, s
   heroCopy: { class: 'min-w-0', 'data-testid': 'preview-hero-copy' },
 }
 
-const TITLE_CLASS = 'text-base font-semibold text-foreground leading-snug m-0'
-const SUBTITLE_CLASS = 'text-base text-[var(--text-secondary)] leading-snug m-0'
+const TITLE_CLASS = 'text-ui font-medium text-ink m-0'
+const SUBTITLE_CLASS = 'text-ui text-ink-muted m-0'
 const ROW: Array<[number, string, Record<string, string>]> = [
   [2, 'LI', { class: 'flex items-center justify-between gap-4 px-6 py-2 border-b border-border', 'data-testid': 'sample-panel-row' }],
   [3, 'DIV', { class: 'min-w-0' }],
   [4, 'P', { class: TITLE_CLASS, 'data-testid': 'sample-panel-row-title' }],
   [4, 'P', { class: SUBTITLE_CLASS, 'data-testid': 'sample-panel-row-subtitle' }],
 ]
-const AMOUNT: [number, string, Record<string, string>] = [3, 'SPAN', { class: 'shrink-0 text-lg font-bold text-[#047857] dark:text-[#34D399]', 'data-testid': 'sample-panel-row-value' }]
+const AMOUNT: [number, string, Record<string, string>] = [3, 'SPAN', { 'data-slot': 'num', class: 'tabular-nums shrink-0 text-ui font-semibold text-ink-success dark:text-[#34D399]', 'data-testid': 'sample-panel-row-value' }]
 /**
  * Every element of the panel, in document order: [depth below the panel, tag,
  * exact attributes]. Nothing inside the panel can be added, moved, restyled or
@@ -87,10 +87,10 @@ const PANEL_ELEMENTS: Array<[number, string, Record<string, string>]> = [
     'data-testid': 'sample-panel',
   }],
   [1, 'DIV', { class: 'flex items-start justify-between gap-4 px-6 py-3.5 border-b border-border' }],
-  [2, 'H2', { id: 'sample-panel-title', class: 'text-lg font-bold text-foreground tracking-tight leading-tight m-0', 'data-testid': 'sample-panel-title' }],
+  [2, 'H2', { id: 'sample-panel-title', class: 'text-card-title text-ink m-0', 'data-testid': 'sample-panel-title' }],
   [2, 'SPAN', {
     id: 'sample-panel-tag',
-    class: 'text-[13px] font-bold uppercase tracking-[0.08em] leading-none shrink-0 rounded-md px-3 py-1.5',
+    class: 'text-label uppercase tracking-[0.04em] leading-none shrink-0 rounded-md px-3 py-1.5',
     style: 'background: var(--bg-accent); color: var(--text-accent);',
     'data-testid': 'sample-panel-tag',
   }],
@@ -100,14 +100,14 @@ const PANEL_ELEMENTS: Array<[number, string, Record<string, string>]> = [
   ...ROW, AMOUNT,
   ...ROW,
   [3, 'SPAN', {
-    class: 'shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold leading-none bg-[var(--bg-danger)] text-[#B91C1C] dark:text-[#F87171]',
+    class: 'shrink-0 rounded-full px-3 py-1.5 text-label leading-none bg-[var(--bg-danger)] text-ink-danger-strong dark:text-[#F87171]',
     'data-testid': 'sample-panel-row-value',
     'data-severity': 'high',
   }],
   [1, 'DIV', { class: 'mx-6 mt-3 rounded-xl px-5 py-2.5 flex items-center justify-between gap-4', style: 'background: var(--bg-accent);', 'data-testid': 'sample-panel-total' }],
-  [2, 'P', { class: 'text-base font-medium text-foreground leading-snug m-0' }],
-  [2, 'SPAN', { class: 'shrink-0 text-2xl font-bold leading-none', style: 'color: var(--text-accent);', 'data-testid': 'sample-panel-total-value' }],
-  [1, 'P', { id: 'sample-panel-caption', class: 'text-base text-[var(--text-secondary)] leading-normal px-6 pt-2.5 pb-3.5 m-0', 'data-testid': 'sample-panel-caption' }],
+  [2, 'P', { class: 'text-ui font-medium text-ink m-0' }],
+  [2, 'SPAN', { 'data-slot': 'num', class: 'tabular-nums shrink-0 text-section leading-none', style: 'color: var(--text-accent);', 'data-testid': 'sample-panel-total-value' }],
+  [1, 'P', { id: 'sample-panel-caption', class: 'text-meta text-ink-muted px-6 pt-2.5 pb-3.5 m-0', 'data-testid': 'sample-panel-caption' }],
 ]
 
 /** Whether every element of `panel` (itself included) matches PANEL_ELEMENTS exactly. */
