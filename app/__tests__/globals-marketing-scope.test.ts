@@ -1,5 +1,7 @@
 import { readFileSync } from 'fs'
+import { createRequire } from 'module'
 import { join } from 'path'
+import postcss, { type AtRule, type Root, type Rule } from 'postcss'
 import { describe, expect, it } from 'vitest'
 
 // app/globals.css styles the marketing and sign-in pages as well as the app. The app-only
@@ -36,5 +38,111 @@ describe('app/globals.css outside the app block', () => {
 
   it('the baseline still contains the existing custom @theme block', () => {
     expect(baseline).toMatch(/\n@theme \{\n  --color-purple-50: #faf5ff;[\s\S]*?--color-purple-900: #581c87;\n\}\n/)
+  })
+
+  it('nothing outside the block defines or reads an --app-* value', () => {
+    expect(splitAppBlock(css).rest).not.toMatch(/--app-/)
+  })
+})
+
+// Every selector in the block is scoped to the app surface; the block's @theme only aliases new
+// names to --app-* values, with no fallback, so its utilities do nothing outside the app.
+const SCOPED_SELECTOR = /^(:root)?\[data-surface="app"\](?=$|[\s>+~:.[#])/
+const APP_VALUE = /^var\((--app-[\w-]+)\)$/
+
+function appBlock(): Root {
+  const { block } = splitAppBlock(css)
+  expect(block, 'the APP SURFACE block exists').not.toBeNull()
+  return postcss.parse(block!)
+}
+
+/** Every custom property name Tailwind's theme or the frozen part of globals.css already defines. */
+function existingNames(): Set<string> {
+  const names = new Set<string>()
+  const tailwindTheme = readFileSync(createRequire(import.meta.url).resolve('tailwindcss/theme.css'), 'utf8')
+  for (const source of [tailwindTheme, baseline]) {
+    postcss.parse(source).walkDecls((decl) => {
+      if (decl.prop.startsWith('--')) names.add(decl.prop)
+    })
+  }
+  return names
+}
+
+describe('the APP SURFACE block in app/globals.css', () => {
+  it('holds only comments, one @theme inline, scoped rules and @media blocks of scoped rules', () => {
+    const themes: AtRule[] = []
+    for (const node of appBlock().nodes) {
+      if (node.type === 'comment') continue
+      if (node.type === 'atrule' && node.name === 'theme') {
+        expect(node.params, '@theme in the block is inline').toBe('inline')
+        themes.push(node)
+        continue
+      }
+      if (node.type === 'atrule' && node.name === 'media') {
+        for (const child of node.nodes ?? []) {
+          if (child.type === 'comment') continue
+          expect(child.type, `only rules inside @media ${node.params}`).toBe('rule')
+        }
+        continue
+      }
+      expect(node.type, `unexpected ${node.toString().slice(0, 60)}`).toBe('rule')
+    }
+    expect(themes).toHaveLength(1)
+  })
+
+  it('every selector (including inside @media) starts with [data-surface="app"]', () => {
+    const selectors: string[] = []
+    appBlock().walkRules((rule) => {
+      selectors.push(...rule.selectors)
+    })
+    expect(selectors.length).toBeGreaterThan(0)
+    for (const selector of selectors) expect(selector, selector).toMatch(SCOPED_SELECTOR)
+  })
+
+  it('every --app-* value is defined only inside scoped rules', () => {
+    const defined = new Set<string>()
+    appBlock().walkDecls(/^--app-/, (decl) => {
+      expect(decl.parent?.type, decl.prop).toBe('rule')
+      for (const selector of (decl.parent as Rule).selectors) expect(selector, decl.prop).toMatch(SCOPED_SELECTOR)
+      defined.add(decl.prop)
+    })
+    expect(defined.size).toBeGreaterThan(0)
+  })
+
+  it('@theme inline only adds new names, each aliased to a defined --app-* value with no fallback', () => {
+    const existing = existingNames()
+    const defined = new Set<string>()
+    appBlock().walkRules((rule) => {
+      rule.walkDecls((decl) => {
+        defined.add(decl.prop)
+      })
+    })
+    const theme = appBlock().nodes.find((n): n is AtRule => n.type === 'atrule' && n.name === 'theme')!
+    const names: string[] = []
+    theme.walkDecls((decl) => {
+      names.push(decl.prop)
+      expect(existing.has(decl.prop), `${decl.prop} already exists`).toBe(false)
+      const alias = decl.value.match(APP_VALUE)
+      expect(alias, `${decl.prop}: ${decl.value}`).not.toBeNull()
+      expect(defined.has(alias![1]), `${alias![1]} is defined in a scoped rule`).toBe(true)
+    })
+    expect(names).toContain('--text-title')
+    expect(names).toContain('--color-ink-muted')
+    expect(names).toContain('--spacing-page-top')
+  })
+
+  it('no value in the block has a fallback', () => {
+    appBlock().walkDecls((decl) => {
+      expect(decl.value, `${decl.prop}: ${decl.value}`).not.toMatch(/var\([^()]*,/)
+    })
+  })
+
+  it('page-top spacing is 24 / 32 / 40 px at Tailwind sm (40rem) and lg (64rem)', () => {
+    const values: Record<string, string> = {}
+    appBlock().walkDecls('--app-spacing-page-top', (decl) => {
+      const media = decl.parent?.parent
+      values[media?.type === 'atrule' ? (media as AtRule).params : 'base'] = decl.value
+    })
+    expect(values).toEqual({ base: '1.5rem', '(width >= 40rem)': '2rem', '(width >= 64rem)': '2.5rem' })
   })
 })
