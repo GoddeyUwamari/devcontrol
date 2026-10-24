@@ -216,7 +216,7 @@ export function ServiceHealthTable({ services, loading = false, rangeLabel }: Se
                       service.monitored === false
                         ? "bg-gray-300"
                         : service.status === 'healthy' && "bg-green-500",
-                      service.monitored !== false && service.status === 'degraded' && "bg-yellow-500",
+                      service.monitored !== false && service.status === 'degraded' && "bg-amber-500",
                       service.monitored !== false && service.status === 'critical' && "bg-red-600",
                       service.monitored !== false && service.status === 'down' && "bg-red-900",
                       service.monitored !== false && service.status === 'unknown' && "bg-gray-300"
@@ -306,7 +306,7 @@ export function ServiceHealthTable({ services, loading = false, rangeLabel }: Se
               {service.recentIncidents !== undefined && (
                 <div className={`mt-2 ml-7 text-xs rounded px-2 py-1 inline-block ${
                   service.recentIncidents > 0
-                    ? 'text-yellow-700 bg-yellow-50'
+                    ? 'text-ink-warning bg-amber-50'
                     : 'text-gray-400 bg-gray-50'
                 }`}>
                   {service.recentIncidents === 0

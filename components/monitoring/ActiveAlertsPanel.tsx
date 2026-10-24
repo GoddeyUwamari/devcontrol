@@ -58,14 +58,14 @@ export function ActiveAlertsPanel({ alerts, emptyMessage, countsAvailable }: Act
                   className={cn(
                     "w-8 h-8 rounded-full flex items-center justify-center",
                     alert.severity === 'critical' && "bg-red-100",
-                    alert.severity === 'warning' && "bg-yellow-100"
+                    alert.severity === 'warning' && "bg-amber-100"
                   )}
                 >
                   <AlertTriangle
                     className={cn(
                       "w-4 h-4",
                       alert.severity === 'critical' && "text-red-600",
-                      alert.severity === 'warning' && "text-yellow-600"
+                      alert.severity === 'warning' && "text-ink-warning"
                     )}
                   />
                 </div>
@@ -80,7 +80,7 @@ export function ActiveAlertsPanel({ alerts, emptyMessage, countsAvailable }: Act
                         alert.severity === 'critical' &&
                           "bg-red-100 text-red-700",
                         alert.severity === 'warning' &&
-                          "bg-yellow-100 text-yellow-700"
+                          "bg-amber-100 text-ink-warning-strong"
                       )}
                     >
                       {alert.severity.toUpperCase()}

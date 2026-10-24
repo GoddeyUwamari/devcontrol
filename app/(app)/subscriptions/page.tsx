@@ -132,7 +132,7 @@ export default function SubscriptionsPage() {
     const variants: Record<Subscription['status'], string> = {
       active: 'bg-green-100 text-green-700 hover:bg-green-100',
       cancelled: 'bg-gray-100 text-gray-700 hover:bg-gray-100',
-      past_due: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
+      past_due: 'bg-amber-100 text-ink-warning-strong hover:bg-amber-100',
       expired: 'bg-red-100 text-red-700 hover:bg-red-100',
       suspended: 'bg-orange-100 text-orange-700 hover:bg-orange-100',
     }
