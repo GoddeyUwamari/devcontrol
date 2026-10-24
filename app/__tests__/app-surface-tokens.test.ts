@@ -222,6 +222,33 @@ describe('the whole app/globals.css, compiled with a repo scan', () => {
     })
     expect(defined).toContain('--app-color-ink-muted')
   })
+
+  // The re-pointed tokens (globals-marketing-scope.test.ts checks the source): in the real output each one
+  // is declared, inside the app, by a rule that includes :root[data-surface=app] -- specificity (0,2,0)
+  // against the frozen :root's (0,1,0) -- so on <html> it wins even if minification reorders rules.
+  it.each(['false', 'true'])('re-pointed tokens outrank :root on <html>, and placeholders get full opacity (optimize: %s)', (optimize) => {
+    const { full } = outputs[optimize]
+    const ROOT_APP = /^:root\[data-surface=(?:"app"|app)\]$/
+    for (const name of ['--muted-foreground', '--text-success', '--text-warning', '--text-danger']) {
+      const scoped: Rule[] = []
+      full.walkDecls(name, (decl) => {
+        const rule = decl.parent as Rule
+        if (rule.selectors.every(isAppScopedSelector)) scoped.push(rule)
+      })
+      expect(scoped.length, name).toBeGreaterThan(0)
+      for (const rule of scoped) expect(rule.selectors.some((s) => ROOT_APP.test(s.trim())), `${name} in ${rule.selector}`).toBe(true)
+    }
+    const placeholders: Rule[] = []
+    full.walkRules((rule) => {
+      if (rule.selectors.every(isAppScopedSelector) && /placeholder/.test(rule.selector)) placeholders.push(rule)
+    })
+    expect(placeholders.length).toBeGreaterThan(0)
+    for (const rule of placeholders) {
+      const decls: Record<string, string> = {}
+      rule.walkDecls((decl) => void (decls[decl.prop] = decl.value))
+      expect(decls, rule.selector).toEqual({ color: 'var(--muted-foreground)', opacity: '1' })
+    }
+  })
 })
 
 // The promised contrast of each ink token (typography plan §3.1/§3.3) against the light surfaces it
@@ -272,5 +299,28 @@ describe('ink tokens meet 4.5:1 on the surfaces they are promised for', () => {
       expect(palette[surface], surface).toBeDefined()
       expect(contrast(fg, palette[surface]), `${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
+  })
+})
+
+// The app values of the re-pointed tokens meet 4.5:1 where they are used: muted text on every light
+// surface, the status colours on white, the page and card surfaces and the 50-tints (on a 100-tint or a
+// --bg-* tint the app uses the -strong ink instead).
+const OVERRIDE_INK: [string, string, string[]][] = [
+  ['--muted-foreground', 'ink-muted', ALL],
+  ['--text-success', 'ink-success', [...NEUTRAL_50, ...TINTS_50]],
+  ['--text-warning', 'ink-warning', [...NEUTRAL_50, ...TINTS_50]],
+  ['--text-danger', 'ink-danger', ALL],
+]
+
+describe('re-pointed tokens meet 4.5:1 in the app', () => {
+  it.each(OVERRIDE_INK)('%s', (name, ink, surfaces) => {
+    // The value as written: an ink token (var(--app-color-ink-…)) or, if edited, a palette colour.
+    const m = block.match(new RegExp(`\\n  ${name}: var\\(--(?:app-color-(ink[a-z-]*)|color-([a-z]+-\\d+))\\);`))
+    expect(m, name).not.toBeNull()
+    const fg = palette[m![1] ? inkColour(m![1]) : m![2]]
+    expect(fg, name).toBeDefined()
+    expect(contrast(fg, WHITE), `${name} on white`).toBeGreaterThanOrEqual(4.5)
+    for (const surface of surfaces) expect(contrast(fg, palette[surface]), `${name} on ${surface}`).toBeGreaterThanOrEqual(4.5)
+    expect(m![1], `${name} uses the ${ink} token`).toBe(ink)
   })
 })

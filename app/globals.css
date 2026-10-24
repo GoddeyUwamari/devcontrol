@@ -844,4 +844,29 @@ body { overflow-x: hidden; }
     --app-spacing-page-top: 2.5rem;
   }
 }
+
+/*
+ * Existing tokens, re-pointed for the app only: muted text to slate-600 and the
+ * status text colours to the ink values that pass AA on white. On <html>,
+ * :root[data-surface="app"] outranks the :root definitions above whatever the
+ * order; the bare attribute covers the wrapper's first paint. Outside the app
+ * the values above apply unchanged.
+ */
+:root[data-surface="app"],
+[data-surface="app"] {
+  --muted-foreground: var(--app-color-ink-muted);
+  --text-success: var(--app-color-ink-success);
+  --text-warning: var(--app-color-ink-warning);
+  --text-danger: var(--app-color-ink-danger);
+}
+
+/*
+ * Placeholder text in the app. The ::placeholder rule above wraps an oklch
+ * value in hsl(), which is invalid, so placeholders take the field's own text
+ * colour at 70 % opacity; here they get the muted colour at full opacity.
+ */
+[data-surface="app"] ::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
 /* === END APP SURFACE === */

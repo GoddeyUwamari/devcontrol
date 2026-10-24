@@ -156,3 +156,45 @@ describe('the APP SURFACE block in app/globals.css', () => {
     expect(values).toEqual({ base: '1.5rem', '(width >= 40rem)': '2rem', '(width >= 64rem)': '2.5rem' })
   })
 })
+
+// The block may re-point a few existing tokens for the app (typography plan T1): only these, each only in
+// a rule whose selectors include :root[data-surface="app"] -- which outranks the frozen :root definition on
+// <html> regardless of source order -- and each to its ink token. The only other declarations are the
+// placeholder colour and opacity, on placeholders inside the app.
+const OVERRIDES: Record<string, string> = {
+  '--muted-foreground': 'var(--app-color-ink-muted)',
+  '--text-success': 'var(--app-color-ink-success)',
+  '--text-warning': 'var(--app-color-ink-warning)',
+  '--text-danger': 'var(--app-color-ink-danger)',
+}
+
+describe('existing tokens re-pointed inside the APP SURFACE block', () => {
+  it('only the allowed names, each to its ink token, in rules that include :root[data-surface="app"]', () => {
+    const existing = existingNames()
+    const seen: Record<string, string> = {}
+    appBlock().walkRules((rule) => {
+      rule.walkDecls((decl) => {
+        if (!decl.prop.startsWith('--') || decl.prop.startsWith('--app-')) return
+        expect(Object.keys(OVERRIDES), `${decl.prop} may not be re-pointed`).toContain(decl.prop)
+        expect(existing.has(decl.prop), `${decl.prop} exists outside the block`).toBe(true)
+        expect(decl.value, decl.prop).toBe(OVERRIDES[decl.prop])
+        expect(rule.selectors.map((s) => s.trim()), decl.prop).toContain(':root[data-surface="app"]')
+        for (const selector of rule.selectors) expect(isAppScopedSelector(selector), selector).toBe(true)
+        seen[decl.prop] = decl.value
+      })
+    })
+    expect(seen).toEqual(OVERRIDES)
+  })
+
+  it('the only non-custom-property declarations are the placeholder colour and opacity, inside the app', () => {
+    const plain: string[] = []
+    appBlock().walkDecls((decl) => {
+      if (decl.prop.startsWith('--') || decl.parent?.type !== 'rule') return
+      plain.push(`${(decl.parent as Rule).selector} { ${decl.prop}: ${decl.value} }`)
+    })
+    expect(plain).toEqual([
+      '[data-surface="app"] ::placeholder { color: var(--muted-foreground) }',
+      '[data-surface="app"] ::placeholder { opacity: 1 }',
+    ])
+  })
+})
