@@ -143,13 +143,14 @@ export function samplePanelProblems(root: Element): string[] {
   const panel = panels[0]
   const problems: string[] = []
 
-  // Place: the hero's second column, after the copy column (and so after the h1), before the cards.
+  // Place: the hero's second column, after the copy column (and so after the h1), before the cards' section.
   const hero = panel.parentElement
   const preview = hero?.parentElement
   const copy = panel.previousElementSibling
+  const covers = hero?.nextElementSibling
   if (hero?.getAttribute('data-testid') !== 'preview-hero' || preview?.getAttribute('data-testid') !== 'dashboard-preview') problems.push('not in the hero')
   if (copy?.getAttribute('data-testid') !== 'preview-hero-copy' || copy.firstElementChild?.tagName !== 'H1' || panel.nextElementSibling !== null) problems.push('not after the headline column')
-  if (hero?.nextElementSibling?.getAttribute('data-testid') !== 'preview-cards') problems.push('not before the cards')
+  if (covers?.getAttribute('data-testid') !== 'preview-covers' || covers.lastElementChild?.getAttribute('data-testid') !== 'preview-cards') problems.push('not before the cards')
 
   // The wrappers above it and the column beside it, then every element of the panel, exactly as pinned.
   if (!sameAttributes(preview, CHAIN_ATTRIBUTES.preview)) problems.push('preview attributes changed')

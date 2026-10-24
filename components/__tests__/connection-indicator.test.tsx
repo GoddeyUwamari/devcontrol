@@ -26,6 +26,14 @@ describe('ConnectionIndicator', () => {
     expect(dotEl.className.includes('animate-pulse')).toBe(isConnected)
   })
 
+  it.each([true, false])('sits in the page flow, never over the page: not fixed, absolute or sticky, no offsets or z-index (socket open = %s)', (isConnected) => {
+    socketState.isConnected = isConnected
+    render(<ConnectionIndicator />)
+    const classes = screen.getByTestId('connection-indicator').className.split(/\s+/)
+    expect(classes.filter((c) => /^(?:[\w-]+:)?(?:fixed|absolute|sticky|-?(?:inset|top|right|bottom|left)-\S+|z-\S+)$/.test(c))).toEqual([])
+    expect(classes).toEqual(expect.arrayContaining(['w-fit', 'ml-4', 'mb-4']))
+  })
+
   it.each([true, false])('never says "Connected" (socket open = %s): it is not the AWS connection', (isConnected) => {
     socketState.isConnected = isConnected
     const { container } = render(<ConnectionIndicator />)
