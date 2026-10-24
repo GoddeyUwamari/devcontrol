@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { WebClient } from '@slack/web-api';
-import { JiraClient } from './jira-client.service';
+import { JiraClient, JiraFailureReason, JiraRequestError } from './jira-client.service';
+import { OutboundRefused, SMTP_CLIENT_NAME, pinnedSmtpTarget, safeHttpsPost } from '../utils/safe-outbound';
 
 interface AlertConfig {
   email?: {
@@ -34,6 +35,8 @@ interface AlertConfig {
 export interface ChannelResult {
   channel: 'email' | 'slack' | 'webhook' | 'jira';
   ok: boolean;
+  /** For a failed Jira delivery that Jira itself refused: which of the fixed reasons. */
+  reason?: JiraFailureReason;
 }
 
 interface Alert {
@@ -45,41 +48,68 @@ interface Alert {
   metadata?: Record<string, any>;
 }
 
-/** A non-2xx answer is a failed delivery. The body is not read. */
-async function assertDelivered(response: Response, label: string): Promise<void> {
-  if (response.ok) return;
-  await response.body?.cancel().catch(() => {});
-  throw new Error(`${label} returned ${response.status}`);
+/** A non-2xx answer is a failed delivery. */
+function assertDelivered(status: number, label: string): void {
+  if (status >= 200 && status <= 299) return;
+  throw new Error(`${label} returned ${status}`);
+}
+
+/**
+ * Transport options for an organization's mail server: connect to the
+ * checked address, verify the certificate against the configured host name,
+ * require TLS (STARTTLS except on 465), and announce a fixed client name.
+ */
+export function buildSmtpTransportOptions(
+  target: { address: string; servername?: string; port: number; secure: boolean },
+  auth?: { user: string; pass: string }
+) {
+  return {
+    host: target.address,
+    port: target.port,
+    secure: target.secure,
+    requireTLS: !target.secure,
+    ignoreTLS: false,
+    ...(target.servername ? { servername: target.servername } : {}),
+    tls: {
+      ...(target.servername ? { servername: target.servername } : {}),
+      rejectUnauthorized: true,
+      minVersion: 'TLSv1.2' as const,
+    },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+    dnsTimeout: 5_000,
+    name: SMTP_CLIENT_NAME,
+    logger: false,
+    debug: false,
+    ...(auth ? { auth } : {}),
+  };
 }
 
 export class AlertNotificationService {
-  private emailTransporter?: nodemailer.Transporter;
   private slackClient?: WebClient;
   private jiraClient?: JiraClient;
+  private jiraSetupError?: unknown;
 
-  constructor(private config: AlertConfig) {
-    if (config.email?.enabled) {
-      this.emailTransporter = nodemailer.createTransport({
-        host: config.email.smtpHost,
-        port: config.email.smtpPort,
-        secure: config.email.smtpPort === 465,
-        auth: {
-          user: config.email.smtpUser,
-          pass: config.email.smtpPass,
-        },
-      });
-    }
-
+  constructor(
+    private config: AlertConfig,
+    private context: { organizationId?: string } = {}
+  ) {
     if (config.slack?.enabled && config.slack.webhookUrl) {
       this.slackClient = new WebClient();
     }
 
     if (config.jira?.enabled) {
-      this.jiraClient = new JiraClient(
-        config.jira.baseUrl,
-        config.jira.email,
-        config.jira.apiToken
-      );
+      try {
+        this.jiraClient = new JiraClient(
+          config.jira.baseUrl,
+          config.jira.email,
+          config.jira.apiToken
+        );
+      } catch (error) {
+        // Reported as this channel's failed delivery.
+        this.jiraSetupError = error;
+      }
     }
   }
 
@@ -88,7 +118,7 @@ export class AlertNotificationService {
     const attempts: { channel: ChannelResult['channel']; promise: Promise<void> }[] = [];
 
     // Send email notification
-    if (this.config.email?.enabled && this.emailTransporter) {
+    if (this.config.email?.enabled) {
       attempts.push({ channel: 'email', promise: this.sendEmailAlert(alert) });
     }
 
@@ -103,16 +133,30 @@ export class AlertNotificationService {
     }
 
     // Send Jira notification
-    if (this.config.jira?.enabled && this.jiraClient) {
+    if (this.config.jira?.enabled) {
       attempts.push({ channel: 'jira', promise: this.sendJiraAlert(alert) });
     }
 
     const settled = await Promise.allSettled(attempts.map((attempt) => attempt.promise));
-    return settled.map((outcome, i) => ({ channel: attempts[i].channel, ok: outcome.status === 'fulfilled' }));
+    return settled.map((outcome, i) => {
+      const channel = attempts[i].channel;
+      if (outcome.status === 'fulfilled') return { channel, ok: true };
+      if (outcome.reason instanceof OutboundRefused) {
+        console.warn('[SafeOutbound] refused', {
+          organizationId: this.context.organizationId,
+          channel,
+          code: outcome.reason.code,
+        });
+      }
+      if (channel === 'jira' && outcome.reason instanceof JiraRequestError) {
+        return { channel, ok: false, reason: outcome.reason.reason };
+      }
+      return { channel, ok: false };
+    });
   }
 
   private async sendEmailAlert(alert: Alert): Promise<void> {
-    if (!this.emailTransporter || !this.config.email) return;
+    if (!this.config.email) return;
 
     const severityColor = {
       critical: '#dc2626',
@@ -141,12 +185,21 @@ export class AlertNotificationService {
       </div>
     `;
 
-    await this.emailTransporter.sendMail({
-      from: this.config.email.smtpUser,
-      to: this.config.email.recipients.join(', '),
-      subject: `[DevControl ${alert.severity.toUpperCase()}] ${alert.title}`,
-      html,
-    });
+    // Resolved and checked on every send, then connected to by address.
+    const target = await pinnedSmtpTarget(this.config.email.smtpHost, this.config.email.smtpPort);
+    const transporter = nodemailer.createTransport(
+      buildSmtpTransportOptions(target, { user: this.config.email.smtpUser, pass: this.config.email.smtpPass })
+    );
+    try {
+      await transporter.sendMail({
+        from: this.config.email.smtpUser,
+        to: this.config.email.recipients.join(', '),
+        subject: `[DevControl ${alert.severity.toUpperCase()}] ${alert.title}`,
+        html,
+      });
+    } finally {
+      transporter.close();
+    }
   }
 
   private async sendSlackAlert(alert: Alert): Promise<void> {
@@ -164,8 +217,8 @@ export class AlertNotificationService {
       info: '#3b82f6',
     };
 
-    const response = await fetch(this.config.slack.webhookUrl, {
-      method: 'POST',
+    const { status } = await safeHttpsPost(this.config.slack.webhookUrl, {
+      policy: 'slack-webhook',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: this.config.slack.channel,
@@ -212,14 +265,14 @@ export class AlertNotificationService {
         ],
       }),
     });
-    await assertDelivered(response, 'Slack webhook');
+    assertDelivered(status, 'Slack webhook');
   }
 
   private async sendWebhookAlert(alert: Alert): Promise<void> {
     if (!this.config.webhook) return;
 
-    const response = await fetch(this.config.webhook.url, {
-      method: 'POST',
+    const { status } = await safeHttpsPost(this.config.webhook.url, {
+      policy: 'public-https',
       headers: {
         'Content-Type': 'application/json',
         ...this.config.webhook.headers,
@@ -234,10 +287,11 @@ export class AlertNotificationService {
         metadata: alert.metadata,
       }),
     });
-    await assertDelivered(response, 'Webhook');
+    assertDelivered(status, 'Webhook');
   }
 
   private async sendJiraAlert(alert: Alert): Promise<void> {
+    if (this.jiraSetupError) throw this.jiraSetupError;
     if (!this.jiraClient || !this.config.jira) return;
 
     const severityPriorityMap = {

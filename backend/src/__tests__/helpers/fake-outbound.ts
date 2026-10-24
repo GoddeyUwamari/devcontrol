@@ -34,7 +34,8 @@ export function stubDns(map: Record<string, DnsAnswer>): jest.SpyInstance {
     if (hostname === 'localhost' && !(hostname in map)) {
       return (realLookup as any).call(dns, hostname, opts, done);
     }
-    const answer = map[hostname];
+    // An IP literal (for example a local server's listen address) answers as itself.
+    const answer = net.isIP(hostname) && !(hostname in map) ? [hostname] : map[hostname];
     if (answer === 'hang') return;
     process.nextTick(() => {
       if (answer === undefined) {
@@ -207,7 +208,8 @@ export function guardNetwork(): NetworkGuard {
     const first = normalized ? args[0][0] : args[0];
     let options: any =
       typeof first === 'object' && first !== null ? { ...first } : typeof first === 'number' ? { port: first, host: args[1] } : { path: first };
-    if (options.path === undefined) {
+    // As in net: a truthy path is a local pipe; anything else is TCP (agents pass path: null).
+    if (!options.path) {
       const host: string = options.host ?? 'localhost';
       if (net.isIP(host)) {
         if (!isLoopback(host)) {

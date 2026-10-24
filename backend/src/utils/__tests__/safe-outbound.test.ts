@@ -56,6 +56,18 @@ describe('the network guard', () => {
     expect(guard.attempts).toEqual([`${PUBLIC_V4}:443`]);
     guard.attempts.length = 0;
   });
+
+  it('also fails an HTTPS request by name through an agent (which passes path: null to net)', async () => {
+    stubDns({ 'a.example': [PUBLIC_V4] });
+    const req = https.request({ hostname: 'a.example', port: 443, path: '/x', method: 'POST', agent: new https.Agent({ keepAlive: false }) });
+    const error = await new Promise<Error>((resolve) => {
+      req.once('error', resolve);
+      req.end();
+    });
+    expect(error.message).toBe('blocked by the test network guard');
+    expect(guard.attempts).toEqual([`a.example=${PUBLIC_V4}:443`]);
+    guard.attempts.length = 0;
+  });
 });
 
 describe('U1: bypass forms are refused', () => {

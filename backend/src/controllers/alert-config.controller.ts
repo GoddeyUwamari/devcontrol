@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { AlertNotificationService } from '../services/alert-notification.service';
-import { JiraClient } from '../services/jira-client.service';
+import { JIRA_FAILURE_MESSAGES, JiraFailureReason, JiraClient, JiraRequestError } from '../services/jira-client.service';
+import { OutboundRefused } from '../utils/safe-outbound';
 
 // Store configurations in database (add table later)
 export const alertConfigs = new Map<string, any>();
@@ -209,6 +210,18 @@ function isChannelReady(config: any, channel: Channel): boolean {
 const testFailed = (channel: Channel) =>
   `Test alert to ${channel} failed. Check the channel settings and try again.`;
 
+/**
+ * The message for a failed test. Jira's own refusals (a rejected issue or
+ * rejected credentials) get their fixed message; anything else gets the
+ * generic one.
+ */
+function testFailureMessage(channel: Channel, reason?: JiraFailureReason): string {
+  if (channel === 'jira' && (reason === 'issue_rejected' || reason === 'credentials_rejected')) {
+    return JIRA_FAILURE_MESSAGES[reason];
+  }
+  return testFailed(channel);
+}
+
 export class AlertConfigController {
   // Get alert configuration
   async getConfig(req: Request, res: Response) {
@@ -272,28 +285,30 @@ export class AlertConfigController {
         return res.status(400).json({ success: false, error: `${type} is not enabled` });
       }
 
-      const fail = () => {
+      const fail = (reason?: JiraFailureReason) => {
         console.warn('[AlertConfig] test failed', { organizationId, channel: type });
-        return res.status(502).json({ success: false, error: testFailed(type) });
+        return res.status(502).json({ success: false, error: testFailureMessage(type, reason) });
       };
 
       // Test Jira connection first if testing Jira
       if (type === 'jira') {
-        const jiraClient = new JiraClient(
-          config.jira.baseUrl,
-          config.jira.email,
-          config.jira.apiToken
-        );
-
         try {
+          const jiraClient = new JiraClient(
+            config.jira.baseUrl,
+            config.jira.email,
+            config.jira.apiToken
+          );
           await jiraClient.testConnection();
-        } catch {
-          return fail();
+        } catch (error) {
+          if (error instanceof OutboundRefused) {
+            console.warn('[SafeOutbound] refused', { organizationId, channel: type, code: error.code });
+          }
+          return fail(error instanceof JiraRequestError ? error.reason : undefined);
         }
       }
 
       // Only the channel under test is sent to.
-      const alertService = new AlertNotificationService({ [type]: config[type] });
+      const alertService = new AlertNotificationService({ [type]: config[type] }, { organizationId });
 
       const results = await alertService.sendAlert({
         severity: 'info',
@@ -304,8 +319,9 @@ export class AlertConfigController {
         metadata: { test: true, channel: type },
       });
 
-      if (!results.some((result) => result.channel === type && result.ok)) {
-        return fail();
+      const result = results.find((entry) => entry.channel === type);
+      if (!result?.ok) {
+        return fail(result?.reason);
       }
 
       res.json({ success: true, message: `Test alert sent successfully to ${type}` });
