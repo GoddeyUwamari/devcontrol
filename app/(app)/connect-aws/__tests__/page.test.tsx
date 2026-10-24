@@ -130,3 +130,50 @@ describe('Connect AWS page — connect-init denied for a non-owner', () => {
     expect(screen.getByRole('button', { name: /connect account/i })).toBeDisabled()
   })
 })
+
+// The app type scale (typography plan, T1): the page's text uses only the app role tokens, its title is the
+// shared PageHeader, and its top spacing is the app page-top token.
+describe('Connect AWS page — app type scale', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockConnectInit.mockResolvedValue(CONNECT_INIT_DATA)
+  })
+
+  const classTokens = (container: HTMLElement) =>
+    [...container.querySelectorAll('[class]')].flatMap((node) => (node.getAttribute('class') ?? '').split(/\s+/).filter(Boolean))
+
+  it('one h1 from PageHeader: the 28px title role, with the subtitle role under it', async () => {
+    renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Connect your AWS account' })
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(h1.closest('[data-slot="page-header"]')).not.toBeNull()
+    expect(h1.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-title', 'text-ink']))
+    expect(screen.getByText(/Set up a read-only IAM role/).className).toContain('text-subtitle')
+    for (const h2 of screen.getAllByRole('heading', { level: 2 })) expect(h2.className).toContain('text-section')
+  })
+
+  it('top spacing is pt-page-top and nothing else sets the top padding', () => {
+    const { container } = renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    const root = container.firstElementChild as HTMLElement
+    const classes = root.className.split(/\s+/)
+    expect(classes).toContain('pt-page-top')
+    expect(classes.filter((c) => /^(?:[\w-]+:)?(?:p|py|pt)-/.test(c) && c !== 'pt-page-top')).toEqual([])
+  })
+
+  it('every size comes from the role tokens: no Tailwind size scale, no pixel sizes, no bold', async () => {
+    const { container } = renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    // Fill the page: the trust policy, an invalid then a valid ARN (both validation lines).
+    await screen.findByText(/"Version"/)
+    const input = screen.getByPlaceholderText(/arn:aws:iam/i)
+    fireEvent.change(input, { target: { value: 'arn:aws:iam::123456789012:role/Other' } })
+    expect(screen.getByText(/Expected format/).className).toContain('text-ink-warning')
+    fireEvent.change(input, { target: { value: 'arn:aws:iam::123456789012:role/DevControlRole' } })
+    expect(screen.getByText(/Valid ARN format/).className).toContain('text-ink-success')
+
+    const tokens = classTokens(container)
+    expect(tokens.filter((c) => /^(?:[\w-]+:)?text-(?:xs|sm|base|lg|xl|\dxl|\[\d[^\]]*\])$/.test(c))).toEqual([])
+    expect(tokens.filter((c) => /^(?:[\w-]+:)?font-(?:bold|extrabold|black)$/.test(c))).toEqual([])
+    const roles = new Set(tokens.filter((c) => /^text-(?:title|subtitle|section|card-title|body|ui|meta|label|kpi)$/.test(c)))
+    expect([...roles].sort()).toEqual(['text-body', 'text-label', 'text-meta', 'text-section', 'text-subtitle', 'text-title', 'text-ui'])
+  })
+})
