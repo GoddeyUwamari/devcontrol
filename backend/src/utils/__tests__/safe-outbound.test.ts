@@ -57,6 +57,29 @@ describe('the network guard', () => {
     guard.attempts.length = 0;
   });
 
+  it.each([
+    ['an options object with a string port', () => net.connect({ host: PUBLIC_V4, port: '443' as unknown as number })],
+    ['a string port and host', () => net.connect('443' as unknown as number, PUBLIC_V4)],
+    ['a numeric port and host', () => net.connect(443, PUBLIC_V4)],
+    // net.connect normalises its arguments first; a socket's own connect gets them as given.
+    ['a socket connect with a string port and host', () => new net.Socket().connect('443' as unknown as number, PUBLIC_V4)],
+  ])('fails a connect given %s', async (_label, connect) => {
+    const socket = connect();
+    const error = await new Promise<Error>((resolve) => socket.once('error', resolve));
+    expect(error.message).toBe('blocked by the test network guard');
+    expect(guard.attempts).toEqual([`${PUBLIC_V4}:443`]);
+    guard.attempts.length = 0;
+  });
+
+  it('fails a connect by name given a string port', async () => {
+    stubDns({ 'a.example': [PUBLIC_V4] });
+    const socket = net.connect('443' as unknown as number, 'a.example');
+    const error = await new Promise<Error>((resolve) => socket.once('error', resolve));
+    expect(error.message).toBe('blocked by the test network guard');
+    expect(guard.attempts).toEqual([`a.example=${PUBLIC_V4}:443`]);
+    guard.attempts.length = 0;
+  });
+
   it('also fails an HTTPS request by name through an agent (which passes path: null to net)', async () => {
     stubDns({ 'a.example': [PUBLIC_V4] });
     const req = https.request({ hostname: 'a.example', port: 443, path: '/x', method: 'POST', agent: new https.Agent({ keepAlive: false }) });
@@ -70,7 +93,7 @@ describe('the network guard', () => {
   });
 });
 
-describe('U1: bypass forms are refused', () => {
+describe('U1: URL forms that are refused', () => {
   const refused: unknown[] = [
     'http://a.example',
     'https://127.0.0.1',
@@ -107,7 +130,7 @@ describe('U1: bypass forms are refused', () => {
     'https://localhost',
     'https://a.localhost',
     'https://localhost.',
-    'https://evil.example.',
+    'https://unsafe.example.',
     'https://intranet',
     'https://user:pw@a.example',
     'https://a.example%2f@b',
@@ -204,13 +227,13 @@ describe('U2: the Slack policy accepts only the two Slack webhook hosts, exactly
 
   it.each([
     'https://slack-gov.com/x',
-    'https://hooks.slack-gov.com.evil.example/x',
-    'https://evilhooks.slack-gov.com/x',
+    'https://hooks.slack-gov.com.unsafe.example/x',
+    'https://otherhooks.slack-gov.com/x',
     'https://hooks.slack-gov.com./x',
-    'https://hooks.slack.com.evil.example/x',
-    'https://evilhooks.slack.com/x',
+    'https://hooks.slack.com.unsafe.example/x',
+    'https://otherhooks.slack.com/x',
     'https://hooks.slack.com:8443/x',
-    'https://hooks.slack.com@evil.example/x',
+    'https://hooks.slack.com@unsafe.example/x',
     'https://hooks.slack.com./x',
     'https://hooks.slаck.com/x',
     'http://hooks.slack.com/x',

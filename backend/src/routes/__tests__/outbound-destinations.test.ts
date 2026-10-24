@@ -158,6 +158,16 @@ function loggedText(): string {
     .join('\n');
 }
 
+/** The [SafeOutbound] log calls so far, each rendered in full on one line. */
+function refusalLines(): string[] {
+  return logSpies
+    .flatMap((spy) => spy.mock.calls)
+    .map((args: unknown[]) =>
+      args.map((arg) => (typeof arg === 'string' ? arg : inspect(arg, { depth: 8, breakLength: Infinity }))).join(' ')
+    )
+    .filter((line) => line.includes('[SafeOutbound] refused'));
+}
+
 beforeEach(() => {
   logSpies = captureLogs();
   guard = guardNetwork();
@@ -166,7 +176,7 @@ beforeEach(() => {
     'smtp.example.com': [PUBLIC_V4],
     'hooks.slack.com': [PUBLIC_V4],
     'hooks.example': [PUBLIC_V4],
-    'rebind.example': [PUBLIC_V4],
+    'changing.example': [PUBLIC_V4],
   };
   stubDns(dns);
   alertConfigs.delete(org.orgId);
@@ -254,8 +264,8 @@ describe('E: a destination is checked again when it is used (real sockets)', () 
   it('E1: a webhook name that now resolves to loopback gets no connection', async () => {
     const counter = await connectionCounter();
     try {
-      expect((await save({ webhook: { enabled: true, url: `https://rebind.example:${counter.port}/x` } })).status).toBe(200);
-      dns['rebind.example'] = ['127.0.0.1'];
+      expect((await save({ webhook: { enabled: true, url: `https://changing.example:${counter.port}/x` } })).status).toBe(200);
+      dns['changing.example'] = ['127.0.0.1'];
 
       const res = await testChannel('webhook');
 
@@ -264,7 +274,7 @@ describe('E: a destination is checked again when it is used (real sockets)', () 
       expect(counter.count()).toBe(0);
       const logged = loggedText();
       expect(logged).toContain('[SafeOutbound] refused');
-      expect(logged).not.toContain('rebind.example');
+      expect(logged).not.toContain('changing.example');
       expect(logged).not.toContain('127.0.0.1');
     } finally {
       await counter.close();
@@ -274,15 +284,43 @@ describe('E: a destination is checked again when it is used (real sockets)', () 
   it('E2: a Jira name that now resolves to loopback gets no connection', async () => {
     const counter = await connectionCounter();
     try {
-      expect((await save(jiraConfig(`https://rebind.example:${counter.port}`))).status).toBe(200);
-      dns['rebind.example'] = ['127.0.0.1'];
+      expect((await save(jiraConfig(`https://changing.example:${counter.port}`))).status).toBe(200);
+      dns['changing.example'] = ['127.0.0.1'];
 
       const res = await testChannel('jira');
 
       expect(res.status).toBe(502);
       expect(res.body).toEqual(genericFailure('jira'));
       expect(counter.count()).toBe(0);
-      expect(loggedText()).not.toContain('rebind.example');
+      expect(loggedText()).not.toContain('changing.example');
+      // The same refusal line as every other channel, with nothing about the destination.
+      const lines = refusalLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(org.orgId);
+      expect(lines[0]).toContain("'jira'");
+      expect(lines[0]).toContain("'not_allowed'");
+      expect(lines[0]).not.toMatch(/changing\.example|127\.0\.0\.1/);
+    } finally {
+      await counter.close();
+    }
+  });
+
+  it('E2b: issue creation to a Jira name that now resolves to loopback is refused and logged the same way', async () => {
+    const counter = await connectionCounter();
+    try {
+      dns['changing.example'] = ['127.0.0.1'];
+      const service = new AlertNotificationService(jiraConfig(`https://changing.example:${counter.port}`), { organizationId: org.orgId });
+
+      const results = await service.sendAlert(TEST_ALERT);
+
+      expect(results).toEqual([{ channel: 'jira', ok: false, reason: 'failed' }]);
+      expect(counter.count()).toBe(0);
+      const lines = refusalLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(org.orgId);
+      expect(lines[0]).toContain("'jira'");
+      expect(lines[0]).toContain("'not_allowed'");
+      expect(lines[0]).not.toMatch(/changing\.example|127\.0\.0\.1/);
     } finally {
       await counter.close();
     }
@@ -316,9 +354,9 @@ describe('E: a destination is checked again when it is used (real sockets)', () 
   it('E4: an SMTP host that now resolves to loopback is not connected to', async () => {
     const transport = jest.spyOn(nodemailer, 'createTransport');
     expect(
-      (await save({ email: { enabled: true, recipients: ['ops@example.com'], smtpHost: 'rebind.example', smtpPort: 587, smtpUser: 'u@example.com', smtpPass: `pw-${SENT}` } })).status
+      (await save({ email: { enabled: true, recipients: ['ops@example.com'], smtpHost: 'changing.example', smtpPort: 587, smtpUser: 'u@example.com', smtpPass: `pw-${SENT}` } })).status
     ).toBe(200);
-    dns['rebind.example'] = ['127.0.0.1'];
+    dns['changing.example'] = ['127.0.0.1'];
 
     const res = await testChannel('email');
 
@@ -327,7 +365,7 @@ describe('E: a destination is checked again when it is used (real sockets)', () 
     expect(transport).not.toHaveBeenCalled();
     const logged = loggedText();
     expect(logged).toContain('[SafeOutbound] refused');
-    expect(logged).not.toContain('rebind.example');
+    expect(logged).not.toContain('changing.example');
   });
 
   it('E5: a stored report webhook that now resolves privately is not posted to; email still goes out', async () => {
@@ -408,7 +446,7 @@ describe('J: the Jira client', () => {
   it('J4: a created issue yields only its validated key and a link built from the base URL', async () => {
     fakeHttpsRequest({
       status: 201,
-      body: JSON.stringify({ id: '10001', key: 'OPS-123', self: 'https://evil.example/x', extra: SENT }),
+      body: JSON.stringify({ id: '10001', key: 'OPS-123', self: 'https://unsafe.example/x', extra: SENT }),
     });
 
     const created = await client().createIssue(ISSUE);
@@ -702,7 +740,7 @@ describe('R: saving a destination', () => {
       // The Slack message itself names the two allowed hosts; any other host must not appear.
       if (host && !JSON.stringify(writer.refusal).includes(host)) expect(res.text).not.toContain(host);
     }
-    for (const leak of ['10.0.0.5', '10.0.0.1', 'ENOTFOUND', 'getaddrinfo', PUBLIC_V4]) expect(res.text).not.toContain(leak);
+    for (const detail of ['10.0.0.5', '10.0.0.1', 'ENOTFOUND', 'getaddrinfo', PUBLIC_V4]) expect(res.text).not.toContain(detail);
     expect(await writer.state()).toEqual(before);
   }
 

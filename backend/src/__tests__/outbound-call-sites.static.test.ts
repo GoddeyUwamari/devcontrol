@@ -10,12 +10,13 @@
  * those URLs has to be added here, through safeHttpsPost.
  *
  * A new call site needs a reviewed entry below. A source scan can be
- * bypassed by aliasing, so this is a tripwire, not a proof; the behaviour is
+ * missed when a call is reached through an alias, so this is a tripwire, not a proof; the behaviour is
  * covered by utils/__tests__/safe-outbound.test.ts and
  * routes/__tests__/outbound-destinations.test.ts.
  */
 import fs from 'fs';
 import path from 'path';
+import { COMMENT_FIXTURE, codeLines, codeLinesOf } from './helpers/source-scan';
 
 const SRC = path.join(__dirname, '..');
 
@@ -25,15 +26,6 @@ function sourceFiles(dir: string): string[] {
     if (entry.isDirectory()) return entry.name === '__tests__' ? [] : sourceFiles(full);
     return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [full] : [];
   });
-}
-
-/** The file's lines without comment-only lines (line and block comments), with their line numbers. */
-function codeLines(file: string): Array<{ line: number; text: string }> {
-  return fs
-    .readFileSync(file, 'utf-8')
-    .split('\n')
-    .map((text, i) => ({ line: i + 1, text }))
-    .filter(({ text }) => !/^\s*(\/\/|\/\*|\*)/.test(text));
 }
 
 const OUTBOUND_CALL = /\bfetch\(|\baxios\.|\bhttps?\.(request|get)\(|\bcreateTransport\(/;
@@ -111,6 +103,13 @@ describe('outbound call sites', () => {
       for (const file of [...Object.keys(ALLOWED_CALL_SITES), path.join('routes', 'webhooks.routes.ts'), 'server.ts']) {
         expect(files).toContain(file);
       }
+    });
+
+    it('it ignores comments but not code that shares a line with one', () => {
+      const found = codeLinesOf(COMMENT_FIXTURE.source)
+        .filter(({ text }) => OUTBOUND_CALL.test(text))
+        .map(({ line }) => line);
+      expect(found).toEqual(COMMENT_FIXTURE.calls);
     });
 
     it('it matches each kind of call', () => {

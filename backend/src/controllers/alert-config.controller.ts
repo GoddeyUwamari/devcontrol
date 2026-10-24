@@ -356,8 +356,14 @@ export class AlertConfigController {
           );
           await jiraClient.testConnection();
         } catch (error) {
-          if (error instanceof OutboundRefused) {
-            console.warn('[SafeOutbound] refused', { organizationId, channel: type, code: error.code });
+          const refusal =
+            error instanceof OutboundRefused
+              ? error.code
+              : error instanceof JiraRequestError
+                ? error.outboundCode
+                : undefined;
+          if (refusal) {
+            console.warn('[SafeOutbound] refused', { organizationId, channel: type, code: refusal });
           }
           return fail(error instanceof JiraRequestError ? error.reason : undefined);
         }

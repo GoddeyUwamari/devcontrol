@@ -3,7 +3,7 @@
  *
  *   - stubDns: answers dns.lookup from a map. Unmapped names fail as
  *     ENOTFOUND, except 'localhost' (the test database), so no test resolves a
- *     real name. The map can be changed between calls to simulate rebinding.
+ *     real name. The map can be changed between calls, for a name whose address changes.
  *   - fakeHttpsRequest: replaces https.request, records the options and body
  *     of each call and answers with a fake response that records whether
  *     anything read it.
@@ -206,8 +206,15 @@ export function guardNetwork(): NetworkGuard {
   net.Socket.prototype.connect = function guardedConnect(this: net.Socket, ...args: any[]) {
     const normalized = Array.isArray(args[0]);
     const first = normalized ? args[0][0] : args[0];
+    const callback = normalized ? undefined : args.find((arg) => typeof arg === 'function');
+    // As in net's argument handling: a string is a pipe path only if it isn't a number (so '443' is a port).
+    const isPipeName = (value: unknown) => typeof value === 'string' && !(Number(value) >= 0);
     let options: any =
-      typeof first === 'object' && first !== null ? { ...first } : typeof first === 'number' ? { port: first, host: args[1] } : { path: first };
+      typeof first === 'object' && first !== null
+        ? { ...first }
+        : isPipeName(first)
+          ? { path: first }
+          : { port: first, ...(typeof args[1] === 'string' ? { host: args[1] } : {}) };
     // As in net: a truthy path is a local pipe; anything else is TCP (agents pass path: null).
     if (!options.path) {
       const host: string = options.host ?? 'localhost';
@@ -235,7 +242,8 @@ export function guardNetwork(): NetworkGuard {
         };
       }
     }
-    const rebuilt = normalized ? [[options, ...args[0].slice(1)], ...args.slice(1)] : typeof first === 'object' ? [options, ...args.slice(1)] : args;
+    // Always passed on as an options object, so the guarded lookup applies whichever form the caller used.
+    const rebuilt = normalized ? [[options, ...args[0].slice(1)], ...args.slice(1)] : callback ? [options, callback] : [options];
     if (normalized) (rebuilt[0] as any)[NORMALIZED] = (args[0] as any)[NORMALIZED];
     return (realConnect as any).apply(this, rebuilt);
   } as any;

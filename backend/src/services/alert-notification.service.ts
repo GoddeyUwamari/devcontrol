@@ -141,11 +141,17 @@ export class AlertNotificationService {
     return settled.map((outcome, i) => {
       const channel = attempts[i].channel;
       if (outcome.status === 'fulfilled') return { channel, ok: true };
-      if (outcome.reason instanceof OutboundRefused) {
+      const refusal =
+        outcome.reason instanceof OutboundRefused
+          ? outcome.reason.code
+          : outcome.reason instanceof JiraRequestError
+            ? outcome.reason.outboundCode
+            : undefined;
+      if (refusal) {
         console.warn('[SafeOutbound] refused', {
           organizationId: this.context.organizationId,
           channel,
-          code: outcome.reason.code,
+          code: refusal,
         });
       }
       if (channel === 'jira' && outcome.reason instanceof JiraRequestError) {

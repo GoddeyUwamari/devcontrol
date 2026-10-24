@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse, Method } from 'axios';
 import { Readable } from 'stream';
-import { checkUrlSyntax, createSafeHttpsAgent } from '../utils/safe-outbound';
+import { OutboundRefused, checkUrlSyntax, createSafeHttpsAgent } from '../utils/safe-outbound';
 
 /**
  * Jira API Client
@@ -32,14 +32,17 @@ export const JIRA_FAILURE_MESSAGES: Readonly<Record<JiraFailureReason, string>> 
 
 export class JiraRequestError extends Error {
   readonly reason: JiraFailureReason;
+  /** Set when the destination was refused before or while connecting. Never part of the message. */
+  readonly outboundCode?: OutboundRefused['code'];
 
-  constructor(reason: JiraFailureReason) {
+  constructor(reason: JiraFailureReason, outboundCode?: OutboundRefused['code']) {
     const known: JiraFailureReason = Object.prototype.hasOwnProperty.call(JIRA_FAILURE_MESSAGES, reason)
       ? reason
       : 'failed';
     super(JIRA_FAILURE_MESSAGES[known]);
     this.name = 'JiraRequestError';
     this.reason = known;
+    if (outboundCode) this.outboundCode = outboundCode;
   }
 }
 
@@ -135,8 +138,10 @@ export class JiraClient {
         data,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-    } catch {
-      throw new JiraRequestError('failed');
+    } catch (error) {
+      // axios keeps the socket's error as the cause; a refused destination is reported as such.
+      const cause = (error as { cause?: unknown } | null)?.cause;
+      throw new JiraRequestError('failed', cause instanceof OutboundRefused ? cause.code : undefined);
     }
   }
 
