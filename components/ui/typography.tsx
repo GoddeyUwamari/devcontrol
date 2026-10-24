@@ -8,6 +8,13 @@ import { cn } from "@/lib/utils"
  * surface (app/globals.css, APP SURFACE block).
  */
 
+/**
+ * The page title and subtitle roles. PageHeader uses them, and so does any page that lays out its own h1 (the
+ * pre-connect dashboard), so the two cannot drift; layout classes go alongside them through cn().
+ */
+const PAGE_TITLE_CLASS = "text-title text-ink"
+const PAGE_SUBTITLE_CLASS = "text-subtitle text-ink-muted"
+
 interface PageHeaderProps {
   title: React.ReactNode
   subtitle?: React.ReactNode
@@ -26,10 +33,10 @@ function PageHeader({ title, subtitle, actions, titleId, className }: PageHeader
       className={cn("flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between", className)}
     >
       <div className="min-w-0">
-        <h1 id={titleId} className="text-title text-ink">
+        <h1 id={titleId} className={PAGE_TITLE_CLASS}>
           {title}
         </h1>
-        {subtitle && <p className="text-subtitle text-ink-muted mt-2 max-w-[70ch]">{subtitle}</p>}
+        {subtitle && <p className={cn(PAGE_SUBTITLE_CLASS, "mt-2 max-w-[70ch]")}>{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
     </div>
@@ -38,12 +45,10 @@ function PageHeader({ title, subtitle, actions, titleId, className }: PageHeader
 
 /**
  * Costs, counts and percentages in running text: tabular figures, so digits
- * line up and don't jitter. Classes are joined, not passed through cn():
- * tailwind-merge does not know the role sizes (text-ui, text-section, ...) and
- * drops them as colours when a text-ink-* colour is also given.
+ * line up and don't jitter.
  */
 function Num({ className, ...props }: React.ComponentProps<"span">) {
-  return <span data-slot="num" className={className ? `tabular-nums ${className}` : "tabular-nums"} {...props} />
+  return <span data-slot="num" className={cn("tabular-nums", className)} {...props} />
 }
 
-export { PageHeader, Num }
+export { PageHeader, Num, PAGE_TITLE_CLASS, PAGE_SUBTITLE_CLASS }
