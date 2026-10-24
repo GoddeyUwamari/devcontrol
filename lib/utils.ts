@@ -1,5 +1,18 @@
 import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { extendTailwindMerge } from "tailwind-merge"
+
+/**
+ * The app's type roles and page-top spacing, the theme names the APP SURFACE block of app/globals.css adds.
+ * tailwind-merge does not know them: it would read a role as a text colour and drop it whenever a colour is
+ * given too. Marketing and sign-in code use none of these names, and
+ * app/__tests__/cn-marketing-equivalence.test.ts checks that their merges are unchanged.
+ */
+export const APP_TEXT_ROLES = ["title", "subtitle", "section", "card-title", "body", "ui", "meta", "label", "kpi"]
+export const APP_SPACING = ["page-top"]
+
+const twMerge = extendTailwindMerge({
+  extend: { theme: { text: APP_TEXT_ROLES, spacing: APP_SPACING } },
+})
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

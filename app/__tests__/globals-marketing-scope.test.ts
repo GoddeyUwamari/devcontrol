@@ -160,7 +160,9 @@ describe('the APP SURFACE block in app/globals.css', () => {
 // The block may re-point a few existing tokens for the app (typography plan T1): only these, each only in
 // a rule whose selectors include :root[data-surface="app"] -- which outranks the frozen :root definition on
 // <html> regardless of source order -- and each to its ink token. The only other declarations are the
-// placeholder colour and opacity, on placeholders inside the app.
+// placeholder colour and opacity, on placeholders inside the app, and the app's fonts (T2): Geist on <body>
+// once <html> is marked and on the wrapper, never on <html> itself, Geist Mono on bare code elements, and
+// Geist on the toast container only while <html> is marked.
 const OVERRIDES: Record<string, string> = {
   '--muted-foreground': 'var(--app-color-ink-muted)',
   '--text-success': 'var(--app-color-ink-success)',
@@ -186,15 +188,18 @@ describe('existing tokens re-pointed inside the APP SURFACE block', () => {
     expect(seen).toEqual(OVERRIDES)
   })
 
-  it('the only non-custom-property declarations are the placeholder colour and opacity, inside the app', () => {
+  it('the only non-custom-property declarations are the placeholder colour and opacity and the app fonts, inside the app', () => {
     const plain: string[] = []
     appBlock().walkDecls((decl) => {
       if (decl.prop.startsWith('--') || decl.parent?.type !== 'rule') return
-      plain.push(`${(decl.parent as Rule).selector} { ${decl.prop}: ${decl.value} }`)
+      plain.push(`${(decl.parent as Rule).selectors.join(', ')} { ${decl.prop}: ${decl.value} }`)
     })
     expect(plain).toEqual([
       '[data-surface="app"] ::placeholder { color: var(--muted-foreground) }',
       '[data-surface="app"] ::placeholder { opacity: 1 }',
+      ':root[data-surface="app"] body, [data-surface="app"]:not(:root) { font-family: var(--font-geist-sans) }',
+      '[data-surface="app"] :is(code, kbd, samp, pre) { font-family: var(--font-geist-mono) }',
+      ':root[data-surface="app"] [data-sonner-toaster] { font-family: var(--font-geist-sans) }',
     ])
   })
 })

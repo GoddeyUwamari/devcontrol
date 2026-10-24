@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { DashboardUnconnectedPreview } from '../dashboard-unconnected-preview'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { HERO_FORBIDDEN, SAMPLE_CAPTION, SAMPLE_PANEL_TITLE, SAMPLE_TAG, expectApprovedSamplePanel, expectNoGeneratedContent, expectNoStylesheets, heroWords, samplePanelProblems, withoutValidSamplePanel } from './sample-panel'
 
 const CARD_ORDER = [
@@ -261,6 +262,22 @@ describe('responsive behaviour', () => {
     // title 28, section 18, card title 15, subtitle 15, body 15, controls and rows 14, caption 13, labels 12.
     const roles = new Set(tokens.filter((c) => /^text-(?:title|subtitle|section|card-title|body|ui|meta|label|kpi)$/.test(c)))
     expect([...roles].sort()).toEqual(['text-body', 'text-card-title', 'text-label', 'text-meta', 'text-section', 'text-subtitle', 'text-title', 'text-ui'])
+  })
+
+  it("the title and lead take PageHeader's classes, from the shared constants, so they cannot drift", () => {
+    renderPreview()
+    const h1 = screen.getByRole('heading', { level: 1 })
+    const lead = h1.nextElementSibling as HTMLElement
+    expect(h1.className.split(/\s+/)).toEqual([...PAGE_TITLE_CLASS.split(' '), 'mt-0', 'mb-4', 'max-w-3xl'])
+    expect(lead.tagName).toBe('P')
+    expect(lead.className.split(/\s+/)).toEqual([...PAGE_SUBTITLE_CLASS.split(' '), 'mt-0', 'mb-6', 'max-w-3xl'])
+    // The source reads the constants rather than repeating their classes.
+    const source = readFileSync(join(process.cwd(), 'components/dashboard/dashboard-unconnected-preview.tsx'), 'utf8')
+    expect(source).toContain("className={cn(PAGE_TITLE_CLASS, 'mt-0 mb-4 max-w-3xl')}")
+    expect(source).toContain("className={cn(PAGE_SUBTITLE_CLASS, 'mt-0 mb-6 max-w-3xl')}")
+    for (const cls of [...PAGE_TITLE_CLASS.split(' '), ...PAGE_SUBTITLE_CLASS.split(' ')].filter((c) => c.startsWith('text-') && !c.startsWith('text-ink'))) {
+      expect(source, cls).not.toMatch(new RegExp(`['"\`\\s]${cls}[\\s'"\`]`))
+    }
   })
 
   it('the sample amounts and total use tabular figures', () => {

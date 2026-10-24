@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { CircleCheck, Lock } from 'lucide-react'
 import { INFRASTRUCTURE_POSTURE_LABEL } from '@/lib/infrastructure-posture'
 import { RESOURCE_CHECKS_TITLE } from './resource-checks-section'
-import { Num } from '@/components/ui/typography'
+import { Num, PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { cn } from '@/lib/utils'
 
 interface PreviewItem {
   /** The category tag above the title. */
@@ -257,10 +258,10 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
         {/* Two columns from lg (equal until xl, so the panel does not wrap at 1024px), both aligned to the top: the copy and the way to connect, then the sample panel. Stacked, in that order, below. */}
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 xl:gap-12 items-start mb-6" data-testid="preview-hero">
           <div className="min-w-0" data-testid="preview-hero-copy">
-            <h1 id="dashboard-preview-title" className="text-title text-ink mt-0 mb-4 max-w-3xl">
+            <h1 id="dashboard-preview-title" className={cn(PAGE_TITLE_CLASS, 'mt-0 mb-4 max-w-3xl')}>
               AI-Powered Cloud Operations &amp; Infrastructure Intelligence
             </h1>
-            <p className="text-subtitle text-ink-muted mt-0 mb-6 max-w-3xl">
+            <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-0 mb-6 max-w-3xl')}>
               Operational visibility across cloud costs, security, observability, and infrastructure efficiency, so you can reduce waste, mitigate risk, and scale with confidence.
             </p>
 
