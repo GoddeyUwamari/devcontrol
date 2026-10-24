@@ -869,4 +869,19 @@ body { overflow-x: hidden; }
   color: var(--muted-foreground);
   opacity: 1;
 }
+
+/*
+ * The app's fonts. app/layout.tsx defines --font-geist-sans and --font-geist-mono on <body>, but the page font
+ * is set on <html>, where they are undefined, so text falls back to the system font. In the app, <body> (once
+ * <html> carries the marker) and the wrapper (first paint) read Geist where it is defined; <html> itself is not
+ * restyled. Bare code, kbd, samp and pre get Geist Mono, like the font-mono utility.
+ */
+:root[data-surface="app"] body,
+[data-surface="app"]:not(:root) {
+  font-family: var(--font-geist-sans);
+}
+
+[data-surface="app"] :is(code, kbd, samp, pre) {
+  font-family: var(--font-geist-mono);
+}
 /* === END APP SURFACE === */

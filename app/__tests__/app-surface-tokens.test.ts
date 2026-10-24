@@ -249,6 +249,37 @@ describe('the whole app/globals.css, compiled with a repo scan', () => {
       expect(decls, rule.selector).toEqual({ color: 'var(--muted-foreground)', opacity: '1' })
     }
   })
+
+  // The app fonts: app/layout.tsx defines --font-geist-sans/--font-geist-mono on <body> only, so they must be
+  // read on <body> or below. In the real output the only font-family rules that need the marker are Geist on
+  // <body> under a marked <html> (dialogs and menus portalled to <body>) and on the wrapper (first paint), and
+  // Geist Mono on bare code elements. Nothing sets a font on <html> itself.
+  it.each(['false', 'true'])('the app fonts are read on <body> and the wrapper, never on <html> (optimize: %s)', (optimize) => {
+    const { full } = outputs[optimize]
+    const norm = (selector: string) => selector.replace(/["']/g, '').replace(/\s+/g, ' ').replace(/\s*,\s*/g, ',').trim()
+    const fonts: Record<string, string[]> = {}
+    full.walkDecls('font-family', (decl) => {
+      const rule = decl.parent as Rule
+      if (rule.type !== 'rule' || !rule.selectors.some((s) => /data-surface/.test(s))) return
+      for (const selector of rule.selectors) {
+        expect(isAppScopedSelector(selector), selector).toBe(true)
+        ;(fonts[decl.value] ??= []).push(norm(selector))
+      }
+    })
+    expect(Object.keys(fonts).sort()).toEqual(['var(--font-geist-mono)', 'var(--font-geist-sans)'])
+    expect(fonts['var(--font-geist-sans)'].sort()).toEqual([':root[data-surface=app] body', '[data-surface=app]:not(:root)'])
+    expect(fonts['var(--font-geist-mono)']).toEqual(['[data-surface=app] :is(code,kbd,samp,pre)'])
+  })
+})
+
+describe('the app font variables', () => {
+  it('app/layout.tsx defines them on <body>, where the APP SURFACE font rules read them', () => {
+    const layout = readFileSync(join(process.cwd(), 'app/layout.tsx'), 'utf8')
+    expect(layout).toMatch(/Geist\(\{\s*variable: "--font-geist-sans"/)
+    expect(layout).toMatch(/Geist_Mono\(\{\s*variable: "--font-geist-mono"/)
+    expect(layout).toMatch(/<body[^>]*className=\{`\$\{geistSans\.variable\} \$\{geistMono\.variable\}/)
+    expect(layout).not.toMatch(/<html[^>]*className/)
+  })
 })
 
 // The promised contrast of each ink token (typography plan §3.1/§3.3) against the light surfaces it
