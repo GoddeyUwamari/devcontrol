@@ -7,8 +7,9 @@
  */
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { SOURCE_FILES } from '@/app/__tests__/surface-scope'
 
 const auth = vi.hoisted(() => ({ isAuthenticated: false, isLoading: true }))
@@ -110,6 +111,48 @@ describe('app surface marker', () => {
     expect(screen.getByText('page')).toBeInTheDocument()
     expect(html()).not.toHaveAttribute('data-surface')
     expect(container.querySelector('[data-surface]')).toBeNull()
+  })
+
+  // Signing out ends the session and pushes /login (lib/contexts/auth-context.tsx logout): the (app) layout
+  // unmounts and the (auth) layout mounts in the same navigation. Afterwards nothing carries the marker, so
+  // no APP SURFACE rule (every one needs it; app/__tests__/globals-marketing-scope.test.ts) can reach the
+  // sign-in page, which keeps today's font. The browser capture checks the computed font itself.
+  it('signing out to /login removes it, and the sign-in page renders outside it', () => {
+    auth.isAuthenticated = true
+    auth.isLoading = false
+    function Routes() {
+      const [path, setPath] = useState('/dashboard')
+      if (path === '/login') {
+        return (
+          <AuthLayout>
+            <form aria-label="Sign in" />
+          </AuthLayout>
+        )
+      }
+      return (
+        <AppLayout>
+          <button
+            type="button"
+            onClick={() => {
+              auth.isAuthenticated = false
+              setPath('/login')
+            }}
+          >
+            Sign out
+          </button>
+        </AppLayout>
+      )
+    }
+    const { container } = render(<Routes />)
+    expect(html()).toHaveAttribute('data-surface', 'app')
+    expect(container.querySelector('[data-surface="app"]')).not.toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+
+    const form = screen.getByRole('form', { name: 'Sign in' })
+    expect(html()).not.toHaveAttribute('data-surface')
+    expect(document.querySelector('[data-surface]')).toBeNull()
+    expect(form.closest('[data-surface]')).toBeNull()
   })
 
   it('only app/(app)/layout.tsx sets it', () => {

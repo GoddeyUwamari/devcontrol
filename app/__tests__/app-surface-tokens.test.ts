@@ -4,6 +4,7 @@ import { createRequire } from 'module'
 import { join } from 'path'
 import tailwind from '@tailwindcss/postcss'
 import postcss, { type Root, type Rule } from 'postcss'
+import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { contrast } from './contrast'
 import { isAppScopedSelector } from './surface-scope'
@@ -252,8 +253,9 @@ describe('the whole app/globals.css, compiled with a repo scan', () => {
 
   // The app fonts: app/layout.tsx defines --font-geist-sans/--font-geist-mono on <body> only, so they must be
   // read on <body> or below. In the real output the only font-family rules that need the marker are Geist on
-  // <body> under a marked <html> (dialogs and menus portalled to <body>) and on the wrapper (first paint), and
-  // Geist Mono on bare code elements. Nothing sets a font on <html> itself.
+  // <body> under a marked <html> (dialogs and menus portalled to <body>), on the wrapper (first paint) and on
+  // the toast container under a marked <html> (toasts mount outside the wrapper), and Geist Mono on bare code
+  // elements. Nothing sets a font on <html> itself.
   it.each(['false', 'true'])('the app fonts are read on <body> and the wrapper, never on <html> (optimize: %s)', (optimize) => {
     const { full } = outputs[optimize]
     const norm = (selector: string) => selector.replace(/["']/g, '').replace(/\s+/g, ' ').replace(/\s*,\s*/g, ',').trim()
@@ -267,18 +269,76 @@ describe('the whole app/globals.css, compiled with a repo scan', () => {
       }
     })
     expect(Object.keys(fonts).sort()).toEqual(['var(--font-geist-mono)', 'var(--font-geist-sans)'])
-    expect(fonts['var(--font-geist-sans)'].sort()).toEqual([':root[data-surface=app] body', '[data-surface=app]:not(:root)'])
+    expect(fonts['var(--font-geist-sans)'].sort()).toEqual([
+      ':root[data-surface=app] [data-sonner-toaster]',
+      ':root[data-surface=app] body',
+      '[data-surface=app]:not(:root)',
+    ])
     expect(fonts['var(--font-geist-mono)']).toEqual(['[data-surface=app] :is(code,kbd,samp,pre)'])
+  })
+
+  // Toasts render on <body>, outside the wrapper, so the toast rule must hang off the <html> marker: on the
+  // marketing and sign-in pages (no marker) sonner's own font applies, as today.
+  it.each(['false', 'true'])('the toast font needs the marker on <html> (optimize: %s)', (optimize) => {
+    const { full } = outputs[optimize]
+    const toaster: string[] = []
+    full.walkRules((rule) => {
+      for (const selector of rule.selectors) if (/data-sonner-toaster/.test(selector)) toaster.push(selector.replace(/["']/g, '').trim())
+    })
+    expect(toaster).toEqual([':root[data-surface=app] [data-sonner-toaster]'])
+  })
+})
+
+describe('the toast font override', () => {
+  // sonner sets its font on [data-sonner-toaster], specificity (0,1,0); the app rule
+  // :root[data-surface="app"] [data-sonner-toaster] is (0,3,0), so it wins whatever the stylesheet order.
+  it("sonner's own font rule is the bare attribute selector the app rule outranks", () => {
+    const sonner = readFileSync(createRequire(import.meta.url).resolve('sonner'), 'utf8')
+    const rules = [...sonner.matchAll(/([^{}]+)\{[^{}]*font-family:[^{}]*\}/g)].map((m) => m[1].trim().replace(/^.*?(\[data-sonner-toaster\])$/, '$1'))
+    expect(rules).toContain('[data-sonner-toaster]')
+    for (const selector of rules) expect(selector, selector).toBe('[data-sonner-toaster]')
   })
 })
 
 describe('the app font variables', () => {
+  // Structure, not text: the Geist and Geist_Mono calls with their variable names, and the <body> className
+  // reading both .variable values (any order, spacing or extra classes). <html> gets no className.
   it('app/layout.tsx defines them on <body>, where the APP SURFACE font rules read them', () => {
-    const layout = readFileSync(join(process.cwd(), 'app/layout.tsx'), 'utf8')
-    expect(layout).toMatch(/Geist\(\{\s*variable: "--font-geist-sans"/)
-    expect(layout).toMatch(/Geist_Mono\(\{\s*variable: "--font-geist-mono"/)
-    expect(layout).toMatch(/<body[^>]*className=\{`\$\{geistSans\.variable\} \$\{geistMono\.variable\}/)
-    expect(layout).not.toMatch(/<html[^>]*className/)
+    const file = 'app/layout.tsx'
+    const source = ts.createSourceFile(file, readFileSync(join(process.cwd(), file), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const fonts: Record<string, string> = {}
+    const classNameOf: Record<string, string[]> = {}
+    const visit = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && node.initializer && ts.isCallExpression(node.initializer) && ts.isIdentifier(node.initializer.expression)) {
+        const [options] = node.initializer.arguments
+        if (options && ts.isObjectLiteralExpression(options)) {
+          for (const prop of options.properties) {
+            if (ts.isPropertyAssignment(prop) && prop.name.getText(source) === 'variable' && ts.isStringLiteralLike(prop.initializer)) {
+              fonts[`${node.initializer.expression.text}:${node.name.getText(source)}`] = prop.initializer.text
+            }
+          }
+        }
+      }
+      if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+        const tag = node.tagName.getText(source)
+        for (const attr of node.attributes.properties) {
+          if (ts.isJsxAttribute(attr) && attr.name.getText(source) === 'className' && attr.initializer) {
+            const reads: string[] = []
+            const collect = (n: ts.Node) => {
+              if (ts.isPropertyAccessExpression(n)) reads.push(n.getText(source))
+              ts.forEachChild(n, collect)
+            }
+            collect(attr.initializer)
+            ;(classNameOf[tag] ??= []).push(...reads)
+          }
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+    expect(fonts).toEqual({ 'Geist:geistSans': '--font-geist-sans', 'Geist_Mono:geistMono': '--font-geist-mono' })
+    expect(classNameOf.body?.sort()).toEqual(['geistMono.variable', 'geistSans.variable'])
+    expect(classNameOf.html).toBeUndefined()
   })
 })
 

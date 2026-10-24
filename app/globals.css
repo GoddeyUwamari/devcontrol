@@ -884,4 +884,13 @@ body { overflow-x: hidden; }
 [data-surface="app"] :is(code, kbd, samp, pre) {
   font-family: var(--font-geist-mono);
 }
+
+/*
+ * Toasts (sonner) mount on <body>, outside the app wrapper, and sonner sets its own font on
+ * [data-sonner-toaster]. They get Geist only while <html> carries the marker; on the marketing and sign-in
+ * pages they keep sonner's font.
+ */
+:root[data-surface="app"] [data-sonner-toaster] {
+  font-family: var(--font-geist-sans);
+}
 /* === END APP SURFACE === */

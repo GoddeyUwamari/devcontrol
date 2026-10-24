@@ -8,9 +8,13 @@ import { cn } from '@/lib/utils'
 import { NON_APP_CLOSURE } from './surface-scope'
 
 // lib/utils.ts is shared with the marketing and sign-in pages (components/marketing-ui imports cn from it),
-// and cn() now knows the app's type roles (a recorded exception to the typography plan's R3.6). This proves
+// and cn() now knows the app's type roles (a recorded exception to the typography plan's R3.6). This checks
 // the change cannot alter a marketing or sign-in page: for every file those pages reach, every pair of
 // class-like words in that file's strings merges exactly as stock tailwind-merge merges it.
+//
+// The guarantee also relies on app/__tests__/app-token-scope.test.ts: the configured merger differs from the
+// stock one only for classes using the role and page-top names, and that test keeps those names out of every
+// file outside the app, so no marketing or sign-in class string can contain one.
 
 /** Every whitespace-separated word in a file's string literals and template chunks that could be a class. */
 function classWords(file: string): string[] {
