@@ -34,6 +34,8 @@ export class OutboundRefused extends Error {
 }
 
 export const SLACK_WEBHOOK_HOSTS = ['hooks.slack.com', 'hooks.slack-gov.com'] as const;
+/** The save-time error for a Slack webhook URL that isn't allowed, from every place one is saved. */
+export const slackWebhookUrlError = 'Slack webhook URL must be an https://hooks.slack.com/ or https://hooks.slack-gov.com/ address.';
 export const SMTP_PORTS = [25, 465, 587, 2525] as const;
 /** The EHLO/HELO name sent to an organization's mail server, instead of this host's own name. */
 export const SMTP_CLIENT_NAME = 'getdevcontrol.com';
@@ -139,6 +141,14 @@ export function checkUrlSyntax(raw: unknown, policy: DestinationPolicy): URL {
 
 /** A mail server host and port, the host canonicalised the same way as a URL's. */
 export function checkSmtpSyntax(host: unknown, port: unknown): { host: string; port: number } {
+  const checkedHost = checkSmtpHost(host);
+  if (typeof port !== 'number' || !Number.isInteger(port) || !(SMTP_PORTS as readonly number[]).includes(port)) {
+    throw notAllowed();
+  }
+  return { host: checkedHost, port };
+}
+
+function checkSmtpHost(host: unknown): string {
   if (typeof host !== 'string' || CONTROL_CHARACTERS.test(host)) throw notAllowed();
   const value = host.trim();
   if (!value || value.length > MAX_HOST_LENGTH || /\s/.test(value)) throw notAllowed();
@@ -151,12 +161,7 @@ export function checkSmtpSyntax(host: unknown, port: unknown): { host: string; p
   } catch {
     throw notAllowed();
   }
-  const checkedHost = checkHost(canonical);
-
-  if (typeof port !== 'number' || !Number.isInteger(port) || !(SMTP_PORTS as readonly number[]).includes(port)) {
-    throw notAllowed();
-  }
-  return { host: checkedHost, port };
+  return checkHost(canonical);
 }
 
 export interface ResolvedAddress {
@@ -201,6 +206,11 @@ const hostOf = (url: URL) => checkHost(url.hostname);
 export async function assertDestination(raw: unknown, policy: DestinationPolicy): Promise<void> {
   const url = checkUrlSyntax(raw, policy);
   await resolvePublic(hostOf(url));
+}
+
+/** Save-time check for a mail server host on its own (its port is checked separately). */
+export async function assertSmtpHost(host: unknown): Promise<void> {
+  await resolvePublic(checkSmtpHost(host));
 }
 
 /**

@@ -14,6 +14,10 @@
  *   - N: the mail transport connects to the checked address, verifies the
  *     certificate against the configured host, requires TLS, and announces a
  *     fixed client name.
+ *   - R: every place a destination is saved (alert configuration, the
+ *     organization's report webhook, webhook endpoints) refuses one that is
+ *     not allowed with a fixed message, echoing nothing, and changes nothing.
+ *     A disabled channel's empty field is not a destination and saves.
  *
  * Real routes over an in-process HTTP server against live Postgres, in a Pro
  * organization. DNS is stubbed for every name; the network guard fails any
@@ -29,6 +33,8 @@ import nodemailer from 'nodemailer';
 import SMTPConnection from 'nodemailer/lib/smtp-connection';
 import { Pool } from 'pg';
 import alertConfigRoutes from '../alert-config.routes';
+import organizationsRoutes from '../organizations.routes';
+import webhooksRoutes from '../webhooks.routes';
 import { errorHandler } from '../../middleware/error-handler';
 import { authService } from '../../services/auth.service';
 import { JIRA_FAILURE_MESSAGES, JiraClient, JiraFailureReason, JiraRequestError } from '../../services/jira-client.service';
@@ -108,12 +114,16 @@ let org: Org;
 let dns: Record<string, DnsAnswer>;
 let guard: NetworkGuard;
 let logSpies: jest.SpyInstance[];
+let hasWebhookTable: boolean;
 
 beforeAll(async () => {
+  hasWebhookTable = (await pool.query(`SELECT to_regclass('webhook_endpoints') AS t`)).rows[0].t !== null;
   org = await buildOrg();
   const app = express();
   app.use(express.json());
   app.use('/api/alert-config', alertConfigRoutes);
+  app.use('/api/organizations', organizationsRoutes);
+  app.use('/api/webhooks', webhooksRoutes);
   app.use(errorHandler);
   server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -173,6 +183,7 @@ afterEach(async () => {
 afterAll(async () => {
   for (const id of createdOrgIds) alertConfigs.delete(id);
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (hasWebhookTable) await pool.query('DELETE FROM webhook_endpoints WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM scheduled_reports WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM audit_logs WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query(
@@ -614,5 +625,211 @@ describe('N: the mail transport', () => {
     } finally {
       await new Promise<void>((resolve) => smtpServer.close(() => resolve()));
     }
+  });
+});
+
+describe('R: saving a destination', () => {
+  const SLACK_ERROR = 'Slack webhook URL must be an https://hooks.slack.com/ or https://hooks.slack-gov.com/ address.';
+  const WEBHOOK_ERROR = 'Webhook URL must be a public https:// address.';
+  const JIRA_ERROR = 'Jira URL must be a public https:// address.';
+  const SMTP_HOST_ERROR = 'SMTP host must be a public mail server.';
+  const SMTP_PORT_ERROR = 'SMTP port must be 25, 465, 587 or 2525.';
+  const HEADERS_ERROR = "Webhook headers can't include Host, Content-Length, Connection, Transfer-Encoding or proxy headers.";
+  const ENDPOINT_ERROR = { success: false, message: 'A valid public HTTPS URL is required' };
+
+  beforeEach(() => {
+    dns['private.example'] = ['10.0.0.5'];
+    dns['hooks.slack-gov.com'] = [PUBLIC_V4];
+  });
+
+  const readConfig = async () => (await sendAs('admin', 'GET', '/alert-config/config')).body.data;
+  const readSettings = async () =>
+    (await pool.query('SELECT settings FROM organizations WHERE id = $1', [org.orgId])).rows[0].settings;
+  const endpointCount = async () =>
+    hasWebhookTable ? Number((await pool.query('SELECT count(*) FROM webhook_endpoints WHERE organization_id = $1', [org.orgId])).rows[0].count) : 0;
+
+  interface Writer {
+    name: string;
+    /** Sends `value` to this writer. */
+    send: (value: unknown) => Promise<{ status: number; text: string; body: any }>;
+    /** The refusal body. */
+    refusal: Record<string, unknown>;
+    /** What the store looks like; must be unchanged by a refusal. */
+    state: () => Promise<unknown>;
+  }
+
+  const alertWriter = (name: string, body: (value: unknown) => Record<string, unknown>, error: string): Writer => ({
+    name,
+    send: (value) => save(body(value)),
+    refusal: { success: false, error },
+    state: readConfig,
+  });
+
+  const URL_WRITERS: Writer[] = [
+    alertWriter('alert Slack webhook', (value) => ({ slack: { enabled: true, webhookUrl: value, channel: '#a' } }), SLACK_ERROR),
+    alertWriter('alert webhook', (value) => ({ webhook: { enabled: true, url: value } }), WEBHOOK_ERROR),
+    alertWriter('alert Jira', (value) => jiraConfig(value as string), JIRA_ERROR),
+    {
+      name: 'organization report webhook',
+      send: (value) => sendAs('admin', 'PATCH', `/organizations/${org.orgId}`, { settings: { slack_webhook_url: value } }),
+      refusal: { success: false, error: SLACK_ERROR },
+      state: readSettings,
+    },
+    {
+      name: 'webhook endpoint',
+      send: (value) => sendAs('admin', 'POST', '/webhooks', { url: value, events: ['alert.triggered'] }),
+      refusal: ENDPOINT_ERROR,
+      state: endpointCount,
+    },
+  ];
+
+  /** Values each URL writer must refuse; the Slack writers get Slack-host versions where a host is used. */
+  const refusedUrls = (slack: boolean): Array<[string, string]> => [
+    ['http:', slack ? 'http://hooks.slack.com/services/x' : 'http://jira.example/x'],
+    ['a private literal', 'https://10.0.0.1/x'],
+    ['a name resolving to a private address', slack ? 'https://hooks.slack.com/services/x' : 'https://private.example/x'],
+    ['a name that does not resolve', slack ? 'https://hooks.slack-gov.com/services/x' : 'https://missing.example/x'],
+    ['a trailing dot', slack ? 'https://hooks.slack.com./services/x' : 'https://jira.example./x'],
+  ];
+
+  async function expectRefused(writer: Writer, value: unknown) {
+    const before = await writer.state();
+    const res = await writer.send(value);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual(writer.refusal);
+    if (typeof value === 'string') {
+      const host = value.replace(/^\w+:\/\//, '').split(/[/:]/)[0];
+      // The Slack message itself names the two allowed hosts; any other host must not appear.
+      if (host && !JSON.stringify(writer.refusal).includes(host)) expect(res.text).not.toContain(host);
+    }
+    for (const leak of ['10.0.0.5', '10.0.0.1', 'ENOTFOUND', 'getaddrinfo', PUBLIC_V4]) expect(res.text).not.toContain(leak);
+    expect(await writer.state()).toEqual(before);
+  }
+
+  describe('R1: each writer refuses each kind of bad destination', () => {
+    for (const writer of URL_WRITERS) {
+      const slack = writer.refusal.error === SLACK_ERROR;
+      it.each(refusedUrls(slack))(`${writer.name}: %s`, async (_label, value) => {
+        if (slack && value === 'https://hooks.slack.com/services/x') dns['hooks.slack.com'] = ['10.0.0.5'];
+        if (slack && value === 'https://hooks.slack-gov.com/services/x') delete dns['hooks.slack-gov.com'];
+        await expectRefused(writer, value);
+      });
+    }
+
+    const smtpWriter = alertWriter(
+      'alert SMTP host',
+      (value) => ({ email: { enabled: true, recipients: ['ops@example.com'], smtpHost: value, smtpPort: 587, smtpUser: 'u@example.com' } }),
+      SMTP_HOST_ERROR
+    );
+    it.each([
+      ['a URL', 'http://smtp.example.com'],
+      ['a private literal', '10.0.0.1'],
+      ['a name resolving to a private address', 'private.example'],
+      ['a name that does not resolve', 'missing.example'],
+      ['a trailing dot', 'smtp.example.com.'],
+      ['a numeric loopback form', '2130706433'],
+    ])('alert SMTP host: %s', async (_label, value) => {
+      await expectRefused(smtpWriter, value);
+    });
+
+    const portWriter = alertWriter(
+      'alert SMTP port',
+      (value) => ({ email: { enabled: true, recipients: ['ops@example.com'], smtpHost: 'smtp.example.com', smtpPort: value, smtpUser: 'u@example.com' } }),
+      SMTP_PORT_ERROR
+    );
+    it.each([6379, 0, 65536, '587', null])('alert SMTP port: %p on an enabled channel', async (value) => {
+      await expectRefused(portWriter, value);
+    });
+  });
+
+  it.each([
+    ['alert Slack webhook', URL_WRITERS[0]],
+    ['organization report webhook', URL_WRITERS[3]],
+  ])('R2: %s refuses a public address that is not Slack', async (_label, writer) => {
+    await expectRefused(writer, 'https://hooks.example/x');
+  });
+
+  it.each([{ Host: 'x' }, { 'Transfer-Encoding': 'x' }, { 'proxy-authorization': 'x' }, { 'Content-Length': '1' }])(
+    'R3: webhook headers %p are refused',
+    async (headers) => {
+      await expectRefused(alertWriter('alert webhook headers', () => ({ webhook: { enabled: true, url: 'https://hooks.example/x', headers } }), HEADERS_ERROR), 'unused');
+    }
+  );
+
+  describe('R4: allowed destinations save', () => {
+    it('every alert channel at once', async () => {
+      const res = await save({
+        email: { enabled: true, recipients: ['ops@example.com'], smtpHost: 'smtp.example.com', smtpPort: 465, smtpUser: 'u@example.com', smtpPass: 'p' },
+        slack: { enabled: true, webhookUrl: 'https://hooks.slack-gov.com/services/T/B/x', channel: '#a' },
+        webhook: { enabled: true, url: 'https://hooks.example:8443/x', headers: { 'X-Auth': 'v' } },
+        ...jiraConfig(),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('the organization report webhook', async () => {
+      const res = await sendAs('admin', 'PATCH', `/organizations/${org.orgId}`, { settings: { slack_webhook_url: 'https://hooks.slack.com/services/T/B/x' } });
+      expect(res.status).toBe(200);
+      expect((await readSettings()).slack_webhook_url).toBe('https://hooks.slack.com/services/T/B/x');
+    });
+
+    it('clearing the organization report webhook is not a destination check', async () => {
+      for (const value of ['', null]) {
+        expect((await sendAs('admin', 'PATCH', `/organizations/${org.orgId}`, { settings: { slack_webhook_url: value } })).status).toBe(200);
+      }
+    });
+
+    it('a webhook endpoint, whose secret is still returned once', async () => {
+      const res = await sendAs('admin', 'POST', '/webhooks', { url: '  https://hooks.example/endpoint  ', events: ['alert.triggered'] });
+      if (!hasWebhookTable) {
+        expect(res.status).toBe(500);
+        return;
+      }
+      expect(res.status).toBe(201);
+      expect(res.body.data.url).toBe('https://hooks.example/endpoint');
+      expect(res.body.data.secret).toMatch(/^whsec_[0-9a-f]{48}$/);
+    });
+  });
+
+  describe('R5 and blank fields on disabled channels', () => {
+    it.each([
+      ['Slack', { slack: { enabled: false, webhookUrl: 'https://hooks.example/x' } }, SLACK_ERROR],
+      ['webhook', { webhook: { enabled: false, url: 'http://hooks.example/x' } }, WEBHOOK_ERROR],
+      ['Jira', { jira: { enabled: false, baseUrl: 'https://10.0.0.1' } }, JIRA_ERROR],
+      ['email host', { email: { enabled: false, smtpHost: 'private.example', smtpPort: null } }, SMTP_HOST_ERROR],
+      ['email port', { email: { enabled: false, smtpHost: '', smtpPort: 6379 } }, SMTP_PORT_ERROR],
+    ])('a disabled %s channel with a filled, invalid field is refused', async (_label, body, error) => {
+      await expectRefused(alertWriter('disabled', () => body, error), 'unused');
+    });
+
+    it('email disabled with an empty port (sent as null) saves', async () => {
+      const res = await save({ email: { enabled: false, recipients: [], smtpHost: '', smtpPort: null, smtpUser: '' } });
+      expect(res.status).toBe(200);
+      expect((await readConfig()).email.smtpPort).toBeNull();
+    });
+
+    it('email disabled with an empty port and a filled bad host is refused', async () => {
+      const before = await readConfig();
+      const res = await save({ email: { enabled: false, recipients: [], smtpHost: '10.0.0.1', smtpPort: null, smtpUser: '' } });
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ success: false, error: SMTP_HOST_ERROR });
+      expect(await readConfig()).toEqual(before);
+    });
+
+    it('every disabled channel with blank fields saves', async () => {
+      const res = await save({
+        email: { enabled: false, recipients: [], smtpHost: '   ', smtpPort: null, smtpUser: '' },
+        slack: { enabled: false, webhookUrl: '', channel: '' },
+        webhook: { enabled: false, url: '' },
+        jira: { enabled: false, baseUrl: '  ', email: '', apiToken: '', projectKey: '', issueType: 'Task' },
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('an enabled email channel with an empty port is refused', async () => {
+      const res = await save({ email: { enabled: true, recipients: ['ops@example.com'], smtpHost: 'smtp.example.com', smtpPort: null, smtpUser: 'u@example.com' } });
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ success: false, error: SMTP_PORT_ERROR });
+    });
   });
 });

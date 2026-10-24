@@ -7,8 +7,9 @@
  *     stack's deny-list (config/local-stack-guard.ts);
  *   - no non-test source hard-codes a Slack webhook host;
  *   - the one exception to both: the allow-list of Slack webhook hosts an
- *     organization's own webhook may use (utils/safe-outbound.ts), by exact
- *     line. It names hosts to accept, not a destination to send to;
+ *     organization's own webhook may use, and the save error that names
+ *     them (utils/safe-outbound.ts), by exact line. They name hosts to
+ *     accept, not a destination to send to;
  *   - the report-delivery files read only the SMTP settings from the
  *     environment, by name, and import no config module but the database.
  * A static scan can't prove behaviour; scheduled-reports.slack-delivery.test.ts
@@ -70,6 +71,7 @@ const OUTBOUND = path.join('utils', 'safe-outbound.ts');
 /** The only code lines either scan may find, as "file: text". Any other line, in that file too, fails. */
 const SLACK_HOST_ALLOW_LIST = [
   `${OUTBOUND}: export const SLACK_WEBHOOK_HOSTS = ['hooks.slack.com', 'hooks.slack-gov.com'] as const;`,
+  `${OUTBOUND}: export const slackWebhookUrlError = 'Slack webhook URL must be an https://hooks.slack.com/ or https://hooks.slack-gov.com/ address.';`,
   `${OUTBOUND}: if (!(SLACK_WEBHOOK_HOSTS as readonly string[]).includes(host)) throw notAllowed();`,
 ];
 const withoutLineNumber = (match: string) => match.replace(/:\d+: /, ': ');
@@ -116,8 +118,8 @@ describe('no platform-level Slack webhook for report delivery', () => {
 
     it('the allow-list exception covers exactly the host allow-list lines, which are still found', () => {
       const outbound = [path.join(SRC, OUTBOUND)];
-      expect(matches(outbound, SLACK_NAME).map(withoutLineNumber)).toEqual(SLACK_HOST_ALLOW_LIST);
-      expect(matches(outbound, /hooks\.slack\.com/i).map(withoutLineNumber)).toEqual([SLACK_HOST_ALLOW_LIST[0]]);
+      expect(matches(outbound, SLACK_NAME).map(withoutLineNumber)).toEqual([SLACK_HOST_ALLOW_LIST[0], SLACK_HOST_ALLOW_LIST[2]]);
+      expect(matches(outbound, /hooks\.slack\.com/i).map(withoutLineNumber)).toEqual(SLACK_HOST_ALLOW_LIST.slice(0, 2));
     });
 
     it('it walks the whole source tree', () => {

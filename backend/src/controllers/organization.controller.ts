@@ -8,6 +8,7 @@ import { organizationService } from '../services/organization.service';
 import { auditRequestContext } from '../services/auditEvents.service';
 import { OrganizationAccessError, OrganizationRole } from '../services/organization-authorization';
 import type { WebSocketServer } from '../websocket/server';
+import { assertDestination, slackWebhookUrlError } from '../utils/safe-outbound';
 
 /**
  * Status for a failed membership operation: authorization/seat errors from
@@ -195,6 +196,24 @@ export class OrganizationController {
     try {
       const { id } = req.params;
       const { name, displayName, description, logoUrl, settings } = req.body;
+
+      // The report Slack webhook must be an allowed Slack address that resolves publicly.
+      if (
+        settings &&
+        typeof settings === 'object' &&
+        !Array.isArray(settings) &&
+        Object.prototype.hasOwnProperty.call(settings, 'slack_webhook_url')
+      ) {
+        const webhookUrl = settings.slack_webhook_url;
+        if (webhookUrl !== '' && webhookUrl !== null) {
+          try {
+            await assertDestination(webhookUrl, 'slack-webhook');
+          } catch {
+            res.status(400).json({ success: false, error: slackWebhookUrlError });
+            return;
+          }
+        }
+      }
 
       const organization = await organizationService.updateOrganization(id, {
         name,

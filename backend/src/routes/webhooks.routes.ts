@@ -3,6 +3,7 @@ import { pool } from '../config/database'
 import crypto from 'crypto'
 import { authenticateToken } from '../middleware/auth.middleware'
 import { requireAdmin } from '../middleware/rbac.middleware'
+import { assertDestination } from '../utils/safe-outbound'
 
 const router = Router()
 
@@ -27,11 +28,15 @@ router.get('/', async (req, res) => {
 })
 
 // POST /api/webhooks — register a new endpoint scoped to the caller's org (owner/admin)
+// Nothing delivers to these endpoints yet. A sender must use safeHttpsPost(url, { policy: 'public-https' }),
+// which checks the address again when it connects and never follows redirects.
 router.post('/', requireAdmin, async (req, res) => {
   const organizationId = (req as any).user?.organizationId
   const { url, events } = req.body
-  if (!url?.trim() || !url.startsWith('https://')) {
-    return res.status(400).json({ success: false, message: 'A valid HTTPS URL is required' })
+  try {
+    await assertDestination(typeof url === 'string' ? url.trim() : url, 'public-https')
+  } catch {
+    return res.status(400).json({ success: false, message: 'A valid public HTTPS URL is required' })
   }
 
   const secret = 'whsec_' + crypto.randomBytes(24).toString('hex')

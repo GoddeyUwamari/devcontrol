@@ -464,7 +464,7 @@ describe('PUT /api/alert-config/config -- merge on save', () => {
     const res = await save(invalid);
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ success: false, error: 'Jira URL must be HTTPS' });
+    expect(res.body).toEqual({ success: false, error: 'Jira URL must be a public https:// address.' });
     expect((await read()).body.data.jira.baseUrl).toBe('https://example.atlassian.net');
     expect(await credentialsUsed()).toEqual(ORIGINAL);
   });

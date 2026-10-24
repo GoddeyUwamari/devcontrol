@@ -49,6 +49,7 @@ import { AnomalyDetectionService } from '../../services/anomaly-detection.servic
 import { AnomalyAIService } from '../../services/anomaly-ai.service';
 import { alertConfigs } from '../../controllers/alert-config.controller';
 import { pool as appPool } from '../../config/database';
+import { NetworkGuard, PUBLIC_V4, guardNetwork, stubDns } from '../../__tests__/helpers/fake-outbound';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
 jest.mock('../../services/onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
@@ -191,7 +192,12 @@ beforeAll(async () => {
   baseUrl = `http://127.0.0.1:${port}/api`;
 });
 
+let guard: NetworkGuard;
+
 beforeEach(() => {
+  // Destinations saved below are checked by DNS; no real lookup or connection is made.
+  guard = guardNetwork();
+  stubDns({ 'hooks.slack.com': [PUBLIC_V4], 'example.com': [PUBLIC_V4] });
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -229,6 +235,8 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  guard.restore();
+  expect(guard.attempts).toEqual([]);
   for (const id of createdOrgIds) alertConfigs.delete(id);
 });
 
@@ -393,7 +401,7 @@ const mutations: Mutation[] = [
     name: 'PUT /api/alert-config/config',
     method: 'PUT',
     route: () => '/alert-config/config',
-    body: { slack: { enabled: true, webhookUrl: 'https://hooks.example/role-gate' } },
+    body: { slack: { enabled: true, webhookUrl: 'https://hooks.slack.com/services/role-gate' } },
     prepare: async () => '',
     allowed: () => 200,
     happened: async (orgId) => alertConfigs.has(orgId),
@@ -404,7 +412,7 @@ const mutations: Mutation[] = [
     route: () => '/alert-config/test',
     body: { type: 'slack' },
     prepare: async (orgId) => {
-      alertConfigs.set(orgId, { slack: { enabled: true, webhookUrl: 'https://hooks.example/role-gate' } });
+      alertConfigs.set(orgId, { slack: { enabled: true, webhookUrl: 'https://hooks.slack.com/services/role-gate' } });
       return '';
     },
     allowed: () => 200,

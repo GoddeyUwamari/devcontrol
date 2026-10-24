@@ -1,7 +1,15 @@
 import { Request, Response } from 'express';
 import { AlertNotificationService } from '../services/alert-notification.service';
 import { JIRA_FAILURE_MESSAGES, JiraFailureReason, JiraClient, JiraRequestError } from '../services/jira-client.service';
-import { OutboundRefused } from '../utils/safe-outbound';
+import {
+  OutboundRefused,
+  SMTP_PORTS,
+  assertDestination,
+  assertSmtpHost,
+  checkUrlSyntax,
+  isForbiddenWebhookHeader,
+  slackWebhookUrlError,
+} from '../utils/safe-outbound';
 
 // Store configurations in database (add table later)
 export const alertConfigs = new Map<string, any>();
@@ -174,10 +182,34 @@ function mergeConfig(stored: any, body: Record<string, any>): any {
   return merged;
 }
 
-function validateConfig(config: any): void {
+const DESTINATION_ERRORS = {
+  webhook: 'Webhook URL must be a public https:// address.',
+  webhookHeaders: "Webhook headers can't include Host, Content-Length, Connection, Transfer-Encoding or proxy headers.",
+  jira: 'Jira URL must be a public https:// address.',
+  smtpHost: 'SMTP host must be a public mail server.',
+  smtpPort: 'SMTP port must be 25, 465, 587 or 2525.',
+};
+
+/** Whether a destination field holds something to check. Blank, null and NaN (an emptied port field) do not. */
+function isProvided(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (typeof value === 'number') return !Number.isNaN(value);
+  return true;
+}
+
+/**
+ * Checks the merged configuration. A destination is checked whenever one is
+ * provided, whether or not its channel is enabled, so nothing invalid is
+ * stored; an enabled email channel always needs an allowed port. Each refusal
+ * has one fixed message per field.
+ */
+async function validateConfig(config: any): Promise<void> {
   if (config.jira?.enabled) {
-    if (!config.jira.baseUrl?.startsWith('https://')) {
-      throw new ConfigValidationError('Jira URL must be HTTPS');
+    try {
+      checkUrlSyntax(config.jira.baseUrl, 'public-https');
+    } catch {
+      throw new ConfigValidationError(DESTINATION_ERRORS.jira);
     }
     if (!config.jira.email?.includes('@')) {
       throw new ConfigValidationError('Valid email required');
@@ -189,6 +221,30 @@ function validateConfig(config: any): void {
       throw new ConfigValidationError('Project key required');
     }
   }
+
+  const headerNames = isObject(config.webhook?.headers) ? Object.keys(config.webhook.headers) : [];
+  if (headerNames.some(isForbiddenWebhookHeader)) {
+    throw new ConfigValidationError(DESTINATION_ERRORS.webhookHeaders);
+  }
+
+  const email = isObject(config.email) ? config.email : {};
+  if (email.enabled || isProvided(email.smtpPort)) {
+    if (!Number.isInteger(email.smtpPort) || !(SMTP_PORTS as readonly number[]).includes(email.smtpPort)) {
+      throw new ConfigValidationError(DESTINATION_ERRORS.smtpPort);
+    }
+  }
+
+  // Each lookup has its own deadline; they run together and the first refusal in this order is reported.
+  const destinations: Array<{ value: unknown; check: (value: unknown) => Promise<void>; error: string }> = [
+    { value: config.slack?.webhookUrl, check: (value) => assertDestination(value, 'slack-webhook'), error: slackWebhookUrlError },
+    { value: config.webhook?.url, check: (value) => assertDestination(value, 'public-https'), error: DESTINATION_ERRORS.webhook },
+    { value: config.jira?.baseUrl, check: (value) => assertDestination(value, 'public-https'), error: DESTINATION_ERRORS.jira },
+    { value: email.smtpHost, check: assertSmtpHost, error: DESTINATION_ERRORS.smtpHost },
+  ];
+  const checks = destinations.filter((entry) => isProvided(entry.value));
+  const outcomes = await Promise.allSettled(checks.map((entry) => entry.check(entry.value)));
+  const refused = outcomes.findIndex((outcome) => outcome.status === 'rejected');
+  if (refused >= 0) throw new ConfigValidationError(checks[refused].error);
 }
 
 /** Whether `channel` is switched on and has what it needs to send. */
@@ -250,7 +306,7 @@ export class AlertConfigController {
       }
 
       const config = mergeConfig(alertConfigs.get(organizationId), req.body);
-      validateConfig(config);
+      await validateConfig(config);
 
       // TODO: Store in database
 
