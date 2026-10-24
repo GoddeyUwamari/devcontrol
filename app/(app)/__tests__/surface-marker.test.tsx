@@ -69,6 +69,18 @@ describe('app surface marker', () => {
     expect(wrapper).toContainElement(screen.getByRole('status'))
   })
 
+  it('the wrapper carries only the marker: no class, style or other attribute that could change layout', () => {
+    for (const signedIn of [false, true]) {
+      auth.isAuthenticated = signedIn
+      auth.isLoading = !signedIn
+      const { container, unmount } = render(<AppLayout><p>page</p></AppLayout>)
+      const wrapper = container.firstElementChild as HTMLElement
+      expect(wrapper.tagName).toBe('DIV')
+      expect(wrapper.getAttributeNames()).toEqual(['data-surface'])
+      unmount()
+    }
+  })
+
   it('signed in: set on <html> and on the wrapper around the shell', () => {
     auth.isAuthenticated = true
     auth.isLoading = false
@@ -102,7 +114,7 @@ describe('app surface marker', () => {
 
   it('only app/(app)/layout.tsx sets it', () => {
     const setters = SOURCE_FILES.filter((file) =>
-      /data-surface|dataset\.surface|['"]surface['"]/.test(readFileSync(join(process.cwd(), file), 'utf8'))
+      /data-surface|dataset\.surface|dataset\[\s*['"]surface['"]\s*\]|setAttribute\(\s*['"]data-surface/.test(readFileSync(join(process.cwd(), file), 'utf8'))
     )
     expect(setters).toEqual(['app/(app)/layout.tsx'])
   })
