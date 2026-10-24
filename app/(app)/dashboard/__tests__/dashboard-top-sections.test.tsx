@@ -492,7 +492,10 @@ describe('10. change badge is neutral while today is still billing', () => {
     costSummarySpy.mockResolvedValue({ spend: actualSpend(123.45, false), monthOverMonth: mom(-7, -0.7, false) })
     renderDashboard()
     await settled()
-    expect(within(kpi('/costs')).getByTestId('spend-change').style.color).toBe('var(--text-success)')
+    const badge = within(kpi('/costs')).getByTestId('spend-change')
+    // Green on the success tint: the -strong ink, which keeps 4.5:1 there (typography plan T1).
+    expect(badge.style.color).toBe('var(--app-color-ink-success-strong)')
+    expect(badge.style.background).toBe('var(--bg-success)')
   })
 
   it('an unavailable comparison renders no change badge at all', async () => {

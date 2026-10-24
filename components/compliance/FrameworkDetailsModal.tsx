@@ -81,7 +81,7 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
     const colors: Record<string, string> = {
       critical: 'bg-red-100 text-red-700 border-red-200',
       high: 'bg-orange-100 text-orange-700 border-orange-200',
-      medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+      medium: 'bg-amber-100 text-ink-warning-strong border-amber-200',
       low: 'bg-blue-100 text-blue-700 border-blue-200',
     };
     return colors[severity] || 'bg-gray-100 text-gray-700 border-gray-200';
@@ -93,7 +93,7 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
       backups: 'bg-green-100 text-green-700',
       public_access: 'bg-red-100 text-red-700',
       tagging: 'bg-blue-100 text-blue-700',
-      iam: 'bg-yellow-100 text-yellow-700',
+      iam: 'bg-white text-ink-muted',
       networking: 'bg-indigo-100 text-indigo-700',
       custom: 'bg-gray-100 text-gray-700',
     };

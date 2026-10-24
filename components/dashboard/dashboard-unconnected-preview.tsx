@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { CircleCheck, Lock } from 'lucide-react'
 import { INFRASTRUCTURE_POSTURE_LABEL } from '@/lib/infrastructure-posture'
 import { RESOURCE_CHECKS_TITLE } from './resource-checks-section'
+import { Num } from '@/components/ui/typography'
 
 interface PreviewItem {
   /** The category tag above the title. */
@@ -133,11 +134,11 @@ const perMonth = (dollars: number) => `$${dollars}/mo`
 const CONNECT_HREF = '/connect-aws'
 const ASK_OWNER = 'Ask your organization owner to connect AWS.'
 
-/** Tags: 13px bold, uppercase, letter-spaced. */
-const LABEL = 'text-[13px] font-bold uppercase tracking-[0.08em] leading-none'
+/** Tags: the 12px label role, uppercase, letter-spaced. */
+const LABEL = 'text-label uppercase tracking-[0.04em] leading-none'
 const SURFACE = 'bg-[var(--surface-2)] rounded-2xl border border-border p-7'
-const PILL = 'inline-flex items-center rounded-full border border-border bg-[var(--surface-2)] px-3.5 py-2 text-[13px] font-semibold leading-none text-[var(--text-secondary)]'
-const BUTTON = 'inline-flex items-center justify-center rounded-xl px-6 min-h-[44px] text-base font-semibold no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
+const PILL = 'inline-flex items-center rounded-full border border-border bg-[var(--surface-2)] px-3.5 py-2 text-label leading-none text-ink-muted'
+const BUTTON = 'inline-flex items-center justify-center rounded-xl px-6 min-h-[44px] text-ui font-semibold no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
 
 /**
  * One card: tag, title, subtitle, then what the card shows, in words. It is a
@@ -157,18 +158,18 @@ function PreviewCard({ tag, title, subtitle, shows, planLabel }: PreviewItem) {
         </span>
         {planLabel && (
           <span
-            className="text-[13px] font-bold leading-none rounded-full px-3 py-1.5 bg-foreground text-background"
+            className="text-label leading-none rounded-full px-3 py-1.5 bg-foreground text-background"
             data-testid="preview-plan-label"
           >
             {planLabel}
           </span>
         )}
       </div>
-      <h2 className="text-2xl font-bold text-foreground tracking-tight leading-tight mt-0 mb-1.5" data-testid="preview-title">{title}</h2>
-      <p className="text-base text-[var(--text-secondary)] leading-normal m-0" data-testid="preview-subtitle">{subtitle}</p>
+      <h2 className="text-card-title text-ink mt-0 mb-1.5" data-testid="preview-title">{title}</h2>
+      <p className="text-body text-ink-muted m-0" data-testid="preview-subtitle">{subtitle}</p>
       <ul className="list-none p-0 mt-5 mb-0 flex flex-col gap-3">
         {shows.map((line) => (
-          <li key={line} className="flex items-start gap-2.5 text-base font-medium text-foreground leading-[1.4]" data-testid="preview-shows">
+          <li key={line} className="flex items-start gap-2.5 text-ui font-medium text-ink-body" data-testid="preview-shows">
             <CircleCheck size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--text-success)' }} aria-hidden="true" />
             <span>{line}</span>
           </li>
@@ -192,7 +193,7 @@ function SamplePanel() {
       data-testid="sample-panel"
     >
       <div className="flex items-start justify-between gap-4 px-6 py-3.5 border-b border-border">
-        <h2 id="sample-panel-title" className="text-lg font-bold text-foreground tracking-tight leading-tight m-0" data-testid="sample-panel-title">
+        <h2 id="sample-panel-title" className="text-card-title text-ink m-0" data-testid="sample-panel-title">
           What you&apos;ll see after connecting
         </h2>
         <span
@@ -208,17 +209,16 @@ function SamplePanel() {
         {SAMPLE_ROWS.map((row) => (
           <li key={row.title} className="flex items-center justify-between gap-4 px-6 py-2 border-b border-border" data-testid="sample-panel-row">
             <div className="min-w-0">
-              <p className="text-base font-semibold text-foreground leading-snug m-0" data-testid="sample-panel-row-title">{row.title}</p>
-              <p className="text-base text-[var(--text-secondary)] leading-snug m-0" data-testid="sample-panel-row-subtitle">{row.subtitle}</p>
+              <p className="text-ui font-medium text-ink m-0" data-testid="sample-panel-row-title">{row.title}</p>
+              <p className="text-ui text-ink-muted m-0" data-testid="sample-panel-row-subtitle">{row.subtitle}</p>
             </div>
             {row.monthly !== undefined ? (
-              // Fixed colours: the success token is too light for text on white (AA).
-              <span className="shrink-0 text-lg font-bold text-[#047857] dark:text-[#34D399]" data-testid="sample-panel-row-value">
+              <Num className="shrink-0 text-ui font-semibold text-ink-success dark:text-[#34D399]" data-testid="sample-panel-row-value">
                 {perMonth(row.monthly)}
-              </span>
+              </Num>
             ) : (
               <span
-                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold leading-none bg-[var(--bg-danger)] text-[#B91C1C] dark:text-[#F87171]"
+                className="shrink-0 rounded-full px-3 py-1.5 text-label leading-none bg-[var(--bg-danger)] text-ink-danger-strong dark:text-[#F87171]"
                 data-testid="sample-panel-row-value"
                 data-severity={row.severity?.toLowerCase()}
               >
@@ -229,12 +229,12 @@ function SamplePanel() {
         ))}
       </ul>
       <div className="mx-6 mt-3 rounded-xl px-5 py-2.5 flex items-center justify-between gap-4" style={{ background: 'var(--bg-accent)' }} data-testid="sample-panel-total">
-        <p className="text-base font-medium text-foreground leading-snug m-0">Estimated monthly saving (sample)</p>
-        <span className="shrink-0 text-2xl font-bold leading-none" style={{ color: 'var(--text-accent)' }} data-testid="sample-panel-total-value">
+        <p className="text-ui font-medium text-ink m-0">Estimated monthly saving (sample)</p>
+        <Num className="shrink-0 text-section leading-none" style={{ color: 'var(--text-accent)' }} data-testid="sample-panel-total-value">
           {perMonth(SAMPLE_TOTAL)}
-        </span>
+        </Num>
       </div>
-      <p id="sample-panel-caption" className="text-base text-[var(--text-secondary)] leading-normal px-6 pt-2.5 pb-3.5 m-0" data-testid="sample-panel-caption">
+      <p id="sample-panel-caption" className="text-meta text-ink-muted px-6 pt-2.5 pb-3.5 m-0" data-testid="sample-panel-caption">
         Illustrative example. Your own findings appear after your first scan.
       </p>
     </section>
@@ -257,10 +257,10 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
         {/* Two columns from lg (equal until xl, so the panel does not wrap at 1024px), both aligned to the top: the copy and the way to connect, then the sample panel. Stacked, in that order, below. */}
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-8 xl:gap-12 items-start mb-6" data-testid="preview-hero">
           <div className="min-w-0" data-testid="preview-hero-copy">
-            <h1 id="dashboard-preview-title" className="text-[30px] md:text-[44px] font-bold text-foreground tracking-tight leading-[1.1] mt-0 mb-4 max-w-3xl">
+            <h1 id="dashboard-preview-title" className="text-title text-ink mt-0 mb-4 max-w-3xl">
               AI-Powered Cloud Operations &amp; Infrastructure Intelligence
             </h1>
-            <p className="text-lg text-[var(--text-secondary)] leading-normal mt-0 mb-6 max-w-3xl">
+            <p className="text-subtitle text-ink-muted mt-0 mb-6 max-w-3xl">
               Operational visibility across cloud costs, security, observability, and infrastructure efficiency, so you can reduce waste, mitigate risk, and scale with confidence.
             </p>
 
@@ -283,9 +283,9 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
               ))}
             </div>
             {!canConnectAws && (
-              <p className="text-base text-[var(--text-secondary)] leading-normal mt-4 mb-0" data-testid="preview-ask-owner">{ASK_OWNER}</p>
+              <p className="text-body text-ink-muted mt-4 mb-0" data-testid="preview-ask-owner">{ASK_OWNER}</p>
             )}
-            <p className="flex items-start gap-2 text-base text-[var(--text-secondary)] leading-normal mt-4 mb-0 max-w-[540px]" data-testid="preview-trust">
+            <p className="flex items-start gap-2 text-body text-ink-muted mt-4 mb-0 max-w-[540px]" data-testid="preview-trust">
               <Lock size={16} className="shrink-0 mt-1" aria-hidden="true" />
               <span>Read-only access through a role you create and control. Delete it anytime and our access ends. Setup takes a few minutes.</span>
             </p>
@@ -303,8 +303,8 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
           data-testid="preview-band"
         >
           <div className="min-w-0">
-            <h2 className="text-2xl font-bold text-white tracking-tight leading-tight mt-0 mb-1.5">See where your AWS money is going</h2>
-            <p className="text-base text-[#D6D3E8] leading-normal m-0">Connect once. Your first scan runs automatically.</p>
+            <h2 className="text-section text-white mt-0 mb-1.5">See where your AWS money is going</h2>
+            <p className="text-body text-[#D6D3E8] m-0">Connect once. Your first scan runs automatically.</p>
           </div>
           {canConnectAws ? (
             <Link
@@ -315,24 +315,24 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
               Connect AWS
             </Link>
           ) : (
-            <p className="text-base font-medium text-white leading-normal m-0 md:max-w-xs md:text-right" data-testid="preview-band-ask-owner">{ASK_OWNER}</p>
+            <p className="text-body font-medium text-white m-0 md:max-w-xs md:text-right" data-testid="preview-band-ask-owner">{ASK_OWNER}</p>
           )}
         </div>
       </section>
 
       <section className="mb-6" aria-labelledby="connecting-steps-title" data-testid="connecting-steps">
-        <h2 id="connecting-steps-title" className="text-2xl font-bold text-foreground tracking-tight leading-tight mt-0 mb-5">How connecting works</h2>
+        <h2 id="connecting-steps-title" className="text-section text-ink mt-0 mb-5">How connecting works</h2>
         <ol className="list-none p-0 m-0 grid grid-cols-1 md:grid-cols-3 gap-5">
           {STEPS.map((step, i) => (
             <li key={step} className={`${SURFACE} flex flex-col gap-4`} data-testid="connecting-step">
               <span
-                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold"
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-label"
                 style={{ background: 'var(--bg-accent)', color: 'var(--text-accent)' }}
                 data-testid="connecting-step-number"
               >
                 {i + 1}
               </span>
-              <span className="text-base text-[var(--text-secondary)] leading-normal">{step}</span>
+              <span className="text-body text-ink-muted">{step}</span>
             </li>
           ))}
         </ol>

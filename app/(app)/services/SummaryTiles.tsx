@@ -67,7 +67,7 @@ function Tile({ label, value, tone, children }: { label: string; value: string; 
 const SEVERITY_CHIPS = [
   { key: 'critical', label: 'Critical', className: 'bg-red-50 text-red-800' },
   { key: 'high',     label: 'High',     className: 'bg-orange-50 text-orange-800' },
-  { key: 'medium',   label: 'Medium',   className: 'bg-yellow-50 text-yellow-900' },
+  { key: 'medium',   label: 'Medium',   className: 'bg-amber-50 text-ink-warning-strong' },
   { key: 'low',      label: 'Low',      className: 'bg-slate-100 text-slate-700' },
 ] as const
 

@@ -580,9 +580,9 @@ export default function DashboardPage() {
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
 
-  // The not-connected preview starts closer to the nav (lg:pt-4), so its cards show without scrolling.
+  // Top spacing is the app's page-top token (24 / 32 / 40 px) in every state.
   return (
-    <div className={`px-4 py-6 sm:px-6 sm:py-8 lg:px-14 ${awsConnection === 'unconnected' ? 'lg:pt-4 lg:pb-10' : 'lg:py-10'} max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]`}>
+    <div className="px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1400px] mx-auto min-h-screen bg-[var(--surface-1)]">
 
       {/* The unconnected preview is its own hero (headline, the way to connect, a labelled sample). */}
       {awsConnection !== 'unconnected' && (
@@ -616,7 +616,7 @@ export default function DashboardPage() {
           {(hasServicesOnly || isBillingSyncing) && (
             <div className="bg-[var(--bg-warning)] border border-[var(--border-warning)] rounded-xl px-5 py-3 mb-6 flex items-center gap-3">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--fill-warning)' }} />
-              <span className="text-[13px]" style={{ color: 'var(--text-warning)' }}>
+              <span className="text-[13px]" style={{ color: 'var(--app-color-ink-warning-strong)' }}>
                 {hasServicesOnly
                   ? 'Historical billing data is still syncing. Infrastructure scanning and security analysis are fully operational — cost totals will be available within 24–48 hours.'
                   : 'Billing sync in progress (24–48h) — infrastructure and security data are ready now.'}

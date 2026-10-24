@@ -93,9 +93,9 @@ export function ResponseTimeChart({ data, currentValue, trendPercent = 0 }: Resp
       )}
 
       {hasAnomaly && (
-        <div className="mt-3 p-2 bg-yellow-50 rounded flex items-center gap-2 text-xs">
-          <AlertTriangle className="w-4 h-4 text-yellow-600" />
-          <span className="text-yellow-900">
+        <div className="mt-3 p-2 bg-amber-50 rounded flex items-center gap-2 text-xs">
+          <AlertTriangle className="w-4 h-4 text-ink-warning" />
+          <span className="text-ink-warning-strong">
             Latency spike detected (+{trendPercent.toFixed(1)}%)
           </span>
         </div>

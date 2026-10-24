@@ -189,6 +189,8 @@ describe('connection gates and the connection state ignore the cost evidence', (
     expect(router.replace).not.toHaveBeenCalled()
     // isBillingSyncing comes from computeDashboardAwsGates(stats) alone.
     expect(screen.getByText(BILLING_SYNC_BANNER)).toBeInTheDocument()
+    // On the warning tint, the text is the -strong ink (typography plan T1).
+    expect(screen.getByText(BILLING_SYNC_BANNER).style.color).toBe('var(--app-color-ink-warning-strong)')
     expect(screen.queryByText(SYNCING_BANNER)).not.toBeInTheDocument()
   })
 
@@ -434,6 +436,18 @@ describe('an organization with no AWS account stays on the dashboard', () => {
   beforeEach(() => {
     awsAccounts = []
     setup(LEGACY_STATS.zero, { spend: noSpend('unavailable'), monthOverMonth: noMom('unavailable') })
+  })
+
+  it('the page starts at the app page-top spacing (24 / 32 / 40 px), as every app page does', async () => {
+    signInAs('owner')
+    const { container } = renderDashboard()
+
+    await screen.findByTestId('dashboard-preview')
+    const root = container.firstElementChild as HTMLElement
+    const classes = root.className.split(/\s+/)
+    expect(classes).toContain('pt-page-top')
+    // Nothing else sets the top padding (the preview used to start at lg:pt-4, 16px under the nav).
+    expect(classes.filter((c) => /^(?:[\w-]+:)?(?:p|py|pt)-/.test(c) && c !== 'pt-page-top')).toEqual([])
   })
 
   it('owner: the preview as the hero, with two Connect AWS buttons to /connect-aws, the strip, and nothing else', async () => {

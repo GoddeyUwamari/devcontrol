@@ -102,6 +102,155 @@ describe('generated CSS for the app tokens', () => {
   })
 })
 
+// The whole app/globals.css, compiled the way the Next.js build compiles it (the same plugin, scanning the
+// repo for class candidates), and the frozen baseline compiled the same way. What a page without
+// [data-surface="app"] can match -- the full output minus the app-scoped rules, minus the utilities generated
+// from the app tokens, minus default palette variables the app values reference, minus the new theme names
+// -- must equal the baseline's output, with and without Lightning CSS minification. So nothing in the block,
+// and nothing the preceding @theme blocks do with it, changes the marketing and sign-in pages.
+//
+// The new theme names do reach :root in a real build: Tailwind emits a theme variable whose name appears
+// as var(--name) in any scanned file (test files included), even for @theme inline. Each one is only an
+// alias of its own --app-* value, so outside the app it is an undefined value that nothing there reads
+// (app-token-scope.test.ts keeps the names out of non-app files).
+const baselineCss = readFileSync(join(process.cwd(), 'app/__tests__/__fixtures__/globals.baseline.css'), 'utf8')
+const defaultPalette: Record<string, string> = {}
+postcss
+  .parse(readFileSync(createRequire(import.meta.url).resolve('tailwindcss/theme.css'), 'utf8'))
+  .walkDecls(/^--color-[a-z]+-\d+$/, (decl) => void (defaultPalette[decl.prop] = decl.value))
+
+// Separate `from` paths: the plugin caches its compiler per input file.
+async function compileWhole(source: string, from: string, optimize: boolean): Promise<Root> {
+  // No asset URL rewriting: it is relative to `from`, which differs between the two compiles.
+  const result = await postcss([tailwind({ optimize, transformAssetUrls: false })]).process(source, { from: join(process.cwd(), from) })
+  return postcss.parse(result.css)
+}
+
+/** A new theme name aliased to its own --app-* value: --text-title: var(--app-text-title). */
+const isAppAlias = (prop: string, value: string) => NEW_THEME_NAMES.includes(prop) && value.trim() === `var(--app-${prop.slice(2)})`
+
+/**
+ * A utility generated from the app tokens (.text-title, .sm\:text-kpi, .-mt-page-top, .drop-shadow-ink, ...):
+ * it applies only to elements carrying that class, and app-token-scope.test.ts keeps those class names out
+ * of every non-app file.
+ */
+const TOKEN_UTILITY = new RegExp(
+  `^-?(?:text-(?:${TEXT_ROLES.join('|')})|[a-z-]+-(?:${INKS.join('|')})|[a-z-]+-page-top)$`
+)
+const isTokenUtility = (rule: Rule) =>
+  rule.selectors.every((selector) => {
+    const cls = selector.trim().match(/^\.((?:\\.|[\w-])+)/)?.[1]
+    if (!cls) return false
+    const name = cls.replace(/\\(.)/g, '$1').split(':').pop()!
+    return TOKEN_UTILITY.test(name)
+  })
+
+/** One line per rule, at-rule and declaration, in order; comments and formatting ignored. */
+function serialise(root: Root, skipDecl: (prop: string, value: string) => boolean = () => false): string[] {
+  const lines: string[] = []
+  const visit = (nodes: Root['nodes'], depth: number) => {
+    for (const node of nodes) {
+      if (node.type === 'decl') {
+        if (!skipDecl(node.prop, node.value)) lines.push(`${'  '.repeat(depth)}${node.prop}: ${node.value}${node.important ? ' !important' : ''}`)
+      } else if (node.type === 'rule') {
+        lines.push(`${'  '.repeat(depth)}${node.selector} {`)
+        visit(node.nodes, depth + 1)
+      } else if (node.type === 'atrule') {
+        lines.push(`${'  '.repeat(depth)}@${node.name} ${node.params} {`)
+        visit(node.nodes ?? [], depth + 1)
+      }
+    }
+  }
+  visit(root.nodes, 0)
+  return lines
+}
+
+/** The full output as a page without the marker sees it. */
+function withoutAppSurface(root: Root): Root {
+  const copy = root.clone()
+  copy.walkRules((rule) => {
+    if (rule.selectors.every(isAppScopedSelector) || isTokenUtility(rule)) rule.remove()
+  })
+  // Drop at-rules the removal emptied (e.g. the block's @media wrappers).
+  let removed = true
+  while (removed) {
+    removed = false
+    copy.walkAtRules((at) => {
+      if (at.nodes && at.nodes.length === 0) { at.remove(); removed = true }
+    })
+  }
+  return copy
+}
+
+describe('the whole app/globals.css, compiled with a repo scan', () => {
+  const outputs: Record<string, { full: Root; baseline: Root }> = {}
+
+  beforeAll(async () => {
+    for (const optimize of [false, true]) {
+      outputs[String(optimize)] = {
+        full: await compileWhole(css, 'app/globals.css', optimize),
+        baseline: await compileWhole(baselineCss, 'app/__tests__/__fixtures__/globals.baseline.css', optimize),
+      }
+    }
+  }, 180_000)
+
+  it.each(['false', 'true'])('outside the app it equals the baseline (optimize: %s)', (optimize) => {
+    const { full, baseline } = outputs[optimize]
+    const baselineDecls = new Set<string>()
+    baseline.walkDecls((decl) => void baselineDecls.add(`${decl.prop}: ${decl.value}`))
+    // A palette variable the app values reference may be emitted where the baseline did not need it:
+    // a new, unused name with Tailwind's own value, so it changes nothing outside the app.
+    const addedPalette = (prop: string, value: string) =>
+      !baselineDecls.has(`${prop}: ${value}`) && prop in defaultPalette && defaultPalette[prop] === value
+    expect(serialise(withoutAppSurface(full), (prop, value) => addedPalette(prop, value) || isAppAlias(prop, value))).toEqual(serialise(baseline))
+  })
+
+  it.each(['false', 'true'])('a new theme name appears only as its own --app-* alias, and every --app-* value is app-scoped (optimize: %s)', (optimize) => {
+    const { full } = outputs[optimize]
+    const defined: string[] = []
+    full.walkDecls((decl) => {
+      if (NEW_THEME_NAMES.includes(decl.prop)) {
+        expect(isAppAlias(decl.prop, decl.value), `${decl.prop}: ${decl.value}`).toBe(true)
+        expect((decl.parent as Rule).selectors?.map((s) => s.trim()).sort(), decl.prop).toEqual([':host', ':root'])
+        return
+      }
+      if (!decl.prop.startsWith('--app-')) return
+      const rule = decl.parent as Rule
+      expect(rule.type, decl.prop).toBe('rule')
+      for (const selector of rule.selectors) expect(isAppScopedSelector(selector), `${decl.prop} in ${selector}`).toBe(true)
+      defined.push(decl.prop)
+    })
+    expect(defined).toContain('--app-color-ink-muted')
+  })
+
+  // The re-pointed tokens (globals-marketing-scope.test.ts checks the source): in the real output each one
+  // is declared, inside the app, by a rule that includes :root[data-surface=app] -- specificity (0,2,0)
+  // against the frozen :root's (0,1,0) -- so on <html> it wins even if minification reorders rules.
+  it.each(['false', 'true'])('re-pointed tokens outrank :root on <html>, and placeholders get full opacity (optimize: %s)', (optimize) => {
+    const { full } = outputs[optimize]
+    const ROOT_APP = /^:root\[data-surface=(?:"app"|app)\]$/
+    for (const name of ['--muted-foreground', '--text-success', '--text-warning', '--text-danger']) {
+      const scoped: Rule[] = []
+      full.walkDecls(name, (decl) => {
+        const rule = decl.parent as Rule
+        if (rule.selectors.every(isAppScopedSelector)) scoped.push(rule)
+      })
+      expect(scoped.length, name).toBeGreaterThan(0)
+      for (const rule of scoped) expect(rule.selectors.some((s) => ROOT_APP.test(s.trim())), `${name} in ${rule.selector}`).toBe(true)
+    }
+    const placeholders: Rule[] = []
+    full.walkRules((rule) => {
+      if (rule.selectors.every(isAppScopedSelector) && /placeholder/.test(rule.selector)) placeholders.push(rule)
+    })
+    expect(placeholders.length).toBeGreaterThan(0)
+    for (const rule of placeholders) {
+      const decls: Record<string, string> = {}
+      rule.walkDecls((decl) => void (decls[decl.prop] = decl.value))
+      expect(decls, rule.selector).toEqual({ color: 'var(--muted-foreground)', opacity: '1' })
+    }
+  })
+})
+
 // The promised contrast of each ink token (typography plan §3.1/§3.3) against the light surfaces it
 // may sit on, from Tailwind's own palette values.
 const palette: Record<string, string> = {}
@@ -150,5 +299,28 @@ describe('ink tokens meet 4.5:1 on the surfaces they are promised for', () => {
       expect(palette[surface], surface).toBeDefined()
       expect(contrast(fg, palette[surface]), `${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5)
     }
+  })
+})
+
+// The app values of the re-pointed tokens meet 4.5:1 where they are used: muted text on every light
+// surface, the status colours on white, the page and card surfaces and the 50-tints (on a 100-tint or a
+// --bg-* tint the app uses the -strong ink instead).
+const OVERRIDE_INK: [string, string, string[]][] = [
+  ['--muted-foreground', 'ink-muted', ALL],
+  ['--text-success', 'ink-success', [...NEUTRAL_50, ...TINTS_50]],
+  ['--text-warning', 'ink-warning', [...NEUTRAL_50, ...TINTS_50]],
+  ['--text-danger', 'ink-danger', ALL],
+]
+
+describe('re-pointed tokens meet 4.5:1 in the app', () => {
+  it.each(OVERRIDE_INK)('%s', (name, ink, surfaces) => {
+    // The value as written: an ink token (var(--app-color-ink-…)) or, if edited, a palette colour.
+    const m = block.match(new RegExp(`\\n  ${name}: var\\(--(?:app-color-(ink[a-z-]*)|color-([a-z]+-\\d+))\\);`))
+    expect(m, name).not.toBeNull()
+    const fg = palette[m![1] ? inkColour(m![1]) : m![2]]
+    expect(fg, name).toBeDefined()
+    expect(contrast(fg, WHITE), `${name} on white`).toBeGreaterThanOrEqual(4.5)
+    for (const surface of surfaces) expect(contrast(fg, palette[surface]), `${name} on ${surface}`).toBeGreaterThanOrEqual(4.5)
+    expect(m![1], `${name} uses the ${ink} token`).toBe(ink)
   })
 })

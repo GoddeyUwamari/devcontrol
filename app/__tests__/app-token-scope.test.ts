@@ -22,7 +22,7 @@ const SPACING = [...new Set(names('spacing'))]
 
 const alt = (list: string[]) => list.join('|')
 const COLOR_UTILITY =
-  'text|bg|border|border-[trblxy]|border-[se]|ring|ring-offset|outline|fill|stroke|decoration|divide|placeholder|caret|accent|shadow|inset-shadow|from|via|to'
+  'text|bg|border|border-[trblxy]|border-[se]|ring|ring-offset|inset-ring|outline|fill|stroke|decoration|divide|placeholder|caret|accent|shadow|inset-shadow|drop-shadow|text-shadow|from|via|to'
 const TOKEN_USE = new RegExp(
   [
     `(?<![\\w-])text-(?:${alt(TEXT)})(?![\\w-])`,
@@ -46,6 +46,8 @@ describe('app tokens stay in app code', () => {
   it('the pattern catches each kind of use (self-check)', () => {
     for (const use of [
       'text-title', 'sm:text-kpi', 'text-ink-muted', 'hover:bg-ink', 'border-ink-danger', 'pt-page-top',
+      // Assembled at runtime so Tailwind's scan of this file does not generate these utilities.
+      ...[['inset-ring', 'ink-muted'], ['drop-shadow', 'ink'], ['text-shadow', 'ink-accent']].map((parts) => parts.join('-')),
       'lg:pt-page-top', '-mt-page-top', 'var(--app-color-ink)', 'var(--text-title)', 'var(--spacing-page-top)',
     ]) {
       expect(`className="${use}"`, use).toMatch(TOKEN_USE)

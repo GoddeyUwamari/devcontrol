@@ -93,12 +93,12 @@ export function ErrorDisplay({
         };
       case ErrorType.RATE_LIMIT_ERROR:
         return {
-          bg: 'bg-yellow-50 dark:bg-yellow-900/20',
-          border: 'border-yellow-200 dark:border-yellow-800',
-          text: 'text-yellow-800 dark:text-yellow-200',
-          subtext: 'text-yellow-600 dark:text-yellow-300',
-          icon: 'text-yellow-600 dark:text-yellow-400',
-          button: 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-800/50 dark:hover:bg-yellow-800',
+          bg: 'bg-amber-50 dark:bg-amber-900/20',
+          border: 'border-amber-200 dark:border-amber-800',
+          text: 'text-ink-warning-strong dark:text-amber-200',
+          subtext: 'text-ink-warning dark:text-amber-300',
+          icon: 'text-ink-warning dark:text-amber-400',
+          button: 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-800/50 dark:hover:bg-amber-800',
         };
       case ErrorType.NETWORK_ERROR:
       case ErrorType.TIMEOUT_ERROR:

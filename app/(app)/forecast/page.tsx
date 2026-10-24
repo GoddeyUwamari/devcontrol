@@ -123,7 +123,7 @@ export default function ForecastPage() {
   };
 
   const getVolatilityLabel = () => { if (!forecast) return 'Unknown'; if (forecast.volatility < 30) return 'Low'; if (forecast.volatility < 60) return 'Medium'; return 'High'; };
-  const getVolatilityColor = () => { if (!forecast) return 'text-gray-600'; if (forecast.volatility < 30) return 'text-green-600'; if (forecast.volatility < 60) return 'text-yellow-600'; return 'text-red-600'; };
+  const getVolatilityColor = () => { if (!forecast) return 'text-gray-600'; if (forecast.volatility < 30) return 'text-green-600'; if (forecast.volatility < 60) return 'text-ink-warning'; return 'text-red-600'; };
 
   const { isPro } = usePlan();
 
@@ -170,7 +170,7 @@ export default function ForecastPage() {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <Card className="p-8 text-center">
-          <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+          <AlertTriangle className="w-12 h-12 text-ink-warning mx-auto mb-4" />
           <h3 className="text-sm font-semibold mb-2">Unable to Load Forecast</h3>
           <p className="text-gray-600 mb-4">There was an error loading the forecast data.</p>
           <Button onClick={loadForecast}><RefreshCw className="w-4 h-4 mr-2" />Try Again</Button>
@@ -433,9 +433,9 @@ export default function ForecastPage() {
                   },
                   {
                     type: 'traffic_half' as ScenarioType, params: () => ({}),
-                    icon: <TrendingDown className="w-5 h-5 text-yellow-600 group-hover:scale-110 transition-transform" />,
+                    icon: <TrendingDown className="w-5 h-5 text-ink-warning group-hover:scale-110 transition-transform" />,
                     title: 'Traffic Decrease', desc: 'What if traffic drops 50%?',
-                    borderHover: 'hover:border-yellow-400 hover:bg-yellow-50',
+                    borderHover: 'hover:border-amber-400 hover:bg-amber-50',
                     input: <span className="text-xs text-gray-500">Simulates reduced usage</span>,
                   },
                   {

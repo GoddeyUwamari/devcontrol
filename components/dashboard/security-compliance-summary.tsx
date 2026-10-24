@@ -1,5 +1,6 @@
 import { ShieldCheck, ChevronRight } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toneText } from './evidence-badge'
 
 interface FindingCounts {
   critical: number
@@ -60,7 +61,7 @@ function Row({ badge, headline, sub, href }: { badge: { label: string; color: st
     <div className={`flex items-center gap-3 py-3${href ? '' : ` ${divider}`}`}>
       <span
         className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
-        style={{ color: badge.color, background: badge.background }}
+        style={{ color: toneText(badge.color), background: badge.background }}
       >
         {badge.label}
       </span>
