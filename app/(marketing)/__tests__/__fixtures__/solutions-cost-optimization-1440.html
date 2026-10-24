@@ -1,0 +1,652 @@
+<div class="min-h-screen bg-background">
+<section class="relative overflow-hidden bg-gradient-to-br from-green-500/5 via-background to-green-500/10 py-12 lg:py-16">
+<div class="max-w-7xl mx-auto px-4">
+<div class="text-center max-w-4xl mx-auto">
+<span data-slot="badge" class="inline-flex items-center justify-center rounded-full border font-medium w-fit whitespace-nowrap shrink-0 [&amp;>svg]:size-3 gap-1 [&amp;>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden border-transparent bg-secondary text-secondary-foreground [a&amp;]:hover:bg-secondary/90 mb-4 px-4 py-1.5 text-sm">FinOps &amp; Cloud Cost Management</span>
+<h1 class="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4 leading-tight">Cut Your AWS Bill by <span class="text-green-500">30%</span>
+<br>Without Sacrificing Performance</h1>
+<p class="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-6 leading-relaxed">DevControl analyzes your AWS infrastructure to find unused resources, rightsizing opportunities, and Reserved Instance savings—with actionable recommendations you can implement today.</p>
+<div class="flex flex-col sm:flex-row gap-3 justify-center items-center mb-8">
+<a data-slot="button" class="inline-flex items-center justify-center whitespace-nowrap font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-white shadow-sm hover:shadow-md rounded-lg text-base has-[>svg]:px-6 gap-2 px-6 h-11 bg-green-600 hover:bg-green-700" href="/dashboard">See Your Savings<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right w-4 h-4" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+<a data-slot="button" class="inline-flex items-center justify-center whitespace-nowrap font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 shadow-xs rounded-lg text-base has-[>svg]:px-6 gap-2 px-6 h-11" href="/cost-optimization">View Demo</a>
+</div>
+<div class="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
+<div class="flex items-center gap-1.5">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check w-4 h-4 text-green-500" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span>Free savings analysis</span>
+</div>
+<div class="flex items-center gap-1.5">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check w-4 h-4 text-green-500" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span>No credit card required</span>
+</div>
+<div class="flex items-center gap-1.5">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check w-4 h-4 text-green-500" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span>Read-only access</span>
+</div>
+</div>
+</div>
+</div>
+<div class="absolute -top-24 -right-24 w-96 h-96 bg-green-500/5 rounded-full blur-3xl">
+</div>
+<div class="absolute -bottom-24 -left-24 w-96 h-96 bg-green-500/5 rounded-full blur-3xl">
+</div>
+</section>
+<section class="py-12 lg:py-16 bg-muted/30">
+<div class="max-w-7xl mx-auto px-4">
+<div class="text-center mb-8">
+<h2 class="text-2xl md:text-3xl font-bold text-foreground mb-2">Real Results, Real Savings</h2>
+<p class="text-muted-foreground">Join hundreds of teams who have reduced their cloud spend</p>
+</div>
+<div class="grid md:grid-cols-3 gap-4">
+<div data-slot="card" class="text-gray-900 flex flex-col gap-6 rounded-lg border-gray-200 py-6 text-center border-0 shadow-md bg-card">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-1 pt-5">
+<div class="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down w-6 h-6 text-green-600" aria-hidden="true">
+<path d="M16 17h6v-6">
+</path>
+<path d="m22 17-8.5-8.5-5 5L2 7">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="text-4xl font-bold text-green-600 mb-1">30%</div>
+<div data-slot="card-description" class="text-base font-semibold text-foreground">Average Savings</div>
+</div>
+<div data-slot="card-content" class="px-6 pb-5">
+<p class="text-sm text-muted-foreground leading-relaxed">Customers reduce their monthly AWS bill by 30% on average within the first 90 days.</p>
+</div>
+</div>
+<div data-slot="card" class="text-gray-900 flex flex-col gap-6 rounded-lg border-gray-200 py-6 text-center border-0 shadow-md bg-card">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-1 pt-5">
+<div class="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-dollar-sign w-6 h-6 text-green-600" aria-hidden="true">
+<line x1="12" x2="12" y1="2" y2="22">
+</line>
+<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="text-4xl font-bold text-green-600 mb-1">$2.4M</div>
+<div data-slot="card-description" class="text-base font-semibold text-foreground">Savings Identified</div>
+</div>
+<div data-slot="card-content" class="px-6 pb-5">
+<p class="text-sm text-muted-foreground leading-relaxed">Total annual savings identified across all customers in the past 12 months.</p>
+</div>
+</div>
+<div data-slot="card" class="text-gray-900 flex flex-col gap-6 rounded-lg border-gray-200 py-6 text-center border-0 shadow-md bg-card">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-1 pt-5">
+<div class="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clock w-6 h-6 text-green-600" aria-hidden="true">
+<path d="M12 6v6l4 2">
+</path>
+<circle cx="12" cy="12" r="10">
+</circle>
+</svg>
+</div>
+<div data-slot="card-title" class="text-4xl font-bold text-green-600 mb-1">5 min</div>
+<div data-slot="card-description" class="text-base font-semibold text-foreground">Time to First Insight</div>
+</div>
+<div data-slot="card-content" class="px-6 pb-5">
+<p class="text-sm text-muted-foreground leading-relaxed">Connect your AWS account and see your first cost-saving recommendations in minutes.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="py-12 lg:py-16">
+<div class="max-w-7xl mx-auto px-4">
+<div class="text-center mb-8">
+<h2 class="text-2xl md:text-3xl font-bold text-foreground mb-2">How It Works</h2>
+<p class="text-muted-foreground">From setup to savings in four simple steps</p>
+</div>
+<div class="grid md:grid-cols-4 gap-4">
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm relative text-center">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="text-4xl font-bold text-muted-foreground/20 mb-2">01</div>
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mx-auto mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap w-5 h-5 text-green-600" aria-hidden="true">
+<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Connect</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm">Link your AWS account with a read-only IAM role. Takes 5 minutes.</div>
+</div>
+<div class="hidden md:block absolute top-1/2 -right-2 transform -translate-y-1/2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right w-4 h-4 text-muted-foreground/30" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm relative text-center">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="text-4xl font-bold text-muted-foreground/20 mb-2">02</div>
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mx-auto mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search w-5 h-5 text-green-600" aria-hidden="true">
+<path d="m21 21-4.34-4.34">
+</path>
+<circle cx="11" cy="11" r="8">
+</circle>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Analyze</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm">We scan your infrastructure and analyze usage patterns across all resources.</div>
+</div>
+<div class="hidden md:block absolute top-1/2 -right-2 transform -translate-y-1/2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right w-4 h-4 text-muted-foreground/30" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm relative text-center">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="text-4xl font-bold text-muted-foreground/20 mb-2">03</div>
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mx-auto mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-lightbulb w-5 h-5 text-green-600" aria-hidden="true">
+<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5">
+</path>
+<path d="M9 18h6">
+</path>
+<path d="M10 22h4">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Recommend</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm">Get prioritized recommendations ranked by potential savings and effort.</div>
+</div>
+<div class="hidden md:block absolute top-1/2 -right-2 transform -translate-y-1/2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right w-4 h-4 text-muted-foreground/30" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm relative text-center">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="text-4xl font-bold text-muted-foreground/20 mb-2">04</div>
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mx-auto mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-dollar-sign w-5 h-5 text-green-600" aria-hidden="true">
+<line x1="12" x2="12" y1="2" y2="22">
+</line>
+<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Save</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm">Implement recommendations and track your savings over time.</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="py-12 lg:py-16 bg-muted/30">
+<div class="max-w-7xl mx-auto px-4">
+<div class="text-center mb-8">
+<h2 class="text-2xl md:text-3xl font-bold text-foreground mb-2">Complete Cost Optimization Toolkit</h2>
+<p class="text-muted-foreground">Everything you need to find and eliminate cloud waste</p>
+</div>
+<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm hover:shadow-md transition-shadow">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search w-5 h-5 text-green-600" aria-hidden="true">
+<path d="m21 21-4.34-4.34">
+</path>
+<circle cx="11" cy="11" r="8">
+</circle>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Unused Resource Detection</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm leading-relaxed">Automatically identify idle EC2 instances, unattached EBS volumes, unused Elastic IPs, and orphaned snapshots costing you money.</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm hover:shadow-md transition-shadow">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down w-5 h-5 text-green-600" aria-hidden="true">
+<path d="M16 17h6v-6">
+</path>
+<path d="m22 17-8.5-8.5-5 5L2 7">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Rightsizing Recommendations</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm leading-relaxed">AI-powered analysis of CPU, memory, and network utilization to recommend optimal instance types and sizes.</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm hover:shadow-md transition-shadow">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calculator w-5 h-5 text-green-600" aria-hidden="true">
+<rect width="16" height="20" x="4" y="2" rx="2">
+</rect>
+<line x1="8" x2="16" y1="6" y2="6">
+</line>
+<line x1="16" x2="16" y1="14" y2="18">
+</line>
+<path d="M16 10h.01">
+</path>
+<path d="M12 10h.01">
+</path>
+<path d="M8 10h.01">
+</path>
+<path d="M12 14h.01">
+</path>
+<path d="M8 14h.01">
+</path>
+<path d="M12 18h.01">
+</path>
+<path d="M8 18h.01">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Reserved Instance Advisor</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm leading-relaxed">Analyze your usage patterns and get recommendations for Reserved Instances and Savings Plans that maximize discounts.</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm hover:shadow-md transition-shadow">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chart-pie w-5 h-5 text-green-600" aria-hidden="true">
+<path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z">
+</path>
+<path d="M21.21 15.89A10 10 0 1 1 8 2.83">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Cost Allocation</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm leading-relaxed">Track spending by team, project, environment, or any custom dimension. Automatic tag enforcement and gap detection.</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm hover:shadow-md transition-shadow">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bell w-5 h-5 text-green-600" aria-hidden="true">
+<path d="M10.268 21a2 2 0 0 0 3.464 0">
+</path>
+<path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Budget Alerts</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm leading-relaxed">Set budgets at any level and get alerts before you exceed them. Anomaly detection catches unexpected spend spikes.</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm hover:shadow-md transition-shadow">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 pb-2">
+<div class="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center mb-2">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2 lucide-trash-2 w-5 h-5 text-green-600" aria-hidden="true">
+<path d="M10 11v6">
+</path>
+<path d="M14 11v6">
+</path>
+<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6">
+</path>
+<path d="M3 6h18">
+</path>
+<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+</path>
+</svg>
+</div>
+<div data-slot="card-title" class="font-semibold text-lg">Waste Elimination</div>
+</div>
+<div data-slot="card-content" class="px-6">
+<div data-slot="card-description" class="text-muted-foreground text-sm leading-relaxed">One-click cleanup of development resources, old snapshots, and unused storage. Safe deletion with rollback protection.</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="py-12 lg:py-16">
+<div class="max-w-7xl mx-auto px-4">
+<div class="text-center mb-8">
+<h2 class="text-2xl md:text-3xl font-bold text-foreground mb-2">Where Teams Find Savings</h2>
+<p class="text-muted-foreground">Illustrative examples of common savings opportunities</p>
+</div>
+<div class="grid md:grid-cols-2 gap-4">
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm overflow-hidden">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 bg-muted/50 border-b py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-red-500/10 text-red-500">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert w-4 h-4" aria-hidden="true">
+<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+</path>
+<path d="M12 9v4">
+</path>
+<path d="M12 17h.01">
+</path>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">The Problem</p>
+<div data-slot="card-title" class="font-semibold text-base leading-snug">Development instances running 24/7</div>
+</div>
+</div>
+</div>
+<div data-slot="card-content" class="px-6 py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-green-500/10 text-green-600">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-server w-4 h-4" aria-hidden="true">
+<rect width="20" height="8" x="2" y="2" rx="2" ry="2">
+</rect>
+<rect width="20" height="8" x="2" y="14" rx="2" ry="2">
+</rect>
+<line x1="6" x2="6.01" y1="6" y2="6">
+</line>
+<line x1="6" x2="6.01" y1="18" y2="18">
+</line>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">DevControl Could Find</p>
+<p class="text-sm font-medium leading-snug">Automated scheduling recommendations save 65% on non-production environments</p>
+<span data-slot="badge" class="inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&amp;>svg]:size-3 gap-1 [&amp;>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden border-transparent [a&amp;]:hover:bg-secondary/90 mt-2 bg-green-500/10 text-green-600">Illustrative savings: $8,400/mo</span>
+</div>
+</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm overflow-hidden">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 bg-muted/50 border-b py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-red-500/10 text-red-500">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert w-4 h-4" aria-hidden="true">
+<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+</path>
+<path d="M12 9v4">
+</path>
+<path d="M12 17h.01">
+</path>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">The Problem</p>
+<div data-slot="card-title" class="font-semibold text-base leading-snug">Oversized production instances</div>
+</div>
+</div>
+</div>
+<div data-slot="card-content" class="px-6 py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-green-500/10 text-green-600">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down w-4 h-4" aria-hidden="true">
+<path d="M16 17h6v-6">
+</path>
+<path d="m22 17-8.5-8.5-5 5L2 7">
+</path>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">DevControl Could Find</p>
+<p class="text-sm font-medium leading-snug">Rightsizing analysis identified instances using less than 10% of capacity</p>
+<span data-slot="badge" class="inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&amp;>svg]:size-3 gap-1 [&amp;>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden border-transparent [a&amp;]:hover:bg-secondary/90 mt-2 bg-green-500/10 text-green-600">Illustrative savings: $12,000/mo</span>
+</div>
+</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm overflow-hidden">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 bg-muted/50 border-b py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-red-500/10 text-red-500">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert w-4 h-4" aria-hidden="true">
+<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+</path>
+<path d="M12 9v4">
+</path>
+<path d="M12 17h.01">
+</path>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">The Problem</p>
+<div data-slot="card-title" class="font-semibold text-base leading-snug">Orphaned EBS volumes and snapshots</div>
+</div>
+</div>
+</div>
+<div data-slot="card-content" class="px-6 py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-green-500/10 text-green-600">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-hard-drive w-4 h-4" aria-hidden="true">
+<line x1="22" x2="2" y1="12" y2="12">
+</line>
+<path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z">
+</path>
+<line x1="6" x2="6.01" y1="16" y2="16">
+</line>
+<line x1="10" x2="10.01" y1="16" y2="16">
+</line>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">DevControl Could Find</p>
+<p class="text-sm font-medium leading-snug">Found 2TB of unattached storage and 500+ obsolete snapshots</p>
+<span data-slot="badge" class="inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&amp;>svg]:size-3 gap-1 [&amp;>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden border-transparent [a&amp;]:hover:bg-secondary/90 mt-2 bg-green-500/10 text-green-600">Illustrative savings: $3,200/mo</span>
+</div>
+</div>
+</div>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm overflow-hidden">
+<div data-slot="card-header" class="@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 bg-muted/50 border-b py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-red-500/10 text-red-500">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-triangle-alert w-4 h-4" aria-hidden="true">
+<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+</path>
+<path d="M12 9v4">
+</path>
+<path d="M12 17h.01">
+</path>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">The Problem</p>
+<div data-slot="card-title" class="font-semibold text-base leading-snug">Missing Reserved Instance coverage</div>
+</div>
+</div>
+</div>
+<div data-slot="card-content" class="px-6 py-4">
+<div class="flex items-start gap-3">
+<div class="p-2 rounded-lg bg-green-500/10 text-green-600">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database w-4 h-4" aria-hidden="true">
+<ellipse cx="12" cy="5" rx="9" ry="3">
+</ellipse>
+<path d="M3 5V19A9 3 0 0 0 21 19V5">
+</path>
+<path d="M3 12A9 3 0 0 0 21 12">
+</path>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs text-muted-foreground mb-0.5">DevControl Could Find</p>
+<p class="text-sm font-medium leading-snug">RI recommendations for stable workloads with 1-year commitment</p>
+<span data-slot="badge" class="inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&amp;>svg]:size-3 gap-1 [&amp;>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden border-transparent [a&amp;]:hover:bg-secondary/90 mt-2 bg-green-500/10 text-green-600">Illustrative savings: $15,000/mo</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="py-12 lg:py-16 bg-muted/30">
+<div class="max-w-7xl mx-auto px-4">
+<div class="text-center mb-8">
+<h2 class="text-2xl md:text-3xl font-bold text-foreground mb-2">DevControl vs. Manual Cost Management</h2>
+<p class="text-muted-foreground">Stop spending hours in the AWS Cost Explorer</p>
+</div>
+<div data-slot="card" class="bg-white text-gray-900 flex flex-col gap-6 rounded-lg border border-gray-200 py-6 shadow-sm overflow-hidden max-w-3xl mx-auto">
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead>
+<tr class="border-b bg-muted/50">
+<th class="text-left p-3 font-semibold text-sm">Capability</th>
+<th class="text-center p-3 font-semibold text-sm text-green-600">DevControl</th>
+<th class="text-center p-3 font-semibold text-sm text-muted-foreground">Manual Process</th>
+</tr>
+</thead>
+<tbody>
+<tr class="border-b last:border-0">
+<td class="p-3 text-sm font-medium">Time to find savings</td>
+<td class="p-3 text-center">
+<span class="text-sm font-semibold text-green-600">5 minutes</span>
+</td>
+<td class="p-3 text-center text-muted-foreground">
+<span class="text-sm">Days/weeks</span>
+</td>
+</tr>
+<tr class="border-b last:border-0">
+<td class="p-3 text-sm font-medium">Coverage</td>
+<td class="p-3 text-center">
+<span class="text-sm font-semibold text-green-600">7 resource types (EC2, RDS, EBS, S3, Lambda, DynamoDB, EIP)</span>
+</td>
+<td class="p-3 text-center text-muted-foreground">
+<span class="text-sm">Manual spreadsheets</span>
+</td>
+</tr>
+<tr class="border-b last:border-0">
+<td class="p-3 text-sm font-medium">Recommendations</td>
+<td class="p-3 text-center">
+<span class="text-sm font-semibold text-green-600">Prioritized &amp; actionable</span>
+</td>
+<td class="p-3 text-center text-muted-foreground">
+<span class="text-sm">Raw data only</span>
+</td>
+</tr>
+<tr class="border-b last:border-0">
+<td class="p-3 text-sm font-medium">Continuous monitoring</td>
+<td class="p-3 text-center">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check w-4 h-4 text-green-500 mx-auto" aria-hidden="true">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>
+</td>
+<td class="p-3 text-center text-muted-foreground">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x w-4 h-4 text-red-500 mx-auto" aria-hidden="true">
+<path d="M18 6 6 18">
+</path>
+<path d="m6 6 12 12">
+</path>
+</svg>
+</td>
+</tr>
+<tr class="border-b last:border-0">
+<td class="p-3 text-sm font-medium">Cost allocation</td>
+<td class="p-3 text-center">
+<span class="text-sm font-semibold text-green-600">Automatic tagging</span>
+</td>
+<td class="p-3 text-center text-muted-foreground">
+<span class="text-sm">Manual effort</span>
+</td>
+</tr>
+<tr class="border-b last:border-0">
+<td class="p-3 text-sm font-medium">Anomaly detection</td>
+<td class="p-3 text-center">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check w-4 h-4 text-green-500 mx-auto" aria-hidden="true">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>
+</td>
+<td class="p-3 text-center text-muted-foreground">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x w-4 h-4 text-red-500 mx-auto" aria-hidden="true">
+<path d="M18 6 6 18">
+</path>
+<path d="m6 6 12 12">
+</path>
+</svg>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</section>
+<section class="py-14 lg:py-20 bg-gradient-to-br from-green-500/10 via-background to-green-500/5">
+<div class="max-w-7xl mx-auto px-4 text-center">
+<h2 class="text-2xl md:text-3xl lg:text-4xl font-bold text-foreground mb-4">Ready to See How Much You Can Save?</h2>
+<p class="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">Connect your AWS account and get your personalized savings report in minutes. No commitment required.</p>
+<div class="flex flex-col sm:flex-row gap-3 justify-center items-center mb-6">
+<a data-slot="button" class="inline-flex items-center justify-center whitespace-nowrap font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-white shadow-sm hover:shadow-md rounded-lg text-base has-[>svg]:px-6 gap-2 px-6 h-11 bg-green-600 hover:bg-green-700" href="/dashboard">Get Your Free Analysis<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right w-4 h-4" aria-hidden="true">
+<path d="M5 12h14">
+</path>
+<path d="m12 5 7 7-7 7">
+</path>
+</svg>
+</a>
+<a data-slot="button" class="inline-flex items-center justify-center whitespace-nowrap font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 shadow-xs rounded-lg text-base has-[>svg]:px-6 gap-2 px-6 h-11" href="/pricing">View Pricing</a>
+</div>
+<div class="flex flex-wrap justify-center items-center gap-4 text-sm text-muted-foreground">
+<div class="flex items-center gap-1.5">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check w-4 h-4 text-green-500" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span>Free savings report</span>
+</div>
+<div class="flex items-center gap-1.5">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check w-4 h-4 text-green-500" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span>No credit card required</span>
+</div>
+<div class="flex items-center gap-1.5">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check w-4 h-4 text-green-500" aria-hidden="true">
+<circle cx="12" cy="12" r="10">
+</circle>
+<path d="m9 12 2 2 4-4">
+</path>
+</svg>
+<span>5-minute setup</span>
+</div>
+</div>
+</div>
+</section>
+</div>
