@@ -87,7 +87,7 @@ export function ErrorDisplay({
           bg: 'bg-red-50 dark:bg-red-900/20',
           border: 'border-red-200 dark:border-red-800',
           text: 'text-red-800 dark:text-red-200',
-          subtext: 'text-red-600 dark:text-red-300',
+          subtext: 'text-red-700 dark:text-red-300',
           icon: 'text-red-600 dark:text-red-400',
           button: 'bg-red-100 hover:bg-red-200 dark:bg-red-800/50 dark:hover:bg-red-800',
         };
@@ -107,7 +107,7 @@ export function ErrorDisplay({
           bg: 'bg-orange-50 dark:bg-orange-900/20',
           border: 'border-orange-200 dark:border-orange-800',
           text: 'text-orange-800 dark:text-orange-200',
-          subtext: 'text-orange-600 dark:text-orange-300',
+          subtext: 'text-orange-700 dark:text-orange-300',
           icon: 'text-orange-600 dark:text-orange-400',
           button: 'bg-orange-100 hover:bg-orange-200 dark:bg-orange-800/50 dark:hover:bg-orange-800',
         };
@@ -116,7 +116,7 @@ export function ErrorDisplay({
           bg: 'bg-red-50 dark:bg-red-900/20',
           border: 'border-red-200 dark:border-red-800',
           text: 'text-red-800 dark:text-red-200',
-          subtext: 'text-red-600 dark:text-red-300',
+          subtext: 'text-red-700 dark:text-red-300',
           icon: 'text-red-600 dark:text-red-400',
           button: 'bg-red-100 hover:bg-red-200 dark:bg-red-800/50 dark:hover:bg-red-800',
         };
@@ -133,7 +133,7 @@ export function ErrorDisplay({
   if (variant === 'inline') {
     return (
       <div
-        className={cn('flex items-center gap-2 text-sm', colors.text, className)}
+        className={cn('flex items-center gap-2 text-ui', colors.text, className)}
         role="alert"
         aria-live="polite"
       >
@@ -170,21 +170,21 @@ export function ErrorDisplay({
         </div>
 
         <div className="flex-1 min-w-0">
-          <h3 className={cn('text-sm font-semibold', colors.text)}>
+          <h3 className={cn('text-ui font-semibold', colors.text)}>
             {title}
           </h3>
-          <p className={cn('text-sm mt-1', colors.subtext)}>
+          <p className={cn('text-ui mt-1', colors.subtext)}>
             {error.userMessage}
           </p>
 
           {/* Recovery suggestion */}
-          <p className={cn('text-xs mt-2 opacity-75', colors.subtext)}>
+          <p className={cn('text-meta mt-2', colors.subtext)}>
             {suggestion}
           </p>
 
           {/* Rate limit countdown */}
           {error.type === ErrorType.RATE_LIMIT_ERROR && countdown !== null && countdown > 0 && (
-            <p className={cn('text-sm font-medium mt-2', colors.text)}>
+            <p className={cn('text-ui font-medium mt-2', colors.text)}>
               Retry available in {countdown} second{countdown !== 1 ? 's' : ''}
             </p>
           )}
@@ -258,7 +258,7 @@ export function ErrorBadge({
   const Icon = error.type === ErrorType.NETWORK_ERROR ? WifiOff : AlertTriangle;
 
   return (
-    <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full text-xs">
+    <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full text-meta">
       <Icon className="w-3 h-3" />
       <span>{getErrorTitle(error.type)}</span>
       {error.retryable && onRetry && (

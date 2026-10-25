@@ -31,8 +31,8 @@ export function EmptyState({
         <Icon className="h-8 w-8 text-muted-foreground" />
       </div>
       <div className="text-center space-y-2 max-w-md">
-        <h3 className="text-lg font-semibold">{title}</h3>
-        <p className="text-sm text-muted-foreground leading-relaxed">
+        <h3 className="text-section font-semibold">{title}</h3>
+        <p className="text-body text-muted-foreground leading-relaxed">
           {description}
         </p>
       </div>

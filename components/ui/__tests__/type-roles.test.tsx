@@ -13,6 +13,14 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Label } from '../label'
 import { Tabs, TabsList, TabsTrigger } from '../tabs'
 import { Form, FormDescription, FormField, FormItem, FormMessage } from '../form'
+import { Inbox } from 'lucide-react'
+import { Card, CardDescription, CardHeader, CardTitle } from '../card'
+import { Badge } from '../badge'
+import { SeverityBadge } from '../severity-badge'
+import { Alert, AlertDescription, AlertTitle } from '../alert'
+import { EmptyState } from '../empty-state'
+import { ErrorBadge, ErrorDisplay } from '../error-display'
+import { type AppError, ErrorType, getErrorTitle, getRecoverySuggestion } from '@/lib/errors/error-types'
 
 const classes = (el: Element) => el.className.split(/\s+/)
 
@@ -140,5 +148,108 @@ describe('form', () => {
     render(<SampleForm />)
     expect(classes(screen.getByText('Shown to your team.'))).toEqual(expect.arrayContaining(['text-ui', 'text-muted-foreground']))
     expect(classes(screen.getByText('Required.'))).toEqual(expect.arrayContaining(['text-ui', 'text-destructive']))
+  })
+})
+
+describe('Card', () => {
+  it('title is the card-title role (15/22) with an explicit weight; description the meta role (13 px)', () => {
+    render(
+      <Card>
+        <CardHeader>
+          <CardTitle>Monthly spend</CardTitle>
+          <CardDescription>Month to date</CardDescription>
+        </CardHeader>
+      </Card>
+    )
+    const title = classes(screen.getByText('Monthly spend'))
+    expect(title).toEqual(expect.arrayContaining(['text-card-title', 'font-semibold']))
+    expect(title).not.toContain('leading-none')
+    const description = classes(screen.getByText('Month to date'))
+    expect(description).toEqual(expect.arrayContaining(['text-meta', 'text-muted-foreground']))
+    expect(description).not.toContain('text-sm')
+  })
+})
+
+describe('badges', () => {
+  it('Badge is the label role (12 px) at weight 600', () => {
+    render(<Badge>Active</Badge>)
+    const badge = classes(screen.getByText('Active'))
+    expect(badge).toEqual(expect.arrayContaining(['text-label', 'font-semibold']))
+    expect(badge).not.toContain('text-xs')
+    expect(badge).not.toContain('font-medium')
+  })
+
+  it('a Badge with className="text-xs" keeps weight 600', () => {
+    render(<Badge className="text-xs">Legacy</Badge>)
+    const badge = classes(screen.getByText('Legacy'))
+    expect(badge).toContain('text-xs')
+    expect(badge).not.toContain('text-label')
+    expect(badge).toContain('font-semibold')
+  })
+
+  it("keeps the role next to a variant's text colour", () => {
+    render(<Badge variant="destructive">Failed</Badge>)
+    expect(classes(screen.getByText('Failed'))).toEqual(expect.arrayContaining(['text-label', 'text-white']))
+  })
+
+  it('SeverityBadge is the label role at weight 600, beside its severity colour', () => {
+    render(<SeverityBadge severity="critical" label="Critical" />)
+    const badge = classes(screen.getByText('Critical'))
+    expect(badge).toEqual(expect.arrayContaining(['text-label', 'font-semibold', 'text-red-700']))
+    expect(badge).not.toContain('font-medium')
+  })
+})
+
+describe('Alert', () => {
+  it('base and description use the ui role; the title keeps weight 500', () => {
+    render(
+      <Alert>
+        <AlertTitle>Heads up</AlertTitle>
+        <AlertDescription>Something changed.</AlertDescription>
+      </Alert>
+    )
+    expect(classes(screen.getByRole('alert'))).toContain('text-ui')
+    expect(classes(screen.getByText('Heads up'))).toContain('font-medium')
+    expect(classes(screen.getByText('Something changed.'))).toEqual(expect.arrayContaining(['text-ui', 'text-muted-foreground']))
+  })
+})
+
+describe('EmptyState', () => {
+  it('title is the section role (18/26) and the copy the body role (15 px)', () => {
+    render(<EmptyState icon={Inbox} title="No reports yet" description="Reports you schedule appear here." />)
+    const title = screen.getByRole('heading', { level: 3, name: 'No reports yet' })
+    expect(classes(title)).toEqual(expect.arrayContaining(['text-section', 'font-semibold']))
+    const copy = classes(screen.getByText('Reports you schedule appear here.'))
+    expect(copy).toEqual(expect.arrayContaining(['text-body', 'text-muted-foreground']))
+    expect(copy).not.toContain('text-sm')
+  })
+})
+
+const appError = (type: ErrorType): AppError => ({ type, message: 'm', userMessage: 'Could not load dependencies.', retryable: false })
+
+describe('ErrorDisplay', () => {
+  it('the recovery line is the meta role at full opacity, in a colour that passes AA', () => {
+    render(<ErrorDisplay error={appError(ErrorType.SERVER_ERROR)} />)
+    const suggestion = classes(screen.getByText(getRecoverySuggestion(ErrorType.SERVER_ERROR)))
+    expect(suggestion).toEqual(expect.arrayContaining(['text-meta', 'text-red-700']))
+    expect(suggestion.some((c) => c.startsWith('opacity-'))).toBe(false)
+    expect(classes(screen.getByText('Could not load dependencies.'))).toEqual(expect.arrayContaining(['text-ui', 'text-red-700']))
+  })
+
+  it('the offline sub-text is orange-700, not orange-600', () => {
+    render(<ErrorDisplay error={appError(ErrorType.OFFLINE_ERROR)} />)
+    const sub = classes(screen.getByText('Could not load dependencies.'))
+    expect(sub).toContain('text-orange-700')
+    expect(sub).not.toContain('text-orange-600')
+  })
+
+  it('the inline variant uses the ui role', () => {
+    render(<ErrorDisplay error={appError(ErrorType.SERVER_ERROR)} variant="inline" />)
+    expect(classes(screen.getByRole('alert'))).toContain('text-ui')
+  })
+
+  it('ErrorBadge uses the meta role', () => {
+    render(<ErrorBadge error={appError(ErrorType.NETWORK_ERROR)} />)
+    expect(classes(screen.getByText(getErrorTitle(ErrorType.NETWORK_ERROR)).parentElement!)).toContain('text-meta')
   })
 })
