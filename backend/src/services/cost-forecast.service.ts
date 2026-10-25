@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { CostForecast, TimeSeriesPoint, ForecastPeriod } from '../types/forecast.types';
 import { ForecastMLService } from './forecast-ml.service';
 import awsCostService from './aws-cost.service';
@@ -51,7 +51,7 @@ export class CostForecastService {
     const historicalAverage = historicalTotal / historicalData.length;
 
     const forecast: CostForecast = {
-      id: uuidv4(),
+      id: randomUUID(),
       organizationId,
       generatedAt: new Date(),
 

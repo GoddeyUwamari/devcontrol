@@ -1,11 +1,9 @@
-import { v4 as uuidv4 } from 'uuid';
-
 const DEMO_ORG_ID = 'demo-org-12345';
 
 export const DEMO_AWS_RESOURCES = [
   // Production EC2 instances
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'i-prod-web-01',
     resourceName: 'production-web-server-1',
@@ -23,7 +21,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'i-prod-web-02',
     resourceName: 'production-web-server-2',
@@ -41,7 +39,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'i-prod-api-01',
     resourceName: 'production-api-server',
@@ -60,7 +58,7 @@ export const DEMO_AWS_RESOURCES = [
   },
   // IDLE instance (for optimization)
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'i-staging-old-01',
     resourceName: 'staging-old-server',
@@ -79,7 +77,7 @@ export const DEMO_AWS_RESOURCES = [
   },
   // OVERSIZED instance
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'i-dev-testing-01',
     resourceName: 'dev-testing-environment',
@@ -98,7 +96,7 @@ export const DEMO_AWS_RESOURCES = [
   },
   // HIGH CPU (for anomaly)
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'i-prod-worker-01',
     resourceName: 'production-worker-overloaded',
@@ -119,7 +117,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // RDS Databases
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'db-prod-postgres-01',
     resourceName: 'production-postgres-primary',
@@ -135,7 +133,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'db-prod-postgres-replica',
     resourceName: 'production-postgres-replica',
@@ -151,7 +149,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'db-staging-mysql',
     resourceName: 'staging-mysql-database',
@@ -169,7 +167,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // Lambda Functions
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'lambda-api-gateway',
     resourceName: 'api-gateway-handler',
@@ -185,7 +183,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'lambda-image-processor',
     resourceName: 'image-processing-worker',
@@ -201,7 +199,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'lambda-email-sender',
     resourceName: 'email-notification-service',
@@ -218,7 +216,7 @@ export const DEMO_AWS_RESOURCES = [
   },
   // SPIKE (for anomaly)
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'lambda-payment-processor',
     resourceName: 'payment-processor',
@@ -236,7 +234,7 @@ export const DEMO_AWS_RESOURCES = [
   },
   // OVER-PROVISIONED (for optimization)
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'lambda-webhook-handler',
     resourceName: 'webhook-handler',
@@ -254,7 +252,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // S3 Buckets
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 's3-prod-assets',
     resourceName: 'production-static-assets',
@@ -268,7 +266,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 's3-backups',
     resourceName: 'database-backups',
@@ -282,7 +280,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 's3-logs',
     resourceName: 'application-logs',
@@ -298,7 +296,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // EBS Volumes
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'vol-prod-web-01-root',
     resourceName: 'production-web-1-root',
@@ -313,7 +311,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'vol-prod-api-01-data',
     resourceName: 'production-api-data',
@@ -329,7 +327,7 @@ export const DEMO_AWS_RESOURCES = [
   },
   // UNATTACHED (for optimization)
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'vol-old-backup-01',
     resourceName: 'old-backup-volume',
@@ -344,7 +342,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'vol-test-snapshot',
     resourceName: 'testing-snapshot-volume',
@@ -361,7 +359,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // Elastic IPs
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'eipalloc-prod-web-lb',
     resourceName: 'production-load-balancer-ip',
@@ -373,7 +371,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'eipalloc-prod-api-lb',
     resourceName: 'production-api-load-balancer',
@@ -386,7 +384,7 @@ export const DEMO_AWS_RESOURCES = [
   },
   // UNUSED (for optimization)
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'eipalloc-old-staging',
     resourceName: 'old-staging-ip',
@@ -399,7 +397,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // Load Balancers
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'alb-prod-web',
     resourceName: 'production-web-alb',
@@ -413,7 +411,7 @@ export const DEMO_AWS_RESOURCES = [
     },
   },
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'alb-prod-api',
     resourceName: 'production-api-alb',
@@ -429,7 +427,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // ECS Services
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'ecs-prod-containers',
     resourceName: 'production-microservices',
@@ -446,7 +444,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // CloudFront
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'cf-prod-cdn',
     resourceName: 'production-cdn-distribution',
@@ -462,7 +460,7 @@ export const DEMO_AWS_RESOURCES = [
 
   // ElastiCache
   {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     organizationId: DEMO_ORG_ID,
     resourceId: 'redis-prod-cache',
     resourceName: 'production-redis-cluster',

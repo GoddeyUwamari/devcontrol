@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { Scenario, ScenarioType, TimeSeriesPoint } from '../types/forecast.types';
 import { CostForecastService } from './cost-forecast.service';
 
@@ -37,7 +37,7 @@ export class ScenarioPlanningService {
     const costDeltaPercent = (costDelta / baselineCost) * 100;
 
     const scenario: Scenario = {
-      id: uuidv4(),
+      id: randomUUID(),
       organizationId,
       type,
       name: this.getScenarioName(type, params),

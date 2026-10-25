@@ -13,7 +13,7 @@
 import express from 'express';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
-import { Client } from '@smithy/smithy-client';
+import { STSClient } from '@aws-sdk/client-sts';
 
 const ORG_ID = '00000000-0000-0000-0000-0000000000d7';
 
@@ -72,8 +72,11 @@ import infrastructureRoutes from '../../routes/infrastructure.routes';
 
 let server: Server;
 let base: string;
+// The shared @smithy/smithy-client base of every AWS SDK v3 client, reached
+// through a declared client package.
+const SmithyClient = Object.getPrototypeOf(STSClient.prototype).constructor;
 // Never calls through: an SDK call here fails instead of reaching AWS.
-const send = jest.spyOn(Client.prototype, 'send').mockImplementation(() => Promise.reject(new Error('no AWS in this test')));
+const send = jest.spyOn(SmithyClient.prototype, 'send').mockImplementation(() => Promise.reject(new Error('no AWS in this test')));
 
 beforeAll(async () => {
   const app = express();
