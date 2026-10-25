@@ -151,8 +151,8 @@ afterAll(async () => {
   await pool.end();
 });
 
-/** Requests as `userId` in `orgId`, from CLIENT_IP with USER_AGENT. */
-function as(userId: string, orgId: string, jwtRole = 'owner') {
+/** Requests as `userId` in `orgId`, from CLIENT_IP (or `forwardedFor`) with USER_AGENT. */
+function as(userId: string, orgId: string, jwtRole = 'owner', forwardedFor = CLIENT_IP) {
   return (method: string, path: string, body?: unknown) => {
     jest.spyOn(authService, 'verifyToken').mockReturnValue({
       userId,
@@ -166,7 +166,7 @@ function as(userId: string, orgId: string, jwtRole = 'owner') {
       headers: {
         Authorization: 'Bearer test-token',
         'Content-Type': 'application/json',
-        'X-Forwarded-For': CLIENT_IP,
+        'X-Forwarded-For': forwardedFor,
         'User-Agent': USER_AGENT,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -304,6 +304,28 @@ describe('invitation created', () => {
     });
     expect(res.status).toBe(403);
     expect(await events(org.orgId, 'organization_invitation.created')).toHaveLength(0);
+  });
+});
+
+describe('request IP behind one trusted proxy hop', () => {
+  async function recordedIp(forwardedFor: string): Promise<string> {
+    const org = await buildOrg();
+    const res = await as(org.owner, org.orgId, 'owner', forwardedFor)('POST', `/organizations/${org.orgId}/invite`, {
+      email: `audit-events-ip-${uniqueSuffix()}@example.com`,
+      role: 'viewer',
+    });
+    expect(res.status).toBe(200);
+    const rows = await events(org.orgId, 'organization_invitation.created');
+    expect(rows).toHaveLength(1);
+    return rows[0].ip_address;
+  }
+
+  it('several X-Forwarded-For entries: the one the proxy appended (the last) is recorded', async () => {
+    expect(await recordedIp(`198.51.100.99, ${CLIENT_IP}`)).toBe(CLIENT_IP);
+  });
+
+  it('an IPv4-mapped IPv6 client address is recorded as sent', async () => {
+    expect(await recordedIp('::ffff:203.0.113.51')).toBe('::ffff:203.0.113.51');
   });
 });
 
