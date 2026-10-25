@@ -2,7 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 
-// Pages already on the app type scale (typography plan T1) may not drift back: every size and weight comes
+// Pages and components already on the app type scale (typography plan T1, T2b) may not drift back: every size and weight comes
 // from the role tokens (text-title ... text-label), and text colours are the ink tokens or pass AA on their
 // own surface. The full guard for every app file is its own PR (TG); this covers the files moved so far.
 // Variants count, bracketed ones included ([&_p]:, data-[state=open]:, group-[.x]:); dark: variants are
@@ -11,6 +11,26 @@ const STRICT = [
   'app/(app)/connect-aws/page.tsx',
   'components/dashboard/dashboard-unconnected-preview.tsx',
   'components/ui/typography.tsx',
+  // T2b: the shared components.
+  'components/ui/alert-dialog.tsx',
+  'components/ui/alert.tsx',
+  'components/ui/badge.tsx',
+  'components/ui/button.tsx',
+  'components/ui/card.tsx',
+  'components/ui/command.tsx',
+  'components/ui/dialog.tsx',
+  'components/ui/dropdown-menu.tsx',
+  'components/ui/empty-state.tsx',
+  'components/ui/error-display.tsx',
+  'components/ui/form.tsx',
+  'components/ui/input.tsx',
+  'components/ui/label.tsx',
+  'components/ui/select.tsx',
+  'components/ui/severity-badge.tsx',
+  'components/ui/table.tsx',
+  'components/ui/tabs.tsx',
+  'components/ui/textarea.tsx',
+  'components/ui/tooltip.tsx',
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
@@ -32,9 +52,10 @@ const RULES: Record<string, RegExp> = {
 
 /**
  * Reviewed exceptions: each names the exact class or style, how many times it may occur (an extra
- * occurrence fails, and so does a missing one), and why it is fine.
+ * occurrence fails, and so does a missing one), and why it is fine. `variant` is the exact variant chain
+ * the class carries (for example 'disabled:'); without one, only the bare class is allowed.
  */
-const ALLOWED: { file: string; match: string; rule: string; count: number; reason: string }[] = [
+const ALLOWED: { file: string; match: string; variant?: string; rule: string; count: number; reason: string }[] = [
   {
     file: 'app/(app)/connect-aws/page.tsx',
     match: 'text-slate-200',
@@ -70,20 +91,46 @@ const ALLOWED: { file: string; match: string; rule: string; count: number; reaso
     count: 1,
     reason: 'The aria-hidden check icon in each card line: a decorative icon, not text (green-700 in the app).',
   },
+  // T2b: the shared components (reviewed exceptions, typography plan T2b).
+  { file: 'components/ui/button.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/input.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/input.tsx', match: 'text-sm', variant: 'file:', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The native file-picker button's label (file:), 14 px like the field; left as it is by founder decision (no visible change)." },
+  { file: 'components/ui/textarea.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/select.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/select.tsx', match: 'opacity-50', variant: 'data-[disabled]:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/select.tsx', match: 'opacity-50', rule: 'opacity on content', count: 1, reason: "The trigger's decorative chevron icon (an svg, not text); founder decision: kept, no visible change." },
+  { file: 'components/ui/label.tsx', match: 'opacity-50', variant: 'group-data-[disabled=true]:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/label.tsx', match: 'opacity-50', variant: 'peer-disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/tabs.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/dropdown-menu.tsx', match: 'opacity-50', variant: 'data-[disabled]:', rule: 'opacity on content', count: 3, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24). Item, checkbox item and radio item.' },
+  { file: 'components/ui/command.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/command.tsx', match: 'opacity-50', variant: 'data-[disabled=true]:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming, kept until the solid disabled style lands in its own PR after T2 (founder decision, Oct 24).' },
+  { file: 'components/ui/command.tsx', match: 'opacity-50', rule: 'opacity on content', count: 1, reason: "The input's decorative search icon (an svg, not text); founder decision: kept, no visible change." },
+  { file: 'components/ui/dialog.tsx', match: 'opacity-70', rule: 'opacity on content', count: 1, reason: "The close button, whose only visible content is the X icon (its name is sr-only text); founder decision: kept, no visible change." },
+  { file: 'components/ui/dialog.tsx', match: 'opacity-100', variant: 'hover:', rule: 'opacity on content', count: 1, reason: "The same close button at full opacity on hover; founder decision: kept, no visible change." },
+  { file: 'components/ui/error-display.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 2, reason: 'The aria-hidden error icon on its red-50 tint (server/auth/permission and default schemes): an icon, not text; founder decision: kept.' },
+  { file: 'components/ui/error-display.tsx', match: 'text-orange-600', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The aria-hidden error icon on its orange-50 tint (network/timeout/offline): an icon, not text; founder decision: kept.' },
 ]
 
-function findings(file: string): { rule: string; match: string; line: number }[] {
-  const source = readFileSync(join(process.cwd(), file), 'utf8')
-  const out: { rule: string; match: string; line: number }[] = []
+type Finding = { rule: string; match: string; variant: string; line: number }
+
+function findingsIn(source: string): Finding[] {
+  const out: Finding[] = []
   for (const [rule, re] of Object.entries(RULES)) {
     for (const m of source.matchAll(re)) {
-      // Classes are reported without their variants; inline styles with their spacing normalised.
-      const match = rule === 'inline text style' ? m[0].replace(/\s+/g, ' ') : m[0].replace(new RegExp(`^(?:${VARIANT}:)+`), '')
-      out.push({ rule, match, line: source.slice(0, m.index).split('\n').length })
+      // Classes are reported without their variants, which are kept apart; inline styles with their spacing
+      // normalised.
+      const variant = rule === 'inline text style' ? '' : (m[0].match(new RegExp(`^(?:${VARIANT}:)+`))?.[0] ?? '')
+      const match = rule === 'inline text style' ? m[0].replace(/\s+/g, ' ') : m[0].slice(variant.length)
+      out.push({ rule, match, variant, line: source.slice(0, m.index).split('\n').length })
     }
   }
   return out
 }
+
+const findings = (file: string) => findingsIn(readFileSync(join(process.cwd(), file), 'utf8'))
+const covers = (entry: (typeof ALLOWED)[number], f: Finding) =>
+  entry.match === f.match && entry.rule === f.rule && (entry.variant ?? '') === f.variant
 
 describe('strict typography for the pages on the app type scale', () => {
   it('the rules catch each kind of drift (self-check)', () => {
@@ -125,13 +172,22 @@ describe('strict typography for the pages on the app type scale', () => {
 
   it.each(STRICT)('%s has no drift outside the reviewed exceptions', (file) => {
     const all = findings(file)
-    const unexpected = all.filter((f) => !ALLOWED.some((a) => a.file === file && a.match === f.match && a.rule === f.rule))
-    expect(unexpected.map((f) => `${file}:${f.line} ${f.match} (${f.rule})`)).toEqual([])
+    const unexpected = all.filter((f) => !ALLOWED.some((a) => a.file === file && covers(a, f)))
+    expect(unexpected.map((f) => `${file}:${f.line} ${f.variant}${f.match} (${f.rule})`)).toEqual([])
     // An allowed class or style may occur exactly as often as reviewed: one more is drift too.
     for (const entry of ALLOWED.filter((a) => a.file === file)) {
-      const found = all.filter((f) => f.match === entry.match && f.rule === entry.rule)
-      expect(found.map((f) => `${file}:${f.line} ${f.match}`), `${entry.match} may occur ${entry.count}x`).toHaveLength(entry.count)
+      const found = all.filter((f) => covers(entry, f))
+      expect(found.map((f) => `${file}:${f.line} ${f.variant}${f.match}`), `${entry.variant ?? ''}${entry.match} may occur ${entry.count}x`).toHaveLength(entry.count)
     }
+  })
+
+  it('an exception covers only its own variant chain (self-check)', () => {
+    const entry = { file: 'x', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: '' }
+    const [disabled, bare, hover] = findingsIn('className="disabled:opacity-50 opacity-50 hover:opacity-50"')
+    expect([disabled.variant, bare.variant, hover.variant]).toEqual(['disabled:', '', 'hover:'])
+    expect([covers(entry, disabled), covers(entry, bare), covers(entry, hover)]).toEqual([true, false, false])
+    expect(covers({ ...entry, variant: undefined }, bare)).toBe(true)
+    expect(covers({ ...entry, variant: undefined }, disabled)).toBe(false)
   })
 
   it('every exception names a strict file, a count of at least 1 and a reason', () => {
