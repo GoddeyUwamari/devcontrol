@@ -21,6 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from '../alert'
 import { EmptyState } from '../empty-state'
 import { ErrorBadge, ErrorDisplay } from '../error-display'
 import { type AppError, ErrorType, getErrorTitle, getRecoverySuggestion } from '@/lib/errors/error-types'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '../table'
 
 const classes = (el: Element) => el.className.split(/\s+/)
 
@@ -251,5 +252,53 @@ describe('ErrorDisplay', () => {
   it('ErrorBadge uses the meta role', () => {
     render(<ErrorBadge error={appError(ErrorType.NETWORK_ERROR)} />)
     expect(classes(screen.getByText(getErrorTitle(ErrorType.NETWORK_ERROR)).parentElement!)).toContain('text-meta')
+  })
+})
+
+function SampleTable({ numeric }: { numeric?: boolean }) {
+  return (
+    <Table>
+      <TableCaption>Recent payments</TableCaption>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Customer</TableHead>
+          <TableHead>Amount</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        <TableRow>
+          <TableCell>Sample Customer</TableCell>
+          <TableCell numeric={numeric}>$49.00</TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+  )
+}
+
+describe('Table', () => {
+  it('the table is the ui role, headers the label role (12 px, 600) in muted ink, cells body ink', () => {
+    render(<SampleTable />)
+    expect(classes(screen.getByRole('table'))).toContain('text-ui')
+    const head = classes(screen.getByRole('columnheader', { name: 'Customer' }))
+    expect(head).toEqual(expect.arrayContaining(['text-label', 'font-semibold', 'text-ink-muted']))
+    expect(head).not.toContain('text-sm')
+    expect(head).not.toContain('text-foreground')
+    expect(classes(screen.getByRole('cell', { name: 'Sample Customer' }))).toContain('text-ink-body')
+    const caption = classes(screen.getByText('Recent payments'))
+    expect(caption).toContain('text-meta')
+    expect(caption).not.toContain('text-sm')
+  })
+
+  it('a numeric cell is right-aligned with tabular figures; other cells are not', () => {
+    render(<SampleTable numeric />)
+    expect(classes(screen.getByRole('cell', { name: '$49.00' }))).toEqual(expect.arrayContaining(['text-right', 'tabular-nums', 'text-ink-body']))
+    const other = classes(screen.getByRole('cell', { name: 'Sample Customer' }))
+    expect(other).not.toContain('tabular-nums')
+    expect(other).not.toContain('text-right')
+  })
+
+  it('numeric is not passed to the DOM', () => {
+    render(<SampleTable numeric />)
+    expect(screen.getByRole('cell', { name: '$49.00' })).not.toHaveAttribute('numeric')
   })
 })
