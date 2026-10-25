@@ -349,7 +349,7 @@ describe('dialogs', () => {
 })
 
 // jsdom has no ResizeObserver or scrollIntoView; cmdk's list observes its height and scrolls to the selected item.
-;(globalThis as any).ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} }
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver
 Element.prototype.scrollIntoView ??= () => {}
 
 describe('menus, tooltip and command', () => {
