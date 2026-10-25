@@ -22,6 +22,19 @@ import { EmptyState } from '../empty-state'
 import { ErrorBadge, ErrorDisplay } from '../error-display'
 import { type AppError, ErrorType, getErrorTitle, getRecoverySuggestion } from '@/lib/errors/error-types'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '../table'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../dialog'
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from '../alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '../dropdown-menu'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from '../command'
 
 const classes = (el: Element) => el.className.split(/\s+/)
 
@@ -300,5 +313,113 @@ describe('Table', () => {
   it('numeric is not passed to the DOM', () => {
     render(<SampleTable numeric />)
     expect(screen.getByRole('cell', { name: '$49.00' })).not.toHaveAttribute('numeric')
+  })
+})
+
+describe('dialogs', () => {
+  it('Dialog title is the section role (18/26) and the description the body role (15 px)', () => {
+    render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>Invite member</DialogTitle>
+          <DialogDescription>They get an email with a link.</DialogDescription>
+        </DialogContent>
+      </Dialog>
+    )
+    const title = classes(screen.getByRole('heading', { name: 'Invite member' }))
+    expect(title).toEqual(expect.arrayContaining(['text-section', 'font-semibold']))
+    expect(title).not.toContain('leading-none')
+    const description = classes(screen.getByText('They get an email with a link.'))
+    expect(description).toEqual(expect.arrayContaining(['text-body', 'text-muted-foreground']))
+    expect(description).not.toContain('text-sm')
+  })
+
+  it('AlertDialog title and description use the same roles', () => {
+    render(
+      <AlertDialog open>
+        <AlertDialogContent>
+          <AlertDialogTitle>Remove member?</AlertDialogTitle>
+          <AlertDialogDescription>They lose access at once.</AlertDialogDescription>
+        </AlertDialogContent>
+      </AlertDialog>
+    )
+    expect(classes(screen.getByRole('heading', { name: 'Remove member?' }))).toEqual(expect.arrayContaining(['text-section', 'font-semibold']))
+    expect(classes(screen.getByText('They lose access at once.'))).toEqual(expect.arrayContaining(['text-body', 'text-muted-foreground']))
+  })
+})
+
+// jsdom has no ResizeObserver or scrollIntoView; cmdk's list observes its height and scrolls to the selected item.
+;(globalThis as any).ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} }
+Element.prototype.scrollIntoView ??= () => {}
+
+describe('menus, tooltip and command', () => {
+  it('dropdown items are the ui role, the label 600, shortcuts the meta role (13 px)', () => {
+    render(
+      <DropdownMenu open>
+        <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuLabel>Account</DropdownMenuLabel>
+          <DropdownMenuItem>
+            Settings <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuCheckboxItem checked>Compact</DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+    expect(classes(screen.getByRole('menuitem', { name: /Settings/ }))).toContain('text-ui')
+    expect(classes(screen.getByRole('menuitemcheckbox', { name: 'Compact' }))).toContain('text-ui')
+    expect(classes(screen.getByText('Account'))).toEqual(expect.arrayContaining(['text-ui', 'font-semibold']))
+    const shortcut = classes(screen.getByText('⌘S'))
+    expect(shortcut).toContain('text-meta')
+    expect(shortcut).not.toContain('text-xs')
+  })
+
+  it('tooltip is the meta role (13 px)', () => {
+    render(
+      <TooltipProvider>
+        <Tooltip open>
+          <TooltipTrigger>Info</TooltipTrigger>
+          <TooltipContent data-testid="tip">Updated hourly</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+    const tip = classes(screen.getByTestId('tip'))
+    expect(tip).toContain('text-meta')
+    expect(tip).not.toContain('text-xs')
+  })
+
+  it('command input and items are the ui role; group headings 600; shortcuts the meta role', () => {
+    render(
+      <Command>
+        <CommandInput placeholder="Search" />
+        <CommandList>
+          <CommandGroup heading="Pages">
+            <CommandItem>
+              Costs <CommandShortcut>G C</CommandShortcut>
+            </CommandItem>
+          </CommandGroup>
+        </CommandList>
+      </Command>
+    )
+    expect(classes(screen.getByPlaceholderText('Search'))).toContain('text-ui')
+    expect(classes(screen.getByRole('option', { name: /Costs/ }))).toContain('text-ui')
+    const group = classes(document.querySelector('[cmdk-group]')!)
+    expect(group).toEqual(expect.arrayContaining(['[&_[cmdk-group-heading]]:text-label', '[&_[cmdk-group-heading]]:font-semibold']))
+    expect(group).not.toContain('[&_[cmdk-group-heading]]:font-medium')
+    const shortcut = classes(screen.getByText('G C'))
+    expect(shortcut).toContain('text-meta')
+    expect(shortcut).not.toContain('text-xs')
+  })
+
+  it('command empty text is the ui role', () => {
+    render(
+      <Command>
+        <CommandInput placeholder="Search" />
+        <CommandList>
+          <CommandEmpty>No results.</CommandEmpty>
+        </CommandList>
+      </Command>
+    )
+    expect(classes(screen.getByText('No results.'))).toContain('text-ui')
   })
 })
