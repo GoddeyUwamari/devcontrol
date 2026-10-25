@@ -92,12 +92,16 @@ let server: http.Server;
 let ws: WebSocketServer;
 let baseUrl: string;
 
-/** Connects and resolves once connected, or rejects with the server's refusal. */
-function connect(authToken?: string): Promise<ClientSocket> {
+/**
+ * Connects and resolves once connected, or rejects with the server's refusal.
+ * WebSocket only, unless `defaultTransports` (polling first, then an upgrade,
+ * as lib/hooks/useWebSocket.ts connects).
+ */
+function connect(authToken?: string, { defaultTransports = false } = {}): Promise<ClientSocket> {
   return new Promise((resolve, reject) => {
     const client = connectClient(baseUrl, {
       path: '/socket.io',
-      transports: ['websocket'],
+      ...(defaultTransports ? {} : { transports: ['websocket'] }),
       reconnection: false,
       auth: authToken === undefined ? {} : { token: authToken },
     });
@@ -177,6 +181,28 @@ describe('handshake', () => {
     const received = new Promise((resolve) => client.once('deployment:started', resolve));
     ws.emitToOrganization(org.orgId, 'deployment:started', { id: 'd-1' });
     await expect(received).resolves.toEqual({ id: 'd-1' });
+  });
+
+  it('with the default transports, a member starts on polling, is upgraded to WebSocket and receives organization events', async () => {
+    const org = await buildOrg();
+    const client = await connect(token(org.member, org.orgId), { defaultTransports: true });
+    const engine = client.io.engine;
+    if (engine.transport.name !== 'websocket') {
+      await new Promise((resolve) => engine.once('upgrade', resolve));
+    }
+    expect(engine.transport.name).toBe('websocket');
+
+    const received = new Promise((resolve) => client.once('deployment:started', resolve));
+    ws.emitToOrganization(org.orgId, 'deployment:started', { id: 'd-2' });
+    await expect(received).resolves.toEqual({ id: 'd-2' });
+  });
+
+  it('the heartbeat event the frontend sends is answered', async () => {
+    const org = await buildOrg();
+    const client = await connect(token(org.member, org.orgId));
+    const pong = new Promise<void>((resolve) => client.once('pong', () => resolve()));
+    client.emit('ping');
+    await expect(pong).resolves.toBeUndefined();
   });
 
   it('a refresh token is refused', async () => {
