@@ -441,7 +441,14 @@ describe('POST /api/organizations/:id/aws-credentials -- the request body is nev
 
 describe('the log-capture app mirrors the server middleware', () => {
   it("server.ts's global middleware ahead of the API routes is the set the app above runs or leaves out", () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'server.ts'), 'utf-8');
+    // server.ts mounts the body parsers through applyBodyParsing(app), so its
+    // app.use calls are read in place of that call.
+    const bodyParsing = fs.readFileSync(path.join(__dirname, '..', '..', 'middleware', 'body-parsing.ts'), 'utf-8');
+    const bodyParsingCalls = bodyParsing.slice(bodyParsing.indexOf('export function applyBodyParsing'));
+    expect(bodyParsingCalls).toContain('app.use(');
+    const serverSource = fs.readFileSync(path.join(__dirname, '..', '..', 'server.ts'), 'utf-8');
+    expect(serverSource.match(/applyBodyParsing\(app\);/g)).toHaveLength(1);
+    const source = serverSource.replace('applyBodyParsing(app);', bodyParsingCalls);
     const start = source.indexOf('const app = express();');
     const end = source.indexOf("app.use('/api', routes);");
     expect(start).toBeGreaterThan(-1);

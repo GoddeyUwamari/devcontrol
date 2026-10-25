@@ -8,6 +8,19 @@ function isJsonParseError(err: unknown): boolean {
 }
 
 /**
+ * The 4xx status of a request body the body parser rejected (too large,
+ * unsupported encoding, undecodable), or undefined for any other error.
+ * The parser marks these the http-errors way: `expose: true` and a 4xx
+ * `status`. An undecodable body carries no `type`, so `type` is not required.
+ */
+function rejectedBodyStatus(err: unknown): number | undefined {
+  const { expose, status } = (err ?? {}) as { expose?: unknown; status?: unknown };
+  return expose === true && typeof status === 'number' && status >= 400 && status <= 499
+    ? status
+    : undefined;
+}
+
+/**
  * The fields of an error that are logged -- never the error object itself.
  * An AppError's code is a fixed identifier, so it is logged too.
  * A JSON parse error's message and stack quote the request body, so a fixed
@@ -40,6 +53,7 @@ export const errorHandler = (
   let statusCode = 500;
   let errorCode = 'INTERNAL_SERVER_ERROR';
   let errorMessage = 'Internal server error';
+  const rejectedStatus = rejectedBodyStatus(err);
 
   if (err instanceof AppError) {
     statusCode = err.statusCode;
@@ -49,6 +63,19 @@ export const errorHandler = (
     statusCode = 400;
     errorCode = 'INVALID_JSON';
     errorMessage = 'Invalid JSON body';
+  } else if (rejectedStatus !== undefined) {
+    // Fixed text: the parser's own message can quote request headers.
+    statusCode = rejectedStatus;
+    if (statusCode === 413) {
+      errorCode = 'PAYLOAD_TOO_LARGE';
+      errorMessage = 'Request body too large';
+    } else if (statusCode === 415) {
+      errorCode = 'UNSUPPORTED_MEDIA_TYPE';
+      errorMessage = 'Unsupported request body encoding';
+    } else {
+      errorCode = 'BAD_REQUEST';
+      errorMessage = 'Invalid request body';
+    }
   } else {
     errorMessage = process.env.NODE_ENV === 'production'
       ? 'Internal server error'

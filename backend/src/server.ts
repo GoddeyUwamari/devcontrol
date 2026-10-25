@@ -19,6 +19,7 @@ import { pool, testConnection } from './config/database';
 import { metricsMiddleware } from './middleware/metrics';
 import { standardRateLimiter } from './middleware/rateLimiter';
 import { sanitizerMiddleware } from './middleware/sanitizer';
+import { applyBodyParsing, RAW_BODY_PATHS } from './middleware/body-parsing';
 import metricsRoutes from './routes/metrics.routes';
 import { updateBusinessMetrics } from './metrics';
 import { AlertSyncJob } from './jobs/alert-sync.job';
@@ -104,30 +105,8 @@ app.use(helmet({
 // CORS middleware
 app.use(corsMiddleware);
 
-// ✅ Stripe and GitHub webhook endpoints need RAW body (for signature verification)
-const RAW_BODY_PATHS = ['/api/stripe/webhook', '/api/webhooks/github'];
-app.use(
-  '/api/stripe/webhook',
-  express.raw({ type: 'application/json' })
-);
-app.use(
-  '/api/webhooks/github',
-  express.raw({ type: 'application/json' })
-);
-
-// Body parsing middleware - skip webhook routes to preserve raw body
-app.use((req, res, next) => {
-  if (RAW_BODY_PATHS.includes(req.path)) {
-    return next();
-  }
-  express.json()(req, res, next);
-});
-app.use((req, res, next) => {
-  if (RAW_BODY_PATHS.includes(req.path)) {
-    return next();
-  }
-  express.urlencoded({ extended: true })(req, res, next);
-});
+// Body parsing (raw body on webhook routes, JSON/urlencoded elsewhere)
+applyBodyParsing(app);
 
 // Input sanitization (after body parser, prevents XSS) - skip webhook routes
 app.use((req, res, next) => {
