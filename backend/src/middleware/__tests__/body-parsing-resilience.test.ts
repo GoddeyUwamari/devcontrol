@@ -34,7 +34,9 @@ const { errorHandler, notFoundHandler } = require(srcDir + '/middleware/error-ha
 const app = express();
 applyBodyParsing(app);
 app.post('/api/probe', (req, res) => res.json({ body: typeof req.body, keys: Object.keys(req.body ?? {}) }));
-app.post('/api/stripe/webhook', (req, res) => res.json({ raw: Buffer.isBuffer(req.body) }));
+app.post('/api/stripe/webhook', (req, res) =>
+  res.json({ raw: Buffer.isBuffer(req.body), base64: Buffer.isBuffer(req.body) ? req.body.toString('base64') : null })
+);
 app.use(notFoundHandler);
 app.use(errorHandler);
 const server = app.listen(0, '127.0.0.1', () => console.log('PORT=' + server.address().port));
@@ -109,6 +111,19 @@ describe('compressed request bodies through the real parser chain', () => {
 
     expect(res.status).toBe(status);
     expect(res.status).toBeLessThan(500);
+  });
+
+  it('the Stripe webhook route receives the body as a raw Buffer, byte for byte as sent', async () => {
+    // Spacing and a number format (1.50) that a JSON parse and re-serialise
+    // would not keep, so only the untouched bytes match.
+    const sent = Buffer.from('{ "id" : "evt_probe",\n  "type":"invoice.paid" , "n": 1.50 }');
+
+    const res = await rawPost('/api/stripe/webhook', JSON_TYPE, sent);
+
+    expect(res.status).toBe(200);
+    const received = JSON.parse(res.body);
+    expect(received.raw).toBe(true);
+    expect(Buffer.from(received.base64, 'base64').equals(sent)).toBe(true);
   });
 
   it('the process is still serving afterwards, with nothing uncaught on stderr', async () => {
