@@ -18,6 +18,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { invoicesService } from '@/lib/services/invoices.service';
 import { InvoiceActions } from '@/components/invoices/invoice-actions';
+import { PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { Breadcrumb } from '@/components/navigation/breadcrumb';
 import { BackButton } from '@/components/navigation/back-button';
 
@@ -59,8 +60,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         <BackButton href="/invoices" label="Back to Invoices" />
         <Card>
           <CardContent className="p-12 text-center">
-            <p className="text-red-500">Failed to load invoice</p>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-ink-danger">Failed to load invoice</p>
+            <p className="text-ui text-muted-foreground mt-2">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
           </CardContent>
@@ -117,7 +118,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           <div className="flex items-center gap-4">
             <BackButton href="/invoices" label="Back to Invoices" />
           </div>
-          <h1 className="text-3xl font-bold">{invoice.invoiceNumber}</h1>
+          <h1 className={PAGE_TITLE_CLASS}>{invoice.invoiceNumber}</h1>
           <p className="text-muted-foreground">
             Created on {formatDate(invoice.createdAt)}
           </p>
@@ -146,17 +147,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <p className="text-sm text-muted-foreground">Status</p>
+              <p className="text-ui text-muted-foreground">Status</p>
               <div className="mt-1">{getStatusBadge(invoice.status)}</div>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Tenant</p>
+              <p className="text-ui text-muted-foreground">Tenant</p>
               <p className="font-medium">{invoice.tenantName || invoice.tenantId}</p>
             </div>
             {invoice.subscriptionId && (
               <div>
-                <p className="text-sm text-muted-foreground">Subscription ID</p>
-                <p className="font-mono text-sm">{invoice.subscriptionId}</p>
+                <p className="text-ui text-muted-foreground">Subscription ID</p>
+                <p className="font-mono text-ui">{invoice.subscriptionId}</p>
               </div>
             )}
           </CardContent>
@@ -169,29 +170,29 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <p className="text-sm text-muted-foreground">Issue Date</p>
+              <p className="text-ui text-muted-foreground">Issue Date</p>
               <p className="font-medium">{formatDate(invoice.issueDate)}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Due Date</p>
+              <p className="text-ui text-muted-foreground">Due Date</p>
               <p className="font-medium">{formatDate(invoice.dueDate)}</p>
             </div>
             {invoice.paidAt && (
               <div>
-                <p className="text-sm text-muted-foreground">Paid On</p>
+                <p className="text-ui text-muted-foreground">Paid On</p>
                 <p className="font-medium">{formatDate(invoice.paidAt)}</p>
               </div>
             )}
             {invoice.paymentMethod && (
               <div>
-                <p className="text-sm text-muted-foreground">Payment Method</p>
+                <p className="text-ui text-muted-foreground">Payment Method</p>
                 <p className="font-medium capitalize">{invoice.paymentMethod}</p>
               </div>
             )}
             {invoice.paymentReference && (
               <div>
-                <p className="text-sm text-muted-foreground">Payment Reference</p>
-                <p className="font-mono text-sm">{invoice.paymentReference}</p>
+                <p className="text-ui text-muted-foreground">Payment Reference</p>
+                <p className="font-mono text-ui">{invoice.paymentReference}</p>
               </div>
             )}
           </CardContent>
@@ -277,16 +278,16 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   <TableCell colSpan={4} className="text-right font-medium">
                     Discount
                   </TableCell>
-                  <TableCell className="text-right font-medium text-green-600">
+                  <TableCell className="text-right font-medium text-ink-success">
                     -{formatCurrency(invoice.discountAmount)}
                   </TableCell>
                 </TableRow>
               )}
               <TableRow>
-                <TableCell colSpan={4} className="text-right text-lg font-bold">
+                <TableCell colSpan={4} className="text-right text-section tabular-nums">
                   Total
                 </TableCell>
-                <TableCell className="text-right text-lg font-bold">
+                <TableCell className="text-right text-section tabular-nums">
                   {formatCurrency(invoice.totalAmount)}
                 </TableCell>
               </TableRow>
@@ -295,17 +296,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   <TableCell colSpan={4} className="text-right font-medium">
                     Amount Paid
                   </TableCell>
-                  <TableCell className="text-right font-medium text-green-600">
+                  <TableCell className="text-right font-medium text-ink-success">
                     {formatCurrency(invoice.amountPaid)}
                   </TableCell>
                 </TableRow>
               )}
               {invoice.amountDue > 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-right text-lg font-bold">
+                  <TableCell colSpan={4} className="text-right text-section tabular-nums">
                     Amount Due
                   </TableCell>
-                  <TableCell className="text-right text-lg font-bold text-red-600">
+                  <TableCell className="text-right text-section tabular-nums text-ink-danger">
                     {formatCurrency(invoice.amountDue)}
                   </TableCell>
                 </TableRow>

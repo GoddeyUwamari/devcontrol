@@ -152,13 +152,13 @@ export function InvoiceActions({ invoice }: InvoiceActionsProps) {
           )}
 
           {(isDraft || isOpen) && (
-            <DropdownMenuItem onClick={handleVoid} className="text-red-600">
+            <DropdownMenuItem onClick={handleVoid} className="text-ink-danger">
               Void Invoice
             </DropdownMenuItem>
           )}
 
           {isOpen && (
-            <DropdownMenuItem onClick={handleUncollectible} className="text-orange-600">
+            <DropdownMenuItem onClick={handleUncollectible} className="text-ink-warning">
               Mark Uncollectible
             </DropdownMenuItem>
           )}
@@ -191,9 +191,9 @@ export function InvoiceActions({ invoice }: InvoiceActionsProps) {
                 placeholder="0.00"
               />
               {errors.paymentAmount && (
-                <p className="text-sm text-red-500">{errors.paymentAmount.message}</p>
+                <p className="text-ui text-ink-danger">{errors.paymentAmount.message}</p>
               )}
-              <p className="text-sm text-muted-foreground">
+              <p className="text-ui text-muted-foreground">
                 Amount Due: ${invoice.amountDue.toFixed(2)}
               </p>
             </div>
@@ -206,7 +206,7 @@ export function InvoiceActions({ invoice }: InvoiceActionsProps) {
                 placeholder="e.g., card, bank_transfer, cash"
               />
               {errors.paymentMethod && (
-                <p className="text-sm text-red-500">{errors.paymentMethod.message}</p>
+                <p className="text-ui text-ink-danger">{errors.paymentMethod.message}</p>
               )}
             </div>
 

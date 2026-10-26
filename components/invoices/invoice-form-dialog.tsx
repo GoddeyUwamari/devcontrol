@@ -125,7 +125,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
         <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Basic Information */}
           <div className="space-y-4">
-            <h3 className="font-semibold text-sm">Basic Information</h3>
+            <h3 className="font-semibold text-ui">Basic Information</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="tenantId">Tenant ID *</Label>
@@ -135,7 +135,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
                   placeholder="Enter tenant ID"
                 />
                 {errors.tenantId && (
-                  <p className="text-sm text-red-500">{errors.tenantId.message}</p>
+                  <p className="text-ui text-ink-danger">{errors.tenantId.message}</p>
                 )}
               </div>
 
@@ -152,7 +152,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
 
           {/* Dates */}
           <div className="space-y-4">
-            <h3 className="font-semibold text-sm">Dates</h3>
+            <h3 className="font-semibold text-ui">Dates</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="periodStart">Period Start *</Label>
@@ -162,7 +162,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
                   {...register('periodStart', { required: 'Period start is required' })}
                 />
                 {errors.periodStart && (
-                  <p className="text-sm text-red-500">{errors.periodStart.message}</p>
+                  <p className="text-ui text-ink-danger">{errors.periodStart.message}</p>
                 )}
               </div>
 
@@ -174,7 +174,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
                   {...register('periodEnd', { required: 'Period end is required' })}
                 />
                 {errors.periodEnd && (
-                  <p className="text-sm text-red-500">{errors.periodEnd.message}</p>
+                  <p className="text-ui text-ink-danger">{errors.periodEnd.message}</p>
                 )}
               </div>
 
@@ -191,7 +191,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
                   {...register('dueDate', { required: 'Due date is required' })}
                 />
                 {errors.dueDate && (
-                  <p className="text-sm text-red-500">{errors.dueDate.message}</p>
+                  <p className="text-ui text-ink-danger">{errors.dueDate.message}</p>
                 )}
               </div>
             </div>
@@ -200,7 +200,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
           {/* Line Items */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-sm">Line Items</h3>
+              <h3 className="font-semibold text-ui">Line Items</h3>
               <Button
                 type="button"
                 variant="outline"
@@ -223,7 +223,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
               {fields.map((field, index) => (
                 <div key={field.id} className="p-4 border rounded-lg space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Item {index + 1}</span>
+                    <span className="text-ui font-medium">Item {index + 1}</span>
                     {fields.length > 1 && (
                       <Button
                         type="button"
@@ -246,7 +246,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
                         placeholder="Enter item description"
                       />
                       {errors.items?.[index]?.description && (
-                        <p className="text-sm text-red-500">
+                        <p className="text-ui text-ink-danger">
                           {errors.items[index]?.description?.message}
                         </p>
                       )}
@@ -306,7 +306,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
 
           {/* Additional Information */}
           <div className="space-y-4">
-            <h3 className="font-semibold text-sm">Additional Information</h3>
+            <h3 className="font-semibold text-ui">Additional Information</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="currency">Currency</Label>
@@ -318,7 +318,7 @@ export function InvoiceFormDialog({ open, onOpenChange }: InvoiceFormDialogProps
                 <textarea
                   id="notes"
                   {...register('notes')}
-                  className="w-full min-h-[80px] px-3 py-2 text-sm border rounded-md"
+                  className="w-full min-h-[80px] px-3 py-2 text-ui border rounded-md"
                   placeholder="Add any notes for this invoice..."
                 />
               </div>

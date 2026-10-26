@@ -13,6 +13,8 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { toast } from 'sonner'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { cn } from '@/lib/utils'
 
 type NormalizedType = 'cost_analysis' | 'security' | 'infrastructure' | 'executive'
 
@@ -68,11 +70,11 @@ function ConfirmModal({ title, body, confirmLabel, confirmDanger = true, onConfi
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-900/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6" onClick={onCancel}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-7 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-semibold text-slate-900 mb-2.5">{title}</h3>
-        <p className="text-sm text-slate-500 leading-relaxed mb-6">{body}</p>
+        <h3 className="text-ui font-semibold text-slate-900 mb-2.5">{title}</h3>
+        <p className="text-ui text-ink-muted leading-relaxed mb-6">{body}</p>
         <div className="flex gap-2.5 justify-end">
-          <button onClick={onCancel} disabled={loading} className="px-4 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-500 cursor-pointer hover:bg-slate-50 transition-colors">Cancel</button>
-          <button onClick={onConfirm} disabled={loading} className={`px-4 py-2 rounded-lg text-xs font-semibold text-white border-none flex items-center gap-1.5 transition-colors ${confirmDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-600 hover:bg-violet-700'} ${loading ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}>
+          <button onClick={onCancel} disabled={loading} className="px-4 py-2 rounded-lg text-label border border-slate-200 bg-white text-ink-muted cursor-pointer hover:bg-slate-50 transition-colors">Cancel</button>
+          <button onClick={onConfirm} disabled={loading} className={`px-4 py-2 rounded-lg text-label text-white border-none flex items-center gap-1.5 transition-colors ${confirmDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-600 hover:bg-violet-700'} ${loading ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}>
             {loading ? <><RefreshCw size={12} className="animate-spin" /> Deleting…</> : confirmLabel}
           </button>
         </div>
@@ -188,9 +190,9 @@ export default function AIReportsPage() {
           <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto mb-5">
             <Lock size={24} className="text-violet-600" />
           </div>
-          <h2 className="text-sm font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
-          <p className="text-sm text-slate-500 leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
-          <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors">Upgrade to Pro</a>
+          <h2 className="text-ui font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
+          <p className="text-ui text-ink-muted leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
+          <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">Upgrade to Pro</a>
         </div>
       </div>
     )
@@ -203,19 +205,19 @@ export default function AIReportsPage() {
       {/* Upgrade banner */}
       {showUpgradeBanner && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-3">
-          <div className="flex items-center gap-2.5"><span className="text-lg">⚠️</span><span className="text-sm font-medium text-amber-900">This feature requires the Pro plan.</span></div>
-          <a href="/settings/billing/upgrade" className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap">Upgrade to Pro</a>
+          <div className="flex items-center gap-2.5"><span className="text-lg">⚠️</span><span className="text-ui font-medium text-amber-900">This feature requires the Pro plan.</span></div>
+          <a href="/settings/billing/upgrade" className="shrink-0 text-label text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap">Upgrade to Pro</a>
         </div>
       )}
 
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Uncover Cost Savings, Risks, and Insights Across Your AWS — in Minutes</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Generate executive-ready AI reports with actionable recommendations your team can use immediately.</p>
+          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Uncover Cost Savings, Risks, and Insights Across Your AWS — in Minutes</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>Generate executive-ready AI reports with actionable recommendations your team can use immediately.</p>
         </div>
         <button onClick={() => handleGenerateReport()} disabled={generatingType !== null}
-          className={`flex items-center gap-2 bg-white text-violet-600 px-4 py-2.5 rounded-lg text-sm font-semibold border border-violet-200 whitespace-nowrap shrink-0 transition-colors ${generatingType !== null ? 'cursor-not-allowed opacity-70' : 'hover:bg-violet-50 cursor-pointer'}`}>
+          className={`flex items-center gap-2 bg-white text-violet-600 px-4 py-2.5 rounded-lg text-ui font-semibold border border-violet-200 whitespace-nowrap shrink-0 transition-colors ${generatingType !== null ? 'cursor-not-allowed opacity-70' : 'hover:bg-violet-50 cursor-pointer'}`}>
           {generatingType === 'weekly_summary' ? <><RefreshCw size={14} className="animate-spin" /> Generating...</> : <><Sparkles size={14} /> Generate Executive Summary</>}
         </button>
       </div>
@@ -230,45 +232,45 @@ export default function AIReportsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr] gap-4 mb-4">
             {/* Recommended next */}
             <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Recommended Next</p>
+              <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">Recommended Next</p>
               <div className="flex items-center gap-2.5 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0"><Shield size={14} className="text-red-600" /></div>
-                <p className="text-sm font-semibold text-slate-900">Security Risk Report</p>
+                <p className="text-ui font-semibold text-slate-900">Security Risk Report</p>
               </div>
-              <p className="text-sm text-slate-600 leading-relaxed mb-3">{reportsThisMonth === 0 ? 'No reports generated yet — start here' : 'Run a security scan to check for active risks'}</p>
+              <p className="text-ui text-slate-600 leading-relaxed mb-3">{reportsThisMonth === 0 ? 'No reports generated yet — start here' : 'Run a security scan to check for active risks'}</p>
               <button onClick={() => handleGenerateReport('security')} disabled={generatingType !== null}
-                className={`bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${generatingType !== null ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                className={`bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-4 py-2 text-label inline-flex items-center gap-1.5 transition-colors ${generatingType !== null ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                 Generate security report →
               </button>
             </div>
             {/* Last outcome */}
             <div className="bg-white rounded-xl p-5 border border-slate-200">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Last Outcome</p>
+              <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">Last Outcome</p>
               {lastInsight && lastTypeConfig ? (
                 <>
                   <div className="flex items-center gap-1.5 mb-2">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: lastTypeConfig.bg, color: lastTypeConfig.color }}>{lastTypeConfig.label}</span>
-                    <span className="text-xs text-slate-500">{lastReport?.createdAt ? formatGeneratedAt(lastReport.createdAt) : ''}</span>
+                    <span className="text-label px-2 py-0.5 rounded-full" style={{ background: lastTypeConfig.bg, color: lastTypeConfig.color }}>{lastTypeConfig.label}</span>
+                    <span className="text-meta text-ink-muted">{lastReport?.createdAt ? formatGeneratedAt(lastReport.createdAt) : ''}</span>
                   </div>
-                  <p className="text-sm text-slate-700 leading-relaxed font-medium">{lastInsight}</p>
+                  <p className="text-ui text-slate-700 leading-relaxed font-medium">{lastInsight}</p>
                 </>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <p className="text-sm text-slate-500 leading-relaxed">No insights yet — generate your first report to surface key findings</p>
-                  <button onClick={() => handleGenerateReport()} disabled={generatingType !== null} className="bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-violet-600 cursor-pointer w-fit hover:bg-violet-50 transition-colors">Generate first report →</button>
+                  <p className="text-ui text-ink-muted leading-relaxed">No insights yet — generate your first report to surface key findings</p>
+                  <button onClick={() => handleGenerateReport()} disabled={generatingType !== null} className="bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 text-label text-violet-600 cursor-pointer w-fit hover:bg-violet-50 transition-colors">Generate first report →</button>
                 </div>
               )}
             </div>
             {/* Report activity */}
             <div className="bg-white rounded-xl p-5 border border-slate-200">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Report Activity</p>
-              <div className="text-3xl font-bold text-slate-900 tracking-tight leading-none mb-2">{reportsThisMonth}</div>
-              <p className="text-sm text-slate-600 mb-2.5">Reports generated this month</p>
+              <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">Report Activity</p>
+              <div className="text-kpi tabular-nums text-slate-900 tracking-tight leading-none mb-2">{reportsThisMonth}</div>
+              <p className="text-ui text-slate-600 mb-2.5">Reports generated this month</p>
               <div className="flex flex-wrap gap-1.5">
                 {(['cost_analysis', 'security', 'infrastructure', 'executive'] as const).map(t => {
                   const count = displayReports.filter((r: any) => normalizeReportType(r.type || r.report_type || '') === t).length
                   const tc = typeConfig[t]
-                  return count > 0 ? <span key={t} className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: tc.bg, color: tc.color }}>{tc.label} {count}</span> : null
+                  return count > 0 ? <span key={t} className="text-label px-2 py-0.5 rounded-full" style={{ background: tc.bg, color: tc.color }}>{tc.label} {count}</span> : null
                 })}
               </div>
             </div>
@@ -278,7 +280,7 @@ export default function AIReportsPage() {
 
       {/* Report type cards */}
       <div className="mb-4">
-        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Available Reports</p>
+        <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-4">Available Reports</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { type: 'cost_analysis',  badge: 'High impact',  badgeColor: '#059669', badgeBg: '#F0FDF4' },
@@ -293,8 +295,8 @@ export default function AIReportsPage() {
                   <div className="flex items-start gap-3">
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc.bg, color: tc.color }}>{tc.icon}</div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-900 mb-1">{tc.title}</p>
-                      <p className="text-xs text-slate-500 leading-relaxed">
+                      <p className="text-ui font-semibold text-slate-900 mb-1">{tc.title}</p>
+                      <p className="text-meta text-ink-muted leading-relaxed">
                         {type === 'cost_analysis' ? 'Identify unused resources, rightsizing opportunities, and immediate savings.'
                           : type === 'security' ? 'Detect misconfigurations, IAM issues, and compliance gaps.'
                           : type === 'infrastructure' ? 'Analyze performance, bottlenecks, and reliability across services.'
@@ -302,10 +304,10 @@ export default function AIReportsPage() {
                       </p>
                     </div>
                   </div>
-                  {badge && <span className="text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ background: badgeBg!, color: badgeColor! }}>{badge}</span>}
+                  {badge && <span className="text-label px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ background: badgeBg!, color: badgeColor! }}>{badge}</span>}
                 </div>
                 <button onClick={() => handleGenerateReport(type)} disabled={generatingType !== null}
-                  className={`self-start flex items-center gap-1.5 text-white border-none px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${generatingType !== null ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
+                  className={`self-start flex items-center gap-1.5 text-white border-none px-4 py-1.5 rounded-lg text-label transition-all ${generatingType !== null ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
                   style={{ background: generatingType === type ? tc.color : '#7C3AED' }}>
                   {generatingType === type ? <><RefreshCw size={11} className="animate-spin" /> Generating...</> : 'Generate →'}
                 </button>
@@ -319,7 +321,7 @@ export default function AIReportsPage() {
       {generatingType !== null && (
         <div className="flex items-center gap-2.5 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 mb-5">
           <RefreshCw size={13} className="text-violet-600 shrink-0 animate-spin" />
-          <span className="text-xs text-violet-700 font-medium">AI is analyzing your infrastructure data — usually takes 20–30 seconds</span>
+          <span className="text-meta text-violet-700 font-medium">AI is analyzing your infrastructure data — usually takes 20–30 seconds</span>
         </div>
       )}
 
@@ -327,23 +329,23 @@ export default function AIReportsPage() {
       {isLoading && !isDemoActive ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-100">
           <RefreshCw size={22} className="text-slate-300 mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Loading reports...</p>
+          <p className="text-ui text-ink-muted">Loading reports...</p>
         </div>
       ) : displayReports.length === 0 ? (
         <div className="bg-gradient-to-br from-violet-50 to-violet-100 rounded-2xl p-8 sm:p-14 text-center border border-violet-200">
           <div className="text-3xl mb-4">✨</div>
-          <p className="text-sm font-semibold text-slate-900 mb-2">Start uncovering insights in minutes</p>
-          <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-sm mx-auto">Generate your first AI report to discover:</p>
+          <p className="text-ui font-semibold text-slate-900 mb-2">Start uncovering insights in minutes</p>
+          <p className="text-ui text-ink-muted leading-relaxed mb-6 max-w-sm mx-auto">Generate your first AI report to discover:</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-sm mx-auto mb-7 text-left">
             {['💰 Immediate cost-saving opportunities', '🔐 Hidden security risks and misconfigs', '⚙️ Infrastructure inefficiencies', '📊 Executive-ready summaries'].map(item => (
-              <div key={item} className="text-xs text-slate-500 bg-white rounded-lg px-3.5 py-2.5 border border-violet-100">{item}</div>
+              <div key={item} className="text-meta text-ink-muted bg-white rounded-lg px-3.5 py-2.5 border border-violet-100">{item}</div>
             ))}
           </div>
           <button onClick={() => handleGenerateReport()} disabled={generatingType !== null}
-            className={`text-white px-7 py-3 rounded-xl text-sm font-semibold border-none inline-flex items-center gap-2 transition-colors ${generatingType !== null ? 'bg-violet-400 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}>
+            className={`text-white px-7 py-3 rounded-xl text-ui font-semibold border-none inline-flex items-center gap-2 transition-colors ${generatingType !== null ? 'bg-violet-400 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}>
             {generatingType !== null ? <><RefreshCw size={13} className="animate-spin" /> Generating...</> : <><Sparkles size={13} /> Generate My First AI Report</>}
           </button>
-          <p className="text-xs text-slate-500 mt-3">Takes ~2 minutes · No setup required · Read-only access</p>
+          <p className="text-meta text-ink-muted mt-3">Takes ~2 minutes · No setup required · Read-only access</p>
         </div>
       ) : (
         <div>
@@ -352,11 +354,11 @@ export default function AIReportsPage() {
             <div className="flex items-center gap-2.5">
               <input ref={selectAllRef} type="checkbox" checked={allSelected} onChange={handleSelectAll} className="w-3.5 h-3.5 cursor-pointer accent-violet-600" />
               {selectedIds.size > 0
-                ? <span className="text-xs text-slate-500 font-medium">{selectedIds.size} report{selectedIds.size !== 1 ? 's' : ''} selected</span>
-                : <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Recent Reports</span>}
+                ? <span className="text-meta text-ink-muted font-medium">{selectedIds.size} report{selectedIds.size !== 1 ? 's' : ''} selected</span>
+                : <span className="text-label text-ink-muted uppercase tracking-[0.04em]">Recent Reports</span>}
             </div>
             {selectedIds.size > 0 && (
-              <button onClick={() => setShowBulkConfirm(true)} className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer hover:bg-red-100 transition-colors">
+              <button onClick={() => setShowBulkConfirm(true)} className="flex items-center gap-1.5 bg-red-50 text-ink-danger border border-red-200 px-3.5 py-1.5 rounded-lg text-label cursor-pointer hover:bg-red-100 transition-colors">
                 <Trash2 size={12} /> Delete Selected
               </button>
             )}
@@ -379,37 +381,37 @@ export default function AIReportsPage() {
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: type.bg, color: type.color }}>{type.icon}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <span className="text-sm font-semibold text-slate-900">{reportTitle}</span>
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: type.bg, color: type.color }}>{type.label}</span>
-                        <span className="flex items-center gap-1 text-xs font-semibold text-green-600 shrink-0"><CheckCircle2 size={10} /> Ready</span>
+                        <span className="text-ui font-semibold text-slate-900">{reportTitle}</span>
+                        <span className="text-label px-2 py-0.5 rounded-full shrink-0" style={{ background: type.bg, color: type.color }}>{type.label}</span>
+                        <span className="flex items-center gap-1 text-label text-ink-success shrink-0"><CheckCircle2 size={10} /> Ready</span>
                         {(() => {
                           if (normalizedType !== 'security') return null
                           const riskCount = report.report_data?.security_findings?.length
                           if (!riskCount) return null
                           return (
-                            <a href="/anomalies" className="text-xs font-semibold text-red-600 no-underline" onClick={e => e.stopPropagation()}>
+                            <a href="/anomalies" className="text-label text-ink-danger no-underline" onClick={e => e.stopPropagation()}>
                               · {riskCount} risk{riskCount !== 1 ? 's' : ''} detected — Fix now →
                             </a>
                           )
                         })()}
                       </div>
-                      <p className="text-xs text-slate-500 mb-1">Generated {dateVal ? relativeTime(dateVal) : '—'}</p>
-                      {insight && <p className="text-xs text-slate-600 leading-relaxed">{insight}</p>}
+                      <p className="text-meta text-ink-muted mb-1">Generated {dateVal ? relativeTime(dateVal) : '—'}</p>
+                      {insight && <p className="text-meta text-slate-600 leading-relaxed">{insight}</p>}
                     </div>
                     {/* Actions */}
                     <div className="flex items-center gap-1.5 shrink-0 mt-0.5 flex-wrap justify-end">
-                      <button onClick={() => handleViewReport(report.id)} className="bg-violet-600 hover:bg-violet-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors whitespace-nowrap">View Report</button>
-                      <button onClick={() => handleDownloadReport(report.id)} className="bg-transparent text-slate-500 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 cursor-pointer flex items-center gap-1 hover:bg-slate-50 transition-colors whitespace-nowrap"><Download size={11} /> PDF</button>
+                      <button onClick={() => handleViewReport(report.id)} className="bg-violet-600 hover:bg-violet-700 text-white px-3.5 py-1.5 rounded-lg text-label border-none cursor-pointer transition-colors whitespace-nowrap">View Report</button>
+                      <button onClick={() => handleDownloadReport(report.id)} className="bg-transparent text-ink-muted px-2.5 py-1.5 rounded-lg text-label font-medium border border-slate-200 cursor-pointer flex items-center gap-1 hover:bg-slate-50 transition-colors whitespace-nowrap"><Download size={11} /> PDF</button>
                       <div className="relative">
                         <button onClick={e => { e.stopPropagation(); setOpenMenuId(openMenuId === report.id ? null : report.id) }}
-                          className="bg-transparent border border-slate-200 text-slate-500 p-1.5 rounded-lg cursor-pointer flex items-center hover:bg-slate-50 transition-colors">
+                          className="bg-transparent border border-slate-200 text-ink-muted p-1.5 rounded-lg cursor-pointer flex items-center hover:bg-slate-50 transition-colors">
                           <MoreHorizontal size={14} />
                         </button>
                         {openMenuId === report.id && (
                           <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[150px] p-1" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => { handleDownloadReport(report.id); setOpenMenuId(null) }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border-none bg-transparent text-xs text-slate-600 cursor-pointer hover:bg-slate-50 font-medium text-left"><Download size={12} className="text-slate-400" /> Download PDF</button>
+                            <button onClick={() => { handleDownloadReport(report.id); setOpenMenuId(null) }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border-none bg-transparent text-label text-slate-600 cursor-pointer hover:bg-slate-50 font-medium text-left"><Download size={12} className="text-slate-400" /> Download PDF</button>
                             <div className="h-px bg-slate-100 my-1" />
-                            <button onClick={() => { setDeleteTargetId(report.id); setOpenMenuId(null) }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border-none bg-transparent text-xs text-slate-600 cursor-pointer hover:bg-red-50 hover:text-red-600 font-medium text-left"><Trash2 size={12} className="text-red-500" /> Delete</button>
+                            <button onClick={() => { setDeleteTargetId(report.id); setOpenMenuId(null) }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border-none bg-transparent text-label text-slate-600 cursor-pointer hover:bg-red-50 hover:text-ink-danger font-medium text-left"><Trash2 size={12} className="text-red-500" /> Delete</button>
                           </div>
                         )}
                       </div>
@@ -421,7 +423,7 @@ export default function AIReportsPage() {
           </div>
 
           {displayReports.length > 5 && (
-            <button onClick={() => setShowAllReports(!showAllReports)} className="bg-transparent border border-slate-200 rounded-xl px-6 py-2.5 text-xs font-semibold text-slate-500 cursor-pointer w-full mt-2.5 hover:bg-slate-50 transition-colors">
+            <button onClick={() => setShowAllReports(!showAllReports)} className="bg-transparent border border-slate-200 rounded-xl px-6 py-2.5 text-label text-ink-muted cursor-pointer w-full mt-2.5 hover:bg-slate-50 transition-colors">
               <span className="flex items-center gap-1.5 justify-center">
                 {showAllReports ? <><ChevronUp size={13} /> Show less</> : <><ChevronDown size={13} /> Show all {displayReports.length} reports</>}
               </span>
