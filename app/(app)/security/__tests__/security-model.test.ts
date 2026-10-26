@@ -116,7 +116,7 @@ function inputs(over: Partial<SecurityInputs> = {}): SecurityInputs {
     accountFindings: ready([]),
     resourceFindings: ready({ kind: 'full', resources: [] }),
     coverage: ready(coverage()),
-    frameworks: ready({ frameworks: [], scans: [] }),
+    frameworks: ready({ frameworks: [], scans: [], scansLimit: 50 }),
     anomalies: ready({ active: 0 }),
     ...over,
   }
@@ -380,16 +380,37 @@ describe('frameworks', () => {
     expect(v).toMatchObject({ state: 'failed', score: null, text: 'The last run failed on Oct 22. No score is shown as current.', action: { kind: 'try_again', label: 'Try again' } })
     expect(JSON.stringify(v)).not.toContain('95')
   })
-  it('never evaluated, including a completed scan without a usable score', () => {
-    for (const scans of [[], [scan('fw-1', 'completed', null, DAY)], [scan('other', 'completed', 90, DAY)]]) {
-      expect(one(scans)).toMatchObject({ state: 'never', text: 'No evaluation yet.', score: null, action: { kind: 'evaluate_now', label: 'Evaluate now' } })
+  it('never evaluated only when the scan list is the whole history', () => {
+    for (const scans of [[], [scan('other', 'completed', 90, DAY)]]) {
+      expect(describeFramework(fw('fw-1'), scans, NOW, true)).toMatchObject({ state: 'never', label: 'Never evaluated', text: 'No evaluation yet.', score: null, action: { kind: 'evaluate_now', label: 'Evaluate now' } })
     }
+  })
+  it('not in the list and the history may be cut off: "Last evaluation not found", no score', () => {
+    const notFound = { state: 'not_found', label: 'Last evaluation not found', text: 'Last evaluation not found. Re-evaluate to refresh.', score: null, action: { kind: 're_evaluate', label: 'Re-evaluate' } }
+    expect(one([])).toMatchObject(notFound)
+    expect(one([scan('other', 'completed', 90, DAY)])).toMatchObject(notFound)
+    // A completed scan without a usable score was an evaluation: never "never".
+    expect(describeFramework(fw('fw-1'), [scan('fw-1', 'completed', null, DAY)], NOW, true)).toMatchObject(notFound)
+  })
+  it('the page knows "never" only when the list came back shorter than its limit', () => {
+    const others = (k: number) => Array.from({ length: k }, (_, i) => scan('other', 'completed', 90, DAY + i * 1000, `o-${i}`))
+    const state = (k: number, scansLimit: number) =>
+      describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('fw-1')], scans: others(k), scansLimit }) }), NOW).frameworks.frameworks[0].state
+    expect(state(49, 50)).toBe('never')
+    expect(state(0, 50)).toBe('never')
+    expect(state(50, 50)).toBe('not_found')
+    expect(state(51, 50)).toBe('not_found')
+    for (const bad of [0, -1, NaN, 2.5, undefined as unknown as number]) expect(state(0, bad), String(bad)).toBe('not_found')
+    const tile = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('fw-1')], scans: others(50), scansLimit: 50 }) }), NOW).tiles.compliance
+    expect(tile).toEqual({ label: 'Last evaluation not found', lastEvaluated: null })
+    expect(describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('fw-1')], scans: [], scansLimit: 50 }) }), NOW).tiles.compliance)
+      .toEqual({ label: 'Never evaluated', lastEvaluated: null })
   })
   it('below Enterprise: the plan note and See plans; every framework is listed (no cap)', () => {
     const plan = describeSecurity(inputs({ frameworks: PLAN }), NOW)
     expect(plan.frameworks).toMatchObject({ status: 'plan', note: 'Compliance frameworks are on the Enterprise plan.', action: { label: 'See plans' } })
     expect(plan.tiles.compliance).toEqual({ label: 'Compliance frameworks are on the Enterprise plan.', lastEvaluated: null })
-    const many = describeSecurity(inputs({ frameworks: ready({ frameworks: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => fw(id)), scans: [] }) }), NOW)
+    const many = describeSecurity(inputs({ frameworks: ready({ frameworks: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => fw(id)), scans: [], scansLimit: 50 }) }), NOW)
     expect(many.frameworks.frameworks).toHaveLength(6)
   })
   it('the tile shows the stalest framework, with the same date string as the list', () => {
@@ -397,18 +418,19 @@ describe('frameworks', () => {
       frameworks: ready({
         frameworks: [fw('a'), fw('b'), fw('c')],
         scans: [scan('a', 'completed', 90, DAY), scan('b', 'completed', 80, 9 * DAY), scan('c', 'completed', 70, 12 * DAY)],
+        scansLimit: 50,
       }),
     }), NOW)
     expect(view.tiles.compliance).toEqual({ label: 'Out of date', lastEvaluated: 'Last evaluated Oct 11' })
     const c = view.frameworks.frameworks.find((f) => f.id === 'c')!
     expect(c.text).toContain(view.tiles.compliance!.lastEvaluated!.replace('Last evaluated ', ''))
     const a = view.frameworks.frameworks.find((f) => f.id === 'a')!
-    const tileA = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('a')], scans: [scan('a', 'completed', 90, DAY)] }) }), NOW).tiles.compliance!
+    const tileA = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('a')], scans: [scan('a', 'completed', 90, DAY)], scansLimit: 50 }) }), NOW).tiles.compliance!
     expect(tileA).toEqual({ label: 'Current', lastEvaluated: `Last evaluated ${a.lastEvaluated}` })
     expect(a.text).toBe(`Evaluated ${a.lastEvaluated} · 90%`)
   })
   it('a failed framework outranks an out-of-date one on the tile', () => {
-    const view = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('a'), fw('b')], scans: [scan('a', 'completed', 90, 9 * DAY), scan('b', 'failed', null, DAY)] }) }), NOW)
+    const view = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('a'), fw('b')], scans: [scan('a', 'completed', 90, 9 * DAY), scan('b', 'failed', null, DAY)], scansLimit: 50 }) }), NOW)
     expect(view.tiles.compliance?.label).toBe('Failed')
   })
 })

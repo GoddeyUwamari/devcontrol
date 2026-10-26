@@ -69,7 +69,8 @@ export interface SecurityInputs {
   accountFindings: SecLoadable<AccountSecurityFinding[]>
   resourceFindings: SecLoadable<ResourceFindingsSource>
   coverage: SecLoadable<ServicesCoverage>
-  frameworks: SecLoadable<{ frameworks: ComplianceFramework[]; scans: ComplianceScan[] }>
+  /** scansLimit: the limit the scan list was requested with (the org's newest scans, all frameworks together). */
+  frameworks: SecLoadable<{ frameworks: ComplianceFramework[]; scans: ComplianceScan[]; scansLimit: number }>
   anomalies: SecLoadable<{ active: number }>
 }
 
@@ -89,6 +90,7 @@ export const SECURITY_COPY = {
   frameworksPlan: 'Compliance frameworks are on the Enterprise plan.',
   frameworksError: "Couldn't load compliance frameworks.",
   neverEvaluated: 'No evaluation yet.',
+  evaluationNotFound: 'Last evaluation not found. Re-evaluate to refresh.',
   trendPlan: 'Score history is on the Pro plan',
   trendNone: 'No score history yet',
   trendError: "Couldn't load score history.",
@@ -386,10 +388,11 @@ function findingsTile(i: SecurityInputs, rows: FindingRow[]): FindingsTile | nul
 
 // ── Compliance frameworks (M5, safeguard 2) ──
 
-export type FrameworkState = 'current' | 'running' | 'failed' | 'out_of_date' | 'never'
+export type FrameworkState = 'current' | 'running' | 'failed' | 'out_of_date' | 'never' | 'not_found'
 
 export const FRAMEWORK_STATE_LABEL: Record<FrameworkState, string> = {
-  current: 'Current', running: 'Running', failed: 'Failed', out_of_date: 'Out of date', never: 'Not evaluated yet',
+  current: 'Current', running: 'Running', failed: 'Failed', out_of_date: 'Out of date', never: 'Never evaluated',
+  not_found: 'Last evaluation not found',
 }
 
 export interface FrameworkView {
@@ -403,7 +406,7 @@ export interface FrameworkView {
   /** The latest completed evaluation, formatted ("Oct 3"), or null. */
   lastEvaluated: string | null
   lastEvaluatedAt: number | null
-  action: { kind: 'try_again' | 'evaluate_now'; label: string } | null
+  action: { kind: 'try_again' | 'evaluate_now' | 're_evaluate'; label: string } | null
 }
 
 export interface FrameworksView {
@@ -416,7 +419,14 @@ export interface FrameworksView {
 const byNewest = (a: ComplianceScan, b: ComplianceScan) =>
   (parse(b.created_at) ?? 0) - (parse(a.created_at) ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
 
-export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[], now: number): FrameworkView {
+/**
+ * The scan list is the org's newest scans across every framework, so a framework
+ * with no scan in it has either never been evaluated or was evaluated before the
+ * list's window. `historyComplete` (the list came back shorter than its limit) is
+ * the only case where "never" is known; otherwise the model says it didn't find
+ * the last evaluation, and shows no score.
+ */
+export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[], now: number, historyComplete = false): FrameworkView {
   const own = scans.filter((s) => s.framework_id === f.id).sort(byNewest)
   const latest = own[0]
   const lastDone = own.find((s) => s.status === 'completed' && formatScore(s.compliance_score) !== null)
@@ -433,9 +443,15 @@ export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[
     const on = formatDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
     return view('failed', `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, null, { kind: 'try_again', label: 'Try again' })
   }
-  const score = latest?.status === 'completed' ? formatScore(latest.compliance_score) : null
-  if (!latest || score === null || base.lastEvaluatedAt === null) {
-    return view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: 'Evaluate now' })
+  if (!latest) {
+    return historyComplete
+      ? view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: 'Evaluate now' })
+      : view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate' })
+  }
+  const score = latest.status === 'completed' ? formatScore(latest.compliance_score) : null
+  // A completed scan without a usable score: there was an evaluation, so never "never".
+  if (score === null || base.lastEvaluatedAt === null) {
+    return view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate' })
   }
   if (now - base.lastEvaluatedAt >= FRAMEWORK_STALE_AFTER_MS) {
     return view('out_of_date', `Last evaluated ${base.lastEvaluated}, over 7 days ago. Findings may have changed.`, null, null)
@@ -448,10 +464,12 @@ function frameworksView(i: SecurityInputs, now: number): FrameworksView {
   if (f.status === 'loading') return { status: 'loading', note: null, action: null, frameworks: [] }
   if (f.status === 'plan') return { status: 'plan', note: SECURITY_COPY.frameworksPlan, action: { label: 'See plans', href: '/settings/billing/upgrade' }, frameworks: [] }
   if (f.status === 'error') return { status: 'error', note: SECURITY_COPY.frameworksError, action: null, frameworks: [] }
-  return { status: 'ready', note: null, action: null, frameworks: f.data.frameworks.map((fw) => describeFramework(fw, f.data.scans, now)) }
+  const { scans, scansLimit } = f.data
+  const historyComplete = Number.isInteger(scansLimit) && scansLimit > 0 && scans.length < scansLimit
+  return { status: 'ready', note: null, action: null, frameworks: f.data.frameworks.map((fw) => describeFramework(fw, scans, now, historyComplete)) }
 }
 
-const STATE_PRIORITY: Record<FrameworkState, number> = { failed: 0, out_of_date: 1, never: 2, running: 3, current: 4 }
+const STATE_PRIORITY: Record<FrameworkState, number> = { failed: 0, out_of_date: 1, not_found: 2, never: 3, running: 4, current: 5 }
 
 export interface ComplianceTile { label: string; lastEvaluated: string | null }
 
