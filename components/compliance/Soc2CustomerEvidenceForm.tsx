@@ -129,7 +129,7 @@ export function Soc2CustomerEvidenceForm({ open, onClose, criteria, defaultCrite
           <div>
             <Label htmlFor="ce-criterion">Criterion</Label>
             {isEditing ? (
-              <p id="ce-criterion" className="mt-1 text-sm text-slate-700">
+              <p id="ce-criterion" className="mt-1 text-ui text-slate-700">
                 {criteria.find((c) => c.criterionId === criterionId)?.name ?? criterionId}
               </p>
             ) : (
@@ -199,7 +199,7 @@ export function Soc2CustomerEvidenceForm({ open, onClose, criteria, defaultCrite
               placeholder="https://… (a link to the document)"
               className="mt-1"
             />
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-meta text-ink-muted mt-1">
               Externally hosted — DevControl stores this link only and does not fetch or verify its contents.
             </p>
           </div>
@@ -207,11 +207,11 @@ export function Soc2CustomerEvidenceForm({ open, onClose, criteria, defaultCrite
           <div>
             <Label htmlFor="ce-review-date">Review Date (optional)</Label>
             <Input id="ce-review-date" type="date" value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} className="mt-1" />
-            <p className="text-xs text-slate-400 mt-1">Informational only — does not automatically expire this evidence.</p>
+            <p className="text-meta text-ink-muted mt-1">Informational only — does not automatically expire this evidence.</p>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Provenance:</span>
+            <span className="text-label font-medium text-ink-muted">Provenance:</span>
             <ProvenanceBadge provenance="SELF_ATTESTED" />
           </div>
 

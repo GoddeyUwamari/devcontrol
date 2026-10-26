@@ -13,6 +13,8 @@ import { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-f
 import { useToast } from '@/components/ui/use-toast';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
+import { cn } from '@/lib/utils';
 
 type DemoFramework = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing'; rulesCount: number; lastScanAt: Date; isCustom?: boolean };
 
@@ -210,18 +212,18 @@ export default function ComplianceFrameworksPage() {
         {/* Page header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
           <div>
-            <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Security</p>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Compliance Intelligence</h1>
-            <p className="text-xs text-slate-500 font-medium leading-relaxed">Detect compliance gaps and misconfigurations across your AWS environment — before they become audit failures.</p>
+            <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">Security</p>
+            <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Compliance Intelligence</h1>
+            <p className={PAGE_SUBTITLE_CLASS}>Detect compliance gaps and misconfigurations across your AWS environment — before they become audit failures.</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {displayFrameworks.length === 0 && !isDemoActive ? (
-              <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
+              <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-ink-muted border border-slate-200 rounded-lg px-4 py-2.5 text-label cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
                 <Plus size={12} /> Add Framework
               </button>
             ) : (
               <button onClick={() => handleRunScan(displayFrameworks[0].id)}
-                className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap">
+                className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-4 py-2.5 text-label cursor-pointer transition-colors whitespace-nowrap">
                 <RefreshCw size={12} /> Run Baseline Scan
               </button>
             )}
@@ -239,12 +241,12 @@ export default function ComplianceFrameworksPage() {
                     <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
                     <circle cx="27" cy="27" r="23" fill="none" stroke={isDemoActive ? '#D97706' : '#94A3B8'} strokeWidth="5" strokeDasharray="144.5" strokeDashoffset={isDemoActive ? 43 : 144.5} strokeLinecap="round" transform="rotate(-90 27 27)"/>
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold" style={{ color: isDemoActive ? '#D97706' : '#94A3B8' }}>{isDemoActive ? '80%' : 'N/A'}</span>
+                  <span className="absolute inset-0 flex items-center justify-center text-label" style={{ color: isDemoActive ? '#D97706' : '#94A3B8' }}>{isDemoActive ? '80%' : 'N/A'}</span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Compliance Score</p>
-                  <p className="text-sm font-bold text-slate-900 mb-0.5">{isDemoActive ? 'Partially Compliant' : 'Risk Visibility: Not Established'}</p>
-                  <p className="text-xs text-slate-500">{isDemoActive ? '4 frameworks active · 1 failing · last scan 30 min ago' : 'Run a baseline scan to establish compliance posture'}</p>
+                  <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Compliance Score</p>
+                  <p className="text-ui font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Partially Compliant' : 'Risk Visibility: Not Established'}</p>
+                  <p className="text-meta text-ink-muted">{isDemoActive ? '4 frameworks active · 1 failing · last scan 30 min ago' : 'Run a baseline scan to establish compliance posture'}</p>
                 </div>
               </div>
 
@@ -252,16 +254,16 @@ export default function ComplianceFrameworksPage() {
 
               {/* Primary risk */}
               <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">{isDemoActive ? 'Primary Risk' : 'Compliance Posture'}</p>
+                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1.5">{isDemoActive ? 'Primary Risk' : 'Compliance Posture'}</p>
                 <div className="flex flex-col gap-0.5">
                   {isDemoActive ? (
                     <>
-                      <p className="text-xs text-red-600 font-semibold">● PCI-DSS failing at 68% — audit risk active</p>
-                      <p className="text-xs text-amber-500 font-medium">● SOC 2 sample evidence available — see Compliance → SOC 2 Readiness</p>
-                      <p className="text-xs text-green-600 font-medium">● CIS (87%) and NIST (91%) passing</p>
+                      <p className="text-meta text-ink-danger font-semibold">● PCI-DSS failing at 68% — audit risk active</p>
+                      <p className="text-meta text-ink-warning font-medium">● SOC 2 sample evidence available — see Compliance → SOC 2 Readiness</p>
+                      <p className="text-meta text-ink-success font-medium">● CIS (87%) and NIST (91%) passing</p>
                     </>
                   ) : (
-                    <p className="text-xs text-slate-500 font-medium">Run a baseline scan to see your compliance posture</p>
+                    <p className="text-meta text-ink-muted font-medium">Run a baseline scan to see your compliance posture</p>
                   )}
                 </div>
               </div>
@@ -270,12 +272,12 @@ export default function ComplianceFrameworksPage() {
 
               {/* Recommended action */}
               <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Recommended Action</p>
-                <p className="text-sm font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Resolve PCI-DSS critical controls' : 'Run CIS AWS baseline scan'}</p>
-                <p className="text-xs text-slate-500">{isDemoActive ? '7 critical violations · immediate remediation required' : 'Establish baseline: 2–5 min · read-only · no infrastructure changes'}</p>
+                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Recommended Action</p>
+                <p className="text-ui font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Resolve PCI-DSS critical controls' : 'Run CIS AWS baseline scan'}</p>
+                <p className="text-meta text-ink-muted">{isDemoActive ? '7 critical violations · immediate remediation required' : 'Establish baseline: 2–5 min · read-only · no infrastructure changes'}</p>
               </div>
             </div>
-            <a href="/security" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
+            <a href="/security" className="text-label text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0">
               Security overview <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </a>
           </div>
@@ -286,13 +288,13 @@ export default function ComplianceFrameworksPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 mb-4 flex items-start gap-3.5">
             <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Shield size={12} className="text-white" /></div>
             <div className="flex-1">
-              <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1">Decision Intelligence</p>
-              <p className="text-sm text-slate-700 leading-relaxed">
-                <strong className="text-red-600">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. Sample SOC 2 technical and customer-provided evidence is available for review — not a certification or Type II audit. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-xs text-slate-500">Recommended: resolve PCI-DSS critical controls before next audit cycle · review SOC 2 sample evidence.</span>
+              <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1">Decision Intelligence</p>
+              <p className="text-ui text-slate-700 leading-relaxed">
+                <strong className="text-ink-danger">PCI-DSS is failing at 68%</strong> — payment card data security standards not met. Audit risk is active. Sample SOC 2 technical and customer-provided evidence is available for review — not a certification or Type II audit. CIS AWS (87%) and NIST CSF (91%) are passing.<span className="block mt-1 text-meta text-ink-muted">Recommended: resolve PCI-DSS critical controls before next audit cycle · review SOC 2 sample evidence.</span>
               </p>
             </div>
             <button onClick={() => handleRunScan(displayFrameworks.find((f: any) => f.status === 'failing')?.id ?? displayFrameworks[0]?.id)}
-              className="text-xs font-bold text-red-600 bg-transparent border-none cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap p-0">
+              className="text-label text-ink-danger bg-transparent border-none cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap p-0">
               Resolve now <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </button>
           </div>
@@ -302,58 +304,58 @@ export default function ComplianceFrameworksPage() {
         {(hasScans || isDemoActive) && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-4">
             {[
-              { label: 'Compliance Score',     value: complianceScore === '—' ? 'Unknown' : complianceScore,   sub: complianceScore === '—' ? 'Unknown — audit readiness cannot be assessed' : 'Weighted across all frameworks', color: complianceScore === '—' ? '#9CA3AF' : '#059669' },
-              { label: 'Critical Violations',  value: criticalViolations === '—' ? 'Unknown' : criticalViolations, sub: criticalViolations === '—' ? 'Unknown — potential critical exposure not evaluated' : 'Immediate action required', color: criticalViolations === '—' ? '#9CA3AF' : '#DC2626' },
-              { label: 'High-Risk Violations', value: highRiskViolations === '—' ? 'Unknown' : highRiskViolations, sub: highRiskViolations === '—' ? 'Unknown — high-risk exposure not evaluated' : 'Public S3, open ports, IAM', color: highRiskViolations === '—' ? '#9CA3AF' : '#D97706' },
-              { label: 'Last Scan',            value: lastScanLabel === '—' ? 'Never' : lastScanLabel,          sub: lastScanLabel === '—' ? 'Never — no historical security baseline established' : 'Scan history available', color: lastScanLabel === '—' ? '#9CA3AF' : '#0F172A' },
-            ].map(({ label, value, sub, color }) => (
+              { label: 'Compliance Score',     value: complianceScore === '—' ? 'Unknown' : complianceScore,   sub: complianceScore === '—' ? 'Unknown — audit readiness cannot be assessed' : 'Weighted across all frameworks', tone: complianceScore === '—' ? 'text-ink-muted' : 'text-ink-success' },
+              { label: 'Critical Violations',  value: criticalViolations === '—' ? 'Unknown' : criticalViolations, sub: criticalViolations === '—' ? 'Unknown — potential critical exposure not evaluated' : 'Immediate action required', tone: criticalViolations === '—' ? 'text-ink-muted' : 'text-ink-danger' },
+              { label: 'High-Risk Violations', value: highRiskViolations === '—' ? 'Unknown' : highRiskViolations, sub: highRiskViolations === '—' ? 'Unknown — high-risk exposure not evaluated' : 'Public S3, open ports, IAM', tone: highRiskViolations === '—' ? 'text-ink-muted' : 'text-ink-warning' },
+              { label: 'Last Scan',            value: lastScanLabel === '—' ? 'Never' : lastScanLabel,          sub: lastScanLabel === '—' ? 'Never — no historical security baseline established' : 'Scan history available', tone: lastScanLabel === '—' ? 'text-ink-muted' : 'text-slate-900' },
+            ].map(({ label, value, sub, tone }) => (
               <div key={label} className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
-                <div className="text-xl sm:text-2xl font-bold tracking-tight leading-none mb-1.5" style={{ color }}>{value}</div>
-                <p className="text-xs text-slate-500 leading-relaxed">{sub}</p>
+                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">{label}</p>
+                <div className={`text-section sm:text-kpi tabular-nums leading-none mb-1.5 ${tone}`}>{value}</div>
+                <p className="text-meta text-ink-muted leading-relaxed">{sub}</p>
               </div>
             ))}
           </div>
         )}
 
-        {displayError && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-6"><p className="text-sm text-red-600">{displayError}</p></div>}
+        {displayError && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-6"><p className="text-ui text-ink-danger">{displayError}</p></div>}
 
         {/* Priority Actions */}
         {isDemoActive && displayFrameworks.length > 0 && (
           <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
               <div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Priority Actions</p>
-                <p className="text-xs text-slate-500">Ranked by audit risk · resolve before next compliance cycle</p>
+                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Priority Actions</p>
+                <p className="text-meta text-ink-muted">Ranked by audit risk · resolve before next compliance cycle</p>
               </div>
-              <span className="inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase bg-red-600 text-white w-fit">Act Now</span>
+              <span className="inline-flex px-2 py-0.5 rounded text-label uppercase bg-red-600 text-white w-fit">Act Now</span>
             </div>
             <div className="flex flex-col gap-2.5">
               {[
-                { priority: 1, color: 'red', bg: 'bg-red-50', border: 'border-red-200', title: 'PCI-DSS', titleSub: 'failing at 68% · audit risk active', titleColor: 'text-red-600', desc: 'Payment card data security · 31 rules · critical control failures · immediate remediation required', badge: 'Critical', badgeCls: 'bg-red-600 text-white', btnText: 'Resolve →', btnCls: 'bg-red-600 hover:bg-red-700 text-white border-transparent', fw: 'PCI' },
+                { priority: 1, color: 'red', bg: 'bg-red-50', border: 'border-red-200', title: 'PCI-DSS', titleSub: 'failing at 68% · audit risk active', titleColor: 'text-ink-danger', desc: 'Payment card data security · 31 rules · critical control failures · immediate remediation required', badge: 'Critical', badgeCls: 'bg-red-600 text-white', btnText: 'Resolve →', btnCls: 'bg-red-600 hover:bg-red-700 text-white border-transparent', fw: 'PCI' },
                 // SOC 2's own route is fixed (/compliance/frameworks/soc2, not a generic
                 // displayFrameworks id) and its copy must never claim a score, "Type II",
                 // or an "in progress" audit -- see the real SOC2 card's own truthful
                 // 'Technical + customer evidence' framing this mirrors.
-                { priority: 2, color: 'amber', bg: 'bg-amber-50', border: 'border-amber-200', title: 'SOC 2 Readiness', titleSub: 'sample evidence available', titleColor: 'text-amber-500', desc: 'Technical + customer-provided evidence — sample data for demonstration, not a certification or Type II audit.', badge: 'High', badgeCls: 'bg-amber-100 text-amber-800', btnText: 'Review →', btnCls: 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200', href: '/compliance/frameworks/soc2' },
-                { priority: 3, color: 'slate', bg: 'bg-slate-50', border: 'border-slate-100', title: 'Maintain CIS AWS (87%) + NIST CSF (91%)', titleSub: 'passing', titleColor: 'text-green-600', desc: 'Schedule next scan to maintain compliance standing · no immediate action required', badge: 'Monitor', badgeCls: 'bg-slate-100 text-slate-500', btnText: 'Schedule →', btnCls: 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200', fw: '' },
+                { priority: 2, color: 'amber', bg: 'bg-amber-50', border: 'border-amber-200', title: 'SOC 2 Readiness', titleSub: 'sample evidence available', titleColor: 'text-ink-warning', desc: 'Technical + customer-provided evidence — sample data for demonstration, not a certification or Type II audit.', badge: 'High', badgeCls: 'bg-amber-100 text-amber-800', btnText: 'Review →', btnCls: 'bg-white hover:bg-slate-50 text-ink-muted border-slate-200', href: '/compliance/frameworks/soc2' },
+                { priority: 3, color: 'slate', bg: 'bg-slate-50', border: 'border-slate-100', title: 'Maintain CIS AWS (87%) + NIST CSF (91%)', titleSub: 'passing', titleColor: 'text-ink-success', desc: 'Schedule next scan to maintain compliance standing · no immediate action required', badge: 'Monitor', badgeCls: 'bg-slate-100 text-ink-muted', btnText: 'Schedule →', btnCls: 'bg-white hover:bg-slate-50 text-ink-muted border-slate-200', fw: '' },
               ].map(({ priority, bg, border, title, titleSub, titleColor, desc, badge, badgeCls, btnText, btnCls, fw, href }) => (
                 <div key={priority} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between ${bg} rounded-xl border ${border} px-4 py-3 gap-3`}>
                   <div className="flex items-start gap-3.5">
                     <div className="text-center min-w-[36px] shrink-0">
-                      <p className={`text-xs font-bold uppercase mb-0.5 ${titleColor}`}>Priority</p>
-                      <p className={`text-base font-bold ${titleColor}`}>{priority}</p>
+                      <p className={`text-label uppercase mb-0.5 ${titleColor}`}>Priority</p>
+                      <p className={`text-card-title tabular-nums ${titleColor}`}>{priority}</p>
                     </div>
                     <div className={`w-px h-8 self-center ${border} border-l shrink-0`} />
                     <div>
-                      <p className="text-sm font-semibold text-slate-900 mb-0.5">{title} — <span className={titleColor}>{titleSub}</span></p>
-                      <p className="text-xs text-slate-500">{desc}</p>
+                      <p className="text-ui font-semibold text-slate-900 mb-0.5">{title} — <span className={titleColor}>{titleSub}</span></p>
+                      <p className="text-meta text-ink-muted">{desc}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
-                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase ${badgeCls}`}>{badge}</span>
+                    <span className={`inline-flex px-2 py-0.5 rounded text-label uppercase ${badgeCls}`}>{badge}</span>
                     <button onClick={() => href ? router.push(href) : handleViewDetails(displayFrameworks.find((f: any) => fw ? f.name?.includes(fw) : true)?.id ?? '')}
-                      className={`border rounded-lg px-3 py-1.5 text-xs font-bold cursor-pointer transition-colors ${btnCls}`}>{btnText}</button>
+                      className={`border rounded-lg px-3 py-1.5 text-label cursor-pointer transition-colors ${btnCls}`}>{btnText}</button>
                   </div>
                 </div>
               ))}
@@ -365,7 +367,7 @@ export default function ComplianceFrameworksPage() {
         {loading && !isDemoActive ? (
           <div className="bg-white rounded-2xl p-12 text-center border border-slate-100">
             <RefreshCw size={22} className="text-slate-300 mx-auto mb-3 animate-spin" />
-            <p className="text-sm text-slate-500">Loading frameworks...</p>
+            <p className="text-ui text-ink-muted">Loading frameworks...</p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -378,27 +380,27 @@ export default function ComplianceFrameworksPage() {
                 <div key={f.id} className={`bg-white rounded-xl border p-5 sm:p-7 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-center hover:border-slate-300 transition-colors ${failing ? 'bg-red-50/30 border-red-100' : 'border-slate-100'}`}>
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-2 mb-3">
-                      <span className="text-sm font-semibold text-slate-900">{f.name}</span>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: passing ? '#F0FDF4' : failing ? '#FEF2F2' : '#FFFBEB', color: statusColor }}>{statusLabel}</span>
-                      {f.isCustom && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Custom</span>}
-                      {f.is_default && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Default</span>}
+                      <span className="text-ui font-semibold text-slate-900">{f.name}</span>
+                      <span className="text-label px-2 py-0.5 rounded-full" style={{ background: passing ? '#F0FDF4' : failing ? '#FEF2F2' : '#FFFBEB', color: statusColor }}>{statusLabel}</span>
+                      {f.isCustom && <span className="text-label px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Custom</span>}
+                      {f.is_default && <span className="text-label px-2 py-0.5 rounded-full bg-blue-50 text-ink-info">Default</span>}
                     </div>
                     <div className="flex items-center gap-3 mb-2">
                       <div className="flex-1 h-1.5 bg-slate-100 rounded-full">
                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: statusColor }} />
                       </div>
-                      <span className="text-sm font-bold min-w-[40px] text-right" style={{ color: statusColor }}>{pct}%</span>
+                      <span className="text-ui font-semibold tabular-nums min-w-[40px] text-right" style={{ color: statusColor }}>{pct}%</span>
                     </div>
-                    <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                    <div className="flex flex-wrap gap-3 text-meta text-ink-muted">
                       {f.rulesCount != null && <span>{f.rulesCount} rules</span>}
                       {f.lastScanAt && <span>Last scan {new Date(f.lastScanAt).toLocaleString()}</span>}
                     </div>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <button onClick={() => handleRunScan(f.id)} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
+                    <button onClick={() => handleRunScan(f.id)} className="flex items-center gap-1.5 bg-white text-ink-muted border border-slate-200 rounded-lg px-3.5 py-2 text-label cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
                       <RefreshCw size={11} /> Run Scan
                     </button>
-                    <button onClick={() => handleViewDetails(f.id)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap">
+                    <button onClick={() => handleViewDetails(f.id)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-label cursor-pointer transition-colors whitespace-nowrap">
                       <FileText size={11} /> View Details
                     </button>
                   </div>
@@ -418,16 +420,16 @@ export default function ComplianceFrameworksPage() {
         <div className="bg-white rounded-xl border border-slate-100 p-5 sm:p-7 mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-center hover:border-slate-300 transition-colors">
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="text-sm font-semibold text-slate-900">SOC 2 Readiness</span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Sample data</span>
+              <span className="text-ui font-semibold text-slate-900">SOC 2 Readiness</span>
+              <span className="text-label px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Sample data</span>
             </div>
-            <p className="text-xs text-slate-500 leading-relaxed mb-2">Technical and customer-provided supporting evidence for SOC 2 criteria — not a certification or Type II audit.</p>
-            <p className="text-xs text-slate-400">{soc2Subtext}</p>
+            <p className="text-meta text-ink-muted leading-relaxed mb-2">Technical and customer-provided supporting evidence for SOC 2 criteria — not a certification or Type II audit.</p>
+            <p className="text-meta text-ink-muted">{soc2Subtext}</p>
           </div>
           <button
             type="button"
             onClick={() => router.push('/compliance/frameworks/soc2')}
-            className="text-xs text-violet-600 bg-violet-50 border border-violet-200 rounded-lg px-3.5 py-2 font-semibold cursor-pointer hover:bg-violet-100 transition-colors whitespace-nowrap"
+            className="text-label text-violet-600 bg-violet-50 border border-violet-200 rounded-lg px-3.5 py-2 cursor-pointer hover:bg-violet-100 transition-colors whitespace-nowrap"
           >
             View Readiness →
           </button>
@@ -447,15 +449,15 @@ export default function ComplianceFrameworksPage() {
       {/* Breadcrumb + header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
         <div>
-          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Security / Compliance</p>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Compliance</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Track your compliance posture across industry standards and frameworks.</p>
+          <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">Security / Compliance</p>
+          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Compliance</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>Track your compliance posture across industry standards and frameworks.</p>
         </div>
         {/* The only real-mode entry point for CreateFrameworkModal -- same
             state (createModalOpen), same modal, same handler as demo mode's
             equivalent button below. Without this, an authenticated real
             customer has no way to open framework creation at all. */}
-        <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-4 py-2.5 text-xs font-bold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0">
+        <button onClick={handleCreateFramework} className="flex items-center gap-1.5 bg-white text-ink-muted border border-slate-200 rounded-lg px-4 py-2.5 text-label cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0">
           <Plus size={12} /> Add Framework
         </button>
       </div>
@@ -463,7 +465,7 @@ export default function ComplianceFrameworksPage() {
       {/* AWS Security Hub attribution banner */}
       <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3.5 mb-4 flex items-start gap-2.5">
         <Info size={14} className="text-violet-600 mt-0.5 shrink-0" />
-        <p className="text-xs text-violet-900 leading-relaxed">
+        <p className="text-meta text-violet-900 leading-relaxed">
           {shNeverSynced ? (
             <>
               <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub once it&apos;s connected and synchronized — it is not currently connected to DevControl. NIST coverage reflects AWS Security Hub&apos;s own interpretation of the NIST SP 800-53 Rev. 5 guidelines, limited to a DevControl-verified technical subset — not a certification. <strong>SOC 2</strong> readiness — technical evidence DevControl observes plus supporting evidence your organization provides, not a full Type II audit or certification — is available separately.
@@ -476,16 +478,16 @@ export default function ComplianceFrameworksPage() {
         </p>
       </div>
 
-      {displayError && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-4"><p className="text-sm text-red-600">{displayError}</p></div>}
-      {scansError && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-4"><p className="text-sm text-red-600">{scansError}</p></div>}
+      {displayError && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-4"><p className="text-ui text-ink-danger">{displayError}</p></div>}
+      {scansError && <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-4"><p className="text-ui text-ink-danger">{scansError}</p></div>}
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
         {kpiCards.map(({ label, value, sub }) => (
           <div key={label} className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
-            <div className="text-xl sm:text-2xl font-bold tracking-tight leading-none mb-1.5" style={{ color: value === '—' ? '#9CA3AF' : '#0F172A' }}>{value}</div>
-            <p className="text-xs text-slate-500 leading-relaxed">{sub}</p>
+            <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">{label}</p>
+            <div className={`text-section sm:text-kpi tabular-nums leading-none mb-1.5 ${value === '—' ? 'text-ink-muted' : 'text-slate-900'}`}>{value}</div>
+            <p className="text-meta text-ink-muted leading-relaxed">{sub}</p>
           </div>
         ))}
       </div>
@@ -498,28 +500,28 @@ export default function ComplianceFrameworksPage() {
           mounted below -- no new modal, hook, or API call. */}
       {frameworks.length > 0 && (
         <>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Your Custom Frameworks</p>
+          <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-4">Your Custom Frameworks</p>
           <div className="flex flex-col gap-3 mb-6">
             {frameworks.map((f) => (
               <div key={f.id} className="bg-white rounded-xl border border-slate-100 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="text-sm font-semibold text-slate-900">{f.name}</span>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Custom</span>
-                    {f.is_default && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Default</span>}
+                    <span className="text-ui font-semibold text-slate-900">{f.name}</span>
+                    <span className="text-label px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">Custom</span>
+                    {f.is_default && <span className="text-label px-2 py-0.5 rounded-full bg-blue-50 text-ink-info">Default</span>}
                   </div>
-                  {f.description && <p className="text-xs text-slate-500">{f.description}</p>}
+                  {f.description && <p className="text-meta text-ink-muted">{f.description}</p>}
                 </div>
                 <div className="flex gap-2 flex-wrap shrink-0">
                   <button
                     onClick={() => handleRunScan(f.id)}
-                    className="flex items-center gap-1.5 bg-white text-slate-500 border border-slate-200 rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap"
+                    className="flex items-center gap-1.5 bg-white text-ink-muted border border-slate-200 rounded-lg px-3.5 py-2 text-label cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap"
                   >
                     <RefreshCw size={11} /> Run Scan
                   </button>
                   <button
                     onClick={() => handleViewDetails(f.id)}
-                    className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap"
+                    className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-label cursor-pointer transition-colors whitespace-nowrap"
                   >
                     <FileText size={11} /> View / Manage Rules
                   </button>
@@ -531,7 +533,7 @@ export default function ComplianceFrameworksPage() {
       )}
 
       {/* Compliance Frameworks */}
-      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Compliance Frameworks</p>
+      <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-4">Compliance Frameworks</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {FRAMEWORK_STANDARDS.map((fw) => {
           const isCis = fw.key === 'cis';
@@ -549,50 +551,50 @@ export default function ComplianceFrameworksPage() {
           return (
             <div key={fw.key} className="bg-white rounded-xl border border-slate-200 p-4">
               <div className="mb-2 flex items-center gap-2">
-                <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: fw.badgeBg, color: fw.badgeColor }}>{fw.badge}</span>
+                <span className="text-label font-medium px-2 py-0.5 rounded" style={{ background: fw.badgeBg, color: fw.badgeColor }}>{fw.badge}</span>
               </div>
-              <p className="text-sm font-semibold text-slate-900 mb-1">{fw.name}</p>
-              <p className="text-xs text-slate-500 leading-relaxed mb-2">{fw.desc}</p>
-              <p className="text-xs font-semibold text-slate-600 mb-0.5">
+              <p className="text-ui font-semibold text-slate-900 mb-1">{fw.name}</p>
+              <p className="text-meta text-ink-muted leading-relaxed mb-2">{fw.desc}</p>
+              <p className="text-label text-slate-600 mb-0.5">
                 {fw.attribution === 'security_hub' ? 'Security Hub-backed' : fw.attribution === 'soc2_evidence' ? 'Technical + customer evidence' : 'Not yet implemented'}
               </p>
-              <p className="text-xs text-slate-400 mb-3">
+              <p className="text-meta text-ink-muted mb-3">
                 {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : isSoc2 ? soc2Subtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
               </p>
               {isSoc2 ? (
                 <button
                   type="button"
                   onClick={() => router.push('/compliance/frameworks/soc2')}
-                  className="w-full text-xs text-violet-600 bg-violet-50 border border-violet-200 rounded-lg py-1.5 font-semibold cursor-pointer hover:bg-violet-100 transition-colors"
+                  className="w-full text-label text-violet-600 bg-violet-50 border border-violet-200 rounded-lg py-1.5 cursor-pointer hover:bg-violet-100 transition-colors"
                 >
                   View Readiness →
                 </button>
               ) : evaluated && readiness ? (
-                <div className="text-xs text-slate-600 leading-relaxed" data-testid={isCis ? 'cis-coverage' : isPci ? 'pci-coverage' : 'nist-coverage'}>
-                  <span className="font-semibold text-emerald-600">{readiness.coverage.passed} passed</span>
+                <div className="text-meta text-slate-600 leading-relaxed" data-testid={isCis ? 'cis-coverage' : isPci ? 'pci-coverage' : 'nist-coverage'}>
+                  <span className="font-semibold text-ink-success">{readiness.coverage.passed} passed</span>
                   {' · '}
-                  <span className="font-semibold text-red-600">{readiness.coverage.failed} failed</span>
+                  <span className="font-semibold text-ink-danger">{readiness.coverage.failed} failed</span>
                   {' · '}
                   <span>{readiness.coverage.unknown} unknown</span>
                   {' · '}
                   <span>{readiness.coverage.notEvaluated} not evaluated</span>
                   {notEstablishableCount > 0 && <span>{' · '}{notEstablishableCount} not establishable</span>}
-                  <span className="text-slate-400"> / {readiness.coverage.totalControls} mapped</span>
+                  <span className="text-ink-muted"> / {readiness.coverage.totalControls} mapped</span>
                   {isPci && (
-                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                    <p className="text-meta text-ink-muted mt-1.5 leading-relaxed">
                       Partial coverage — supported AWS evidence only, not a full PCI DSS v4.0.1 assessment.
                       {additionalEvidenceCount > 0 && ` ${additionalEvidenceCount} of these are supporting evidence only (not a direct technical match).`}
                     </p>
                   )}
                   {isNist && (
-                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                    <p className="text-meta text-ink-muted mt-1.5 leading-relaxed">
                       Coverage reflects AWS Security Hub&apos;s own interpretation of NIST SP 800-53 Rev. 5, limited to a DevControl-verified subset of AWS&apos;s ~297-control catalog — not a certification, audit, or full NIST 800-53 assessment. Manual and non-technical requirements are not evaluated.
                       {additionalEvidenceCount > 0 && ` ${additionalEvidenceCount} of these are supporting evidence only (not a direct technical match).`}
                     </p>
                   )}
                 </div>
               ) : (
-                <button type="button" disabled aria-disabled="true" className="w-full text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg py-1.5 font-medium cursor-not-allowed">
+                <button type="button" disabled aria-disabled="true" className="w-full text-label text-ink-muted bg-slate-50 border border-slate-200 rounded-lg py-1.5 font-medium cursor-not-allowed">
                   🔒 Not yet available
                 </button>
               )}
@@ -605,8 +607,8 @@ export default function ComplianceFrameworksPage() {
       <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex-1">
-            <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">AWS Security Hub</p>
-            <p className="text-sm font-semibold text-slate-900 mb-2">
+            <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">AWS Security Hub</p>
+            <p className="text-ui font-semibold text-slate-900 mb-2">
               {(() => {
                 // Composed rather than hand-written per combination (2^3 branches for
                 // three frameworks) — this only changes how the sentence is generated,
@@ -633,21 +635,21 @@ export default function ComplianceFrameworksPage() {
                 return `${joinNames(pendingNames)} can be evaluated through AWS Security Hub once it is connected and synchronized.`;
               })()}
             </p>
-            <p className="text-xs text-slate-500 leading-relaxed max-w-xl">AWS Security Hub continuously evaluates supported security standards and provides findings that can be used to understand your compliance posture.</p>
+            <p className="text-meta text-ink-muted leading-relaxed max-w-xl">AWS Security Hub continuously evaluates supported security standards and provides findings that can be used to understand your compliance posture.</p>
           </div>
           <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 shrink-0">
-            <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wide whitespace-nowrap">
+            <span className="inline-flex items-center gap-1 text-label px-2.5 py-1 rounded-full bg-slate-100 text-ink-muted uppercase tracking-[0.04em] whitespace-nowrap">
               <Lock size={10} /> {shBadgeLabel}
             </span>
             <button
               type="button"
               onClick={() => triggerSecurityHubSync()}
               disabled={shSyncing}
-              className="flex items-center gap-1.5 bg-white text-violet-600 border border-violet-200 rounded-lg px-3 py-1.5 text-xs font-bold cursor-pointer hover:bg-violet-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              className="flex items-center gap-1.5 bg-white text-violet-600 border border-violet-200 rounded-lg px-3 py-1.5 text-label cursor-pointer hover:bg-violet-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
               <RefreshCw size={11} className={shSyncing ? 'animate-spin' : ''} /> {shSyncing ? 'Syncing…' : 'Sync Security Hub'}
             </button>
-            <a href="/docs" className="text-xs font-bold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
+            <a href="/docs" className="text-label text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
               Learn more <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </a>
           </div>
@@ -655,37 +657,37 @@ export default function ComplianceFrameworksPage() {
       </div>
 
       {/* Active Evaluations */}
-      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Active Evaluations</p>
+      <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-4">Active Evaluations</p>
       {evaluationState === 'loading' ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-100 mb-6">
           <RefreshCw size={22} className="text-slate-300 mx-auto mb-3 animate-spin" />
-          <p className="text-sm text-slate-500">Loading evaluations...</p>
+          <p className="text-ui text-ink-muted">Loading evaluations...</p>
         </div>
       ) : activeEvaluations.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-8 sm:p-12 text-center mb-6">
-          <p className="text-sm font-semibold text-slate-900 mb-2">No active compliance evaluations</p>
-          <p className="text-xs text-slate-500">Start an evaluation when a supported framework becomes available.</p>
+          <p className="text-ui font-semibold text-slate-900 mb-2">No active compliance evaluations</p>
+          <p className="text-meta text-ink-muted">Start an evaluation when a supported framework becomes available.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3 mb-6">
           {activeEvaluations.map((scan) => (
             <div key={scan.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-900">{frameworkNameFor(scan.framework_id, frameworks)}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-ui font-semibold text-slate-900">{frameworkNameFor(scan.framework_id, frameworks)}</p>
+                <p className="text-meta text-ink-muted">
                   {scan.status === 'completed'
                     ? `Completed ${new Date(scan.completed_at ?? scan.created_at).toLocaleString()}`
                     : scan.status === 'running' ? 'In progress' : 'Pending'}
                 </p>
               </div>
-              {scan.compliance_score != null && <span className="text-sm font-bold text-slate-900">{scan.compliance_score}%</span>}
+              {scan.compliance_score != null && <span className="text-ui font-semibold tabular-nums text-slate-900">{scan.compliance_score}%</span>}
             </div>
           ))}
         </div>
       )}
 
       {/* Security / read-only footer messaging */}
-      <p className="text-xs text-slate-400 text-center">
+      <p className="text-meta text-ink-muted text-center">
         DevControl evaluations use secure, read-only access by default — optional remediation actions require separate, explicit permission and your approval.
       </p>
 

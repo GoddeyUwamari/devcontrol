@@ -14,6 +14,8 @@ import { Soc2ObservedEvidenceList } from '@/components/compliance/Soc2ObservedEv
 import { Soc2CustomerEvidenceSection } from '@/components/compliance/Soc2CustomerEvidenceSection';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
+import { cn } from '@/lib/utils';
 
 /**
  * SOC 2 Readiness detail page. Uses GET /api/soc2/readiness (all six criteria) and
@@ -49,21 +51,21 @@ export default function Soc2ReadinessDetailPage() {
       <button
         type="button"
         onClick={() => router.push('/compliance/frameworks')}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 mb-4"
+        className="inline-flex items-center gap-1.5 text-label text-ink-muted hover:text-slate-700 mb-4"
       >
         <ArrowLeft size={13} /> Back to Compliance Frameworks
       </button>
 
       <div className="mb-6">
-        <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Security / Compliance / SOC 2</p>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">SOC 2 Readiness</h1>
-        <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-2xl">
+        <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">Security / Compliance / SOC 2</p>
+        <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>SOC 2 Readiness</h1>
+        <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-2xl')}>
           Technical evidence DevControl observes from your connected AWS account, and supporting evidence your
           organization provides. This is supplementary readiness evidence — not a SOC 2 certification, Type II audit,
           or auditor approval.
         </p>
         {isDemoActive && (
-          <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 max-w-2xl">
+          <p className="text-label text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 max-w-2xl">
             Sample data for demonstration — not evidence from a real AWS account.
           </p>
         )}
@@ -76,11 +78,11 @@ export default function Soc2ReadinessDetailPage() {
         </div>
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center justify-between gap-3">
-          <p className="text-sm text-red-600">{error instanceof Error ? error.message : 'Failed to load SOC 2 readiness'}</p>
+          <p className="text-ui text-ink-danger">{error instanceof Error ? error.message : 'Failed to load SOC 2 readiness'}</p>
           <button
             type="button"
             onClick={() => refetch()}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-700 hover:text-red-800 shrink-0"
+            className="inline-flex items-center gap-1.5 text-label text-red-700 hover:text-red-800 shrink-0"
           >
             <RefreshCw size={12} /> Retry
           </button>
@@ -99,7 +101,7 @@ export default function Soc2ReadinessDetailPage() {
         >
           <TabsList className="flex-wrap h-auto justify-start mb-4">
             {criteria.map((c) => (
-              <TabsTrigger key={c.criterionId} value={c.criterionId} className="text-xs">
+              <TabsTrigger key={c.criterionId} value={c.criterionId} className="text-label">
                 {c.criterionId}
               </TabsTrigger>
             ))}
@@ -110,36 +112,36 @@ export default function Soc2ReadinessDetailPage() {
               {/* Criterion summary */}
               <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7">
                 <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-violet-50 text-violet-700">{c.criterionId}</span>
+                  <span className="text-label px-2 py-0.5 rounded bg-violet-50 text-violet-700">{c.criterionId}</span>
                   <DispositionBadge dispositionClass={c.dispositionClass} />
                 </div>
-                <p className="text-sm font-semibold text-slate-900 mb-2">{c.name}</p>
-                <p className="text-xs text-slate-700 leading-relaxed mb-1.5">{c.evidenceClaim}</p>
-                <p className="text-xs text-slate-400 leading-relaxed mb-4">{c.limitation}</p>
+                <p className="text-ui font-semibold text-slate-900 mb-2">{c.name}</p>
+                <p className="text-meta text-slate-700 leading-relaxed mb-1.5">{c.evidenceClaim}</p>
+                <p className="text-meta text-ink-muted leading-relaxed mb-4">{c.limitation}</p>
 
                 {c.evaluated && c.evidenceSummary ? (
-                  <div className="text-xs text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
+                  <div className="text-meta text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
                     <span className="font-semibold text-emerald-700">{c.evidenceSummary.supports} supports</span>
                     {' · '}
-                    <span className="font-semibold text-red-600">{c.evidenceSummary.contradicts} contradicts</span>
+                    <span className="font-semibold text-ink-danger">{c.evidenceSummary.contradicts} contradicts</span>
                     {' · '}
                     <span>{c.evidenceSummary.unknown} unknown</span>
                     {c.computedAt && (
-                      <p className="text-xs text-slate-400 mt-1">Evaluation computed at {new Date(c.computedAt).toLocaleString()}</p>
+                      <p className="text-meta text-ink-muted mt-1">Evaluation computed at {new Date(c.computedAt).toLocaleString()}</p>
                     )}
                   </div>
                 ) : (
                   <div className="border-t border-slate-100 pt-3">
-                    <p className="text-xs font-medium text-slate-500">Not yet evaluated</p>
-                    <p className="text-xs text-slate-400 mt-0.5">No technical evaluation has been computed for this criterion yet.</p>
+                    <p className="text-meta font-medium text-ink-muted">Not yet evaluated</p>
+                    <p className="text-meta text-ink-muted mt-0.5">No technical evaluation has been computed for this criterion yet.</p>
                   </div>
                 )}
               </div>
 
               {/* AWS-Observed Evidence */}
               <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7">
-                <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">AWS-Observed Evidence</p>
-                <p className="text-xs text-slate-500 mb-4">Technical facts DevControl observed directly from your connected AWS account.</p>
+                <p className="text-label text-blue-600 uppercase tracking-[0.04em] mb-1">AWS-Observed Evidence</p>
+                <p className="text-meta text-ink-muted mb-4">Technical facts DevControl observed directly from your connected AWS account.</p>
                 <Soc2ObservedEvidenceList criterionId={c.criterionId} />
               </div>
 

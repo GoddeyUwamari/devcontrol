@@ -37,7 +37,7 @@ export function Soc2ObservedEvidenceList({ criterionId }: { criterionId: string 
   if (error) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-        <p className="text-sm text-red-600">{error instanceof Error ? error.message : 'Failed to load AWS-observed evidence'}</p>
+        <p className="text-ui text-ink-danger">{error instanceof Error ? error.message : 'Failed to load AWS-observed evidence'}</p>
       </div>
     );
   }
@@ -58,20 +58,20 @@ export function Soc2ObservedEvidenceList({ criterionId }: { criterionId: string 
         <div key={`${obs.resourceArn ?? 'org-level'}-${idx}`} className="border border-slate-100 rounded-lg p-4">
           <div className="flex items-start justify-between gap-3 mb-2">
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-slate-900">{obs.resourceType}</p>
+              <p className="text-label text-slate-900">{obs.resourceType}</p>
               {obs.resourceArn ? (
                 <button
                   type="button"
                   onClick={() => handleCopy(obs.resourceArn as string)}
-                  className="text-xs text-slate-500 hover:text-violet-600 inline-flex items-center gap-1 mt-0.5 break-all text-left"
+                  className="text-meta text-ink-muted hover:text-violet-600 inline-flex items-center gap-1 mt-0.5 break-all text-left"
                   title="Copy ARN"
                 >
                   <Copy size={11} className="shrink-0" />
                   {obs.resourceArn}
-                  {copied === obs.resourceArn && <span className="text-emerald-600 ml-1">Copied</span>}
+                  {copied === obs.resourceArn && <span className="text-ink-success ml-1">Copied</span>}
                 </button>
               ) : (
-                <p className="text-xs text-slate-400 mt-0.5">Organization-level observation</p>
+                <p className="text-meta text-ink-muted mt-0.5">Organization-level observation</p>
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -79,8 +79,8 @@ export function Soc2ObservedEvidenceList({ criterionId }: { criterionId: string 
               <EvidenceResultBadge result={obs.result} />
             </div>
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed mb-2">{obs.explanation}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-400">
+          <p className="text-meta text-slate-600 leading-relaxed mb-2">{obs.explanation}</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-meta text-ink-muted">
             <span>Collected at {new Date(obs.collectedAt).toLocaleString()}</span>
             {obs.observedAt && <span>Observed at {new Date(obs.observedAt).toLocaleString()}</span>}
             <span>Schema v{obs.schemaVersion}</span>

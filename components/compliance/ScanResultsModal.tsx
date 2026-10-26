@@ -68,32 +68,32 @@ export function ScanResultsModal({ open, onClose, scanId }: ScanResultsModalProp
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Card>
                 <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold text-gray-900">{scan.compliance_score?.toFixed(1)}%</p>
-                  <p className="text-sm text-gray-600">Score</p>
+                  <p className="text-kpi tabular-nums text-gray-900">{scan.compliance_score?.toFixed(1)}%</p>
+                  <p className="text-ui text-gray-600">Score</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold text-green-600">{passedFindings.length}</p>
-                  <p className="text-sm text-gray-600">Passed</p>
+                  <p className="text-kpi tabular-nums text-ink-success">{passedFindings.length}</p>
+                  <p className="text-ui text-gray-600">Passed</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold text-red-600">{failedFindings.length}</p>
-                  <p className="text-sm text-gray-600">Failed</p>
+                  <p className="text-kpi tabular-nums text-ink-danger">{failedFindings.length}</p>
+                  <p className="text-ui text-gray-600">Failed</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold text-red-600">{scan.critical_issues}</p>
-                  <p className="text-sm text-gray-600">Critical</p>
+                  <p className="text-kpi tabular-nums text-ink-danger">{scan.critical_issues}</p>
+                  <p className="text-ui text-gray-600">Critical</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 text-center">
-                  <p className="text-2xl font-bold text-orange-600">{scan.high_issues}</p>
-                  <p className="text-sm text-gray-600">High</p>
+                  <p className="text-kpi tabular-nums text-ink-warning">{scan.high_issues}</p>
+                  <p className="text-ui text-gray-600">High</p>
                 </CardContent>
               </Card>
             </div>
@@ -114,12 +114,12 @@ export function ScanResultsModal({ open, onClose, scanId }: ScanResultsModalProp
                               {getStatusBadge(finding.status)}
                               <Badge variant="outline">{finding.severity}</Badge>
                             </div>
-                            <p className="text-sm text-gray-600 mb-1">{finding.resource_type} • {finding.category}</p>
+                            <p className="text-ui text-gray-600 mb-1">{finding.resource_type} • {finding.category}</p>
                             {finding.issue && (
-                              <p className="text-sm text-red-700 mb-2">{finding.issue}</p>
+                              <p className="text-ui text-red-700 mb-2">{finding.issue}</p>
                             )}
                             {finding.recommendation && (
-                              <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                              <p className="text-ui text-gray-700 bg-gray-50 p-2 rounded">
                                 <span className="font-medium">Recommendation:</span> {finding.recommendation}
                               </p>
                             )}
@@ -140,7 +140,7 @@ export function ScanResultsModal({ open, onClose, scanId }: ScanResultsModalProp
                 </summary>
                 <div className="space-y-2">
                   {passedFindings.slice(0, 20).map((finding) => (
-                    <div key={finding.id} className="flex items-center gap-2 text-sm text-gray-600 bg-green-50 p-2 rounded">
+                    <div key={finding.id} className="flex items-center gap-2 text-ui text-gray-600 bg-green-50 p-2 rounded">
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
                       <span>{finding.resource_name || finding.resource_id}</span>
                       <span className="text-gray-400">•</span>
@@ -148,7 +148,7 @@ export function ScanResultsModal({ open, onClose, scanId }: ScanResultsModalProp
                     </div>
                   ))}
                   {passedFindings.length > 20 && (
-                    <p className="text-sm text-gray-500 text-center">
+                    <p className="text-ui text-ink-muted text-center">
                       ... and {passedFindings.length - 20} more
                     </p>
                   )}

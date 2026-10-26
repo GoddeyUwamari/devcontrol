@@ -49,8 +49,8 @@ export function Soc2CustomerEvidenceSection({ criterionId, criteria, canManage }
     <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-xs font-bold text-amber-600 uppercase tracking-widest mb-1">Customer-Provided Evidence</p>
-          <p className="text-xs text-slate-500">Self-attested supporting evidence your organization submits — not AWS-observed, not verified by DevControl.</p>
+          <p className="text-label text-ink-warning uppercase tracking-[0.04em] mb-1">Customer-Provided Evidence</p>
+          <p className="text-meta text-ink-muted">Self-attested supporting evidence your organization submits — not AWS-observed, not verified by DevControl.</p>
         </div>
         <Button
           size="sm"
@@ -70,7 +70,7 @@ export function Soc2CustomerEvidenceSection({ criterionId, criteria, canManage }
         </div>
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-          <p className="text-sm text-red-600">{error instanceof Error ? error.message : 'Failed to load customer evidence'}</p>
+          <p className="text-ui text-ink-danger">{error instanceof Error ? error.message : 'Failed to load customer evidence'}</p>
         </div>
       ) : !evidence || evidence.length === 0 ? (
         <EmptyState
@@ -91,11 +91,11 @@ export function Soc2CustomerEvidenceSection({ criterionId, criteria, canManage }
                     <button
                       type="button"
                       onClick={() => setDetail(item)}
-                      className="text-sm font-semibold text-slate-900 hover:text-violet-600 text-left"
+                      className="text-ui font-semibold text-slate-900 hover:text-violet-600 text-left"
                     >
                       {item.title}
                     </button>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-meta text-ink-muted mt-0.5">
                       {item.criterionId} · {item.evidenceType}
                     </p>
                   </div>
@@ -105,7 +105,7 @@ export function Soc2CustomerEvidenceSection({ criterionId, criteria, canManage }
                   </div>
                 </div>
                 {shortDescription && (
-                  <p className="text-xs text-slate-600 leading-relaxed mb-2">
+                  <p className="text-meta text-slate-600 leading-relaxed mb-2">
                     {shortDescription}
                     {truncated && (
                       <button type="button" onClick={() => setDetail(item)} className="text-violet-600 font-medium ml-1">
@@ -115,7 +115,7 @@ export function Soc2CustomerEvidenceSection({ criterionId, criteria, canManage }
                   </p>
                 )}
                 <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <p className="text-xs text-slate-400">Submitted {new Date(item.submittedAt).toLocaleDateString()}</p>
+                  <p className="text-meta text-ink-muted">Submitted {new Date(item.submittedAt).toLocaleDateString()}</p>
                   {canEdit && (
                     <Button
                       size="sm"
@@ -162,19 +162,19 @@ export function Soc2CustomerEvidenceSection({ criterionId, criteria, canManage }
                   <CustomerEvidenceStatusBadge status={detail.status} />
                 </div>
                 {detail.description && (
-                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{detail.description}</p>
+                  <p className="text-ui text-slate-700 leading-relaxed whitespace-pre-wrap">{detail.description}</p>
                 )}
                 {detail.externalReference && <Soc2ExternalReferenceLink href={detail.externalReference} />}
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs pt-2 border-t border-slate-100">
-                  <dt className="text-slate-400">Submitted at</dt>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-meta pt-2 border-t border-slate-100">
+                  <dt className="text-ink-muted">Submitted at</dt>
                   <dd className="text-slate-700">{new Date(detail.submittedAt).toLocaleString()}</dd>
                   {detail.reviewDate && (
                     <>
-                      <dt className="text-slate-400">Review date</dt>
+                      <dt className="text-ink-muted">Review date</dt>
                       <dd className="text-slate-700">{new Date(detail.reviewDate).toLocaleDateString()}</dd>
                     </>
                   )}
-                  <dt className="text-slate-400">Updated at</dt>
+                  <dt className="text-ink-muted">Updated at</dt>
                   <dd className="text-slate-700">{new Date(detail.updatedAt).toLocaleString()}</dd>
                 </dl>
               </div>

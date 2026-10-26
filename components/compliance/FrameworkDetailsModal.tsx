@@ -161,9 +161,9 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
                               {rule.category}
                             </Badge>
                           </div>
-                          <p className="text-sm text-gray-600 mb-2">{rule.rule_code}</p>
+                          <p className="text-ui text-gray-600 mb-2">{rule.rule_code}</p>
                           {rule.description && (
-                            <p className="text-sm text-gray-700 mb-2">{rule.description}</p>
+                            <p className="text-ui text-gray-700 mb-2">{rule.description}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
@@ -181,7 +181,7 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
                         </div>
                       </div>
 
-                      <div className="text-sm space-y-1">
+                      <div className="text-ui space-y-1">
                         <div className="flex items-start gap-2">
                           <span className="font-medium text-gray-700">Type:</span>
                           <span className="text-gray-600">{rule.rule_type.replace('_', ' ')}</span>
@@ -196,7 +196,7 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="font-medium text-gray-700">Conditions:</span>
-                          <span className="text-gray-600 font-mono text-xs">
+                          <span className="text-gray-600 font-mono text-meta">
                             {JSON.stringify(rule.conditions)}
                           </span>
                         </div>
