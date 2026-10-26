@@ -114,6 +114,8 @@ const KNOWN_UNRESOLVED: Record<string, Partial<Record<Kind, number>>> = {
   'database/migrations-admin/README.md': { uuid: 3 },
   // Fixture-looking values nobody has confirmed are invented.
   'app/(app)/security/page.tsx': { resourceId: 2 },
+  // The rendered copy of page.tsx's demo row; remove it together with that entry.
+  'app/(app)/security/__tests__/__snapshots__/security-flag-off.demo.html': { resourceId: 2 },
   'backend/src/monitoring/__tests__/weeklyEmailJobMonitor.test.ts': { uuid: 1 },
   'backend/src/routes/__tests__/organization-context-fail-closed.test.ts': { uuid: 1 },
   'backend/src/services/__tests__/activity-feed.service.test.ts': { uuid: 1 },

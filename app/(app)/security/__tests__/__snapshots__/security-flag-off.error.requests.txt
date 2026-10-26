@@ -1,0 +1,7 @@
+GET /api/compliance-frameworks
+GET /api/compliance-frameworks/scans/list?limit=50
+GET /api/risk-score/current
+GET /api/risk-score/trend?date_range=30d
+GET /api/security/account-findings
+fetch /api/anomalies
+fetch /api/anomalies/stats

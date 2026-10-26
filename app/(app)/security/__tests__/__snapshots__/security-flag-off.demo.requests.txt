@@ -1,0 +1,3 @@
+GET /api/compliance-frameworks
+GET /api/compliance-frameworks/scans/list?limit=50
+fetch /api/anomalies/stats

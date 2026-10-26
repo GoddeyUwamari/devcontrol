@@ -67,6 +67,16 @@ const G1 = [
   ...G1_COMPONENTS,
 ]
 
+// Security V2: every new file in the Security route folder and lib/security, .ts included (the redesign's model and
+// helpers are .ts), except the legacy page. A self-check below keeps this list equal to that.
+const SECURITY_DIRS = ['app/(app)/security/', 'lib/security/']
+const SECURITY_LEGACY = ['app/(app)/security/page.tsx']
+const SECURITY = [
+  'app/(app)/security/overview/fixGuidance.ts',
+  'app/(app)/security/overview/securityModel.ts',
+  'lib/security/findingDisplay.ts',
+]
+
 // The Security menu pages other than the Security page itself (SM): Anomalies (+ rules), Compliance (the retired
 // /compliance redirect, frameworks, SOC 2) and Audit Logs, plus every components/compliance file (only these pages use
 // them). A self-check below keeps this list equal to that. The Security page and lib/security are Security V2's.
@@ -91,7 +101,7 @@ const SM = [
 ]
 
 // Not converted yet, so never on the strict list: the Security page (Security V2 rebuilds it) and G1's legacy files.
-const EXEMPT = ['app/(app)/security/page.tsx', ...G1_LEGACY]
+const EXEMPT = [...SECURITY_LEGACY, ...G1_LEGACY]
 
 const STRICT = [
   'app/(app)/connect-aws/page.tsx',
@@ -153,6 +163,8 @@ const STRICT = [
   ...COSTS,
   // G1: Infrastructure + Services, Invoices and AI Reports.
   ...G1,
+  // Security V2.
+  ...SECURITY,
   // SM: the Security menu pages (Anomalies, Compliance, Audit Logs).
   ...SM,
 ]
@@ -534,6 +546,14 @@ describe('strict typography for the pages on the app type scale', () => {
     for (const file of G1_LEGACY) expect(routeFiles, file).toContain(file)
     for (const file of G1) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
     expect(G1.filter((f) => COSTS.includes(f)), 'no file is in two groups').toEqual([])
+  })
+
+  it('the Security additions are exactly the .ts and .tsx files in the Security folders minus the legacy page, each listed once', () => {
+    const securityFiles = SOURCE_FILES.filter((f) => /\.tsx?$/.test(f) && SECURITY_DIRS.some((d) => f.startsWith(d)))
+    expect([...SECURITY].sort()).toEqual(securityFiles.filter((f) => !SECURITY_LEGACY.includes(f)))
+    for (const file of SECURITY_LEGACY) expect(securityFiles, file).toContain(file)
+    for (const file of SECURITY) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
+    expect(SECURITY.filter((f) => COSTS.includes(f) || G1.includes(f)), 'no file is in two groups').toEqual([])
   })
 
   it('the SM additions are exactly the Anomalies, Compliance and Audit Logs files plus components/compliance, each listed once', () => {
