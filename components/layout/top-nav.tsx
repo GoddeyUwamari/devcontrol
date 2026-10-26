@@ -263,7 +263,8 @@ export function TopNav() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
             onClick={() => setMobileMenuOpen(true)}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', borderRadius: '10px', border: 'none', background: 'none', cursor: 'pointer', color: '#0F172A' }}
+            className="text-ink"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', borderRadius: '10px', border: 'none', background: 'none', cursor: 'pointer' }}
             aria-label="Open menu"
           >
             <Menu size={26} />
@@ -283,7 +284,8 @@ export function TopNav() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
           <Link
             href="/observability/alerts"
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', color: '#475569' }}
+            className="text-ink-muted"
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px' }}
             aria-label="Alerts"
           >
             <Bell size={24} />
@@ -307,7 +309,7 @@ export function TopNav() {
               onLogout={handleLogout}
             />
           ) : (
-            <Link href="/login" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>Sign in</Link>
+            <Link href="/login" className="text-ui font-semibold text-violet-600" style={{ textDecoration: 'none' }}>Sign in</Link>
           )}
         </div>
       </div>
@@ -339,9 +341,9 @@ export function TopNav() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-base font-medium rounded-md transition-colors',
-                      'hover:bg-accent hover:text-[#1e1b4b]',
-                      isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
+                      'flex items-center gap-1.5 px-3 py-2 text-body font-medium text-ink rounded-md transition-colors',
+                      'hover:bg-accent',
+                      isActive && 'bg-accent'
                     )}
                   >
                     {item.label}
@@ -358,9 +360,9 @@ export function TopNav() {
                 >
                   <button
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-base font-medium rounded-md transition-colors',
-                      'hover:bg-accent hover:text-[#1e1b4b]',
-                      isActive ? 'bg-accent text-foreground' : 'text-[#1E293B]'
+                      'flex items-center gap-1.5 px-3 py-2 text-body font-medium text-ink rounded-md transition-colors',
+                      'hover:bg-accent',
+                      isActive && 'bg-accent'
                     )}
                   >
                     {item.label}
@@ -407,18 +409,18 @@ export function TopNav() {
                             onMouseLeave={(e) => { if (!childActive) e.currentTarget.style.background = 'transparent'; }}
                           >
                             <div style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                              <ChildIcon size={16} style={{ color: '#7c3aed' }} />
+                              <ChildIcon size={16} className="text-violet-600" />
                             </div>
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e1b4b', lineHeight: 1.3 }}>{child.label}</div>
+                                <div className="text-ui font-semibold text-ink">{child.label}</div>
                                 {child.badge && (
-                                  <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: '#fff', background: '#7c3aed', borderRadius: '4px', padding: '1px 6px' }}>
+                                  <span className="text-label font-semibold text-white" style={{ background: '#7c3aed', borderRadius: '4px', padding: '1px 6px' }}>
                                     {child.badge}
                                   </span>
                                 )}
                               </div>
-                              <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '2px' }}>{child.desc}</div>
+                              <div className="text-meta text-ink-muted" style={{ marginTop: '2px' }}>{child.desc}</div>
                             </div>
                           </Link>
                         );
@@ -438,12 +440,12 @@ export function TopNav() {
             variant="outline"
             size="sm"
             onClick={handleSearchClick}
-            className="hidden md:flex items-center gap-2 text-base text-slate-500 md:w-32 lg:w-48 justify-start rounded-lg border border-slate-200 bg-white hover:border-slate-300"
+            className="hidden md:flex items-center gap-2 text-ui text-ink-muted md:w-32 lg:w-48 justify-start rounded-lg border border-slate-200 bg-white hover:border-slate-300"
           >
             <Search className="h-4 w-4" />
             <span>Search...</span>
-            <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
-              <span className="text-xs">⌘</span>K
+            <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-label font-medium text-ink-muted">
+              <span>⌘</span>K
             </kbd>
           </Button>
 
@@ -512,7 +514,8 @@ export function TopNav() {
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#0F172A' }}>DevControl</span>
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '6px', border: 'none', background: '#F1F5F9', cursor: 'pointer', color: '#475569' }}
+                className="text-ink-muted"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '6px', border: 'none', background: '#F1F5F9', cursor: 'pointer' }}
                 aria-label="Close menu"
               >
                 <X size={16} />
@@ -525,10 +528,10 @@ export function TopNav() {
                 <div key={section.key}>
                   <button
                     onClick={() => toggleSection(section.key)}
+                    className="text-body font-semibold text-ink"
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       width: '100%', padding: '14px 20px',
-                      fontSize: '1rem', fontWeight: 600, color: '#1e1b4b',
                       background: 'none', border: 'none', borderBottom: '1px solid #F1F5F9',
                       cursor: 'pointer', textAlign: 'left',
                     }}
@@ -553,11 +556,9 @@ export function TopNav() {
                           <Link
                             key={item.href}
                             href={item.href}
+                            className={cn('text-ui', isActive ? 'font-semibold text-violet-600' : 'font-normal text-ink-muted')}
                             style={{
                               display: 'block', padding: '10px 32px',
-                              fontSize: '0.9rem',
-                              color: isActive ? '#7C3AED' : '#475569',
-                              fontWeight: isActive ? 600 : 400,
                               textDecoration: 'none',
                               background: isActive ? '#F5F3FF' : 'transparent',
                             }}
@@ -575,9 +576,9 @@ export function TopNav() {
             {/* Bottom: Settings */}
             <Link
               href="/settings"
+              className="text-ui text-ink-muted"
               style={{
                 display: 'block', padding: '16px 20px',
-                fontSize: '0.9rem', color: '#475569',
                 borderTop: '1px solid #F1F5F9',
                 textDecoration: 'none', flexShrink: 0,
               }}
