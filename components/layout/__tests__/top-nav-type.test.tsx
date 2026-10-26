@@ -4,7 +4,7 @@
  * (13 px) and badges label (12 px); the search trigger is ui in muted ink and its shortcut a label. The
  * DevControl wordmark and the "DC" monogram are brand marks and stay exactly as they were.
  */
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { render, screen, fireEvent, within, act } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard', useRouter: () => ({ push: vi.fn() }) }))
@@ -12,7 +12,13 @@ vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({ user: { fullName: 'Sample Owner', email: 'owner@example.com' }, logout: vi.fn(), isLoading: false }),
 }))
 vi.mock('@/lib/services/anomaly.service', () => ({ anomalyService: { getAnomalies: vi.fn().mockResolvedValue({ anomalies: [] }) } }))
-vi.mock('@/lib/hooks/useWebSocket', () => ({ useWebSocket: () => ({ socket: null, isConnected: true }) }))
+// Each useWebSocket() call opens its own socket; the mock counts hook instances (a state initialiser runs
+// once per mounted hook), so a second socket shows up as a second instance.
+const ws = vi.hoisted(() => ({ isConnected: true, instances: 0 }))
+vi.mock('@/lib/hooks/useWebSocket', async () => {
+  const React = await import('react')
+  return { useWebSocket: () => { React.useState(() => { ws.instances++ }); return { socket: null, isConnected: ws.isConnected } } }
+})
 
 import { TopNav } from '../top-nav'
 
@@ -104,5 +110,34 @@ describe('top nav: phone bar and drawer', () => {
     const bell = screen.getByRole('link', { name: 'Alerts' })
     expect(classes(bell)).toContain('text-ink-muted')
     expect(bell.getAttribute('style')).not.toMatch(/(?:^|;\s*)color:/)
+  })
+})
+
+describe('top nav: Live updates', () => {
+  beforeEach(() => { ws.instances = 0; ws.isConnected = true })
+
+  it('opens one socket for both bars', async () => {
+    await renderNav()
+    expect(ws.instances).toBe(1)
+  })
+
+  it.each([
+    [true, 'Live updates'],
+    [false, 'Live updates paused'],
+  ])('socket open = %s: one indicator in each bar, inside the banner, named "%s"', async (isConnected, label) => {
+    ws.isConnected = isConnected
+    const { container } = await renderNav()
+    const mobile = container.querySelector('[data-nav-bar="mobile"]')!
+    const desktop = container.querySelector('[data-nav-bar="desktop"]')!
+    const inMobile = within(mobile as HTMLElement).getByRole('status', { name: label })
+    const inDesktop = within(desktop as HTMLElement).getByRole('status', { name: label })
+    expect(container.querySelectorAll('[data-testid="connection-indicator"]')).toHaveLength(2)
+    // Phone bar: before the alerts bell, dot only below sm. Desktop: first in the right-hand group (before
+    // search), dot only below xl.
+    expect(inMobile.nextElementSibling?.getAttribute('aria-label')).toBe('Alerts')
+    expect(within(inMobile).getByText(label).className).toContain('sm:not-sr-only')
+    expect(inDesktop.parentElement!.firstElementChild).toBe(inDesktop)
+    expect(inDesktop.nextElementSibling?.textContent).toContain('Search...')
+    expect(within(inDesktop).getByText(label).className).toContain('xl:not-sr-only')
   })
 })
