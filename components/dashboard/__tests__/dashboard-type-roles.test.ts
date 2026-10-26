@@ -39,7 +39,10 @@ describe('D3: figures', () => {
     expect(src('executive-roi-card.tsx')).toContain('<div className="text-kpi tabular-nums leading-none mb-1.5"')
   })
 
-  it("the hero heading is the page-title role, shared with PageHeader", () => {
-    expect(src('dashboard-hero.tsx')).toContain("<h1 className={cn(PAGE_TITLE_CLASS, 'mb-2 max-w-xl')}>")
+  it("the hero heading and subtitle are the page-title and subtitle roles, shared with PageHeader", () => {
+    const hero = src('dashboard-hero.tsx')
+    expect(hero).toContain("<h1 className={cn(PAGE_TITLE_CLASS, 'mb-2 max-w-xl')}>")
+    expect(hero).toContain("<p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-xl')}>")
+    expect(hero).not.toMatch(/leading-relaxed/)
   })
 })

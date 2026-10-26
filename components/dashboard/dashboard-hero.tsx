@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { Plug } from 'lucide-react'
-import { PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
 
 /** See app/(app)/dashboard/dashboardAwsConnection.ts. */
@@ -91,7 +91,7 @@ export function DashboardHero({ awsConnection, canConnectAws, orgName, lastSynce
         <h1 className={cn(PAGE_TITLE_CLASS, 'mb-2 max-w-xl')}>
           AI-Powered Cloud Operations &amp; Infrastructure Intelligence
         </h1>
-        <p className="text-ui text-ink-muted leading-relaxed max-w-xl">
+        <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-xl')}>
           Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence.
         </p>
         <p className="text-meta text-ink-muted font-medium mt-2">
