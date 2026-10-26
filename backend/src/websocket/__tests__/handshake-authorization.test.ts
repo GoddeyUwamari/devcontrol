@@ -97,6 +97,9 @@ let baseUrl: string;
  * WebSocket only, unless `defaultTransports` (polling first, then an upgrade,
  * as lib/hooks/useWebSocket.ts connects).
  */
+/** The transport each client's connection opened on, before any upgrade. */
+const openedOn = new WeakMap<ClientSocket, string>();
+
 function connect(authToken?: string, { defaultTransports = false } = {}): Promise<ClientSocket> {
   return new Promise((resolve, reject) => {
     const client = connectClient(baseUrl, {
@@ -106,6 +109,7 @@ function connect(authToken?: string, { defaultTransports = false } = {}): Promis
       auth: authToken === undefined ? {} : { token: authToken },
     });
     openClients.push(client);
+    client.io.once('open', () => openedOn.set(client, client.io.engine.transport.name));
     client.once('connect', () => resolve(client));
     client.once('connect_error', (error) => reject(error));
   });
@@ -186,6 +190,7 @@ describe('handshake', () => {
   it('with the default transports, a member starts on polling, is upgraded to WebSocket and receives organization events', async () => {
     const org = await buildOrg();
     const client = await connect(token(org.member, org.orgId), { defaultTransports: true });
+    expect(openedOn.get(client)).toBe('polling');
     const engine = client.io.engine;
     if (engine.transport.name !== 'websocket') {
       await new Promise((resolve) => engine.once('upgrade', resolve));

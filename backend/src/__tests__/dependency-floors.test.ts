@@ -59,7 +59,6 @@ describe('installed HTTP stack versions', () => {
 
     expect({ pkg, version, atLeastFloor: isAtLeast(version, floor) }).toEqual({ pkg, version, atLeastFloor: true });
   });
-
 });
 
 const socketIo = packageDir('socket.io', BACKEND_ROOT);

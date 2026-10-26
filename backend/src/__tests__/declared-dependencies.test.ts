@@ -5,9 +5,10 @@
  * then fails at start-up. Type-checking does not catch it if @types for the
  * package are still installed.
  *
- * Runtime files (backend/src outside tests, backend/scripts) may import only
- * `dependencies`, since production installs with --omit=dev. Test files may
- * also import `devDependencies`.
+ * Runtime files (backend/src outside tests, backend/scripts, and the repo-root
+ * database/ and scripts/ that run against the backend's install on the host)
+ * may import only `dependencies`, since production installs with --omit=dev.
+ * Test files may also import `devDependencies`.
  */
 import fs from 'fs';
 import { builtinModules } from 'module';
@@ -15,6 +16,7 @@ import path from 'path';
 import ts from 'typescript';
 
 const BACKEND_ROOT = path.join(__dirname, '..', '..');
+const REPO_ROOT = path.join(BACKEND_ROOT, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(BACKEND_ROOT, 'package.json'), 'utf8'));
 const runtimeDeclared = new Set(Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.peerDependencies }));
 const testDeclared = new Set([...runtimeDeclared, ...Object.keys(manifest.devDependencies ?? {})]);
@@ -45,12 +47,17 @@ function undeclaredImports(file: string): string[] {
   return importedFiles
     .map(({ fileName }) => packageOf(fileName))
     .filter((name): name is string => name !== null && !allowed.has(name))
-    .map((name) => `${path.relative(BACKEND_ROOT, file)}: ${name}`);
+    .map((name) => `${path.relative(REPO_ROOT, file)}: ${name}`);
 }
 
 describe('backend imports', () => {
   it('every imported package is declared in backend/package.json for that kind of file', () => {
-    const files = [...sourceFiles(path.join(BACKEND_ROOT, 'src')), ...sourceFiles(path.join(BACKEND_ROOT, 'scripts'))];
+    const files = [
+      ...sourceFiles(path.join(BACKEND_ROOT, 'src')),
+      ...sourceFiles(path.join(BACKEND_ROOT, 'scripts')),
+      ...sourceFiles(path.join(REPO_ROOT, 'database')),
+      ...sourceFiles(path.join(REPO_ROOT, 'scripts')),
+    ];
     expect(files.length).toBeGreaterThan(100);
 
     expect(files.flatMap(undeclaredImports)).toEqual([]);

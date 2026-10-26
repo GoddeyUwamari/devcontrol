@@ -1,8 +1,9 @@
 /**
- * Every package the frontend source imports is declared in the root
- * package.json. Without that, an import can resolve only because the backend
- * workspace (or another package) happens to install the package at the top of
- * node_modules, and it breaks the build when that changes.
+ * Every package the frontend source, and the repo-root database/ and scripts/,
+ * import is declared in the root package.json. Without that, an import can
+ * resolve only because the backend workspace (or another package) happens to
+ * install the package at the top of node_modules, and it breaks the build when
+ * that changes.
  */
 import fs from 'fs'
 import { builtinModules } from 'module'
@@ -11,7 +12,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 const ROOT = path.join(__dirname, '..', '..')
-const SOURCE = ['app', 'components', 'lib', 'hooks', 'types', 'middleware.ts']
+const SOURCE = ['app', 'components', 'lib', 'hooks', 'types', 'middleware.ts', 'database', 'scripts']
 const SKIP_DIRS = new Set(['node_modules', '.next'])
 
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
