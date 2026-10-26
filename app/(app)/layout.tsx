@@ -5,6 +5,7 @@ import { AuthGate } from '@/components/auth/auth-gate';
 import { TopNav } from '@/components/layout/top-nav';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { CommandPalette } from '@/components/command-palette';
+import { ConnectionIndicator } from '@/components/ConnectionIndicator';
 import { WelcomeModal } from '@/components/onboarding/welcome-modal';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { useOnboardingStore } from '@/lib/stores/onboarding-store';
@@ -84,6 +85,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       <CommandPalette />
+      <ConnectionIndicator />
       <WelcomeModal />
       {showAIChat && <AIChatWidget />}
       <SiteAnalytics />

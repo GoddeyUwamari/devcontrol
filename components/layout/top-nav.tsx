@@ -17,11 +17,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { UserDropdown } from '@/components/ui/user-dropdown';
-import { ConnectionIndicator } from '@/components/ConnectionIndicator';
 import { cn } from '@/lib/utils';
 import { anomalyService } from '@/lib/services/anomaly.service';
 import { useAuth } from '@/lib/contexts/auth-context';
-import { useWebSocket } from '@/lib/hooks/useWebSocket';
 import { quickActions } from '@/lib/navigation-config';
 import { useState, useEffect } from 'react';
 
@@ -182,9 +180,6 @@ export function TopNav() {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [hasCriticalAlerts, setHasCriticalAlerts] = useState(false);
-  // The live-update channel, read once here (each useWebSocket call opens its own socket) and shown in
-  // whichever bar is visible.
-  const { isConnected } = useWebSocket();
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -263,7 +258,6 @@ export function TopNav() {
       {/* ── MOBILE TOP BAR (lg:hidden) ── */}
       <div
         className="lg:hidden flex items-center justify-between px-0 h-[68px]"
-        data-nav-bar="mobile"
       >
         {/* Left: Hamburger + Logo grouped */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -286,9 +280,8 @@ export function TopNav() {
           </Link>
         </div>
 
-        {/* Right: Live updates (dot only below sm) + Bell + Avatar */}
+        {/* Right: Bell + Avatar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
-          <ConnectionIndicator isConnected={isConnected} compactBelow="sm" />
           <Link
             href="/observability/alerts"
             className="text-ink-muted"
@@ -322,7 +315,7 @@ export function TopNav() {
       </div>
 
       {/* ── DESKTOP HEADER (hidden on mobile) ── */}
-      <div className="hidden lg:flex max-w-[1920px] mx-auto h-16 items-center px-4 md:px-6 lg:px-8" data-nav-bar="desktop">
+      <div className="hidden lg:flex max-w-[1920px] mx-auto h-16 items-center px-4 md:px-6 lg:px-8">
         {/* Left: Logo + Navigation */}
         <div className="flex items-center gap-2 lg:gap-6">
           {/* Logo */}
@@ -440,9 +433,8 @@ export function TopNav() {
           </nav>
         </div>
 
-        {/* Right: Live updates (dot only below xl) + Search + Actions + User */}
+        {/* Right: Search + Actions + User */}
         <div className="ml-auto flex items-center gap-2 lg:gap-3 shrink-0">
-          <ConnectionIndicator isConnected={isConnected} compactBelow="xl" />
           {/* Search Trigger (Cmd+K) */}
           <Button
             variant="outline"
