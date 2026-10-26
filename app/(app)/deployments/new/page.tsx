@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { Loader2, ArrowLeft, Rocket } from 'lucide-react'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -109,8 +110,8 @@ export default function NewDeploymentPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Create New Deployment</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className={PAGE_TITLE_CLASS}>Create New Deployment</h1>
+          <p className={`${PAGE_SUBTITLE_CLASS} mt-2`}>
             Deploy a service to your AWS infrastructure
           </p>
         </div>
@@ -138,8 +139,8 @@ export default function NewDeploymentPage() {
           <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Service Selection */}
             <div className="space-y-2">
-              <Label htmlFor="serviceId" className="text-sm font-medium">
-                Service <span className="text-red-500">*</span>
+              <Label htmlFor="serviceId" className="text-ui font-medium">
+                Service <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={serviceId}
@@ -158,10 +159,10 @@ export default function NewDeploymentPage() {
                 </SelectContent>
               </Select>
               {errors.serviceId && (
-                <p className="text-sm text-red-600">{errors.serviceId.message}</p>
+                <p className="text-ui text-ink-danger">{errors.serviceId.message}</p>
               )}
               {services.length === 0 && !servicesLoading && (
-                <p className="text-xs text-amber-600">
+                <p className="text-meta text-ink-warning">
                   No services found. Please create a service first.
                 </p>
               )}
@@ -169,8 +170,8 @@ export default function NewDeploymentPage() {
 
             {/* Environment */}
             <div className="space-y-2">
-              <Label htmlFor="environment" className="text-sm font-medium">
-                Environment <span className="text-red-500">*</span>
+              <Label htmlFor="environment" className="text-ui font-medium">
+                Environment <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={environment}
@@ -186,14 +187,14 @@ export default function NewDeploymentPage() {
                 </SelectContent>
               </Select>
               {errors.environment && (
-                <p className="text-sm text-red-600">{errors.environment.message}</p>
+                <p className="text-ui text-ink-danger">{errors.environment.message}</p>
               )}
             </div>
 
             {/* AWS Region */}
             <div className="space-y-2">
-              <Label htmlFor="awsRegion" className="text-sm font-medium">
-                AWS Region <span className="text-red-500">*</span>
+              <Label htmlFor="awsRegion" className="text-ui font-medium">
+                AWS Region <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={awsRegion}
@@ -211,14 +212,14 @@ export default function NewDeploymentPage() {
                 </SelectContent>
               </Select>
               {errors.awsRegion && (
-                <p className="text-sm text-red-600">{errors.awsRegion.message}</p>
+                <p className="text-ui text-ink-danger">{errors.awsRegion.message}</p>
               )}
             </div>
 
             {/* Deployed By */}
             <div className="space-y-2">
-              <Label htmlFor="deployedBy" className="text-sm font-medium">
-                Deployed By (Email) <span className="text-red-500">*</span>
+              <Label htmlFor="deployedBy" className="text-ui font-medium">
+                Deployed By (Email) <span className="text-ink-danger">*</span>
               </Label>
               <Input
                 id="deployedBy"
@@ -228,9 +229,9 @@ export default function NewDeploymentPage() {
                 className={errors.deployedBy ? 'border-red-500 text-base' : 'text-base'}
               />
               {errors.deployedBy && (
-                <p className="text-sm text-red-600">{errors.deployedBy.message}</p>
+                <p className="text-ui text-ink-danger">{errors.deployedBy.message}</p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Email address of the person deploying this service
               </p>
             </div>

@@ -109,19 +109,19 @@ export function LiveLogViewer({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium">Live Logs</h3>
+          <h3 className="text-ui font-medium">Live Logs</h3>
           {isStreaming && (
-            <span className="flex items-center gap-1 text-xs text-green-600">
+            <span className="flex items-center gap-1 text-meta text-ink-success">
               <span className="h-2 w-2 rounded-full bg-green-600 animate-pulse"></span>
               Streaming
             </span>
           )}
           {error && (
-            <span className="text-xs text-red-600">Error: {error}</span>
+            <span className="text-meta text-ink-danger">Error: {error}</span>
           )}
         </div>
         <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-xs">
+          <label className="flex items-center gap-2 text-meta">
             <input
               type="checkbox"
               checked={autoScroll}
@@ -132,7 +132,7 @@ export function LiveLogViewer({
           </label>
           <button
             onClick={() => setLogs([])}
-            className="text-xs text-gray-600 hover:text-gray-900"
+            className="text-meta text-gray-600 hover:text-gray-900"
             aria-label="Clear logs"
           >
             Clear
@@ -142,7 +142,7 @@ export function LiveLogViewer({
 
       <div
         ref={scrollRef}
-        className="h-[400px] overflow-auto rounded-md border bg-black p-4 font-mono text-xs text-green-400"
+        className="h-[400px] overflow-auto rounded-md border bg-black p-4 font-mono text-meta text-green-400"
       >
         {logs.length === 0 ? (
           <div className="text-gray-500">
@@ -160,7 +160,7 @@ export function LiveLogViewer({
         )}
       </div>
 
-      <div className="text-xs text-gray-500">
+      <div className="text-meta text-ink-muted">
         {logs.length} log line{logs.length !== 1 ? 's' : ''}
       </div>
     </div>

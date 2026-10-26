@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { deploymentStatusDisplay, type RecordedDeployment as Deployment } from '@/lib/deployments/status';
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 
 export default function DeploymentDetailsPage() {
   const params = useParams();
@@ -42,7 +43,7 @@ export default function DeploymentDetailsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center space-y-4">
-              <p className="text-lg font-medium">Deployment not found</p>
+              <p className="text-section font-medium">Deployment not found</p>
               <Link href="/deployments">
                 <Button>
                   <ArrowLeft className="h-4 w-4 mr-2" />
@@ -79,10 +80,10 @@ export default function DeploymentDetailsPage() {
 
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold">
+            <h1 className={PAGE_TITLE_CLASS}>
               {deployment.serviceName || deployment.serviceId || 'Deployment'}
             </h1>
-            <p className="text-muted-foreground mt-2">
+            <p className={`${PAGE_SUBTITLE_CLASS} mt-2`}>
               {deployment.environment} • Deployed by {deployment.deployedBy}
             </p>
           </div>
@@ -96,23 +97,23 @@ export default function DeploymentDetailsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-ui font-medium text-muted-foreground">
               Region
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-lg font-semibold">{deployment.awsRegion}</p>
+            <p className="text-section">{deployment.awsRegion}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-ui font-medium text-muted-foreground">
               Version
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-lg font-semibold font-mono">
+            <p className="text-section font-mono">
               {(deployment as any).version || 'N/A'}
             </p>
           </CardContent>
@@ -120,12 +121,12 @@ export default function DeploymentDetailsPage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-ui font-medium text-muted-foreground">
               Started At
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-lg font-semibold">
+            <p className="text-section">
               {new Date(deployment.deployedAt).toLocaleString()}
             </p>
           </CardContent>
@@ -133,12 +134,12 @@ export default function DeploymentDetailsPage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-ui font-medium text-muted-foreground">
               Duration
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-lg font-semibold">
+            <p className="text-section">
               {(deployment as any).duration || 'In progress...'}
             </p>
           </CardContent>
@@ -148,7 +149,7 @@ export default function DeploymentDetailsPage() {
       {/* Live Logs Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Live Deployment Logs</h2>
+          <h2 className="text-section">Live Deployment Logs</h2>
           <Button variant="outline" size="sm" asChild>
             <a
               href={`https://console.aws.amazon.com/cloudwatch/home?region=${deployment.awsRegion}`}
