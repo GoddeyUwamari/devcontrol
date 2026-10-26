@@ -2,7 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 
-// Pages and components already on the app type scale (typography plan T1, T2b) may not drift back: every size and weight comes
+// Pages and components already on the app type scale (typography plan T1, T2b, T2c) may not drift back: every size and weight comes
 // from the role tokens (text-title ... text-label), and text colours are the ink tokens or pass AA on their
 // own surface. The full guard for every app file is its own PR (TG); this covers the files moved so far.
 // Variants count, bracketed ones included ([&_p]:, data-[state=open]:, group-[.x]:); dark: variants are
@@ -31,6 +31,19 @@ const STRICT = [
   'components/ui/tabs.tsx',
   'components/ui/textarea.tsx',
   'components/ui/tooltip.tsx',
+  // T2c: the app shell.
+  'app/(app)/layout.tsx',
+  'components/ConnectionIndicator.tsx',
+  'components/ai/AIChatWidget.tsx',
+  'components/command-palette.tsx',
+  'components/demo/DemoBanner.tsx',
+  'components/error-boundary.tsx',
+  'components/layout/top-nav.tsx',
+  'components/navigation/back-button.tsx',
+  'components/navigation/breadcrumb.tsx',
+  'components/onboarding/welcome-modal.tsx',
+  'components/ui/breadcrumb.tsx',
+  'components/ui/user-dropdown.tsx',
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
@@ -110,6 +123,20 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'components/ui/dialog.tsx', match: 'opacity-100', variant: 'hover:', rule: 'opacity on content', count: 1, reason: "The same close button at full opacity on hover; founder decision: kept, no visible change." },
   { file: 'components/ui/error-display.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 2, reason: 'The aria-hidden error icon on its red-50 tint (server/auth/permission and default schemes): an icon, not text; founder decision: kept.' },
   { file: 'components/ui/error-display.tsx', match: 'text-orange-600', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The aria-hidden error icon on its orange-50 tint (network/timeout/offline): an icon, not text; founder decision: kept.' },
+  // T2c: the app shell (reviewed exceptions, typography plan T2c).
+  { file: 'components/layout/top-nav.tsx', match: 'text-xl', rule: 'Tailwind size scale (use a role token)', count: 2, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Desktop: the DC monogram and the DevControl wordmark.' },
+  { file: 'components/layout/top-nav.tsx', match: 'font-bold', rule: 'bold weight (roles carry 600)', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Desktop: the DC monogram.' },
+  { file: 'components/layout/top-nav.tsx', match: 'fontWeight: 700', rule: 'inline text style', count: 3, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Phone bar wordmark, phone bar monogram, and the DevControl name heading the phone drawer.' },
+  { file: 'components/layout/top-nav.tsx', match: "fontSize: '1.2rem'", rule: 'inline text style', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Phone bar wordmark.' },
+  { file: 'components/layout/top-nav.tsx', match: "color: '#1e1b4b'", rule: 'inline text style', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Phone bar wordmark (indigo-black on white, 16:1).' },
+  { file: 'components/layout/top-nav.tsx', match: "letterSpacing: '-0.01em'", rule: 'inline text style', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Phone bar wordmark.' },
+  { file: 'components/layout/top-nav.tsx', match: "color: '#fff'", rule: 'inline text style', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Phone bar monogram: white on its blue-to-indigo gradient tile.' },
+  { file: 'components/layout/top-nav.tsx', match: "fontSize: '13px'", rule: 'inline text style', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). Phone bar monogram.' },
+  { file: 'components/layout/top-nav.tsx', match: "fontSize: '1rem'", rule: 'inline text style', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). The DevControl name heading the phone drawer.' },
+  { file: 'components/layout/top-nav.tsx', match: "color: '#0F172A'", rule: 'inline text style', count: 1, reason: 'Brand mark: the DevControl wordmark and the DC monogram stay exactly as they are (founder decision on the T2 plan, Oct 24). The DevControl name heading the phone drawer (slate-900).' },
+  { file: 'components/layout/top-nav.tsx', match: "color: '#94A3B8'", rule: 'inline text style', count: 1, reason: "The drawer sections' decorative chevron icon (an svg, not text); kept, no visible change (typography plan T2c)." },
+  { file: 'components/ui/breadcrumb.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative chevron icon between steps (an svg, not text); kept, no visible change (typography plan T2c).' },
+  { file: 'components/error-boundary.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "The fallback's alert icon on its red-100 circle: an icon, not text; kept like the error-display icons (typography plan T2b, T2c)." },
 ]
 
 type Finding = { rule: string; match: string; variant: string; line: number }
