@@ -25,7 +25,7 @@ const CHIP_CLASS: Record<CoverageChip['state'], { chip: string; dot: string }> =
 function Note({ note }: { note: CoverageNote }) {
   const warn = note.tone === 'warn'
   return (
-    <div role="note" className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${warn ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-950'}`}>
+    <div role="note" className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-ui ${warn ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-950'}`}>
       {warn ? <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
       <span>{note.title && <strong>{note.title} </strong>}{note.body}</span>
     </div>
@@ -59,13 +59,13 @@ export function CoverageStrip({ state, statusHeadline, inTabWarnings, storedReso
 
   return (
     <section aria-label="Account and scan coverage" className="bg-white rounded-xl border border-slate-200 p-4 mb-4 flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-ui">
         {state.status === 'loading' && <span role="status" className="text-slate-600">Loading scan coverage…</span>}
         {state.status === 'error' && (
           <span role="alert" className="flex flex-wrap items-center gap-2 text-slate-700">
             Scan coverage could not be loaded.
             {state.retry && (
-              <button type="button" onClick={state.retry} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300">
+              <button type="button" onClick={state.retry} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-label text-slate-700 hover:border-slate-300">
                 <RefreshCw size={12} aria-hidden="true" /> Try again
               </button>
             )}
@@ -90,7 +90,7 @@ export function CoverageStrip({ state, statusHeadline, inTabWarnings, storedReso
         )}
       </div>
 
-      <p className="m-0 text-sm text-slate-700">
+      <p className="m-0 text-ui text-slate-700">
         <span className="font-semibold">Resource status:</span> {statusHeadline}
       </p>
 
@@ -98,14 +98,14 @@ export function CoverageStrip({ state, statusHeadline, inTabWarnings, storedReso
         <>
           <ul aria-label="Scanned regions" className="m-0 flex list-none flex-wrap gap-2 p-0">
             {view.chips.map((chip) => (
-              <li key={chip.key} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${CHIP_CLASS[chip.state].chip}`}>
+              <li key={chip.key} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label font-normal ${CHIP_CLASS[chip.state].chip}`}>
                 <span aria-hidden="true" className={`inline-block h-2 w-2 rounded-full ${CHIP_CLASS[chip.state].dot}`} />
                 <span className="font-mono text-slate-900">{chip.region}</span>
                 <span className={chip.state === 'failed' ? 'font-semibold text-red-800' : 'text-slate-600'}>{chip.note}</span>
               </li>
             ))}
           </ul>
-          <div aria-label="Region states" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+          <div aria-label="Region states" className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-slate-600">
             <span><strong className="text-slate-900">Complete</strong>: the last scan finished with no warning</span>
             <span><strong className="text-slate-900">Partial</strong>: the last scan finished with a warning, shown below</span>
             <span><strong className="text-slate-900">Last scan failed</strong>: some counts may be from an earlier scan</span>
@@ -138,7 +138,7 @@ const REGION_CHIP_CLASS: Record<RegionChip['state'], { chip: string; dot: string
 function RegionNoteBox({ note, now }: { note: RegionNote; now: number }) {
   const warn = note.tone === 'warn'
   return (
-    <div role="note" data-note={note.key} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${warn ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-950'}`}>
+    <div role="note" data-note={note.key} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-ui ${warn ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-950'}`}>
       {warn ? <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
       <span>{note.title && <strong>{note.title} </strong>}<RichText parts={note.parts} now={now} /></span>
     </div>
@@ -153,7 +153,7 @@ function RegionNoteBox({ note, now }: { note: RegionNote; now: number }) {
 function RegionCoverageStrip({ view, statusHeadline, now }: { view: RegionCoverageView; statusHeadline: string; now: number }) {
   return (
     <section aria-label="Account and scan coverage" className="bg-white rounded-xl border border-slate-200 p-4 mb-4 flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-ui">
         <span className="inline-flex items-center gap-1.5 font-semibold text-slate-900">
           <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-green-700" />AWS account connected
         </span>
@@ -162,20 +162,20 @@ function RegionCoverageStrip({ view, statusHeadline, now }: { view: RegionCovera
         <a href={`#${REGION_COVERAGE_ID}`} className="ml-auto text-violet-700 underline-offset-2 hover:underline">Region coverage <span aria-hidden="true">→</span></a>
       </div>
 
-      <p className="m-0 text-sm text-slate-700">
+      <p className="m-0 text-ui text-slate-700">
         <span className="font-semibold">Resource status:</span> {statusHeadline}
       </p>
 
       <ul aria-label="Scanned regions" className="m-0 flex list-none flex-wrap gap-2 p-0">
         {view.chips.map((chip) => (
-          <li key={chip.key} data-chip={chip.key} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${REGION_CHIP_CLASS[chip.state].chip}`}>
+          <li key={chip.key} data-chip={chip.key} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label font-normal ${REGION_CHIP_CLASS[chip.state].chip}`}>
             <span aria-hidden="true" className={`inline-block h-2 w-2 rounded-full ${REGION_CHIP_CLASS[chip.state].dot}`} />
             <span className="font-mono text-slate-900">{chip.region}</span>
             <span className={REGION_CHIP_CLASS[chip.state].note}>{chip.note}</span>
           </li>
         ))}
       </ul>
-      <div aria-label="Region states" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+      <div aria-label="Region states" className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-slate-600">
         {view.legend.map((entry) => (
           <span key={entry.key}><strong className="text-slate-900">{entry.label}</strong>: {entry.text}</span>
         ))}

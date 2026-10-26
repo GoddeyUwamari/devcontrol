@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { cn } from '@/lib/utils'
 import { servicesService } from '@/lib/services/services.service'
 import { teamsService } from '@/lib/services/teams.service'
 import { logError } from '@/lib/safe-log'
@@ -99,8 +101,8 @@ export default function NewServicePage() {
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Create New Service</h1>
-          <p className="text-xs text-muted-foreground font-medium mt-2">
+          <h1 className={PAGE_TITLE_CLASS}>Create New Service</h1>
+          <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-2')}>
             Define a new service to track deployments and infrastructure
           </p>
         </div>
@@ -117,8 +119,8 @@ export default function NewServicePage() {
               <Layers className="h-5 w-5 text-[#635BFF]" />
             </div>
             <div>
-              <CardTitle className="text-sm">Service Details</CardTitle>
-              <CardDescription className="text-xs font-medium">
+              <CardTitle>Service Details</CardTitle>
+              <CardDescription>
                 Fill in the information below to create your service
               </CardDescription>
             </div>
@@ -128,8 +130,8 @@ export default function NewServicePage() {
           <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Service Name */}
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-medium">
-                Service Name <span className="text-red-500">*</span>
+              <Label htmlFor="name" className="text-ui font-medium">
+                Service Name <span className="text-ink-danger">*</span>
               </Label>
               <Input
                 id="name"
@@ -138,17 +140,17 @@ export default function NewServicePage() {
                 className={errors.name ? 'border-red-500 text-base' : 'text-base'}
               />
               {errors.name && (
-                <p className="text-sm text-red-600">{errors.name.message}</p>
+                <p className="text-ui text-ink-danger">{errors.name.message}</p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Use lowercase letters, numbers, and hyphens only
               </p>
             </div>
 
             {/* Template */}
             <div className="space-y-2">
-              <Label htmlFor="template" className="text-sm font-medium">
-                Template <span className="text-red-500">*</span>
+              <Label htmlFor="template" className="text-ui font-medium">
+                Template <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={template}
@@ -165,14 +167,14 @@ export default function NewServicePage() {
                 </SelectContent>
               </Select>
               {errors.template && (
-                <p className="text-sm text-red-600">{errors.template.message}</p>
+                <p className="text-ui text-ink-danger">{errors.template.message}</p>
               )}
             </div>
 
             {/* Team */}
             <div className="space-y-2">
-              <Label htmlFor="teamId" className="text-sm font-medium">
-                Team <span className="text-red-500">*</span>
+              <Label htmlFor="teamId" className="text-ui font-medium">
+                Team <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={teamId}
@@ -191,10 +193,10 @@ export default function NewServicePage() {
                 </SelectContent>
               </Select>
               {errors.teamId && (
-                <p className="text-sm text-red-600">{errors.teamId.message}</p>
+                <p className="text-ui text-ink-danger">{errors.teamId.message}</p>
               )}
               {teams.length === 0 && !teamsLoading && (
-                <p className="text-xs text-amber-600">
+                <p className="text-meta text-ink-warning">
                   No teams found. Please create a team first.
                 </p>
               )}
@@ -202,8 +204,8 @@ export default function NewServicePage() {
 
             {/* Owner Email */}
             <div className="space-y-2">
-              <Label htmlFor="owner" className="text-sm font-medium">
-                Owner Email <span className="text-red-500">*</span>
+              <Label htmlFor="owner" className="text-ui font-medium">
+                Owner Email <span className="text-ink-danger">*</span>
               </Label>
               <Input
                 id="owner"
@@ -213,13 +215,13 @@ export default function NewServicePage() {
                 className={errors.owner ? 'border-red-500 text-base' : 'text-base'}
               />
               {errors.owner && (
-                <p className="text-sm text-red-600">{errors.owner.message}</p>
+                <p className="text-ui text-ink-danger">{errors.owner.message}</p>
               )}
             </div>
 
             {/* GitHub URL (Optional) */}
             <div className="space-y-2">
-              <Label htmlFor="githubUrl" className="text-sm font-medium">GitHub Repository URL</Label>
+              <Label htmlFor="githubUrl" className="text-ui font-medium">GitHub Repository URL</Label>
               <Input
                 id="githubUrl"
                 type="url"
@@ -228,14 +230,14 @@ export default function NewServicePage() {
                 className={errors.githubUrl ? 'border-red-500 text-base' : 'text-base'}
               />
               {errors.githubUrl && (
-                <p className="text-sm text-red-600">{errors.githubUrl.message}</p>
+                <p className="text-ui text-ink-danger">{errors.githubUrl.message}</p>
               )}
-              <p className="text-xs text-muted-foreground">Optional</p>
+              <p className="text-meta text-muted-foreground">Optional</p>
             </div>
 
             {/* Description (Optional) */}
             <div className="space-y-2">
-              <Label htmlFor="description" className="text-sm font-medium">Description</Label>
+              <Label htmlFor="description" className="text-ui font-medium">Description</Label>
               <Textarea
                 id="description"
                 placeholder="A brief description of your service..."
@@ -244,9 +246,9 @@ export default function NewServicePage() {
                 className={errors.description ? 'border-red-500 text-base' : 'text-base resize-none min-h-[100px]'}
               />
               {errors.description && (
-                <p className="text-sm text-red-600">{errors.description.message}</p>
+                <p className="text-ui text-ink-danger">{errors.description.message}</p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Optional - Maximum 500 characters
               </p>
             </div>

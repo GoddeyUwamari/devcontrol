@@ -25,14 +25,14 @@ export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter }: {
   return (
     <section aria-labelledby="unowned-heading" className="bg-white rounded-xl border border-slate-200 p-4 mb-6 flex flex-wrap items-center gap-x-6 gap-y-3">
       <div className="flex-[1_1_320px]">
-        <h2 id="unowned-heading" className="m-0 mb-1 text-base font-bold text-slate-900">
+        <h2 id="unowned-heading" className="m-0 mb-1 text-section text-slate-900">
           {unowned} resource{unowned === 1 ? ' is' : 's are'} unowned
         </h2>
-        <p className="m-0 text-sm text-slate-600">
+        <p className="m-0 text-ui text-slate-600">
           They have neither an Owner nor a Team tag, so nobody is on the hook for them. A resource with only a Team tag counts as owned by that team.
         </p>
       </div>
-      <div className="flex min-w-0 flex-[0_1_320px] flex-col gap-1 text-xs">
+      <div className="flex min-w-0 flex-[0_1_320px] flex-col gap-1 text-meta">
         <ul aria-label="Resources per team" className="m-0 flex list-none flex-col gap-1 p-0">
           {bars.map((bar) => (
             <li key={bar.key}>
@@ -46,18 +46,18 @@ export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter }: {
             </li>
           ))}
         </ul>
-        <p className="m-0 text-[11px] text-slate-600">
+        <p className="m-0 text-meta text-slate-600">
           Resources per team (Team tag)
           {onOpenTeamFilter && (stats.teams?.total_teams ?? 0) > 0 && <> · <button type="button" onClick={onOpenTeamFilter} className="font-semibold text-violet-700 hover:underline">all teams</button></>}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {onShowUnowned && unowned > 0 && (
-          <button type="button" onClick={onShowUnowned} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:border-slate-400">
+          <button type="button" onClick={onShowUnowned} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-label text-slate-900 hover:border-slate-400">
             Show the {unowned}
           </button>
         )}
-        <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 opacity-60 cursor-not-allowed">
+        <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-label text-slate-700 opacity-60 cursor-not-allowed">
           Assign owner
         </button>
         <PhaseTwoTag />

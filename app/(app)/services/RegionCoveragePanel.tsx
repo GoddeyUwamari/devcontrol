@@ -32,10 +32,10 @@ function RegionName({ row }: { row: RegionRow }) {
   return (
     <>
       <span className="font-mono text-slate-900">{row.label}</span>
-      {row.home && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">home</span>}
+      {row.home && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-label text-slate-700">home</span>}
       {row.sublabel && <span className="text-slate-600"> · {row.sublabel}</span>}
       {row.regions && (
-        <ul aria-label="Regions not scanned yet" className="m-0 mt-1 flex list-none flex-wrap gap-x-2 gap-y-0.5 p-0 font-mono text-xs font-normal text-slate-600">
+        <ul aria-label="Regions not scanned yet" className="m-0 mt-1 flex list-none flex-wrap gap-x-2 gap-y-0.5 p-0 font-mono text-meta font-normal text-slate-600">
           {row.regions.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
@@ -61,13 +61,13 @@ function Details({ row, now }: { row: RegionRow; now: number }) {
 export function RegionCoveragePanel({ view, now }: { view: RegionCoverageView; now: number }) {
   return (
     <section id={REGION_COVERAGE_ID} aria-labelledby="region-coverage-heading" className="scroll-mt-4 bg-white rounded-xl border border-slate-200 mb-6">
-      <h2 id="region-coverage-heading" className="m-0 border-b border-slate-100 px-4 py-3 text-base font-bold text-slate-900">Region coverage</h2>
+      <h2 id="region-coverage-heading" className="m-0 border-b border-slate-100 px-4 py-3 text-section text-slate-900">Region coverage</h2>
 
       <div className="hidden sm:block" data-layout="table">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full border-collapse text-ui">
           <caption className="sr-only">Scan status of each enabled region</caption>
           <thead>
-            <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-600">
+            <tr className="bg-slate-50 text-left text-label uppercase tracking-[0.04em] text-slate-600">
               <th scope="col" className="px-4 py-2 font-semibold">Region</th>
               <th scope="col" className="px-4 py-2 font-semibold">Status</th>
               <th scope="col" className="px-4 py-2 font-semibold">Last full scan</th>
@@ -89,7 +89,7 @@ export function RegionCoveragePanel({ view, now }: { view: RegionCoverageView; n
 
       <ul className="m-0 list-none p-0 sm:hidden" data-layout="stacked" aria-label="Scan status of each enabled region">
         {view.rows.map((row) => (
-          <li key={row.key} data-row={row.key} className="border-t border-slate-100 px-4 py-3 text-sm first:border-t-0">
+          <li key={row.key} data-row={row.key} className="border-t border-slate-100 px-4 py-3 text-ui first:border-t-0">
             <div className="font-medium"><RegionName row={row} /></div>
             <dl className="m-0 mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
               <dt className="text-slate-600">Status</dt><dd className="m-0"><Status row={row} /></dd>
@@ -101,7 +101,7 @@ export function RegionCoveragePanel({ view, now }: { view: RegionCoverageView; n
       </ul>
 
       {(view.footer || view.listNote) && (
-        <div className="flex flex-col gap-1 border-t border-slate-100 px-4 py-3 text-sm text-slate-700">
+        <div className="flex flex-col gap-1 border-t border-slate-100 px-4 py-3 text-ui text-slate-700">
           {view.footer && <p className="m-0" data-line="footer">{view.footer}</p>}
           {view.listNote && <p className="m-0" data-line="list-note"><RichText parts={view.listNote} now={now} /></p>}
         </div>

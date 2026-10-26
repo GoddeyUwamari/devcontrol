@@ -44,9 +44,9 @@ export function OwnerCell({ row, withTeam = true }: { row: AWSService; withTeam?
   const owner = ownerDisplay(row)
   switch (owner.kind) {
     case 'unowned':
-      return <span className="rounded px-2 py-0.5 text-xs font-semibold bg-orange-50 text-orange-900">Unowned</span>
+      return <span className="rounded px-2 py-0.5 text-label bg-orange-50 text-orange-900">Unowned</span>
     case 'unknown':
-      return <span className="rounded px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700">{owner.label}</span>
+      return <span className="rounded px-2 py-0.5 text-label bg-slate-100 text-slate-700">{owner.label}</span>
     case 'owner':
       return <span className="text-slate-700">{owner.label}{withTeam && owner.team ? ` · ${owner.team}` : ''}</span>
     case 'team-only':
@@ -83,10 +83,10 @@ export function Details({ row }: { row: AWSService }) {
     ['Lifecycle state', STATUS_LABEL[row.status] ?? '—'],
   ]
   return (
-    <dl className="m-0 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+    <dl className="m-0 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 text-ui">
       {items.map(([term, value]) => (
         <div key={term} className="min-w-0">
-          <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">{term}</dt>
+          <dt className="text-label uppercase tracking-[0.04em] text-slate-600">{term}</dt>
           <dd className="m-0 break-words text-slate-900">{value}</dd>
         </div>
       ))}
@@ -99,7 +99,7 @@ function Action({ row, expanded, onToggle, detailsId }: { row: AWSService; expan
   // No Fix in Phase 1 (Q4): a cost recommendation is reviewed on its own page.
   if (row.attention_cause === 'cost_recommendation') {
     return (
-      <Link href="/cost-optimization" aria-label={`Review ${row.name}`} className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 no-underline hover:border-slate-300">
+      <Link href="/cost-optimization" aria-label={`Review ${row.name}`} className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-label text-slate-700 no-underline hover:border-slate-300">
         Review
       </Link>
     )
@@ -111,7 +111,7 @@ function Action({ row, expanded, onToggle, detailsId }: { row: AWSService; expan
       aria-expanded={expanded}
       aria-controls={expanded ? detailsId : undefined}
       aria-label={`${expanded ? 'Hide details' : 'View details'} for ${row.name}`}
-      className="inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-50"
+      className="inline-flex items-center rounded-lg px-2.5 py-1 text-label text-violet-700 hover:bg-violet-50"
     >
       {expanded ? 'Hide details' : 'View details'}
     </button>
@@ -135,13 +135,13 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
 
   let body: React.ReactNode
   if (state.status === 'loading') {
-    body = <p role="status" className="m-0 px-5 py-6 text-sm text-slate-600">Loading resources…</p>
+    body = <p role="status" className="m-0 px-5 py-6 text-ui text-slate-600">Loading resources…</p>
   } else if (state.status === 'error') {
     body = (
       <div role="alert" className="px-5 py-8 text-center">
-        <p className="text-sm font-semibold text-slate-900 mb-1">The resource list could not be loaded</p>
-        <p className="text-xs text-slate-600 mb-4 leading-relaxed">This is a loading error, not an empty result.</p>
-        <button type="button" onClick={state.retry} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer inline-flex items-center gap-1.5">
+        <p className="text-ui font-semibold text-slate-900 mb-1">The resource list could not be loaded</p>
+        <p className="text-meta text-slate-600 mb-4 leading-relaxed">This is a loading error, not an empty result.</p>
+        <button type="button" onClick={state.retry} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-label cursor-pointer inline-flex items-center gap-1.5">
           <RefreshCw size={13} aria-hidden="true" /> Try again
         </button>
       </div>
@@ -151,11 +151,11 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
     body = (
       <div className="px-5 py-8 text-center">
         <CheckCircle2 size={18} className="text-green-700 mx-auto mb-2" aria-hidden="true" />
-        <p className="text-sm font-semibold text-slate-900 mb-1">Nothing needs attention right now</p>
+        <p className="text-ui font-semibold text-slate-900 mb-1">Nothing needs attention right now</p>
         {typeof n === 'number' && (
-          <p className="text-xs text-slate-600 mb-4 leading-relaxed">None of the {n} resource{n !== 1 ? 's have' : ' has'} a flagged issue.</p>
+          <p className="text-meta text-slate-600 mb-4 leading-relaxed">None of the {n} resource{n !== 1 ? 's have' : ' has'} a flagged issue.</p>
         )}
-        <button type="button" onClick={onShowAll} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer">
+        <button type="button" onClick={onShowAll} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-label cursor-pointer">
           Show all resources
         </button>
       </div>
@@ -163,9 +163,9 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
   } else {
     body = (
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-ui">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-label uppercase tracking-[0.04em] text-slate-600">
               <th scope="col" className="px-4 py-2.5">Severity</th>
               <th scope="col" className="px-3 py-2.5">Issue</th>
               <th scope="col" className="px-3 py-2.5">Resource</th>
@@ -187,9 +187,9 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
                     <td className="px-3 py-3 min-w-[220px] text-slate-900">{row.reason ?? '—'}</td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       <span className="font-medium text-slate-900">{row.name}</span>{' '}
-                      <span className="text-xs text-slate-600">{typeLabel(row.type)}</span>
+                      <span className="text-meta text-slate-600">{typeLabel(row.type)}</span>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-slate-700">{row.aws_region ?? '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700">{row.aws_region ?? '—'}</td>
                     <td className="px-3 py-3 whitespace-nowrap"><OwnerCell row={row} /></td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <Action row={row} expanded={isOpen} detailsId={detailsId} onToggle={() => setExpanded(isOpen ? null : row.id)} />
@@ -212,10 +212,10 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
   return (
     <section aria-labelledby="attention-heading" className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-100 px-4 py-3.5">
-        <h2 id="attention-heading" className="m-0 text-base font-bold text-slate-900">What needs attention</h2>
-        <span className="text-sm text-slate-600">{ATTENTION_DESCRIPTION}</span>
+        <h2 id="attention-heading" className="m-0 text-section text-slate-900">What needs attention</h2>
+        <span className="text-ui text-slate-600">{ATTENTION_DESCRIPTION}</span>
         {total !== null && total > 0 && (
-          <button type="button" onClick={onViewAll} className="ml-auto text-sm font-semibold text-violet-700 hover:underline">
+          <button type="button" onClick={onViewAll} className="ml-auto text-ui font-semibold text-violet-700 hover:underline">
             View all {total} →
           </button>
         )}

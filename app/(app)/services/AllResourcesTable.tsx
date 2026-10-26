@@ -20,8 +20,8 @@ export type AllResourcesState =
   /** dimmed: the previous page, shown while the next one loads. */
   | { status: 'ready'; page: AWSServicesPage; dimmed: boolean }
 
-const selectClass = 'w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-900'
-const labelClass = 'flex flex-col gap-1 text-xs font-medium text-slate-600'
+const selectClass = 'w-full min-h-[34px] rounded-lg border border-slate-300 bg-white px-2.5 text-ui text-slate-900'
+const labelClass = 'flex flex-col gap-1 text-label font-medium text-slate-600'
 
 /** A count for a Show option: "…" while loading, "—" when /stats failed, never 0 by default. */
 function showCount(n: number | undefined, stats: StatsState): string {
@@ -53,16 +53,16 @@ function Row({ row }: { row: AWSService }) {
             aria-expanded={open}
             aria-controls={open ? detailsId : undefined}
             aria-label={`${open ? 'Hide details' : 'View details'} for ${row.name}`}
-            className="-ml-1.5 rounded px-1.5 py-0.5 text-xs font-semibold text-violet-700 hover:bg-violet-50"
+            className="-ml-1.5 rounded px-1.5 py-0.5 text-label text-violet-700 hover:bg-violet-50"
           >
             {open ? 'Hide details' : 'View details'}
           </button>
           </div>
         </td>
         <td className="px-3 py-3 whitespace-nowrap">
-          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{typeLabel(row.type)}</span>
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-label text-slate-700">{typeLabel(row.type)}</span>
         </td>
-        <td className="px-3 py-3 whitespace-nowrap font-mono text-xs text-slate-700">{row.aws_region ?? '—'}</td>
+        <td className="px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700">{row.aws_region ?? '—'}</td>
         <td className="px-3 py-3 whitespace-nowrap text-slate-700">{environmentLabel(row)}</td>
         <td className="px-3 py-3 whitespace-nowrap"><OwnerCell row={row} withTeam={false} /></td>
         <td className="px-3 py-3 whitespace-nowrap text-slate-700">{owner || !row.team ? <span className="text-slate-600">—</span> : row.team}</td>
@@ -138,15 +138,15 @@ export function AllResourcesTable({
     body = (
       <div role="status" className="px-7 py-12 text-center">
         <RefreshCw size={20} className="text-slate-500 mx-auto mb-3" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
-        <p className="text-sm text-slate-600 m-0">Loading resources…</p>
+        <p className="text-ui text-slate-600 m-0">Loading resources…</p>
       </div>
     )
   } else if (state.status === 'error') {
     body = (
       <div className="px-5 py-10 text-center" role="alert">
-        <p className="text-sm font-semibold text-slate-900 mb-1">The resource list could not be loaded</p>
-        <p className="text-xs text-slate-600 mb-4 leading-relaxed">This is a loading error, not an empty result.</p>
-        <button type="button" onClick={state.retry} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5">
+        <p className="text-ui font-semibold text-slate-900 mb-1">The resource list could not be loaded</p>
+        <p className="text-meta text-slate-600 mb-4 leading-relaxed">This is a loading error, not an empty result.</p>
+        <button type="button" onClick={state.retry} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-label inline-flex items-center gap-1.5">
           <RefreshCw size={13} aria-hidden="true" /> Try again
         </button>
       </div>
@@ -160,9 +160,9 @@ export function AllResourcesTable({
       body = (
         <div className="px-5 sm:px-12 py-12 text-center">
           <Layers size={22} className="text-slate-500 mx-auto mb-4" aria-hidden="true" />
-          <p className="text-sm font-semibold text-slate-900 mb-1.5">No AWS account connected</p>
-          <p className="text-sm text-slate-600 mb-6 leading-relaxed max-w-md mx-auto">Connect an AWS account with read-only access. DevControl lists the resources it discovers here.</p>
-          <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline inline-flex items-center gap-2">
+          <p className="text-ui font-semibold text-slate-900 mb-1.5">No AWS account connected</p>
+          <p className="text-ui text-slate-600 mb-6 leading-relaxed max-w-md mx-auto">Connect an AWS account with read-only access. DevControl lists the resources it discovers here.</p>
+          <a href="/connect-aws" className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline inline-flex items-center gap-2">
             Connect AWS account
           </a>
         </div>
@@ -171,9 +171,9 @@ export function AllResourcesTable({
       body = (
         <div className="px-5 py-10 text-center">
           <Layers size={18} className="text-slate-500 mx-auto mb-3" aria-hidden="true" />
-          <p className="text-sm font-semibold text-slate-900 mb-1">No resources discovered yet</p>
-          <p className="text-xs text-slate-600 mb-4 leading-relaxed">Run Auto Discover to scan your connected account.</p>
-          <button type="button" onClick={onAutoDiscover} disabled={isDiscovering || scanRunning} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5">
+          <p className="text-ui font-semibold text-slate-900 mb-1">No resources discovered yet</p>
+          <p className="text-meta text-slate-600 mb-4 leading-relaxed">Run Auto Discover to scan your connected account.</p>
+          <button type="button" onClick={onAutoDiscover} disabled={isDiscovering || scanRunning} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label inline-flex items-center gap-1.5">
             {scanRunning && !isDiscovering ? <><Scan size={13} aria-hidden="true" /> Scan running…</> : <><Scan size={13} aria-hidden="true" /> Auto Discover</>}
           </button>
         </div>
@@ -183,9 +183,9 @@ export function AllResourcesTable({
       body = (
         <div className="px-5 py-10 text-center">
           <CheckCircle2 size={18} className="text-green-700 mx-auto mb-3" aria-hidden="true" />
-          <p className={`text-sm font-semibold text-slate-900 ${typeof n === 'number' ? 'mb-1' : 'mb-4'}`}>Nothing needs attention right now</p>
-          {typeof n === 'number' && <p className="text-xs text-slate-600 mb-4 leading-relaxed">None of the {n} resource{n !== 1 ? 's have' : ' has'} a flagged issue.</p>}
-          <button type="button" onClick={onClearFilters} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-xs font-semibold">
+          <p className={`text-ui font-semibold text-slate-900 ${typeof n === 'number' ? 'mb-1' : 'mb-4'}`}>Nothing needs attention right now</p>
+          {typeof n === 'number' && <p className="text-meta text-slate-600 mb-4 leading-relaxed">None of the {n} resource{n !== 1 ? 's have' : ' has'} a flagged issue.</p>}
+          <button type="button" onClick={onClearFilters} className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg text-label">
             Show all resources
           </button>
         </div>
@@ -194,13 +194,13 @@ export function AllResourcesTable({
       body = (
         <div className="px-5 py-8 text-center">
           <SearchX size={18} className="text-slate-500 mx-auto mb-3" aria-hidden="true" />
-          <p className="text-sm font-semibold text-slate-900 mb-1">{filterMissTitle(filters)}</p>
-          <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+          <p className="text-ui font-semibold text-slate-900 mb-1">{filterMissTitle(filters)}</p>
+          <p className="text-meta text-slate-600 mb-4 leading-relaxed">
             {typeof n === 'number'
               ? `Try a different resource type, or clear filters to see all ${n} resource${n !== 1 ? 's' : ''}.`
               : 'Try a different resource type, or clear filters to see all resources.'}
           </p>
-          <button type="button" onClick={onClearFilters} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold">
+          <button type="button" onClick={onClearFilters} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label">
             Clear filter
           </button>
         </div>
@@ -214,9 +214,9 @@ export function AllResourcesTable({
       <div className={state.dimmed ? 'opacity-60' : ''}>
         {/* The table scrolls in its own box at phone width; the box is focusable for keyboard scrolling. */}
         <div role="region" aria-label="All resources table" tabIndex={0} className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
-          <table className="w-full text-sm">
+          <table className="w-full text-ui">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
+              <tr className="border-b border-slate-100 bg-slate-50 text-left text-label uppercase tracking-[0.04em] text-slate-600">
                 {['Resource', 'Type', 'Region', 'Environment', 'Owner', 'Team', 'Issue', 'Last seen'].map((h) => (
                   <th key={h} scope="col" className="px-3 py-2.5 first:px-4 whitespace-nowrap">{h}</th>
                 ))}
@@ -228,12 +228,12 @@ export function AllResourcesTable({
           </table>
         </div>
         <nav aria-label="All resources pages" className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 border-t border-slate-100">
-          <p className="text-xs text-slate-600 font-medium m-0">Showing {first}–{last} of {pagination.total}</p>
+          <p className="text-meta text-slate-600 font-medium m-0">Showing {first}–{last} of {pagination.total}</p>
           <div className="flex items-center gap-2">
-            <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-label text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={state.dimmed || pagination.page <= 1} onClick={() => onPage(pagination.page - 1)}>Previous</button>
-            <span className="text-xs text-slate-600 font-medium">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span>
-            <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            <span className="text-meta text-slate-600 font-medium">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span>
+            <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-label text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={state.dimmed || !pagination.has_more} onClick={() => onPage(pagination.page + 1)}>Next</button>
           </div>
         </nav>
@@ -246,14 +246,14 @@ export function AllResourcesTable({
   return (
     <section aria-labelledby={id('heading')} className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-100 px-4 py-3.5">
-        <h2 id={id('heading')} className="m-0 text-base font-bold text-slate-900">All resources</h2>
+        <h2 id={id('heading')} className="m-0 text-section text-slate-900">All resources</h2>
         {typeof total === 'number' && (
-          <span className="text-sm text-slate-600">
+          <span className="text-ui text-slate-600">
             {plural(total, 'resource')}{filtered ? ' matching current filters' : scope ? ` ${scope}` : ''}
           </span>
         )}
         {typeof noFlagged === 'number' && noFlagged > 0 && showsNoFlaggedLine(filters) && (
-          <span className="text-sm text-slate-600">
+          <span className="text-ui text-slate-600">
             · {plural(noFlagged, 'resource')} with no flagged issues{narrowed ? ' matching current filters' : ''}
           </span>
         )}
@@ -303,11 +303,11 @@ export function AllResourcesTable({
           type="button"
           aria-pressed={filters.env === 'production'}
           onClick={() => onFilters({ env: filters.env === 'production' ? 'all' : 'production' })}
-          className={`min-h-[34px] rounded-full border px-3 text-xs font-semibold ${filters.env === 'production' ? 'border-violet-700 bg-violet-700 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'}`}
+          className={`min-h-[34px] rounded-full border px-3 text-label ${filters.env === 'production' ? 'border-violet-700 bg-violet-700 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'}`}
         >
           Production
         </button>
-        <div role="group" aria-label="Group by" className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+        <div role="group" aria-label="Group by" className="ml-auto flex flex-wrap items-center gap-1.5 text-meta text-slate-600">
           <span aria-hidden="true">Group by</span>
           <button type="button" aria-pressed="true" className="rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1 font-semibold text-violet-900">Resource</button>
           <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 opacity-60 cursor-not-allowed">Service</button>
