@@ -33,7 +33,7 @@ export function UserDropdown({ user, onLogout }: UserDropdownProps) {
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-2 p-1 rounded-full hover:bg-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           <Avatar className="w-9 h-9">
-            <AvatarFallback className="bg-muted text-muted-foreground text-base font-semibold border border-border">
+            <AvatarFallback className="bg-muted text-ink-muted text-ui font-semibold border border-border">
               {user.initials}
             </AvatarFallback>
           </Avatar>
@@ -43,8 +43,8 @@ export function UserDropdown({ user, onLogout }: UserDropdownProps) {
       <DropdownMenuContent className="w-64 p-2" align="end" sideOffset={8}>
         {/* User Info Header */}
         <div className="px-3 py-2.5 mb-1">
-          <div className="font-medium text-foreground">{user.name}</div>
-          <div className="text-sm text-muted-foreground truncate">
+          <div className="text-ui font-medium text-ink">{user.name}</div>
+          <div className="text-meta text-ink-muted truncate">
             {user.email}
           </div>
         </div>
@@ -76,9 +76,9 @@ export function UserDropdown({ user, onLogout }: UserDropdownProps) {
                       {Icon && (
                         <Icon className="w-4 h-4 text-muted-foreground" />
                       )}
-                      <span className="flex-1 text-sm">{item.label}</span>
+                      <span className="flex-1 text-ui">{item.label}</span>
                       {item.badge && (
-                        <span className="px-2 py-0.5 text-xs bg-destructive/10 text-destructive rounded-full font-medium">
+                        <span className="px-2 py-0.5 text-label font-semibold bg-destructive/10 text-ink-danger-strong rounded-full">
                           {item.badge}
                         </span>
                       )}
