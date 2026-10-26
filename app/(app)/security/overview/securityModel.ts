@@ -90,6 +90,7 @@ export const SECURITY_COPY = {
   frameworksPlan: 'Compliance frameworks are on the Enterprise plan.',
   frameworksError: "Couldn't load compliance frameworks.",
   neverEvaluated: 'No evaluation yet.',
+  noFrameworks: 'No frameworks yet.',
   evaluationNotFound: 'Last evaluation not found. Re-evaluate to refresh.',
   trendPlan: 'Score history is on the Pro plan',
   trendNone: 'No score history yet',
@@ -98,7 +99,9 @@ export const SECURITY_COPY = {
   reviewInInfrastructure: 'Review in Infrastructure',
   reviewHref: '/infrastructure',
   iamRoles: 'IAM roles and policies',
-  iamUsers: 'IAM users: MFA and key age',
+  scanRunning: 'Scan running…',
+  acceptedCaption: 'Only account findings can be accepted for now.',
+  iamUsers: 'IAM users: MFA, key age',
   s3Policies: 'S3 bucket policies (all regions)',
 } as const
 
@@ -449,12 +452,12 @@ export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[
   if (!latest) {
     return historyComplete
       ? view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: 'Evaluate now' })
-      : view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate' })
+      : view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate now' })
   }
   const score = latest.status === 'completed' ? formatScore(latest.compliance_score) : null
   // A completed scan without a usable score: there was an evaluation, so never "never".
   if (score === null || base.lastEvaluatedAt === null) {
-    return view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate' })
+    return view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate now' })
   }
   if (now - base.lastEvaluatedAt >= FRAMEWORK_STALE_AFTER_MS) {
     return view('out_of_date', `Last evaluated ${base.lastEvaluated}, over 7 days ago. Findings may have changed.`, null, null)
@@ -481,7 +484,7 @@ function complianceTile(view: FrameworksView): ComplianceTile | null {
   if (view.status !== 'ready') return { label: view.note!, lastEvaluated: null }
   const [worst] = [...view.frameworks].sort((a, b) =>
     STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state] || (a.lastEvaluatedAt ?? -Infinity) - (b.lastEvaluatedAt ?? -Infinity))
-  if (!worst) return { label: SECURITY_COPY.neverEvaluated, lastEvaluated: null }
+  if (!worst) return { label: SECURITY_COPY.noFrameworks, lastEvaluated: null }
   return { label: worst.label, lastEvaluated: worst.lastEvaluated ? `Last evaluated ${worst.lastEvaluated}` : null }
 }
 
@@ -541,6 +544,101 @@ export function securityCheckedLines(coverage: SecLoadable<ServicesCoverage>): C
   return lines
 }
 
+// ── Header scan line and "Not checked yet" (founder answers 6, 11, 12, Oct 26) ──
+
+export type ScanLineState = 'finished' | 'running' | 'failed' | 'none'
+
+/** The header's dot and line. The dot is decorative; `text` carries the meaning. */
+export interface ScanLine { state: ScanLineState; text: string }
+
+function cleanTime(text: string): string {
+  // Newer ICU puts a narrow no-break space before AM/PM (as regionCoverage's formatWhen).
+  return text.replace(/[\u202f\u00a0]/g, ' ')
+}
+
+/** "today, 4:12 PM" or "Oct 19, 4:12 PM" in the viewer's local time, no zone suffix (founder answer 6); null for a missing or invalid time. */
+export function formatScanWhen(iso: string | null | undefined, now: number): string | null {
+  const at = parse(iso)
+  if (at === null) return null
+  const day = (ms: number) => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(ms)
+  const time = cleanTime(new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(at))
+  if (day(at) === day(now)) return `today, ${time}`
+  return `${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(at)}, ${time}`
+}
+
+/**
+ * Running → "Scan running…"; the latest attempt failed → "Last scan failed: <time>"; a finished scan →
+ * "Last scan: <time>"; otherwise "No scan has finished yet.". A failed attempt with no time to print falls
+ * back to the finished/none line rather than inventing one. Null while coverage loads or failed.
+ */
+export function scanLine(coverage: SecLoadable<ServicesCoverage>, now: number): ScanLine | null {
+  if (coverage.status !== 'ready') return null
+  const c = coverage.data
+  if (c.scan_in_progress) return { state: 'running', text: SECURITY_COPY.scanRunning }
+  if (c.last_scan?.status === 'failed') {
+    const at = formatScanWhen(c.last_scan.completed_at ?? c.last_scan.started_at, now)
+    if (at) return { state: 'failed', text: `Last scan failed: ${at}` }
+  }
+  const done = formatScanWhen(lastCompletedIso(c), now)
+  return done ? { state: 'finished', text: `Last scan: ${done}` } : { state: 'none', text: SECURITY_COPY.noScanYet }
+}
+
+/** "Not checked yet: <n> regions · IAM roles and policies" (Infra's rule, PLAN §9.3); null unless coverage loaded for a connected account. */
+export function notCheckedText(coverage: SecLoadable<ServicesCoverage>): string | null {
+  if (coverage.status !== 'ready' || !coverage.data.account.connected) return null
+  const c = coverage.data
+  const counts = hasRegionCoverage(c) ? regionCounts(c) : null
+  const parts: string[] = []
+  if (counts && counts.enabled !== null) {
+    const n = Math.max(0, counts.enabled - counts.checked)
+    if (n > 0) parts.push(`${n} ${plural(n, 'region', 'regions')}`)
+  } else {
+    parts.push('other regions (region list not read yet)')
+  }
+  parts.push(SECURITY_COPY.iamRoles)
+  return `Not checked yet: ${parts.join(' · ')}`
+}
+
+// ── Labels and empty lines for the findings list (founder answers 9, 10; e2 13, 14, 16) ──
+
+export const SEVERITY_LABEL: Record<string, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
+
+/** Open rows have no chip. */
+export const STATUS_LABEL: Record<RowStatus, string | null> = {
+  open: null, acknowledged: 'Acknowledged', accepted: 'Risk accepted', dismissed: 'Dismissed',
+}
+
+export const SCOPE_LABEL: Record<FindingRow['scope'], string> = { account: 'Account', resource: 'Resource' }
+
+export const FILTER_EMPTY: Record<FilterKey, string> = {
+  all: 'No findings in the areas we checked.',
+  resources: 'No resource findings.',
+  account: 'No account findings.',
+  accepted: 'No accepted findings.',
+  dismissed: 'No dismissed findings.',
+}
+
+/**
+ * What a filter with no rows says. The "No … findings." lines only when every findings source loaded
+ * (e2 16); "in the areas we checked" claims (All, Resources, Account) also need a finished scan on a
+ * connected account, and Resources/All need the full resource list, not the below-Pro attention list.
+ */
+function emptyTexts(i: SecurityInputs): Record<FilterKey, string> | null {
+  const sources = [i.accountFindings, i.resourceFindings]
+  if (sources.some((s) => s.status === 'loading')) return null
+  const failed = sources.some((s) => s.status !== 'ready')
+  const partial = i.resourceFindings.status === 'ready' && i.resourceFindings.data.kind === 'attention'
+  const coverage = i.coverage.status === 'ready' ? i.coverage.data : null
+  const scanned = coverage !== null && coverage.account.connected && !!lastCompletedIso(coverage)
+  const text = (key: FilterKey): string => {
+    if (failed) return SECURITY_COPY.incomplete
+    if (partial && (key === 'all' || key === 'resources')) return SECURITY_COPY.attentionOnly
+    if (!scanned && (key === 'all' || key === 'resources' || key === 'account')) return SECURITY_COPY.noScanYet
+    return FILTER_EMPTY[key]
+  }
+  return { all: text('all'), resources: text('resources'), account: text('account'), accepted: text('accepted'), dismissed: text('dismissed') }
+}
+
 // ── The page ──
 
 export interface SecurityView {
@@ -552,6 +650,12 @@ export interface SecurityView {
   frameworks: FrameworksView
   trend: TrendView | null
   checked: CheckedLine[]
+  /** The header's scan line (null while coverage loads or failed). */
+  scan: ScanLine | null
+  /** The banner's right-hand line. */
+  notChecked: string | null
+  /** What each filter says when it has no rows; null while a findings source loads. */
+  empty: Record<FilterKey, string> | null
 }
 
 export function describeSecurity(i: SecurityInputs, now: number): SecurityView {
@@ -587,5 +691,8 @@ export function describeSecurity(i: SecurityInputs, now: number): SecurityView {
     frameworks,
     trend: trendView(i, now),
     checked: securityCheckedLines(i.coverage),
+    scan: scanLine(i.coverage, now),
+    notChecked: notCheckedText(i.coverage),
+    empty: emptyTexts(i),
   }
 }
