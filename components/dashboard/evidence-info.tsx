@@ -69,17 +69,17 @@ export function EvidenceInfo({ about, label = `About ${about}`, heading = INFO_H
     <>
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
         <div className="min-w-0">
-          <DialogPrimitive.Title className="text-sm font-semibold text-foreground m-0">{heading}</DialogPrimitive.Title>
-          <p className="text-xs text-[var(--text-secondary)] m-0 mt-0.5" data-testid="evidence-info-subject">{about}</p>
+          <DialogPrimitive.Title className="text-ui font-semibold text-ink m-0">{heading}</DialogPrimitive.Title>
+          <p className="text-meta text-ink-muted m-0 mt-0.5" data-testid="evidence-info-subject">{about}</p>
         </div>
         <DialogPrimitive.Close
           aria-label="Close"
-          className="inline-flex items-center justify-center w-11 h-11 -my-3 -mr-3 rounded-full text-[var(--text-secondary)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-accent)]"
+          className="inline-flex items-center justify-center w-11 h-11 -my-3 -mr-3 rounded-full text-ink-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-accent)]"
         >
           <X size={16} aria-hidden="true" />
         </DialogPrimitive.Close>
       </div>
-      <div className="px-4 py-3 text-xs text-[var(--text-secondary)] leading-relaxed">{children}</div>
+      <div className="px-4 py-3 text-meta text-ink-muted leading-relaxed">{children}</div>
     </>
   )
 
@@ -91,7 +91,7 @@ export function EvidenceInfo({ about, label = `About ${about}`, heading = INFO_H
             <DialogPrimitive.Trigger
               aria-label={label}
               data-testid="evidence-info-button"
-              className="group inline-flex items-center justify-center w-11 h-11 -m-3 rounded-full shrink-0 cursor-pointer text-[var(--text-secondary)] focus-visible:outline-none"
+              className="group inline-flex items-center justify-center w-11 h-11 -m-3 rounded-full shrink-0 cursor-pointer text-ink-muted focus-visible:outline-none"
             >
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors group-hover:bg-[var(--surface-1)] group-focus-visible:bg-[var(--surface-1)] group-focus-visible:ring-2 group-focus-visible:ring-[var(--text-accent)]">
                 <Info size={15} aria-hidden="true" />
@@ -131,7 +131,7 @@ export function EvidenceInfo({ about, label = `About ${about}`, heading = INFO_H
 export function EvidenceSection({ heading, children }: { heading: string; children: ReactNode }) {
   return (
     <section className="mb-3 last:mb-0">
-      <h4 className="text-xs font-semibold text-foreground mb-1">{heading}</h4>
+      <h4 className="text-label font-semibold text-ink mb-1">{heading}</h4>
       {children}
     </section>
   )

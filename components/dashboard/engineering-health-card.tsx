@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/contexts/auth-context'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import { doraMetricsService } from '@/lib/services/dora-metrics.service'
 import { deploymentStatusDisplay } from '@/lib/deployments/status'
+import { Num } from '@/components/ui/typography'
 
 interface DoraRow {
   label: string
@@ -98,9 +99,9 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
       <div className={`flex items-center flex-wrap justify-between gap-x-3 gap-y-1 ${isDemoActive ? 'mb-4' : 'mb-3'}`}>
         <div className="flex items-center gap-2.5">
           <Code2 size={17} style={{ color: 'var(--text-accent)' }} />
-          <h3 className="text-base font-bold text-foreground">Engineering Health</h3>
+          <h3 className="text-section text-ink">Engineering Health</h3>
         </div>
-        <a href="/app/dora-metrics" className="text-xs font-semibold no-underline flex items-center gap-1 whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
+        <a href="/app/dora-metrics" className="text-label font-semibold no-underline flex items-center gap-1 whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
           View details →
         </a>
       </div>
@@ -111,12 +112,12 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
             const DeltaIcon = delta?.direction === 'up' ? TrendingUp : TrendingDown
             return (
               <div key={label}>
-                <div className="text-2xl font-bold text-foreground leading-none mb-1.5">{value}</div>
-                <p className="text-xs text-[var(--text-secondary)] leading-snug mb-1.5">{label}</p>
+                <div className="text-section text-ink leading-none mb-1.5"><Num>{value}</Num></div>
+                <p className="text-label font-normal text-ink-muted leading-snug mb-1.5">{label}</p>
                 {delta && (
                   <div className="flex items-center gap-1" style={{ color: delta.good ? 'var(--text-success)' : 'var(--text-danger)' }}>
                     <DeltaIcon size={12} />
-                    <span className="text-xs font-semibold">{delta.label}</span>
+                    <span className="text-label font-semibold">{delta.label}</span>
                   </div>
                 )}
               </div>
@@ -124,7 +125,7 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
           })}
         </div>
       ) : noneRecorded ? (
-        <p className="text-sm text-[var(--text-secondary)] leading-relaxed m-0" data-testid="engineering-health-empty">
+        <p className="text-ui text-ink-muted leading-relaxed m-0" data-testid="engineering-health-empty">
           No deployments recorded · Connect your CI
         </p>
       ) : (
@@ -132,13 +133,13 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
           <div className="grid grid-cols-3 gap-4">
             {realRows.map(({ key, label, value, sub }) => (
               <div key={key} data-testid={`engineering-health-${key}`}>
-                <div className="text-xl font-bold text-foreground leading-none mb-1.5">{value}</div>
-                <p className="text-xs text-[var(--text-secondary)] leading-snug m-0">{label}</p>
-                {sub && <p className="text-[11px] text-[var(--text-secondary)] leading-snug m-0 mt-0.5">{sub}</p>}
+                <div className="text-section text-ink leading-none mb-1.5"><Num>{value}</Num></div>
+                <p className="text-label font-normal text-ink-muted leading-snug m-0">{label}</p>
+                {sub && <p className="text-label font-normal text-ink-muted leading-snug m-0 mt-0.5">{sub}</p>}
               </div>
             ))}
           </div>
-          <p className="text-xs text-[var(--text-secondary)] leading-relaxed m-0 mt-3" data-testid="engineering-health-note">
+          <p className="text-meta text-ink-muted leading-relaxed m-0 mt-3" data-testid="engineering-health-note">
             {failed ? 'Deployment metrics could not be loaded. ' : ''}Lead time and time to restore: not tracked
           </p>
         </div>

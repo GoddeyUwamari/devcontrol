@@ -1,4 +1,5 @@
 import { LineChart } from 'lucide-react'
+import { Num } from '@/components/ui/typography'
 
 interface ExecutiveRoiCardProps {
   monthlySavingsLabel: string | null
@@ -18,32 +19,32 @@ export function ExecutiveRoiCard({ monthlySavingsLabel, annualSavingsLabel, isDe
       <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-4">
         <div className="flex items-center gap-2.5">
           <LineChart size={17} style={{ color: 'var(--text-accent)' }} />
-          <h3 className="text-base font-bold text-foreground">Executive ROI Summary</h3>
+          <h3 className="text-section text-ink">Executive ROI Summary</h3>
         </div>
-        <a href={detailsHref} className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
+        <a href={detailsHref} className="text-label font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
           View report →
         </a>
       </div>
 
-      <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">
+      <p className="text-label font-medium text-ink-muted mb-1.5">
         {isDemoActive ? 'Monthly savings realized' : 'Estimated monthly savings'}
       </p>
-      <div className="text-3xl font-bold tracking-tight leading-none mb-1.5" style={{ color: 'var(--text-success)' }}>
+      <div className="text-kpi tabular-nums leading-none mb-1.5" style={{ color: 'var(--text-success)' }}>
         {monthlySavingsLabel ?? '—'}
       </div>
       {/* No label means no active recommendation carries a figure -- not
           evidence that nothing can be saved, so no conclusion is shown. */}
       {monthlySavingsLabel && (
-        <p className="text-xs text-[var(--text-secondary)] mb-4">
+        <p className="text-meta text-ink-muted mb-4">
           Based on current optimization opportunities
         </p>
       )}
 
       {annualSavingsLabel && (
         <div className="bg-[var(--bg-accent)] border border-[var(--border-accent)] rounded-xl px-4 py-3 mt-auto">
-          <p className="text-xs font-semibold" style={{ color: 'var(--text-accent)' }}>Potential annual savings</p>
-          <p className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-accent)' }}>{annualSavingsLabel}</p>
-          <p className="text-[11px] text-[var(--text-secondary)]">(estimated)</p>
+          <p className="text-label font-semibold" style={{ color: 'var(--text-accent)' }}>Potential annual savings</p>
+          <p className="text-section tracking-tight" style={{ color: 'var(--text-accent)' }}><Num>{annualSavingsLabel}</Num></p>
+          <p className="text-label font-normal text-ink-muted">(estimated)</p>
         </div>
       )}
     </div>

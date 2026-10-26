@@ -38,8 +38,8 @@ export function CostTrendsCard({
     return (
       <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full">
         <div className="flex items-start justify-between mb-5">
-          <h3 className="text-sm font-semibold text-foreground">AWS Cost Trends</h3>
-          <a href="/costs" className="text-[var(--text-secondary)]"><MoreHorizontal size={16} /></a>
+          <h3 className="text-section text-ink">AWS Cost Trends</h3>
+          <a href="/costs" className="text-ink-muted"><MoreHorizontal size={16} /></a>
         </div>
         <CostBreakdownBarList
           data={demoBreakdownData}
@@ -75,10 +75,10 @@ export function CostTrendsCard({
     <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full flex flex-col items-center justify-center text-center py-12 gap-3">
       <h3 className="sr-only">AWS Cost Trends</h3>
       <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[var(--surface-1)]">
-        <span className="text-lg text-[var(--text-secondary)]">$</span>
+        <span className="text-section font-normal text-ink-muted">$</span>
       </div>
-      <p className="text-sm font-semibold text-foreground">Cost data syncing</p>
-      <p className="text-xs text-[var(--text-secondary)] leading-relaxed max-w-[240px]">
+      <p className="text-ui font-semibold text-ink">Cost data syncing</p>
+      <p className="text-meta text-ink-muted leading-relaxed max-w-[240px]">
         Billing data is available within 24–48h of connecting your AWS account
       </p>
     </div>

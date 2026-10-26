@@ -47,7 +47,7 @@ describe('provider pills', () => {
     expect(aws).toHaveAttribute('data-state', 'not-connected')
     expect(aws.textContent).toBe('AWS not connected')
     expect(aws.querySelector('svg.lucide-plug')).toHaveAttribute('aria-hidden', 'true')
-    expect(aws.className).toContain('text-[var(--text-secondary)]')
+    expect(aws.className).toContain('text-ink-muted')
     expect(aws.className).toContain('border-border')
     expect(aws.tagName).toBe('SPAN')
     expect(screen.queryByText('Connect AWS')).not.toBeInTheDocument()
@@ -140,7 +140,7 @@ describe('info button', () => {
     expect(button.className).toMatch(/\bh-11\b/)
     expect(button.className).toContain('cursor-pointer')
     expect(button.querySelector('span')!.className).toContain('group-hover:bg-[var(--surface-1)]')
-    expect(button.className).toContain('text-[var(--text-secondary)]')
+    expect(button.className).toContain('text-ink-muted')
   })
 
   it('focus shows the one-line tooltip; the panel opens only on click, with the new heading and the card name beneath it', async () => {

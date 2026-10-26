@@ -643,3 +643,15 @@ describe('UI polish: card arrows, info buttons, both security scopes', () => {
     expect(screen.getByTestId('posture-tile-observability').textContent).not.toContain('%')
   })
 })
+
+describe('6. the data refresh note', () => {
+  it('says only that each data source refreshes on its own schedule, in the meta role and muted ink, with no connection status', async () => {
+    renderDashboard()
+    await settled()
+    const note = screen.getByTestId('data-refresh-note')
+    expect(note.textContent).toBe('Each data source refreshes on its own schedule.')
+    expect(note.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-meta', 'text-ink-muted']))
+    expect(note.querySelector('svg')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Live update channel|reconnecting/i)
+  })
+})

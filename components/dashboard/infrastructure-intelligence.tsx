@@ -75,7 +75,7 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <p className="text-sm font-semibold m-0" style={{ color: severity ? toneText(style.color) : 'var(--foreground)' }}>Top Risk</p>
+            <p className="text-ui font-semibold m-0" style={{ color: severity ? toneText(style.color) : 'var(--foreground)' }}>Top Risk</p>
             {severity && <EvidenceBadge label={SEVERITY_STYLE[severity].label} color={style.color} testId="top-risk-severity" />}
           </div>
           {/* Only an identified risk links to the findings, as before. */}
@@ -88,8 +88,8 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
           </span>
         ) : (
           <>
-            <p className="text-[13px] text-foreground leading-snug m-0 break-words">{headline}</p>
-            {description && <p className="text-xs text-[var(--text-secondary)] leading-snug mt-1 mb-0">{description}</p>}
+            <p className="text-meta text-ink leading-snug m-0 break-words">{headline}</p>
+            {description && <p className="text-meta text-ink-muted leading-snug mt-1 mb-0">{description}</p>}
           </>
         )}
       </div>
@@ -112,7 +112,7 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2 min-w-0">
-            <p className="text-sm font-semibold text-foreground m-0 truncate">DevControl System Health</p>
+            <p className="text-ui font-semibold text-ink m-0 truncate">DevControl System Health</p>
             <EvidenceInfo about="DevControl System Health" align="start">
               <p className="m-0">{SYSTEM_HEALTH_EXPLANATION}</p>
             </EvidenceInfo>
@@ -120,13 +120,13 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
           <CardArrowLink href={SYSTEM_STATUS_HREF} label="Open DevControl status" />
         </div>
         <span
-          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full border border-border"
+          className="inline-flex items-center gap-1.5 text-label font-semibold px-2 py-0.5 rounded-full border border-border"
           style={{ color: systemStatus.color, background: 'var(--surface-2)' }}
         >
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: systemStatus.dotColor }} aria-hidden="true" />
           {systemStatus.value}
         </span>
-        <p className="text-xs text-[var(--text-secondary)] leading-snug mt-2 mb-0" data-testid="system-health-caption">{systemStatus.caption}</p>
+        <p className="text-meta text-ink-muted leading-snug mt-2 mb-0" data-testid="system-health-caption">{systemStatus.caption}</p>
       </div>
     </div>
   )

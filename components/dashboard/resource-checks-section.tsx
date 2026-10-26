@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { AlertTriangle, CheckCircle2, CircleDashed, ExternalLink, ListChecks, Server } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
+import { Num } from '@/components/ui/typography'
 import { checkResultLabel, resourceTypeLabel } from '@/components/monitoring/ServiceHealthTable'
 import { useInViewOnce, useResourceChecks, type ResourceChecksState } from '@/lib/hooks/useResourceChecks'
 import { checkCountsFrom, mapServiceRow, type CloudWatchMetricsData, type HealthSummary, type PaginationMeta, type ServiceHealth } from '@/lib/resource-checks'
@@ -184,12 +185,12 @@ function SummaryCard({ view }: { view: ResourceChecksView }) {
       </div>
       <div className="min-w-0 flex-1 self-center">
         {view.kind === 'line' ? (
-          <p className="text-sm text-[var(--text-secondary)] m-0" data-testid="resource-checks-state">{view.line}</p>
+          <p className="text-ui text-ink-muted m-0" data-testid="resource-checks-state">{view.line}</p>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-2xl font-bold leading-none text-foreground mr-1" data-testid="resource-checks-value">
-                {view.passing} <span className="text-base font-semibold text-[var(--text-secondary)]">of</span> {view.reporting}
+              <span className="text-section leading-none text-ink mr-1" data-testid="resource-checks-value">
+                <Num>{view.passing}</Num> <span className="text-body font-semibold text-ink-muted">of</span> <Num>{view.reporting}</Num>
               </span>
               {noIssues
                 ? <EvidenceBadge label="No issues detected" color={TONE_COLOR.success} testId="resource-checks-chip" />
@@ -206,7 +207,7 @@ function SummaryCard({ view }: { view: ResourceChecksView }) {
               />
             </div>
             {view.caption && (
-              <p className="text-xs text-[var(--text-secondary)] leading-snug m-0 mt-3" data-testid="resource-checks-caption">{view.caption}</p>
+              <p className="text-meta text-ink-muted leading-snug m-0 mt-3" data-testid="resource-checks-caption">{view.caption}</p>
             )}
           </>
         )}
@@ -219,47 +220,47 @@ function DetailsPanel({ view }: { view: ResourceChecksView }) {
   return (
     <div className="min-w-0 rounded-xl border border-border bg-[var(--surface-2)] p-5 flex flex-col gap-4" data-testid="resource-checks-details">
       <div>
-        <p className="text-sm font-semibold text-foreground m-0">What this checks</p>
-        <p className="text-xs text-[var(--text-secondary)] leading-snug m-0 mt-1">{RESOURCE_CHECKS_SCOPE}</p>
+        <p className="text-ui font-semibold text-ink m-0">What this checks</p>
+        <p className="text-meta text-ink-muted leading-snug m-0 mt-1">{RESOURCE_CHECKS_SCOPE}</p>
       </div>
       {view.kind === 'results' && (
         <div>
-          <p className="text-sm font-semibold text-foreground m-0 mb-1">Resources</p>
+          <p className="text-ui font-semibold text-ink m-0 mb-1">Resources</p>
           <ul className="list-none m-0 p-0" data-testid="resource-checks-rows">
             {view.rows.map((row) => (
               <li key={row.key} className="flex items-center gap-3 py-2 border-b border-border last:border-b-0" data-testid="resource-checks-row">
                 <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--surface-1)] border border-border">
-                  <Server size={14} aria-hidden="true" className="text-[var(--text-secondary)]" />
+                  <Server size={14} aria-hidden="true" className="text-ink-muted" />
                 </span>
                 <span className="min-w-0 flex-1 flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                  <span className="text-sm text-foreground max-w-full truncate">{row.typeLabel} · {row.shortId}</span>
+                  <span className="text-ui text-ink max-w-full truncate">{row.typeLabel} · {row.shortId}</span>
                   <EvidenceBadge label={row.label} color={rowChipColor(row)} testId="resource-checks-row-result" />
                 </span>
               </li>
             ))}
           </ul>
           {view.moreCount > 0 && (
-            <Link href={MONITORING_HREF} className="inline-block text-xs font-semibold no-underline mt-2" style={{ color: 'var(--text-accent)' }} data-testid="resource-checks-more">
+            <Link href={MONITORING_HREF} className="inline-block text-label font-semibold no-underline mt-2" style={{ color: 'var(--text-accent)' }} data-testid="resource-checks-more">
               +{view.moreCount} more
             </Link>
           )}
         </div>
       )}
       <div>
-        <p className="text-sm font-semibold text-foreground m-0">Not checked</p>
-        <p className="text-xs text-[var(--text-secondary)] leading-snug m-0 mt-1">{RESOURCE_CHECKS_NOT_CHECKED}</p>
+        <p className="text-ui font-semibold text-ink m-0">Not checked</p>
+        <p className="text-meta text-ink-muted leading-snug m-0 mt-1">{RESOURCE_CHECKS_NOT_CHECKED}</p>
       </div>
       {view.kind === 'results' ? (
         <>
-          <p className="text-xs text-[var(--text-secondary)] m-0" data-testid="resource-checks-source">
+          <p className="text-meta text-ink-muted m-0" data-testid="resource-checks-source">
             Amazon CloudWatch{view.capturedAt ? ` · ${checkedAgo(view.capturedAt)}` : ''}
           </p>
-          <Link href={MONITORING_HREF} className="inline-flex items-center gap-1.5 text-xs font-semibold no-underline mt-auto" style={{ color: 'var(--text-accent)' }}>
+          <Link href={MONITORING_HREF} className="inline-flex items-center gap-1.5 text-label font-semibold no-underline mt-auto" style={{ color: 'var(--text-accent)' }}>
             <ExternalLink size={13} aria-hidden="true" /> Open resource checks →
           </Link>
         </>
       ) : (
-        <p className="text-xs text-[var(--text-secondary)] m-0" data-testid="resource-checks-details-state">{view.line}</p>
+        <p className="text-meta text-ink-muted m-0" data-testid="resource-checks-details-state">{view.line}</p>
       )}
     </div>
   )
@@ -291,15 +292,15 @@ export function ResourceChecksSection({ isDemoActive, organizationId, aboveLoade
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-base font-bold text-foreground m-0">{RESOURCE_CHECKS_TITLE}</h3>
+              <h3 className="text-section text-ink m-0">{RESOURCE_CHECKS_TITLE}</h3>
               <EvidenceInfo about={RESOURCE_CHECKS_TITLE} heading="How these checks work" tooltip="How these checks work" align="start">
                 <SectionInfo />
               </EvidenceInfo>
             </div>
-            <p className="text-xs text-[var(--text-secondary)] m-0 mt-0.5">Not included in the posture score</p>
+            <p className="text-meta text-ink-muted m-0 mt-0.5">Not included in the posture score</p>
           </div>
         </div>
-        <Link href={MONITORING_HREF} className="text-xs font-semibold no-underline whitespace-nowrap py-2" style={{ color: 'var(--text-accent)' }}>
+        <Link href={MONITORING_HREF} className="text-label font-semibold no-underline whitespace-nowrap py-2" style={{ color: 'var(--text-accent)' }}>
           View all checks →
         </Link>
       </div>

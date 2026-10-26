@@ -1,6 +1,6 @@
 /**
  * The top nav is on the app type scale (typography plan T2c; founder decisions on the T2 plan, Oct 24):
- * top-level items are the body role (15 px) in ink, menu items the ui role (14 px), their descriptions meta
+ * desktop top-level items are 16 px (text-base, 16/24; founder decision Oct 26) in ink, menu items the ui role (14 px), their descriptions meta
  * (13 px) and badges label (12 px); the search trigger is ui in muted ink and its shortcut a label. The
  * DevControl wordmark and the "DC" monogram are brand marks and stay exactly as they were.
  */
@@ -31,14 +31,14 @@ async function renderNav() {
 }
 
 describe('top nav: desktop', () => {
-  it('top-level items are the body role, medium weight, ink', async () => {
+  it('top-level items are 16 px (text-base, founder decision Oct 26), medium weight, ink', async () => {
     const { container } = await renderNav()
     const nav = container.querySelector('nav')!
     const items = [...nav.querySelectorAll(':scope > div > button, :scope > a')]
     expect(items.map((b) => b.textContent)).toEqual(['Services', 'Infrastructure', 'Costs', 'Security', 'Observability', 'DevOps'])
     for (const item of items) {
-      expect(classes(item)).toEqual(expect.arrayContaining(['text-body', 'font-medium', 'text-ink']))
-      expect(item.className).not.toMatch(/text-base|text-\[#/)
+      expect(classes(item)).toEqual(expect.arrayContaining(['text-base', 'font-medium', 'text-ink']))
+      expect(item.className).not.toMatch(/text-body|text-ui|text-\[#/)
     }
   })
 

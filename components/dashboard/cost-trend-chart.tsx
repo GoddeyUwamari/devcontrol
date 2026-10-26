@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CHART_TICK } from '@/lib/chart-theme';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
@@ -109,15 +110,15 @@ export function CostTrendChart({
       const isForecast = payload[0]?.payload?.forecast;
       return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
-          <p className="text-sm font-semibold text-gray-900 mb-2">
+          <p className="text-ui font-semibold text-ink mb-2">
             {formatDate(label)}
-            {isForecast && <span className="text-xs text-gray-500 ml-2">(Forecast)</span>}
+            {isForecast && <span className="text-meta text-ink-muted ml-2">(Forecast)</span>}
           </p>
           <div className="space-y-1.5">
             {payload
               .filter((entry: any) => !hiddenSeries.has(entry.dataKey))
               .map((entry: any) => (
-                <div key={entry.name} className="flex items-center justify-between gap-4 text-sm">
+                <div key={entry.name} className="flex items-center justify-between gap-4 text-ui">
                   <div className="flex items-center gap-2">
                     <div
                       className="w-3 h-3 rounded-[2px]"
@@ -132,9 +133,9 @@ export function CostTrendChart({
               ))}
           </div>
           <div className="mt-2 pt-2 border-t border-gray-100">
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-ui">
               <span className="font-medium text-gray-700">Total:</span>
-              <span className="font-bold text-gray-900">
+              <span className="font-semibold text-gray-900">
                 ${payload.reduce((sum: number, entry: any) => sum + (hiddenSeries.has(entry.dataKey) ? 0 : entry.value), 0).toFixed(2)}
               </span>
             </div>
@@ -260,7 +261,7 @@ export function CostTrendChart({
       <CardHeader className="min-w-0">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
           <div>
-            <CardTitle>AWS Cost Trends</CardTitle>
+            <CardTitle className="text-section">AWS Cost Trends</CardTitle>
             <CardDescription>
               {hasServiceBreakdown
                 ? `Daily cost breakdown by service over time · ${TREND_TOTALS_NOTE}`
@@ -280,10 +281,10 @@ export function CostTrendChart({
                     variant="ghost"
                     size="sm"
                     onClick={() => onDateRangeChange(option.value as any)}
-                    className={`h-7 px-3 text-xs shrink-0 ${
+                    className={`h-7 px-3 text-label shrink-0 ${
                       dateRange === option.value
                         ? 'bg-white text-gray-900 shadow-sm hover:bg-white'
-                        : 'text-gray-500 hover:bg-white/50'
+                        : 'text-ink-muted hover:bg-white/50'
                     }`}
                   >
                     {option.label}
@@ -304,7 +305,7 @@ export function CostTrendChart({
       <CardContent>
         {unavailableMessage ? (
           <div className="h-[300px] flex items-center justify-center text-center px-4">
-            <p className="text-sm text-muted-foreground">{unavailableMessage}</p>
+            <p className="text-ui text-ink-muted">{unavailableMessage}</p>
           </div>
         ) : (
         <>
@@ -317,13 +318,13 @@ export function CostTrendChart({
                 dataKey="date"
                 tickFormatter={formatDate}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <YAxis
                 domain={[0, 'auto']}
                 tickFormatter={formatCurrency}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <Tooltip content={<CustomTooltip />} />
 
@@ -333,7 +334,7 @@ export function CostTrendChart({
                   x={data.find(d => d.forecast)?.date}
                   stroke="#9ca3af"
                   strokeDasharray="5 5"
-                  label={{ value: 'Forecast', position: 'top', fill: '#6b7280', fontSize: 12 }}
+                  label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
                 />
               )}
 
@@ -364,13 +365,13 @@ export function CostTrendChart({
                 dataKey="date"
                 tickFormatter={formatDate}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <YAxis
                 domain={[0, 'auto']}
                 tickFormatter={formatCurrency}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <Tooltip content={<CustomTooltip />} />
 
@@ -380,7 +381,7 @@ export function CostTrendChart({
                   x={data.find(d => d.forecast)?.date}
                   stroke="#9ca3af"
                   strokeDasharray="5 5"
-                  label={{ value: 'Forecast', position: 'top', fill: '#6b7280', fontSize: 12 }}
+                  label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
                 />
               )}
 
@@ -413,7 +414,7 @@ export function CostTrendChart({
             <button
               key={s.key}
               onClick={() => toggleSeries(s.key)}
-              className={`flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-all ${
+              className={`flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 rounded-md text-label font-medium whitespace-nowrap shrink-0 transition-all ${
                 hiddenSeries.has(s.key)
                   ? 'opacity-40 hover:opacity-60'
                   : 'hover:bg-gray-100'
@@ -431,7 +432,7 @@ export function CostTrendChart({
         {/* Anomaly Indicators */}
         {hasSpike && (
           <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-            <p className="text-sm text-orange-800">
+            <p className="text-ui text-orange-800">
               <span className="font-semibold">⚠️ May cause unexpected AWS bill increase</span> — unusual spending pattern identified. Review details above.
             </p>
           </div>

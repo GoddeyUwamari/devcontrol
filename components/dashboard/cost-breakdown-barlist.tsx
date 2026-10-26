@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { TrendingUp, TrendingDown, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Num } from '@/components/ui/typography'
 
 interface CostCategory {
   name: string
@@ -83,17 +84,14 @@ export function CostBreakdownBarList({
               <button
                 key={option.value}
                 onClick={() => onDateRangeChange(option.value as '7d' | '30d' | '90d' | '6mo' | '1yr')}
+                className={isActive ? 'text-label font-semibold text-ink' : 'text-label font-normal text-ink-muted'}
                 style={{
                   padding: '4px 12px',
-                  fontSize: '0.75rem',
-                  fontWeight: isActive ? 600 : 400,
-                  color: isActive ? '#0F172A' : '#64748B',
                   background: isActive ? '#F1F5F9' : 'transparent',
                   borderRadius: '6px',
                   border: 'none',
                   cursor: 'pointer',
                   transition: 'all 0.1s',
-                  letterSpacing: '-0.01em',
                 }}
               >
                 {option.label}
@@ -103,7 +101,8 @@ export function CostBreakdownBarList({
           {onExport && (
             <button
               onClick={onExport}
-              style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '0.75rem', color: '#64748B', background: 'transparent', border: '1px solid #E2E8F0', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+              className="text-label font-normal text-ink-muted"
+              style={{ marginLeft: 'auto', padding: '4px 10px', background: 'transparent', border: '1px solid #E2E8F0', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
               <Download size={12} /> Export
             </button>
@@ -113,11 +112,11 @@ export function CostBreakdownBarList({
 
       {/* Total Cost */}
       <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #F1F5F9' }}>
-        <div style={{ fontSize: '0.72rem', color: '#64748B', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+        <div className="text-label font-semibold uppercase tracking-wider text-ink-muted" style={{ marginBottom: '2px' }}>
           Total Monthly Cost
         </div>
-        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>
-          {valueFormatter(totalCost)}
+        <div className="text-section tracking-tight text-ink">
+          <Num>{valueFormatter(totalCost)}</Num>
         </div>
       </div>
 
@@ -129,11 +128,11 @@ export function CostBreakdownBarList({
             <div key={item.name}>
               {/* Name + value on same line above the bar */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 500, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="text-meta font-medium text-ink-body" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.color, display: 'inline-block', flexShrink: 0 }} />
                   {item.name}
                 </span>
-                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0F172A' }}>
+                <span className="text-meta font-semibold text-ink tabular-nums">
                   {valueFormatter(item.value)}
                 </span>
               </div>
@@ -182,23 +181,23 @@ export function CostBreakdownBarList({
                 background: item.color,
                 flexShrink: 0,
               }} />
-              <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#1E293B' }}>
+              <span className="text-ui font-medium text-ink-body">
                 {item.name}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A' }}>
+              <span className="text-ui font-semibold text-ink tabular-nums">
                 {valueFormatter(item.value)}
               </span>
-              <span style={{ fontSize: '0.75rem', color: '#64748B', minWidth: '42px', textAlign: 'right' }}>
+              <span className="text-label font-normal text-ink-muted tabular-nums" style={{ minWidth: '42px', textAlign: 'right' }}>
                 {item.percentage}%
               </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: '48px', color: item.change > 0 ? '#DC2626' : '#059669' }}>
+              <div className={item.change > 0 ? 'text-ink-danger' : 'text-ink-success'} style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: '48px' }}>
                 {item.change > 0
                   ? <TrendingUp size={12} />
                   : <TrendingDown size={12} />
                 }
-                <span style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                <span className="text-label font-semibold tabular-nums">
                   {Math.abs(item.change)}%
                 </span>
               </div>
@@ -209,7 +208,7 @@ export function CostBreakdownBarList({
 
       {/* Footer Note */}
       <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #F1F5F9' }}>
-        <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>
+        <p className="text-label font-normal text-ink-muted" style={{ margin: 0 }}>
           💡 Trends show change vs previous period.
         </p>
       </div>

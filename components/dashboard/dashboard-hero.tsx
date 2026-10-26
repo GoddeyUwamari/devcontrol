@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { Plug } from 'lucide-react'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { cn } from '@/lib/utils'
 
 /** See app/(app)/dashboard/dashboardAwsConnection.ts. */
 type AwsConnection = 'connected' | 'unconnected' | 'unknown' | 'loading'
@@ -14,7 +16,7 @@ interface DashboardHeroProps {
   lastSynced: Date | null
 }
 
-const PILL = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap'
+const PILL = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-label font-semibold whitespace-nowrap'
 
 /**
  * Cloud providers as one row of pills. AWS is connected or not, from the
@@ -54,7 +56,7 @@ export function ProviderPills({ awsConnection, canConnectAws }: { awsConnection:
         </Link>
       ) : (
         <span
-          className={`${PILL} border border-border bg-transparent text-[var(--text-secondary)] cursor-default`}
+          className={`${PILL} border border-border bg-transparent text-ink-muted cursor-default`}
           data-testid="provider-pill-aws"
           data-state="not-connected"
         >
@@ -65,7 +67,7 @@ export function ProviderPills({ awsConnection, canConnectAws }: { awsConnection:
       {['GCP', 'Azure'].map((name) => (
         <span
           key={name}
-          className={`${PILL} border border-dashed border-border bg-transparent text-[var(--text-secondary)] cursor-default`}
+          className={`${PILL} border border-dashed border-border bg-transparent text-ink-muted cursor-default`}
           data-testid={`provider-pill-${name.toLowerCase()}`}
         >
           {name} soon
@@ -86,13 +88,13 @@ export function DashboardHero({ awsConnection, canConnectAws, orgName, lastSynce
   return (
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between mb-6">
       <div>
-        <h1 className="text-[26px] font-bold text-foreground tracking-tight leading-tight mb-2 max-w-xl">
+        <h1 className={cn(PAGE_TITLE_CLASS, 'mb-2 max-w-xl')}>
           AI-Powered Cloud Operations &amp; Infrastructure Intelligence
         </h1>
-        <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-xl">
+        <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-xl')}>
           Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence.
         </p>
-        <p className="text-xs text-[var(--text-secondary)] font-medium mt-2">
+        <p className="text-meta text-ink-muted font-medium mt-2">
           {`${orgName}${awsConnection === 'connected' && lastSynced ? ` · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}` : ''}`}
         </p>
       </div>

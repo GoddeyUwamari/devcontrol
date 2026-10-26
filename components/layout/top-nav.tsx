@@ -341,7 +341,7 @@ export function TopNav() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-body font-medium text-ink rounded-md transition-colors',
+                      'flex items-center gap-1.5 px-3 py-2 text-base font-medium text-ink rounded-md transition-colors',
                       'hover:bg-accent',
                       isActive && 'bg-accent'
                     )}
@@ -360,7 +360,7 @@ export function TopNav() {
                 >
                   <button
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-body font-medium text-ink rounded-md transition-colors',
+                      'flex items-center gap-1.5 px-3 py-2 text-base font-medium text-ink rounded-md transition-colors',
                       'hover:bg-accent',
                       isActive && 'bg-accent'
                     )}
