@@ -1,0 +1,570 @@
+/**
+ * What the Security Overview redesign (NEXT_PUBLIC_SECURITY_V2) shows, from
+ * existing DB-backed responses: the risk score and its trend, account-level
+ * findings, resource findings (the full list on Pro, the needs-attention list
+ * below it), coverage, compliance frameworks and the anomaly count. Pure: no
+ * React, no fetch, no Date.now(); `now` is passed in. Every string the page
+ * prints is built here, so each wording rule is tested without rendering
+ * (security-page-plan.md §2–§9, founder decisions of Oct 23 and Oct 26, 2026).
+ *
+ * Rules:
+ * - A value that did not load is null ("—" or a reason), never 0, and a source
+ *   that failed never erases the findings that loaded from the others.
+ * - "No critical …" statements need every source they depend on to have loaded.
+ * - Open = an account finding that is active or acknowledged, or any current
+ *   resource finding (resource findings have no dispositions yet).
+ * - Dates are UTC; compliance dates, times and scores, the first-found dates and
+ *   the trend labels all come from the one formatter section below.
+ * - A running or failed framework never shows an earlier score as current.
+ * - No full access key ID or ARN in any string (lib/security/findingDisplay).
+ */
+import type { AccountSecurityFinding, ComplianceSeverity } from '@/lib/services/account-security-findings.service'
+import type { AWSService, ServicesCoverage } from '@/lib/services/aws-services.service'
+import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
+import type { RiskScore, RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
+import { findingWhere, maskText, resourceWhere, safeTitle, type FindingWhere } from '@/lib/security/findingDisplay'
+import { typeLabel } from '../../services/AttentionTable'
+import { formatWhen, hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
+import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
+import {
+  WEB_SERVER_HINT,
+  buildHttpsOnlyStatement,
+  guidanceFor,
+  guidanceKeyForAccountFinding,
+  guidanceKeyForResourceIssue,
+  type FixGuidance,
+  type GuidanceKey,
+} from './fixGuidance'
+
+export type SecLoadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'plan' } | { status: 'ready'; data: T }
+
+/** One issue stored on a resource (aws_resources.compliance_issues, current entries only). */
+export interface ResourceIssue {
+  severity: string
+  category: string
+  issue: string
+  recommendation: string
+  resource_arn?: string
+  findingKey?: string
+}
+
+/** A row of GET /api/aws-resources/compliance (Pro): the resource and its current issues. */
+export interface ResourceWithIssues {
+  id: string
+  resource_name: string | null
+  resource_arn: string
+  resource_type: string
+  region: string | null
+  issues: ResourceIssue[]
+}
+
+/** The full resource list (Pro), or the needs-attention list (worst issue per resource, high and above) below Pro. */
+export type ResourceFindingsSource =
+  | { kind: 'full'; resources: ResourceWithIssues[] }
+  | { kind: 'attention'; services: AWSService[] }
+
+export interface SecurityInputs {
+  score: SecLoadable<RiskScore>
+  trend: SecLoadable<RiskScoreTrendResponse>
+  accountFindings: SecLoadable<AccountSecurityFinding[]>
+  resourceFindings: SecLoadable<ResourceFindingsSource>
+  coverage: SecLoadable<ServicesCoverage>
+  frameworks: SecLoadable<{ frameworks: ComplianceFramework[]; scans: ComplianceScan[] }>
+  anomalies: SecLoadable<{ active: number }>
+}
+
+// ── Copy ──
+
+export const SECURITY_COPY = {
+  incomplete: "Some checks couldn't load, so this may be incomplete.",
+  noCritical: 'No critical findings in the areas we checked.',
+  noCriticalOrHigh: 'No critical or high-severity findings in the areas we checked.',
+  noScanYet: 'No scan has finished yet.',
+  attentionOnly: 'Showing high and critical resource findings.',
+  scoreFrom: 'From the last scan',
+  scorePreliminary: 'The first scan is still running.',
+  scorePlan: 'The score is on the Pro plan.',
+  scoreError: "Couldn't load the score.",
+  anomaliesNone: 'None open',
+  frameworksPlan: 'Compliance frameworks are on the Enterprise plan.',
+  frameworksError: "Couldn't load compliance frameworks.",
+  neverEvaluated: 'No evaluation yet.',
+  trendPlan: 'Score history is on the Pro plan',
+  trendNone: 'No score history yet',
+  trendError: "Couldn't load score history.",
+  trendCaption: 'Daily, at 02:00 UTC.',
+  reviewInInfrastructure: 'Review in Infrastructure',
+  reviewHref: '/infrastructure',
+  iamRoles: 'IAM roles and policies',
+  iamUsers: 'IAM users: MFA and key age',
+  s3Policies: 'S3 bucket policies (all regions)',
+} as const
+
+/** A framework result older than this is out of date (founder decision, Oct 23: one named constant, 7 days). */
+export const FRAMEWORK_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+
+const SEVERITIES: ComplianceSeverity[] = ['critical', 'high', 'medium', 'low']
+const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+const rank = (s: string) => SEVERITY_RANK[s] ?? 4
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
+
+// ── Formatting: one place for every date, time and score on the page (UTC) ──
+
+const parse = (iso: string | null | undefined): number | null => {
+  if (typeof iso !== 'string') return null
+  const at = Date.parse(iso)
+  return Number.isFinite(at) ? at : null
+}
+
+/** "Oct 3", or "Oct 3, 2025" outside the current UTC year; null for a missing or invalid date. */
+export function formatDay(iso: string | null | undefined, now: number): string | null {
+  const at = parse(iso)
+  if (at === null) return null
+  const sameYear = new Date(at).getUTCFullYear() === new Date(now).getUTCFullYear()
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) }).format(at)
+}
+
+/** "today, 4:12 PM UTC" (the Services/Infrastructure time format, in UTC); null for a missing or invalid time. */
+export function formatTime(iso: string | null | undefined, now: number): string | null {
+  return parse(iso) === null ? null : `${formatWhen(iso!, now, 'UTC')} UTC`
+}
+
+/** A compliance score as a whole percent, never rounded up (99.6 is "99"); null when it isn't a finite number. */
+export function formatScore(value: unknown): string | null {
+  const n = typeof value === 'string' ? (value.trim() === '' ? NaN : Number(value)) : typeof value === 'number' ? value : NaN
+  return Number.isFinite(n) ? String(Math.floor(n)) : null
+}
+
+// ── Findings ──
+
+export type RowStatus = 'open' | 'acknowledged' | 'accepted' | 'dismissed'
+
+export interface FindingRow {
+  id: string
+  scope: 'account' | 'resource'
+  severity: string
+  title: string
+  where: FindingWhere
+  status: RowStatus
+  /** "First found Oct 3" (account findings only; resource findings have no first-found date yet). */
+  firstFound: string | null
+  firstFoundAt: number | null
+  recommendation: string | null
+  guidanceKey: GuidanceKey | null
+  guidance: FixGuidance | null
+  webHint: string | null
+  /** One statement to merge into the bucket's existing policy (HTTPS-only findings with a bucket name). */
+  policyStatement: string | null
+  /** Acknowledge / Dismiss / Accept risk exist for account findings only. */
+  canDisposition: boolean
+  /** Navigation, not remediation. */
+  review: { text: string; href: string } | null
+}
+
+const ACCOUNT_STATUS: Record<string, RowStatus | undefined> = {
+  active: 'open', acknowledged: 'acknowledged', accepted_risk: 'accepted', dismissed: 'dismissed',
+}
+
+export const isOpen = (r: FindingRow) => r.status === 'open' || r.status === 'acknowledged'
+
+function withGuidance(key: GuidanceKey | null) {
+  return { guidanceKey: key, guidance: guidanceFor(key) ?? null, webHint: key === 'sg_open_web' ? WEB_SERVER_HINT : null }
+}
+
+function accountRow(f: AccountSecurityFinding, now: number): FindingRow | null {
+  const status = ACCOUNT_STATUS[f.derived_status]
+  if (!status) return null
+  const day = formatDay(f.detected_at, now)
+  return {
+    id: `account:${f.id}`,
+    scope: 'account',
+    severity: f.severity,
+    title: safeTitle(f),
+    where: findingWhere(f),
+    status,
+    firstFound: day ? `First found ${day}` : null,
+    firstFoundAt: parse(f.detected_at),
+    recommendation: f.recommendation ? maskText(f.recommendation) : null,
+    ...withGuidance(guidanceKeyForAccountFinding(f)),
+    policyStatement: null,
+    canDisposition: true,
+    review: null,
+  }
+}
+
+const REVIEW = { text: SECURITY_COPY.reviewInInfrastructure, href: SECURITY_COPY.reviewHref }
+
+function resourceRows(source: ResourceFindingsSource): FindingRow[] {
+  if (source.kind === 'attention') {
+    return source.services
+      .filter((s) => s.attention_cause === 'finding' && (s.priority_severity === 'critical' || s.priority_severity === 'high'))
+      .map((s) => ({
+        id: `resource:${s.id}`,
+        scope: 'resource' as const,
+        severity: s.priority_severity as string,
+        title: maskText(s.reason ?? ''),
+        where: { name: s.name, kind: typeLabel(s.type), region: s.aws_region ?? s.region },
+        status: 'open' as const,
+        firstFound: null,
+        firstFoundAt: null,
+        recommendation: null,
+        ...withGuidance(null),
+        policyStatement: null,
+        canDisposition: false,
+        review: REVIEW,
+      }))
+  }
+  return source.resources.flatMap((r) => r.issues.map((issue, i) => {
+    const key = guidanceKeyForResourceIssue(issue)
+    const where = resourceWhere(r)
+    return {
+      id: `resource:${r.id}:${issue.findingKey ?? i}`,
+      scope: 'resource' as const,
+      severity: issue.severity,
+      title: maskText(issue.issue),
+      where: { ...where, kind: typeLabel(r.resource_type) },
+      status: 'open' as const,
+      firstFound: null,
+      firstFoundAt: null,
+      recommendation: issue.recommendation ? maskText(issue.recommendation) : null,
+      ...withGuidance(key),
+      policyStatement: key === 's3_https_only' && r.resource_name ? buildHttpsOnlyStatement(r.resource_name) : null,
+      canDisposition: false,
+      review: REVIEW,
+    }
+  }))
+}
+
+/** M8: severity, then the oldest first-found (undated last), then name A–Z. */
+export function compareRows(a: FindingRow, b: FindingRow): number {
+  return rank(a.severity) - rank(b.severity)
+    || (a.firstFoundAt ?? Infinity) - (b.firstFoundAt ?? Infinity)
+    || a.where.name.localeCompare(b.where.name, 'en')
+    || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
+// ── Filters and groups ──
+
+export type FilterKey = 'all' | 'resources' | 'account' | 'accepted' | 'dismissed'
+
+export interface FilterView {
+  key: FilterKey
+  label: string
+  /** null when a source it depends on didn't load. */
+  count: number | null
+  /** false when the count is from a partial list (the needs-attention list below Pro). */
+  complete: boolean
+}
+
+export const FILTER_LABELS: Record<FilterKey, string> = {
+  all: 'All', resources: 'Resources', account: 'Account', accepted: 'Accepted', dismissed: 'Dismissed',
+}
+
+export function filterRows(rows: FindingRow[], key: FilterKey): FindingRow[] {
+  switch (key) {
+    case 'all': return rows.filter(isOpen)
+    case 'resources': return rows.filter((r) => r.scope === 'resource' && isOpen(r))
+    case 'account': return rows.filter((r) => r.scope === 'account' && isOpen(r))
+    case 'accepted': return rows.filter((r) => r.status === 'accepted')
+    case 'dismissed': return rows.filter((r) => r.status === 'dismissed')
+  }
+}
+
+export interface FindingGroup {
+  key: string
+  title: string
+  /** "<title> · <count>" */
+  label: string
+  count: number
+  severity: string
+  rows: FindingRow[]
+}
+
+/** Group by issue: by guidance key, else by the finding's own title. Rows keep the list order. */
+export function groupRows(rows: FindingRow[]): FindingGroup[] {
+  const groups = new Map<string, FindingGroup>()
+  for (const row of [...rows].sort(compareRows)) {
+    const key = row.guidanceKey ?? `title:${row.title}`
+    const title = row.guidance?.title ?? row.title
+    const g = groups.get(key) ?? { key, title, label: '', count: 0, severity: row.severity, rows: [] }
+    g.rows.push(row)
+    g.count += 1
+    if (rank(row.severity) < rank(g.severity)) g.severity = row.severity
+    groups.set(key, g)
+  }
+  return [...groups.values()]
+    .map((g) => ({ ...g, label: `${g.title} · ${g.count}` }))
+    .sort((a, b) => rank(a.severity) - rank(b.severity) || b.count - a.count || a.title.localeCompare(b.title, 'en'))
+}
+
+// ── Banner and tiles ──
+
+export interface BannerView {
+  tone: 'danger' | 'warning' | 'success' | 'neutral'
+  headline: string | null
+  detail: string | null
+}
+
+export type SeverityCounts = Record<ComplianceSeverity, number>
+
+function countOpen(rows: FindingRow[]): SeverityCounts {
+  const c: SeverityCounts = { critical: 0, high: 0, medium: 0, low: 0 }
+  for (const r of rows) if (isOpen(r) && r.severity in c) c[r.severity as ComplianceSeverity] += 1
+  return c
+}
+
+const lastCompletedIso = (c: ServicesCoverage) => c.last_completed_scan?.completed_at ?? c.last_successful_scan_at ?? null
+
+function needReview(c: number, h: number): string {
+  const verb = plural(c + h, 'finding needs review', 'findings need review')
+  if (c > 0) return h > 0 ? `${c} critical and ${h} high-severity ${verb}` : `${c} critical ${verb}`
+  return `${h} high-severity ${verb}`
+}
+
+/** M2 with decision 10: loaded findings are always counted; "No critical …" only when every source it rests on loaded. */
+function banner(i: SecurityInputs, rows: FindingRow[]): BannerView | null {
+  const sources = [i.accountFindings, i.resourceFindings]
+  if (sources.some((s) => s.status === 'loading') || i.coverage.status === 'loading') return null
+  const failed = sources.some((s) => s.status !== 'ready')
+  const partial = i.resourceFindings.status === 'ready' && i.resourceFindings.data.kind === 'attention'
+  const coverage = i.coverage.status === 'ready' ? i.coverage.data : null
+  const { critical: c, high: h } = countOpen(rows)
+  const tone = c > 0 ? 'danger' : h > 0 ? 'warning' : 'neutral'
+  const note = failed ? SECURITY_COPY.incomplete : partial ? SECURITY_COPY.attentionOnly : null
+
+  if (c + h > 0) {
+    // A failed or partial source's note always wins: "No critical …" needs every source.
+    return { tone, headline: needReview(c, h), detail: note ?? (coverage !== null && c === 0 ? SECURITY_COPY.noCritical : null) }
+  }
+  if (failed || coverage === null) return { tone: 'warning', headline: SECURITY_COPY.incomplete, detail: null }
+  if (partial) return { tone: 'neutral', headline: null, detail: SECURITY_COPY.attentionOnly }
+  if (!coverage.account.connected || !lastCompletedIso(coverage)) return { tone: 'neutral', headline: SECURITY_COPY.noScanYet, detail: null }
+  return { tone: 'success', headline: SECURITY_COPY.noCriticalOrHigh, detail: null }
+}
+
+export interface ScoreTile { value: number | null; caption: string | null; retry: boolean }
+
+function coverageCaption(c: ServicesCoverage | null): string | null {
+  const home = c ? c.account.home_region ?? c.scope.home_region?.region ?? null : null
+  if (!c || !home || !lastCompletedIso(c)) return null
+  return `resources in ${home}${c.scope.s3.in_last_scan ? ' and S3 buckets in all regions' : ''}, security groups in ${home}, IAM users.`
+}
+
+function scoreTile(i: SecurityInputs): ScoreTile {
+  const s = i.score
+  if (s.status === 'loading') return { value: null, caption: null, retry: false }
+  if (s.status === 'plan') return { value: null, caption: SECURITY_COPY.scorePlan, retry: false }
+  if (s.status === 'error' || !Number.isFinite(s.data.score)) return { value: null, caption: SECURITY_COPY.scoreError, retry: true }
+  if (s.data.isPreliminary) return { value: null, caption: SECURITY_COPY.scorePreliminary, retry: false }
+  const where = coverageCaption(i.coverage.status === 'ready' ? i.coverage.data : null)
+  return { value: Math.round(s.data.score), caption: where ? `${SECURITY_COPY.scoreFrom}: ${where}` : `${SECURITY_COPY.scoreFrom}.`, retry: false }
+}
+
+export interface FindingsTile {
+  total: number | null
+  /** "<c> critical · <h> high · <m> medium · <l> low" */
+  breakdown: string | null
+  complete: boolean
+  note: string | null
+}
+
+function findingsTile(i: SecurityInputs, rows: FindingRow[]): FindingsTile | null {
+  const sources = [i.accountFindings, i.resourceFindings]
+  if (sources.some((s) => s.status === 'loading')) return null
+  const loaded = sources.filter((s) => s.status === 'ready').length
+  if (loaded === 0) return { total: null, breakdown: null, complete: false, note: SECURITY_COPY.incomplete }
+  const c = countOpen(rows)
+  const failed = loaded < sources.length
+  const partial = i.resourceFindings.status === 'ready' && i.resourceFindings.data.kind === 'attention'
+  return {
+    total: SEVERITIES.reduce((n, s) => n + c[s], 0),
+    breakdown: `${c.critical} critical · ${c.high} high · ${c.medium} medium · ${c.low} low`,
+    complete: !failed && !partial,
+    note: failed ? SECURITY_COPY.incomplete : partial ? SECURITY_COPY.attentionOnly : null,
+  }
+}
+
+// ── Compliance frameworks (M5, safeguard 2) ──
+
+export type FrameworkState = 'current' | 'running' | 'failed' | 'out_of_date' | 'never'
+
+export const FRAMEWORK_STATE_LABEL: Record<FrameworkState, string> = {
+  current: 'Current', running: 'Running', failed: 'Failed', out_of_date: 'Out of date', never: 'Not evaluated yet',
+}
+
+export interface FrameworkView {
+  id: string
+  name: string
+  state: FrameworkState
+  label: string
+  text: string
+  /** Only for a current result; never while a run is active or after the latest run failed. */
+  score: string | null
+  /** The latest completed evaluation, formatted ("Oct 3"), or null. */
+  lastEvaluated: string | null
+  lastEvaluatedAt: number | null
+  action: { kind: 'try_again' | 'evaluate_now'; label: string } | null
+}
+
+export interface FrameworksView {
+  status: 'loading' | 'plan' | 'error' | 'ready'
+  note: string | null
+  action: { label: string; href: string } | null
+  frameworks: FrameworkView[]
+}
+
+const byNewest = (a: ComplianceScan, b: ComplianceScan) =>
+  (parse(b.created_at) ?? 0) - (parse(a.created_at) ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+
+export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[], now: number): FrameworkView {
+  const own = scans.filter((s) => s.framework_id === f.id).sort(byNewest)
+  const latest = own[0]
+  const lastDone = own.find((s) => s.status === 'completed' && formatScore(s.compliance_score) !== null)
+  const lastEvaluatedIso = lastDone ? lastDone.completed_at ?? lastDone.created_at : null
+  const base = { id: f.id, name: f.name, lastEvaluated: formatDay(lastEvaluatedIso, now), lastEvaluatedAt: parse(lastEvaluatedIso) }
+  const view = (state: FrameworkState, text: string, score: string | null, action: FrameworkView['action']): FrameworkView =>
+    ({ ...base, state, label: FRAMEWORK_STATE_LABEL[state], text, score, action })
+
+  if (latest && (latest.status === 'pending' || latest.status === 'running')) {
+    const started = formatTime(latest.started_at ?? latest.created_at, now)
+    return view('running', `Started ${started ?? 'recently'}. The previous result is hidden until this run finishes.`, null, null)
+  }
+  if (latest && latest.status === 'failed') {
+    const on = formatDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
+    return view('failed', `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, null, { kind: 'try_again', label: 'Try again' })
+  }
+  const score = latest?.status === 'completed' ? formatScore(latest.compliance_score) : null
+  if (!latest || score === null || base.lastEvaluatedAt === null) {
+    return view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: 'Evaluate now' })
+  }
+  if (now - base.lastEvaluatedAt >= FRAMEWORK_STALE_AFTER_MS) {
+    return view('out_of_date', `Last evaluated ${base.lastEvaluated}, over 7 days ago. Findings may have changed.`, null, null)
+  }
+  return view('current', `Evaluated ${base.lastEvaluated} · ${score}%`, score, null)
+}
+
+function frameworksView(i: SecurityInputs, now: number): FrameworksView {
+  const f = i.frameworks
+  if (f.status === 'loading') return { status: 'loading', note: null, action: null, frameworks: [] }
+  if (f.status === 'plan') return { status: 'plan', note: SECURITY_COPY.frameworksPlan, action: { label: 'See plans', href: '/settings/billing/upgrade' }, frameworks: [] }
+  if (f.status === 'error') return { status: 'error', note: SECURITY_COPY.frameworksError, action: null, frameworks: [] }
+  return { status: 'ready', note: null, action: null, frameworks: f.data.frameworks.map((fw) => describeFramework(fw, f.data.scans, now)) }
+}
+
+const STATE_PRIORITY: Record<FrameworkState, number> = { failed: 0, out_of_date: 1, never: 2, running: 3, current: 4 }
+
+export interface ComplianceTile { label: string; lastEvaluated: string | null }
+
+function complianceTile(view: FrameworksView): ComplianceTile | null {
+  if (view.status === 'loading') return null
+  if (view.status !== 'ready') return { label: view.note!, lastEvaluated: null }
+  const [worst] = [...view.frameworks].sort((a, b) =>
+    STATE_PRIORITY[a.state] - STATE_PRIORITY[b.state] || (a.lastEvaluatedAt ?? -Infinity) - (b.lastEvaluatedAt ?? -Infinity))
+  if (!worst) return { label: SECURITY_COPY.neverEvaluated, lastEvaluated: null }
+  return { label: worst.label, lastEvaluated: worst.lastEvaluated ? `Last evaluated ${worst.lastEvaluated}` : null }
+}
+
+// ── Trend ──
+
+export interface TrendView {
+  note: string | null
+  points: { label: string; score: number }[]
+  /** "+3 pts", "-3 pts", "±0 pts"; null with fewer than 2 points. */
+  delta: string | null
+  caption: string
+}
+
+function trendView(i: SecurityInputs, now: number): TrendView | null {
+  const t = i.trend
+  const caption = SECURITY_COPY.trendCaption
+  if (t.status === 'loading') return null
+  if (t.status === 'plan') return { note: SECURITY_COPY.trendPlan, points: [], delta: null, caption }
+  if (t.status === 'error') return { note: SECURITY_COPY.trendError, points: [], delta: null, caption }
+  const points = [...(t.data.history ?? [])]
+    .filter((p) => Number.isFinite(p.score) && parse(p.date) !== null)
+    .sort((a, b) => parse(a.date)! - parse(b.date)!)
+    .map((p) => ({ label: formatDay(p.date, now)!, score: p.score }))
+  if (points.length === 0) return { note: SECURITY_COPY.trendNone, points, delta: null, caption }
+  let delta: string | null = null
+  if (points.length >= 2) {
+    const d = Math.round(points[points.length - 1].score - points[0].score)
+    delta = d > 0 ? `+${d} pts` : d < 0 ? `-${-d} pts` : '±0 pts'
+  }
+  return { note: null, points, delta, caption }
+}
+
+// ── What we checked ──
+
+export interface CheckedLine { key: string; label: string; status: 'checked' | 'not_checked' | null }
+
+export function securityCheckedLines(coverage: SecLoadable<ServicesCoverage>): CheckedLine[] {
+  if (coverage.status === 'loading') return []
+  if (coverage.status !== 'ready') return [{ key: 'error', label: OVERVIEW_COPY.coverageError, status: null }]
+  const c = coverage.data
+  if (!c.account.connected) return [{ key: 'nothing', label: OVERVIEW_COPY.nothingChecked, status: null }]
+  const home = c.account.home_region ?? c.scope.home_region?.region ?? '—'
+  const done = !!lastCompletedIso(c)
+  const lines: CheckedLine[] = [
+    { key: 'security-groups', label: `Security groups (${home})`, status: done ? 'checked' : 'not_checked' },
+    { key: 's3', label: SECURITY_COPY.s3Policies, status: done && c.scope.s3.in_last_scan ? 'checked' : 'not_checked' },
+    { key: 'iam-users', label: SECURITY_COPY.iamUsers, status: done ? 'checked' : 'not_checked' },
+    { key: 'iam-roles', label: SECURITY_COPY.iamRoles, status: 'not_checked' },
+  ]
+  const counts = hasRegionCoverage(c) ? regionCounts(c) : null
+  if (counts && counts.enabled !== null) {
+    const n = Math.max(0, counts.enabled - counts.checked)
+    if (n > 0) lines.push({ key: 'other-regions', label: `Other ${n} ${plural(n, 'region', 'regions')}`, status: 'not_checked' })
+  } else {
+    lines.push({ key: 'other-regions', label: 'Other regions (region list not read yet)', status: 'not_checked' })
+  }
+  return lines
+}
+
+// ── The page ──
+
+export interface SecurityView {
+  banner: BannerView | null
+  tiles: { score: ScoreTile; findings: FindingsTile | null; compliance: ComplianceTile | null; anomalies: string | null }
+  /** Every row (open, accepted and dismissed), in list order; use filterRows / groupRows. */
+  rows: FindingRow[]
+  filters: FilterView[]
+  frameworks: FrameworksView
+  trend: TrendView | null
+  checked: CheckedLine[]
+}
+
+export function describeSecurity(i: SecurityInputs, now: number): SecurityView {
+  const account = i.accountFindings.status === 'ready'
+    ? i.accountFindings.data.map((f) => accountRow(f, now)).filter((r): r is FindingRow => r !== null)
+    : []
+  const resources = i.resourceFindings.status === 'ready' ? resourceRows(i.resourceFindings.data) : []
+  const rows = [...account, ...resources].sort(compareRows)
+
+  const accountOk = i.accountFindings.status === 'ready'
+  const resourcesOk = i.resourceFindings.status === 'ready'
+  const resourcesComplete = resourcesOk && i.resourceFindings.status === 'ready' && i.resourceFindings.data.kind === 'full'
+  const count = (key: FilterKey) => filterRows(rows, key).length
+  const filters: FilterView[] = [
+    { key: 'all', label: FILTER_LABELS.all, count: accountOk && resourcesOk ? count('all') : null, complete: accountOk && resourcesComplete },
+    { key: 'resources', label: FILTER_LABELS.resources, count: resourcesOk ? count('resources') : null, complete: resourcesComplete },
+    { key: 'account', label: FILTER_LABELS.account, count: accountOk ? count('account') : null, complete: accountOk },
+    { key: 'accepted', label: FILTER_LABELS.accepted, count: accountOk ? count('accepted') : null, complete: accountOk },
+    { key: 'dismissed', label: FILTER_LABELS.dismissed, count: accountOk ? count('dismissed') : null, complete: accountOk },
+  ]
+
+  const frameworks = frameworksView(i, now)
+  const a = i.anomalies
+  const anomalies = a.status === 'ready' && Number.isFinite(a.data.active) && a.data.active >= 0
+    ? (a.data.active === 0 ? SECURITY_COPY.anomaliesNone : `${a.data.active} open`)
+    : null
+
+  return {
+    banner: banner(i, rows),
+    tiles: { score: scoreTile(i), findings: findingsTile(i, rows), compliance: complianceTile(frameworks), anomalies },
+    rows,
+    filters,
+    frameworks,
+    trend: trendView(i, now),
+    checked: securityCheckedLines(i.coverage),
+  }
+}

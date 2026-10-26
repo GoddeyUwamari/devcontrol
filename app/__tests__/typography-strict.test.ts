@@ -73,6 +73,7 @@ const SECURITY_DIRS = ['app/(app)/security/', 'lib/security/']
 const SECURITY_LEGACY = ['app/(app)/security/page.tsx']
 const SECURITY = [
   'app/(app)/security/overview/fixGuidance.ts',
+  'app/(app)/security/overview/securityModel.ts',
   'lib/security/findingDisplay.ts',
 ]
 
