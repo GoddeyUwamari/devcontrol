@@ -135,9 +135,9 @@ describe('top nav: Live updates', () => {
     // Phone bar: before the alerts bell, dot only below sm. Desktop: first in the right-hand group (before
     // search), dot only below xl.
     expect(inMobile.nextElementSibling?.getAttribute('aria-label')).toBe('Alerts')
-    expect(within(inMobile).getByText(label).className).toContain('sm:not-sr-only')
+    expect(within(inMobile).getByText(label).className).toContain('sm:inline')
     expect(inDesktop.parentElement!.firstElementChild).toBe(inDesktop)
     expect(inDesktop.nextElementSibling?.textContent).toContain('Search...')
-    expect(within(inDesktop).getByText(label).className).toContain('xl:not-sr-only')
+    expect(within(inDesktop).getByText(label).className).toContain('xl:inline')
   })
 })

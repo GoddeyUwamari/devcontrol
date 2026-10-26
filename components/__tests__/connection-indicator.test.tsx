@@ -26,13 +26,17 @@ describe('ConnectionIndicator', () => {
   })
 
   it.each([
-    ['sm', 'sr-only sm:not-sr-only', 'sm:px-3'],
-    ['xl', 'sr-only xl:not-sr-only', 'xl:px-3'],
-  ] as const)('below %s only the dot shows: the label is screen-reader text until then, and the pill chrome starts there', (bp, textClasses, pill) => {
+    ['sm', 'hidden sm:inline', 'sm:px-3'],
+    ['xl', 'hidden xl:inline', 'xl:px-3'],
+  ] as const)('below %s only the dot shows: the visible label starts there, the pill chrome too, and the name never depends on it', (bp, textClasses, pill) => {
     render(<ConnectionIndicator isConnected compactBelow={bp} />)
     const badge = screen.getByRole('status', { name: 'Live updates' })
     const text = screen.getByText('Live updates')
     expect(classes(text)).toEqual(expect.arrayContaining(textClasses.split(' ')))
+    // Not sr-only + not-sr-only: the unlayered .sr-only in app/globals.css outranks Tailwind's layered
+    // not-sr-only, so that label would never show (found in the T2c visual check).
+    expect(text.className).not.toMatch(/sr-only/)
+    expect(badge.getAttribute('aria-label')).toBe('Live updates')
     expect(classes(badge)).toContain(pill)
     // Its own border, fill and padding apply only from the breakpoint (none on the bare dot).
     expect(classes(badge).filter((c) => /^(?:border|bg-white|px-3|py-1\.5)$/.test(c))).toEqual([])

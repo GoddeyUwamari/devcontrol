@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
  * says "Connected". It sits in the top nav, which reads the socket once and
  * passes its state to the indicator in each bar; it is never fixed over the
  * page. Below `compactBelow` only the dot shows: the label stays the status's
- * accessible name and the dot's tooltip.
+ * accessible name (aria-label) and its tooltip.
  */
 export function ConnectionIndicator({ isConnected, compactBelow }: { isConnected: boolean; compactBelow: 'sm' | 'xl' }) {
   const label = isConnected ? 'Live updates' : 'Live updates paused';
@@ -34,7 +34,10 @@ export function ConnectionIndicator({ isConnected, compactBelow }: { isConnected
             : 'bg-red-500'
         }`}
       />
-      <span className={cn('text-ink-body dark:text-gray-300', compactBelow === 'sm' ? 'sr-only sm:not-sr-only' : 'sr-only xl:not-sr-only')}>
+      {/* hidden + inline, not sr-only + not-sr-only: app/globals.css has its own unlayered .sr-only, which
+          outranks Tailwind's layered not-sr-only, so the label would never show. The status keeps its name
+          from aria-label at every width. */}
+      <span className={cn('text-ink-body dark:text-gray-300', compactBelow === 'sm' ? 'hidden sm:inline' : 'hidden xl:inline')}>
         {label}
       </span>
     </div>
