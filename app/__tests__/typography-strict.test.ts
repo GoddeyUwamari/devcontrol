@@ -84,6 +84,7 @@ const SECURITY = [
   'app/(app)/security/overview/fixGuidance.ts',
   'app/(app)/security/overview/securityCopy.ts',
   'app/(app)/security/overview/securityModel.ts',
+  'app/(app)/security/securityV2Flag.ts',
   'lib/security/findingDisplay.ts',
 ]
 
