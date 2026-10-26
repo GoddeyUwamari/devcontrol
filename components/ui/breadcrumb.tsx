@@ -24,7 +24,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className={cn('flex items-center text-sm', className)}
+      className={cn('flex items-center text-meta', className)}
     >
       <div className="flex items-center flex-nowrap w-full">
         {items.map((item, index) => {
@@ -51,7 +51,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
               {item.href && !isLast ? (
                 <Link
                   href={item.href}
-                  className="breadcrumb-link text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 transition-colors whitespace-nowrap"
+                  className="breadcrumb-link text-ink-muted hover:text-ink dark:text-gray-400 dark:hover:text-gray-200 transition-colors whitespace-nowrap"
                 >
                   {item.label}
                 </Link>
@@ -60,8 +60,8 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
                   className={cn(
                     'whitespace-nowrap',
                     isLast
-                      ? 'font-medium text-gray-900 dark:text-gray-100'
-                      : 'text-gray-500 dark:text-gray-400'
+                      ? 'font-medium text-ink dark:text-gray-100'
+                      : 'text-ink-muted dark:text-gray-400'
                   )}
                   aria-current={isLast ? 'page' : undefined}
                 >

@@ -17,7 +17,7 @@ export function ConnectionIndicator() {
       role="status"
       aria-label={label}
       data-testid="connection-indicator"
-      className="w-fit ml-4 mb-4 flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs"
+      className="w-fit ml-4 mb-4 flex items-center gap-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-label font-normal"
     >
       <div
         aria-hidden="true"
@@ -27,7 +27,7 @@ export function ConnectionIndicator() {
             : 'bg-red-500'
         }`}
       />
-      <span className="text-gray-700 dark:text-gray-300">
+      <span className="text-ink-body dark:text-gray-300">
         {label}
       </span>
     </div>

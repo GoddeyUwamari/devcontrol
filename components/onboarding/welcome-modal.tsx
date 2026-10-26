@@ -79,14 +79,14 @@ export function WelcomeModal() {
     <Dialog open={open} onOpenChange={setOpen}>
        <DialogContent className="w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pt-4">
-  <DialogTitle className="text-lg sm:text-2xl flex items-center gap-2">
+  <DialogTitle className="flex items-center gap-2">
     <Cloud className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600 shrink-0" aria-hidden="true" />
     Connect AWS to get started
   </DialogTitle>
 </DialogHeader>
 
         <div className="space-y-4 py-4">
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-body text-ink-muted dark:text-gray-400">
             DevControl reads your AWS account through a read-only IAM role and lists what it finds.
             Cost findings (idle EC2 instances, unattached EBS volumes, unused Elastic IPs, and EBS and S3
             storage settings that cost more than needed) show estimated monthly savings. Security findings
@@ -94,12 +94,12 @@ export function WelcomeModal() {
           </p>
 
           <div className="bg-purple-50 dark:bg-purple-950 p-4 rounded-lg">
-            <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-2 ml-4 list-decimal">
+            <ol className="text-ui text-ink-body dark:text-gray-300 space-y-2 ml-4 list-decimal">
               <li data-testid="welcome-step"><strong>Connect AWS</strong>: create a read-only IAM role, so DevControl can view your account but not change it.</li>
               <li data-testid="welcome-step"><strong>DevControl scans</strong>: right after you connect, then on a regular schedule.</li>
               <li data-testid="welcome-step"><strong>Review findings</strong>: cost findings show estimated monthly savings; security findings appear on the Security page.</li>
             </ol>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 flex items-center gap-1">
+            <p className="text-meta text-ink-muted dark:text-gray-400 mt-3 flex items-center gap-1">
               <Lock className="h-3 w-3" aria-hidden="true" /> Read-only access
             </p>
           </div>

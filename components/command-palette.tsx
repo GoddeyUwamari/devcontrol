@@ -116,7 +116,7 @@ export function CommandPalette() {
         {isNL && (
           <div
             className="absolute right-3 top-3 flex items-center gap-2
-              text-xs text-purple-600 dark:text-purple-400"
+              text-meta text-ink-accent dark:text-purple-400"
             style={{ cursor: isNL ? 'pointer' : 'default' }}
             onClick={() => { if (isNL && !isProcessing) runNLQuery() }}
           >
@@ -132,15 +132,15 @@ export function CommandPalette() {
             <div className="text-center py-6">
               <Sparkles className="h-8 w-8 mx-auto mb-2 text-purple-600" />
               {isProcessing ? (
-                <p className="text-sm font-medium text-purple-600">
+                <p className="text-ui font-medium text-ink-accent">
                   Analyzing your infrastructure...
                 </p>
               ) : (
                 <>
-                  <p className="text-sm font-medium">
+                  <p className="text-ui font-medium text-ink">
                     Press Enter to search with AI
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-meta text-ink-muted mt-1">
                     {'Try: "stopped EC2 instances" · "what is my AWS spend this month"'}
                   </p>
                 </>
@@ -159,7 +159,7 @@ export function CommandPalette() {
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-3 w-3 text-purple-600" />
                   <span>AI Results</span>
-                  <span className="text-xs text-muted-foreground font-normal">
+                  <span className="text-meta text-ink-muted font-normal">
                     {nlResult.data.outcome === 'answered' || nlResult.data.outcome === 'no_results'
                       ? `${nlResult.rowCount} result${nlResult.rowCount !== 1 ? 's' : ''}`
                       : nlResult.data.outcome === 'not_supported' ? "Can't answer this" : 'Data not available'}
@@ -172,17 +172,17 @@ export function CommandPalette() {
                 </button>
               </div>
             }>
-              <div className="px-2 py-2 text-xs text-muted-foreground
+              <div className="px-2 py-2 text-meta text-ink-muted
                 border-b border-border mb-1">
                 {/* What was actually queried, written by DevControl (never the model),
                     so an answer to a misread question discloses its real filters. */}
-                <div className="font-medium text-foreground">{nlResult.intent.explanation}</div>
+                <div className="font-medium text-ink">{nlResult.intent.explanation}</div>
                 {nlResult.data.summary}
               </div>
               {nlResult.data.rows.length === 0 ? (
                 nlResult.data.outcome === 'no_results' ? (
-                  <div className="px-2 py-3 text-xs text-center
-                    text-muted-foreground flex items-center justify-center gap-2">
+                  <div className="px-2 py-3 text-meta text-center
+                    text-ink-muted flex items-center justify-center gap-2">
                     <AlertCircle className="h-3 w-3" />
                     Checked -- nothing matched.
                   </div>
@@ -215,7 +215,7 @@ export function CommandPalette() {
                     }}>
                       <div className="flex flex-col min-w-0">
                         <span className="font-medium truncate">{label}</span>
-                        <span className="text-xs text-muted-foreground truncate">
+                        <span className="text-meta text-ink-muted truncate">
                           {[sub1, sub2].filter(Boolean).join(' · ')}
                         </span>
                       </div>
@@ -228,7 +228,7 @@ export function CommandPalette() {
                   setOpen(false)
                   router.push(`/${nlResult.intent.target}`)
                 }} >
-                  <span className="text-xs text-purple-600 font-medium">
+                  <span className="text-meta text-ink-accent font-medium">
                     View all {nlResult.rowCount} results →
                   </span>
                 </CommandItem>
@@ -304,7 +304,7 @@ export function CommandPalette() {
                       <Layers className="mr-2 h-4 w-4" />
                       <div className="flex flex-col">
                         <span>{s.name}</span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-meta text-ink-muted">
                           {s.template} · {s.status}
                         </span>
                       </div>
@@ -326,7 +326,7 @@ export function CommandPalette() {
                         <span>
                           {d.serviceName || d.serviceId?.substring(0, 8) || 'Unknown'}
                         </span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-meta text-ink-muted">
                           {d.environment} · {d.status}
                         </span>
                       </div>
@@ -348,7 +348,7 @@ export function CommandPalette() {
                         <span>
                           {r.serviceName || r.serviceId?.substring(0, 8) || 'Unknown'}
                         </span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-meta text-ink-muted">
                           {r.resourceType} · {r.awsRegion}
                         </span>
                       </div>

@@ -35,8 +35,8 @@ export function BackButton({
         {label}
       </Button>
       {showKeyboardHint && (
-        <span className="text-xs text-muted-foreground hidden md:inline">
-          Press <kbd className="px-1.5 py-0.5 text-xs font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded">Esc</kbd> to go back
+        <span className="text-meta text-ink-muted hidden md:inline">
+          Press <kbd className="px-1.5 py-0.5 text-label font-semibold text-ink-body bg-gray-100 border border-gray-200 rounded">Esc</kbd> to go back
         </span>
       )}
     </div>

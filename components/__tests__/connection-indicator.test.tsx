@@ -34,6 +34,17 @@ describe('ConnectionIndicator', () => {
     expect(classes).toEqual(expect.arrayContaining(['w-fit', 'ml-4', 'mb-4']))
   })
 
+  it('is the label role at its existing size and weight (12 px, 400), its text in body ink, always shown in full', () => {
+    socketState.isConnected = true
+    render(<ConnectionIndicator />)
+    const classes = screen.getByTestId('connection-indicator').className.split(/\s+/)
+    expect(classes).toEqual(expect.arrayContaining(['text-label', 'font-normal']))
+    expect(classes).not.toContain('text-xs')
+    const text = screen.getByText('Live updates')
+    expect(text.className.split(/\s+/)).toContain('text-ink-body')
+    expect(text.className).not.toMatch(/sr-only|hidden|text-gray-700/)
+  })
+
   it.each([true, false])('never says "Connected" (socket open = %s): it is not the AWS connection', (isConnected) => {
     socketState.isConnected = isConnected
     const { container } = render(<ConnectionIndicator />)

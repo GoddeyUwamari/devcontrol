@@ -31,10 +31,10 @@ export function DemoBanner() {
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 inline-block" />
-        <span className="text-xs sm:text-[0.82rem] font-semibold text-white">
+        <span className="text-label sm:text-meta font-semibold text-white">
           {salesDemoMode ? 'Sales Demo Mode active' : 'Demo Mode active'}
         </span>
-        <span className="hidden sm:inline text-[0.82rem] text-white/80">
+        <span className="hidden sm:inline text-meta text-white">
           · Showing sample data, not your AWS account
         </span>
       </div>
@@ -42,12 +42,10 @@ export function DemoBanner() {
       <div className="flex items-center gap-2">
         <button
           onClick={handleSwitch}
-          className="text-[0.72rem] sm:text-[0.78rem] font-semibold px-2 sm:px-3 py-1 rounded-md cursor-pointer"
+          className="text-label sm:text-meta font-semibold text-white px-2 sm:px-3 py-1 rounded-md cursor-pointer"
           style={{
             background: 'transparent',
-            color: '#fff',
             border: '1px solid #fff',
-            fontWeight: 700,
           }}
         >
           Switch to real data
