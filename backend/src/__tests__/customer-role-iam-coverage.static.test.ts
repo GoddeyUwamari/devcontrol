@@ -415,6 +415,15 @@ describe('customer role: SDK calls against the policy set', () => {
     expect(entriesOfKind('remediation-write').length).toBe(10);
   });
 
+  it('no Allow statement names a remediation write action, at any resource scope', () => {
+    const hits = policySet()
+      .filter((s) => s.Effect === 'Allow')
+      .flatMap((s) => entriesOfKind('remediation-write')
+        .flatMap(({ key, action }) => s.Action.filter((p) => wildcardMatch(p, action, true))
+          .map((p) => `${action} (${key}) matches Allow ${p} in ${s.source}${s.Sid ? ` ${s.Sid}` : ''} on ${s.Resource.join(', ')}`)));
+    expect(hits).toEqual([]);
+  });
+
   it('Resource Explorer Search is allowed only on the customer account\'s views', () => {
     const statements = policySet();
     const otherAccount = '9'.repeat(12);
