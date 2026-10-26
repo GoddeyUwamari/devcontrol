@@ -100,6 +100,14 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
     }
     expect(container.innerHTML).not.toMatch(/Draft wording|Control Assessment/i)
   })
+  it('heading levels go h1 → h2 → h3 with no jumps', async () => {
+    await show()
+    fireEvent.click(screen.getByRole('button', { name: 'Group by issue' }))
+    const levels = screen.getAllByRole('heading').map((h) => Number(h.tagName.slice(1)))
+    expect(levels[0]).toBe(1)
+    for (let i = 1; i < levels.length; i++) expect(levels[i] - levels[i - 1], `heading ${i}`).toBeLessThanOrEqual(1)
+    expect(levels).toContain(3)
+  })
   it('tile titles and links', async () => {
     await show()
     for (const [id, title] of [['score', 'Security score'], ['findings', 'Open findings'], ['compliance', 'Compliance baseline'], ['anomalies', 'Anomalies']]) {
@@ -180,6 +188,16 @@ describe('header scan line and Sync (answers 5, 6, 12; e2 4, 5; decision 3)', ()
     await waitFor(() => expect(screen.getByRole('button', { name: /Sync now/ })).toBeEnabled())
     expect(m.toast.error).not.toHaveBeenCalled()
   })
+  it('a sync refreshes no system-intelligence query (nothing that could request /api/observability/*)', async () => {
+    const { client } = await show()
+    const spy = vi.spyOn(client, 'invalidateQueries')
+    fireEvent.click(screen.getByRole('button', { name: /Sync now/ }))
+    await waitFor(() => expect(m.toast.success).toHaveBeenCalled())
+    const keys = spy.mock.calls.map(([filters]) => JSON.stringify((filters as { queryKey?: unknown }).queryKey))
+    expect(keys.length).toBeGreaterThan(0)
+    expect(keys.filter((k) => k.includes('system-intelligence'))).toEqual([])
+    expect(h.log.filter((l) => l.includes('/api/observability/'))).toEqual([])
+  })
   it.each([
     [403, "You don't have permission to start a sync."],
     [402, "Your plan's sync limit is reached."],
@@ -198,8 +216,12 @@ describe('tiles: unavailable is never 0', () => {
   it('score error: "—", "Couldn\'t load the score." and Retry', async () => {
     await show({ 'GET /api/risk-score/current': fail(500) })
     const tile = screen.getByTestId('security-tile-score')
-    expect(tile).toHaveTextContent("—Couldn't load the score.Retry")
+    expect(tile).toHaveTextContent("—not availableCouldn't load the score.Retry")
     expect(tile.textContent).not.toMatch(/\d/)
+    // The dash is hidden from screen readers, which read "not available" instead.
+    const dash = within(tile).getByText('—')
+    expect(dash).toHaveAttribute('aria-hidden', 'true')
+    expect(within(tile).getByText('not available')).toHaveClass('sr-only')
     fireEvent.click(within(tile).getByRole('button', { name: 'Retry' }))
     await waitFor(() => expect(h.log.filter((l) => l === 'GET /api/risk-score/current')).toHaveLength(2))
   })
@@ -329,8 +351,11 @@ describe('findings list (read-only; founder answers 7–10, e2 13–16)', () => 
       expect(h).toHaveAttribute('scope', 'col')
     }
     fireEvent.click(screen.getByRole('button', { name: 'Group by issue' }))
-    // Group view keeps the same five column headers (each group's own row is scope="colgroup").
+    // Group view keeps the same five column headers; each group's own header cell is scope="rowgroup" (its tbody).
     expect([...findings().querySelectorAll('th[scope="col"]')].map((h) => h.textContent)).toEqual(['Severity', 'Issue', 'Where', 'Scope', 'Action'])
+    const groupHeaders = [...findings().querySelectorAll('tbody[data-testid="security-group"] > tr:first-child > th')]
+    expect(groupHeaders).toHaveLength(4)
+    for (const th of groupHeaders) expect(th).toHaveAttribute('scope', 'rowgroup')
   })
   it('scope labels Account / Resource', async () => {
     await show()

@@ -11,14 +11,16 @@ const RETRY = 'inline-flex min-h-11 w-fit items-center rounded-lg border border-
 function Tile({ testId, title, busy, children }: { testId: string; title: string; busy: boolean; children: React.ReactNode }) {
   return (
     <div data-testid={testId} aria-busy={busy || undefined} className="flex min-w-0 flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-      <h3 className="m-0 text-label uppercase tracking-[0.04em] text-ink-muted">{title}</h3>
+      <h2 className="m-0 text-label uppercase tracking-[0.04em] text-ink-muted">{title}</h2>
       {children}
     </div>
   )
 }
 
-/** A value that didn't load is "—", never 0. */
-const Dash = () => <p className="m-0 text-kpi text-ink">{PAGE_COPY.unavailable}</p>
+/** A value that didn't load is "—", never 0, read as "not available" (as the filter counts, founder answer 7). */
+const Dash = () => (
+  <p className="m-0 text-kpi text-ink"><span aria-hidden="true">{PAGE_COPY.unavailable}</span><span className="sr-only">{PAGE_COPY.notAvailable}</span></p>
+)
 
 /** Security score · Open findings · Compliance baseline · Anomalies (founder answer 3). */
 export function SecurityTiles({ tiles, anomaliesError, onRetryScore, onRetryAnomalies }: {

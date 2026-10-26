@@ -112,7 +112,8 @@ export default function SecurityOverviewV2() {
       const result = await awsServicesService.discoverServices()
       await Promise.all([
         ['security-v2', orgId], ['services-coverage', orgId], ['account-security-findings'], ['account-security-findings-stats'],
-        ['services-stats'], ['risk-score-current'], ['risk-score-trend'], ['anomaly-stats'], ['system-intelligence'],
+        // Not ['system-intelligence']: a refresh of that key could request /api/observability/intelligence.
+        ['services-stats'], ['risk-score-current'], ['risk-score-trend'], ['anomaly-stats'],
       ].map((queryKey) => queryClient.invalidateQueries({ queryKey })))
       toast.success(PAGE_COPY.syncComplete(result.discovered))
     } catch (error) {

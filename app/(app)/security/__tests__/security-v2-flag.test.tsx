@@ -2,7 +2,9 @@
  * NEXT_PUBLIC_SECURITY_V2 (Security V2, F2a):
  * - on only for exactly 'true';
  * - off (or in demo mode), the V2 module is never loaded: a module-load counter stays at 0, and the same
- *   counter reaches 1 with the flag on, so the probe is live;
+ *   counter reaches 1 with the flag on, so the probe is live. The counter is per test: vi.resetModules()
+ *   alone keeps vitest's mock registry (a factory runs once per file), so each test also re-registers the
+ *   V2 mock with vi.doMock, and every off value and demo mode is proven on its own;
  * - the legacy page is the page at af3262e: SecurityContent's body is byte for byte the old SecurityPage
  *   body, and the whole file differs from af3262e only by the two imports and the wrapper.
  * The legacy render and its requests are pinned for every off value by security-flag-off.test.tsx.
@@ -21,10 +23,6 @@ import { render, screen, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { isSecurityV2Enabled } from '../securityV2Flag'
 
-vi.mock('../overview/SecurityOverviewV2', () => {
-  m.v2Loads += 1
-  return { default: () => <div data-testid="security-v2-stub" /> }
-})
 vi.mock('@/lib/services/demo-mode.service', () => ({ demoModeService: { isEnabled: () => m.demo } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/api', () => {
@@ -43,6 +41,11 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-23T15:00:00Z') })
   vi.resetModules()
   m.v2Loads = 0
+  // Re-registered for every test, so its factory (the counter) runs again on this test's first load.
+  vi.doMock('../overview/SecurityOverviewV2', () => {
+    m.v2Loads += 1
+    return { default: () => <div data-testid="security-v2-stub" /> }
+  })
   m.demo = false
   m.log.length = 0
   global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }) as unknown as typeof fetch
@@ -93,6 +96,12 @@ describe('the V2 module is loaded only with the flag on, outside demo mode', () 
     expect(await screen.findByRole('heading', { level: 1, name: 'Cloud Security Command Center' })).toBeInTheDocument()
     expect(screen.queryByTestId('security-v2-stub')).toBeNull()
     expect(m.v2Loads).toBe(0)
+  })
+  it("flag 'true' again, after the demo test: loads = 1 here too (the counter is per test, not per file)", async () => {
+    stubFlag('true')
+    await renderPage()
+    expect(await screen.findByTestId('security-v2-stub')).toBeInTheDocument()
+    expect(m.v2Loads).toBe(1)
   })
   it('flag off: the legacy page makes its own requests and nothing of the redesign', async () => {
     stubFlag('false')

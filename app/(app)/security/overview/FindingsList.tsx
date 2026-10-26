@@ -125,7 +125,7 @@ export function FindingsList({ view }: { view: SecurityView }) {
               ? groupRows(rows).map((g) => (
                   <tbody key={g.key} data-testid="security-group">
                     <tr>
-                      <th scope="colgroup" colSpan={PAGE_COPY.tableHeaders.length} className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-left">
+                      <th scope="rowgroup" colSpan={PAGE_COPY.tableHeaders.length} className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-left">
                         <h3 className="m-0 text-ui font-semibold text-ink">{g.label}</h3>
                       </th>
                     </tr>
