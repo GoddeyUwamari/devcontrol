@@ -78,8 +78,8 @@ const STATUS_STYLES: Record<Soc2CustomerEvidenceStatus, { label: string; classNa
   // backend/src/routes/soc2-customer-evidence.routes.ts's own docblock: REVIEWED means
   // only that an authorized platform-staff reviewer reviewed the record.
   REVIEWED: { label: 'Reviewed by DevControl', className: 'border-violet-200 bg-violet-50 text-violet-700' },
-  EXPIRED: { label: 'Expired', className: 'border-slate-200 bg-slate-100 text-slate-500' },
-  SUPERSEDED: { label: 'Superseded', className: 'border-slate-200 bg-slate-100 text-slate-500' },
+  EXPIRED: { label: 'Expired', className: 'border-slate-200 bg-slate-100 text-ink-muted' },
+  SUPERSEDED: { label: 'Superseded', className: 'border-slate-200 bg-slate-100 text-ink-muted' },
 };
 
 export function CustomerEvidenceStatusBadge({ status, className }: { status: Soc2CustomerEvidenceStatus; className?: string }) {

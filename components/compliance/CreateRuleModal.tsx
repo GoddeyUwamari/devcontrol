@@ -214,10 +214,10 @@ export function CreateRuleModal({ open, onClose, onSubmit, initialData, isEditin
               value={conditions}
               onChange={(e) => setConditions(e.target.value)}
               placeholder='{"property": "is_encrypted", "operator": "equals", "value": true}'
-              className="mt-1 font-mono text-sm"
+              className="mt-1 font-mono text-ui"
               rows={4}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-meta text-ink-muted mt-1">
               Define the conditions for this rule as a JSON object
             </p>
           </div>

@@ -6,6 +6,8 @@ import { RefreshCw, Download } from 'lucide-react';
 import { auditLogsService, AuditLogFilters } from '@/lib/services/audit-logs.service';
 import { demoModeService } from '@/lib/services/demo-mode.service';
 import awsAccountsService from '@/lib/services/aws-accounts.service';
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
+import { cn } from '@/lib/utils';
 
 type DemoLog = { id: string; timestamp: Date; user: string; action: string; resource: string; resourceType: string; status: 'success' | 'warning' | 'error'; duration: number; ipAddress: string };
 
@@ -71,14 +73,14 @@ export default function AuditLogsPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Audit Logs &amp; Activity Monitoring</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">Monitor activity, detect anomalies, and investigate security events across your AWS environment</p>
+          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Audit Logs &amp; Activity Monitoring</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>Monitor activity, detect anomalies, and investigate security events across your AWS environment</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleExport} disabled={!hasLogs && !demoMode} className="flex items-center gap-2 bg-white text-slate-500 border border-slate-200 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
+          <button onClick={handleExport} disabled={!hasLogs && !demoMode} className="flex items-center gap-2 bg-white text-ink-muted border border-slate-200 px-4 py-2.5 rounded-lg text-ui font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
             <Download size={14} /> Export CSV
           </button>
-          <button onClick={() => refetch()} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white border-none px-4 py-2.5 rounded-lg text-sm font-semibold cursor-pointer transition-colors whitespace-nowrap">
+          <button onClick={() => refetch()} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white border-none px-4 py-2.5 rounded-lg text-ui font-semibold cursor-pointer transition-colors whitespace-nowrap">
             <RefreshCw size={14} /> Refresh
           </button>
         </div>
@@ -87,15 +89,15 @@ export default function AuditLogsPage() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
         {[
-          { label: 'Suspicious events',  value: hasLogs ? suspiciousCount : '—', sub: 'AI-detected anomalies',        color: !hasLogs || suspiciousCount === 0 ? 'text-slate-300' : 'text-red-600' },
-          { label: 'Failed actions',      value: hasLogs ? failedCount     : '—', sub: 'Last 24 hours',                color: !hasLogs || failedCount === 0     ? 'text-slate-300' : 'text-amber-500' },
-          { label: 'High-risk actions',   value: hasLogs ? highRiskCount   : '—', sub: 'IAM changes, security groups', color: !hasLogs || highRiskCount === 0   ? 'text-slate-300' : 'text-red-600' },
-          { label: 'Active users',        value: hasLogs ? activeUserCount : '—', sub: 'Last 24 hours',                color: 'text-slate-300' },
-        ].map(({ label, value, sub, color }) => (
+          { label: 'Suspicious events',  value: hasLogs ? suspiciousCount : '—', sub: 'AI-detected anomalies',        tone: !hasLogs || suspiciousCount === 0 ? 'text-ink-muted' : 'text-ink-danger' },
+          { label: 'Failed actions',      value: hasLogs ? failedCount     : '—', sub: 'Last 24 hours',                tone: !hasLogs || failedCount === 0     ? 'text-ink-muted' : 'text-ink-warning' },
+          { label: 'High-risk actions',   value: hasLogs ? highRiskCount   : '—', sub: 'IAM changes, security groups', tone: !hasLogs || highRiskCount === 0   ? 'text-ink-muted' : 'text-ink-danger' },
+          { label: 'Active users',        value: hasLogs ? activeUserCount : '—', sub: 'Last 24 hours',                tone: 'text-ink-muted' },
+        ].map(({ label, value, sub, tone }) => (
           <div key={label} className="bg-white rounded-xl p-5 sm:p-8 border border-slate-200">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
-            <div className={`text-3xl font-bold tracking-tight leading-none mb-2 ${color}`}>{value}</div>
-            <p className="text-xs text-slate-500 leading-relaxed">{sub}</p>
+            <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">{label}</p>
+            <div className={`text-kpi tabular-nums leading-none mb-2 ${tone}`}>{value}</div>
+            <p className="text-meta text-ink-muted leading-relaxed">{sub}</p>
           </div>
         ))}
       </div>
@@ -103,11 +105,11 @@ export default function AuditLogsPage() {
       {/* AI anomaly banner */}
       {hasLogs && suspiciousCount > 0 && (
         <div className="bg-red-50 border border-red-100 border-l-[3px] border-l-red-600 rounded-xl px-4 py-3.5 mb-5 flex items-start gap-3">
-          <div className="w-7 h-7 bg-red-100 rounded-lg flex items-center justify-center shrink-0 text-red-600 text-sm">⚠</div>
+          <div className="w-7 h-7 bg-red-100 rounded-lg flex items-center justify-center shrink-0 text-red-600 text-ui">⚠</div>
           <div>
-            <p className="text-xs font-medium text-red-900 uppercase tracking-widest mb-1">AI anomaly detected</p>
-            <p className="text-xs text-red-900 leading-relaxed mb-0.5">Unusual spike in IAM policy changes detected in the last 2 hours. {suspiciousCount} action{suspiciousCount !== 1 ? 's' : ''} were performed outside normal usage patterns.</p>
-            <p className="text-xs text-red-700">Review flagged events below.</p>
+            <p className="text-label font-medium text-red-900 uppercase tracking-[0.04em] mb-1">AI anomaly detected</p>
+            <p className="text-meta text-red-900 leading-relaxed mb-0.5">Unusual spike in IAM policy changes detected in the last 2 hours. {suspiciousCount} action{suspiciousCount !== 1 ? 's' : ''} were performed outside normal usage patterns.</p>
+            <p className="text-meta text-red-700">Review flagged events below.</p>
           </div>
         </div>
       )}
@@ -115,8 +117,8 @@ export default function AuditLogsPage() {
       {/* Search bar */}
       <div className="relative mb-3">
         <input type="text" placeholder="Search by user, action, or resource..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} disabled={!hasLogs && !demoMode}
-          className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-sm bg-white text-slate-900 outline-none focus:border-violet-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" />
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">⌕</span>
+          className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-ui bg-white text-slate-900 outline-none focus:border-violet-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" />
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-ui">⌕</span>
       </div>
 
       {/* Filters */}
@@ -130,20 +132,20 @@ export default function AuditLogsPage() {
               { label: 'End Date', value: filters.end_date || '', onChange: (v: string) => updateFilter('end_date', v || undefined), type: 'date', options: [] },
             ].map(({ label, value, onChange, type, options }) => (
               <div key={label}>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">{label}</p>
+                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1.5">{label}</p>
                 {type === 'select' ? (
-                  <select value={value} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900 bg-white cursor-pointer outline-none focus:border-violet-500 transition-colors">
+                  <select value={value} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-ui text-slate-900 bg-white cursor-pointer outline-none focus:border-violet-500 transition-colors">
                     <option value="">All {label}s</option>
                     {(options as string[]).map((o: string) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 ) : (
-                  <input type="date" value={value} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900 bg-white outline-none focus:border-violet-500 transition-colors box-border" />
+                  <input type="date" value={value} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-200 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 transition-colors box-border" />
                 )}
               </div>
             ))}
           </div>
           <div className="flex justify-end">
-            <button onClick={clearFilters} className="bg-transparent border border-slate-200 rounded-lg px-4 py-1.5 text-xs font-medium text-slate-500 cursor-pointer hover:bg-slate-50 transition-colors">Clear Filters</button>
+            <button onClick={clearFilters} className="bg-transparent border border-slate-200 rounded-lg px-4 py-1.5 text-label font-medium text-ink-muted cursor-pointer hover:bg-slate-50 transition-colors">Clear Filters</button>
           </div>
         </div>
       )}
@@ -151,26 +153,26 @@ export default function AuditLogsPage() {
       {/* Audit log table */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100 flex items-center justify-between">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Recent Activity</p>
-          <p className="text-xs text-slate-500">Showing {displayLogs.length} {displayLogs.length === 1 ? 'entry' : 'entries'}</p>
+          <p className="text-label text-ink-muted uppercase tracking-[0.04em]">Recent Activity</p>
+          <p className="text-meta text-ink-muted">Showing {displayLogs.length} {displayLogs.length === 1 ? 'entry' : 'entries'}</p>
         </div>
 
         {isLoading && !demoMode ? (
           <div className="p-12 text-center">
             <RefreshCw size={20} className="text-slate-300 mx-auto mb-3" />
-            <p className="text-sm text-slate-500">Loading audit logs...</p>
+            <p className="text-ui text-ink-muted">Loading audit logs...</p>
           </div>
         ) : displayLogs.length === 0 ? (
           <div className="p-8 sm:p-12 text-center">
-            <p className="text-sm font-semibold text-slate-900 mb-2.5">No audit activity detected yet</p>
-            <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-lg mx-auto">
+            <p className="text-ui font-semibold text-slate-900 mb-2.5">No audit activity detected yet</p>
+            <p className="text-ui text-ink-muted leading-relaxed mb-6 max-w-lg mx-auto">
               {isAwsConnected
                 ? 'No audit activity recorded yet. DevControl captures infrastructure actions, API calls, and user activity as they happen. Activity will appear here automatically.'
                 : 'Once connected, DevControl will track all infrastructure actions, API calls, and user activity across your AWS environment.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-w-sm mx-auto text-left">
               {['Trace who made changes', 'Detect unusual access patterns', 'Investigate incidents in seconds', 'Track IAM and policy changes'].map(item => (
-                <div key={item} className="flex items-center gap-2 text-xs text-slate-500">
+                <div key={item} className="flex items-center gap-2 text-meta text-ink-muted">
                   <div className="w-1.5 h-1.5 rounded-full bg-violet-600 shrink-0" />{item}
                 </div>
               ))}
@@ -182,7 +184,7 @@ export default function AuditLogsPage() {
             <div className="hidden sm:block overflow-x-auto">
               <div className="grid px-7 py-2.5 border-b border-slate-50 bg-slate-50 min-w-[860px]" style={{ gridTemplateColumns: '140px 180px 160px 70px 1fr 80px 80px 120px' }}>
                 {['Time', 'User', 'Action', 'Risk', 'Resource', 'Status', 'Duration', 'IP Address'].map(col => (
-                  <span key={col} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{col}</span>
+                  <span key={col} className="text-label text-ink-muted uppercase tracking-[0.04em]">{col}</span>
                 ))}
               </div>
               {displayLogs.map((log: any, idx: number) => {
@@ -194,18 +196,18 @@ export default function AuditLogsPage() {
                 let status: 'success' | 'warning' | 'error' = 'success';
                 if (log.status) status = log.status;
                 else if (log.status_code != null) status = log.status_code < 300 ? 'success' : log.status_code < 500 ? 'warning' : 'error';
-                const statusClass = status === 'success' ? 'bg-green-50 text-green-600' : status === 'warning' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600';
+                const statusClass = status === 'success' ? 'bg-green-50 text-ink-success' : status === 'warning' ? 'bg-amber-50 text-ink-warning' : 'bg-red-50 text-ink-danger';
                 const risk = getRiskLevel(log.action ?? '');
                 return (
                   <div key={log.id} className={`grid px-7 py-3.5 items-center hover:bg-slate-50 transition-colors min-w-[860px] ${idx < displayLogs.length - 1 ? 'border-b border-slate-50' : ''}`} style={{ gridTemplateColumns: '140px 180px 160px 70px 1fr 80px 80px 120px' }}>
-                    <span className="text-xs text-slate-500">{new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                    <span className="text-xs font-medium text-slate-700 truncate pr-2">{user}</span>
-                    <span className="text-xs font-mono text-violet-600 bg-violet-50 px-2 py-0.5 rounded w-fit truncate">{log.action}</span>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded w-fit ${risk.cls}`}>{risk.label}</span>
-                    <span className="text-xs text-slate-700 truncate pr-2">{resource}</span>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full w-fit capitalize ${statusClass}`}>{status}</span>
-                    <span className="text-xs text-slate-500">{durationMs != null ? `${(durationMs / 1000).toFixed(1)}s` : '—'}</span>
-                    <span className="text-xs font-mono text-slate-500">{ip}</span>
+                    <span className="text-meta text-ink-muted">{new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                    <span className="text-meta font-medium text-slate-700 truncate pr-2">{user}</span>
+                    <span className="text-label font-normal font-mono text-violet-600 bg-violet-50 px-2 py-0.5 rounded w-fit truncate">{log.action}</span>
+                    <span className={`text-label px-2 py-0.5 rounded w-fit ${risk.cls}`}>{risk.label}</span>
+                    <span className="text-meta text-slate-700 truncate pr-2">{resource}</span>
+                    <span className={`text-label px-2 py-0.5 rounded-full w-fit capitalize ${statusClass}`}>{status}</span>
+                    <span className="text-meta text-ink-muted">{durationMs != null ? `${(durationMs / 1000).toFixed(1)}s` : '—'}</span>
+                    <span className="text-xs font-mono text-ink-muted">{ip}</span>
                   </div>
                 );
               })}
@@ -220,20 +222,20 @@ export default function AuditLogsPage() {
                 let status: 'success' | 'warning' | 'error' = 'success';
                 if (log.status) status = log.status;
                 else if (log.status_code != null) status = log.status_code < 300 ? 'success' : log.status_code < 500 ? 'warning' : 'error';
-                const statusClass = status === 'success' ? 'bg-green-50 text-green-600' : status === 'warning' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600';
+                const statusClass = status === 'success' ? 'bg-green-50 text-ink-success' : status === 'warning' ? 'bg-amber-50 text-ink-warning' : 'bg-red-50 text-ink-danger';
                 const risk = getRiskLevel(log.action ?? '');
                 return (
                   <div key={log.id} className="px-4 py-4">
                     <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <span className="text-xs font-mono text-violet-600 bg-violet-50 px-2 py-0.5 rounded">{log.action}</span>
+                      <span className="text-label font-normal font-mono text-violet-600 bg-violet-50 px-2 py-0.5 rounded">{log.action}</span>
                       <div className="flex gap-1.5 shrink-0">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${risk.cls}`}>{risk.label}</span>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${statusClass}`}>{status}</span>
+                        <span className={`text-label px-2 py-0.5 rounded ${risk.cls}`}>{risk.label}</span>
+                        <span className={`text-label px-2 py-0.5 rounded-full capitalize ${statusClass}`}>{status}</span>
                       </div>
                     </div>
-                    <p className="text-xs font-medium text-slate-700 mb-1 truncate">{user}</p>
-                    <p className="text-xs text-slate-500 truncate mb-1">{resource}</p>
-                    <p className="text-xs text-slate-500">{new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                    <p className="text-meta font-medium text-slate-700 mb-1 truncate">{user}</p>
+                    <p className="text-meta text-ink-muted truncate mb-1">{resource}</p>
+                    <p className="text-meta text-ink-muted">{new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
                   </div>
                 );
               })}
@@ -245,14 +247,14 @@ export default function AuditLogsPage() {
       {/* Pagination */}
       {!demoMode && total > (filters.limit || 50) && (
         <div className="flex items-center justify-between mt-5">
-          <span className="text-xs text-slate-500">Page {filters.page || 1} of {Math.ceil(total / (filters.limit || 50))}</span>
+          <span className="text-meta text-ink-muted">Page {filters.page || 1} of {Math.ceil(total / (filters.limit || 50))}</span>
           <div className="flex gap-2">
             <button onClick={() => setFilters({ ...filters, page: (filters.page || 1) - 1 })} disabled={(filters.page || 1) === 1}
-              className={`bg-white border border-slate-200 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors ${(filters.page || 1) === 1 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-50 cursor-pointer'}`}>
+              className={`bg-white border border-slate-200 rounded-lg px-4 py-1.5 text-label font-medium transition-colors ${(filters.page || 1) === 1 ? 'text-slate-300 cursor-not-allowed' : 'text-ink-muted hover:bg-slate-50 cursor-pointer'}`}>
               Previous
             </button>
             <button onClick={() => setFilters({ ...filters, page: (filters.page || 1) + 1 })} disabled={(filters.page || 1) >= Math.ceil(total / (filters.limit || 50))}
-              className={`bg-white border border-slate-200 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors ${(filters.page || 1) >= Math.ceil(total / (filters.limit || 50)) ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-50 cursor-pointer'}`}>
+              className={`bg-white border border-slate-200 rounded-lg px-4 py-1.5 text-label font-medium transition-colors ${(filters.page || 1) >= Math.ceil(total / (filters.limit || 50)) ? 'text-slate-300 cursor-not-allowed' : 'text-ink-muted hover:bg-slate-50 cursor-pointer'}`}>
               Next
             </button>
           </div>

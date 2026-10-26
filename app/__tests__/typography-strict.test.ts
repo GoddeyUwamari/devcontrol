@@ -67,6 +67,29 @@ const G1 = [
   ...G1_COMPONENTS,
 ]
 
+// The Security menu pages other than the Security page itself (SM): Anomalies (+ rules), Compliance (the retired
+// /compliance redirect, frameworks, SOC 2) and Audit Logs, plus every components/compliance file (only these pages use
+// them). A self-check below keeps this list equal to that. The Security page and lib/security are Security V2's.
+const SM_ROUTE_DIRS = ['app/(app)/anomalies/', 'app/(app)/compliance/', 'app/(app)/audit-logs/']
+const SM_COMPONENT_DIRS = ['components/compliance/']
+const SM = [
+  'app/(app)/anomalies/page.tsx',
+  'app/(app)/anomalies/rules/page.tsx',
+  'app/(app)/compliance/page.tsx',
+  'app/(app)/compliance/frameworks/page.tsx',
+  'app/(app)/compliance/frameworks/soc2/page.tsx',
+  'app/(app)/audit-logs/page.tsx',
+  'components/compliance/CreateFrameworkModal.tsx',
+  'components/compliance/CreateRuleModal.tsx',
+  'components/compliance/FrameworkDetailsModal.tsx',
+  'components/compliance/ScanResultsModal.tsx',
+  'components/compliance/Soc2CustomerEvidenceForm.tsx',
+  'components/compliance/Soc2CustomerEvidenceSection.tsx',
+  'components/compliance/Soc2ExternalReferenceLink.tsx',
+  'components/compliance/Soc2ObservedEvidenceList.tsx',
+  'components/compliance/soc2-badges.tsx',
+]
+
 // Not converted yet, so never on the strict list: the Security page (Security V2 rebuilds it) and G1's legacy files.
 const EXEMPT = ['app/(app)/security/page.tsx', ...G1_LEGACY]
 
@@ -130,6 +153,8 @@ const STRICT = [
   ...COSTS,
   // G1: Infrastructure + Services, Invoices and AI Reports.
   ...G1,
+  // SM: the Security menu pages (Anomalies, Compliance, Audit Logs).
+  ...SM,
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
@@ -347,6 +372,54 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'app/(app)/ai-reports/[id]/page.tsx', match: "color: '#D97706'", rule: 'inline text style', count: 1, reason: 'The medium-impact colour key (recommendation pill text on its own tint); kept, listed as unconverted in the G1 report.' },
   { file: 'app/(app)/ai-reports/[id]/page.tsx', match: 'color: type.color', rule: 'inline text style', count: 2, reason: "The header's icon box and type pill, in the report-type colour key; kept, listed as unconverted in the G1 report." },
   { file: 'app/(app)/ai-reports/[id]/page.tsx', match: 'color: impact.color', rule: 'inline text style', count: 1, reason: "A recommendation's impact pill text in its impact colour key; kept, listed as unconverted in the G1 report." },
+  // SM: the Security menu pages (reviewed exceptions). Status colour keys that also colour tints, rings, bars or
+  // toggles; decorative icons, glyphs and dividers; disabled-state dimming (the "Disabled" badge and the solid disabled
+  // style are deferred); and one fixed-width table column kept at its size.
+  { file: 'app/(app)/anomalies/page.tsx', match: 'text-lg', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'The decorative ⚠️ emoji in the Pro-plan banner (as on AI Reports and the Infrastructure limit prompt).' },
+  { file: 'app/(app)/anomalies/page.tsx', match: "color: '#DC2626'", rule: 'inline text style', count: 1, reason: 'severityConfig.critical: the severity colour key (chip text on its own #FEF2F2 tint and border); kept unchanged.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: "color: '#D97706'", rule: 'inline text style', count: 1, reason: 'severityConfig.warning: the severity colour key (chip text on its own #FFFBEB tint and border); kept unchanged.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: "color: '#64748B'", rule: 'inline text style', count: 1, reason: 'severityConfig.info: the severity colour key (chip text on its own #F8FAFC tint and border); kept unchanged.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'color: sev.color', rule: 'inline text style', count: 1, reason: "An anomaly's severity chip, in the severityConfig key with its tint background." },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'color: sc', rule: 'inline text style', count: 1, reason: "A custom rule's severity pill, in the rule severity key (sc) with its tint (sb)." },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'color: rule.enabled', rule: 'inline text style', count: 1, reason: 'The rule toggle icon: violet when on, slate-400 when off; the colour shows the toggle state.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "The insight banner's decorative AlertTriangle icon in its red tint box (svg, not text)." },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'text-slate-200', rule: 'text colour below AA on light surfaces', count: 3, reason: 'Decorative "|" dividers in the status bar, the filter row and the bulk-action bar.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 3, reason: 'The decorative loading icon, and the two "|" dividers in the confidence/deviation line.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 4, reason: "Decorative icons: the two empty states' AlertCircle, the icon-only row menu button (MoreHorizontal) and View Details' ChevronDown." },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'text-amber-500', rule: 'text colour below AA on light surfaces', count: 2, reason: 'Decorative AlertCircle icons in the Unassigned pill and the Impact row.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Resolve selected / Ignore selected while nothing is selected; the solid disabled style is deferred.' },
+  { file: 'app/(app)/anomalies/page.tsx', match: 'opacity-60', rule: 'opacity on content', count: 1, reason: 'A disabled custom rule row; the "Disabled" badge change (plan §1.6, H3) is deferred.' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: "color: '#DC2626'", rule: 'inline text style', count: 2, reason: 'SEVERITY_CONFIG.critical (pill text on its own tint and border) and the Critical Rules KPI value in the same severity colour; kept unchanged.' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: "color: '#D97706'", rule: 'inline text style', count: 2, reason: 'SEVERITY_CONFIG.warning (pill text on its own tint and border) and the Warning Rules KPI value in the same severity colour; kept unchanged.' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: "color: '#64748B'", rule: 'inline text style', count: 1, reason: 'SEVERITY_CONFIG.info (pill text on its own tint and border); kept unchanged.' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: "color: '#1e1b4b'", rule: 'inline text style', count: 1, reason: 'The Total Rules KPI value in the KPI colour key (indigo-950, 15:1 on white); kept unchanged with the rest of the key.' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: "color: '#059669'", rule: 'inline text style', count: 1, reason: 'The Active Rules KPI value (30 px) in the KPI colour key; kept unchanged.' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: 'color: sev.color', rule: 'inline text style', count: 1, reason: "A rule's severity pill, in SEVERITY_CONFIG with its tint background and border." },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: 'text-xl', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'The create form\'s "×" close glyph (an icon character on an icon-only button).' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 2, reason: 'Icon-only buttons: the form\'s "×" close glyph and the Trash2 delete button.' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: 'text-red-500', variant: 'hover:', rule: 'text colour below AA on light surfaces', count: 1, reason: 'Hover feedback on the icon-only Trash2 delete button (not resting text).' },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The Enterprise gate's decorative Lock icon." },
+  { file: 'app/(app)/anomalies/rules/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 3, reason: 'Create Rule while saving, Enable/Disable while toggling and Delete while deleting; the solid disabled style is deferred.' },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: 'color: isDemoActive', rule: 'inline text style', count: 1, reason: "The compliance score ring's centre label, in the same colour as the ring stroke (amber in demo, slate-400 for N/A)." },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: "color: 'red'", rule: 'inline text style', count: 1, reason: "Not a style: a Priority Actions row's `color` key holds a tone name." },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: "color: 'amber'", rule: 'inline text style', count: 1, reason: "Not a style: a Priority Actions row's `color` key holds a tone name." },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: "color: 'slate'", rule: 'inline text style', count: 1, reason: "Not a style: a Priority Actions row's `color` key holds a tone name." },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: 'color: statusColor', rule: 'inline text style', count: 2, reason: "A framework's status pill (on its own tint) and its % beside the progress bar filled with the same colour." },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: 'color: fw.badgeColor', rule: 'inline text style', count: 1, reason: "A framework card's badge, in the framework badge key with its badgeBg tint." },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 2, reason: 'Decorative spinning RefreshCw loading icons (frameworks, evaluations).' },
+  { file: 'app/(app)/compliance/frameworks/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Sync Security Hub while syncing; the solid disabled style is deferred.' },
+  { file: 'components/compliance/FrameworkDetailsModal.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The empty state's decorative AlertTriangle icon." },
+  { file: 'components/compliance/FrameworkDetailsModal.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The icon-only delete-rule button (Trash2 icon).' },
+  { file: 'components/compliance/FrameworkDetailsModal.tsx', match: 'opacity-60', rule: 'opacity on content', count: 1, reason: 'A disabled rule card; the "Disabled" badge change (plan §1.6, H3) is deferred.' },
+  { file: 'components/compliance/ScanResultsModal.tsx', match: 'text-green-600', rule: 'text colour below AA on light surfaces', count: 2, reason: "Status icons: a passed finding's CheckCircle2 and the passed-list CheckCircle2." },
+  { file: 'components/compliance/ScanResultsModal.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "Status icon: a failed finding's XCircle." },
+  { file: 'components/compliance/ScanResultsModal.tsx', match: 'text-orange-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "Status icon: a warning finding's AlertCircle." },
+  { file: 'components/compliance/ScanResultsModal.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 2, reason: "A skipped finding's SkipForward icon, and the decorative \"•\" separator in the passed list." },
+  { file: 'app/(app)/audit-logs/page.tsx', match: 'text-xs', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The desktop table's IP cell kept at 12 px: a fixed 120px mono column with no truncation, where 13 px would fill about 117 of 120px." },
+  { file: 'app/(app)/audit-logs/page.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative "⚠" glyph in the anomaly notice\'s red tint icon box.' },
+  { file: 'app/(app)/audit-logs/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative "⌕" search glyph inside the search field.' },
+  { file: 'app/(app)/audit-logs/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 3, reason: 'The decorative loading icon, and the disabled Previous/Next pager text: colour is their only disabled cue (the solid disabled style is deferred).' },
+  { file: 'app/(app)/audit-logs/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Export and the search field while there are no logs; the solid disabled style is deferred.' },
 ]
 
 type Finding = { rule: string; match: string; variant: string; line: number }
@@ -461,6 +534,15 @@ describe('strict typography for the pages on the app type scale', () => {
     for (const file of G1_LEGACY) expect(routeFiles, file).toContain(file)
     for (const file of G1) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
     expect(G1.filter((f) => COSTS.includes(f)), 'no file is in two groups').toEqual([])
+  })
+
+  it('the SM additions are exactly the Anomalies, Compliance and Audit Logs files plus components/compliance, each listed once', () => {
+    const smFiles = SOURCE_FILES.filter((f) => f.endsWith('.tsx') && [...SM_ROUTE_DIRS, ...SM_COMPONENT_DIRS].some((d) => f.startsWith(d)))
+    expect([...SM].sort()).toEqual([...smFiles].sort())
+    for (const file of SM) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
+    expect(SM.filter((f) => COSTS.includes(f) || G1.includes(f)), 'no file is in two groups').toEqual([])
+    // The Security page and lib/security belong to Security V2 and stay out of this group.
+    expect(SM.filter((f) => f.startsWith('app/(app)/security/') || f.startsWith('lib/security/'))).toEqual([])
   })
 
   it('files outside the converted groups stay exempt', () => {

@@ -83,7 +83,7 @@ export function CreateFrameworkModal({ open, onClose, onSubmit, initialData, isE
               placeholder="e.g., Internal Data Handling Policy"
               className="mt-1"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-meta text-ink-muted mt-1">
               Custom frameworks are your own rules -- this can&apos;t be named after an
               officially-supported standard (e.g. SOC 2, NIST, CIS, PCI DSS, HIPAA).
             </p>
