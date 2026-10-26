@@ -124,9 +124,9 @@ export function AIChatWidget() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-xl">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5" />
-          <span className="font-semibold">AWS AI Assistant</span>
+          <span className="text-card-title">AWS AI Assistant</span>
           {messages.length > 0 && (
-            <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+            <span className="text-label bg-white/20 px-2 py-0.5 rounded-full">
               {messages.length} messages
             </span>
           )}
@@ -135,7 +135,7 @@ export function AIChatWidget() {
           {messages.length > 0 && !isMinimized && (
             <button
               onClick={clearChat}
-              className="hover:bg-white/20 p-1.5 rounded-lg transition-colors text-xs"
+              className="hover:bg-white/20 p-1.5 rounded-lg transition-colors text-meta"
               title="Clear chat"
             >
               Clear
@@ -172,23 +172,23 @@ export function AIChatWidget() {
                   <div className="w-16 h-16 bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
                     <MessageSquare className="w-8 h-8 text-blue-600 dark:text-blue-400" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  <h3 className="text-section text-ink dark:text-white mb-2">
                     AWS Infrastructure Assistant
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-400 text-sm max-w-xs mx-auto">
+                  <p className="text-body text-ink-muted dark:text-gray-400 max-w-xs mx-auto">
                     Ask me anything about your costs, resources, or reliability. I have access to your latest synced AWS cost and resource data.
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium px-1">
+                  <p className="text-meta text-ink-muted dark:text-gray-400 font-medium px-1">
                     Quick questions:
                   </p>
                   {quickPrompts.map((prompt, i) => (
                     <button
                       key={i}
                       onClick={() => setInput(prompt)}
-                      className="block w-full text-left text-sm text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 p-2.5 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
+                      className="block w-full text-left text-ui text-ink-body dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 p-2.5 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
                     >
                       {prompt}
                     </button>
@@ -208,12 +208,12 @@ export function AIChatWidget() {
                   className={`max-w-[85%] rounded-xl px-4 py-3 ${
                     message.role === 'user'
                       ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white'
-                      : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 shadow-sm'
+                      : 'bg-white dark:bg-gray-800 text-ink dark:text-gray-100 border border-gray-200 dark:border-gray-700 shadow-sm'
                   }`}
                 >
-                  <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                  <div className="text-ui whitespace-pre-wrap leading-relaxed">
                     {message.content || (
-                      <span className="text-gray-400 italic">Thinking...</span>
+                      <span className="text-ink-muted italic">Thinking...</span>
                     )}
                   </div>
                 </div>
@@ -245,7 +245,7 @@ export function AIChatWidget() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask about your AWS environment..."
-                className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500"
+                className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-ui bg-white dark:bg-gray-800 text-ink dark:text-white placeholder:text-ink-muted"
                 disabled={isLoading}
               />
               <button
@@ -257,7 +257,7 @@ export function AIChatWidget() {
                 <Send className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-2 text-center">
+            <p className="text-meta text-ink-muted mt-2 text-center">
               Press Enter to send
             </p>
           </div>
