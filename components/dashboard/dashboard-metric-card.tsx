@@ -66,7 +66,7 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: iconBackground }}>
             <Icon size={16} style={{ color: iconColor }} aria-hidden="true" />
           </div>
-          <p className="text-sm font-semibold text-foreground truncate m-0" data-testid="kpi-title">{label}</p>
+          <p className="text-ui font-semibold text-ink truncate m-0" data-testid="kpi-title">{label}</p>
           {info && (
             <EvidenceInfo about={label} align={info.align ?? 'start'}>
               {info.content}
@@ -76,9 +76,9 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
         {link && <CardArrowLink href={link.href} label={link.label} />}
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="text-[30px] font-bold leading-none tracking-tight text-foreground">
+        <div className="text-kpi tabular-nums leading-none text-ink">
           {value}
-          {valueSuffix && <span className="text-base text-[var(--text-secondary)] font-normal"> {valueSuffix}</span>}
+          {valueSuffix && <span className="text-body text-ink-muted font-normal"> {valueSuffix}</span>}
         </div>
         {badges && badges.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -86,7 +86,7 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
           </div>
         )}
       </div>
-      {caption && <p className="text-xs text-[var(--text-secondary)] leading-snug mt-2.5 mb-0" data-testid="kpi-caption">{caption}</p>}
+      {caption && <p className="text-meta text-ink-muted leading-snug mt-2.5 mb-0" data-testid="kpi-caption">{caption}</p>}
       <div className="mt-auto">
         {progress && (
           <Progress

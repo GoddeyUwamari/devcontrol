@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Gauge } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Num } from '@/components/ui/typography'
 import type { SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
 import { INFRASTRUCTURE_POSTURE_LABEL, INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION } from '@/lib/infrastructure-posture'
 import { EvidenceBadge, PartialBadge } from './evidence-badge'
@@ -47,8 +48,8 @@ function ComponentTile({ componentKey, component, statusBadge, caption }: {
   return (
     <div className="relative min-w-0 rounded-xl border border-border p-4 flex flex-col" data-testid={`posture-tile-${componentKey}`}>
       <div className="flex items-center gap-2 mb-2 min-w-0">
-        <Icon size={15} aria-hidden="true" className="text-[var(--text-secondary)] shrink-0" />
-        <p className="text-sm font-semibold text-foreground truncate m-0">{d.label}</p>
+        <Icon size={15} aria-hidden="true" className="text-ink-muted shrink-0" />
+        <p className="text-ui font-semibold text-ink truncate m-0">{d.label}</p>
         {component.reason && (
           <EvidenceInfo about={`${d.label} score`} align="start">
             <p className="m-0">{component.reason}</p>
@@ -56,14 +57,14 @@ function ComponentTile({ componentKey, component, statusBadge, caption }: {
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className={`text-lg font-bold leading-none mr-1 ${d.score === null ? 'text-[var(--text-secondary)]' : 'text-foreground'}`} data-testid={`posture-score-${componentKey}`}>
-          {d.scoreText}
-          {d.score !== null && <span className="text-xs font-normal text-[var(--text-secondary)]"> /100</span>}
+        <span className={`text-section leading-none mr-1 ${d.score === null ? 'text-ink-muted' : 'text-ink'}`} data-testid={`posture-score-${componentKey}`}>
+          <Num>{d.scoreText}</Num>
+          {d.score !== null && <span className="text-label font-normal text-ink-muted"> /100</span>}
         </span>
         {d.tier && <EvidenceBadge label={d.tier.label} color={d.tier.color} />}
       </div>
       {faceCaption && (
-        <p className="text-xs text-[var(--text-secondary)] leading-snug m-0 mt-2" data-testid={`posture-tile-caption-${componentKey}`}>{faceCaption}</p>
+        <p className="text-meta text-ink-muted leading-snug m-0 mt-2" data-testid={`posture-tile-caption-${componentKey}`}>{faceCaption}</p>
       )}
       {d.score !== null && (
         <div className="mt-auto pt-3">
@@ -105,16 +106,16 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-base font-bold text-foreground m-0">{INFRASTRUCTURE_POSTURE_LABEL}</h3>
+              <h3 className="text-section text-ink m-0">{INFRASTRUCTURE_POSTURE_LABEL}</h3>
               <EvidenceInfo about={INFRASTRUCTURE_POSTURE_LABEL} label={`About the ${INFRASTRUCTURE_POSTURE_LABEL} section`} align="start">
                 <PostureEvidence components={components} statusBadge={statusBadge} />
               </EvidenceInfo>
               {partial && <PartialBadge testId="posture-section-partial" />}
             </div>
-            <p className="text-xs text-[var(--text-secondary)] m-0 mt-0.5">{INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION}</p>
+            <p className="text-meta text-ink-muted m-0 mt-0.5">{INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION}</p>
           </div>
         </div>
-        <Link href="/infrastructure" className="text-xs font-semibold no-underline whitespace-nowrap py-2" style={{ color: 'var(--text-accent)' }}>
+        <Link href="/infrastructure" className="text-label font-semibold no-underline whitespace-nowrap py-2" style={{ color: 'var(--text-accent)' }}>
           View details →
         </Link>
       </div>
@@ -130,7 +131,7 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
           ))}
         </div>
       ) : !components ? (
-        <p className="text-xs text-[var(--text-secondary)] m-0">— · Unavailable</p>
+        <p className="text-meta text-ink-muted m-0">— · Unavailable</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {POSTURE_COMPONENT_ORDER.map((key) => (

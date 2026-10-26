@@ -46,7 +46,7 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
     <div className="bg-[var(--surface-2)] border border-border rounded-2xl p-5 h-full">
       <div className="flex items-center gap-2.5 mb-4">
         <Clock size={17} style={{ color: 'var(--text-accent)' }} />
-        <h3 className="text-base font-bold text-foreground">Recent Activity</h3>
+        <h3 className="text-section text-ink">Recent Activity</h3>
       </div>
 
       {isLoading ? (
@@ -58,10 +58,10 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
       ) : isError || !data || data.length === 0 ? (
         <div className="text-center py-10 flex flex-col items-center gap-2">
           <div className="w-10 h-10 rounded-xl bg-[var(--surface-1)] flex items-center justify-center mb-1">
-            <ActivityIcon size={18} className="text-[var(--text-secondary)]" />
+            <ActivityIcon size={18} className="text-ink-muted" />
           </div>
-          <p className="text-sm font-semibold text-foreground">No activity yet</p>
-          <p className="text-xs text-[var(--text-secondary)] leading-relaxed">Activity will appear here once resources sync, findings are detected, or scores update</p>
+          <p className="text-ui font-semibold text-ink">No activity yet</p>
+          <p className="text-meta text-ink-muted leading-relaxed">Activity will appear here once resources sync, findings are detected, or scores update</p>
         </div>
       ) : (
         <div>
@@ -74,19 +74,19 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
                   <Icon size={14} style={{ color: conf.color }} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold text-foreground leading-snug line-clamp-1" title={event.message}>{event.message}</p>
+                  <p className="text-meta font-semibold text-ink leading-snug line-clamp-1" title={event.message}>{event.message}</p>
                   {/* 'score' events are periodic historical snapshots (risk_score_history),
                       not the live current score shown in the Security Posture KPI -- the two
                       can legitimately differ. Label this explicitly rather than the generic
                       type name, so the timestamp reads as "this was the score then", not an
                       implicit claim that it's still current. Message/timestamp are untouched
                       real values from the API. */}
-                  <p className="text-xs text-[var(--text-secondary)]">
+                  <p className="text-meta text-ink-muted">
                     {event.type === 'score' ? 'Historical snapshot' : <span className="capitalize">{event.type}</span>}
                     {event.severity ? ` · ${event.severity}` : ''}
                   </p>
                 </div>
-                <span className="text-xs text-[var(--text-secondary)] whitespace-nowrap shrink-0">
+                <span className="text-meta text-ink-muted whitespace-nowrap shrink-0">
                   {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}
                 </span>
               </div>
@@ -97,7 +97,7 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
               type="button"
               aria-expanded={expanded}
               onClick={() => setExpandedFor(expanded ? null : data)}
-              className="mt-3 text-xs font-semibold bg-transparent border-0 p-0 cursor-pointer hover:underline"
+              className="mt-3 text-label font-semibold bg-transparent border-0 p-0 cursor-pointer hover:underline"
               style={{ color: 'var(--text-accent)' }}
             >
               {expanded ? 'Show less' : `Show all ${totalActivityCount}`}

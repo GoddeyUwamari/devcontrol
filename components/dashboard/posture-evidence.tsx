@@ -74,18 +74,18 @@ export function PostureEvidence({ components, statusBadge }: {
               return (
                 <li key={key} data-testid={`posture-evidence-${key}`} className="flex gap-3 py-2.5 border-b border-border last:border-b-0">
                   <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-[var(--surface-1)] border border-border">
-                    <Icon size={14} aria-hidden="true" className="text-[var(--text-secondary)]" />
+                    <Icon size={14} aria-hidden="true" className="text-ink-muted" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-xs font-semibold text-foreground mr-1">{d.label}</span>
+                      <span className="text-label font-semibold text-ink mr-1">{d.label}</span>
                       <EvidenceBadge label={chip} color={d.tier?.color ?? NEUTRAL_COLOR} />
                       {d.partial && <PartialBadge />}
                     </div>
                     {component.reason ? (
-                      <p className="m-0 mt-1 text-[11px] leading-snug">{component.reason}</p>
+                      <p className="m-0 mt-1 text-label font-normal leading-snug">{component.reason}</p>
                     ) : d.missingText ? (
-                      <p className="m-0 mt-1 text-[11px] leading-snug">{d.missingText}</p>
+                      <p className="m-0 mt-1 text-label font-normal leading-snug">{d.missingText}</p>
                     ) : null}
                   </div>
                 </li>

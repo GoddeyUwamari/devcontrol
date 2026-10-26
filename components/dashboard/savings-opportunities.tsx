@@ -1,4 +1,5 @@
 import { PuzzleIcon, Sparkles } from 'lucide-react'
+import { Num } from '@/components/ui/typography'
 import { toneText } from './evidence-badge'
 
 /**
@@ -80,39 +81,39 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
       <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-4">
         <div className="flex items-center gap-2.5">
           <PuzzleIcon size={17} style={{ color: 'var(--text-accent)' }} />
-          <h3 className="text-base font-bold text-foreground">Cost-Saving Opportunities</h3>
+          <h3 className="text-section text-ink">Cost-Saving Opportunities</h3>
         </div>
-        <a href={detailsHref} className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
+        <a href={detailsHref} className="text-label font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
           {totalActiveCount === null ? 'View all →' : `View all (${totalActiveCount}) →`}
         </a>
       </div>
       {showEmptyState ? (
         <div className="text-center py-8 flex flex-col items-center gap-2">
           <div className="w-10 h-10 rounded-xl bg-[var(--surface-1)] flex items-center justify-center mb-1">
-            <Sparkles size={18} className="text-[var(--text-secondary)]" />
+            <Sparkles size={18} className="text-ink-muted" />
           </div>
-          <p className="text-sm text-[var(--text-secondary)]">Scan results by check are on the Cost Optimization page.</p>
+          <p className="text-ui text-ink-muted">Scan results by check are on the Cost Optimization page.</p>
         </div>
       ) : (
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${gridColsClass} gap-4`}>
         {items.map(({ type, title, description, count, savingsLabel, priorityBadge }) => (
           <div key={type} className="bg-[var(--surface-1)] rounded-xl border border-border p-4">
-            <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">{title}</p>
+            <p className="text-label font-medium text-ink-muted mb-2">{title}</p>
             {evaluationState === 'evaluated' || count > 0 ? (
               <>
-                <div className="text-xl font-bold tracking-tight leading-none mb-1" style={{ color: count > 0 ? 'var(--text-success)' : 'var(--text-secondary)' }}>
-                  {savingsLabel}
+                <div className="text-section tracking-tight leading-none mb-1" style={{ color: count > 0 ? 'var(--text-success)' : 'var(--text-secondary)' }}>
+                  <Num>{savingsLabel}</Num>
                 </div>
-                <p className="text-xs text-[var(--text-secondary)] mb-2">{countPhrase(count)}</p>
+                <p className="text-meta text-ink-muted mb-2">{countPhrase(count)}</p>
               </>
             ) : (
-              <div className="text-sm font-semibold text-[var(--text-secondary)] mb-2">
+              <div className="text-ui font-semibold text-ink-muted mb-2">
                 {EVALUATION_LABEL[evaluationState]}
               </div>
             )}
-            <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-2.5">{description}</p>
+            <p className="text-meta text-ink-muted leading-relaxed mb-2.5">{description}</p>
             {count > 0 && priorityBadge && (
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full inline-block" style={{ color: toneText(priorityBadge.color), background: priorityBadge.background }}>
+              <span className="text-label font-semibold px-2 py-0.5 rounded-full inline-block" style={{ color: toneText(priorityBadge.color), background: priorityBadge.background }}>
                 {priorityBadge.label}
               </span>
             )}

@@ -60,16 +60,16 @@ function Row({ badge, headline, sub, href }: { badge: { label: string; color: st
   const content = (
     <div className={`flex items-center gap-3 py-3${href ? '' : ` ${divider}`}`}>
       <span
-        className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
+        className="text-label font-semibold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
         style={{ color: toneText(badge.color), background: badge.background }}
       >
         {badge.label}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-semibold text-foreground leading-snug truncate">{headline}</p>
-        <p className="text-xs text-[var(--text-secondary)] leading-snug truncate">{sub}</p>
+        <p className="text-meta font-semibold text-ink leading-snug truncate">{headline}</p>
+        <p className="text-meta text-ink-muted leading-snug truncate">{sub}</p>
       </div>
-      {href && <ChevronRight size={14} className="text-[var(--text-secondary)] shrink-0" />}
+      {href && <ChevronRight size={14} className="text-ink-muted shrink-0" />}
     </div>
   )
   return href ? <a href={href} className={`no-underline block ${divider}`}>{content}</a> : content
@@ -131,9 +131,9 @@ export function SecurityComplianceSummary({
       <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-2">
         <div className="flex items-center gap-2.5">
           <ShieldCheck size={17} style={{ color: 'var(--text-accent)' }} />
-          <h3 className="text-base font-bold text-foreground">Security Key Findings</h3>
+          <h3 className="text-section text-ink">Security Key Findings</h3>
         </div>
-        <a href={detailsHref} className="text-xs font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
+        <a href={detailsHref} className="text-label font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
           View all →
         </a>
       </div>
@@ -145,11 +145,11 @@ export function SecurityComplianceSummary({
             <RowSkeleton />
           </>
         ) : findingsError ? (
-          <div className="py-4 text-xs text-[var(--text-secondary)]">Account-level findings: Unavailable</div>
+          <div className="py-4 text-meta text-ink-muted">Account-level findings: Unavailable</div>
         ) : severityRows.length > 0 ? (
           severityRows.map((row) => <Row key={row.badge.label} {...row} />)
         ) : (
-          <div className="py-4 text-xs text-[var(--text-secondary)]">No open account-level findings recorded yet.</div>
+          <div className="py-4 text-meta text-ink-muted">No open account-level findings recorded yet.</div>
         )}
 
         {riskDataLoading ? (

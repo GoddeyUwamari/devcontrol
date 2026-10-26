@@ -24,14 +24,14 @@ export function RecommendedActionCard({ opportunityCount, savingsLabel, ctaHref,
           <Zap size={17} style={{ color: 'var(--text-accent)' }} />
         </div>
         <div>
-          <div className="text-[11px] font-bold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>
+          <div className="text-label font-semibold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>
             Recommended action
           </div>
-          <div className="text-base font-bold text-foreground mb-1">
+          <div className="text-card-title text-ink mb-1">
             {opportunityCount} optimization opportunit{opportunityCount !== 1 ? 'ies' : 'y'} identified
           </div>
           {savingsLabel && (
-            <div className="flex items-center gap-1.5 text-[13px]" style={{ color: 'var(--text-success)' }}>
+            <div className="flex items-center gap-1.5 text-meta" style={{ color: 'var(--text-success)' }}>
               <CheckCircle2 size={13} />
               <span>Estimated potential savings: {savingsLabel}</span>
             </div>
@@ -39,7 +39,7 @@ export function RecommendedActionCard({ opportunityCount, savingsLabel, ctaHref,
           {isDemoActive && (
             <div className="flex gap-1.5 flex-wrap mt-2">
               {['Zero downtime', 'Fully reversible', 'Takes < 5 min'].map((pill) => (
-                <span key={pill} className="bg-[var(--surface-2)] border border-border rounded-full px-2.5 py-0.5 text-xs text-[var(--text-secondary)]">
+                <span key={pill} className="bg-[var(--surface-2)] border border-border rounded-full px-2.5 py-0.5 text-label font-normal text-ink-muted">
                   {pill}
                 </span>
               ))}
@@ -49,7 +49,7 @@ export function RecommendedActionCard({ opportunityCount, savingsLabel, ctaHref,
       </div>
       <a
         href={ctaHref}
-        className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-[13px] font-semibold no-underline whitespace-nowrap shrink-0 self-start sm:self-center"
+        className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline whitespace-nowrap shrink-0 self-start sm:self-center"
       >
         Review {opportunityCount} recommendation{opportunityCount !== 1 ? 's' : ''} →
       </a>
