@@ -23,6 +23,7 @@ import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendation
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { annualizeMonthly, cn, formatSavingsCurrency } from '@/lib/utils';
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { describeCeilings, formatRecommendationSavings, savingsBasisKind } from '@/lib/savings-basis';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -147,11 +148,11 @@ function AnalysisStatusBanner({
         <Icon size={18} className={status === 'in_progress' ? 'animate-spin' : undefined} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold">{m.label}</p>
-        <p className="text-xs opacity-80">{m.description}</p>
+        <p className="text-ui font-semibold">{m.label}</p>
+        <p className="text-meta">{m.description}</p>
       </div>
       {relative && sourceLabel && (status === 'failed' || status.startsWith('completed')) && (
-        <span className="text-[11px] font-medium opacity-70 whitespace-nowrap shrink-0">{sourceLabel}, {relative}</span>
+        <span className="text-label font-medium whitespace-nowrap shrink-0">{sourceLabel}, {relative}</span>
       )}
     </div>
   );
@@ -295,11 +296,11 @@ export default function CostOptimizationPage() {
   const hiddenCount = Math.max(0, activeCount - recommendations.length);
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
+    <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-2">Cost Optimization</h1>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-lg">
+          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-2')}>Cost Optimization</h1>
+          <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-lg')}>
             DevControl identifies potential AWS cost-saving opportunities by checking your connected account
             against the categories below. Figures are estimated potential savings, not realized or billed savings.
           </p>
@@ -307,7 +308,7 @@ export default function CostOptimizationPage() {
         {!isDemoActive && awsConnected === false ? (
           <a
             href="/connect-aws"
-            className="inline-flex items-center gap-2 text-white text-sm font-semibold px-5 py-2.5 rounded-lg bg-violet-700 hover:bg-violet-800 whitespace-nowrap no-underline transition-colors"
+            className="inline-flex items-center gap-2 text-white text-ui font-semibold px-5 py-2.5 rounded-lg bg-violet-700 hover:bg-violet-800 whitespace-nowrap no-underline transition-colors"
           >
             Connect AWS
           </a>
@@ -320,8 +321,8 @@ export default function CostOptimizationPage() {
 
       {isDemoActive ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
-          <p className="text-sm font-semibold text-slate-900 mb-2">Cost recommendations aren&apos;t shown in demo mode</p>
-          <p className="text-sm text-slate-500">Turn off demo mode to see real optimization opportunities for your connected AWS account.</p>
+          <p className="text-ui font-semibold text-slate-900 mb-2">Cost recommendations aren&apos;t shown in demo mode</p>
+          <p className="text-ui text-ink-muted">Turn off demo mode to see real optimization opportunities for your connected AWS account.</p>
         </div>
       ) : (
         <>
@@ -329,18 +330,18 @@ export default function CostOptimizationPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <Card>
               <CardContent className="px-5">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Active Opportunities</p>
-                {statsLoading ? <Skeleton className="h-8 w-14" /> : <p className="text-3xl font-bold text-slate-900">{activeCount}</p>}
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Active Opportunities</p>
+                {statsLoading ? <Skeleton className="h-8 w-14" /> : <p className="text-kpi tabular-nums text-slate-900">{activeCount}</p>}
               </CardContent>
             </Card>
             <Card>
               <CardContent className="px-5">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Estimated Monthly Savings</p>
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Estimated Monthly Savings</p>
                 {statsLoading ? <Skeleton className="h-8 w-24" /> : (
                   <>
-                    <p className="text-3xl font-bold text-green-600">{formatWholeDollars(monthlySavings)}<span className="text-sm font-semibold text-slate-400">/mo</span></p>
+                    <p className="text-kpi tabular-nums text-ink-success">{formatWholeDollars(monthlySavings)}<span className="text-ui font-semibold text-ink-muted">/mo</span></p>
                     {ceilingLines.map((line) => (
-                      <p key={line} className="text-xs text-slate-500 mt-1">{line}</p>
+                      <p key={line} className="text-meta text-ink-muted mt-1">{line}</p>
                     ))}
                   </>
                 )}
@@ -348,35 +349,35 @@ export default function CostOptimizationPage() {
             </Card>
             <Card>
               <CardContent className="px-5">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Estimated Annual Savings</p>
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Estimated Annual Savings</p>
                 {statsLoading ? <Skeleton className="h-8 w-24" /> : (
-                  <p className="text-3xl font-bold text-green-600">{formatWholeDollars(annualSavings)}<span className="text-sm font-semibold text-slate-400">/yr</span></p>
+                  <p className="text-kpi tabular-nums text-ink-success">{formatWholeDollars(annualSavings)}<span className="text-ui font-semibold text-ink-muted">/yr</span></p>
                 )}
               </CardContent>
             </Card>
             <Card>
               <CardContent className="px-5">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Last Analysis</p>
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Last Analysis</p>
                 {analysisStatus === 'loading' ? <Skeleton className="h-6 w-20" /> : analysisStatus === 'not_connected' ? (
-                  <p className="text-lg font-bold text-slate-300">—</p>
+                  <p className="text-section text-ink-muted">—</p>
                 ) : analysisStatus === 'never_analyzed' ? (
-                  <p className="text-lg font-bold text-slate-400">Never</p>
+                  <p className="text-section text-ink-muted">Never</p>
                 ) : analysisStatus === 'in_progress' ? (
-                  <p className="text-lg font-bold text-violet-600">Running…</p>
+                  <p className="text-section text-violet-600">Running…</p>
                 ) : latestAnalysis?.completedAt ? (
                   <>
-                    <p className="text-lg font-bold text-slate-900 leading-tight">{formatDistanceToNow(new Date(latestAnalysis.completedAt), { addSuffix: true })}</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">{SOURCE_LABEL[latestAnalysis.source]}</p>
+                    <p className="text-section text-slate-900 leading-tight">{formatDistanceToNow(new Date(latestAnalysis.completedAt), { addSuffix: true })}</p>
+                    <p className="text-label font-normal text-ink-muted mt-0.5">{SOURCE_LABEL[latestAnalysis.source]}</p>
                   </>
                 ) : (
-                  <p className="text-lg font-bold text-slate-400">—</p>
+                  <p className="text-section text-ink-muted">—</p>
                 )}
               </CardContent>
             </Card>
           </div>
 
           {/* ── TRUST / DISCLAIMER ── */}
-          <p className="text-[11px] text-slate-400 leading-relaxed mb-6 max-w-3xl">
+          <p className="text-label font-normal text-ink-muted leading-relaxed mb-6 max-w-3xl">
             Savings figures are estimated potential savings based on DevControl&apos;s recommendation methodology, not confirmed AWS billing savings.
             Resolving or dismissing a recommendation records your decision — it does not itself confirm the underlying AWS change was made.
           </p>
@@ -401,9 +402,9 @@ export default function CostOptimizationPage() {
             </div>
           ) : error ? (
             <div className="bg-white border border-red-100 rounded-2xl p-12 text-center">
-              <p className="text-sm font-semibold text-slate-900 mb-2">Couldn&apos;t load recommendations</p>
-              <p className="text-sm text-slate-500 mb-4">{(error as Error).message || 'Something went wrong.'}</p>
-              <button onClick={() => refetch()} className="bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors">
+              <p className="text-ui font-semibold text-slate-900 mb-2">Couldn&apos;t load recommendations</p>
+              <p className="text-ui text-ink-muted mb-4">{(error as Error).message || 'Something went wrong.'}</p>
+              <button onClick={() => refetch()} className="bg-violet-700 hover:bg-violet-800 text-white text-label font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors">
                 Try again
               </button>
             </div>
@@ -412,28 +413,28 @@ export default function CostOptimizationPage() {
               {analysisStatus === 'not_connected' ? (
                 <>
                   <CloudOff size={32} className="text-slate-400 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-900 mb-2">Connect AWS to check for savings</p>
-                  <p className="text-sm text-slate-500 mb-6">DevControl needs a connected AWS account before it can look for cost-saving opportunities.</p>
+                  <p className="text-ui font-semibold text-slate-900 mb-2">Connect AWS to check for savings</p>
+                  <p className="text-ui text-ink-muted mb-6">DevControl needs a connected AWS account before it can look for cost-saving opportunities.</p>
                 </>
               ) : analysisStatus === 'never_analyzed' ? (
                 <>
                   <Clock size={32} className="text-slate-400 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-900 mb-2">No analysis has run yet</p>
-                  <p className="text-sm text-slate-500 mb-6">Run your first cost analysis to check for savings opportunities.</p>
+                  <p className="text-ui font-semibold text-slate-900 mb-2">No analysis has run yet</p>
+                  <p className="text-ui text-ink-muted mb-6">Run your first cost analysis to check for savings opportunities.</p>
                 </>
               ) : analysisStatus === 'in_progress' ? (
                 <>
                   <Loader2 size={32} className="text-violet-500 mx-auto mb-3 animate-spin" />
-                  <p className="text-sm font-semibold text-slate-900 mb-2">Analysis in progress</p>
-                  <p className="text-sm text-slate-500 mb-6">DevControl is currently checking your account. This can take a few minutes.</p>
+                  <p className="text-ui font-semibold text-slate-900 mb-2">Analysis in progress</p>
+                  <p className="text-ui text-ink-muted mb-6">DevControl is currently checking your account. This can take a few minutes.</p>
                 </>
               ) : analysisStatus === 'failed' ? (
                 <>
                   <AlertTriangle size={32} className="text-red-500 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-900 mb-2">
+                  <p className="text-ui font-semibold text-slate-900 mb-2">
                     The last {latestAnalysis ? SOURCE_LABEL[latestAnalysis.source].toLowerCase() : 'analysis'} didn&apos;t complete
                   </p>
-                  <p className="text-sm text-slate-500 mb-6">{latestAnalysis?.errorMessage || 'Something interrupted the scan before it finished.'}</p>
+                  <p className="text-ui text-ink-muted mb-6">{latestAnalysis?.errorMessage || 'Something interrupted the scan before it finished.'}</p>
                 </>
               ) : (
                 // Completed with nothing active: no "none found" conclusion --
@@ -441,8 +442,8 @@ export default function CostOptimizationPage() {
                 // outcomes are not recorded yet.
                 <>
                   <Clock size={32} className="text-slate-400 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-900 mb-2">No active recommendations to review</p>
-                  <p className="text-sm text-slate-500 mb-6">
+                  <p className="text-ui font-semibold text-slate-900 mb-2">No active recommendations to review</p>
+                  <p className="text-ui text-ink-muted mb-6">
                     {analysisStatus === 'completed_all_resolved' ? 'Previously identified items have been resolved or dismissed. ' : ''}
                     This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.
                   </p>
@@ -450,7 +451,7 @@ export default function CostOptimizationPage() {
               )}
               <div className="flex flex-col items-center gap-1.5 mb-2">
                 {implementedRules.map((rule) => (
-                  <span key={rule.id} className="inline-flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                  <span key={rule.id} className="inline-flex items-center gap-1.5 text-label text-ink-muted font-medium">
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" /> {rule.name}
                   </span>
                 ))}
@@ -460,11 +461,11 @@ export default function CostOptimizationPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6 items-start">
               <div className="flex flex-col gap-3">
                 <div className="flex items-baseline justify-between gap-3 flex-wrap">
-                  <p className="text-sm font-bold text-slate-900">
+                  <p className="text-ui font-semibold text-slate-900">
                     {hiddenCount > 0 ? `Showing ${recommendations.length} of ${activeCount} active opportunities` : `${activeCount} active opportunit${activeCount !== 1 ? 'ies' : 'y'}`}
                   </p>
                   {hiddenCount > 0 && (
-                    <p className="text-[11px] text-slate-400">Sorted by highest potential savings first</p>
+                    <p className="text-label font-normal text-ink-muted">Sorted by highest potential savings first</p>
                   )}
                 </div>
 
@@ -473,39 +474,39 @@ export default function CostOptimizationPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-start">
                       <div>
                         <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <span className="text-sm font-semibold text-slate-900">{rec.issue || '—'}</span>
+                          <span className="text-ui font-semibold text-slate-900">{rec.issue || '—'}</span>
                           {rec.severity && <SeverityBadge {...severityToBadge(rec.severity)} />}
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{rec.status || '—'}</span>
+                          <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-ink-muted">{rec.status || '—'}</span>
                         </div>
-                        {rec.description && <p className="text-xs text-slate-500 leading-relaxed mb-2.5">{rec.description}</p>}
+                        {rec.description && <p className="text-meta text-ink-muted leading-relaxed mb-2.5">{rec.description}</p>}
                         <div className="flex flex-wrap gap-1.5">
-                          <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.resourceId || '—'}</span>
-                          {rec.resourceName && <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.resourceName}</span>}
-                          {rec.resourceType && <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.resourceType}</span>}
-                          {rec.awsRegion && <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{rec.awsRegion}</span>}
+                          <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.resourceId || '—'}</span>
+                          {rec.resourceName && <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.resourceName}</span>}
+                          {rec.resourceType && <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.resourceType}</span>}
+                          {rec.awsRegion && <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.awsRegion}</span>}
                         </div>
                       </div>
                       <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3">
                         <div className="text-right">
-                          <p className="text-xl sm:text-2xl font-bold text-green-600 whitespace-nowrap">
+                          <p className="text-section tabular-nums text-ink-success whitespace-nowrap">
                             {formatRecommendationSavings(rec, formatSavingsCurrency)}
                           </p>
                           {isSavingsCeiling(rec) && (
-                            <p className="text-[10px] text-slate-400 font-medium">Estimated ceiling, not an expected saving</p>
+                            <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
                           )}
                         </div>
                         <div className="flex gap-2">
                           <button
                             onClick={() => resolveMutation.mutate(rec.id)}
                             disabled={pendingMutation(rec.id)}
-                            className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold border-none cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3.5 py-1.5 rounded-lg text-label font-semibold border-none cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             <CheckCircle size={12} /> Resolve
                           </button>
                           <button
                             onClick={() => dismissMutation.mutate(rec.id)}
                             disabled={pendingMutation(rec.id)}
-                            className="flex items-center gap-1 bg-transparent text-slate-500 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="flex items-center gap-1 bg-transparent text-ink-muted px-3 py-1.5 rounded-lg text-label font-medium border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             <XCircle size={12} /> Dismiss
                           </button>
@@ -519,7 +520,7 @@ export default function CostOptimizationPage() {
               {/* ── SIDEBAR: severity breakdown + what devcontrol checks ── */}
               <div className="flex flex-col gap-4">
                 <Card>
-                  <CardHeader className="px-5 pb-0"><h2 className="text-sm font-bold text-slate-900">Severity breakdown</h2></CardHeader>
+                  <CardHeader className="px-5 pb-0"><h2 className="text-ui font-semibold text-slate-900">Severity breakdown</h2></CardHeader>
                   <CardContent className="px-5">
                     <div className="flex flex-col gap-2.5">
                       {([
@@ -531,9 +532,9 @@ export default function CostOptimizationPage() {
                         const pct = total > 0 ? (row.count / total) * 100 : 0;
                         return (
                           <div key={row.key}>
-                            <div className="flex items-center justify-between text-xs mb-1">
+                            <div className="flex items-center justify-between text-meta mb-1">
                               <span className="font-medium text-slate-600">{row.label}</span>
-                              <span className="font-bold text-slate-900">{row.count}</span>
+                              <span className="font-semibold text-slate-900 tabular-nums">{row.count}</span>
                             </div>
                             <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                               <div className={cn('h-full rounded-full', row.color)} style={{ width: `${pct}%` }} />
@@ -542,27 +543,27 @@ export default function CostOptimizationPage() {
                         );
                       })}
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
+                    <p className="text-label font-normal text-ink-muted mt-3 leading-relaxed">
                       Only High/Medium/Low severities are currently supported — there is no Critical tier in the underlying data.
                     </p>
                   </CardContent>
                 </Card>
 
                 <Card>
-                  <CardHeader className="px-5 pb-0"><h2 className="text-sm font-bold text-slate-900">What DevControl checks</h2></CardHeader>
+                  <CardHeader className="px-5 pb-0"><h2 className="text-ui font-semibold text-slate-900">What DevControl checks</h2></CardHeader>
                   <CardContent className="px-5">
                     <div className="flex flex-col gap-3">
                       {implementedRules.map((rule) => (
                         <div key={rule.id} className="flex items-start gap-2">
                           <Server size={13} className="text-slate-400 mt-0.5 shrink-0" />
                           <div>
-                            <p className="text-xs font-semibold text-slate-700">{rule.name}</p>
-                            <p className="text-[11px] text-slate-400 leading-snug">{rule.detail}</p>
+                            <p className="text-label font-semibold text-slate-700">{rule.name}</p>
+                            <p className="text-label font-normal text-ink-muted leading-snug">{rule.detail}</p>
                           </div>
                         </div>
                       ))}
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-3 leading-relaxed border-t border-slate-100 pt-3">
+                    <p className="text-label font-normal text-ink-muted mt-3 leading-relaxed border-t border-slate-100 pt-3">
                       {implementedRules.length} active check{implementedRules.length !== 1 ? 's' : ''} today — not a complete list of every possible AWS cost optimization.
                     </p>
                   </CardContent>
@@ -574,9 +575,9 @@ export default function CostOptimizationPage() {
                     and disclosed, not hidden. See config/optimization-rules.ts. */}
                 {ruleCatalog.summary.totalRules > 0 && (
                   <Card>
-                    <CardHeader className="px-5 pb-0"><h2 className="text-sm font-bold text-slate-900">Coverage</h2></CardHeader>
+                    <CardHeader className="px-5 pb-0"><h2 className="text-ui font-semibold text-slate-900">Coverage</h2></CardHeader>
                     <CardContent className="px-5">
-                      <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                      <p className="text-label font-normal text-ink-muted leading-relaxed mb-3">
                         {ruleCatalog.summary.implementedCount} of {ruleCatalog.summary.totalRules} registered checks are active today, across {ruleCatalog.summary.services.length} AWS services DevControl has rules for.
                       </p>
                       <div className="flex flex-wrap gap-1.5 mb-3">
@@ -584,8 +585,8 @@ export default function CostOptimizationPage() {
                           <span
                             key={s.service}
                             className={cn(
-                              'text-[11px] font-medium px-2 py-0.5 rounded-full',
-                              s.implementedCount > 0 ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'
+                              'text-label font-medium px-2 py-0.5 rounded-full',
+                              s.implementedCount > 0 ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-ink-muted'
                             )}
                           >
                             {s.service}
@@ -594,12 +595,12 @@ export default function CostOptimizationPage() {
                       </div>
                       {plannedRules.length > 0 && (
                         <>
-                          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-t border-slate-100 pt-3 mb-2">
+                          <p className="text-label font-semibold text-ink-muted uppercase tracking-wide border-t border-slate-100 pt-3 mb-2">
                             Planned / coming soon
                           </p>
                           <div className="flex flex-col gap-1.5">
                             {plannedRules.map((rule) => (
-                              <p key={rule.id} className="text-[11px] text-slate-400 leading-snug">
+                              <p key={rule.id} className="text-label font-normal text-ink-muted leading-snug">
                                 {rule.service} — {rule.name}
                               </p>
                             ))}
