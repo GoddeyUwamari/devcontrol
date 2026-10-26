@@ -1,12 +1,29 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
+import { NON_APP_CLOSURE, SOURCE_FILES } from './surface-scope'
 
-// Pages and components already on the app type scale (typography plan T1, T2b, T2c) may not drift back: every size and weight comes
+// Pages and components already on the app type scale (typography plan T1, T2b, T2c, then one PR per page group) may not drift back: every size and weight comes
 // from the role tokens (text-title ... text-label), and text colours are the ink tokens or pass AA on their
 // own surface. The full guard for every app file is its own PR (TG); this covers the files moved so far.
 // Variants count, bracketed ones included ([&_p]:, data-[state=open]:, group-[.x]:); dark: variants are
 // exempt (dark mode is not wired up; typography plan Q3). Inline style colours and sizes count too.
+// The Costs group (G2): every page under the Costs routes. A self-check below keeps this list equal to the .tsx
+// files in those route folders, so a new Costs page cannot land outside the guard.
+const COSTS_ROUTE_DIRS = ['app/(app)/costs/', 'app/(app)/forecast/', 'app/(app)/cost-optimization/']
+const COSTS = [
+  'app/(app)/cost-optimization/controls/page.tsx',
+  'app/(app)/cost-optimization/page.tsx',
+  'app/(app)/costs/by-team/page.tsx',
+  'app/(app)/costs/efficiency/page.tsx',
+  'app/(app)/costs/page.tsx',
+  'app/(app)/forecast/page.tsx',
+]
+
+// Not converted yet, so never on the strict list: the Security page (Security V2 rebuilds it) and the
+// shared Infrastructure/Services notice that the Costs pages also render (its own group, G1).
+const EXEMPT = ['app/(app)/security/page.tsx', 'components/aws/discovery-warning-notice.tsx']
+
 const STRICT = [
   'app/(app)/connect-aws/page.tsx',
   'components/dashboard/dashboard-unconnected-preview.tsx',
@@ -63,6 +80,8 @@ const STRICT = [
   'components/dashboard/savings-opportunities.tsx',
   'components/dashboard/security-compliance-summary.tsx',
   'components/dashboard/system-intelligence-card.tsx',
+  // G2: the Costs pages.
+  ...COSTS,
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
@@ -194,6 +213,47 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'components/dashboard/security-compliance-summary.tsx', match: 'color: toneText(badge.color)', rule: 'inline text style', count: 1, reason: "Each finding's severity chip text: the -strong ink on its tint (toneText)." },
   { file: 'components/dashboard/cost-trend-chart.tsx', match: 'opacity-40', rule: 'opacity on content', count: 1, reason: "A legend entry whose series is toggled off: a state, not quieter text; kept, no visible change (D6)." },
   { file: 'components/dashboard/cost-trend-chart.tsx', match: 'opacity-60', variant: 'hover:', rule: 'opacity on content', count: 1, reason: "The same toggled-off legend entry on hover; kept, no visible change (D6)." },
+  // G2: the Costs pages (reviewed exceptions). Decorative icons, chart series colours, class names held in a
+  // `color` key, disabled-state dimming and the narrow chart axes kept at their size (founder decision, Oct 26).
+  { file: 'app/(app)/costs/page.tsx', match: 'opacity: 0', rule: 'inline text style', count: 1, reason: "The end frame of the ping keyframes in the page's <style> tag (the anomaly dot's ring animation), not a style on content." },
+  { file: 'app/(app)/costs/page.tsx', match: 'opacity-40', rule: 'opacity on content', count: 1, reason: "The anomaly dot's animated ping ring: an empty decorative div with no text; kept, no visible change." },
+  { file: 'app/(app)/costs/page.tsx', match: "color: 'text-slate-900'", rule: 'inline text style', count: 1, reason: "Not a style: the chart summary's `color` key holds a class name (slate-900, the spend figure)." },
+  { file: 'app/(app)/costs/page.tsx', match: 'color: growthRate', rule: 'inline text style', count: 1, reason: "Not a style: the Month-over-Month `color` key holds class names (text-ink-muted/-danger/-success) chosen at runtime." },
+  { file: 'app/(app)/costs/page.tsx', match: "color: 'text-ink-muted'", rule: 'inline text style', count: 1, reason: "Not a style: the Active Recommendations `color` key holds the text-ink-muted class name." },
+  { file: 'app/(app)/costs/page.tsx', match: "color: 'text-ink-success'", rule: 'inline text style', count: 1, reason: "Not a style: the savings `color` key holds the text-ink-success class name." },
+  { file: 'app/(app)/costs/page.tsx', match: "color: '#3B82F6'", rule: 'inline text style', count: 1, reason: 'Chart series colour (Compute): the top-drivers swatch, not text.' },
+  { file: 'app/(app)/costs/page.tsx', match: "color: '#8B5CF6'", rule: 'inline text style', count: 1, reason: 'Chart series colour (Database): the top-drivers swatch, not text.' },
+  { file: 'app/(app)/costs/page.tsx', match: "color: '#06B6D4'", rule: 'inline text style', count: 1, reason: 'Chart series colour (Storage): the top-drivers swatch, not text.' },
+  { file: 'app/(app)/costs/page.tsx', match: "color: '#0F172A'", rule: 'inline text style', count: 2, reason: 'Chart series colour (Actual spend): the legend line stroke, not text (demo and real legends).' },
+  { file: 'app/(app)/costs/page.tsx', match: "color: '#7C3AED'", rule: 'inline text style', count: 1, reason: 'Chart series colour (AI forecast, demo only): the legend line stroke, not text.' },
+  { file: 'app/(app)/costs/page.tsx', match: 'fontSize: 10', rule: 'inline text style', count: 2, reason: 'Spend trend Y axis ticks ($x.xk) on a fixed width={48} axis: 12 px would crowd it, so the size stays 10 and the colour is CHART_TICK (founder decision, Oct 26). Demo and real charts.' },
+  { file: 'app/(app)/costs/page.tsx', match: 'fontSize: 9', rule: 'inline text style', count: 3, reason: 'Demo-only spend chart: three event labels (Apr 8, 14, 18) placed a few days apart inside the plot; at 12 px they would overlap, so they stay 9 px. Demo mode is permanently off.' },
+  { file: 'app/(app)/costs/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 2, reason: 'Decorative icons (svg, not text): the query box search icon and the chart loading spinner; kept, no visible change.' },
+  { file: 'app/(app)/costs/by-team/page.tsx', match: "color: '#7C3AED'", rule: 'inline text style', count: 2, reason: "Decorative KPI icons (svg, not text): the demo Total Monthly Spend icon's colour key and the spend card's dollar icon." },
+  { file: 'app/(app)/costs/by-team/page.tsx', match: "color: '#4f8ef7'", rule: 'inline text style', count: 1, reason: "Demo-only KPI icon and its tile tint (svg and background, not text). Demo mode is permanently off." },
+  { file: 'app/(app)/costs/by-team/page.tsx', match: "color: '#38c9a0'", rule: 'inline text style', count: 1, reason: "Demo-only KPI icon and its tile tint (svg and background, not text). Demo mode is permanently off." },
+  { file: 'app/(app)/costs/by-team/page.tsx', match: "color: '#e05d2e'", rule: 'inline text style', count: 1, reason: "Demo-only KPI icon and its tile tint (svg and background, not text). Demo mode is permanently off." },
+  { file: 'app/(app)/costs/by-team/page.tsx', match: 'fontSize: 11', rule: 'inline text style', count: 1, reason: 'Demo-only team bar chart: category names (up to 20 characters) on a fixed width={130} Y axis; 12 px would crowd it, so the size stays 11 (slate-600 already). Founder decision, Oct 26.' },
+  { file: 'app/(app)/costs/by-team/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative Users icon above the "not available yet" message (svg, not text); kept, no visible change.' },
+  { file: 'app/(app)/costs/efficiency/page.tsx', match: 'color: QUADRANT_COLORS', rule: 'inline text style', count: 1, reason: 'Scatter tooltip: the quadrant name in its series colour, chosen at runtime and shared with the chart fills. A separate text palette is a colour change, not a role swap; left for a later pass.' },
+  { file: 'app/(app)/costs/efficiency/page.tsx', match: 'color: efficiencyColor(r.efficiency)', rule: 'inline text style', count: 1, reason: "Demo-only efficiency % in the wasteful-resources table, in the same runtime colour as its bar. Demo mode is permanently off." },
+  { file: 'app/(app)/costs/efficiency/page.tsx', match: 'color: isDemoActive', rule: 'inline text style', count: 1, reason: "Efficiency score by service: demo shows the score in its bar's runtime colour; real accounts show a muted '—' (#9ca3af). Left with the quadrant colours for a later pass." },
+  { file: 'app/(app)/forecast/page.tsx', match: 'fontWeight: 600', rule: 'inline text style', count: 1, reason: "The chart's 'Today' marker label: SVG text that can't take a class, at the label role's 600 (it was bold) with CHART_TICK's size and a red-700 fill." },
+  { file: 'app/(app)/forecast/page.tsx', match: "color: '#534AB7'", rule: 'inline text style', count: 1, reason: "Forecast driver bar colour (Compute): a bar fill, not text." },
+  { file: 'app/(app)/forecast/page.tsx', match: "color: '#1D9E75'", rule: 'inline text style', count: 1, reason: "Forecast driver bar colour (Storage): a bar fill, not text." },
+  { file: 'app/(app)/forecast/page.tsx', match: "color: '#7F77DD'", rule: 'inline text style', count: 1, reason: "Forecast driver bar colour (Database): a bar fill, not text." },
+  { file: 'app/(app)/forecast/page.tsx', match: "color: '#BA7517'", rule: 'inline text style', count: 1, reason: "Forecast driver bar colour (Network): a bar fill, not text." },
+  { file: 'app/(app)/forecast/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative Brain icon in the no-data state (svg, not text); kept, no visible change.' },
+  { file: 'app/(app)/cost-optimization/page.tsx', match: "color: 'bg-red-500'", rule: 'inline text style', count: 1, reason: "Not a style: the severity breakdown's `color` key holds the High bar's background class." },
+  { file: 'app/(app)/cost-optimization/page.tsx', match: "color: 'bg-amber-500'", rule: 'inline text style', count: 1, reason: "Not a style: the severity breakdown's `color` key holds the Medium bar's background class." },
+  { file: 'app/(app)/cost-optimization/page.tsx', match: "color: 'bg-slate-400'", rule: 'inline text style', count: 1, reason: "Not a style: the severity breakdown's `color` key holds the Low bar's background class." },
+  { file: 'app/(app)/cost-optimization/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 4, reason: 'Decorative icons (svg, not text): the empty-state CloudOff and two Clock icons, and the rule list Server icon; kept, no visible change.' },
+  { file: 'app/(app)/cost-optimization/page.tsx', match: 'text-red-500', rule: 'text colour below AA on light surfaces', count: 1, reason: "The failed-analysis empty state's decorative alert icon (svg, not text); kept, no visible change." },
+  { file: 'app/(app)/cost-optimization/page.tsx', match: 'opacity-60', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Disabled-state dimming on the Resolve and Dismiss buttons, kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
+  { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The Enterprise gate's decorative Lock icon (svg, not text); kept, no visible change." },
+  { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The info line's decorative sliders icon (svg, not text); kept, no visible change." },
+  { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'text-red-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The load-error state's decorative alert icon (svg, not text); kept, no visible change." },
+  { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Disabled-state dimming on the Save and Reset buttons, kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
   { file: 'components/ui/breadcrumb.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative chevron icon between steps (an svg, not text); kept, no visible change (typography plan T2c).' },
   { file: 'components/error-boundary.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "The fallback's alert icon on its red-100 circle: an icon, not text; kept like the error-display icons (typography plan T2b, T2c)." },
 ]
@@ -294,6 +354,51 @@ describe('strict typography for the pages on the app type scale', () => {
     expect([covers(entry, disabled), covers(entry, bare), covers(entry, hover)]).toEqual([true, false, false])
     expect(covers({ ...entry, variant: undefined }, bare)).toBe(true)
     expect(covers({ ...entry, variant: undefined }, disabled)).toBe(false)
+  })
+
+  it('the Costs additions are exactly the pages in the Costs route folders, each listed once', () => {
+    const routePages = SOURCE_FILES.filter((f) => f.endsWith('.tsx') && COSTS_ROUTE_DIRS.some((d) => f.startsWith(d)))
+    expect([...COSTS].sort()).toEqual(routePages)
+    for (const file of COSTS) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
+    expect(new Set(STRICT).size, 'no file is listed twice').toBe(STRICT.length)
+  })
+
+  it('files outside the converted groups stay exempt', () => {
+    for (const file of EXEMPT) {
+      expect(SOURCE_FILES, file).toContain(file)
+      expect(STRICT, file).not.toContain(file)
+    }
+    // Marketing and sign-in code (the non-app closure) and the frozen marketing-ui copies are never app-guarded.
+    expect(STRICT.filter((f) => NON_APP_CLOSURE.has(f) || f.startsWith('components/marketing-ui/') || f.startsWith('components/landing/'))).toEqual([])
+    // connect-aws is guarded since T1 and stays out of the page-group lists.
+    expect(COSTS).not.toContain('app/(app)/connect-aws/page.tsx')
+  })
+
+  it('every raw size, weight, colour and opacity class the plan replaces is a finding (banned-class table)', () => {
+    // Assembled at runtime so Tailwind's scan of this file does not generate these utilities.
+    const t = 'text'
+    const banned: [string, string][] = [
+      ...['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', '8xl', '9xl'].map((n): [string, string] => [`${t}-${n}`, 'Tailwind size scale (use a role token)']),
+      ...['9px', '10px', '11px', '12px', '13px', '26px', '0.65rem', '0.75rem', '.82rem', 'calc(1rem+2px)', 'clamp(1rem,2vw,2rem)', 'length:12px'].map((n): [string, string] => [`${t}-[${n}]`, 'arbitrary font size']),
+      ...['bold', 'extrabold', 'black'].map((w): [string, string] => [`font-${w}`, 'bold weight (roles carry 600)']),
+      ...['font-size', 'font-weight', 'font-family', 'line-height', 'letter-spacing', 'color', 'opacity'].map((p): [string, string] => [`[${p}:1]`, 'arbitrary text property']),
+      ...["fontSize: 11", "fontSize: '12px'", "fontWeight: 700", "fontFamily: 'monospace'", 'lineHeight: 1.4', "letterSpacing: '0.07em'", "color: '#6b7280'", 'opacity: 0.6'].map((st): [string, string] => [`style={{ ${st} }}`, 'inline text style']),
+      ...['slate', 'gray', 'zinc', 'neutral', 'stone'].flatMap((h) => ['50', '100', '200', '300', '400', '500'].map((n): [string, string] => [`${t}-${h}-${n}`, 'text colour below AA on light surfaces'])),
+      ...['green', 'emerald', 'teal', 'cyan', 'lime', 'amber', 'yellow', 'orange'].flatMap((h) => ['300', '400', '500', '600'].map((n): [string, string] => [`${t}-${h}-${n}`, 'text colour below AA on light surfaces'])),
+      ...['red', 'blue', 'sky', 'rose', 'pink'].flatMap((h) => ['300', '400', '500'].map((n): [string, string] => [`${t}-${h}-${n}`, 'text colour below AA on light surfaces'])),
+      [`${t}-red-600`, 'text colour below AA on light surfaces'],
+      [`${t}-slate-400/80`, 'text colour below AA on light surfaces'],
+      ...['#6b7280', 'rgb(1,2,3)', 'hsl(1,2%,3%)', 'oklch(0.5_0.1_200)', 'var(--text-secondary)'].map((c): [string, string] => [`${t}-[${c}]`, 'arbitrary text colour']),
+      ...['40', '50', '60', '70', '80', '90'].map((n): [string, string] => [`opacity-${n}`, 'opacity on content']),
+    ]
+    for (const [cls, rule] of banned) {
+      expect(findingsIn(`className="${cls}"`).map((f) => f.rule), cls).toContain(rule)
+      expect(findingsIn(`className="sm:${cls}"`).map((f) => f.rule), `sm:${cls}`).toContain(rule)
+    }
+    // The role and ink tokens that replace them are not findings.
+    const roles = ['title', 'subtitle', 'section', 'card-title', 'body', 'ui', 'meta', 'label', 'kpi'].map((r) => `${t}-${r}`)
+    const inks = ['', '-body', '-muted', '-success', '-warning', '-danger', '-info', '-accent', '-success-strong'].map((i) => `${t}-ink${i}`)
+    expect(findingsIn(`className="${[...roles, ...inks, 'font-semibold', 'font-medium', 'font-normal', 'tabular-nums', 'pt-page-top'].join(' ')}"`)).toEqual([])
   })
 
   it('every exception names a strict file, a count of at least 1 and a reason', () => {
