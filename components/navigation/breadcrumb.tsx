@@ -19,7 +19,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className={cn('flex items-center space-x-1 text-sm', className)}
+      className={cn('flex items-center space-x-1 text-meta', className)}
     >
       <ol className="flex flex-nowrap items-center space-x-1">
         {items.map((item, index) => {
@@ -34,7 +34,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
               {item.href && !isCurrent ? (
                 <Link
                   href={item.href}
-                  className="text-muted-foreground hover:text-foreground transition-colors font-medium"
+                  className="text-ink-muted hover:text-ink transition-colors font-medium"
                 >
                   {item.label}
                 </Link>
@@ -43,8 +43,8 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
                   className={cn(
                     'font-medium',
                     isCurrent
-                      ? 'text-foreground'
-                      : 'text-muted-foreground'
+                      ? 'text-ink'
+                      : 'text-ink-muted'
                   )}
                   aria-current={isCurrent ? 'page' : undefined}
                 >
