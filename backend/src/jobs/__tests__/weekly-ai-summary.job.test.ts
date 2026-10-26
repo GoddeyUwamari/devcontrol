@@ -1,12 +1,13 @@
 /**
  * WeeklyAISummaryJob send path with a fake pool, a stubbed repository, and a
- * stubbed Resend client -- no database, no Cost Explorer, no model call, and
- * no email leaves the process.
+ * stubbed Resend client (or, in W, the real SDK against a local fake API) --
+ * no database, no Cost Explorer, no model call, and no email leaves the process.
  */
 import { Pool } from 'pg';
 import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../weekly-ai-summary.job';
 import { AIInsightsService } from '../../services/ai-insights.service';
 import { verifyUnsubscribeToken } from '../../services/unsubscribe-token';
+import { FAKE_RESEND_KEY, guardFetch, startFakeResendApi } from '../../__tests__/helpers/fake-resend-api';
 
 const ORG_A = 'c0000000-0000-4000-8000-00000000000a';
 const ORG_B = 'c0000000-0000-4000-8000-00000000000b';
@@ -169,5 +170,41 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     const complete = logLine.mock.calls.map(c => String(c[0])).find(l => l.includes('[Weekly AI Summary] COMPLETE'));
     expect(complete).toContain('"sent":0');
     expect(complete).toContain('"errors":2');
+  });
+
+  it('W: through the real resend SDK, the email carries the html, the text version and exactly the unsubscribe headers', async () => {
+    const api = await startFakeResendApi();
+    const guard = guardFetch();
+    try {
+      const { job, repository } = setup(org => ({ userId: userOf(org), email: `owner@${org}.test`, fullName: 'Pat Owner' }));
+      stubEvidence(repository);
+      (job as any).resend = api.loadAgainst(() => new (require('resend').Resend)(FAKE_RESEND_KEY));
+
+      api.reply(200, { id: 'wire-weekly-1' });
+      expect(await job.triggerManual(ORG_B)).toEqual({ sent: 1, skipped: 0, errors: 0 });
+
+      expect(api.requests).toHaveLength(1);
+      const { method, path, headers, body } = api.requests[0];
+      expect(method).toBe('POST');
+      expect(path).toBe('/emails');
+      expect(headers.authorization).toBe(`Bearer ${FAKE_RESEND_KEY}`);
+      expect(Object.keys(body).sort()).toEqual(['from', 'headers', 'html', 'subject', 'text', 'to']);
+      expect(body.to).toBe(`owner@${ORG_B}.test`);
+      expect(body.subject).toBe(WEEKLY_SUMMARY_SUBJECT);
+      expect(body.text).toContain('Cloud spend data was unavailable for this period');
+      expect(Object.keys(body.headers).sort()).toEqual(['List-Unsubscribe', 'List-Unsubscribe-Post', 'X-Entity-Ref-ID']);
+      expect(body.headers['List-Unsubscribe']).toMatch(/^<.+\/api\/user\/preferences\/unsubscribe\?token=v1\.[^>]+>$/);
+      expect(body.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+      expect(body.headers['X-Entity-Ref-ID']).toMatch(/^weekly-summary-\d+$/);
+
+      // An API error response is counted as an error, never as sent.
+      api.reply(422, { name: 'validation_error', message: 'The to field is invalid.', statusCode: 422 });
+      expect(await job.triggerManual(ORG_B)).toEqual({ sent: 0, skipped: 0, errors: 1 });
+      expect(api.requests).toHaveLength(2);
+    } finally {
+      guard.restore();
+      await api.close();
+    }
+    expect(guard.refused).toEqual([]);
   });
 });
