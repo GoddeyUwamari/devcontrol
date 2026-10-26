@@ -115,8 +115,8 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
     file: 'app/(app)/connect-aws/page.tsx',
     match: 'text-slate-200',
     rule: 'text colour below AA on light surfaces',
-    count: 1,
-    reason: 'Light text on the dark code block: the trust policy sits on bg-slate-900, well above 4.5:1.',
+    count: 2,
+    reason: 'Light text on the dark code blocks: the trust policy and the inline policy sit on bg-slate-900, well above 4.5:1.',
   },
   {
     file: 'components/dashboard/dashboard-unconnected-preview.tsx',
