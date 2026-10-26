@@ -26,12 +26,16 @@ describe('ConnectionIndicator', () => {
     expect(dotEl.className.includes('animate-pulse')).toBe(isConnected)
   })
 
-  it.each([true, false])('sits in the page flow, never over the page: not fixed, absolute or sticky, no offsets or z-index (socket open = %s)', (isConnected) => {
+  it.each([true, false])('floats as a fixed pill in the bottom-left corner, above the page (socket open = %s)', (isConnected) => {
     socketState.isConnected = isConnected
     render(<ConnectionIndicator />)
     const classes = screen.getByTestId('connection-indicator').className.split(/\s+/)
-    expect(classes.filter((c) => /^(?:[\w-]+:)?(?:fixed|absolute|sticky|-?(?:inset|top|right|bottom|left)-\S+|z-\S+)$/.test(c))).toEqual([])
-    expect(classes).toEqual(expect.arrayContaining(['w-fit', 'ml-4', 'mb-4']))
+    // Exactly one position and one offset per side, so a second class can't override the corner.
+    expect(classes.filter((c) => /^(?:[\w-]+:)?(?:static|fixed|absolute|relative|sticky)$/.test(c))).toEqual(['fixed'])
+    expect(classes.filter((c) => /^(?:[\w-]+:)?-?(?:inset|top|right|bottom|left)-\S+$/.test(c))).toEqual(['bottom-4', 'left-4'])
+    expect(classes.filter((c) => /^(?:[\w-]+:)?z-\S+$/.test(c))).toEqual(['z-50'])
+    expect(classes).toContain('shadow-lg')
+    expect(classes.filter((c) => ['w-fit', 'ml-4', 'mb-4'].includes(c))).toEqual([])
   })
 
   it('is the label role at its existing size and weight (12 px, 400), its text in body ink, always shown in full', () => {
