@@ -20,9 +20,55 @@ const COSTS = [
   'app/(app)/forecast/page.tsx',
 ]
 
-// Not converted yet, so never on the strict list: the Security page (Security V2 rebuilds it) and the
-// shared Infrastructure/Services notice that the Costs pages also render (its own group, G1).
-const EXEMPT = ['app/(app)/security/page.tsx', 'components/aws/discovery-warning-notice.tsx']
+// The Infrastructure + Services group (G1), with the last two Costs-dropdown pages (Invoices, AI Reports): every page
+// and component in these route folders except the legacy ones below, plus the shared components only these pages use.
+// A self-check below keeps this list equal to that, so a new file in these folders cannot land outside the guard.
+const G1_ROUTE_DIRS = ['app/(app)/infrastructure/', 'app/(app)/services/', 'app/(app)/invoices/', 'app/(app)/ai-reports/']
+const G1_COMPONENTS = [
+  'components/aws/discovery-warning-notice.tsx',
+  'components/invoices/invoice-actions.tsx',
+  'components/invoices/invoice-form-dialog.tsx',
+]
+// Legacy (flag-off / demo fallback); converted in a later PR. The legacy Infrastructure page is also what the
+// Overview renders in demo and sales demo; on the Services page only the shared resource-limit prompt is converted.
+const G1_LEGACY = ['app/(app)/infrastructure/page.tsx', 'app/(app)/services/page.tsx', 'app/(app)/services/RegisteredServices.tsx']
+const G1 = [
+  'app/(app)/infrastructure/new/page.tsx',
+  'app/(app)/infrastructure/overview/AccountStrip.tsx',
+  'app/(app)/infrastructure/overview/AttentionReview.tsx',
+  'app/(app)/infrastructure/overview/CostByService.tsx',
+  'app/(app)/infrastructure/overview/InfrastructureOverviewV2.tsx',
+  'app/(app)/infrastructure/overview/KpiTiles.tsx',
+  'app/(app)/infrastructure/overview/OverviewFooter.tsx',
+  'app/(app)/infrastructure/overview/OverviewHeader.tsx',
+  'app/(app)/infrastructure/overview/OwnershipGaps.tsx',
+  'app/(app)/infrastructure/overview/PlanBanners.tsx',
+  'app/(app)/infrastructure/overview/StatusLine.tsx',
+  'app/(app)/infrastructure/overview/WhatWeChecked.tsx',
+  'app/(app)/services/AddServiceButton.tsx',
+  'app/(app)/services/AllResourcesTable.tsx',
+  'app/(app)/services/AttentionTable.tsx',
+  'app/(app)/services/CoverageStrip.tsx',
+  'app/(app)/services/NotCheckedCard.tsx',
+  'app/(app)/services/PhaseTwoTag.tsx',
+  'app/(app)/services/RegionCoveragePanel.tsx',
+  'app/(app)/services/ResourceFocus.tsx',
+  'app/(app)/services/ScanTime.tsx',
+  'app/(app)/services/ServicesHeader.tsx',
+  'app/(app)/services/ServicesOverview.tsx',
+  'app/(app)/services/SummaryTiles.tsx',
+  'app/(app)/services/UnownedCard.tsx',
+  'app/(app)/services/YourServices.tsx',
+  'app/(app)/services/new/page.tsx',
+  'app/(app)/invoices/page.tsx',
+  'app/(app)/invoices/[id]/page.tsx',
+  'app/(app)/ai-reports/page.tsx',
+  'app/(app)/ai-reports/[id]/page.tsx',
+  ...G1_COMPONENTS,
+]
+
+// Not converted yet, so never on the strict list: the Security page (Security V2 rebuilds it) and G1's legacy files.
+const EXEMPT = ['app/(app)/security/page.tsx', ...G1_LEGACY]
 
 const STRICT = [
   'app/(app)/connect-aws/page.tsx',
@@ -82,6 +128,8 @@ const STRICT = [
   'components/dashboard/system-intelligence-card.tsx',
   // G2: the Costs pages.
   ...COSTS,
+  // G1: Infrastructure + Services, Invoices and AI Reports.
+  ...G1,
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
@@ -256,6 +304,49 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Disabled-state dimming on the Save and Reset buttons, kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
   { file: 'components/ui/breadcrumb.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative chevron icon between steps (an svg, not text); kept, no visible change (typography plan T2c).' },
   { file: 'components/error-boundary.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "The fallback's alert icon on its red-100 circle: an icon, not text; kept like the error-display icons (typography plan T2b, T2c)." },
+  // G1: Infrastructure + Services.
+  { file: 'app/(app)/infrastructure/overview/OverviewHeader.tsx', match: 'opacity-60', variant: 'disabled:', rule: 'opacity on content', count: 1, reason: 'Disabled-state dimming on the Sync button (one class string for the phone and desktop copies), kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
+  { file: 'app/(app)/infrastructure/overview/PlanBanners.tsx', match: 'text-lg', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The resource-limit prompt's decorative warning emoji, the same as the legacy page's; kept, no visible change." },
+  { file: 'app/(app)/infrastructure/new/page.tsx', match: 'text-[#635BFF]', rule: 'arbitrary text colour', count: 1, reason: "The card header's decorative Server icon (svg, not text) on its own tint; kept, no visible change." },
+  { file: 'app/(app)/infrastructure/new/page.tsx', match: 'text-base', rule: 'Tailwind size scale (use a role token)', count: 4, reason: "16 px input text on the AWS Resource ID and Monthly Cost inputs (both branches of each error ternary): kept so iOS Safari doesn't zoom the page on focus; the Input default is text-ui (14)." },
+  { file: 'app/(app)/services/new/page.tsx', match: 'text-[#635BFF]', rule: 'arbitrary text colour', count: 1, reason: "The card header's decorative Layers icon (svg, not text) on its own tint; kept, no visible change." },
+  { file: 'app/(app)/services/new/page.tsx', match: 'text-base', rule: 'Tailwind size scale (use a role token)', count: 8, reason: "16 px text on the Name, Owner Email, GitHub URL and Description fields (both branches of each error ternary): kept so iOS Safari doesn't zoom the page on focus; the Input and Textarea default is text-ui (14)." },
+  { file: 'app/(app)/services/ServicesHeader.tsx', match: 'opacity-70', rule: 'opacity on content', count: 1, reason: 'Busy dimming on Auto Discover while it is disabled (scanning, or a scan already running), kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
+  { file: 'app/(app)/services/AddServiceButton.tsx', match: 'opacity-50', rule: 'opacity on content', count: 1, reason: 'The disabled + Add Service button shown to members and viewers, kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
+  { file: 'app/(app)/services/AllResourcesTable.tsx', match: 'text-slate-500', rule: 'text colour below AA on light surfaces', count: 4, reason: 'Decorative icons (svg, not text): the loading RefreshCw and the Layers and SearchX empty-state icons; kept, no visible change.' },
+  { file: 'app/(app)/services/AllResourcesTable.tsx', match: 'opacity-60', rule: 'opacity on content', count: 2, reason: "The table's dimming while the next page or filter is loading (state.dimmed, a loading state), and the disabled Phase 2 'Service' group-by button; kept until the solid disabled style lands in its own PR." },
+  { file: 'app/(app)/services/AllResourcesTable.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Disabled-state dimming on the Previous and Next page buttons, kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
+  { file: 'app/(app)/services/UnownedCard.tsx', match: 'opacity-60', rule: 'opacity on content', count: 1, reason: "The disabled Phase 2 'Assign owner' button, kept until the solid disabled style lands in its own PR (founder decision, Oct 24)." },
+  { file: 'app/(app)/services/YourServices.tsx', match: 'opacity-60', rule: 'opacity on content', count: 1, reason: "The disabled Phase 2 'Map resources to services' button, kept until the solid disabled style lands in its own PR (founder decision, Oct 24)." },
+  // G1: Invoices and AI Reports.
+  { file: 'app/(app)/invoices/page.tsx', match: 'opacity-60', rule: 'opacity on content', count: 2, reason: 'Disabled dimming on the Export button with no invoices, and on the status tabs while there is no billing data (pointer-events-none); kept until the solid disabled style lands in its own PR.' },
+  { file: 'app/(app)/invoices/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The loading state\'s decorative RefreshCw icon (svg, not text); kept, no visible change.' },
+  { file: 'app/(app)/invoices/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 2, reason: 'The two empty states\' decorative FileText icons (svg, not text); kept, no visible change.' },
+  { file: 'app/(app)/invoices/page.tsx', match: 'text-base', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The billing-error notice's decorative warning emoji; kept, no visible change." },
+  { file: 'components/invoices/invoice-form-dialog.tsx', match: 'text-red-500', rule: 'text colour below AA on light surfaces', count: 1, reason: "The line item's decorative Trash2 remove icon (svg, not text; the button has its own label); kept, no visible change." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'opacity-70', rule: 'opacity on content', count: 2, reason: "Busy dimming on the confirm dialog's Delete button while deleting, and on Generate Executive Summary while a report generates; kept until the solid disabled style lands in its own PR." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'opacity-60', rule: 'opacity on content', count: 1, reason: "Busy dimming on the Available Reports 'Generate →' buttons while another report generates; kept until the solid disabled style lands in its own PR." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'opacity-90', variant: 'hover:', rule: 'opacity on content', count: 1, reason: "Hover feedback on the 'Generate →' buttons (white text on the report-type fill), not resting content; kept, no visible change." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'text-lg', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The Pro-plan banner's decorative warning emoji; kept, no visible change." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'text-3xl', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The empty state's decorative sparkles emoji; kept, no visible change." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "Recommended Next's decorative Shield icon (svg, not text) on its red-50 tile; kept, no visible change." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 1, reason: "The loading state's decorative RefreshCw icon (svg, not text); kept, no visible change." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The report menu's decorative Download icon (svg, not text); kept, no visible change." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'text-red-500', rule: 'text colour below AA on light surfaces', count: 1, reason: "The report menu's decorative Trash2 icon (svg, not text); kept, no visible change." },
+  ...["'#16A34A'", "'#DC2626'", "'#2563EB'", "'#7C3AED'"].map((hex) => ({ file: 'app/(app)/ai-reports/page.tsx', match: `color: ${hex}`, rule: 'inline text style', count: 1, reason: 'A report-type colour key (typeConfig): the icon colour and the type pill text on its own tint. Kept: a colour change, not a role swap, is out of scope (listed as unconverted in the G1 report).' })),
+  { file: 'app/(app)/ai-reports/page.tsx', match: "color : '#7C3AED'", rule: 'inline text style', count: 1, reason: "Not a text colour: the Generate button's background ternary (`tc.color : '#7C3AED'`) reads as `color :` to the rule." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'color: badgeColor', rule: 'inline text style', count: 1, reason: "Available Reports badge text in its listed colour key (#059669, #475569 or #7C3AED on its own tint); kept, listed as unconverted in the G1 report." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'color: lastTypeConfig.color', rule: 'inline text style', count: 1, reason: "Last Outcome's type pill text in the report-type colour key; kept, listed as unconverted in the G1 report." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'color: tc.color', rule: 'inline text style', count: 2, reason: "Report Activity's per-type count chips and the Available Reports icon boxes, in the report-type colour key; kept, listed as unconverted in the G1 report." },
+  { file: 'app/(app)/ai-reports/page.tsx', match: 'color: type.color', rule: 'inline text style', count: 2, reason: "Recent Reports' icon box and type pill, in the report-type colour key; kept, listed as unconverted in the G1 report." },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 1, reason: "The error state's decorative AlertCircle icon (svg, not text); kept, no visible change." },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: "color: '#16A34A'", rule: 'inline text style', count: 2, reason: 'The Cost report-type colour key and the low-impact key (icon colour and pill text on its own tint); kept, listed as unconverted in the G1 report.' },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: "color: '#DC2626'", rule: 'inline text style', count: 2, reason: 'The Security report-type colour key and the high-impact key (icon colour and pill text on its own tint); kept, listed as unconverted in the G1 report.' },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: "color: '#2563EB'", rule: 'inline text style', count: 1, reason: 'The Infrastructure report-type colour key (icon colour and pill text on its own tint); kept, listed as unconverted in the G1 report.' },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: "color: '#7C3AED'", rule: 'inline text style', count: 1, reason: 'The Executive report-type colour key (icon colour and pill text on its own tint); kept, listed as unconverted in the G1 report.' },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: "color: '#D97706'", rule: 'inline text style', count: 1, reason: 'The medium-impact colour key (recommendation pill text on its own tint); kept, listed as unconverted in the G1 report.' },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: 'color: type.color', rule: 'inline text style', count: 2, reason: "The header's icon box and type pill, in the report-type colour key; kept, listed as unconverted in the G1 report." },
+  { file: 'app/(app)/ai-reports/[id]/page.tsx', match: 'color: impact.color', rule: 'inline text style', count: 1, reason: "A recommendation's impact pill text in its impact colour key; kept, listed as unconverted in the G1 report." },
 ]
 
 type Finding = { rule: string; match: string; variant: string; line: number }
@@ -361,6 +452,15 @@ describe('strict typography for the pages on the app type scale', () => {
     expect([...COSTS].sort()).toEqual(routePages)
     for (const file of COSTS) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
     expect(new Set(STRICT).size, 'no file is listed twice').toBe(STRICT.length)
+  })
+
+  it('the G1 additions are exactly the Infrastructure, Services, Invoices and AI Reports files minus the legacy ones, plus their shared components, each listed once', () => {
+    const routeFiles = SOURCE_FILES.filter((f) => f.endsWith('.tsx') && G1_ROUTE_DIRS.some((d) => f.startsWith(d)))
+    expect([...G1].sort()).toEqual([...routeFiles.filter((f) => !G1_LEGACY.includes(f)), ...G1_COMPONENTS].sort())
+    // Each legacy entry is a real file in those folders, so a stale entry can't stand in for a missing one.
+    for (const file of G1_LEGACY) expect(routeFiles, file).toContain(file)
+    for (const file of G1) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
+    expect(G1.filter((f) => COSTS.includes(f)), 'no file is in two groups').toEqual([])
   })
 
   it('files outside the converted groups stay exempt', () => {
