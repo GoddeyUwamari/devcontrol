@@ -46,7 +46,7 @@ import { roundCents } from '../costs/cost-display'
 import type { OpportunityEvaluationState } from '@/components/dashboard/savings-opportunities'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
-import { DollarSign, ShieldCheck, Gauge, Wifi, WifiOff } from 'lucide-react'
+import { DollarSign, ShieldCheck, Gauge } from 'lucide-react'
 
 type CostRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
 
@@ -85,7 +85,7 @@ const DEMO_TOP_RISK = 'Lambda invocation spike on payment-processor (+178%) — 
 
 export default function DashboardPage() {
   const { organization } = useAuth()
-  const { socket, isConnected } = useWebSocket()
+  const { socket } = useWebSocket()
   const queryClient = useQueryClient()
   const demoMode = useDemoMode()
   const { enabled: salesDemoMode } = useSalesDemo()
@@ -814,13 +814,10 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ── OPTIONAL LIVE STATUS ── */}
-          <div className="flex items-center gap-2 mt-2 mb-2">
-            {isConnected ? <Wifi size={13} className="text-[var(--text-secondary)]" /> : <WifiOff size={13} className="text-[var(--text-secondary)]" />}
-            <span className="text-xs text-[var(--text-secondary)]">
-              {isConnected ? 'Live update channel connected' : 'Live update channel reconnecting…'} · each data source refreshes on its own schedule
-            </span>
-          </div>
+          {/* ── DATA REFRESH NOTE ── the live-update status is the floating pill (ConnectionIndicator). */}
+          <p className="mt-2 mb-2 text-meta text-ink-muted" data-testid="data-refresh-note">
+            Each data source refreshes on its own schedule.
+          </p>
         </>
       )}
     </div>
