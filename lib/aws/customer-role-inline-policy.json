@@ -1,0 +1,51 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DevControlCostExplorerRead",
+      "Effect": "Allow",
+      "Action": [
+        "ce:GetCostAndUsage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DevControlResourceExplorerSearch",
+      "Effect": "Allow",
+      "Action": [
+        "resource-explorer-2:Search"
+      ],
+      "Resource": "arn:aws:resource-explorer-2:*:<ACCOUNT_ID>:view/*"
+    },
+    {
+      "Sid": "DevControlDenyContentAdjacentReads",
+      "Effect": "Deny",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetObjectAcl",
+        "s3:GetObjectVersionAcl",
+        "s3:GetObjectTagging",
+        "s3-object-lambda:GetObjectAcl",
+        "s3-object-lambda:GetObjectVersionAcl",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeLaunchTemplateVersions",
+        "ec2:DescribeSpotFleetRequests",
+        "ec2:DescribeSpotInstanceRequests",
+        "autoscaling:DescribeLaunchConfigurations",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListVersionsByFunction",
+        "ecs:DescribeTaskDefinition",
+        "ecs:DescribeTasks",
+        "rds:DownloadDBLogFilePortion",
+        "cloudtrail:LookupEvents",
+        "cloudformation:GetTemplate",
+        "codepipeline:GetJobDetails",
+        "elasticbeanstalk:DescribeConfigurationSettings",
+        "batch:DescribeJobDefinitions",
+        "security-ir:GetCaseAttachmentDownloadUrl",
+        "cleanrooms:GetProtectedQuery"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

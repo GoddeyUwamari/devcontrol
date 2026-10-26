@@ -396,11 +396,12 @@ devcontrol discover --aws`;
                     What AWS permissions are needed?
                   </AccordionTrigger>
                   <AccordionContent className="text-sm text-muted-foreground">
-                    We require read-only access (Describe*, List*, Get*). No write or
-                    modification permissions.{' '}
-                    <Link href="/docs" className="text-primary hover:underline">
-                      View IAM policy template
-                    </Link>
+                    A read-only IAM role with the AWS managed policies SecurityAudit and
+                    ViewOnlyAccess, plus a small inline policy for Cost Explorer and
+                    Resource Explorer. DevControl reads configuration and metadata, not
+                    the contents of your S3 objects or DynamoDB items, and has no write or
+                    modification permissions. The Connect AWS page shows the exact
+                    policy to copy.
                   </AccordionContent>
                 </AccordionItem>
 

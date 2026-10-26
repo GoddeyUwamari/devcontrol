@@ -6,6 +6,8 @@
  * a user redirected to /dashboard immediately after connecting would be
  * stuck looking at pre-connection (empty) stats for up to 4 hours.
  */
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -128,6 +130,53 @@ describe('Connect AWS page — connect-init denied for a non-owner', () => {
     expect(screen.queryByText(/Could not load your trust policy/)).not.toBeInTheDocument()
     expect(toast.error).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: /connect account/i })).toBeDisabled()
+  })
+})
+
+// Step 1 asks for SecurityAudit, ViewOnlyAccess and the inline policy from
+// lib/aws/customer-role-inline-policy.json, the file the backend's IAM coverage
+// test checks, instead of ReadOnlyAccess.
+describe('Connect AWS page — customer role permissions', () => {
+  const inlinePolicyFile = readFileSync(join(process.cwd(), 'lib/aws/customer-role-inline-policy.json'), 'utf-8')
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockConnectInit.mockResolvedValue(CONNECT_INIT_DATA)
+  })
+
+  it('names the two managed policies and the inline policy, and no longer asks for ReadOnlyAccess', () => {
+    const { container } = renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    const items = screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
+    expect(items.filter((t) => /policy/i.test(t))).toEqual([
+      'The AWS managed policy SecurityAudit.',
+      'The AWS managed policy ViewOnlyAccess.',
+      expect.stringMatching(/^An inline policy named DevControlReadExtras with the JSON below\./),
+    ])
+    // ReadOnlyAccess appears only in the note for roles connected before.
+    const mentions = (container.textContent ?? '').match(/ReadOnlyAccess/g) ?? []
+    expect(mentions).toHaveLength(2)
+    expect(screen.getByText(/^Already connected with ReadOnlyAccess\?/).textContent).toBe(
+      'Already connected with ReadOnlyAccess? It keeps working. To narrow it, attach the three policies above first, then detach ReadOnlyAccess.'
+    )
+    expect(screen.queryByText(/Attach the ReadOnlyAccess/)).not.toBeInTheDocument()
+  })
+
+  it('shows the inline policy file exactly, with the account placeholder and how to fill it in', () => {
+    renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    expect(screen.getByTestId('inline-policy').textContent).toBe(inlinePolicyFile.trimEnd())
+    expect(screen.getByTestId('inline-policy').textContent).toContain('arn:aws:resource-explorer-2:*:<ACCOUNT_ID>:view/*')
+    expect(screen.getByText(/with your 12-digit AWS account ID\.$/).textContent).toBe(
+      'Replace <ACCOUNT_ID> with your 12-digit AWS account ID.'
+    )
+  })
+
+  it('copies the inline policy JSON', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy inline policy →' }))
+    expect(writeText).toHaveBeenCalledWith(inlinePolicyFile.trimEnd())
+    expect(await screen.findByRole('button', { name: '✓ Copied!' })).toBeInTheDocument()
   })
 })
 

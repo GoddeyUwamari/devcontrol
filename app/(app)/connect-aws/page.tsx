@@ -7,6 +7,9 @@ import awsAccountsService, { ConnectInitData } from '@/lib/services/aws-accounts
 import { toast } from 'sonner'
 import { trackLeadQualified } from '@/lib/gtag'
 import { PageHeader } from '@/components/ui/typography'
+import customerRoleInlinePolicy from '@/lib/aws/customer-role-inline-policy.json'
+
+const inlinePolicyStr = JSON.stringify(customerRoleInlinePolicy, null, 2)
 
 export default function ConnectAwsPage() {
   const router = useRouter()
@@ -19,6 +22,7 @@ export default function ConnectAwsPage() {
   const [connecting, setConnecting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [inlineCopied, setInlineCopied] = useState(false)
   const [roleArnFocused, setRoleArnFocused] = useState(false)
   const [nicknameFocused, setNicknameFocused] = useState(false)
 
@@ -59,6 +63,13 @@ export default function ConnectAwsPage() {
     navigator.clipboard.writeText(trustPolicyStr).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  function handleCopyInline() {
+    navigator.clipboard.writeText(inlinePolicyStr).then(() => {
+      setInlineCopied(true)
+      setTimeout(() => setInlineCopied(false), 2000)
     })
   }
 
@@ -134,8 +145,28 @@ export default function ConnectAwsPage() {
                       </>
                     )}
 
+                    <p className="text-body text-ink-body mb-2">Then attach these permissions to the role:</p>
+                    <ol className="list-decimal pl-5 space-y-1 text-body text-ink-body mb-4">
+                      <li>The AWS managed policy <strong className="text-ink">SecurityAudit</strong>.</li>
+                      <li>The AWS managed policy <strong className="text-ink">ViewOnlyAccess</strong>.</li>
+                      <li>
+                        An inline policy named <strong className="text-ink">DevControlReadExtras</strong> with the JSON below. It lets DevControl read your Cost Explorer totals and search your Resource Explorer index, and it blocks some reads DevControl does not need.
+                      </li>
+                    </ol>
+                    <div className="bg-slate-900 rounded-xl p-4 mb-3 overflow-x-auto">
+                      <pre data-testid="inline-policy" className="text-ui text-slate-200 font-mono whitespace-pre-wrap break-words leading-relaxed">{inlinePolicyStr}</pre>
+                    </div>
+                    <p className="text-meta text-ink-muted mb-3">
+                      Replace <code className="font-mono text-meta text-ink-accent">&lt;ACCOUNT_ID&gt;</code> with your 12-digit AWS account ID.
+                    </p>
+                    <button onClick={handleCopyInline} className="border border-slate-200 rounded-lg px-3.5 py-1.5 text-ui font-medium text-ink-muted hover:text-ink hover:border-slate-300 cursor-pointer transition-colors mb-4 bg-transparent">
+                      {inlineCopied ? '✓ Copied!' : 'Copy inline policy →'}
+                    </button>
+                    <p className="text-meta text-ink-muted mb-2">
+                      These policies let DevControl read configuration and metadata. They do not let it read the contents of your S3 objects, DynamoDB items, or other stored data, and they grant no write access.
+                    </p>
                     <p className="text-meta text-ink-muted">
-                      Attach the <strong className="text-ink-body">ReadOnlyAccess</strong> managed policy to this role.
+                      Already connected with ReadOnlyAccess? It keeps working. To narrow it, attach the three policies above first, then detach ReadOnlyAccess.
                     </p>
                   </div>
                 </div>

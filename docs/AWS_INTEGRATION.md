@@ -17,13 +17,29 @@ The backend's own AWS identity is used for one thing only: as the caller identit
 Only an organization **owner** can connect AWS. In the app, open **Connect AWS** (`/connect-aws`):
 
 1. The page shows a trust policy containing DevControl's account and an external ID generated for your organization.
-2. In your AWS account, create an IAM role with that trust policy and attach the `ReadOnlyAccess` managed policy, as the page instructs. **The role name must start with `DevControlRole`** (for example `DevControlRole` or `DevControlRole-Prod`) and the role must not use an IAM path, because DevControl's own identity is only allowed to assume roles matching `arn:aws:iam::*:role/DevControlRole*`.
+2. In your AWS account, create an IAM role with that trust policy and attach its permissions, as the page instructs (see [Role permissions](#role-permissions)). **The role name must start with `DevControlRole`** (for example `DevControlRole` or `DevControlRole-Prod`) and the role must not use an IAM path, because DevControl's own identity is only allowed to assume roles matching `arn:aws:iam::*:role/DevControlRole*`.
 3. Paste the role's ARN into the page. DevControl checks the role name, then verifies that it can assume the role before saving the connection. A role ARN with any other name, or with a path, is refused with a 422 and nothing is saved. Connections saved before this rule existed are not re-checked.
 4. The first resource scan starts automatically. Cost Explorer data can take a day or two to become available from AWS.
 
 > **Cutover warning:** existing connections are not re-checked by the app, but once the platform identity may only assume `role/DevControlRole*`, any stored `aws_accounts.role_arn` with a different role name or with an IAM path will fail to assume and the organization will see `AWS_NOT_CONNECTED`. Before removing the AWS keys from the production environment, operators must confirm that every stored `role_arn` matches the rule (no path, name starting with `DevControlRole`). Run the count query with the organization RLS context set, or as the database owner: a query run without either is silently filtered by RLS and can report zero non-matching rows when there are some.
 
 You control the role: deleting it in AWS removes DevControl's access.
+
+### Role permissions
+
+The role gets three things:
+
+1. The AWS managed policy `SecurityAudit` (`arn:aws:iam::aws:policy/SecurityAudit`).
+2. The AWS managed policy `ViewOnlyAccess` (`arn:aws:iam::aws:policy/job-function/ViewOnlyAccess`).
+3. An inline policy named `DevControlReadExtras`, from [`lib/aws/customer-role-inline-policy.json`](../lib/aws/customer-role-inline-policy.json) (the connect page shows the same file). It allows `ce:GetCostAndUsage` and `resource-explorer-2:Search` on the account's own Resource Explorer views, and explicitly denies a list of reads DevControl does not use (object listings and ACLs, instance user data, function and task environment variables, logs, event history, templates). The customer replaces `<ACCOUNT_ID>` with their 12-digit account ID.
+
+Together these let DevControl read configuration and metadata. They do not let it read the contents of S3 objects, DynamoDB items or other stored data, and they grant no write access. They do not keep every value out of DevControl's process: `lambda:ListFunctions` returns function environment variables, which DevControl does not store or log.
+
+`backend/src/__tests__/customer-role-iam-coverage.static.test.ts` maps every AWS SDK command the backend sends with this role to its IAM action and checks it against fixed snapshots of the managed policies (`backend/src/__tests__/fixtures/iam/`) and the inline policy. A new AWS call fails that test until it is mapped and allowed. A call that hits the Deny list needs a customer-role policy change: get approval, update this page and the connect page, and plan the change for existing roles.
+
+**Remediation never uses this role.** No write action may be added to it, by these instructions, a template or an in-app suggestion. Any future remediation needs its own, separately approved role.
+
+**Roles connected with `ReadOnlyAccess`** keep working: it allows everything DevControl calls. To narrow such a role, attach the three policies above first, then detach `ReadOnlyAccess`. The role ARN, trust policy and external ID stay the same, so nothing changes in DevControl.
 
 The endpoints behind this flow are `GET /api/aws/accounts/connect-init`, `POST /api/aws/accounts` and `GET /api/aws/accounts`.
 
