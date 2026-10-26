@@ -151,7 +151,7 @@ export const ExportMenu = forwardRef<HTMLButtonElement, ExportMenuProps>(
           <FileSpreadsheet className="h-4 w-4 mr-2" />
           <div className="flex flex-col">
             <span className="font-medium">Export as CSV</span>
-            <span className="text-xs text-muted-foreground">Download dependency data</span>
+            <span className="text-meta text-muted-foreground">Download dependency data</span>
           </div>
         </DropdownMenuItem>
 
@@ -162,7 +162,7 @@ export const ExportMenu = forwardRef<HTMLButtonElement, ExportMenuProps>(
           <ImageIcon className="h-4 w-4 mr-2" />
           <div className="flex flex-col">
             <span className="font-medium">Export Graph as PNG</span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               {hasGraph ? 'Save visualization' : 'View graph tab first'}
             </span>
           </div>
@@ -174,7 +174,7 @@ export const ExportMenu = forwardRef<HTMLButtonElement, ExportMenuProps>(
           <FileText className="h-4 w-4 mr-2" />
           <div className="flex flex-col">
             <span className="font-medium">Export Report as PDF</span>
-            <span className="text-xs text-muted-foreground">Counts, graph, dependency table and cycles</span>
+            <span className="text-meta text-muted-foreground">Counts, graph, dependency table and cycles</span>
           </div>
         </DropdownMenuItem>
       </DropdownMenuContent>

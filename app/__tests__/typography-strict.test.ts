@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
-import { NON_APP_CLOSURE, SOURCE_FILES } from './surface-scope'
+import { NON_APP_CLOSURE, SOURCE_FILES, importsOf } from './surface-scope'
 
 // Pages and components already on the app type scale (typography plan T1, T2b, T2c, then one PR per page group) may not drift back: every size and weight comes
 // from the role tokens (text-title ... text-label), and text colours are the ink tokens or pass AA on their
@@ -100,8 +100,40 @@ const SM = [
   'components/compliance/soc2-badges.tsx',
 ]
 
-// Not converted yet, so never on the strict list: the Security page (Security V2 rebuilds it) and G1's legacy files.
-const EXEMPT = [...SECURITY_LEGACY, ...G1_LEGACY]
+// The DevOps pages (DEVOPS): DORA (/app/dora-metrics), Deployments (log, new, detail) and Dependencies, plus every
+// components/dependencies file and components/deployments/LiveLogViewer (only these pages use them). The other
+// components/deployments files have no importer (typography plan §1.8) and stay out until the unused-component
+// cleanup. A self-check below keeps this list equal to that. Observability, monitoring, SLOs and status wait for
+// the Observability redesign.
+const DEVOPS_ROUTE_DIRS = ['app/(app)/app/dora-metrics/', 'app/(app)/deployments/', 'app/(app)/dependencies/']
+const DEVOPS_COMPONENT_DIRS = ['components/dependencies/', 'components/deployments/']
+const DEVOPS_UNIMPORTED = [
+  'components/deployments/DORAMetricsPreview.tsx',
+  'components/deployments/DeploymentAPIExample.tsx',
+  'components/deployments/DeploymentBenefits.tsx',
+  'components/deployments/DeploymentIntegrations.tsx',
+  'components/deployments/DeploymentSetupChecklist.tsx',
+  'components/deployments/DeploymentTimelinePreview.tsx',
+]
+const DEVOPS = [
+  'app/(app)/app/dora-metrics/page.tsx',
+  'app/(app)/deployments/page.tsx',
+  'app/(app)/deployments/new/page.tsx',
+  'app/(app)/deployments/[id]/page.tsx',
+  'app/(app)/dependencies/page.tsx',
+  'components/deployments/LiveLogViewer.tsx',
+  'components/dependencies/AddDependencyDialog.tsx',
+  'components/dependencies/DependencyGraph.tsx',
+  'components/dependencies/DependencyList.tsx',
+  'components/dependencies/EnhancedEmptyState.tsx',
+  'components/dependencies/ExportMenu.tsx',
+  'components/dependencies/FilterSummary.tsx',
+  'components/dependencies/ImpactAnalysisView.tsx',
+]
+
+// Not converted yet, so never on the strict list: the Security page (Security V2 rebuilds it), G1's legacy files and
+// the unimported DevOps previews.
+const EXEMPT = [...SECURITY_LEGACY, ...G1_LEGACY, ...DEVOPS_UNIMPORTED]
 
 const STRICT = [
   'app/(app)/connect-aws/page.tsx',
@@ -167,6 +199,8 @@ const STRICT = [
   ...SECURITY,
   // SM: the Security menu pages (Anomalies, Compliance, Audit Logs).
   ...SM,
+  // DEVOPS: DORA, Deployments and Dependencies.
+  ...DEVOPS,
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
@@ -432,6 +466,37 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'app/(app)/audit-logs/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The decorative "⌕" search glyph inside the search field.' },
   { file: 'app/(app)/audit-logs/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 3, reason: 'The decorative loading icon, and the disabled Previous/Next pager text: colour is their only disabled cue (the solid disabled style is deferred).' },
   { file: 'app/(app)/audit-logs/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Export and the search field while there are no logs; the solid disabled style is deferred.' },
+  // DEVOPS
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: "color: '#059669'", rule: 'inline text style', count: 1, reason: 'tierStyle elite: the tier key also colours the pill tint, the KPI card top border and the demo sparkline; kept (listed for the colour/TG PR).' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: "color: '#2563EB'", rule: 'inline text style', count: 1, reason: 'tierStyle high: the tier key also colours the pill tint, the KPI card top border and the demo sparkline; kept.' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: "color: '#D97706'", rule: 'inline text style', count: 1, reason: 'tierStyle medium: the tier key also colours the pill tint, the KPI card top border and the demo sparkline; kept (listed for the colour/TG PR).' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: "color: '#DC2626'", rule: 'inline text style', count: 1, reason: 'tierStyle low: the tier key also colours the pill tint, the KPI card top border and the demo sparkline; kept.' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'color: dataStateColor', rule: 'inline text style', count: 1, reason: 'The header data-state line: the same colour fills its status dot beside it; kept (listed for the colour/TG PR).' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'color: isDemoActive', rule: 'inline text style', count: 1, reason: 'The demo score ring centre label, in the same colour as the ring stroke.' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'color: row.ts.color', rule: 'inline text style', count: 2, reason: 'The benchmark table: the tier pill (on its tier tint) and the "You" row values in the same tier colour.' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: "color: '#94A3B8'", rule: 'inline text style', count: 1, reason: 'The N/A tier fallback: also the KPI card top border; kept (the N/A pill contrast is listed for the colour/TG PR).' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'color: ts.color', rule: 'inline text style', count: 3, reason: 'Tier pills on their tier tint: the KPI card pill and the Service Breakdown pills (desktop and phone).' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'text-slate-500', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The real-summary decorative Activity icon in its tile.' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'opacity-50', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Export CSV / Download PDF without exportable data; the solid disabled style is deferred.' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'text-xs', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'Dense table: the benchmark grid cells (fixed 110px tier column plus four columns, about 50px each on a phone) stay at 12 px.' },
+  { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'text-xl', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'The decorative 🔒 emoji in the Enterprise benchmark gate.' },
+  { file: 'app/(app)/deployments/page.tsx', match: 'text-lg', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'The decorative ⚠️ emoji in the deployment-limit upgrade prompt.' },
+  { file: 'app/(app)/deployments/page.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 3, reason: "Status icons: the error banner's AlertTriangle and the failed row's XCircle (phone and desktop)." },
+  { file: 'app/(app)/deployments/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 4, reason: 'Decorative: the loading RefreshCw and empty-state Rocket icons, the aria-hidden "…" page gap, and the icon-only modal close button (X).' },
+  { file: 'app/(app)/deployments/page.tsx', match: 'color: statusColor', rule: 'inline text style', count: 3, reason: 'Not a style once (destructuring color from lib/deployments/status); twice the status pill on its own tint (phone, desktop).' },
+  { file: 'app/(app)/deployments/page.tsx', match: 'color: envColor', rule: 'inline text style', count: 2, reason: 'The environment pill on its own tint (phone, desktop); kept (listed for the colour/TG PR).' },
+  { file: 'app/(app)/deployments/page.tsx', match: 'opacity-40', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Previous / Next at the first or last page; the solid disabled style is deferred.' },
+  { file: 'app/(app)/deployments/new/page.tsx', match: 'text-[#635BFF]', rule: 'arbitrary text colour', count: 1, reason: 'The decorative Rocket icon in the form card title.' },
+  { file: 'app/(app)/deployments/new/page.tsx', match: 'text-base', rule: 'Tailwind size scale (use a role token)', count: 2, reason: 'The Deployed By input keeps its 16 px text (one class per branch of the error ternary).' },
+  { file: 'components/deployments/LiveLogViewer.tsx', match: 'text-green-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'Log text on the black terminal surface (light on dark).' },
+  { file: 'components/deployments/LiveLogViewer.tsx', match: 'text-gray-500', rule: 'text colour below AA on light surfaces', count: 2, reason: 'The placeholder and timestamps inside the black terminal surface, not on a light one.' },
+  { file: 'app/(app)/dependencies/page.tsx', match: 'text-amber-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "The slow-load notice's aria-hidden Clock icon." },
+  { file: 'app/(app)/dependencies/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The details panel's icon-only close button (X)." },
+  { file: 'components/dependencies/DependencyGraph.tsx', match: 'color: edge.data', rule: 'inline text style', count: 1, reason: "Not text: the edge arrow marker's colour (critical red, standard grey)." },
+  { file: 'components/dependencies/DependencyGraph.tsx', match: 'fontSize: 12', rule: 'inline text style', count: 1, reason: 'React Flow edge labels are SVG text that takes labelStyle, not a class: 10 -> 12 px (founder decision, DevOps group).' },
+  { file: 'components/dependencies/DependencyGraph.tsx', match: 'fontWeight: edge.data', rule: 'inline text style', count: 1, reason: "React Flow edge label weight: critical edges 600 (was 'bold'), others normal (founder decision, DevOps group)." },
+  { file: 'components/dependencies/DependencyGraph.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "The graph error state's aria-hidden AlertCircle icon." },
+  { file: 'components/dependencies/ImpactAnalysisView.tsx', match: 'text-orange-600', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The Downstream Dependents card title ArrowDown icon.' },
 ]
 
 type Finding = { rule: string; match: string; variant: string; line: number }
@@ -563,6 +628,23 @@ describe('strict typography for the pages on the app type scale', () => {
     expect(SM.filter((f) => COSTS.includes(f) || G1.includes(f)), 'no file is in two groups').toEqual([])
     // The Security page and lib/security belong to Security V2 and stay out of this group.
     expect(SM.filter((f) => f.startsWith('app/(app)/security/') || f.startsWith('lib/security/'))).toEqual([])
+  })
+
+  it('the DEVOPS additions are exactly the DORA, Deployments and Dependencies files plus their components, minus the unimported previews, each listed once', () => {
+    const devopsFiles = SOURCE_FILES.filter((f) => f.endsWith('.tsx') && [...DEVOPS_ROUTE_DIRS, ...DEVOPS_COMPONENT_DIRS].some((d) => f.startsWith(d)))
+    expect([...DEVOPS].sort()).toEqual(devopsFiles.filter((f) => !DEVOPS_UNIMPORTED.includes(f)).sort())
+    // Each exclusion is a real file in those folders that nothing imports, so it can't hide a live component.
+    for (const file of DEVOPS_UNIMPORTED) {
+      expect(devopsFiles, file).toContain(file)
+      expect(SOURCE_FILES.filter((f) => importsOf(f).includes(file)), `${file} importers`).toEqual([])
+    }
+    // The components are used only by these pages (or by each other), so converting them changes no other page.
+    for (const file of DEVOPS.filter((f) => f.startsWith('components/'))) {
+      expect(SOURCE_FILES.filter((f) => importsOf(f).includes(file) && !DEVOPS.includes(f)), `${file} importers`).toEqual([])
+    }
+    for (const file of DEVOPS) expect(STRICT.filter((f) => f === file), file).toHaveLength(1)
+    expect(DEVOPS.filter((f) => COSTS.includes(f) || G1.includes(f) || SECURITY.includes(f) || SM.includes(f)), 'no file is in two groups').toEqual([])
+    expect(new Set(STRICT).size, 'no file is listed twice').toBe(STRICT.length)
   })
 
   it('files outside the converted groups stay exempt', () => {

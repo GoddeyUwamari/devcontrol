@@ -29,15 +29,15 @@ export function ImpactAnalysisView({ organizationId, selectedServiceId, onSelect
       {/* Service Selector */}
       <div className="flex items-center gap-4">
         <div className="flex-1">
-          <label htmlFor="impact-service" className="text-sm font-medium mb-2 block">
+          <label htmlFor="impact-service" className="text-ui font-medium mb-2 block">
             Select a service to analyze its impact
           </label>
           {servicesQuery.isError ? (
-            <p role="alert" className="text-sm text-red-600">Couldn&apos;t load your services. Try again later.</p>
+            <p role="alert" className="text-ui text-ink-danger">Couldn&apos;t load your services. Try again later.</p>
           ) : servicesQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading services...</p>
+            <p className="text-ui text-muted-foreground">Loading services...</p>
           ) : services.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No services yet.</p>
+            <p className="text-ui text-muted-foreground">No services yet.</p>
           ) : (
             <Select value={selectedServiceId || ''} onValueChange={onSelectService}>
               <SelectTrigger id="impact-service">
@@ -56,13 +56,13 @@ export function ImpactAnalysisView({ organizationId, selectedServiceId, onSelect
       </div>
 
       {selectedServiceId && impactQuery.isError && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-ui text-ink-danger">
           Couldn&apos;t load the impact analysis for this service.
         </p>
       )}
 
       {selectedServiceId && impactQuery.isPending && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 text-ui text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           Analyzing impact...
         </div>
@@ -79,13 +79,13 @@ export function ImpactAnalysisView({ organizationId, selectedServiceId, onSelect
                   <ArrowUp className="h-5 w-5 text-blue-600" />
                   Upstream Dependencies ({analysis.totalUpstream})
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-ui text-muted-foreground">
                   Services that <strong>{analysis.serviceName}</strong> depends on
                 </p>
               </CardHeader>
               <CardContent>
                 {analysis.upstreamDependencies.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-ui text-muted-foreground">
                     No upstream dependencies
                   </p>
                 ) : (
@@ -116,13 +116,13 @@ export function ImpactAnalysisView({ organizationId, selectedServiceId, onSelect
                   <ArrowDown className="h-5 w-5 text-orange-600" />
                   Downstream Dependents ({analysis.totalDownstream})
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-ui text-muted-foreground">
                   Services that depend on <strong>{analysis.serviceName}</strong>
                 </p>
               </CardHeader>
               <CardContent>
                 {analysis.downstreamDependencies.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-ui text-muted-foreground">
                     No downstream dependents
                   </p>
                 ) : (
@@ -156,7 +156,7 @@ export function ImpactAnalysisView({ organizationId, selectedServiceId, onSelect
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <p className="text-sm">
+              <p className="text-ui">
                 If <strong>{analysis.serviceName}</strong> fails, it will directly affect{' '}
                 <strong>{analysis.totalAffectedIfFails} service(s)</strong>.
               </p>

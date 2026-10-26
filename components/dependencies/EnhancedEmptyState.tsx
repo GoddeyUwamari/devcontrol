@@ -54,7 +54,7 @@ export function EnhancedEmptyState({
                 <ExampleNode label="DB" caption="PostgreSQL" className="bg-green-600" />
               </div>
 
-              <div className="absolute top-3 right-3 bg-white/90 dark:bg-gray-900/90 px-3 py-1 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+              <div className="absolute top-3 right-3 bg-white/90 dark:bg-gray-900/90 px-3 py-1 rounded-full text-label font-medium text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
                 Example
               </div>
             </div>
@@ -63,10 +63,10 @@ export function EnhancedEmptyState({
 
         {/* Headline */}
         <div className="text-center mb-8 max-w-3xl">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4 leading-tight">
+          <h2 className="text-title text-gray-900 dark:text-white mb-4 leading-tight">
             Map Your Service Architecture
           </h2>
-          <p className="text-lg text-gray-600 dark:text-gray-400 leading-relaxed">
+          <p className="text-subtitle text-gray-600 dark:text-gray-400 leading-relaxed">
             Record which services depend on each other to see them as a graph, find circular
             dependencies, and check what a failure would affect.
           </p>
@@ -74,7 +74,7 @@ export function EnhancedEmptyState({
 
         {/* What you can do once dependencies are recorded */}
         <div className="mb-10 w-full px-4">
-          <h3 className="text-xl font-bold text-center mb-6 text-gray-900 dark:text-white">
+          <h3 className="text-section text-center mb-6 text-gray-900 dark:text-white">
             What You Can Do
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -89,7 +89,7 @@ export function EnhancedEmptyState({
 
         {/* How It Works */}
         <div className="mb-10 w-full px-4">
-          <h3 className="text-xl font-bold text-center mb-6 text-gray-900 dark:text-white">
+          <h3 className="text-section text-center mb-6 text-gray-900 dark:text-white">
             Get Started in 3 Steps
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -106,14 +106,14 @@ export function EnhancedEmptyState({
               <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-xl flex items-center justify-center mb-3">
                 <FileCode className="w-6 h-6 text-blue-600 dark:text-blue-400" />
               </div>
-              <CardTitle className="text-lg">Manual Entry</CardTitle>
+              <CardTitle className="text-section">Manual Entry</CardTitle>
               <CardDescription>
                 Add service dependencies one by one between your registered services
               </CardDescription>
             </CardHeader>
             <CardContent>
               {!canManage ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-ui text-muted-foreground">
                   Dependencies are added by an organization owner or admin. Ask one to record which
                   services depend on each other.
                 </p>
@@ -122,7 +122,7 @@ export function EnhancedEmptyState({
                   <Button onClick={onAddService} className="w-full" size="lg">
                     Add a service
                   </Button>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                  <p className="text-meta text-muted-foreground mt-2 text-center">
                     Add a service first, then record which services depend on each other.
                   </p>
                 </>
@@ -138,7 +138,7 @@ export function EnhancedEmptyState({
 
         {/* Use Cases */}
         <div className="w-full px-4">
-          <h3 className="text-lg font-semibold text-center mb-6 text-gray-900 dark:text-white">
+          <h3 className="text-section text-center mb-6 text-gray-900 dark:text-white">
             Common Use Cases
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -168,9 +168,9 @@ function ExampleNode({ label, caption, className }: { label: string; caption: st
   return (
     <div className="flex flex-col items-center">
       <div className={`w-14 h-14 sm:w-20 sm:h-20 ${className} rounded-xl shadow flex items-center justify-center`}>
-        <span className="text-white font-semibold text-xs sm:text-sm">{label}</span>
+        <span className="text-white font-semibold text-label sm:text-ui">{label}</span>
       </div>
-      <span className="text-xs text-gray-600 dark:text-gray-400 mt-2">{caption}</span>
+      <span className="text-meta text-gray-600 dark:text-gray-400 mt-2">{caption}</span>
     </div>
   );
 }
@@ -182,7 +182,7 @@ function ExampleArrow({ className }: { className: string }) {
         <line x1="0" y1="2" x2="50" y2="2" stroke="currentColor" strokeWidth="3" />
         <polygon points="50,0 60,2 50,4" fill="currentColor" />
       </svg>
-      <span className={`text-xs mt-1 ${className}`}>depends on</span>
+      <span className={`text-meta mt-1 ${className}`}>depends on</span>
     </div>
   );
 }
@@ -203,8 +203,8 @@ function FeatureCard({
         <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
       </div>
       <div>
-        <h4 className="font-semibold text-sm text-gray-900 dark:text-white">{title}</h4>
-        <p className="text-xs text-gray-600 dark:text-gray-400">{description}</p>
+        <h4 className="font-semibold text-ui text-gray-900 dark:text-white">{title}</h4>
+        <p className="text-meta text-gray-600 dark:text-gray-400">{description}</p>
       </div>
     </div>
   );
@@ -228,12 +228,12 @@ function StepCard({
         <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
           <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
         </div>
-        <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
+        <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-blue-600 text-white text-label flex items-center justify-center">
           {number}
         </span>
       </div>
       <h4 className="font-semibold text-gray-900 dark:text-white mb-1">{title}</h4>
-      <p className="text-sm text-gray-600 dark:text-gray-400">{description}</p>
+      <p className="text-ui text-gray-600 dark:text-gray-400">{description}</p>
     </div>
   );
 }
@@ -252,8 +252,8 @@ function UseCaseCard({
     <div className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
       <Icon className="w-5 h-5 text-gray-600 dark:text-gray-400 shrink-0 mt-0.5" />
       <div>
-        <h4 className="font-semibold text-sm text-gray-900 dark:text-white mb-1">{title}</h4>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{scenario}</p>
+        <h4 className="font-semibold text-ui text-gray-900 dark:text-white mb-1">{title}</h4>
+        <p className="text-ui text-gray-600 dark:text-gray-400">{scenario}</p>
       </div>
     </div>
   );

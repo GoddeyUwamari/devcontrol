@@ -63,8 +63,8 @@ function DependencyGraphInner({ organizationId, graphRef: externalRef, onNodeCli
           strokeWidth: edge.data?.isCritical ? 3 : 2,
         },
         labelStyle: {
-          fontSize: 10,
-          fontWeight: edge.data?.isCritical ? 'bold' : 'normal',
+          fontSize: 12,
+          fontWeight: edge.data?.isCritical ? 600 : 'normal',
         },
       }))
 
@@ -84,7 +84,7 @@ function DependencyGraphInner({ organizationId, graphRef: externalRef, onNodeCli
         <AlertCircle className="h-8 w-8 text-red-600" aria-hidden="true" />
         <div className="text-center">
           <h3 className="font-semibold">Error Loading Graph</h3>
-          <p className="text-sm text-muted-foreground">{(error as Error).message}</p>
+          <p className="text-ui text-muted-foreground">{(error as Error).message}</p>
         </div>
         <Button onClick={() => refetch()} variant="outline">
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -108,7 +108,7 @@ function DependencyGraphInner({ organizationId, graphRef: externalRef, onNodeCli
         <Network className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
         <div className="text-center">
           <h3 className="font-semibold">No Dependencies Yet</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-ui text-muted-foreground">
             Add your first dependency to see the graph visualization
           </p>
         </div>
@@ -144,12 +144,12 @@ function DependencyGraphInner({ organizationId, graphRef: externalRef, onNodeCli
           zoomable
         />
         <Panel position="top-right" className="bg-white p-4 rounded-lg shadow-md space-y-2">
-          <div className="text-sm font-semibold">Legend</div>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="text-ui font-semibold">Legend</div>
+          <div className="flex items-center gap-2 text-meta">
             <div className="w-8 h-0.5 bg-gray-500" />
             <span>Standard</span>
           </div>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-meta">
             <div className="w-8 h-1 bg-red-500" />
             <span>Critical</span>
           </div>

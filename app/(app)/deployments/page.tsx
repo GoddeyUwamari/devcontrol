@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { deploymentsService } from '@/lib/services/deployments.service'
 import type { DeploymentEnvironment } from '@/lib/types'
 import {
@@ -56,7 +57,7 @@ const DEMO_DORA = {
 
 export default function DeploymentsPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-slate-400">Loading...</div>}>
+    <Suspense fallback={<div className="p-12 text-center text-ink-muted">Loading...</div>}>
       <DeploymentsContent />
     </Suspense>
   )
@@ -230,21 +231,21 @@ function DeploymentsContent() {
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-1">Deployment History</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">
+          <h1 className={`${PAGE_TITLE_CLASS} mb-1`}>Deployment History</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>
             Track all service deployments across environments · Status as recorded by your pipeline
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => { refetch(); refetchStats() }}
-            className="flex items-center gap-2 bg-white text-slate-500 px-4 py-2 rounded-lg text-sm font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap"
+            className="flex items-center gap-2 bg-white text-ink-muted px-4 py-2 rounded-lg text-ui font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap"
           >
             <RefreshCw size={14} /> Refresh
           </button>
           <button
             onClick={() => { setShowModal(true); setModalError(null); setModalSuccess(null) }}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-semibold border-none cursor-pointer transition-colors whitespace-nowrap"
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-ui font-semibold border-none cursor-pointer transition-colors whitespace-nowrap"
           >
             <Rocket size={14} /> New Deployment
           </button>
@@ -256,11 +257,11 @@ function DeploymentsContent() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-3">
           <div className="flex items-center gap-2.5">
             <span className="text-lg">⚠️</span>
-            <span className="text-sm font-medium text-amber-900">
+            <span className="text-ui font-medium text-amber-900">
               You've reached your monthly deployment limit on the <strong>{tier}</strong> plan. Upgrade to continue deploying.
             </span>
           </div>
-          <a href="/settings/billing/upgrade" className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
+          <a href="/settings/billing/upgrade" className="shrink-0 text-label text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
             Upgrade plan
           </a>
         </div>
@@ -270,8 +271,8 @@ function DeploymentsContent() {
       {!isDemoActive && error && !showUpgradePrompt && (
         <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-6">
           <AlertTriangle size={16} className="text-red-600 shrink-0" />
-          <span className="text-sm text-red-800">Failed to load deployments — check your connection and try again.</span>
-          <button onClick={() => refetch()} className="ml-auto text-xs font-semibold text-red-600 bg-transparent border border-red-200 rounded-lg px-3 py-1.5 cursor-pointer shrink-0">
+          <span className="text-ui text-red-800">Failed to load deployments — check your connection and try again.</span>
+          <button onClick={() => refetch()} className="ml-auto text-label text-ink-danger bg-transparent border border-red-200 rounded-lg px-3 py-1.5 cursor-pointer shrink-0">
             Retry
           </button>
         </div>
@@ -283,8 +284,8 @@ function DeploymentsContent() {
             <Rocket size={14} className="text-slate-600" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-900 mb-1">No deployments recorded</p>
-            <p className="text-sm text-slate-500 leading-relaxed m-0">Connect your CI to record deployments. Success, failure and change failure rate appear here once a deployment has been recorded.</p>
+            <p className="text-ui font-semibold text-slate-900 mb-1">No deployments recorded</p>
+            <p className="text-ui text-ink-muted leading-relaxed m-0">Connect your CI to record deployments. Success, failure and change failure rate appear here once a deployment has been recorded.</p>
           </div>
         </div>
       ) : (<>
@@ -294,8 +295,8 @@ function DeploymentsContent() {
           <Rocket size={14} className="text-slate-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1">Summary · {windowLabel}</p>
-          <p className="text-sm text-slate-800 leading-relaxed m-0">
+          <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Summary · {windowLabel}</p>
+          <p className="text-ui text-slate-800 leading-relaxed m-0">
             {stats
               ? deploymentSummaryText(stats)
               : statsError
@@ -309,8 +310,8 @@ function DeploymentsContent() {
               key={w.value}
               onClick={() => { setStatsWindow(w.value); setPage(1) }}
               aria-pressed={statsWindow === w.value}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold border-none cursor-pointer whitespace-nowrap transition-all ${
-                statsWindow === w.value ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'
+              className={`px-2.5 py-1 rounded-md text-label border-none cursor-pointer whitespace-nowrap transition-all ${
+                statsWindow === w.value ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-ink-muted'
               }`}
             >
               {w.value}
@@ -332,7 +333,7 @@ function DeploymentsContent() {
             label: 'Failed deploys',
             value: stats ? stats.failed : '—',
             sub: `${windowLabel} · pipeline runs stopped by tests before deploying aren't counted`,
-            valueClass: stats && stats.failed > 0 ? 'text-red-600' : 'text-slate-900',
+            valueClass: stats && stats.failed > 0 ? 'text-ink-danger' : 'text-slate-900',
           },
           {
             label: 'Change Failure Rate',
@@ -355,13 +356,13 @@ function DeploymentsContent() {
           },
         ].map(({ label, value, sub, valueClass, small }) => (
           <div key={label} className="bg-white rounded-xl p-5 sm:p-8 border border-slate-200" data-testid={`deployment-card-${label.toLowerCase().replace(/ /g, '-')}`}>
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-3">{label}</p>
-            <div className={`${small ? 'text-xl sm:text-2xl' : 'text-3xl sm:text-4xl'} font-bold tracking-tight leading-none mb-2 ${valueClass}`}>{value}</div>
-            <p className="text-xs text-slate-500 m-0">{sub}</p>
+            <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">{label}</p>
+            <div className={`${small ? 'text-section' : 'text-kpi'} tabular-nums leading-none mb-2 ${valueClass}`}>{value}</div>
+            <p className="text-meta text-ink-muted m-0">{sub}</p>
           </div>
         ))}
       </div>
-      <p className="text-xs text-slate-500 mb-6 min-h-4" data-testid="deployment-unfinished-note">
+      <p className="text-meta text-ink-muted mb-6 min-h-4" data-testid="deployment-unfinished-note">
         {!isDemoActive && statsLoading
           ? ''
           : unfinishedNote
@@ -375,14 +376,14 @@ function DeploymentsContent() {
         <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 mb-6">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1">DORA Metrics</p>
-              <p className="text-sm font-semibold text-slate-900 m-0">
+              <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">DORA Metrics</p>
+              <p className="text-ui font-semibold text-slate-900 m-0">
                 Engineering Velocity —{' '}
-                <span className="text-green-600">Elite Tier</span>
-                <span className="text-[11px] font-semibold bg-green-50 text-green-600 px-2 py-0.5 rounded-full ml-2">Top 10%</span>
+                <span className="text-ink-success">Elite Tier</span>
+                <span className="text-label bg-green-50 text-ink-success px-2 py-0.5 rounded-full ml-2">Top 10%</span>
               </p>
             </div>
-            <a href="/dora-metrics" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
+            <a href="/app/dora-metrics" className="text-label text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
               Full report <ArrowRight size={12} />
             </a>
           </div>
@@ -394,10 +395,10 @@ function DeploymentsContent() {
               { label: 'Mean Time to Recovery', value: DEMO_DORA.mttr,      tier: DEMO_DORA.mttrTier      },
             ].map(({ label, value, tier }) => (
               <div key={label} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">{label}</p>
-                <p className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mb-1.5">{value}</p>
-                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                  tier === 'Elite' ? 'bg-green-50 text-green-600' : tier === 'High' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'
+                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-2.5">{label}</p>
+                <p className="text-section sm:text-kpi tabular-nums text-slate-900 mb-1.5">{value}</p>
+                <span className={`text-label px-2 py-0.5 rounded-full ${
+                  tier === 'Elite' ? 'bg-green-50 text-ink-success' : tier === 'High' ? 'bg-amber-50 text-ink-warning' : 'bg-red-50 text-ink-danger'
                 }`}>{tier}</span>
               </div>
             ))}
@@ -406,10 +407,10 @@ function DeploymentsContent() {
       ) : (
         <div className="bg-white rounded-2xl p-6 border border-slate-100 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1">DORA Metrics</p>
-            <p className="text-sm text-slate-500 leading-relaxed m-0">{nothingRecorded ? 'Deployment frequency and change failure rate need recorded deployments.' : 'Deployment frequency and change failure rate are computed from these deployment records.'}</p>
+            <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">DORA Metrics</p>
+            <p className="text-ui text-ink-muted leading-relaxed m-0">{nothingRecorded ? 'Deployment frequency and change failure rate need recorded deployments.' : 'Deployment frequency and change failure rate are computed from these deployment records.'}</p>
           </div>
-          <a href="/app/dora-metrics" className="text-sm font-semibold text-violet-600 no-underline flex items-center gap-1 shrink-0">
+          <a href="/app/dora-metrics" className="text-ui font-semibold text-violet-600 no-underline flex items-center gap-1 shrink-0">
             View DORA metrics <ArrowRight size={13} />
           </a>
         </div>
@@ -421,8 +422,8 @@ function DeploymentsContent() {
         {/* Table header + filters */}
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Deployment Log</p>
-            <p className="text-xs text-slate-400 m-0" data-testid="deployment-log-count">
+            <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-0.5">Deployment Log</p>
+            <p className="text-meta text-ink-muted m-0" data-testid="deployment-log-count">
               {pagePending
                 ? windowLabel
                 : error && !isDemoActive
@@ -436,8 +437,8 @@ function DeploymentsContent() {
               <button
                 key={env}
                 onClick={() => handleFilterChange(env as EnvironmentFilter)}
-                className={`px-3 py-1 rounded-md text-xs font-semibold border-none cursor-pointer capitalize whitespace-nowrap transition-all ${
-                  environmentFilter === env ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500'
+                className={`px-3 py-1 rounded-md text-label border-none cursor-pointer capitalize whitespace-nowrap transition-all ${
+                  environmentFilter === env ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-ink-muted'
                 }`}
               >
                 {env === 'all' ? 'All' : env}
@@ -449,7 +450,7 @@ function DeploymentsContent() {
         {/* Desktop column headers */}
         <div className={`hidden sm:grid ${rowGrid} px-7 py-2.5 bg-slate-50 border-b border-slate-100`} data-testid="deployment-log-columns">
           {['Service', 'Environment', 'Region', 'Deployed By', 'Status', ...(showCost ? ['Cost'] : [])].map(col => (
-            <span key={col} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{col}</span>
+            <span key={col} className="text-label text-ink-muted uppercase tracking-[0.04em]">{col}</span>
           ))}
         </div>
 
@@ -457,22 +458,22 @@ function DeploymentsContent() {
         {pagePending ? (
           <div className="px-7 py-12 text-center" data-testid="deployment-log-loading">
             <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
-            <p className="text-sm text-slate-500 m-0">Loading deployments...</p>
+            <p className="text-ui text-ink-muted m-0">Loading deployments...</p>
           </div>
         ) : error && !isDemoActive ? (
           <div className="px-5 sm:px-16 py-12 text-center" data-testid="deployment-log-error">
-            <p className="text-sm text-slate-500 m-0">Deployments could not be loaded.</p>
+            <p className="text-ui text-ink-muted m-0">Deployments could not be loaded.</p>
           </div>
         ) : filteredDeployments.length === 0 && nothingRecorded ? (
           <div className="px-5 sm:px-16 py-16 text-center" data-testid="deployment-log-empty" data-reason="none-recorded">
             <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">
               <Rocket size={22} className="text-slate-400" />
             </div>
-            <p className="text-base font-semibold text-slate-900 mb-1.5">No deployments recorded</p>
-            <p className="text-sm text-slate-500 mb-6 leading-relaxed max-w-sm mx-auto">Connect your CI to record deployments.</p>
+            <p className="text-card-title text-slate-900 mb-1.5">No deployments recorded</p>
+            <p className="text-ui text-ink-muted mb-6 leading-relaxed max-w-sm mx-auto">Connect your CI to record deployments.</p>
             <button
               onClick={() => { setShowModal(true); setModalError(null); setModalSuccess(null) }}
-              className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors"
+              className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors"
             >
               <Rocket size={14} /> Create First Deployment
             </button>
@@ -482,10 +483,10 @@ function DeploymentsContent() {
           // deployments elsewhere is the stats' to say; this never claims
           // that nothing was recorded at all.
           <div className="px-5 sm:px-16 py-12 text-center" data-testid="deployment-log-empty" data-reason="no-match">
-            <p className="text-base font-semibold text-slate-900 mb-1.5">
+            <p className="text-card-title text-slate-900 mb-1.5">
               No deployments{environmentLabel} in the last {windowDays} days
             </p>
-            <p className="text-sm text-slate-500 m-0 leading-relaxed max-w-sm mx-auto">
+            <p className="text-ui text-ink-muted m-0 leading-relaxed max-w-sm mx-auto">
               Try a longer window{environmentFilter === 'all' ? '' : ' or another environment'}.
             </p>
           </div>
@@ -503,28 +504,28 @@ function DeploymentsContent() {
                 <div className="sm:hidden px-5 py-4">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 mb-0.5 truncate">{d.serviceName || d.serviceId.slice(0, 8)}</p>
-                      <p className="text-xs text-slate-400 m-0">
+                      <p className="text-ui font-semibold text-slate-900 mb-0.5 truncate">{d.serviceName || d.serviceId.slice(0, 8)}</p>
+                      <p className="text-meta text-ink-muted m-0">
                         {new Date(d.deployedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         {d.deployedBy && ` · ${d.deployedBy.split('@')[0]}`}
                       </p>
                     </div>
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                    <span className="text-label px-2.5 py-1 rounded-full shrink-0" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>{d.environment}</span>
-                    <span className="text-xs text-slate-400 font-mono">{d.awsRegion}</span>
-                    {recordedCost(d.costEstimate) !== null && <span className="text-xs font-semibold text-slate-700 ml-auto">{formatRecordedCost(d.costEstimate)}</span>}
+                    <span className="text-label px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>{d.environment}</span>
+                    <span className="text-meta text-ink-muted font-mono">{d.awsRegion}</span>
+                    {recordedCost(d.costEstimate) !== null && <span className="text-meta font-semibold text-slate-700 ml-auto">{formatRecordedCost(d.costEstimate)}</span>}
                   </div>
                   {d.status === 'failed' && (
                     <div className="mt-2.5 px-3 py-2 bg-red-50 rounded-lg border border-red-100 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
                         <XCircle size={12} className="text-red-600 shrink-0" />
-                        <span className="text-xs text-red-800 font-medium">Deployment failed · Check logs</span>
+                        <span className="text-meta text-red-800 font-medium">Deployment failed · Check logs</span>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
-                        <a href={`/deployments/${d.id}/logs`} className="text-[11px] font-bold text-red-600 no-underline bg-white border border-red-200 px-2 py-1 rounded">Logs</a>
-                        <a href={`/deployments/${d.id}/rollback`} className="text-[11px] font-bold text-red-600 no-underline bg-white border border-red-200 px-2 py-1 rounded">Rollback</a>
+                        <a href={`/deployments/${d.id}/logs`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Logs</a>
+                        <a href={`/deployments/${d.id}/rollback`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Rollback</a>
                       </div>
                     </div>
                   )}
@@ -536,18 +537,18 @@ function DeploymentsContent() {
                   data-testid="deployment-row"
                 >
                   <div>
-                    <p className="text-sm font-semibold text-slate-900 mb-0.5">{d.serviceName || d.serviceId.slice(0, 8)}</p>
-                    <p className="text-xs text-slate-400 m-0">
+                    <p className="text-ui font-semibold text-slate-900 mb-0.5">{d.serviceName || d.serviceId.slice(0, 8)}</p>
+                    <p className="text-meta text-ink-muted m-0">
                       {new Date(d.deployedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       {d.deployedBy && ` · ${d.deployedBy.split('@')[0]}`}
                     </p>
                   </div>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full w-fit" style={{ background: envBg, color: envColor }}>{d.environment}</span>
-                  <span className="text-xs text-slate-500 font-mono">{d.awsRegion || '—'}</span>
-                  <span className="text-xs text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap">{d.deployedBy?.split('@')[0] || '—'}</span>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
+                  <span className="text-label px-2.5 py-1 rounded-full w-fit" style={{ background: envBg, color: envColor }}>{d.environment}</span>
+                  <span className="text-meta text-ink-muted font-mono">{d.awsRegion || '—'}</span>
+                  <span className="text-meta text-ink-muted overflow-hidden text-ellipsis whitespace-nowrap">{d.deployedBy?.split('@')[0] || '—'}</span>
+                  <span className="text-label px-2.5 py-1 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                   {showCost && (
-                    <span className="text-sm font-semibold text-slate-900" title={recordedCost(d.costEstimate) === null ? 'Not recorded' : undefined}>
+                    <span className="text-ui font-semibold tabular-nums text-slate-900" title={recordedCost(d.costEstimate) === null ? 'Not recorded' : undefined}>
                       {formatRecordedCost(d.costEstimate)}
                     </span>
                   )}
@@ -558,11 +559,11 @@ function DeploymentsContent() {
                   <div className="hidden sm:flex mx-7 mb-2 px-3.5 py-2.5 bg-red-50 rounded-lg border border-red-100 items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <XCircle size={13} className="text-red-600 shrink-0" />
-                      <span className="text-xs text-red-800 font-medium">Deployment failed · Check logs and consider rolling back to previous version</span>
+                      <span className="text-meta text-red-800 font-medium">Deployment failed · Check logs and consider rolling back to previous version</span>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      <a href={`/deployments/${d.id}/logs`} className="text-xs font-bold text-red-600 no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">View Logs</a>
-                      <a href={`/deployments/${d.id}/rollback`} className="text-xs font-bold text-red-600 no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">Rollback</a>
+                      <a href={`/deployments/${d.id}/logs`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">View Logs</a>
+                      <a href={`/deployments/${d.id}/rollback`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">Rollback</a>
                     </div>
                   </div>
                 )}
@@ -575,15 +576,15 @@ function DeploymentsContent() {
         {(totalDeployments > 0 || (pagePending && isPlaceholderData)) && !(error && !isDemoActive) && (
           <div className="px-5 sm:px-7 py-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="deployment-pagination">
             <div className="flex items-center gap-4">
-              <p className="text-xs text-slate-500 m-0" data-testid="deployment-range">
+              <p className="text-meta text-ink-muted m-0" data-testid="deployment-range">
                 {pagePending ? 'Loading…' : `${firstRow}–${lastRow} of ${totalDeployments}`}
               </p>
-              <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              <label className="flex items-center gap-1.5 text-meta text-ink-muted">
                 Rows per page
                 <select
                   value={pageSize}
                   onChange={e => { setPageSize(Number(e.target.value) as PageSize); setPage(1) }}
-                  className="text-xs text-slate-700 bg-white border border-slate-200 rounded-md px-1.5 py-1 cursor-pointer"
+                  className="text-label font-normal text-slate-700 bg-white border border-slate-200 rounded-md px-1.5 py-1 cursor-pointer"
                 >
                   {PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
                 </select>
@@ -593,19 +594,19 @@ function DeploymentsContent() {
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={pagePending || page <= 1}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-label text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={12} /> Previous
               </button>
               {!pagePending && pageNumbers(page, pageCount).map((p, i) => p === 'gap' ? (
-                <span key={`gap-${i}`} className="px-1 text-xs text-slate-400" aria-hidden="true">…</span>
+                <span key={`gap-${i}`} className="px-1 text-meta text-slate-400" aria-hidden="true">…</span>
               ) : (
                 <button
                   key={p}
                   onClick={() => setPage(p)}
                   aria-label={`Page ${p}`}
                   aria-current={p === page ? 'page' : undefined}
-                  className={`min-w-7 px-2 py-1 rounded-md text-xs font-semibold border cursor-pointer ${
+                  className={`min-w-7 px-2 py-1 rounded-md text-label border cursor-pointer ${
                     p === page ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'
                   }`}
                 >
@@ -615,7 +616,7 @@ function DeploymentsContent() {
               <button
                 onClick={() => setPage(p => Math.min(pageCount, p + 1))}
                 disabled={pagePending || page >= pageCount}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-label text-slate-600 bg-white border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Next <ChevronRight size={12} />
               </button>
@@ -634,8 +635,8 @@ function DeploymentsContent() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 mb-1">New Deployment</h2>
-                <p className="text-xs text-slate-500 m-0">Deploy a service to an environment</p>
+                <h2 className="text-section text-slate-900 mb-1">New Deployment</h2>
+                <p className="text-meta text-ink-muted m-0">Deploy a service to an environment</p>
               </div>
               <button onClick={() => setShowModal(false)} className="bg-transparent border-none cursor-pointer text-slate-400 hover:text-slate-600 p-1 transition-colors">
                 <X size={18} />
@@ -644,26 +645,26 @@ function DeploymentsContent() {
 
             {modalSuccess ? (
               <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
-                <p className="text-sm font-semibold text-green-600 m-0">{modalSuccess}</p>
+                <p className="text-ui font-semibold text-ink-success m-0">{modalSuccess}</p>
               </div>
             ) : (
               <form method="post" onSubmit={handleNewDeploymentSubmit} className="flex flex-col gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Service Name</label>
+                  <label className="block text-label text-slate-700 mb-1.5">Service Name</label>
                   <input
                     type="text"
                     value={modalForm.serviceName}
                     onChange={e => setModalForm(f => ({ ...f, serviceName: e.target.value }))}
                     placeholder="e.g. api-gateway, auth-service"
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Environment</label>
+                  <label className="block text-label text-slate-700 mb-1.5">Environment</label>
                   <select
                     value={modalForm.environment}
                     onChange={e => setModalForm(f => ({ ...f, environment: e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 bg-white outline-none focus:border-violet-500 transition-all"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 transition-all"
                   >
                     <option value="production">Production</option>
                     <option value="staging">Staging</option>
@@ -671,11 +672,11 @@ function DeploymentsContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Region</label>
+                  <label className="block text-label text-slate-700 mb-1.5">Region</label>
                   <select
                     value={modalForm.region}
                     onChange={e => setModalForm(f => ({ ...f, region: e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 bg-white outline-none focus:border-violet-500 transition-all"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 transition-all"
                   >
                     <option value="us-east-1">us-east-1 (N. Virginia)</option>
                     <option value="us-west-2">us-west-2 (Oregon)</option>
@@ -686,29 +687,29 @@ function DeploymentsContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Version <span className="font-normal text-slate-400">(optional)</span>
+                  <label className="block text-label text-slate-700 mb-1.5">
+                    Version <span className="font-normal text-ink-muted">(optional)</span>
                   </label>
                   <input
                     type="text"
                     value={modalForm.version}
                     onChange={e => setModalForm(f => ({ ...f, version: e.target.value }))}
                     placeholder="e.g. v2.4.1, main@a1b2c3d"
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
                   />
                 </div>
                 {modalError && (
                   <div className="px-3.5 py-2.5 bg-red-50 rounded-lg border border-red-100">
-                    <p className="text-xs text-red-600 m-0">{modalError}</p>
+                    <p className="text-meta text-ink-danger m-0">{modalError}</p>
                   </div>
                 )}
                 <div className="flex gap-3 justify-end pt-1">
                   <button type="button" onClick={() => setShowModal(false)}
-                    className="px-5 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium cursor-pointer hover:bg-slate-50 transition-colors">
+                    className="px-5 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-ui font-medium cursor-pointer hover:bg-slate-50 transition-colors">
                     Cancel
                   </button>
                   <button type="submit" disabled={modalSubmitting}
-                    className={`px-5 py-2.5 rounded-lg text-white text-sm font-semibold border-none inline-flex items-center gap-2 transition-colors ${modalSubmitting ? 'bg-violet-400 cursor-default' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}>
+                    className={`px-5 py-2.5 rounded-lg text-white text-ui font-semibold border-none inline-flex items-center gap-2 transition-colors ${modalSubmitting ? 'bg-violet-400 cursor-default' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}>
                     {modalSubmitting
                       ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Deploying...</>
                       : <><Rocket size={13} /> Deploy</>

@@ -61,7 +61,7 @@ export function FilterSummary({ filters, onRemoveFilter, className }: FilterSumm
 
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)}>
-      <span className="text-xs text-muted-foreground">Active filters:</span>
+      <span className="text-meta text-muted-foreground">Active filters:</span>
 
       {activeFilters.map(({ key, value, label }) => (
         <Badge
@@ -69,7 +69,7 @@ export function FilterSummary({ filters, onRemoveFilter, className }: FilterSumm
           variant="secondary"
           className={cn(
             'pl-2 pr-1 py-1 gap-1.5',
-            'text-xs font-normal',
+            'text-label font-normal',
             'transition-all duration-200',
             'hover:bg-secondary/80'
           )}
