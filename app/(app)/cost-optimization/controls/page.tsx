@@ -9,6 +9,8 @@ import {
 import { Lock, SlidersHorizontal, RotateCcw, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 
 // Enterprise Workstream 3B: product/UI copy for the two rules the backend
 // registry (backend/src/config/optimization-rules.ts) allows an organization
@@ -129,11 +131,11 @@ export default function OptimizationControlsPage() {
   // tier -- only tuning is gated. ──
   if (!isEnterprise) {
     return (
-      <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
+      <div className="max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Cost Optimization</p>
-          <h1 className="text-2xl font-bold text-gray-900">Optimization Controls</h1>
-          <p className="text-xs text-gray-500 font-medium mt-1.5">
+          <p className="text-label font-semibold uppercase tracking-widest text-violet-700 mb-1.5">Cost Optimization</p>
+          <h1 className={PAGE_TITLE_CLASS}>Optimization Controls</h1>
+          <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>
             Tune how DevControl identifies selected cost optimization opportunities for your organization.
           </p>
         </div>
@@ -141,12 +143,12 @@ export default function OptimizationControlsPage() {
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
           </div>
-          <h2 className="text-sm font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
-          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+          <h2 className="text-ui font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+          <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
             Optimization Controls are available on the Enterprise plan — tune the CPU utilization threshold for idle
             EC2 detection and the invocation threshold for low-usage Lambda detection.
           </p>
-          <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+          <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
             Upgrade to Enterprise
           </Link>
         </div>
@@ -155,11 +157,11 @@ export default function OptimizationControlsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
+    <div className="min-h-screen bg-slate-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto">
       <div className="mb-8">
-        <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Cost Optimization</p>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Optimization Controls</h1>
-        <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-xl">
+        <p className="text-label font-semibold text-violet-600 uppercase tracking-widest mb-1.5">Cost Optimization</p>
+        <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Optimization Controls</h1>
+        <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-xl')}>
           Tune how DevControl identifies selected cost optimization opportunities for your organization. Only the
           two thresholds below are configurable — every other check uses its built-in default.
         </p>
@@ -168,27 +170,27 @@ export default function OptimizationControlsPage() {
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100 flex items-start gap-2.5">
           <SlidersHorizontal size={15} className="text-slate-400 mt-0.5 shrink-0" />
-          <p className="text-xs text-slate-500 leading-relaxed">
+          <p className="text-meta text-ink-muted leading-relaxed">
             Changing a threshold affects which resources are flagged going forward. It does not guarantee savings
             and does not change recommendations already identified.
           </p>
         </div>
 
         {isLoading ? (
-          <div className="p-10 sm:p-16 text-center text-sm text-slate-400">Loading…</div>
+          <div className="p-10 sm:p-16 text-center text-ui text-ink-muted">Loading…</div>
         ) : loadError ? (
           <div className="p-10 sm:p-16 text-center">
             <AlertTriangle size={20} className="text-red-400 mx-auto mb-3" />
-            <p className="text-sm text-slate-600 mb-4">{loadError}</p>
+            <p className="text-ui text-slate-600 mb-4">{loadError}</p>
             <button
               onClick={loadConfig}
-              className="bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors"
+              className="bg-violet-700 hover:bg-violet-800 text-white text-label font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors"
             >
               Try again
             </button>
           </div>
         ) : configs.length === 0 ? (
-          <div className="p-10 sm:p-16 text-center text-sm text-slate-500">
+          <div className="p-10 sm:p-16 text-center text-ui text-ink-muted">
             No configurable optimization rules are available right now.
           </div>
         ) : (
@@ -210,12 +212,12 @@ export default function OptimizationControlsPage() {
                 <div key={key} className="p-5 sm:p-7">
                   <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">{copy.ruleName}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{copy.parameterLabel}</p>
+                      <p className="text-ui font-semibold text-slate-900">{copy.ruleName}</p>
+                      <p className="text-meta text-ink-muted mt-0.5">{copy.parameterLabel}</p>
                     </div>
                     <span
-                      className={`text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0 ${
-                        isOverride ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'
+                      className={`text-label font-semibold px-2.5 py-0.5 rounded-full shrink-0 ${
+                        isOverride ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-ink-muted'
                       }`}
                     >
                       {isOverride ? 'Organization override' : 'Default'}
@@ -223,12 +225,12 @@ export default function OptimizationControlsPage() {
                   </div>
 
                   {copy.description && (
-                    <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-2xl">{copy.description}</p>
+                    <p className="text-meta text-ink-muted leading-relaxed mb-4 max-w-2xl">{copy.description}</p>
                   )}
 
                   <div className="flex flex-wrap items-end gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1.5" htmlFor={`input-${key}`}>
+                      <label className="block text-label font-semibold text-slate-600 mb-1.5" htmlFor={`input-${key}`}>
                         {copy.parameterLabel} ({config.unit})
                       </label>
                       <input
@@ -239,9 +241,9 @@ export default function OptimizationControlsPage() {
                         max={config.max}
                         value={draft}
                         onChange={(e) => handleDraftChange(config, e.target.value)}
-                        className="w-40 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        className="w-40 border border-slate-200 rounded-lg px-3 py-2 text-ui"
                       />
-                      <p className="text-[11px] text-slate-400 mt-1">
+                      <p className="text-meta text-ink-muted mt-1">
                         Default {config.default} · Range {config.min}–{config.max}
                       </p>
                     </div>
@@ -249,7 +251,7 @@ export default function OptimizationControlsPage() {
                     <button
                       onClick={() => handleSave(config)}
                       disabled={savingKey === key || !isDirty || !!fieldError}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-violet-700 hover:bg-violet-800 disabled:opacity-50"
+                      className="px-4 py-2 rounded-lg text-ui font-semibold text-white bg-violet-700 hover:bg-violet-800 disabled:opacity-50"
                     >
                       {savingKey === key ? 'Saving…' : 'Save'}
                     </button>
@@ -257,13 +259,13 @@ export default function OptimizationControlsPage() {
                     <button
                       onClick={() => handleReset(config)}
                       disabled={resettingKey === key}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-ui font-semibold text-ink-muted border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50"
                     >
                       <RotateCcw size={13} /> {resettingKey === key ? 'Resetting…' : 'Reset to default'}
                     </button>
                   </div>
 
-                  {fieldError && <p className="text-xs text-red-600 mt-2">{fieldError}</p>}
+                  {fieldError && <p className="text-meta text-ink-danger mt-2">{fieldError}</p>}
                 </div>
               )
             })}

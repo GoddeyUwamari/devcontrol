@@ -22,6 +22,8 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
 import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
 import { formatRecommendationSavings, rankBySavings } from '@/lib/savings-basis'
 import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
@@ -363,86 +365,86 @@ export default function CostsPage() {
       // resource inventory, current spend is Cost Explorer month-to-date billing --
       // different periods and scopes, so the ratio is not a real billing ratio.
       sub: recsUnavailable ? recsUnavailableSub : describeAnnualizedSavings(displaySavings),
-      subColor: recsUnavailable ? 'text-slate-500' : 'text-green-600', TrendIcon: recsUnavailable ? Minus : TrendingDown, trendColor: recsUnavailable ? 'text-slate-400' : 'text-green-600',
-      href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-green-600',
+      subColor: recsUnavailable ? 'text-ink-muted' : 'text-ink-success', TrendIcon: recsUnavailable ? Minus : TrendingDown, trendColor: recsUnavailable ? 'text-ink-muted' : 'text-ink-success',
+      href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-ink-success',
     },
     {
       key: 'mtd', label: spend.label,
       value: spend.value,
       sub: spend.sub,
-      subColor: 'text-slate-500', TrendIcon: Minus, trendColor: 'text-slate-400',
+      subColor: 'text-ink-muted', TrendIcon: Minus, trendColor: 'text-ink-muted',
       href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
     },
     {
       key: 'momchange', label: 'Month-over-Month Change',
       value: mom.value,
       sub: mom.sub,
-      subColor: growthRate === null ? 'text-slate-500' : growthRate > 10 ? 'text-red-600' : growthRate > 5 ? 'text-amber-500' : 'text-green-600',
+      subColor: growthRate === null ? 'text-ink-muted' : growthRate > 10 ? 'text-ink-danger' : growthRate > 5 ? 'text-ink-warning' : 'text-ink-success',
       TrendIcon: mom.direction === 'up' ? TrendingUp : mom.direction === 'down' ? TrendingDown : Minus,
-      trendColor: growthRate === null ? 'text-slate-400' : growthRate > 5 ? 'text-amber-500' : 'text-green-600',
+      trendColor: growthRate === null ? 'text-ink-muted' : growthRate > 5 ? 'text-ink-warning' : 'text-ink-success',
       href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
     },
     {
       key: 'activerecs', label: 'Active Recommendations',
       value: recsUnavailable ? '—' : `${activeRecsCount}`,
       sub: recsUnavailable ? recsUnavailableSub : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations',
-      subColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-500',
+      subColor: activeRecsCount > 0 ? 'text-ink-warning' : 'text-ink-muted',
       TrendIcon: activeRecsCount > 0 ? TrendingUp : Minus,
-      trendColor: activeRecsCount > 0 ? 'text-amber-500' : 'text-slate-400',
+      trendColor: activeRecsCount > 0 ? 'text-ink-warning' : 'text-ink-muted',
       href: '/cost-optimization', borderTop: '', valueColor: 'text-slate-900',
     },
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto overflow-x-hidden">
+    <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto overflow-x-hidden">
       <style>{`@keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }`}</style>
 
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Cost Intelligence</h1>
+            <h1 className={PAGE_TITLE_CLASS}>Cost Intelligence</h1>
             {demoMode && (
-              <span className="text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">
+              <span className="text-label font-semibold bg-amber-50 text-ink-warning border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">
                 Demo Mode
               </span>
             )}
             {isDemoActive ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-slate-500">
+              <span className="inline-flex items-center gap-1.5 text-label font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-ink-muted">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
                 Synced 2 min ago
               </span>
             ) : costSummary?.spend.asOf ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-slate-500">
+              <span className="inline-flex items-center gap-1.5 text-label font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-ink-muted">
                 Cost data as of {new Date(costSummary.spend.asOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </span>
             ) : null}
             {isDemoActive ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-2.5 py-1 bg-green-50 border border-green-200 text-green-600">
+              <span className="inline-flex items-center gap-1.5 text-label font-medium rounded-full px-2.5 py-1 bg-green-50 border border-green-200 text-ink-success">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500" />
                 All systems clear
               </span>
             ) : growthRate !== null ? (
               // Only a real comparison can say whether spend spiked; a missing one says nothing.
-              <span className={`inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-2.5 py-1 ${
+              <span className={`inline-flex items-center gap-1.5 text-label font-medium rounded-full px-2.5 py-1 ${
                 costAnomalyDetected
-                  ? 'bg-red-50 border border-red-200 text-red-600'
-                  : 'bg-green-50 border border-green-200 text-green-600'
+                  ? 'bg-red-50 border border-red-200 text-ink-danger'
+                  : 'bg-green-50 border border-green-200 text-ink-success'
               }`}>
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${costAnomalyDetected ? 'bg-red-500' : 'bg-green-500'}`} />
                 {costAnomalyDetected ? 'Spend up over 20% vs last month' : 'No spend spike vs last month'}
               </span>
             ) : null}
           </div>
-          <p className="text-xs text-slate-500 font-medium leading-relaxed">
+          <p className={PAGE_SUBTITLE_CLASS}>
             AWS spend visibility, forecasting, and AI-powered cost optimization.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white text-slate-600 px-4 py-2.5 rounded-lg text-sm font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
+          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white text-slate-600 px-4 py-2.5 rounded-lg text-ui font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
             <Download size={14} /> Export CSV
           </button>
-          <a href="/cost-optimization" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold no-underline transition-colors whitespace-nowrap">
+          <a href="/cost-optimization" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors whitespace-nowrap">
             <Zap size={14} /> Optimize Now
           </a>
         </div>
@@ -457,32 +459,32 @@ export default function CostsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <p className="text-xs font-bold text-amber-900 m-0">{isDemoActive ? 'Cost Anomaly Detected' : 'Spend Up Sharply vs Last Month'}</p>
-              <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{isDemoActive ? 'AI Detected' : 'Month-over-month'}</span>
+              <p className="text-label font-semibold text-amber-900 m-0">{isDemoActive ? 'Cost Anomaly Detected' : 'Spend Up Sharply vs Last Month'}</p>
+              <span className="text-label font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{isDemoActive ? 'AI Detected' : 'Month-over-month'}</span>
             </div>
-            <p className="text-xs text-amber-800 leading-relaxed mb-2.5">
+            <p className="text-meta text-amber-800 leading-relaxed mb-2.5">
               {isDemoActive
                 ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
                 : `Spend over this month's finished days is more than 20% above the same days last month (AWS Cost Explorer)${mom.includesToday ? `; ${TODAY_STILL_BILLING}` : ''}. Review your recent deployments and scaling events.`
               }
             </p>
             <div className="flex gap-2 flex-wrap">
-              <a href="/cost-optimization" className="text-xs font-medium text-amber-800 px-3 py-1.5 rounded-lg no-underline inline-flex items-center gap-1">
+              <a href="/cost-optimization" className="text-label font-medium text-amber-800 px-3 py-1.5 rounded-lg no-underline inline-flex items-center gap-1">
                 View optimization recommendations →
               </a>
             </div>
           </div>
           <div className="shrink-0 text-right bg-white border border-amber-200 rounded-lg px-3 py-2 hidden sm:block">
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-widest mb-1">Est. Impact</p>
+            <p className="text-label font-semibold text-amber-700 uppercase tracking-widest mb-1">Est. Impact</p>
             {isDemoActive ? (
               <>
-                <p className="text-lg font-bold text-amber-500 m-0">+$864<span className="text-xs font-medium">/mo</span></p>
-                <p className="text-xs text-amber-700 mt-0.5">if sustained</p>
+                <p className="text-section text-ink-warning m-0">+$864<span className="text-label font-medium">/mo</span></p>
+                <p className="text-meta text-amber-700 mt-0.5">if sustained</p>
               </>
             ) : (
               <>
-                <p className="text-lg font-bold text-amber-500 m-0">{mom.value}</p>
-                <p className="text-xs text-amber-700 mt-0.5">vs last month</p>
+                <p className="text-section text-ink-warning m-0">{mom.value}</p>
+                <p className="text-meta text-amber-700 mt-0.5">vs last month</p>
               </>
             )}
           </div>
@@ -499,11 +501,11 @@ export default function CostsPage() {
               onMouseLeave={() => setHoveredCard(null)}
             >
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">{label}</span>
-                <span className="text-slate-300 text-sm">›</span>
+                <span className="text-label font-semibold text-ink-muted uppercase tracking-widest">{label}</span>
+                <span className="text-ink-muted text-ui">›</span>
               </div>
-              <div className={`text-2xl sm:text-3xl font-bold tracking-tight leading-none mb-2 ${valueColor}`}>{value}</div>
-              <div className={`flex items-center gap-1.5 text-xs ${subColor}`}>
+              <div className={`text-section sm:text-kpi tabular-nums leading-none mb-2 ${valueColor}`}>{value}</div>
+              <div className={`flex items-center gap-1.5 text-meta ${subColor}`}>
                 <TrendIcon size={12} className={trendColor} />
                 <span className="leading-relaxed">{sub}</span>
               </div>
@@ -518,9 +520,9 @@ export default function CostsPage() {
           <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-3">
             <Lock size={18} className="text-violet-600" />
           </div>
-          <p className="text-sm font-semibold text-slate-900 mb-1.5">Pro Plan Required</p>
-          <p className="text-xs text-slate-500 mb-4">This feature is available on the Pro plan and above.</p>
-          <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-lg text-xs font-semibold no-underline transition-colors">
+          <p className="text-ui font-semibold text-slate-900 mb-1.5">Pro Plan Required</p>
+          <p className="text-meta text-ink-muted mb-4">This feature is available on the Pro plan and above.</p>
+          <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-lg text-label font-semibold no-underline transition-colors">
             Upgrade to Pro
           </a>
         </div>
@@ -529,10 +531,10 @@ export default function CostsPage() {
           {nlUpgradeBanner && (
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-4 gap-3">
               <div className="flex items-center gap-2.5">
-                <span className="text-lg">⚠️</span>
-                <span className="text-sm font-medium text-amber-900">This feature requires the Pro plan.</span>
+                <span className="text-section">⚠️</span>
+                <span className="text-ui font-medium text-amber-900">This feature requires the Pro plan.</span>
               </div>
-              <a href="/settings/billing/upgrade" className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap">
+              <a href="/settings/billing/upgrade" className="shrink-0 text-label font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap">
                 Upgrade to Pro
               </a>
             </div>
@@ -545,12 +547,12 @@ export default function CostsPage() {
                 value={nlQuery}
                 onChange={e => setNlQuery(e.target.value)}
                 placeholder='Ask about your data — "What is my AWS spend this month?" · "Show running EC2 instances"'
-                className="w-full pl-11 pr-28 py-3.5 rounded-xl border border-slate-200 text-sm text-slate-900 bg-white outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
+                className="w-full pl-11 pr-28 py-3.5 rounded-xl border border-slate-200 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
               />
               <button
                 type="submit"
                 disabled={nlLoading}
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border-none"
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border-none"
               >
                 {nlLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 {nlLoading ? 'Analyzing...' : 'Ask AI'}
@@ -562,7 +564,7 @@ export default function CostsPage() {
                   key={chip}
                   type="button"
                   onClick={() => { setNlQuery(chip); inputRef.current?.focus() }}
-                  className="text-xs text-violet-600 bg-violet-50 rounded-full px-2.5 py-1 cursor-pointer border-none font-medium hover:bg-violet-100 transition-colors"
+                  className="text-label text-violet-600 bg-violet-50 rounded-full px-2.5 py-1 cursor-pointer border-none font-medium hover:bg-violet-100 transition-colors"
                 >
                   {chip}
                 </button>
@@ -570,10 +572,10 @@ export default function CostsPage() {
             </div>
             {isDemoActive && !nlResult && (
               <div className="mt-2.5 flex items-center justify-between bg-slate-50 border-l-2 border-violet-500 rounded-r-lg px-4 py-3 gap-4">
-                <p className="text-xs text-slate-500 leading-relaxed m-0">
+                <p className="text-meta text-ink-muted leading-relaxed m-0">
                   <strong className="text-slate-900">AI insight:</strong> Your EC2 instances are 38% underutilized. 3 instances running at &lt;5% CPU for 21+ days.
                 </p>
-                <span className="text-xs font-bold text-green-600 shrink-0">$362/mo savings</span>
+                <span className="text-label font-semibold text-ink-success shrink-0">$362/mo savings</span>
               </div>
             )}
             {nlResult && (
@@ -584,28 +586,28 @@ export default function CostsPage() {
                       <Sparkles size={11} className="text-white" />
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-slate-900 m-0">{nlResult.intent.explanation}</p>
-                      <p className="text-xs text-violet-600 m-0">{NL_OUTCOME_LABEL[nlResult.data.outcome](nlResult.rowCount)} · {nlResult.executionMs}ms</p>
+                      <p className="text-label font-semibold text-slate-900 m-0">{nlResult.intent.explanation}</p>
+                      <p className="text-meta text-violet-600 m-0">{NL_OUTCOME_LABEL[nlResult.data.outcome](nlResult.rowCount)} · {nlResult.executionMs}ms</p>
                     </div>
                   </div>
-                  <button onClick={() => setNlResult(null)} className="bg-transparent border-none cursor-pointer text-slate-400 hover:text-slate-600">
+                  <button onClick={() => setNlResult(null)} className="bg-transparent border-none cursor-pointer text-ink-muted hover:text-slate-600">
                     <X size={14} />
                   </button>
                 </div>
                 <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50">
-                  <p className="text-xs text-slate-500 m-0">{nlResult.data.summary}</p>
+                  <p className="text-meta text-ink-muted m-0">{nlResult.data.summary}</p>
                 </div>
                 {nlResult.data.rows.length > 0 && (
                   <div className="overflow-x-auto">
                     <div className="grid px-5 py-2.5 bg-slate-50 border-b border-slate-100" style={{ gridTemplateColumns: `repeat(${nlResult.data.columns.length}, 1fr)` }}>
                       {nlResult.data.columns.map(col => (
-                        <span key={col} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{col}</span>
+                        <span key={col} className="text-label font-semibold text-ink-muted uppercase tracking-wider">{col}</span>
                       ))}
                     </div>
                     {nlResult.data.rows.map((row, idx) => (
                       <div key={idx} className="grid px-5 py-3 border-b border-slate-50 last:border-b-0 hover:bg-slate-50 items-center" style={{ gridTemplateColumns: `repeat(${nlResult.data.columns.length}, 1fr)` }}>
                         {Object.values(row).slice(0, nlResult.data.columns.length).map((val: any, ci) => (
-                          <span key={ci} className={`text-sm text-slate-900 ${ci === 0 ? 'font-semibold' : ''}`}>
+                          <span key={ci} className={`text-ui text-slate-900 ${ci === 0 ? 'font-semibold' : ''}`}>
                             {val instanceof Date ? new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : val == null ? '—' : String(val)}
                           </span>
                         ))}
@@ -615,12 +617,12 @@ export default function CostsPage() {
                 )}
                 {nlResult.data.outcome === 'no_results' && (
                   <div className="px-5 py-8 text-center">
-                    <p className="text-sm text-slate-500 m-0">The data was checked and nothing matched this query.</p>
+                    <p className="text-ui text-ink-muted m-0">The data was checked and nothing matched this query.</p>
                   </div>
                 )}
               </div>
             )}
-            {nlError && <p className="mt-2 text-xs text-amber-600 px-1">{nlError}</p>}
+            {nlError && <p className="mt-2 text-meta text-ink-warning px-1">{nlError}</p>}
           </form>
         </>
       )}
@@ -629,8 +631,8 @@ export default function CostsPage() {
       <div className="bg-white rounded-2xl p-4 sm:p-8 border border-slate-100 mb-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
-            <p className="text-xs text-slate-500 leading-relaxed m-0">
+            <h2 className="text-ui font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
+            <p className="text-meta text-ink-muted leading-relaxed m-0">
               {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : `Historical AWS spend by ${trendUnit}, from Cost Explorer · ${TREND_TOTALS_NOTE}`}
             </p>
           </div>
@@ -639,8 +641,8 @@ export default function CostsPage() {
               <button
                 key={label}
                 onClick={() => setSelectedRange(label)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold border-none cursor-pointer transition-all whitespace-nowrap ${
-                  selectedRange === label ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-700'
+                className={`px-3 py-1.5 rounded-md text-label font-semibold border-none cursor-pointer transition-all whitespace-nowrap ${
+                  selectedRange === label ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-ink-muted hover:text-slate-700'
                 }`}
               >
                 {label}
@@ -654,25 +656,25 @@ export default function CostsPage() {
           {[
             { label: spend.label,              value: spend.value, color: 'text-slate-900' },
             {
-              label: 'Month-over-Month', value: mom.value, color: growthRate === null ? 'text-slate-500' : growthRate > 5 ? 'text-red-600' : 'text-green-600',
+              label: 'Month-over-Month', value: mom.value, color: growthRate === null ? 'text-ink-muted' : growthRate > 5 ? 'text-ink-danger' : 'text-ink-success',
               // Fixed basis, stated because this strip sits under the range tabs it does not follow.
               // Built from the same floored daily trend as the chart, so credits/refunds are excluded.
               note: isDemoActive ? undefined : `${MOM_BASIS_LABEL} · ${TREND_TOTALS_NOTE}${mom.includesToday ? ` · ${TODAY_STILL_BILLING}` : ''}`,
             },
-            { label: 'Active Recommendations', value: recsUnavailable ? '—' : `${activeRecsCount}`, color: 'text-slate-500' },
-            { label: 'Estimated Savings Opportunity', value: savingsValue, color: 'text-green-600' },
+            { label: 'Active Recommendations', value: recsUnavailable ? '—' : `${activeRecsCount}`, color: 'text-ink-muted' },
+            { label: 'Estimated Savings Opportunity', value: savingsValue, color: 'text-ink-success' },
           ].map(({ label, value, color, note }: { label: string; value: string; color: string; note?: string }) => (
             <div key={label}>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
-              <p className={`text-lg font-bold tracking-tight m-0 ${color}`}>{value}</p>
-              {note && <p className="text-xs text-slate-500 mt-0.5 m-0" data-testid="mom-basis">{note}</p>}
+              <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-1">{label}</p>
+              <p className={`text-section tracking-tight tabular-nums m-0 ${color}`}>{value}</p>
+              {note && <p className="text-meta text-ink-muted mt-0.5 m-0" data-testid="mom-basis">{note}</p>}
             </div>
           ))}
         </div>
 
         {/* Top drivers */}
         <div className="flex flex-wrap gap-3 mb-5 pb-4 border-b border-slate-100">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest m-0 self-center">Top drivers</p>
+          <p className="text-label font-semibold text-ink-muted uppercase tracking-widest m-0 self-center">Top drivers</p>
           {isDemoActive || hasTrendData ? [
             { name: 'Compute',  amount: isDemoActive ? 5200 : categoryTotals!.compute,  color: '#3B82F6' },
             { name: 'Database', amount: isDemoActive ? 2400 : categoryTotals!.database, color: '#8B5CF6' },
@@ -680,11 +682,11 @@ export default function CostsPage() {
           ].map(({ name, amount, color }) => (
             <div key={name} className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-              <span className="text-xs text-slate-500">{name}</span>
-              <span className="text-xs font-bold text-slate-900">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
+              <span className="text-meta text-ink-muted">{name}</span>
+              <span className="text-label font-semibold text-slate-900 tabular-nums">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
             </div>
           )) : (
-            <span className="text-xs text-slate-500 self-center">{costTrendLoading ? 'Loading…' : 'Not available'}</span>
+            <span className="text-meta text-ink-muted self-center">{costTrendLoading ? 'Loading…' : 'Not available'}</span>
           )}
         </div>
 
@@ -704,9 +706,9 @@ export default function CostsPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} stroke="#F1F5F9" />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[150, (d: number) => Math.ceil(d * 1.05)]} />
-                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '10px 14px' }} labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }} formatter={(v: any, name: any) => [`$${typeof v === 'number' ? v.toLocaleString() : v}/mo`, name === 'actual' ? 'Actual Spend' : 'AI Forecast']} />
+                <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[150, (d: number) => Math.ceil(d * 1.05)]} />
+                <Tooltip contentStyle={CHART_TOOLTIP.contentStyle} labelStyle={CHART_TOOLTIP.labelStyle} formatter={(v: any, name: any) => [`$${typeof v === 'number' ? v.toLocaleString() : v}/mo`, name === 'actual' ? 'Actual Spend' : 'AI Forecast']} />
                 <Area type="monotone" dataKey="actual" stroke="#0F172A" strokeWidth={2} fill="url(#demoActualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
                 <Area type="monotone" dataKey="forecast" stroke="#7C3AED" strokeWidth={2} fill="url(#demoForecastGradient)" dot={false} connectNulls={false} strokeDasharray="6 3" activeDot={{ r: 4, fill: '#7C3AED', strokeWidth: 0 }} />
                 <ReferenceLine x="Apr 8"  stroke="#3B6D11" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: 'Apr 8 · Optimized', position: 'insideTopLeft' as const, fontSize: 9, fill: '#3B6D11' } as any} />
@@ -721,7 +723,7 @@ export default function CostsPage() {
           </div>
         ) : !hasTrendData ? (
           <div className="h-60 flex items-center justify-center text-center px-4">
-            <p className="text-xs text-slate-500 m-0">
+            <p className="text-meta text-ink-muted m-0">
               {costTrendError
                 ? 'The spend trend could not be retrieved from AWS Cost Explorer.'
                 : 'No AWS Cost Explorer spend data is available for this range.'}
@@ -738,9 +740,9 @@ export default function CostsPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} stroke="#F1F5F9" />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
-                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', padding: '10px 14px' }} labelStyle={{ fontWeight: 600, color: '#0F172A', marginBottom: '4px' }} formatter={(v: any) => [`${typeof v === 'number' ? formatUsd(v) : v}/${trendUnit}`, 'Actual Spend']} />
+                <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
+                <Tooltip contentStyle={CHART_TOOLTIP.contentStyle} labelStyle={CHART_TOOLTIP.labelStyle} formatter={(v: any) => [`${typeof v === 'number' ? formatUsd(v) : v}/${trendUnit}`, 'Actual Spend']} />
                 <Area type="monotone" dataKey="actual" stroke="#0F172A" strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
               </AreaChart>
             </ResponsiveContainer>
@@ -762,10 +764,10 @@ export default function CostsPage() {
               <svg width="24" height="2" className="shrink-0">
                 <line x1="0" y1="1" x2="24" y2="1" stroke={color} strokeWidth="2" strokeDasharray={dash ? '5 3' : '0'} />
               </svg>
-              <span className="text-xs text-slate-500 font-medium">{label}</span>
+              <span className="text-label text-ink-muted font-medium">{label}</span>
             </div>
           ))}
-          <span className="text-xs text-slate-500 ml-auto hidden sm:block">
+          <span className="text-meta text-ink-muted ml-auto hidden sm:block">
             {isDemoActive ? 'Values shown as monthly equivalent' : trendUnit === 'month' ? 'Values shown as monthly spend' : 'Values shown as daily spend'}
           </span>
         </div>
@@ -778,16 +780,16 @@ export default function CostsPage() {
         <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
-              {!isDemoActive && <p className="text-xs text-slate-500 m-0 mt-0.5" data-testid="cost-by-service-basis">AWS Cost Explorer · selected range ({selectedRange}) · {TREND_TOTALS_NOTE}</p>}
+              <h2 className="text-ui font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
+              {!isDemoActive && <p className="text-meta text-ink-muted m-0 mt-0.5" data-testid="cost-by-service-basis">AWS Cost Explorer · selected range ({selectedRange}) · {TREND_TOTALS_NOTE}</p>}
             </div>
-            <a href="/cost-optimization" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">
+            <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1">
               Full breakdown <ChevronRight size={12} />
             </a>
           </div>
           <div className="flex flex-col gap-4">
             {!isDemoActive && !hasTrendData ? (
-              <p className="text-xs text-slate-500 m-0 py-6 text-center">
+              <p className="text-meta text-ink-muted m-0 py-6 text-center">
                 {costTrendLoading ? 'Loading…'
                   : costTrendError ? 'Cost by service could not be retrieved from AWS Cost Explorer.'
                   : 'No AWS Cost Explorer spend data is available for this range.'}
@@ -809,18 +811,18 @@ export default function CostsPage() {
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
-                        <span className="text-xs text-slate-700 font-medium">{name}</span>
+                        <span className="text-label text-slate-700 font-medium">{name}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        {hasSpend && <span className="text-xs text-slate-500 font-medium">{pctOfTotal}%</span>}
-                        {hasSpend && trend != null && <span className={`text-xs font-medium ${up ? 'text-amber-500' : 'text-green-600'}`}>{trend}</span>}
-                        <span className="text-sm font-semibold text-slate-900 min-w-[60px] text-right">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
+                        {hasSpend && <span className="text-label text-ink-muted font-medium tabular-nums">{pctOfTotal}%</span>}
+                        {hasSpend && trend != null && <span className={`text-label font-medium ${up ? 'text-ink-warning' : 'text-ink-success'}`}>{trend}</span>}
+                        <span className="text-ui font-semibold text-slate-900 min-w-[60px] text-right tabular-nums">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
                       </div>
                     </div>
                     <div className="h-1.5 bg-slate-100 rounded-full">
                       <div className="h-full rounded-full transition-all duration-500" style={{ width: `${hasSpend ? pct : 0}%`, background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
                     </div>
-                    {savingsFlag && <p className="text-xs text-amber-500 mt-1 font-medium">{savingsFlag}</p>}
+                    {savingsFlag && <p className="text-label text-ink-warning mt-1 font-medium">{savingsFlag}</p>}
                   </div>
                 )
               })
@@ -831,8 +833,8 @@ export default function CostsPage() {
         {/* Top Savings */}
         <div className="bg-white rounded-2xl p-5 sm:p-8 border border-green-200 border-t-[3px] border-t-green-500">
           <div className="flex items-center justify-between mb-5">
-            <h2 className="text-sm font-semibold text-green-600 m-0 tracking-tight">Top Savings</h2>
-            <a href="/cost-optimization" className="text-xs font-semibold text-violet-600 no-underline flex items-center gap-1">
+            <h2 className="text-ui font-semibold text-ink-success m-0 tracking-tight">Top Savings</h2>
+            <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1">
               View all <ChevronRight size={12} />
             </a>
           </div>
@@ -840,52 +842,52 @@ export default function CostsPage() {
           {isDemoActive && (
             <div className="flex items-center justify-between mb-3.5">
               <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">Optimization Confidence</p>
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-1.5">Optimization Confidence</p>
                 <div className="flex items-center gap-2">
                   <div className="h-1 bg-slate-100 rounded-full w-24">
                     <div className="h-full bg-green-500 rounded-full" style={{ width: '94%' }} />
                   </div>
-                  <span className="text-sm font-bold text-green-600">94%</span>
+                  <span className="text-ui font-semibold text-ink-success">94%</span>
                 </div>
               </div>
-              <span className="text-xs text-green-600 font-semibold bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Safe to apply</span>
+              <span className="text-label text-ink-success font-semibold bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Safe to apply</span>
             </div>
           )}
 
           <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold text-green-600 uppercase tracking-widest mb-1">Estimated Savings Opportunity</p>
-              <p className="text-2xl font-extrabold text-green-600 m-0">{recsUnavailable ? '—' : <>{formatSavingsCurrency(displaySavings)}<span className="text-sm font-medium">/mo</span></>}</p>
+              <p className="text-label font-semibold text-ink-success uppercase tracking-widest mb-1">Estimated Savings Opportunity</p>
+              <p className="text-section text-ink-success tabular-nums m-0">{recsUnavailable ? '—' : <>{formatSavingsCurrency(displaySavings)}<span className="text-ui font-medium">/mo</span></>}</p>
               {recsUnavailable
-                ? <p className="text-xs text-slate-500 mt-1 m-0">{recsUnavailableSub}</p>
-                : <p className="text-xs text-green-700 mt-1 m-0">{describeAnnualizedSavings(displaySavings)}</p>}
+                ? <p className="text-meta text-ink-muted mt-1 m-0">{recsUnavailableSub}</p>
+                : <p className="text-meta text-green-700 mt-1 m-0">{describeAnnualizedSavings(displaySavings)}</p>}
             </div>
             <div className="text-center sm:text-right">
-              <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold no-underline inline-block transition-colors whitespace-nowrap">
+              <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-label font-semibold no-underline inline-block transition-colors whitespace-nowrap">
                 Review savings
               </a>
-              {isDemoActive && <p className="text-xs text-green-600 mt-1 font-medium">No downtime risk · Fully reversible</p>}
+              {isDemoActive && <p className="text-label text-ink-success mt-1 font-medium">No downtime risk · Fully reversible</p>}
             </div>
           </div>
 
           <div className="flex flex-col gap-3">
             {!isDemoActive && activeRecsError ? (
               <div className="p-6 text-center">
-                <p className="text-xs text-slate-500 m-0">Recommendations could not be retrieved.</p>
+                <p className="text-meta text-ink-muted m-0">Recommendations could not be retrieved.</p>
               </div>
             ) : topSavingsRows.length > 0 ? topSavingsRows.map((rec) => (
               <div key={rec.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <p className="text-xs font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
-                  <span className="text-xs font-bold text-green-600 shrink-0">{rec.savingsLabel}</span>
+                  <p className="text-label font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
+                  <span className="text-label font-semibold text-ink-success shrink-0">{rec.savingsLabel}</span>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${severityStyles[rec.severity]}`}>
+                <span className={`text-label font-semibold px-2 py-0.5 rounded-full border ${severityStyles[rec.severity]}`}>
                   {rec.severity}
                 </span>
               </div>
             )) : (
               <div className="p-6 text-center">
-                <p className="text-xs text-slate-500 m-0">No optimization recommendations yet. Run a cost scan to identify savings opportunities.</p>
+                <p className="text-meta text-ink-muted m-0">No optimization recommendations yet. Run a cost scan to identify savings opportunities.</p>
               </div>
             )}
           </div>
@@ -895,7 +897,7 @@ export default function CostsPage() {
       {/* ── DEVCONTROL VALUE DELIVERED ── */}
       {isDemoActive && (
         <div className="bg-slate-50 rounded-2xl p-5 sm:p-8 border border-slate-100 mb-4">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-5">DevControl value delivered</p>
+          <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-5">DevControl value delivered</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
               { label: 'Saved this year',       value: '$23,400' },
@@ -906,9 +908,9 @@ export default function CostsPage() {
               { label: 'Policies running',      value: '3' },
             ].map(({ label, value, note }) => (
               <div key={label} className="bg-white rounded-xl p-4 border border-slate-100">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">{label}</p>
-                <p className="text-xl font-bold text-slate-900 m-0 tracking-tight leading-none">{value}</p>
-                {note && <p className="text-xs text-green-600 mt-1 font-medium">{note}</p>}
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-1.5">{label}</p>
+                <p className="text-section text-slate-900 m-0 tracking-tight leading-none tabular-nums">{value}</p>
+                {note && <p className="text-label text-ink-success mt-1 font-medium">{note}</p>}
               </div>
             ))}
           </div>
