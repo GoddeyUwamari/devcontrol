@@ -25,7 +25,7 @@ export function ScanTime({ iso, now, exactLine = false }: { iso: string; now: nu
           <TooltipContent>{exact}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      {exactLine && <span aria-hidden="true" className="block text-xs text-slate-500">{exact}</span>}
+      {exactLine && <span aria-hidden="true" className="block text-meta text-ink-muted">{exact}</span>}
     </>
   )
 }

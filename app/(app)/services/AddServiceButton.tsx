@@ -18,7 +18,7 @@ export function AddServiceButton({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const role = useCurrentRole()
   const reasonId = useId()
   const canAdd = role === 'owner' || role === 'admin'
-  const sizeClass = size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-3.5 py-2 text-xs'
+  const sizeClass = size === 'sm' ? 'px-3 py-1.5 text-label' : 'px-3.5 py-2 text-label'
   const label = <><Plus size={13} aria-hidden="true" /> Add Service</>
 
   if (canAdd) {
@@ -38,7 +38,7 @@ export function AddServiceButton({ size = 'md' }: { size?: 'sm' | 'md' }) {
       >
         {label}
       </button>
-      {role !== null && <span id={reasonId} className="text-xs text-slate-600">{ADD_SERVICE_ADMIN_ONLY_TEXT}</span>}
+      {role !== null && <span id={reasonId} className="text-meta text-slate-600">{ADD_SERVICE_ADMIN_ONLY_TEXT}</span>}
     </span>
   )
 }

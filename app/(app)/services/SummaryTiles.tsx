@@ -50,15 +50,15 @@ export const NOT_SCANNED_TEXT = 'Not scanned yet'
 /** Why there is no count: a link to connect an account, or "Not scanned yet". */
 function GapCaption({ gap }: { gap: 'no-account' | 'not-scanned' }) {
   return gap === 'no-account'
-    ? <p className="m-0 text-xs"><Link href="/connect-aws" className="text-violet-700 hover:underline">{CONNECT_ACCOUNT_TEXT}</Link></p>
-    : <p className="m-0 text-xs text-slate-600">{NOT_SCANNED_TEXT}</p>
+    ? <p className="m-0 text-meta"><Link href="/connect-aws" className="text-violet-700 hover:underline">{CONNECT_ACCOUNT_TEXT}</Link></p>
+    : <p className="m-0 text-meta text-slate-600">{NOT_SCANNED_TEXT}</p>
 }
 
 function Tile({ label, value, tone, children }: { label: string; value: string; tone?: 'danger'; children?: React.ReactNode }) {
   return (
     <div className={`bg-white rounded-xl p-4 border flex flex-col gap-1.5 ${tone === 'danger' ? 'border-red-200' : 'border-slate-200'}`}>
-      <h2 className="m-0 text-xs font-bold uppercase tracking-wider text-slate-700">{label}</h2>
-      <p className={`m-0 text-3xl font-semibold leading-none ${tone === 'danger' ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
+      <h2 className="m-0 text-label uppercase tracking-[0.04em] text-slate-700">{label}</h2>
+      <p className={`m-0 text-kpi tabular-nums leading-none ${tone === 'danger' ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
       {children}
     </div>
   )
@@ -100,18 +100,18 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
         {bySeverity && flagged && (
           <ul aria-label="Needs attention by severity" className="m-0 flex list-none flex-wrap gap-1.5 p-0">
             {SEVERITY_CHIPS.filter((s) => bySeverity[s.key] > 0).map((s) => (
-              <li key={s.key} className={`rounded px-2 py-0.5 text-xs font-semibold ${s.className}`}>{bySeverity[s.key]} {s.label}</li>
+              <li key={s.key} className={`rounded px-2 py-0.5 text-label ${s.className}`}>{bySeverity[s.key]} {s.label}</li>
             ))}
           </ul>
         )}
-        <p className="m-0 text-xs text-slate-600">No flagged issues: {count(stats?.healthy)}</p>
+        <p className="m-0 text-meta text-slate-600">No flagged issues: {count(stats?.healthy)}</p>
         {gap && <GapCaption gap={gap} />}
       </Tile>
 
       <Tile label="Unowned" value={count(ownership?.unowned)}>
         {gap && <GapCaption gap={gap} />}
         {!gap && unownedPercent !== null && !statsState.loading && (
-          <p className="m-0 text-xs text-slate-600">
+          <p className="m-0 text-meta text-slate-600">
             {unownedPercent}% of resources whose tags we could read have neither an Owner nor a Team tag
             {onShowUnowned && (ownership?.unowned ?? 0) > 0 && (
               <> · <button type="button" onClick={onShowUnowned} className="font-semibold text-violet-700 hover:underline">Show them</button></>
@@ -122,21 +122,21 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
 
       <Tile label="Resources" value={count(stats?.total)}>
         {gap && <GapCaption gap={gap} />}
-        {!gap && scope && <p className="m-0 text-xs text-slate-600">{scope}</p>}
+        {!gap && scope && <p className="m-0 text-meta text-slate-600">{scope}</p>}
       </Tile>
 
       <Tile label="Services" value={kpi(registered.count, { loading: registered.loading, unavailable: registered.error })}>
-        <p className="m-0 text-xs text-slate-600">
+        <p className="m-0 text-meta text-slate-600">
           registered{stats?.mapped_to_service === 0 && stats.total > 0 && <> · resources not mapped to services yet <PhaseTwoTag /></>}
         </p>
       </Tile>
 
       <Tile label="AWS spend, month to date" value={spendView.kind === 'loading' ? '…' : spendView.kind === 'billed' ? spendView.value : '—'}>
         {spendView.kind === 'billed' && (
-          <p className="m-0 text-xs text-slate-600">{spendView.notes.join(' · ')} · per service <PhaseTwoTag /></p>
+          <p className="m-0 text-meta text-slate-600">{spendView.notes.join(' · ')} · per service <PhaseTwoTag /></p>
         )}
         {spendView.kind === 'unavailable' && (
-          <p className="m-0 text-xs text-slate-600">
+          <p className="m-0 text-meta text-slate-600">
             {SPEND_UNAVAILABLE_TEXT} · <Link href="/costs" className="text-violet-700 hover:underline">Costs</Link>
           </p>
         )}

@@ -28,7 +28,7 @@ export const SCAN_RUNNING_REFETCH_MS = 60_000
 function LoadErrorBanner() {
   return (
     <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
-      <p className="text-sm text-red-600 m-0">Failed to load resources.</p>
+      <p className="text-ui text-ink-danger m-0">Failed to load resources.</p>
     </div>
   )
 }
@@ -183,7 +183,7 @@ export function ServicesOverview({
   return (
     <>
       {demo && (
-        <div role="note" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-ink-warning-strong">
+        <div role="note" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-meta text-ink-warning-strong">
           <strong>{SAMPLE_DATA_BANNER}</strong> Placeholder names only.
         </div>
       )}

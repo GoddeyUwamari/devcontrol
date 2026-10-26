@@ -7,7 +7,7 @@ import type { FindingsTile, OverviewView, Tile } from './overviewModel'
 function Captions({ captions, now }: { captions: Tile['captions']; now: number }) {
   return (
     <>
-      {captions.map((parts, i) => <p key={i} className="m-0 text-xs text-slate-600"><RichText parts={parts} now={now} /></p>)}
+      {captions.map((parts, i) => <p key={i} className="m-0 text-meta text-slate-600"><RichText parts={parts} now={now} /></p>)}
     </>
   )
 }
@@ -15,10 +15,10 @@ function Captions({ captions, now }: { captions: Tile['captions']; now: number }
 function TileCard({ tile, now }: { tile: Tile; now: number }) {
   return (
     <div data-testid={`infra-tile-${tile.key}`} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-      <h3 className="m-0 text-xs font-bold uppercase tracking-wider text-slate-700">{tile.label}</h3>
-      <p className="m-0 text-2xl font-bold text-slate-900">{tile.value}</p>
+      <h3 className="m-0 text-label uppercase tracking-[0.04em] text-slate-700">{tile.label}</h3>
+      <p className="m-0 text-kpi tabular-nums text-slate-900">{tile.value}</p>
       <Captions captions={tile.captions} now={now} />
-      {tile.link && <Link href={tile.link.href} className="mt-auto text-sm font-semibold text-violet-700 hover:underline">{tile.link.text}</Link>}
+      {tile.link && <Link href={tile.link.href} className="mt-auto text-ui font-semibold text-violet-700 hover:underline">{tile.link.text}</Link>}
     </div>
   )
 }
@@ -27,15 +27,15 @@ function TileCard({ tile, now }: { tile: Tile; now: number }) {
 function FindingsCard({ tile, now }: { tile: FindingsTile; now: number }) {
   return (
     <div data-testid="infra-tile-findings" className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-      <h3 className="m-0 text-xs font-bold uppercase tracking-wider text-slate-700">{tile.label}</h3>
+      <h3 className="m-0 text-label uppercase tracking-[0.04em] text-slate-700">{tile.label}</h3>
       <dl className="m-0 flex flex-col gap-3">
         {tile.sources.map((s) => (
           <div key={s.key} data-testid={`infra-findings-${s.key}`}>
-            <dt className="text-xs font-semibold text-slate-600">{s.label}</dt>
+            <dt className="text-label text-slate-600">{s.label}</dt>
             <dd className="m-0">
-              <span className="text-2xl font-bold text-slate-900">{s.value}</span>
-              {s.breakdown && <span className="block text-xs text-slate-600">{s.breakdown}</span>}
-              {s.note && <span className="block text-xs text-slate-600">{s.note}</span>}
+              <span className="text-kpi tabular-nums text-slate-900">{s.value}</span>
+              {s.breakdown && <span className="block text-meta text-slate-600">{s.breakdown}</span>}
+              {s.note && <span className="block text-meta text-slate-600">{s.note}</span>}
             </dd>
           </div>
         ))}

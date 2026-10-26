@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { aiReportsService, ReportDetail } from '@/lib/services/ai-reports.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
+import { PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import {
   ArrowLeft, Download, AlertCircle,
   DollarSign, Shield, Server, BarChart3, CheckCircle2,
@@ -54,8 +55,8 @@ function Section({ title, icon, children }: { title: string; icon?: React.ReactN
   return (
     <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
       <div className="px-5 sm:px-6 py-4 border-b border-slate-50 flex items-center gap-2">
-        {icon && <span className="text-slate-500">{icon}</span>}
-        <h2 className="text-sm font-bold text-slate-900 tracking-tight">{title}</h2>
+        {icon && <span className="text-ink-muted">{icon}</span>}
+        <h2 className="text-ui font-semibold text-slate-900 tracking-tight">{title}</h2>
       </div>
       <div className="px-5 sm:px-6 py-5">{children}</div>
     </div>
@@ -109,9 +110,9 @@ export default function ReportDetailPage() {
       <div className="px-4 py-8 sm:px-6 lg:px-14 max-w-3xl mx-auto">
         <div className="bg-white rounded-2xl border border-slate-100 p-16 text-center">
           <AlertCircle size={32} className="text-slate-300 mx-auto mb-4" />
-          <p className="text-base font-bold text-slate-900 mb-2">Report not found</p>
-          <p className="text-sm text-slate-400 mb-6">This report may have been deleted or you may not have access to it.</p>
-          <button onClick={() => router.push('/ai-reports')} className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors">
+          <p className="text-section text-slate-900 mb-2">Report not found</p>
+          <p className="text-ui text-ink-muted mb-6">This report may have been deleted or you may not have access to it.</p>
+          <button onClick={() => router.push('/ai-reports')} className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-label border-none cursor-pointer transition-colors">
             <ArrowLeft size={12} /> Back to Reports
           </button>
         </div>
@@ -137,10 +138,10 @@ export default function ReportDetailPage() {
 
       {/* Top nav */}
       <div className="no-print flex items-center justify-between mb-7">
-        <button onClick={() => router.push('/ai-reports')} className="flex items-center gap-1.5 bg-transparent border-none text-slate-500 text-xs font-medium cursor-pointer hover:text-slate-700 transition-colors">
+        <button onClick={() => router.push('/ai-reports')} className="flex items-center gap-1.5 bg-transparent border-none text-ink-muted text-label font-medium cursor-pointer hover:text-slate-700 transition-colors">
           <ArrowLeft size={14} /> Back to Reports
         </button>
-        <button onClick={() => window.print()} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50 transition-colors">
+        <button onClick={() => window.print()} className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-label cursor-pointer hover:bg-slate-50 transition-colors">
           <Download size={12} /> Download PDF
         </button>
       </div>
@@ -151,12 +152,12 @@ export default function ReportDetailPage() {
           <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: type.bg, color: type.color }}>{type.icon}</div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">{type.title}</h1>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: type.bg, color: type.color }}>{type.label}</span>
-              <span className="flex items-center gap-1 text-[10px] font-semibold text-green-600"><CheckCircle2 size={10} /> Ready</span>
+              <h1 className={PAGE_TITLE_CLASS}>{type.title}</h1>
+              <span className="text-label px-2 py-0.5 rounded-full" style={{ background: type.bg, color: type.color }}>{type.label}</span>
+              <span className="flex items-center gap-1 text-label text-ink-success"><CheckCircle2 size={10} /> Ready</span>
             </div>
-            <p className="text-xs text-slate-400 mb-0.5">Generated {formattedDate} · Manual</p>
-            <p className="text-xs text-slate-500">Period: {dateRange}</p>
+            <p className="text-meta text-ink-muted mb-0.5">Generated {formattedDate} · Manual</p>
+            <p className="text-meta text-ink-muted">Period: {dateRange}</p>
           </div>
         </div>
       </div>
@@ -164,8 +165,8 @@ export default function ReportDetailPage() {
       <div className="flex flex-col gap-4">
         {/* Executive Summary */}
         <div className="bg-white rounded-xl border border-slate-100 border-l-[4px] border-l-violet-600 px-5 sm:px-7 py-5">
-          <h2 className="text-[10px] font-bold text-violet-600 uppercase tracking-widest mb-3">Executive Summary</h2>
-          <p className="text-sm text-slate-700 leading-relaxed">{report.executiveSummary || report.summary}</p>
+          <h2 className="text-label text-violet-600 uppercase tracking-[0.04em] mb-3">Executive Summary</h2>
+          <p className="text-ui text-slate-700 leading-relaxed">{report.executiveSummary || report.summary}</p>
         </div>
 
         {/* Key Highlights */}
@@ -173,7 +174,7 @@ export default function ReportDetailPage() {
           <Section title="Key Highlights" icon={<Zap size={13} />}>
             <ul className="list-none p-0 m-0 flex flex-col gap-2">
               {report.keyHighlights.map((h, i) => (
-                <li key={i} className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
+                <li key={i} className="flex items-start gap-2.5 text-ui text-slate-600 leading-relaxed">
                   <ChevronRight size={13} className="text-violet-600 shrink-0 mt-0.5" />{h}
                 </li>
               ))}
@@ -186,13 +187,13 @@ export default function ReportDetailPage() {
           <Section title="Cost Analysis" icon={<DollarSign size={13} />}>
             <div className="flex flex-col gap-4">
               {[{ label: 'Overview', text: report.costAnalysis.overview }, { label: 'Trends', text: report.costAnalysis.trends }].map(({ label, text }) => (
-                <div key={label}><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p><p className="text-sm text-slate-600 leading-relaxed">{text}</p></div>
+                <div key={label}><p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1.5">{label}</p><p className="text-ui text-slate-600 leading-relaxed">{text}</p></div>
               ))}
               {report.costAnalysis.recommendations?.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recommendations</p>
+                  <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-2">Recommendations</p>
                   <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
-                    {report.costAnalysis.recommendations.map((r, i) => <li key={i} className="flex items-start gap-2 text-sm text-slate-600 leading-relaxed"><span className="text-green-600 font-bold shrink-0">→</span>{r}</li>)}
+                    {report.costAnalysis.recommendations.map((r, i) => <li key={i} className="flex items-start gap-2 text-ui text-slate-600 leading-relaxed"><span className="text-ink-success font-semibold shrink-0">→</span>{r}</li>)}
                   </ul>
                 </div>
               )}
@@ -205,13 +206,13 @@ export default function ReportDetailPage() {
           <Section title="Security Analysis" icon={<Lock size={13} />}>
             <div className="flex flex-col gap-4">
               {[{ label: 'Overview', text: report.securityAnalysis.overview }, { label: 'Top Risks', text: report.securityAnalysis.topRisks }].map(({ label, text }) => (
-                <div key={label}><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p><p className="text-sm text-slate-600 leading-relaxed">{text}</p></div>
+                <div key={label}><p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1.5">{label}</p><p className="text-ui text-slate-600 leading-relaxed">{text}</p></div>
               ))}
               {report.securityAnalysis.recommendations?.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recommendations</p>
+                  <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-2">Recommendations</p>
                   <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
-                    {report.securityAnalysis.recommendations.map((r, i) => <li key={i} className="flex items-start gap-2 text-sm text-slate-600 leading-relaxed"><span className="text-red-600 font-bold shrink-0">→</span>{r}</li>)}
+                    {report.securityAnalysis.recommendations.map((r, i) => <li key={i} className="flex items-start gap-2 text-ui text-slate-600 leading-relaxed"><span className="text-ink-danger font-semibold shrink-0">→</span>{r}</li>)}
                   </ul>
                 </div>
               )}
@@ -224,13 +225,13 @@ export default function ReportDetailPage() {
           <Section title="Performance & Deployments" icon={<TrendingUp size={13} />}>
             <div className="flex flex-col gap-4">
               {[{ label: 'Overview', text: report.performanceAnalysis.overview }, { label: 'Delivery Metrics', text: report.performanceAnalysis.doraMetrics }].map(({ label, text }) => (
-                <div key={label}><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p><p className="text-sm text-slate-600 leading-relaxed">{text}</p></div>
+                <div key={label}><p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1.5">{label}</p><p className="text-ui text-slate-600 leading-relaxed">{text}</p></div>
               ))}
               {report.performanceAnalysis.recommendations?.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recommendations</p>
+                  <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-2">Recommendations</p>
                   <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
-                    {report.performanceAnalysis.recommendations.map((r, i) => <li key={i} className="flex items-start gap-2 text-sm text-slate-600 leading-relaxed"><span className="text-blue-600 font-bold shrink-0">→</span>{r}</li>)}
+                    {report.performanceAnalysis.recommendations.map((r, i) => <li key={i} className="flex items-start gap-2 text-ui text-slate-600 leading-relaxed"><span className="text-blue-600 font-semibold shrink-0">→</span>{r}</li>)}
                   </ul>
                 </div>
               )}
@@ -247,14 +248,14 @@ export default function ReportDetailPage() {
                 return (
                   <div key={i} className="border border-slate-100 rounded-xl p-4" style={{ borderLeft: `3px solid ${impact.color}` }}>
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-1.5">
-                      <p className="text-sm font-semibold text-slate-900">{rec.title}</p>
+                      <p className="text-ui font-semibold text-slate-900">{rec.title}</p>
                       <div className="flex gap-1.5 shrink-0 flex-wrap">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: impact.bg, color: impact.color }}>{rec.impact.charAt(0).toUpperCase() + rec.impact.slice(1)} impact</span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-100">{effortLabel[rec.effort]}</span>
+                        <span className="text-label px-2 py-0.5 rounded-full" style={{ background: impact.bg, color: impact.color }}>{rec.impact.charAt(0).toUpperCase() + rec.impact.slice(1)} impact</span>
+                        <span className="text-label px-2 py-0.5 rounded-full bg-slate-50 text-ink-muted border border-slate-100">{effortLabel[rec.effort]}</span>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed">{rec.description}</p>
-                    {rec.estimatedSavings && <p className="text-xs font-semibold text-green-600 mt-2">Est. savings: ${rec.estimatedSavings.toLocaleString()}/mo</p>}
+                    <p className="text-meta text-ink-muted leading-relaxed">{rec.description}</p>
+                    {rec.estimatedSavings && <p className="text-label text-ink-success mt-2">Est. savings: ${rec.estimatedSavings.toLocaleString()}/mo</p>}
                   </div>
                 )
               })}
@@ -267,8 +268,8 @@ export default function ReportDetailPage() {
           <div className="flex flex-wrap gap-5">
             {[{ label: 'Model', value: 'DevControl AI' }, { label: 'Generation time', value: report.metadata.generationTime ? `${(report.metadata.generationTime / 1000).toFixed(1)}s` : '—' }, { label: 'Source', value: report.metadata.wasFallback ? 'Fallback' : 'AI-generated' }, { label: 'Report ID', value: report.id.slice(0, 8) + '…' }].map(({ label, value }) => (
               <div key={label}>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">{label}</p>
-                <p className="text-xs text-slate-500 font-medium">{value}</p>
+                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-0.5">{label}</p>
+                <p className="text-meta text-ink-muted font-medium">{value}</p>
               </div>
             ))}
           </div>

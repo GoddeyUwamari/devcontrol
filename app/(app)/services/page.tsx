@@ -394,11 +394,11 @@ export default function ServicesPage() {
         <div className="flex items-center justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-4 flex-wrap">
           <div className="flex items-center gap-2.5">
             <span className="text-lg">⚠️</span>
-            <span className="text-sm font-medium text-amber-900">
+            <span className="text-ui font-medium text-amber-900">
               You've reached the AWS resource limit on the <strong>{tier}</strong> plan. Upgrade to discover more resources.
             </span>
           </div>
-          <a href="/settings/billing/upgrade" className="shrink-0 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
+          <a href="/settings/billing/upgrade" className="shrink-0 text-label text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
             Upgrade plan
           </a>
         </div>

@@ -18,6 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { cn } from '@/lib/utils'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
 import { logError } from '@/lib/safe-log'
@@ -104,8 +106,8 @@ export default function NewInfrastructurePage() {
     <div className="space-y-6 px-4 md:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Add Infrastructure Resource</h1>
-          <p className="text-xs text-muted-foreground font-medium mt-2">
+          <h1 className={PAGE_TITLE_CLASS}>Add Infrastructure Resource</h1>
+          <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-2')}>
             Track an AWS resource for a service
           </p>
         </div>
@@ -122,8 +124,8 @@ export default function NewInfrastructurePage() {
               <Server className="h-5 w-5 text-[#635BFF]" />
             </div>
             <div>
-              <CardTitle className="text-sm">Resource Details</CardTitle>
-              <CardDescription className="text-xs font-medium">
+              <CardTitle>Resource Details</CardTitle>
+              <CardDescription>
                 Add AWS infrastructure resource information
               </CardDescription>
             </div>
@@ -133,8 +135,8 @@ export default function NewInfrastructurePage() {
           <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Service Selection */}
             <div className="space-y-2">
-              <Label htmlFor="serviceId" className="text-sm font-medium">
-                Service <span className="text-red-500">*</span>
+              <Label htmlFor="serviceId" className="text-ui font-medium">
+                Service <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={serviceId}
@@ -153,10 +155,10 @@ export default function NewInfrastructurePage() {
                 </SelectContent>
               </Select>
               {errors.serviceId && (
-                <p className="text-sm text-red-600">{errors.serviceId.message}</p>
+                <p className="text-ui text-ink-danger">{errors.serviceId.message}</p>
               )}
               {services.length === 0 && !servicesLoading && (
-                <p className="text-xs text-amber-600">
+                <p className="text-meta text-ink-warning">
                   No services found. Please create a service first.
                 </p>
               )}
@@ -164,8 +166,8 @@ export default function NewInfrastructurePage() {
 
             {/* Resource Type */}
             <div className="space-y-2">
-              <Label htmlFor="resourceType" className="text-sm font-medium">
-                Resource Type <span className="text-red-500">*</span>
+              <Label htmlFor="resourceType" className="text-ui font-medium">
+                Resource Type <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={resourceType}
@@ -185,14 +187,14 @@ export default function NewInfrastructurePage() {
                 </SelectContent>
               </Select>
               {errors.resourceType && (
-                <p className="text-sm text-red-600">{errors.resourceType.message}</p>
+                <p className="text-ui text-ink-danger">{errors.resourceType.message}</p>
               )}
             </div>
 
             {/* AWS Resource ID */}
             <div className="space-y-2">
-              <Label htmlFor="awsId" className="text-sm font-medium">
-                AWS Resource ID <span className="text-red-500">*</span>
+              <Label htmlFor="awsId" className="text-ui font-medium">
+                AWS Resource ID <span className="text-ink-danger">*</span>
               </Label>
               <Input
                 id="awsId"
@@ -201,17 +203,17 @@ export default function NewInfrastructurePage() {
                 className={errors.awsId ? 'border-red-500 text-base' : 'text-base'}
               />
               {errors.awsId && (
-                <p className="text-sm text-red-600">{errors.awsId.message}</p>
+                <p className="text-ui text-ink-danger">{errors.awsId.message}</p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 The AWS identifier for this resource (e.g., instance ID, bucket name, etc.)
               </p>
             </div>
 
             {/* AWS Region */}
             <div className="space-y-2">
-              <Label htmlFor="awsRegion" className="text-sm font-medium">
-                AWS Region <span className="text-red-500">*</span>
+              <Label htmlFor="awsRegion" className="text-ui font-medium">
+                AWS Region <span className="text-ink-danger">*</span>
               </Label>
               <Select
                 value={awsRegion}
@@ -229,13 +231,13 @@ export default function NewInfrastructurePage() {
                 </SelectContent>
               </Select>
               {errors.awsRegion && (
-                <p className="text-sm text-red-600">{errors.awsRegion.message}</p>
+                <p className="text-ui text-ink-danger">{errors.awsRegion.message}</p>
               )}
             </div>
 
             {/* Cost Per Month */}
             <div className="space-y-2">
-              <Label htmlFor="costPerMonth" className="text-sm font-medium">
+              <Label htmlFor="costPerMonth" className="text-ui font-medium">
                 Monthly Cost (USD)
               </Label>
               <Input
@@ -246,9 +248,9 @@ export default function NewInfrastructurePage() {
                 className={errors.costPerMonth ? 'border-red-500 text-base' : 'text-base'}
               />
               {errors.costPerMonth && (
-                <p className="text-sm text-red-600">{errors.costPerMonth.message}</p>
+                <p className="text-ui text-ink-danger">{errors.costPerMonth.message}</p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Optional - Estimated monthly cost for this resource
               </p>
             </div>

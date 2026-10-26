@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { RefreshCw, Check, Scan, Rocket } from 'lucide-react'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { cn } from '@/lib/utils'
 import { AddServiceButton } from './AddServiceButton'
 
 // The page heading; the navigation label stays "Services".
@@ -25,13 +27,13 @@ export function ServicesHeader({ isDiscovering, discoveryComplete, discoveryMsg,
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">{SERVICES_HEADING}</h1>
-        <p className="text-sm text-slate-600 font-medium leading-relaxed m-0">{SERVICES_SUBTITLE}</p>
+        <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1')}>{SERVICES_HEADING}</h1>
+        <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0')}>{SERVICES_SUBTITLE}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Link
           href="/deployments"
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 no-underline hover:border-slate-300"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-label border border-slate-200 bg-white text-slate-700 no-underline hover:border-slate-300"
         >
           <Rocket size={13} aria-hidden="true" /> Deployments
         </Link>
@@ -40,7 +42,7 @@ export function ServicesHeader({ isDiscovering, discoveryComplete, discoveryMsg,
           onClick={onAutoDiscover}
           disabled={isDiscovering || scanRunning}
           aria-describedby={scanRunning && !isDiscovering ? 'scan-running-hint' : undefined}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-label border transition-colors cursor-pointer ${
             discoveryComplete
               ? 'bg-green-700 text-white border-green-700'
               : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'

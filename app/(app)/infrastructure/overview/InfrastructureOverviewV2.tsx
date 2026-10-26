@@ -159,8 +159,8 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
       <PlanBanners limitReached={limitReached} isFree={!!isFree} isStarter={!!isStarter} isPro={!!isPro} />
       {view.mode === 'no-account' ? (
         <section aria-labelledby="infra-connect-heading" className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-          <h2 id="infra-connect-heading" className="m-0 text-base font-bold text-slate-900">{OVERVIEW_COPY.noAccountTitle}</h2>
-          <Link href="/connect-aws" className="w-fit text-sm font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.connectAws}</Link>
+          <h2 id="infra-connect-heading" className="m-0 text-section text-slate-900">{OVERVIEW_COPY.noAccountTitle}</h2>
+          <Link href="/connect-aws" className="w-fit text-ui font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.connectAws}</Link>
         </section>
       ) : (
         <AccountStrip account={view.account} now={now} coverageError={view.mode === 'coverage-error'} onRetry={() => coverageQuery.refetch()} />
@@ -202,7 +202,7 @@ function InfrastructureOverview({ demoFallback }: { demoFallback: React.ReactNod
 
 export default function InfrastructureOverviewV2({ demoFallback }: { demoFallback: React.ReactNode }) {
   return (
-    <Suspense fallback={<div className="py-8 text-center text-sm text-slate-600">Loading…</div>}>
+    <Suspense fallback={<div className="py-8 text-center text-ui text-slate-600">Loading…</div>}>
       <InfrastructureOverview demoFallback={demoFallback} />
     </Suspense>
   )

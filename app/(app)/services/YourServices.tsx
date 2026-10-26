@@ -35,22 +35,22 @@ export function YourServices({ state, mappedToService, totalResources }: {
   if (state.status === 'error') {
     body = (
       <div role="alert" className="flex flex-col items-start gap-3 px-4 py-6">
-        <p className="text-sm font-medium text-red-700 m-0">Couldn&apos;t load registered services.</p>
+        <p className="text-ui font-medium text-red-700 m-0">Couldn&apos;t load registered services.</p>
         <button
           type="button"
           onClick={state.retry}
-          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300"
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-label text-slate-700 hover:border-slate-300"
         >
           <RefreshCw size={12} aria-hidden="true" /> Try again
         </button>
       </div>
     )
   } else if (state.status === 'loading') {
-    body = <p role="status" className="px-4 py-6 text-sm text-slate-600 m-0">Loading registered services...</p>
+    body = <p role="status" className="px-4 py-6 text-ui text-slate-600 m-0">Loading registered services...</p>
   } else if (state.services.length === 0) {
     body = (
       <div className="flex flex-col items-start gap-3 px-4 py-6">
-        <p className="text-sm text-slate-700 m-0">No services registered yet.</p>
+        <p className="text-ui text-slate-700 m-0">No services registered yet.</p>
         <AddServiceButton size="sm" />
       </div>
     )
@@ -60,9 +60,9 @@ export function YourServices({ state, mappedToService, totalResources }: {
     body = (
       <>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-ui">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-label uppercase tracking-[0.04em] text-slate-600">
               <th scope="col" className="px-4 py-2.5">Service</th>
               <th scope="col" className="px-3 py-2.5">Owner</th>
               <th scope="col" className="px-3 py-2.5">Team</th>
@@ -99,7 +99,7 @@ export function YourServices({ state, mappedToService, totalResources }: {
             type="button"
             aria-expanded={showAll}
             onClick={() => setShowAll((v) => !v)}
-            className="text-sm font-semibold text-violet-700 hover:underline"
+            className="text-ui font-semibold text-violet-700 hover:underline"
           >
             {showAll ? 'Show fewer' : `Show all ${total}`}
           </button>
@@ -112,9 +112,9 @@ export function YourServices({ state, mappedToService, totalResources }: {
   return (
     <section aria-labelledby="your-services-heading" className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 px-4 py-3">
-        <h2 id="your-services-heading" className="text-base font-bold text-slate-900 m-0">Your services</h2>
+        <h2 id="your-services-heading" className="text-section text-slate-900 m-0">Your services</h2>
         {state.status === 'ready' && state.services.length > 0 && (
-          <span className="text-sm text-slate-600">{state.services.length} registered</span>
+          <span className="text-ui text-slate-600">{state.services.length} registered</span>
         )}
         {/* The empty state carries its own Add Service. */}
         {!(state.status === 'ready' && state.services.length === 0) && <span className="ml-auto"><AddServiceButton size="sm" /></span>}
@@ -122,10 +122,10 @@ export function YourServices({ state, mappedToService, totalResources }: {
       {body}
       {notMapped && typeof totalResources === 'number' && totalResources > 0 && (
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50 px-4 py-3">
-          <p className="m-0 flex-[1_1_320px] text-sm text-slate-600">
+          <p className="m-0 flex-[1_1_320px] text-ui text-slate-600">
             None of the {totalResources} resources are mapped to a service yet. Mapping by tag or by hand fills in resources, findings, cost and deploys per service.
           </p>
-          <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 opacity-60 cursor-not-allowed">
+          <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-label text-slate-700 opacity-60 cursor-not-allowed">
             Map resources to services
           </button>
           <PhaseTwoTag />
