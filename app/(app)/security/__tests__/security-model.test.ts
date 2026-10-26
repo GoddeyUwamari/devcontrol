@@ -47,14 +47,14 @@ const finding = (over: Partial<AccountSecurityFinding>): AccountSecurityFinding 
   disposition_at: null, disposition_note: null, evidence: null, created_at: iso(10 * DAY), updated_at: iso(0),
   derived_status: 'active', framework_mapping: null, ...over,
 })
-const sgEvidence = (protocol: string, from: number, to: number, name = 'example-sg', id = 'sg-0abcdef1234567890') => ({
+const sgEvidence = (protocol: string, from: number, to: number, name = 'example-sg', id = 'sg-0123456789abcdef0') => ({
   schema_version: 1 as const, security_group_id: id, security_group_name: name, region: 'us-east-1', direction: 'ingress' as const,
   protocol, from_port: from, to_port: to, ip_version: 'v4' as const, cidr: '0.0.0.0/0', detected_at: iso(0),
 })
 const sgFinding = (protocol: string, from: number, to: number, over: Partial<AccountSecurityFinding> = {}) => finding({
   category: 'networking', region: 'us-east-1', severity: from <= 22 && to >= 22 ? 'critical' : 'high',
-  title: `Security group "example-sg" (sg-0abcdef1234567890) allows port ${from} from anywhere (0.0.0.0/0)`,
-  resource_identifier: `arn:aws:ec2:us-east-1:${ACCOUNT}:security-group/sg-0abcdef1234567890`,
+  title: `Security group "example-sg" (sg-0123456789abcdef0) allows port ${from} from anywhere (0.0.0.0/0)`,
+  resource_identifier: `arn:aws:ec2:us-east-1:${ACCOUNT}:security-group/sg-0123456789abcdef0`,
   evidence: sgEvidence(protocol, from, to), ...over,
 })
 const keyFinding = (over: Partial<AccountSecurityFinding> = {}) => finding({
@@ -163,7 +163,7 @@ describe('rows', () => {
 
   it('open = active or acknowledged; accepted and dismissed have their own filters; resolved is not shown', () => {
     expect(filterRows(view.rows, 'all').map((r) => r.title)).toEqual([
-      'Security group "example-sg" (sg-0abcdef1234567890) allows port 443 from anywhere (0.0.0.0/0)',
+      'Security group "example-sg" (sg-0123456789abcdef0) allows port 443 from anywhere (0.0.0.0/0)',
       'IAM user "example-user" has an access key (…0001) that is 120 days old',
       'S3 bucket accepts HTTP',
     ])

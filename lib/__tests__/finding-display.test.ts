@@ -17,10 +17,10 @@ const finding = (over: Partial<AccountSecurityFinding>): AccountSecurityFinding 
 
 const SG = finding({
   category: 'networking', severity: 'critical', region: 'us-east-1',
-  title: 'Security group "admin-sg" (sg-0abcdef1234567890) allows SSH (port 22) from anywhere (0.0.0.0/0)',
-  resource_identifier: `arn:aws:ec2:us-east-1:${ACCOUNT}:security-group/sg-0abcdef1234567890`,
+  title: 'Security group "admin-sg" (sg-0123456789abcdef0) allows SSH (port 22) from anywhere (0.0.0.0/0)',
+  resource_identifier: `arn:aws:ec2:us-east-1:${ACCOUNT}:security-group/sg-0123456789abcdef0`,
   evidence: {
-    schema_version: 1, security_group_id: 'sg-0abcdef1234567890', security_group_name: 'admin-sg', region: 'us-east-1',
+    schema_version: 1, security_group_id: 'sg-0123456789abcdef0', security_group_name: 'admin-sg', region: 'us-east-1',
     direction: 'ingress', protocol: 'tcp', from_port: 22, to_port: 22, ip_version: 'v4', cidr: '0.0.0.0/0', detected_at: '2026-10-01T00:00:00Z',
   },
 })
@@ -82,10 +82,10 @@ describe('shortArn', () => {
 
 describe('findingWhere', () => {
   it('names a security group by name and id', () => {
-    expect(findingWhere(SG)).toEqual({ name: 'admin-sg (sg-0abcdef1234567890)', kind: 'Security group', region: 'us-east-1' })
+    expect(findingWhere(SG)).toEqual({ name: 'admin-sg (sg-0123456789abcdef0)', kind: 'Security group', region: 'us-east-1' })
   })
   it('falls back to the short ARN when a security group has no evidence', () => {
-    expect(findingWhere({ ...SG, evidence: null })).toEqual({ name: 'sg-0abcdef1234567890', kind: 'Security group', region: 'us-east-1' })
+    expect(findingWhere({ ...SG, evidence: null })).toEqual({ name: 'sg-0123456789abcdef0', kind: 'Security group', region: 'us-east-1' })
   })
   it('names an IAM user by name, in "Global"', () => {
     expect(findingWhere(MFA_FINDING)).toEqual({ name: 'path-user', kind: 'IAM user', region: 'Global' })
