@@ -17,10 +17,13 @@
  *     ResourceId + dynamodb:table:ReadCapacityUnits dimension -- succeeded
  *     (empty array, not an error)
  * Same caveat as the EKS/ECS entries in cloudwatch.service.ts: this test
- * role uses a broad managed policy, not necessarily representative of a
- * real customer's least-privilege onboarding grant -- no IAM policy
- * document for real customer onboarding exists in this repository to
- * verify against. Bump this module's confidence once a real or disposable
+ * role used a broad managed policy (ReadOnlyAccess), not the recommended
+ * onboarding grant. That grant (SecurityAudit + ViewOnlyAccess + the inline
+ * policy in lib/aws/customer-role-inline-policy.json) covers
+ * DescribeScalableTargets through SecurityAudit's
+ * application-autoscaling:Describe* -- checked offline by
+ * __tests__/customer-role-iam-coverage.static.test.ts, not live-tested
+ * under that grant. Bump this module's confidence once a real or disposable
  * autoscaled table has been evaluated end-to-end under a real customer's
  * actual (not test-account) role.
  *

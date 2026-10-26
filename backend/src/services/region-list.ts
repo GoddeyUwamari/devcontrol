@@ -7,8 +7,10 @@
  * sent through the home region's EC2 client the scan already uses (under the
  * call policy), never through a client for another region: the list is the
  * same from any enabled region's endpoint, and the home endpoint is the one the
- * scan has just reached. The customer role's ReadOnlyAccess grants it through
- * ec2:Describe*.
+ * scan has just reached. The recommended customer role grants it through
+ * SecurityAudit's ec2:Describe* and ViewOnlyAccess's ec2:DescribeRegions
+ * (__tests__/customer-role-iam-coverage.static.test.ts); older roles with
+ * ReadOnlyAccess also allow it.
  *
  * The list is only recorded (aws_account_regions); nothing is scanned because
  * of it. A list that cannot be read or does not make sense is reported as not

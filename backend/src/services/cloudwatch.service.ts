@@ -585,9 +585,11 @@ const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType
   // eks:DescribeCluster/ListNodegroups/DescribeNodegroup against a nonexistent cluster name
   // under the connected org's actual assumed role (DevControlRole-Test, AWS managed
   // ReadOnlyAccess) — got ResourceNotFoundException, not AccessDeniedException, proving the
-  // permission is granted without needing a real cluster to exist. That role uses a broad
-  // managed policy, not necessarily representative of a real customer's least-privilege
-  // onboarding grant. Bump to 'live_verified' once a real or disposable EKS cluster has
+  // permission is granted without needing a real cluster to exist. That role used a broad
+  // managed policy, not the recommended onboarding grant; that grant allows
+  // eks:DescribeCluster through SecurityAudit and ViewOnlyAccess (checked offline by
+  // __tests__/customer-role-iam-coverage.static.test.ts, not live-tested under it).
+  // Bump to 'live_verified' once a real or disposable EKS cluster has
   // been evaluated end-to-end.
   eks: 'deployed',
   // Service Health Coverage Expansion: live-verified 2026-09-14 in production (account
