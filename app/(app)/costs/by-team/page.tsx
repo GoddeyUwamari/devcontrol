@@ -14,6 +14,9 @@ import { platformStatsService } from '@/lib/services/platform-stats.service'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
 import type { PlatformDashboardStats } from '@/lib/types'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { CHART_TICK } from '@/lib/chart-theme'
 import { annualizeMonthly } from '@/lib/utils'
 import { describeStatsSpend } from '../cost-display'
 import { demoAttributionCsv, demoAttributionCsvFilename } from './demo-attribution-csv'
@@ -55,8 +58,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-lg">
-      <p className="text-xs font-semibold text-slate-700 mb-1">{label}</p>
-      <p className="text-sm font-bold text-violet-700">${payload[0].value.toLocaleString()}/mo</p>
+      <p className="text-label font-semibold text-slate-700 mb-1">{label}</p>
+      <p className="text-ui font-semibold text-violet-700 tabular-nums">${payload[0].value.toLocaleString()}/mo</p>
     </div>
   )
 }
@@ -65,7 +68,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 /** On-page label for every block that shows sample team data. */
 const DemoDataBadge = () => (
-  <span data-testid="by-team-demo-badge" className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+  <span data-testid="by-team-demo-badge" className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-label font-semibold text-amber-800">
     Demo data
   </span>
 )
@@ -108,21 +111,21 @@ export default function CostsByTeamPage() {
   // ── Free gate ──
   if (isFree && !isDemoActive) {
     return (
-      <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
+      <div className="max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
-          <h1 className="text-2xl font-bold text-gray-900">Cost Attribution</h1>
-          <p className="text-xs text-gray-500 font-medium mt-1.5">Attribution of AWS spend to teams, services, and resource types.</p>
+          <p className="text-label font-semibold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
+          <h1 className={PAGE_TITLE_CLASS}>Cost Attribution</h1>
+          <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>Attribution of AWS spend to teams, services, and resource types.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-violet-600" />
           </div>
-          <h2 className="text-sm font-semibold text-gray-900 mb-2">Starter Plan Required</h2>
-          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+          <h2 className="text-ui font-semibold text-gray-900 mb-2">Starter Plan Required</h2>
+          <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
             Cost attribution by team is available on the Starter plan and above.
           </p>
-          <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+          <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
             Upgrade to Starter
           </Link>
         </div>
@@ -152,19 +155,19 @@ export default function CostsByTeamPage() {
   const topItem = activeData[0]
 
   return (
-    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen bg-slate-50">
+    <div className="px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1400px] mx-auto min-h-screen bg-slate-50">
 
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
-          <h1 className="text-2xl font-bold text-gray-900">Cost Attribution</h1>
-          <p className="text-xs text-gray-500 font-medium mt-1.5">
+          <p className="text-label font-semibold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
+          <h1 className={PAGE_TITLE_CLASS}>Cost Attribution</h1>
+          <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>
             Attribution of AWS spend to teams, services, and resource types.
           </p>
         </div>
         {isDemoActive && (
-          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium shrink-0 hover:border-violet-300 hover:text-violet-700 transition-colors">
+          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-slate-600 px-4 py-2 rounded-lg text-ui font-medium shrink-0 hover:border-violet-300 hover:text-violet-700 transition-colors">
             <Download size={14} /> Export CSV
           </button>
         )}
@@ -188,9 +191,9 @@ export default function CostsByTeamPage() {
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: color + '15' }}>
                     <Icon size={14} style={{ color }} />
                   </div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{label}</p>
+                  <p className="text-label font-semibold uppercase tracking-widest text-ink-muted">{label}</p>
                 </div>
-                <p className="text-2xl font-bold text-slate-900">{value}</p>
+                <p className="text-section text-slate-900 tabular-nums">{value}</p>
               </div>
             ))}
           </div>
@@ -202,10 +205,10 @@ export default function CostsByTeamPage() {
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key as any)}
-                  className={`px-6 py-3.5 text-sm font-medium transition-colors border-b-2 ${
+                  className={`px-6 py-3.5 text-ui font-medium transition-colors border-b-2 ${
                     activeTab === tab.key
                       ? 'border-violet-600 text-violet-700 bg-violet-50/50'
-                      : 'border-transparent text-slate-500 hover:text-slate-700'
+                      : 'border-transparent text-ink-muted hover:text-slate-700'
                   }`}
                 >
                   {tab.label}
@@ -220,11 +223,11 @@ export default function CostsByTeamPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Bar Chart */}
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Monthly spend</p>
+                  <p className="text-label font-semibold text-ink-muted uppercase tracking-wider mb-4">Monthly spend</p>
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={activeData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v / 1000).toFixed(0) + 'K'} />
+                      <XAxis type="number" tick={CHART_TICK} axisLine={false} tickLine={false} tickFormatter={v => '$' + (v / 1000).toFixed(0) + 'K'} />
                       <YAxis type="category" dataKey="name" tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} width={130} />
                       <Tooltip content={<CustomTooltip />} />
                       <Bar dataKey="cost" radius={[0, 4, 4, 0]}>
@@ -238,27 +241,27 @@ export default function CostsByTeamPage() {
 
                 {/* Table */}
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Breakdown</p>
+                  <p className="text-label font-semibold text-ink-muted uppercase tracking-wider mb-4">Breakdown</p>
                   <div className="flex flex-col gap-2">
                     {activeData.map((item, i) => {
                       const pct = totalCost > 0 ? Math.round((item.cost / totalCost) * 100) : 0
                       return (
                         <div key={i} className="flex items-center gap-3">
                           <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                          <span className="text-sm text-slate-700 flex-1 truncate">{item.name}</span>
-                          <span className="text-xs text-slate-500 w-8 text-right shrink-0">{pct}%</span>
+                          <span className="text-ui text-slate-700 flex-1 truncate">{item.name}</span>
+                          <span className="text-meta text-ink-muted w-8 text-right shrink-0 tabular-nums">{pct}%</span>
                           <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
                             <div className="h-full rounded-full" style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }} />
                           </div>
-                          <span className="text-sm font-semibold text-slate-900 w-24 text-right shrink-0">
+                          <span className="text-ui font-semibold text-slate-900 w-24 text-right shrink-0 tabular-nums">
                             ${item.cost.toLocaleString()}
                           </span>
                         </div>
                       )
                     })}
                     <div className="border-t border-slate-100 pt-2 mt-1 flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total</span>
-                      <span className="text-sm font-bold text-slate-900">${totalCost.toLocaleString()}/mo</span>
+                      <span className="text-label font-semibold text-ink-muted uppercase tracking-wider">Total</span>
+                      <span className="text-ui font-semibold text-slate-900 tabular-nums">${totalCost.toLocaleString()}/mo</span>
                     </div>
                   </div>
                 </div>
@@ -275,10 +278,10 @@ export default function CostsByTeamPage() {
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#7C3AED15' }}>
                   <DollarSign size={14} style={{ color: '#7C3AED' }} />
                 </div>
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{spend.label}</p>
+                <p className="text-label font-semibold uppercase tracking-widest text-ink-muted">{spend.label}</p>
               </div>
-              <p className="text-2xl font-bold text-slate-900">{spend.value}</p>
-              <p className="text-xs text-slate-500 mt-1">{spend.sub}</p>
+              <p className="text-section text-slate-900 tabular-nums">{spend.value}</p>
+              <p className="text-meta text-ink-muted mt-1">{spend.sub}</p>
             </div>
           </div>
 
@@ -286,13 +289,13 @@ export default function CostsByTeamPage() {
           <div className="bg-white border border-gray-100 rounded-xl p-6 mb-5" data-testid="by-team-attribution-unavailable">
             <div className="flex flex-col items-center justify-center text-center py-10">
               <Users size={32} className="text-slate-300 mb-3" />
-              <p className="text-slate-700 text-sm font-semibold">Cost attribution by team and service is not available yet</p>
-              <p className="text-slate-500 text-xs mt-2 max-w-lg">
+              <p className="text-slate-700 text-ui font-semibold">Cost attribution by team and service is not available yet</p>
+              <p className="text-ink-muted text-meta mt-2 max-w-lg">
                 {isAwsConnected
                   ? 'DevControl does not yet allocate your AWS bill to teams or services, so no per-team or per-service amounts are shown. The figure above is your account total, not split by owner.'
                   : 'Connect your AWS account to see your AWS spend. Allocation to teams and services is not available yet.'}
               </p>
-              <Link href="/costs" className="text-xs font-semibold text-violet-700 no-underline mt-4">
+              <Link href="/costs" className="text-label font-semibold text-violet-700 no-underline mt-4">
                 See spend by AWS service →
               </Link>
             </div>
