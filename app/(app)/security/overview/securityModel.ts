@@ -22,7 +22,7 @@ import type { AccountSecurityFinding, ComplianceSeverity } from '@/lib/services/
 import type { AWSService, ServicesCoverage } from '@/lib/services/aws-services.service'
 import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
 import type { RiskScore, RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
-import { findingWhere, maskText, resourceWhere, safeTitle, type FindingWhere } from '@/lib/security/findingDisplay'
+import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type FindingWhere } from '@/lib/security/findingDisplay'
 import { typeLabel } from '../../services/AttentionTable'
 import { formatWhen, hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
@@ -205,7 +205,7 @@ function resourceRows(source: ResourceFindingsSource): FindingRow[] {
         scope: 'resource' as const,
         severity: s.priority_severity as string,
         title: maskText(s.reason ?? ''),
-        where: { name: s.name, kind: typeLabel(s.type), region: s.aws_region ?? s.region },
+        where: { name: shortArn(s.name), kind: typeLabel(s.type), region: s.aws_region ?? s.region },
         status: 'open' as const,
         firstFound: null,
         firstFoundAt: null,
@@ -333,14 +333,17 @@ function banner(i: SecurityInputs, rows: FindingRow[]): BannerView | null {
   const { critical: c, high: h } = countOpen(rows)
   const tone = c > 0 ? 'danger' : h > 0 ? 'warning' : 'neutral'
   const note = failed ? SECURITY_COPY.incomplete : partial ? SECURITY_COPY.attentionOnly : null
+  // "In the areas we checked" needs something checked: a connected account and a finished scan. Findings
+  // from a scan that stopped early can exist without one.
+  const scanned = coverage !== null && coverage.account.connected && !!lastCompletedIso(coverage)
 
   if (c + h > 0) {
     // A failed or partial source's note always wins: "No critical …" needs every source.
-    return { tone, headline: needReview(c, h), detail: note ?? (coverage !== null && c === 0 ? SECURITY_COPY.noCritical : null) }
+    return { tone, headline: needReview(c, h), detail: note ?? (scanned && c === 0 ? SECURITY_COPY.noCritical : null) }
   }
   if (failed || coverage === null) return { tone: 'warning', headline: SECURITY_COPY.incomplete, detail: null }
   if (partial) return { tone: 'neutral', headline: null, detail: SECURITY_COPY.attentionOnly }
-  if (!coverage.account.connected || !lastCompletedIso(coverage)) return { tone: 'neutral', headline: SECURITY_COPY.noScanYet, detail: null }
+  if (!scanned) return { tone: 'neutral', headline: SECURITY_COPY.noScanYet, detail: null }
   return { tone: 'success', headline: SECURITY_COPY.noCriticalOrHigh, detail: null }
 }
 

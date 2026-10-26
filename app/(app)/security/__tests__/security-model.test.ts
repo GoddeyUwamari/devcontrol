@@ -308,10 +308,22 @@ describe('banner', () => {
     expect(b({ accountFindings: ready([high]), coverage: ERROR })?.detail).toBeNull()
     expect(b({ coverage: ready(coverage({ last_completed_scan: null, last_successful_scan_at: null })) })?.headline).toBe('No scan has finished yet.')
   })
+  it('high only with no finished scan: no "No critical …" line (findings from a scan that stopped early)', () => {
+    expect(b({ accountFindings: ready([high]), coverage: ready(coverage({ last_completed_scan: null, last_successful_scan_at: null })) }))
+      .toEqual({ tone: 'warning', headline: '1 high-severity finding needs review', detail: null })
+  })
+  it('high only with the account disconnected: no "No critical …" line', () => {
+    expect(b({ accountFindings: ready([high]), coverage: ready(coverage({ account: { connected: false, status: null, home_region: null } })) }))
+      .toEqual({ tone: 'warning', headline: '1 high-severity finding needs review', detail: null })
+  })
   it('below Pro (the needs-attention list) counts are shown but never called complete', () => {
     const svc = { id: 's1', name: 'example-bucket', type: 's3', region: 'eu-west-1', priority_severity: 'high', attention_cause: 'finding', reason: 'Bucket is public' } as AWSService
     const view = describeSecurity(inputs({ resourceFindings: ready({ kind: 'attention', services: [svc, { ...svc, id: 's2', attention_cause: 'cost_recommendation' }] }) }), NOW)
     expect(view.rows.map((r) => r.title)).toEqual(['Bucket is public'])
+    expect(view.rows[0].where.name).toBe('example-bucket')
+    const arnNamed = describeSecurity(inputs({ resourceFindings: ready({ kind: 'attention', services: [{ ...svc, name: `arn:aws:iam::${ACCOUNT}:role/example-role` }] }) }), NOW)
+    expect(arnNamed.rows[0].where.name).toBe('example-role')
+    expect(JSON.stringify(arnNamed.rows)).not.toContain(ACCOUNT)
     expect(view.banner).toEqual({ tone: 'warning', headline: '1 high-severity finding needs review', detail: 'Showing high and critical resource findings.' })
     expect(view.filters.find((f) => f.key === 'resources')).toMatchObject({ count: 1, complete: false })
     expect(view.filters.find((f) => f.key === 'all')).toMatchObject({ count: 1, complete: false })
