@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CHART_TICK } from '@/lib/chart-theme';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
@@ -317,13 +318,13 @@ export function CostTrendChart({
                 dataKey="date"
                 tickFormatter={formatDate}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <YAxis
                 domain={[0, 'auto']}
                 tickFormatter={formatCurrency}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <Tooltip content={<CustomTooltip />} />
 
@@ -333,7 +334,7 @@ export function CostTrendChart({
                   x={data.find(d => d.forecast)?.date}
                   stroke="#9ca3af"
                   strokeDasharray="5 5"
-                  label={{ value: 'Forecast', position: 'top', fill: '#6b7280', fontSize: 12 }}
+                  label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
                 />
               )}
 
@@ -364,13 +365,13 @@ export function CostTrendChart({
                 dataKey="date"
                 tickFormatter={formatDate}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <YAxis
                 domain={[0, 'auto']}
                 tickFormatter={formatCurrency}
                 stroke="#9ca3af"
-                style={{ fontSize: '12px' }}
+                tick={CHART_TICK}
               />
               <Tooltip content={<CustomTooltip />} />
 
@@ -380,7 +381,7 @@ export function CostTrendChart({
                   x={data.find(d => d.forecast)?.date}
                   stroke="#9ca3af"
                   strokeDasharray="5 5"
-                  label={{ value: 'Forecast', position: 'top', fill: '#6b7280', fontSize: 12 }}
+                  label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
                 />
               )}
 
