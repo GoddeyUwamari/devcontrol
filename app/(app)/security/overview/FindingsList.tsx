@@ -31,28 +31,38 @@ function FilterButton({ filter, on, onClick }: { filter: FilterView; on: boolean
   )
 }
 
-/** One read-only row: severity, the finding and where it is, scope, status (none for open rows), first found. */
+const CELL = 'border-t border-slate-100 px-4 py-3 align-top'
+
+/** One read-only row: severity, the issue (with its status chip and first-found date), where, scope; Action is empty until F2b. */
 function Row({ row }: { row: FindingRow }) {
   const status = STATUS_LABEL[row.status]
   const where = [row.where.name, row.where.kind, row.where.region].filter(Boolean).join(' · ')
   return (
-    <li data-testid="security-row" data-row-id={row.id} className="grid grid-cols-[88px_minmax(0,1fr)_96px_120px] items-start gap-3 border-t border-slate-100 px-4 py-3 first:border-t-0">
-      <span className={cn('text-ui font-semibold', SEVERITY_INK[row.severity] ?? 'text-ink-body')}>{SEVERITY_LABEL[row.severity] ?? row.severity}</span>
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-ui text-ink">{row.title}</span>
-        {where && <span className="text-meta text-ink-muted">{where}</span>}
-      </span>
-      <span className="text-ui text-ink-body">{SCOPE_LABEL[row.scope]}</span>
-      <span className="flex flex-col items-start gap-0.5">
-        {status && <span data-testid="security-row-status" className="rounded-md bg-slate-100 px-2 py-0.5 text-label text-ink-body">{status}</span>}
-        {row.firstFound && <span className="text-meta text-ink-muted">{row.firstFound}</span>}
-      </span>
-    </li>
+    <tr data-testid="security-row" data-row-id={row.id}>
+      <td className={cn(CELL, 'text-ui font-semibold', SEVERITY_INK[row.severity] ?? 'text-ink-body')}>{SEVERITY_LABEL[row.severity] ?? row.severity}</td>
+      <td className={CELL}>
+        <span className="flex min-w-0 flex-col items-start gap-0.5">
+          <span className="text-ui text-ink">{row.title}</span>
+          {status && <span data-testid="security-row-status" className="rounded-md bg-slate-100 px-2 py-0.5 text-label text-ink-body">{status}</span>}
+          {row.firstFound && <span className="text-meta text-ink-muted">{row.firstFound}</span>}
+        </span>
+      </td>
+      <td className={cn(CELL, 'text-meta text-ink-muted')}>{where}</td>
+      <td className={cn(CELL, 'text-ui text-ink-body')}>{SCOPE_LABEL[row.scope]}</td>
+      <td className={CELL} />
+    </tr>
   )
 }
 
-function Rows({ rows }: { rows: FindingRow[] }) {
-  return <ul className="m-0 list-none p-0">{rows.map((row) => <Row key={row.id} row={row} />)}</ul>
+const HEADER = 'bg-slate-50 px-4 py-2 text-left text-label text-ink-muted'
+
+/** The mock's header row; "Action" stays visible over the empty column, so F2b's actions don't shift the layout. */
+function HeaderRow() {
+  return (
+    <tr>
+      {PAGE_COPY.tableHeaders.map((name) => <th key={name} scope="col" className={HEADER}>{name}</th>)}
+    </tr>
+  )
 }
 
 /**
@@ -109,16 +119,21 @@ export function FindingsList({ view }: { view: SecurityView }) {
 
       {rows.length > 0 && (
         <div role="region" aria-labelledby="security-findings-heading" tabIndex={0} className="overflow-x-auto rounded-lg border border-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">
-          <div className="min-w-[640px]">
+          <table className="w-full min-w-[640px] border-collapse">
+            <thead><HeaderRow /></thead>
             {grouped
               ? groupRows(rows).map((g) => (
-                  <div key={g.key} data-testid="security-group">
-                    <h3 className="m-0 border-t border-slate-200 bg-slate-50 px-4 py-2 text-ui font-semibold text-ink first:border-t-0">{g.label}</h3>
-                    <Rows rows={g.rows} />
-                  </div>
+                  <tbody key={g.key} data-testid="security-group">
+                    <tr>
+                      <th scope="colgroup" colSpan={PAGE_COPY.tableHeaders.length} className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-left">
+                        <h3 className="m-0 text-ui font-semibold text-ink">{g.label}</h3>
+                      </th>
+                    </tr>
+                    {g.rows.map((row) => <Row key={row.id} row={row} />)}
+                  </tbody>
                 ))
-              : <Rows rows={shown} />}
-          </div>
+              : <tbody>{shown.map((row) => <Row key={row.id} row={row} />)}</tbody>}
+          </table>
         </div>
       )}
 

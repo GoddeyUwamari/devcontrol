@@ -320,6 +320,18 @@ describe('findings list (read-only; founder answers 7–10, e2 13–16)', () => 
     expect(within(findings()).getAllByTestId('security-row-status').map((s) => s.textContent)).toEqual(['Dismissed'])
     expect(screen.queryByTestId('security-accepted-caption')).toBeNull()
   })
+  it('the table has the mock\'s five column headers, as <th scope="col">, in order', async () => {
+    await show()
+    const headers = within(findings()).getAllByRole('columnheader')
+    expect(headers.map((h) => h.textContent)).toEqual(['Severity', 'Issue', 'Where', 'Scope', 'Action'])
+    for (const h of headers) {
+      expect(h.tagName).toBe('TH')
+      expect(h).toHaveAttribute('scope', 'col')
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Group by issue' }))
+    // Group view keeps the same five column headers (each group's own row is scope="colgroup").
+    expect([...findings().querySelectorAll('th[scope="col"]')].map((h) => h.textContent)).toEqual(['Severity', 'Issue', 'Where', 'Scope', 'Action'])
+  })
   it('scope labels Account / Resource', async () => {
     await show()
     const text = findings().textContent ?? ''

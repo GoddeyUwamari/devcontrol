@@ -35,6 +35,8 @@ export const PAGE_COPY = {
   showing: (shown: number, total: number) => `Showing ${shown} of ${total}`,
   showAll: (total: number) => `Show all ${total}`,
   showFewer: 'Show fewer',
+  // The findings table's column headers (the mock). Action is empty in F2a's read-only list.
+  tableHeaders: ['Severity', 'Issue', 'Where', 'Scope', 'Action'],
 
   trendHeading: 'Score, last 30 days',
   checkedHeading: 'What we checked',
