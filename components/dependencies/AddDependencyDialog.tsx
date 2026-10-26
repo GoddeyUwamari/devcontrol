@@ -127,7 +127,7 @@ export function AddDependencyDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               The service that has the dependency
             </p>
           </div>
@@ -151,7 +151,7 @@ export function AddDependencyDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               The service that is depended upon
             </p>
           </div>

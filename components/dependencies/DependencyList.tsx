@@ -143,7 +143,7 @@ export function DependencyList({ dependencies, cycles, filters, onFiltersChange 
             </Button>
           )}
         </div>
-        <div className="text-sm text-muted-foreground md:ml-auto" aria-live="polite">
+        <div className="text-ui text-muted-foreground md:ml-auto" aria-live="polite">
           Showing {filteredDeps.length} of {dependencies.length} dependencies
         </div>
       </div>
@@ -155,7 +155,7 @@ export function DependencyList({ dependencies, cycles, filters, onFiltersChange 
 
       {filteredDeps.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border p-10 text-center">
-          <p className="text-sm font-medium">No dependencies match your search or filters</p>
+          <p className="text-ui font-medium">No dependencies match your search or filters</p>
           <Button variant="outline" size="sm" onClick={clearAll}>
             Clear search and filters
           </Button>
@@ -189,7 +189,7 @@ export function DependencyList({ dependencies, cycles, filters, onFiltersChange 
                       <Badge variant="secondary">Standard</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
+                  <TableCell className="text-ui text-muted-foreground max-w-xs truncate">
                     {dep.description || '-'}
                   </TableCell>
                 </TableRow>

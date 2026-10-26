@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { Node, Edge } from '@xyflow/react'
 import { Network, List, Activity, AlertTriangle, Plus, Loader2, X, Clock, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ErrorDisplay } from '@/components/ui/error-display'
@@ -169,23 +170,23 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
     body = loadingTimeout && isFirstLoad ? (
       <div role="status" className="flex flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-4 py-8 text-center sm:px-6 sm:py-12">
         <Clock size={32} className="mb-4 text-amber-600" aria-hidden="true" />
-        <h3 className="mb-2 text-base font-semibold text-amber-800">
+        <h3 className="mb-2 text-card-title text-amber-800">
           This is taking longer than usual
         </h3>
-        <p className="mb-5 max-w-md text-sm leading-relaxed text-amber-700">
+        <p className="mb-5 max-w-md text-ui leading-relaxed text-amber-700">
           We&apos;re still loading your dependencies. This might be due to network conditions. You can wait or try refreshing.
         </p>
         <button
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-4 py-2 text-ui font-semibold text-amber-800 disabled:cursor-not-allowed"
         >
           <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           {isRefreshing ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
     ) : (
-      <div role="status" className="flex items-center justify-center gap-2 rounded-lg border bg-white p-12 text-sm text-slate-500">
+      <div role="status" className="flex items-center justify-center gap-2 rounded-lg border bg-white p-12 text-ui text-ink-muted">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         Loading dependencies...
       </div>
@@ -193,7 +194,7 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
   } else if (dependencies.length === 0) {
     body = (
       <>
-        <p className="text-sm font-medium text-slate-700">No dependencies recorded yet.</p>
+        <p className="text-ui font-medium text-slate-700">No dependencies recorded yet.</p>
         <EnhancedEmptyState
           canManage={canManage}
           hasServices={servicesQuery.isSuccess ? hasServices : null}
@@ -218,8 +219,8 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
             ['Circular cycles', cyclesValue],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border bg-white p-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-1">{label}</p>
-              <p className="text-2xl font-bold text-slate-900">{value}</p>
+              <p className="text-label uppercase tracking-[0.04em] text-slate-700 mb-1">{label}</p>
+              <p className="text-section lg:text-kpi tabular-nums text-slate-900">{value}</p>
             </div>
           ))}
         </div>
@@ -313,8 +314,8 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
     <div className="mx-auto flex min-h-screen max-w-[1320px] flex-col gap-6 overflow-x-hidden bg-[#F9FAFB] px-4 py-6 sm:px-6 sm:py-10 lg:px-14">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1">Service Dependency Mapping</h1>
-          <p className="text-sm text-slate-500 leading-relaxed">
+          <h1 className={`${PAGE_TITLE_CLASS} mb-1`}>Service Dependency Mapping</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>
             Map dependencies, detect cycles, and analyze impact
           </p>
         </div>
@@ -359,15 +360,15 @@ function DependenciesContent({ organizationId }: { organizationId: string | null
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4 rounded-lg bg-slate-50 px-3 py-2">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className={`text-sm font-medium text-right ${value === NO_DATA ? 'text-slate-400' : 'text-slate-900'}`}>{value}</span>
+      <span className="text-ui text-ink-muted">{label}</span>
+      <span className={`text-ui font-medium text-right ${value === NO_DATA ? 'text-ink-muted' : 'text-slate-900'}`}>{value}</span>
     </div>
   )
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-2 border-b border-slate-100 pb-1.5 text-[0.68rem] font-semibold uppercase tracking-wider text-slate-600">
+    <p className="mb-2 border-b border-slate-100 pb-1.5 text-label uppercase tracking-[0.04em] text-slate-600">
       {children}
     </p>
   )
@@ -418,7 +419,7 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
         <div className="space-y-1.5">
           <SectionHeader>Depends on ({dependsOn.length})</SectionHeader>
           {dependsOn.length === 0 ? (
-            <p className="text-sm text-slate-400">None recorded</p>
+            <p className="text-ui text-ink-muted">None recorded</p>
           ) : dependsOn.map(d => (
             <Field
               key={d.id}
@@ -430,7 +431,7 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
         <div className="space-y-1.5">
           <SectionHeader>Depended on by ({dependedOnBy.length})</SectionHeader>
           {dependedOnBy.length === 0 ? (
-            <p className="text-sm text-slate-400">None recorded</p>
+            <p className="text-ui text-ink-muted">None recorded</p>
           ) : dependedOnBy.map(d => (
             <Field
               key={d.id}
@@ -461,7 +462,7 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
         ) : dep.isCritical ? (
           <Field label="Failure Impact" value="Critical" />
         ) : (
-          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500 m-0">Not marked critical</p>
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-ui text-ink-muted m-0">Not marked critical</p>
         )}
         <Field label="Description" value={display(dep?.description)} />
         <Field label="Recorded by" value={display(dep?.createdBy)} />
@@ -480,11 +481,11 @@ function DetailsPanel({ node, edge, dependencies, cycles, onClose, onAnalyzeImpa
     >
       <div className="flex items-start justify-between gap-2 border-b border-slate-100 px-6 pb-4 pt-5">
         <div className="min-w-0">
-          <h2 className="text-base font-bold leading-snug text-slate-900">{title}</h2>
+          <h2 className="text-card-title leading-snug text-slate-900">{title}</h2>
           {edgeDependency && (
             <span
-              className={`mt-2 inline-block rounded px-2 py-0.5 text-[0.68rem] font-semibold uppercase ${
-                edgeDependency.isCritical ? 'bg-red-50 text-red-500' : 'bg-slate-50 text-slate-500'
+              className={`mt-2 inline-block rounded px-2 py-0.5 text-label uppercase ${
+                edgeDependency.isCritical ? 'bg-red-50 text-ink-danger' : 'bg-slate-50 text-ink-muted'
               }`}
             >
               {edgeDependency.isCritical
