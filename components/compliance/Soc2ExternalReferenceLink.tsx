@@ -16,12 +16,12 @@ export function Soc2ExternalReferenceLink({ href }: { href: string }) {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 hover:text-violet-700 break-all"
+        className="inline-flex items-center gap-1.5 text-ui font-medium text-violet-600 hover:text-violet-700 break-all"
       >
         <ExternalLink size={13} className="shrink-0" />
         {href}
       </a>
-      <p className="text-xs text-slate-400">Externally hosted — not verified by DevControl.</p>
+      <p className="text-meta text-ink-muted">Externally hosted — not verified by DevControl.</p>
     </div>
   );
 }
