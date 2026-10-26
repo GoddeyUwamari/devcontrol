@@ -22,6 +22,8 @@ import type { InfrastructureResource, CostSummary } from '@/lib/types'
 import { isNotRunning } from './idle'
 import type { AnomalyDetection } from '@/types/anomaly.types'
 import { formatSavingsCurrency } from '@/lib/utils'
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { CHART_TICK } from '@/lib/chart-theme'
 import { describeSpend, formatUsd, roundCents } from '../cost-display'
 import Link from 'next/link'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
@@ -194,11 +196,11 @@ function EfficiencyInfoBadge() {
   return (
     <span
       title={EFFICIENCY_UNAVAILABLE_TOOLTIP}
+      className="text-label font-semibold text-ink-muted normal-case tracking-normal"
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: '13px', height: '13px', borderRadius: '50%',
-        background: '#e5e7eb', color: '#6b7280',
-        fontSize: '9px', fontWeight: 700, textTransform: 'none', letterSpacing: 'normal',
+        background: '#e5e7eb',
         marginLeft: '5px', cursor: 'help',
       }}
     >
@@ -219,23 +221,23 @@ function KPICard({
 }) {
   const isPositiveDelta = (delta ?? 0) > 0
   const deltaColor = label === 'Idle Resource Cost'
-    ? isPositiveDelta ? '#ef4444' : '#16a34a'
-    : isPositiveDelta ? '#16a34a' : '#ef4444'
+    ? isPositiveDelta ? 'text-ink-danger' : 'text-ink-success'
+    : isPositiveDelta ? 'text-ink-success' : 'text-ink-danger'
 
   return (
     <div style={{ background: '#fff', border: accent ? '1.5px solid #e5e7eb' : '1.5px solid #e5e7eb', borderRadius: '10px', padding: '16px', borderLeft: accent ? '3px solid #7c3aed' : undefined }}>
-      <p style={{ fontSize: '12px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>{label}</p>
-      <p style={{ fontSize: '24px', fontWeight: 600, color: '#0f172a', lineHeight: 1, marginBottom: '8px' }}>
+      <p className="text-label font-normal text-ink-muted uppercase tracking-[0.04em]" style={{ marginBottom: '8px' }}>{label}</p>
+      <p className="text-section text-ink tabular-nums leading-none" style={{ marginBottom: '8px' }}>
         {prefix}{typeof value === 'number' ? value.toLocaleString() : value}{suffix}
       </p>
       {delta !== undefined && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          {delta > 0 ? <TrendingUp size={12} style={{ color: deltaColor }} /> : <TrendingDown size={12} style={{ color: deltaColor }} />}
-          <span style={{ fontSize: '12px', fontWeight: 600, color: deltaColor }}>{delta > 0 ? '+' : ''}{delta}%</span>
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>vs previous</span>
+          {delta > 0 ? <TrendingUp size={12} className={deltaColor} /> : <TrendingDown size={12} className={deltaColor} />}
+          <span className={`text-label font-semibold tabular-nums ${deltaColor}`}>{delta > 0 ? '+' : ''}{delta}%</span>
+          <span className="text-meta text-ink-muted">vs previous</span>
         </div>
       )}
-      {note && <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, lineHeight: 1.4 }}>{note}</p>}
+      {note && <p className="text-meta text-ink-muted" style={{ margin: 0 }}>{note}</p>}
     </div>
   )
 }
@@ -246,10 +248,10 @@ const CustomScatterTooltip = ({ active, payload, isDemoActive }: any) => {
   if (!d) return null
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-      <p style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>{d.name}</p>
-      <p style={{ fontSize: '12px', color: '#374151' }}>Cost: ${(d.x / 1000).toFixed(1)}K/mo</p>
-      {isDemoActive && <p style={{ fontSize: '12px', color: '#374151' }}>Efficiency: {d.y}%</p>}
-      <p style={{ fontSize: '12px', fontWeight: 600, color: QUADRANT_COLORS[d.q], marginTop: '4px' }}>{QUADRANT_LABELS[d.q]}</p>
+      <p className="text-label font-semibold text-ink" style={{ marginBottom: '4px' }}>{d.name}</p>
+      <p className="text-meta text-ink-body">Cost: ${(d.x / 1000).toFixed(1)}K/mo</p>
+      {isDemoActive && <p className="text-meta text-ink-body">Efficiency: {d.y}%</p>}
+      <p className="text-label font-semibold" style={{ marginTop: '4px', color: QUADRANT_COLORS[d.q] }}>{QUADRANT_LABELS[d.q]}</p>
     </div>
   )
 }
@@ -259,14 +261,14 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
   const total = payload.reduce((s: number, p: any) => s + (p.value || 0), 0)
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-      <p style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', marginBottom: '6px' }}>{label}</p>
+      <p className="text-label font-semibold text-ink" style={{ marginBottom: '6px' }}>{label}</p>
       {payload.map((p: any) => (
-        <p key={p.name} style={{ fontSize: '12px', color: '#374151', marginBottom: '2px' }}>
+        <p key={p.name} className="text-meta text-ink-body" style={{ marginBottom: '2px' }}>
           <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '2px', background: p.fill, marginRight: '6px' }} />
           {p.name}: ${p.value.toLocaleString()}
         </p>
       ))}
-      <p style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', marginTop: '6px', borderTop: '1px solid #e5e7eb', paddingTop: '6px' }}>
+      <p className="text-label font-semibold text-ink" style={{ marginTop: '6px', borderTop: '1px solid #e5e7eb', paddingTop: '6px' }}>
         Total: ${total.toLocaleString()}
       </p>
     </div>
@@ -492,22 +494,22 @@ export default function EfficiencyPage() {
 
   return (
     <div
-      className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto min-h-screen"
+      className="px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1400px] mx-auto min-h-screen"
       style={{ background: '#fff' }}
     >
 
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p style={{ fontSize: '12px', fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>Costs</p>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px', letterSpacing: '-0.02em' }}>Cloud Efficiency Overview</h1>
-          <p style={{ fontSize: '0.75rem', fontWeight: 500, color: '#6b7280' }}>Resource efficiency, spend breakdown, and cost-to-value analysis across your AWS environment.</p>
+          <p className="text-label font-semibold text-violet-600 uppercase tracking-[0.04em]" style={{ marginBottom: '6px' }}>Costs</p>
+          <h1 className={PAGE_TITLE_CLASS} style={{ margin: '0 0 6px' }}>Cloud Efficiency Overview</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>Resource efficiency, spend breakdown, and cost-to-value analysis across your AWS environment.</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Link href="/cost-optimization" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#7C3AED', color: '#fff', padding: '9px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
+          <Link href="/cost-optimization" className="text-ui font-semibold text-white" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#7C3AED', padding: '9px 18px', borderRadius: '8px', textDecoration: 'none' }}>
             <Zap size={14} /> Review Optimizations
           </Link>
-          <button onClick={handleExport} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', color: '#374151', padding: '9px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
+          <button onClick={handleExport} className="text-ui text-ink-body" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', padding: '9px 14px', borderRadius: '8px', cursor: 'pointer' }}>
             <Download size={14} /> Export
           </button>
         </div>
@@ -539,10 +541,10 @@ export default function EfficiencyPage() {
         <div style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
-              <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Spend breakdown</p>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>Monthly cost by service · Last 6 months{isDemoActive ? '' : ` · ${TREND_TOTALS_NOTE}`}</p>
+              <p className="text-ui font-semibold text-ink" style={{ margin: 0 }}>Spend breakdown</p>
+              <p className="text-meta text-ink-muted" style={{ margin: '2px 0 0' }}>Monthly cost by service · Last 6 months{isDemoActive ? '' : ` · ${TREND_TOTALS_NOTE}`}</p>
             </div>
-            <select value={barGrouping} onChange={e => setBarGrouping(e.target.value as any)} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#374151', fontSize: '12px', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}>
+            <select value={barGrouping} onChange={e => setBarGrouping(e.target.value as any)} className="text-label font-normal text-ink-body" style={{ background: '#f9fafb', border: '1px solid #e5e7eb', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}>
               <option value="service">By Service</option>
               <option value="region">By Region</option>
               <option value="team">By Team</option>
@@ -552,7 +554,7 @@ export default function EfficiencyPage() {
             <>
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
                 {Object.entries(barColors).map(([name, color]) => (
-                  <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#374151' }}>
+                  <span key={name} className="text-meta text-ink-body" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color, display: 'inline-block' }} />{name}
                   </span>
                 ))}
@@ -560,8 +562,8 @@ export default function EfficiencyPage() {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={barData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
-                  <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => formatAxisDollar(v, maxBarStack)} />
+                  <XAxis dataKey="month" tick={CHART_TICK} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
+                  <YAxis tick={CHART_TICK} axisLine={false} tickLine={false} tickFormatter={v => formatAxisDollar(v, maxBarStack)} />
                   <Tooltip content={<CustomBarTooltip />} />
                   {Object.entries(barColors).map(([name, color]) => (
                     <Bar key={name} dataKey={name} stackId="a" fill={color} radius={name === 'Other' ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
@@ -571,7 +573,7 @@ export default function EfficiencyPage() {
             </>
           ) : (
             <div style={{ padding: '48px 0', textAlign: 'center' }}>
-              <p style={{ fontSize: '13px', color: '#6b7280' }}>
+              <p className="text-meta text-ink-muted">
                 {!isDemoActive && realCostTrendError
                   ? 'The spend trend could not be retrieved from AWS Cost Explorer.'
                   : 'No cost trend data available yet'}
@@ -584,10 +586,10 @@ export default function EfficiencyPage() {
         <div style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
-              <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Resource efficiency vs cost</p>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>Quadrant analysis · {isDemoActive ? '11' : scatterData.length} resources</p>
+              <p className="text-ui font-semibold text-ink" style={{ margin: 0 }}>Resource efficiency vs cost</p>
+              <p className="text-meta text-ink-muted" style={{ margin: '2px 0 0' }}>Quadrant analysis · {isDemoActive ? '11' : scatterData.length} resources</p>
             </div>
-            <select value={scatterFilter} onChange={e => setScatterFilter(e.target.value as any)} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#374151', fontSize: '12px', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}>
+            <select value={scatterFilter} onChange={e => setScatterFilter(e.target.value as any)} className="text-label font-normal text-ink-body" style={{ background: '#f9fafb', border: '1px solid #e5e7eb', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer' }}>
               <option value="all">All resources</option>
               <option value="at-risk">At Risk only</option>
               <option value="efficient">Efficient only</option>
@@ -597,7 +599,7 @@ export default function EfficiencyPage() {
           </div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
             {Object.entries(QUADRANT_LABELS).map(([q, label]) => (
-              <span key={q} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#374151' }}>
+              <span key={q} className="text-meta text-ink-body" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: QUADRANT_COLORS[q], display: 'inline-block' }} />{label}
               </span>
             ))}
@@ -605,8 +607,8 @@ export default function EfficiencyPage() {
           <ResponsiveContainer width="100%" height={240}>
             <ScatterChart margin={{ top: 4, right: 4, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-              <XAxis type="number" dataKey="x" name="cost" domain={[0, 'auto']} padding={{ left: 20 }} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} tickFormatter={v => formatAxisDollar(v, maxScatterX)} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, fill: '#6b7280', fontSize: 11 }} />
-              <YAxis type="number" dataKey="y" name="efficiency" domain={[0, 100]} tick={isDemoActive ? { fill: '#6b7280', fontSize: 10 } : false} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={isDemoActive ? { value: 'Efficiency', angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 11 } : undefined} />
+              <XAxis type="number" dataKey="x" name="cost" domain={[0, 'auto']} padding={{ left: 20 }} tick={CHART_TICK} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} tickFormatter={v => formatAxisDollar(v, maxScatterX)} label={{ value: 'Monthly cost', position: 'insideBottom', offset: -12, ...CHART_TICK }} />
+              <YAxis type="number" dataKey="y" name="efficiency" domain={[0, 100]} tick={isDemoActive ? CHART_TICK : false} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} label={isDemoActive ? { value: 'Efficiency', angle: -90, position: 'insideLeft', ...CHART_TICK } : undefined} />
               <ZAxis range={[60, 60]} />
               <Tooltip cursor={{ strokeDasharray: '3 3', stroke: '#e5e7eb' }} content={<CustomScatterTooltip isDemoActive={isDemoActive} />} />
               <ReferenceLine x={20000} stroke="#e5e7eb" strokeDasharray="4 4" />
@@ -632,12 +634,12 @@ export default function EfficiencyPage() {
           return (
             <div key={q} style={{ background: '#fff', border: `1.5px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '10px', padding: '14px 16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                <span style={{ fontSize: '14px', color }}>{icon}</span>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>{title}</span>
-                <span style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: 700, color, background: color + '22', padding: '1px 7px', borderRadius: '100px' }}>{count}</span>
+                <span className="text-ui" style={{ color }}>{icon}</span>
+                <span className="text-ui font-semibold text-ink">{title}</span>
+                <span className="text-label font-semibold tabular-nums" style={{ marginLeft: 'auto', color, background: color + '22', padding: '1px 7px', borderRadius: '100px' }}>{count}</span>
               </div>
-              <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px', lineHeight: 1.5 }}>{sub}</p>
-              <Link href={cta} style={{ fontSize: '12px', fontWeight: 600, color, textDecoration: 'none' }}>{ctaLabel}</Link>
+              <p className="text-meta text-ink-muted" style={{ marginBottom: '10px' }}>{sub}</p>
+              <Link href={cta} className="text-label font-semibold" style={{ color, textDecoration: 'none' }}>{ctaLabel}</Link>
             </div>
           )
         })}
@@ -647,10 +649,10 @@ export default function EfficiencyPage() {
       <div style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div>
-            <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Top wasteful resources</p>
-            <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>Ranked by recoverable savings · Immediate action recommended</p>
+            <p className="text-ui font-semibold text-ink" style={{ margin: 0 }}>Top wasteful resources</p>
+            <p className="text-meta text-ink-muted" style={{ margin: '2px 0 0' }}>Ranked by recoverable savings · Immediate action recommended</p>
           </div>
-          <Link href="/cost-optimization" style={{ fontSize: '12px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Link href="/cost-optimization" className="text-label font-semibold text-violet-600" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
             Fix all → 
           </Link>
         </div>
@@ -661,7 +663,7 @@ export default function EfficiencyPage() {
             <thead>
               <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
                 {['Resource', 'Type', 'Region', 'Monthly Cost', 'Efficiency', 'Issue', 'Potential Savings', ''].map(h => (
-                  <th key={h} style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '8px 12px', textAlign: h === 'Monthly Cost' || h === 'Potential Savings' ? 'right' : 'left' }}>
+                  <th key={h} className="text-label font-semibold text-ink-muted uppercase tracking-[0.04em]" style={{ padding: '8px 12px', textAlign: h === 'Monthly Cost' || h === 'Potential Savings' ? 'right' : 'left' }}>
                     {h}
                     {h === 'Efficiency' && !isDemoActive && <EfficiencyInfoBadge />}
                   </th>
@@ -671,30 +673,30 @@ export default function EfficiencyPage() {
             <tbody>
               {wastefulResources.map((r, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 500, color: '#0f172a' }}>{r.name}</td>
+                  <td className="text-ui font-medium text-ink" style={{ padding: '12px' }}>{r.name}</td>
                   <td style={{ padding: '12px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#7c3aed', background: '#7c3aed22', padding: '2px 7px', borderRadius: '4px' }}>{r.type}</span>
+                    <span className="text-label font-semibold text-violet-600" style={{ background: '#7c3aed22', padding: '2px 7px', borderRadius: '4px' }}>{r.type}</span>
                   </td>
-                  <td style={{ padding: '12px', fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>{r.region}</td>
-                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 600, color: '#0f172a', textAlign: 'right' }}>${r.cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="text-meta text-ink-muted font-mono" style={{ padding: '12px' }}>{r.region}</td>
+                  <td className="text-ui font-semibold text-ink tabular-nums" style={{ padding: '12px', textAlign: 'right' }}>${r.cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td style={{ padding: '12px' }}>
                     {isDemoActive ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <div style={{ flex: 1, height: '4px', background: '#f3f4f6', borderRadius: '2px', minWidth: '60px' }}>
                           <div style={{ width: `${r.efficiency}%`, height: '100%', borderRadius: '2px', background: efficiencyColor(r.efficiency) }} />
                         </div>
-                        <span style={{ fontSize: '12px', color: efficiencyColor(r.efficiency), fontWeight: 600, minWidth: '28px' }}>{r.efficiency}%</span>
+                        <span className="text-label font-semibold tabular-nums" style={{ minWidth: '28px', color: efficiencyColor(r.efficiency) }}>{r.efficiency}%</span>
                       </div>
                     ) : (
-                      <span style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 600 }}>—</span>
+                      <span className="text-label font-semibold text-ink-muted">—</span>
                     )}
                   </td>
-                  <td style={{ padding: '12px', fontSize: '12px', color: '#f59e0b' }}>{r.issue}</td>
-                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 700, color: r.savings != null ? '#16a34a' : '#9ca3af', textAlign: 'right' }}>
+                  <td className="text-meta text-ink-warning" style={{ padding: '12px' }}>{r.issue}</td>
+                  <td className={`text-ui font-semibold tabular-nums ${r.savings != null ? 'text-ink-success' : 'text-ink-muted'}`} style={{ padding: '12px', textAlign: 'right' }}>
                     {r.savings != null ? `-$${r.savings.toLocaleString()}/mo` : '—'}
                   </td>
                   <td style={{ padding: '12px' }}>
-                    <Link href="/cost-optimization" style={{ fontSize: '12px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none', background: '#7C3AED22', padding: '4px 10px', borderRadius: '6px' }}>Fix →</Link>
+                    <Link href="/cost-optimization" className="text-label font-semibold text-violet-600" style={{ textDecoration: 'none', background: '#7C3AED22', padding: '4px 10px', borderRadius: '6px' }}>Fix →</Link>
                   </td>
                 </tr>
               ))}
@@ -707,16 +709,16 @@ export default function EfficiencyPage() {
           {wastefulResources.map((r, i) => (
             <div key={i} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{r.name}</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#7c3aed', background: '#7c3aed22', padding: '2px 7px', borderRadius: '4px' }}>{r.type}</span>
+                <span className="text-ui font-semibold text-ink">{r.name}</span>
+                <span className="text-label font-semibold text-violet-600" style={{ background: '#7c3aed22', padding: '2px 7px', borderRadius: '4px' }}>{r.type}</span>
               </div>
-              <p style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '8px' }}>{r.issue}</p>
+              <p className="text-meta text-ink-warning" style={{ marginBottom: '8px' }}>{r.issue}</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '12px', color: '#374151' }}>${r.cost.toFixed(0)}/mo</span>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: r.savings != null ? '#16a34a' : '#9ca3af' }}>
+                <span className="text-meta text-ink-body tabular-nums">${r.cost.toFixed(0)}/mo</span>
+                <span className={`text-label font-semibold tabular-nums ${r.savings != null ? 'text-ink-success' : 'text-ink-muted'}`}>
                   {r.savings != null ? `Save $${r.savings}/mo` : 'Savings —'}
                 </span>
-                <Link href="/cost-optimization" style={{ fontSize: '12px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>Fix →</Link>
+                <Link href="/cost-optimization" className="text-label font-semibold text-violet-600" style={{ textDecoration: 'none' }}>Fix →</Link>
               </div>
             </div>
           ))}
@@ -727,10 +729,10 @@ export default function EfficiencyPage() {
       <div style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div>
-            <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>Recent cost anomalies</p>
-            <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>Unusual cost spikes detected in the last 7 days</p>
+            <p className="text-ui font-semibold text-ink" style={{ margin: 0 }}>Recent cost anomalies</p>
+            <p className="text-meta text-ink-muted" style={{ margin: '2px 0 0' }}>Unusual cost spikes detected in the last 7 days</p>
           </div>
-          <Link href="/anomalies" style={{ fontSize: '12px', fontWeight: 600, color: '#7C3AED', textDecoration: 'none' }}>
+          <Link href="/anomalies" className="text-label font-semibold text-violet-600" style={{ textDecoration: 'none' }}>
             View all →
           </Link>
         </div>
@@ -741,14 +743,14 @@ export default function EfficiencyPage() {
               return (
                 <div key={i} style={{ background: '#f9fafb', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, borderRadius: '8px', padding: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase' }}>{a.severity}</span>
-                    <span style={{ fontSize: '12px', color: '#64748b' }}>{a.date}</span>
+                    <span className="text-label font-semibold uppercase tracking-[0.04em]" style={{ color, background: color + '22', padding: '2px 7px', borderRadius: '4px' }}>{a.severity}</span>
+                    <span className="text-meta text-ink-muted">{a.date}</span>
                   </div>
-                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>{a.service}</p>
-                  <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>{a.detail}</p>
+                  <p className="text-ui font-semibold text-ink" style={{ marginBottom: '4px' }}>{a.service}</p>
+                  <p className="text-meta text-ink-muted" style={{ marginBottom: '8px' }}>{a.detail}</p>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color, background: color + '22', padding: '2px 7px', borderRadius: '4px' }}>{a.type}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color }}>{a.delta >= 0 ? '+' : ''}{a.delta}%</span>
+                    <span className="text-label font-semibold" style={{ color, background: color + '22', padding: '2px 7px', borderRadius: '4px' }}>{a.type}</span>
+                    <span className="text-ui font-semibold tabular-nums" style={{ color }}>{a.delta >= 0 ? '+' : ''}{a.delta}%</span>
                   </div>
                 </div>
               )
@@ -756,7 +758,7 @@ export default function EfficiencyPage() {
           </div>
         ) : (
           <div style={{ padding: '32px 0', textAlign: 'center' }}>
-            <p style={{ fontSize: '13px', color: '#6b7280' }}>
+            <p className="text-meta text-ink-muted">
               {/* Real mode: no anomaly detector is connected, so an empty response is not
                   evidence that no anomalies exist -- never claim their absence. */}
               {isDemoActive
@@ -773,16 +775,16 @@ export default function EfficiencyPage() {
       <div style={{ background: '#fff', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div>
-            <p style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', margin: 0 }}>
+            <p className="text-ui font-semibold text-ink" style={{ margin: 0 }}>
               Efficiency score by service
               {!isDemoActive && <EfficiencyInfoBadge />}
             </p>
-            <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0' }}>How well each service is utilizing its allocated resources</p>
+            <p className="text-meta text-ink-muted" style={{ margin: '2px 0 0' }}>How well each service is utilizing its allocated resources</p>
           </div>
           {isDemoActive && (
             <div style={{ display: 'flex', gap: '12px' }}>
               {[['#16a34a', '75%+'], ['#f59e0b', '50–74%'], ['#ef4444', '<50%']].map(([color, label]) => (
-                <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#374151' }}>
+                <span key={label} className="text-meta text-ink-body" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color as string, display: 'inline-block' }} />{label}
                 </span>
               ))}
@@ -792,14 +794,14 @@ export default function EfficiencyPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {serviceEfficiency.map((s, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '12px', color: '#374151', width: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.name}</span>
+              <span className="text-meta text-ink-body" style={{ width: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.name}</span>
               <div style={{ flex: 1, height: '6px', background: '#f3f4f6', borderRadius: '3px', overflow: 'hidden' }}>
                 {isDemoActive && (
                   <div style={{ width: `${s.score}%`, height: '100%', borderRadius: '3px', background: efficiencyColor(s.score), transition: 'width 0.4s ease' }} />
                 )}
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: isDemoActive ? efficiencyColor(s.score) : '#9ca3af', width: '36px', textAlign: 'right', flexShrink: 0 }}>{isDemoActive ? `${s.score}%` : '—'}</span>
-              <span style={{ fontSize: '12px', color: '#6b7280', width: '70px', textAlign: 'right', flexShrink: 0 }}>{formatServiceCost(s.cost)}</span>
+              <span className="text-label font-semibold tabular-nums" style={{ width: '36px', textAlign: 'right', flexShrink: 0, color: isDemoActive ? efficiencyColor(s.score) : '#9ca3af' }}>{isDemoActive ? `${s.score}%` : '—'}</span>
+              <span className="text-meta text-ink-muted tabular-nums" style={{ width: '70px', textAlign: 'right', flexShrink: 0 }}>{formatServiceCost(s.cost)}</span>
             </div>
           ))}
         </div>
@@ -808,9 +810,9 @@ export default function EfficiencyPage() {
       {/* ── PRO GATE ── */}
       {!canAccess && !isDemoActive && (
         <div style={{ background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '32px', textAlign: 'center', marginTop: '8px' }}>
-          <p style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>Full Efficiency Analysis — Pro Plan</p>
-          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px' }}>Upgrade to unlock detailed resource efficiency scoring, quadrant drill-down, and export.</p>
-          <Link href="/settings/billing/upgrade" style={{ background: '#7C3AED', color: '#fff', padding: '10px 24px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
+          <p className="text-ui font-semibold text-ink" style={{ marginBottom: '8px' }}>Full Efficiency Analysis — Pro Plan</p>
+          <p className="text-meta text-ink-muted" style={{ marginBottom: '16px' }}>Upgrade to unlock detailed resource efficiency scoring, quadrant drill-down, and export.</p>
+          <Link href="/settings/billing/upgrade" className="text-ui font-semibold text-white" style={{ background: '#7C3AED', padding: '10px 24px', borderRadius: '8px', textDecoration: 'none' }}>
             Upgrade to Pro
           </Link>
         </div>
