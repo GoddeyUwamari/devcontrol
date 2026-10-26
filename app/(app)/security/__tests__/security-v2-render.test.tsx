@@ -367,6 +367,11 @@ describe('findings list (read-only; founder answers 7–10, e2 13–16)', () => 
       expect(screen.getByTestId('security-findings-empty')).toHaveTextContent(text)
     }
   })
+  it('coverage failed: the list says the data is incomplete, never "No scan has finished yet."', async () => {
+    await show({ 'GET /api/security/account-findings': ok([]), 'GET /api/aws-resources/compliance': ok([]), 'GET /api/services/coverage': fail(500) })
+    expect(screen.getByTestId('security-findings-empty')).toHaveTextContent("Some checks couldn't load, so this may be incomplete.")
+    expect(screen.queryByText('No scan has finished yet.')).toBeNull()
+  })
   it('no "No … findings." line when a source failed', async () => {
     await show({ 'GET /api/security/account-findings': fail(500), 'GET /api/aws-resources/compliance': ok([]) })
     expect(screen.getByTestId('security-findings-empty')).toHaveTextContent("Some checks couldn't load, so this may be incomplete.")

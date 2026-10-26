@@ -622,16 +622,19 @@ export const FILTER_EMPTY: Record<FilterKey, string> = {
  * What a filter with no rows says. The "No … findings." lines only when every findings source loaded
  * (e2 16); "in the areas we checked" claims (All, Resources, Account) also need a finished scan on a
  * connected account, and Resources/All need the full resource list, not the below-Pro attention list.
+ * Like the banner: nothing while coverage loads, and the incomplete line when coverage failed, because
+ * whether a scan finished is then unknown (never "No scan has finished yet.").
  */
 function emptyTexts(i: SecurityInputs): Record<FilterKey, string> | null {
   const sources = [i.accountFindings, i.resourceFindings]
-  if (sources.some((s) => s.status === 'loading')) return null
+  if (sources.some((s) => s.status === 'loading') || i.coverage.status === 'loading') return null
   const failed = sources.some((s) => s.status !== 'ready')
   const partial = i.resourceFindings.status === 'ready' && i.resourceFindings.data.kind === 'attention'
   const coverage = i.coverage.status === 'ready' ? i.coverage.data : null
   const scanned = coverage !== null && coverage.account.connected && !!lastCompletedIso(coverage)
   const text = (key: FilterKey): string => {
     if (failed) return SECURITY_COPY.incomplete
+    if (coverage === null && (key === 'all' || key === 'resources' || key === 'account')) return SECURITY_COPY.incomplete
     if (partial && (key === 'all' || key === 'resources')) return SECURITY_COPY.attentionOnly
     if (!scanned && (key === 'all' || key === 'resources' || key === 'account')) return SECURITY_COPY.noScanYet
     return FILTER_EMPTY[key]

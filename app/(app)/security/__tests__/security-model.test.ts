@@ -585,9 +585,16 @@ describe('empty lines per filter (e2 16)', () => {
     const empty = describeSecurity(inputs({ coverage: ready(coverage({ last_completed_scan: null, last_successful_scan_at: null })) }), NOW).empty!
     expect([empty.all, empty.resources, empty.account]).toEqual(Array(3).fill('No scan has finished yet.'))
     expect(empty.accepted).toBe('No accepted findings.')
-    expect(describeSecurity(inputs({ coverage: ERROR }), NOW).empty!.all).toBe('No scan has finished yet.')
   })
-  it('while a findings source loads: null', () => {
+  it('coverage failed: the incomplete line for All, Resources and Account, never "No scan has finished yet."; Accepted/Dismissed keep theirs', () => {
+    const empty = describeSecurity(inputs({ coverage: ERROR }), NOW).empty!
+    expect([empty.all, empty.resources, empty.account]).toEqual(Array(3).fill(SECURITY_COPY.incomplete))
+    expect(Object.values(empty)).not.toContain('No scan has finished yet.')
+    expect(empty.accepted).toBe('No accepted findings.')
+    expect(empty.dismissed).toBe('No dismissed findings.')
+  })
+  it('while a findings source or coverage loads: null (no line yet)', () => {
     expect(describeSecurity(inputs({ accountFindings: LOADING }), NOW).empty).toBeNull()
+    expect(describeSecurity(inputs({ coverage: LOADING }), NOW).empty).toBeNull()
   })
 })
