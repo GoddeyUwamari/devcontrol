@@ -26,6 +26,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { logError } from '@/lib/safe-log'
+import dynamic from 'next/dynamic'
+import { isSecurityV2Enabled } from './securityV2Flag'
 
 type FrameworkDisplay = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing' }
 
@@ -121,7 +123,19 @@ const derivedStatusMeta: Record<DerivedFindingStatus, { label: string; color: st
   resolved:       { label: 'Verified Resolved',  color: '#059669', bg: '#F0FDF4' },
 }
 
+const SecurityOverviewV2 = dynamic(() => import('./overview/SecurityOverviewV2'))
+
+/**
+ * NEXT_PUBLIC_SECURITY_V2 on (securityV2Flag.ts): the redesigned overview, whose module is loaded only
+ * then. Off, or in demo mode (plan Q13), today's page below, unchanged. Hook-free, so the two pages'
+ * hooks never mix.
+ */
 export default function SecurityPage() {
+  if (!isSecurityV2Enabled() || demoModeService.isEnabled()) return <SecurityContent />
+  return <SecurityOverviewV2 />
+}
+
+function SecurityContent() {
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(false)
   const [dispositioningId, setDispositioningId] = useState<string | null>(null)

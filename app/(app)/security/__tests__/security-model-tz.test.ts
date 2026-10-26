@@ -12,7 +12,7 @@ const NOW = vi.hoisted(() => {
 
 import { describe, it, expect, vi } from 'vitest'
 import type { RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
-import { describeFramework, describeSecurity, formatDay, formatTime } from '../overview/securityModel'
+import { describeFramework, describeSecurity, formatDay, formatScanWhen, formatTime } from '../overview/securityModel'
 
 describe('UTC dates west of UTC', () => {
   it('the zone is really Los Angeles here', () => {
@@ -36,5 +36,10 @@ describe('UTC dates west of UTC', () => {
       NOW,
     )
     expect(fw.text).toBe('Evaluated Oct 23 · 90%')
+  })
+  it('the header scan time is the viewer\'s LOCAL time, with no zone suffix (founder answer 6)', () => {
+    // 01:00 UTC on Oct 23 is 6:00 PM on Oct 22 in Los Angeles: "today" here, not Oct 23.
+    expect(formatScanWhen('2026-10-23T01:00:00Z', NOW)).toBe('today, 6:00 PM')
+    expect(formatScanWhen('2026-10-21T17:30:00Z', NOW)).toBe('Oct 21, 10:30 AM')
   })
 })

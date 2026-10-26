@@ -18,8 +18,11 @@ import {
   filterRows,
   formatDay,
   formatScore,
+  formatScanWhen,
   formatTime,
   groupRows,
+  notCheckedText,
+  scanLine,
   securityCheckedLines,
   type ResourceWithIssues,
   type SecLoadable,
@@ -398,7 +401,7 @@ describe('frameworks', () => {
     }
   })
   it('not in the list and the history may be cut off: "Last evaluation not found", no score', () => {
-    const notFound = { state: 'not_found', label: 'Last evaluation not found', text: 'Last evaluation not found. Re-evaluate to refresh.', score: null, action: { kind: 're_evaluate', label: 'Re-evaluate' } }
+    const notFound = { state: 'not_found', label: 'Last evaluation not found', text: 'Last evaluation not found. Re-evaluate to refresh.', score: null, action: { kind: 're_evaluate', label: 'Re-evaluate now' } }
     expect(one([])).toMatchObject(notFound)
     expect(one([scan('other', 'completed', 90, DAY)])).toMatchObject(notFound)
     // A completed scan without a usable score was an evaluation: never "never".
@@ -417,6 +420,15 @@ describe('frameworks', () => {
     expect(tile).toEqual({ label: 'Last evaluation not found', lastEvaluated: null })
     expect(describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('fw-1')], scans: [], scansLimit: 50 }) }), NOW).tiles.compliance)
       .toEqual({ label: 'Never evaluated', lastEvaluated: null })
+  })
+  it('no framework at all: the tile says "No frameworks yet.", never an evaluation state', () => {
+    const view = describeSecurity(inputs({ frameworks: ready({ frameworks: [], scans: [], scansLimit: 50 }) }), NOW)
+    expect(view.tiles.compliance).toEqual({ label: 'No frameworks yet.', lastEvaluated: null })
+    expect(view.frameworks).toMatchObject({ status: 'ready', frameworks: [] })
+  })
+  it('the not-found action reads "Re-evaluate now" (the mock), on the framework and through describeSecurity', () => {
+    const view = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('fw-1')], scans: [scan('fw-1', 'completed', null, DAY)], scansLimit: 50 }) }), NOW)
+    expect(view.frameworks.frameworks[0].action).toEqual({ kind: 're_evaluate', label: 'Re-evaluate now' })
   })
   it('below Enterprise: the plan note and See plans; every framework is listed (no cap)', () => {
     const plan = describeSecurity(inputs({ frameworks: PLAN }), NOW)
@@ -477,7 +489,7 @@ describe('checked lines', () => {
     expect(securityCheckedLines(ready(coverage())).map((l) => [l.label, l.status])).toEqual([
       ['Security groups (us-east-1)', 'checked'],
       ['S3 bucket policies (all regions)', 'checked'],
-      ['IAM users: MFA and key age', 'checked'],
+      ['IAM users: MFA, key age', 'checked'],
       ['IAM roles and policies', 'not_checked'],
       ['Other 16 regions', 'not_checked'],
     ])
@@ -494,5 +506,95 @@ describe('checked lines', () => {
     expect(securityCheckedLines(ready(coverage({ account: { connected: false, status: null, home_region: null } })))).toEqual([{ key: 'nothing', label: 'Nothing has been checked yet.', status: null }])
     expect(securityCheckedLines(ERROR)[0].status).toBeNull()
     expect(securityCheckedLines(LOADING)).toEqual([])
+  })
+})
+
+// ── Header scan line, "Not checked yet", empty lines (founder answers of Oct 26) ──
+
+describe('header scan line (answer 12)', () => {
+  it('a finished scan: "Last scan: today, <time>" or "<MMM d>, <time>", local time (UTC here), no zone', () => {
+    expect(scanLine(ready(coverage()), NOW)).toEqual({ state: 'finished', text: 'Last scan: today, 9:00 AM' })
+    const old = iso(3 * DAY)
+    expect(scanLine(ready(coverage({ last_completed_scan: { started_at: old, completed_at: old, resource_types: [], warnings: [] }, last_scan: { status: 'completed', started_at: old, completed_at: old, warnings: [] } })), NOW))
+      .toEqual({ state: 'finished', text: 'Last scan: Oct 20, 3:00 PM' })
+    expect(formatScanWhen('not a date', NOW)).toBeNull()
+  })
+  it('running wins: "Scan running…"', () => {
+    expect(scanLine(ready(coverage({ scan_in_progress: { since: iso(60_000) } })), NOW)).toEqual({ state: 'running', text: 'Scan running…' })
+  })
+  it('the latest attempt failed: "Last scan failed: <time>", even with an older finished scan', () => {
+    const failed = { status: 'failed', started_at: iso(2 * 3_600_000), completed_at: iso(3_600_000), warnings: [] }
+    expect(scanLine(ready(coverage({ last_scan: failed })), NOW)).toEqual({ state: 'failed', text: 'Last scan failed: today, 2:00 PM' })
+  })
+  it('a failed attempt with no time falls back, never an invented line', () => {
+    const failed = { status: 'failed', started_at: null, completed_at: null, warnings: [] }
+    expect(scanLine(ready(coverage({ last_scan: failed })), NOW)?.state).toBe('finished')
+    expect(scanLine(ready(coverage({ last_scan: failed, last_completed_scan: null, last_successful_scan_at: null })), NOW)).toEqual({ state: 'none', text: 'No scan has finished yet.' })
+  })
+  it('nothing finished: "No scan has finished yet."; no line while coverage loads or failed', () => {
+    expect(scanLine(ready(coverage({ last_completed_scan: null, last_successful_scan_at: null, last_scan: null })), NOW)).toEqual({ state: 'none', text: 'No scan has finished yet.' })
+    expect(scanLine(LOADING, NOW)).toBeNull()
+    expect(scanLine(ERROR, NOW)).toBeNull()
+  })
+})
+
+describe('"Not checked yet" (banner, right)', () => {
+  const regions = (n: number) => Array.from({ length: n }, (_, k) => ({ region: k === 0 ? 'us-east-1' : `xx-test-${k}`, home: k === 0, status: k === 0 ? 'ok' : 'never_scanned', last_scan_finished_at: k === 0 ? iso(DAY / 4) : null, last_success_at: null, last_error_code: null }) as never)
+  it('regions and IAM roles, with the singular for one region (answer 11)', () => {
+    expect(notCheckedText(ready(coverage()))).toBe('Not checked yet: 16 regions · IAM roles and policies')
+    const two = coverage({ region_status: regions(2), scope: { ...coverage().scope, enabled_regions: { known: true, count: 2 } } })
+    expect(notCheckedText(ready(two))).toBe('Not checked yet: 1 region · IAM roles and policies')
+  })
+  it('no region list yet', () => {
+    expect(notCheckedText(ready(coverage({ region_status: [] })))).toBe('Not checked yet: other regions (region list not read yet) · IAM roles and policies')
+  })
+  it('nothing while loading, on error, or with no connected account', () => {
+    expect(notCheckedText(LOADING)).toBeNull()
+    expect(notCheckedText(ERROR)).toBeNull()
+    expect(notCheckedText(ready(coverage({ account: { connected: false, status: null, home_region: null } })))).toBeNull()
+  })
+  it('the checked list says "Other 1 region" too', () => {
+    const two = coverage({ region_status: regions(2), scope: { ...coverage().scope, enabled_regions: { known: true, count: 2 } } })
+    expect(securityCheckedLines(ready(two)).find((l) => l.key === 'other-regions')?.label).toBe('Other 1 region')
+  })
+})
+
+describe('empty lines per filter (e2 16)', () => {
+  it('every source loaded after a finished scan: the decided lines', () => {
+    expect(describeSecurity(inputs(), NOW).empty).toEqual({
+      all: 'No findings in the areas we checked.',
+      resources: 'No resource findings.',
+      account: 'No account findings.',
+      accepted: 'No accepted findings.',
+      dismissed: 'No dismissed findings.',
+    })
+  })
+  it('a failed source: the incomplete line on every filter, never "No … findings."', () => {
+    for (const over of [{ accountFindings: ERROR }, { resourceFindings: ERROR }] as Partial<SecurityInputs>[]) {
+      const empty = describeSecurity(inputs(over), NOW).empty!
+      expect(Object.values(empty)).toEqual(Array(5).fill(SECURITY_COPY.incomplete))
+    }
+  })
+  it('below Pro: All and Resources get the attention note; Account, Accepted, Dismissed keep theirs', () => {
+    const empty = describeSecurity(inputs({ resourceFindings: ready({ kind: 'attention', services: [] }) }), NOW).empty!
+    expect(empty.all).toBe(SECURITY_COPY.attentionOnly)
+    expect(empty.resources).toBe(SECURITY_COPY.attentionOnly)
+    expect(empty.account).toBe('No account findings.')
+  })
+  it('no finished scan: "No scan has finished yet." for All, Resources, Account; Accepted/Dismissed unaffected', () => {
+    const empty = describeSecurity(inputs({ coverage: ready(coverage({ last_completed_scan: null, last_successful_scan_at: null })) }), NOW).empty!
+    expect([empty.all, empty.resources, empty.account]).toEqual(Array(3).fill('No scan has finished yet.'))
+    expect(empty.accepted).toBe('No accepted findings.')
+  })
+  it('coverage failed: the incomplete line for All, Resources and Account, never "No scan has finished yet."; Accepted/Dismissed keep theirs', () => {
+    const empty = describeSecurity(inputs({ coverage: ERROR }), NOW).empty!
+    expect([empty.all, empty.resources, empty.account]).toEqual(Array(3).fill(SECURITY_COPY.incomplete))
+    expect(Object.values(empty)).not.toContain('No scan has finished yet.')
+    expect(empty.accepted).toBe('No accepted findings.')
+    expect(empty.dismissed).toBe('No dismissed findings.')
+  })
+  it('while a findings source or coverage loads: null (no line yet)', () => {
+    expect(describeSecurity(inputs({ accountFindings: LOADING }), NOW).empty).toBeNull()
+    expect(describeSecurity(inputs({ coverage: LOADING }), NOW).empty).toBeNull()
   })
 })
