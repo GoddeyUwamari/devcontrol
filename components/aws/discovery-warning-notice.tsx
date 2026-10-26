@@ -14,7 +14,7 @@ export function hasDeletionDetectionPaused(warnings: readonly string[] | null | 
 export function DiscoveryWarningNotice({ warnings, className = '' }: { warnings: readonly string[] | null | undefined; className?: string }) {
   if (!hasDeletionDetectionPaused(warnings)) return null
   return (
-    <div role="status" className={`flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 ${className}`}>
+    <div role="status" className={`flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-ui text-amber-800 ${className}`}>
       <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
       <span>{DELETION_DETECTION_PAUSED_TEXT}</span>
     </div>
