@@ -27,7 +27,7 @@ import { typeLabel } from '../../services/AttentionTable'
 import { hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
 import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
-import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, evaluateFramework, type EvaluationState, type LocalStart } from '@/lib/compliance/evaluation'
+import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, SEE_PLANS, evaluateFramework, type EvaluationOverlay, type EvaluationState } from '@/lib/compliance/evaluation'
 import {
   WEB_SERVER_HINT,
   buildHttpsOnlyStatement,
@@ -79,8 +79,8 @@ export interface SecurityInputs {
 
 // ── Copy ──
 
-/** The upgrade page, after "Compliance frameworks are on the Enterprise plan." (the card, and a start answered 402). */
-export const SEE_PLANS = { label: 'See plans', href: '/settings/billing/upgrade' } as const
+// The upgrade link and the Enterprise sentence are shared with the Compliance page (lib/compliance/evaluation).
+export { SEE_PLANS }
 
 export const SECURITY_COPY = {
   incomplete: "Some checks couldn't load, so this may be incomplete.",
@@ -93,7 +93,7 @@ export const SECURITY_COPY = {
   scorePlan: 'The score is on the Pro plan.',
   scoreError: "Couldn't load the score.",
   anomaliesNone: 'None open',
-  frameworksPlan: 'Compliance frameworks are on the Enterprise plan.',
+  frameworksPlan: EVALUATION_COPY.enterprisePlan,
   frameworksError: "Couldn't load compliance frameworks.",
   neverEvaluated: 'No evaluation yet.',
   noFrameworks: 'No frameworks yet.',
@@ -466,12 +466,7 @@ export interface FrameworksView {
 export const RE_EVALUATE_NOW = 'Re-evaluate now'
 
 /** What the page knows that the scan list may not show yet (F3): a run it just started, per framework. */
-export interface EvaluationOverlay {
-  /** The latest time the page knows of (at least `now`); the poll ceiling is measured with it. */
-  clock: number
-  /** Framework id → this page's start, while the list doesn't show that run. */
-  startedLocally: Readonly<Record<string, LocalStart>>
-}
+export type { EvaluationOverlay }
 
 /**
  * The scan list is the org's newest scans across every framework, so a framework

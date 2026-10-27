@@ -1,22 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { EVALUATION_COPY } from '@/lib/compliance/evaluation'
-import type { StartProblem } from '@/lib/compliance/useStartEvaluation'
-import { SECURITY_COPY, SEE_PLANS, type FrameworksView } from './securityModel'
+import { CAN_START_EVALUATION, EVALUATION_COPY, SEE_PLANS, START_PROBLEM_TEXT, type StartProblem } from '@/lib/compliance/evaluation'
+import { SECURITY_COPY, type FrameworksView } from './securityModel'
 import { PAGE_COPY, PAGE_HREF } from './securityCopy'
 
 const LINK = 'inline-flex min-h-11 w-fit items-center text-ui font-semibold text-ink-accent hover:underline'
 const ACTION = 'inline-flex min-h-11 w-fit items-center rounded-lg border border-slate-200 bg-white px-3 text-ui font-semibold text-ink-accent hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-ink-muted'
 
-/** The server's member floor on POST /:id/scan (requireMember); a viewer sees the action disabled with the reason. */
-export const CAN_START_EVALUATION = ['owner', 'admin', 'member']
-
-const PROBLEM_TEXT: Record<StartProblem, string> = {
-  viewer: EVALUATION_COPY.viewerCantStart,
-  plan: SECURITY_COPY.frameworksPlan,
-  failed: EVALUATION_COPY.startFailed,
-}
+/** The server's member floor on POST /:id/scan (requireMember), shared with the Compliance page. */
+export { CAN_START_EVALUATION }
 
 /**
  * Each framework's state (M5). Out of date and not found show "Re-evaluate now", Failed "Try again", Never evaluated
@@ -45,7 +38,7 @@ export function Frameworks({ view, role, starting, problems, onStart }: {
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {view.frameworks.map((f) => {
             const problem = problems[f.id]
-            const reason = roleReason ?? (problem ? PROBLEM_TEXT[problem] : null)
+            const reason = roleReason ?? (problem ? START_PROBLEM_TEXT[problem] : null)
             const reasonId = `security-framework-reason-${f.id}`
             const busy = starting.has(f.id)
             return (

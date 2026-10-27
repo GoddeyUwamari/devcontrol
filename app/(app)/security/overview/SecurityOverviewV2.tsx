@@ -1,21 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api, handleApiResponse } from '@/lib/api'
 import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { accountSecurityFindingsService, type AccountSecurityFinding } from '@/lib/services/account-security-findings.service'
 import { awsResourcesService } from '@/lib/services/aws-resources.service'
 import { anomalyService } from '@/lib/services/anomaly.service'
-import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
 import { riskScoreService, type RiskScore, type RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
-import { EVALUATION_POLL_CEILING_MS, activeRunStarts, evaluationPollInterval, type LocalStart } from '@/lib/compliance/evaluation'
-import { useStartEvaluation } from '@/lib/compliance/useStartEvaluation'
+import { FRAMEWORK_SCANS_LIMIT, useFrameworkEvaluations } from '@/lib/compliance/useFrameworkEvaluations'
 import { useNowEachLocalDay } from '../../services/useNowEachLocalDay'
-import { describeSecurity, type EvaluationOverlay, type ResourceFindingsSource, type ResourceWithIssues, type SecLoadable } from './securityModel'
+import { describeSecurity, type ResourceFindingsSource, type ResourceWithIssues, type SecLoadable } from './securityModel'
 import { PAGE_COPY } from './securityCopy'
 import { SecurityHeader } from './SecurityHeader'
 import { StatusBanner } from './StatusBanner'
@@ -26,11 +23,8 @@ import { SecurityChecked } from './SecurityChecked'
 import { Frameworks } from './Frameworks'
 import { BottomLinks } from './BottomLinks'
 
-/**
- * The org's newest scans, all frameworks together, are read with this limit, and the same value is what
- * the model is told was requested (carried item 2): a list shorter than it is the whole history.
- */
-export const FRAMEWORK_SCANS_LIMIT = 50
+/** The scans read limit (carried item 2), shared with the Compliance page through lib/compliance. */
+export { FRAMEWORK_SCANS_LIMIT }
 /** Below Pro, the needs-attention list's page cap (plan §9.2 item 5). */
 export const ATTENTION_LIMIT = 100
 /** While a scan is running, coverage is read again this often (as the Infrastructure Overview). */
@@ -57,15 +51,6 @@ async function readResourceFindings(): Promise<ResourceFindingsSource> {
     const page = await awsServicesService.getServices({ needs_attention: true, page: 1, limit: ATTENTION_LIMIT })
     return { kind: 'attention', services: page.services }
   }
-}
-
-/** Both framework reads keep their axios error, so a 402 (Enterprise) stays distinguishable from a failure. */
-async function readFrameworks() {
-  const [frameworks, scans] = await Promise.all([
-    api.get('/api/compliance-frameworks').then((r) => handleApiResponse<ComplianceFramework[]>(r)),
-    api.get(`/api/compliance-frameworks/scans/list?limit=${FRAMEWORK_SCANS_LIMIT}`).then((r) => handleApiResponse<ComplianceScan[]>(r)),
-  ])
-  return { frameworks, scans, scansLimit: FRAMEWORK_SCANS_LIMIT }
 }
 
 const CAN_SYNC = ['owner', 'admin', 'member']
@@ -95,32 +80,9 @@ export default function SecurityOverviewV2() {
     refetchInterval: (query: { state: { data?: ServicesCoverage } }) => (query.state.data?.scan_in_progress ? SCAN_RUNNING_REFETCH_MS : false),
     refetchIntervalInBackground: false,
   })
-  // While a framework's newest run is active, the scans are read again (5 s for a minute, then 15 s) until it
-  // ends or passes the ceiling.
-  const frameworksQuery = useQuery({
-    queryKey: ['security-v2', orgId, 'frameworks', FRAMEWORK_SCANS_LIMIT],
-    queryFn: readFrameworks,
-    enabled, ...QUERY_OPTIONS,
-    refetchInterval: (query: { state: { data?: { scans: ComplianceScan[] } } }) =>
-      evaluationPollInterval(activeRunStarts(query.state.data?.scans ?? []), Date.now()),
-    refetchIntervalInBackground: false,
-  })
+  // Frameworks and runs, polled while a run is active, and starting a run in place (shared with Compliance).
+  const { query: frameworksQuery, evaluation, overlay } = useFrameworkEvaluations(['security-v2', orgId, 'frameworks', FRAMEWORK_SCANS_LIMIT], enabled, now)
   const anomaliesQuery = useQuery<{ active: number }>({ queryKey: ['security-v2', orgId, 'anomaly-stats'], queryFn: () => anomalyService.getStats(), enabled, ...QUERY_OPTIONS })
-
-  const { refetch: refetchFrameworks } = frameworksQuery
-  const evaluation = useStartEvaluation(useCallback(() => refetchFrameworks(), [refetchFrameworks]))
-  // Moved forward by every answered start and by the ceiling timer below, which fires at once for a run first
-  // seen already past the ceiling; never by render.
-  const [ceilingTick, setCeilingTick] = useState(0)
-  const listedScanIds = new Set(frameworksQuery.data?.scans.map((s) => s.id) ?? [])
-  const startedLocally: Record<string, LocalStart> = {}
-  for (const [frameworkId, local] of Object.entries(evaluation.started)) {
-    if (local.scanId === null || !listedScanIds.has(local.scanId)) startedLocally[frameworkId] = local
-  }
-  const overlay: EvaluationOverlay = {
-    clock: Math.max(now, ceilingTick, ...Object.values(startedLocally).map((local) => local.at)),
-    startedLocally,
-  }
 
   const view = describeSecurity({
     score: loadable(scoreQuery, true),
@@ -131,16 +93,6 @@ export default function SecurityOverviewV2() {
     frameworks: loadable(frameworksQuery, true),
     anomalies: loadable(anomaliesQuery),
   }, now, overlay)
-
-  const running = view.frameworks.frameworks.flatMap((f) => (f.runningSince !== null && f.action === null ? [f.runningSince] : []))
-  const runningKey = running.join(',')
-  useEffect(() => {
-    if (runningKey === '') return
-    // Re-render when the oldest live run passes the ceiling, so its start action shows again.
-    const next = Math.min(...runningKey.split(',').map(Number)) + EVALUATION_POLL_CEILING_MS - Date.now()
-    const timer = setTimeout(() => setCeilingTick(Date.now()), Math.max(0, next) + 1)
-    return () => clearTimeout(timer)
-  }, [runningKey])
 
   const handleSync = async () => {
     setSyncing(true)

@@ -2,10 +2,9 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { api } from '@/lib/api'
-import type { LocalStart } from './evaluation'
+import { SCAN_IN_PROGRESS, type LocalStart, type StartProblem } from './evaluation'
 
-/** Why a start didn't happen: a viewer (403), a plan below Enterprise (402), or anything else. */
-export type StartProblem = 'viewer' | 'plan' | 'failed'
+export type { StartProblem } from './evaluation'
 
 const without = <T,>(record: Readonly<Record<string, T>>, id: string): Record<string, T> =>
   Object.fromEntries(Object.entries(record).filter(([key]) => key !== id))
@@ -18,12 +17,21 @@ const toggled = (set: ReadonlySet<string>, id: string, on: boolean): ReadonlySet
 }
 
 const statusOf = (error: unknown) => (error as { response?: { status?: number } } | null)?.response?.status
+const codeOf = (error: unknown) => (error as { response?: { data?: { error?: unknown } } } | null)?.response?.data?.error
+
+/**
+ * A 409 is "this framework already has an active run" only with the SCAN_IN_PROGRESS code: the controller sends
+ * it only after finding this framework in this org and failing to take its per-framework lock. Any other 409
+ * is a failed start (founder addition 2, Oct 27).
+ */
+const alreadyRunning = (error: unknown) => statusOf(error) === 409 && codeOf(error) === SCAN_IN_PROGRESS
 
 /**
  * Starts a framework's evaluation in place with the existing POST /api/compliance-frameworks/:id/scan.
  * - One request per framework at a time: a second click while one is in flight sends nothing.
  * - A 200 means started, never completed: the run is tracked by its id until the list shows it.
- * - A 409 means a run is already active, so the framework shows Running until the list is read again.
+ * - A 409 SCAN_IN_PROGRESS means a run is already active, so the framework shows Running until the list is read
+ *   again; any other 409 is a failed start.
  * - Anything else keeps the previous state and records the problem; nothing is shown as running.
  * `refresh` reads the scan list again; it is awaited before a 409's local Running is dropped.
  */
@@ -44,7 +52,7 @@ export function useStartEvaluation(refresh: () => Promise<unknown>) {
         response = await api.post(`/api/compliance-frameworks/${encodeURIComponent(frameworkId)}/scan`, {})
       } catch (error) {
         const status = statusOf(error)
-        if (status !== 409) {
+        if (!alreadyRunning(error)) {
           setProblems((prev) => ({ ...prev, [frameworkId]: status === 403 ? 'viewer' : status === 402 ? 'plan' : 'failed' }))
           return
         }
