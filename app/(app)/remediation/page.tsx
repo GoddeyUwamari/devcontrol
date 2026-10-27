@@ -382,7 +382,6 @@ export default function RemediationPage() {
     return (
       <div style={{ maxWidth: 1320, margin: '0 auto', padding: '40px 56px 64px', background: '#F9FAFB', minHeight: '100vh' }}>
         <div style={{ marginBottom: 32 }}>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7C3AED', marginBottom: 6 }}>DevOps</p>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', margin: 0 }}>Auto-Remediation Workflows</h1>
         </div>
         <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '80px 40px', textAlign: 'center' }}>
@@ -407,7 +406,6 @@ export default function RemediationPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
         <div>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7C3AED', marginBottom: 6 }}>DevOps · Enterprise</p>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>Auto-Remediation Workflows</h1>
           <p style={{ fontSize: '0.75rem', fontWeight: 500, color: '#6B7280', margin: 0 }}>
             Approval-based infrastructure remediation. Every AWS action requires explicit human approval.

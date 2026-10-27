@@ -144,7 +144,6 @@ export default function SLODashboardPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Observability</p>
           <h1 className="text-2xl font-bold text-gray-900">SLO Dashboard &amp; Management</h1>
           <p className="text-xs text-gray-500 font-medium mt-1.5">Define and track Service Level Objectives across your infrastructure.</p>
         </div>
@@ -174,7 +173,6 @@ export default function SLODashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">SLO Dashboard &amp; Management</h1>
           <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-xl">
             Live evaluation against real CloudWatch telemetry — EC2 availability, ALB average latency, ALB and Lambda error rate, over a 24-hour or 7-day window. Averages, not percentiles; not application-level uptime.

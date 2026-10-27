@@ -57,7 +57,6 @@ export default function Soc2ReadinessDetailPage() {
       </button>
 
       <div className="mb-6">
-        <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">Security / Compliance / SOC 2</p>
         <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>SOC 2 Readiness</h1>
         <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-2xl')}>
           Technical evidence DevControl observes from your connected AWS account, and supporting evidence your

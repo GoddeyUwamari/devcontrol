@@ -524,7 +524,6 @@ function InfrastructureContent() {
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div className="flex-1">
-          <p className="text-xs font-bold uppercase tracking-widest text-violet-700 mb-1.5">Infrastructure</p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">AWS System Intelligence</h1>
           <p className="text-xs text-slate-500 font-medium leading-relaxed">Visibility into cost, health, and risk across your AWS infrastructure.</p>
 

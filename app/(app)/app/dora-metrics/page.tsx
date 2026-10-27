@@ -131,7 +131,6 @@ export default function DORAMetricsPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">DevOps</p>
           <h1 className={`${PAGE_TITLE_CLASS} mb-1.5`}>Engineering Intelligence</h1>
           <p className={`${PAGE_SUBTITLE_CLASS} mb-2 max-w-lg`}>DORA metrics and engineering performance, automatically measured from your deployment pipeline.</p>
           <div className="flex items-center gap-1.5 text-meta" style={{ color: dataStateColor }}>
