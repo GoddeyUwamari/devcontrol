@@ -62,12 +62,13 @@ export const PAGE_COPY = {
   frameworksHeading: 'Compliance frameworks',
   manage: 'Manage →',
 
-  // The bottom link cards, each with the page's trailing arrow (F2c; "Anomaly Rules →" is new, founder-approved).
-  anomaliesCard: 'Anomalies →',
+  // The bottom link cards (F2c; "Anomaly Rules" is new, founder-approved). The arrow sits apart, pinned right, aria-hidden.
+  cardArrow: '→',
+  anomaliesCard: 'Anomalies',
   anomaliesCardText: 'Unusual activity and its history',
-  anomalyRulesCard: 'Anomaly Rules →',
+  anomalyRulesCard: 'Anomaly Rules',
   anomalyRulesCardText: 'Custom detection thresholds',
-  auditCard: 'Audit logs →',
+  auditCard: 'Audit logs',
   auditCardText: 'Who did what, and when',
 } as const
 

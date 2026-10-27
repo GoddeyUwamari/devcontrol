@@ -79,6 +79,7 @@ const SECURITY = [
   'app/(app)/security/overview/FindingPanel.tsx',
   'app/(app)/security/overview/FindingsList.tsx',
   'app/(app)/security/overview/Frameworks.tsx',
+  'app/(app)/security/overview/RegionText.tsx',
   'app/(app)/security/overview/ScoreTrend.tsx',
   'app/(app)/security/overview/SecurityChecked.tsx',
   'app/(app)/security/overview/SecurityHeader.tsx',
