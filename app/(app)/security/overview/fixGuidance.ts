@@ -134,6 +134,24 @@ export function sgPortClass(evidence: unknown): 'sg_open_admin' | 'sg_open_web' 
   return 'sg_open_other'
 }
 
+const SG_KEYS: ReadonlySet<GuidanceKey> = new Set(['sg_open_admin', 'sg_open_web', 'sg_open_other'])
+
+/**
+ * The findings list's short title for a finding with a guidance key (founder-approved, F2c); the resource goes in
+ * "Where". A security group says which ports: "All ports" for all protocols ("-1"), else its TCP/UDP port or
+ * range. ICMP and other protocols carry no ports (type and code sit there), so they keep the group title "Port
+ * open to the internet". No key → null: the finding keeps its own title.
+ */
+export function shortTitle(key: GuidanceKey | null, evidence: unknown): string | null {
+  const g = guidanceFor(key)
+  if (!g || !key) return null
+  if (!SG_KEYS.has(key)) return g.title
+  const { protocol, from_port: from, to_port: to } = (evidence && typeof evidence === 'object' ? evidence : {}) as Record<string, unknown>
+  if (protocol === '-1' || protocol === -1) return 'All ports open to the internet'
+  if ((protocol !== 'tcp' && protocol !== 'udp') || !isPort(from) || !isPort(to)) return g.title
+  return from === to ? `Port ${from} open to the internet` : `Ports ${from}–${to} open to the internet`
+}
+
 /** The guidance key for an account-level finding (security group or IAM user), or null. */
 export function guidanceKeyForAccountFinding(f: AccountSecurityFinding): GuidanceKey | null {
   const e = f.evidence && typeof f.evidence === 'object' ? (f.evidence as unknown as Record<string, unknown>) : null

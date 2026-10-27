@@ -41,8 +41,9 @@ export const PAGE_COPY = {
   // The expanded row (e2 7, 8, 21).
   review: 'Review',
   hide: 'Hide',
-  showDetails: (title: string) => `Show details for ${title}`,
-  hideDetails: (title: string) => `Hide details for ${title}`,
+  // "… on <resource name>" so rows with the same issue differ (founder, F2c); the plain form when there's no name.
+  showDetails: (title: string, resource?: string) => `Show details for ${title}${resource ? ` on ${resource}` : ''}`,
+  hideDetails: (title: string, resource?: string) => `Hide details for ${title}${resource ? ` on ${resource}` : ''}`,
   whyItMatters: 'Why it matters',
   nextStep: 'Next step',
   fixRisk: 'Risk of the fix',
@@ -61,9 +62,12 @@ export const PAGE_COPY = {
   frameworksHeading: 'Compliance frameworks',
   manage: 'Manage →',
 
-  anomaliesCard: 'Anomalies',
+  // The bottom link cards, each with the page's trailing arrow (F2c; "Anomaly Rules →" is new, founder-approved).
+  anomaliesCard: 'Anomalies →',
   anomaliesCardText: 'Unusual activity and its history',
-  auditCard: 'Audit logs',
+  anomalyRulesCard: 'Anomaly Rules →',
+  anomalyRulesCardText: 'Custom detection thresholds',
+  auditCard: 'Audit logs →',
   auditCardText: 'Who did what, and when',
 } as const
 
@@ -108,6 +112,7 @@ export const PLAIN_SERVER_MESSAGES: readonly string[] = [
 export const PAGE_HREF = {
   frameworks: '/compliance/frameworks',
   anomalies: '/anomalies',
+  anomalyRules: '/anomalies/rules',
   auditLogs: '/audit-logs',
 } as const
 

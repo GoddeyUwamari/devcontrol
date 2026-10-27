@@ -80,7 +80,7 @@ describe('requests', () => {
 })
 
 describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
-  it('header, banner, tiles, then findings beside the side column, then the two link cards, in that order', async () => {
+  it('header, banner, tiles, then findings beside the side column, then the three link cards, in that order', async () => {
     const { container } = await show()
     expect(screen.getByRole('heading', { level: 1, name: 'Security Overview' })).toBeInTheDocument()
     expect(screen.getByText("What's exposed, what to fix first, and what we checked in your AWS account.")).toBeInTheDocument()
@@ -92,8 +92,9 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
       screen.getByRole('heading', { name: 'Score, last 30 days' }),
       screen.getByRole('heading', { name: 'What we checked' }),
       screen.getByRole('heading', { name: 'Compliance frameworks' }),
-      screen.getByRole('link', { name: /^Anomalies\s*Unusual activity and its history$/ }),
-      screen.getByRole('link', { name: /^Audit logs\s*Who did what, and when$/ }),
+      screen.getByRole('link', { name: /^Anomalies →\s*Unusual activity and its history$/ }),
+      screen.getByRole('link', { name: /^Anomaly Rules →\s*Custom detection thresholds$/ }),
+      screen.getByRole('link', { name: /^Audit logs →\s*Who did what, and when$/ }),
     ]
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING, `${i}`).toBeTruthy()

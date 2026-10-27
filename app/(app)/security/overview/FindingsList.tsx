@@ -2,7 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { Num } from '@/components/ui/typography'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import type { SeverityLevel } from '@/lib/utils/severity-colors'
 import { cn } from '@/lib/utils'
+import { HIDDEN } from '@/lib/security/findingDisplay'
 import {
   SCOPE_LABEL, SECURITY_COPY, SEVERITY_LABEL, STATUS_LABEL, filterRows, groupRows,
   type FilterKey, type FilterView, type FindingRow, type SecurityView,
@@ -11,12 +14,8 @@ import { LIST_LIMIT, PAGE_COPY } from './securityCopy'
 import { FindingPanel } from './FindingPanel'
 import { FindingActions } from './FindingActions'
 
-const SEVERITY_INK: Record<string, string> = {
-  critical: 'text-ink-danger',
-  high: 'text-ink-warning',
-  medium: 'text-ink-body',
-  low: 'text-ink-muted',
-}
+const SEVERITY_LEVELS: readonly string[] = ['critical', 'high', 'medium', 'low']
+const severityLevel = (s: string): SeverityLevel => (SEVERITY_LEVELS.includes(s) ? (s as SeverityLevel) : 'info')
 
 const PRESSABLE = 'inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-ui font-semibold'
 const pressed = (on: boolean) => (on ? 'border-violet-700 bg-violet-50 text-ink-accent' : 'border-slate-300 bg-white text-ink hover:bg-slate-50')
@@ -36,7 +35,8 @@ function FilterButton({ filter, on, onClick }: { filter: FilterView; on: boolean
 const CELL = 'border-t border-slate-100 px-4 py-3 align-top'
 
 /**
- * One row: severity, the issue (with its status chip and first-found date), where, scope, and "Review" / "Hide",
+ * One row: the severity pill, the issue (with the web-server hint on open web ports, its status chip and first-found
+ * date), where, scope, and "Review" / "Hide",
  * which shows or hides the row's details in a full-width row below it. aria-expanded follows the real state.
  */
 function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | null; orgId: string | null; onDecided: (rowId: string) => void }) {
@@ -44,13 +44,18 @@ function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | 
   const panelId = useId()
   const status = STATUS_LABEL[row.status]
   const where = [row.where.name, row.where.kind, row.where.region].filter(Boolean).join(' · ')
+  // The accessible name says which resource; a row with no name ("…" or empty) keeps the plain form.
+  const resource = row.where.name && row.where.name !== HIDDEN ? row.where.name : undefined
   return (
     <>
       <tr data-testid="security-row" data-row-id={row.id}>
-        <td className={cn(CELL, 'text-ui font-semibold', SEVERITY_INK[row.severity] ?? 'text-ink-body')}>{SEVERITY_LABEL[row.severity] ?? row.severity}</td>
+        <td className={CELL}>
+          <SeverityBadge severity={severityLevel(row.severity)} label={SEVERITY_LABEL[row.severity] ?? row.severity} className="whitespace-nowrap" />
+        </td>
         <td className={CELL}>
           <span className="flex min-w-0 flex-col items-start gap-0.5">
             <span className="text-ui text-ink">{row.title}</span>
+            {row.webHint && <span data-testid="security-row-web-hint" className="text-meta text-ink-muted">{row.webHint}</span>}
             {status && <span data-testid="security-row-status" className="rounded-md bg-slate-100 px-2 py-0.5 text-label text-ink-body">{status}</span>}
             {row.firstFound && <span className="text-meta text-ink-muted">{row.firstFound}</span>}
           </span>
@@ -62,7 +67,7 @@ function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | 
             type="button"
             aria-expanded={open}
             aria-controls={open ? panelId : undefined}
-            aria-label={open ? PAGE_COPY.hideDetails(row.title) : PAGE_COPY.showDetails(row.title)}
+            aria-label={open ? PAGE_COPY.hideDetails(row.title, resource) : PAGE_COPY.showDetails(row.title, resource)}
             onClick={() => setOpen(!open)}
             className={cn(PRESSABLE, pressed(false))}
           >

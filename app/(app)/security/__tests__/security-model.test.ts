@@ -166,8 +166,8 @@ describe('rows', () => {
 
   it('open = active or acknowledged; accepted and dismissed have their own filters; resolved is not shown', () => {
     expect(filterRows(view.rows, 'all').map((r) => r.title)).toEqual([
-      'Security group "example-sg" (sg-0123456789abcdef0) allows port 443 from anywhere (0.0.0.0/0)',
-      'IAM user "example-user" has an access key (…0001) that is 120 days old',
+      'Port 443 open to the internet',
+      'Access key older than 90 days',
       'S3 bucket accepts HTTP',
     ])
     expect(filterRows(view.rows, 'accepted').map((r) => r.title)).toEqual(['Accepted one'])

@@ -86,16 +86,16 @@ describe('Review / Hide (e2 21)', () => {
   it('aria-expanded and the accessible name follow the real state; the panel exists only while open', async () => {
     await show()
     const title = rowOf(ADMIN).querySelectorAll('td')[1].querySelector('span > span')!.textContent ?? ''
-    expect(title).toMatch(/example-admin-sg/)
+    expect(title).toBe('Port 22 open to the internet')
     const toggle = toggleOf(ADMIN)
-    expect(toggle).toHaveAccessibleName(`Show details for ${title}`)
+    expect(toggle).toHaveAccessibleName(`Show details for ${title} on example-admin-sg`)
     expect(toggle).toHaveTextContent('Review')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(within(findings()).queryAllByTestId('security-row-panel')).toHaveLength(0)
 
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(toggle).toHaveAccessibleName(`Hide details for ${title}`)
+    expect(toggle).toHaveAccessibleName(`Hide details for ${title} on example-admin-sg`)
     expect(toggle).toHaveTextContent('Hide')
     const panel = panelOf(ADMIN)!
     expect(panel).toBeInTheDocument()
