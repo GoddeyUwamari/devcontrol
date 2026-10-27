@@ -112,7 +112,7 @@ describe('reads (D1, D7)', () => {
 describe('starting a run (D5, 409 contract)', () => {
   it('posts once to the existing endpoint; the button is disabled while the start is in flight', async () => {
     const gate = held()
-    await show({ [START]: { ...ok({ scanId: 's-new' }), wait: gate.wait } as Route })
+    await show({ [START]: { status: 200, body: { success: true, data: { scanId: 's-new' } }, wait: gate.wait } })
     const button = within(row()).getByRole('button', { name: 'Run Scan' })
     fireEvent.click(button)
     await waitFor(() => expect(button).toBeDisabled())
