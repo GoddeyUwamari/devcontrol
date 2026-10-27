@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api, handleApiResponse } from '@/lib/api'
@@ -12,8 +12,10 @@ import type { ComplianceFramework, ComplianceScan } from '@/lib/services/complia
 import { riskScoreService, type RiskScore, type RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
+import { EVALUATION_POLL_CEILING_MS, activeRunStarts, evaluationPollInterval, type LocalStart } from '@/lib/compliance/evaluation'
+import { useStartEvaluation } from '@/lib/compliance/useStartEvaluation'
 import { useNowEachLocalDay } from '../../services/useNowEachLocalDay'
-import { describeSecurity, type ResourceFindingsSource, type ResourceWithIssues, type SecLoadable } from './securityModel'
+import { describeSecurity, type EvaluationOverlay, type ResourceFindingsSource, type ResourceWithIssues, type SecLoadable } from './securityModel'
 import { PAGE_COPY } from './securityCopy'
 import { SecurityHeader } from './SecurityHeader'
 import { StatusBanner } from './StatusBanner'
@@ -93,8 +95,32 @@ export default function SecurityOverviewV2() {
     refetchInterval: (query: { state: { data?: ServicesCoverage } }) => (query.state.data?.scan_in_progress ? SCAN_RUNNING_REFETCH_MS : false),
     refetchIntervalInBackground: false,
   })
-  const frameworksQuery = useQuery({ queryKey: ['security-v2', orgId, 'frameworks', FRAMEWORK_SCANS_LIMIT], queryFn: readFrameworks, enabled, ...QUERY_OPTIONS })
+  // While a framework's newest run is active, the scans are read again (5 s for a minute, then 15 s) until it
+  // ends or passes the ceiling.
+  const frameworksQuery = useQuery({
+    queryKey: ['security-v2', orgId, 'frameworks', FRAMEWORK_SCANS_LIMIT],
+    queryFn: readFrameworks,
+    enabled, ...QUERY_OPTIONS,
+    refetchInterval: (query: { state: { data?: { scans: ComplianceScan[] } } }) =>
+      evaluationPollInterval(activeRunStarts(query.state.data?.scans ?? []), Date.now()),
+    refetchIntervalInBackground: false,
+  })
   const anomaliesQuery = useQuery<{ active: number }>({ queryKey: ['security-v2', orgId, 'anomaly-stats'], queryFn: () => anomalyService.getStats(), enabled, ...QUERY_OPTIONS })
+
+  const { refetch: refetchFrameworks } = frameworksQuery
+  const evaluation = useStartEvaluation(useCallback(() => refetchFrameworks(), [refetchFrameworks]))
+  // Moved forward by every answered start and by the ceiling timer below, which fires at once for a run first
+  // seen already past the ceiling; never by render.
+  const [ceilingTick, setCeilingTick] = useState(0)
+  const listedScanIds = new Set(frameworksQuery.data?.scans.map((s) => s.id) ?? [])
+  const startedLocally: Record<string, LocalStart> = {}
+  for (const [frameworkId, local] of Object.entries(evaluation.started)) {
+    if (local.scanId === null || !listedScanIds.has(local.scanId)) startedLocally[frameworkId] = local
+  }
+  const overlay: EvaluationOverlay = {
+    clock: Math.max(now, ceilingTick, ...Object.values(startedLocally).map((local) => local.at)),
+    startedLocally,
+  }
 
   const view = describeSecurity({
     score: loadable(scoreQuery, true),
@@ -104,7 +130,17 @@ export default function SecurityOverviewV2() {
     coverage: loadable(coverageQuery),
     frameworks: loadable(frameworksQuery, true),
     anomalies: loadable(anomaliesQuery),
-  }, now)
+  }, now, overlay)
+
+  const running = view.frameworks.frameworks.flatMap((f) => (f.runningSince !== null && f.action === null ? [f.runningSince] : []))
+  const runningKey = running.join(',')
+  useEffect(() => {
+    if (runningKey === '') return
+    // Re-render when the oldest live run passes the ceiling, so its start action shows again.
+    const next = Math.min(...runningKey.split(',').map(Number)) + EVALUATION_POLL_CEILING_MS - Date.now()
+    const timer = setTimeout(() => setCeilingTick(Date.now()), Math.max(0, next) + 1)
+    return () => clearTimeout(timer)
+  }, [runningKey])
 
   const handleSync = async () => {
     setSyncing(true)
@@ -151,7 +187,13 @@ export default function SecurityOverviewV2() {
         <div className="flex min-w-0 flex-col gap-6">
           <ScoreTrend trend={view.trend} />
           <SecurityChecked lines={view.checked} />
-          <Frameworks view={view.frameworks} />
+          <Frameworks
+            view={view.frameworks}
+            role={role}
+            starting={evaluation.starting}
+            problems={evaluation.problems}
+            onStart={evaluation.start}
+          />
         </div>
       </div>
       <BottomLinks />

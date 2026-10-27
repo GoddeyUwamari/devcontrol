@@ -26,6 +26,7 @@ import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type Findin
 import { typeLabel } from '../../services/AttentionTable'
 import { formatWhen, hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
+import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, evaluateFramework, type EvaluationState, type LocalStart } from '@/lib/compliance/evaluation'
 import {
   WEB_SERVER_HINT,
   buildHttpsOnlyStatement,
@@ -77,6 +78,9 @@ export interface SecurityInputs {
 
 // ── Copy ──
 
+/** The upgrade page, after "Compliance frameworks are on the Enterprise plan." (the card, and a start answered 402). */
+export const SEE_PLANS = { label: 'See plans', href: '/settings/billing/upgrade' } as const
+
 export const SECURITY_COPY = {
   incomplete: "Some checks couldn't load, so this may be incomplete.",
   noCritical: 'No critical findings in the areas we checked.',
@@ -106,8 +110,8 @@ export const SECURITY_COPY = {
   s3Policies: 'S3 bucket policies (all regions)',
 } as const
 
-/** A framework result older than this is out of date (founder decision, Oct 23: one named constant, 7 days). */
-export const FRAMEWORK_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+/** One constant for both pages (lib/compliance/evaluation.ts), re-exported where F1/F2 import it. */
+export { FRAMEWORK_STALE_AFTER_MS }
 
 const SEVERITIES: ComplianceSeverity[] = ['critical', 'high', 'medium', 'low']
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
@@ -135,11 +139,8 @@ export function formatTime(iso: string | null | undefined, now: number): string 
   return parse(iso) === null ? null : `${formatWhen(iso!, now, 'UTC')} UTC`
 }
 
-/** A compliance score as a whole percent, never rounded up (99.6 is "99"); null when it isn't a finite number. */
-export function formatScore(value: unknown): string | null {
-  const n = typeof value === 'string' ? (value.trim() === '' ? NaN : Number(value)) : typeof value === 'number' ? value : NaN
-  return Number.isFinite(n) ? String(Math.floor(n)) : null
-}
+// Compliance scores come from lib/compliance/evaluation's scanScore (the stored counts, D1); the stored
+// compliance_score is never read.
 
 // ── Findings ──
 
@@ -422,7 +423,7 @@ function findingsTile(i: SecurityInputs, rows: FindingRow[]): FindingsTile | nul
 
 // ── Compliance frameworks (M5, safeguard 2) ──
 
-export type FrameworkState = 'current' | 'running' | 'failed' | 'out_of_date' | 'never' | 'not_found'
+export type FrameworkState = EvaluationState
 
 export const FRAMEWORK_STATE_LABEL: Record<FrameworkState, string> = {
   current: 'Current', running: 'Running', failed: 'Failed', out_of_date: 'Out of date', never: 'Never evaluated',
@@ -440,6 +441,11 @@ export interface FrameworkView {
   /** The latest completed evaluation, formatted ("Oct 3"), or null. */
   lastEvaluated: string | null
   lastEvaluatedAt: number | null
+  /** A current result with no counted resource (D1): "No rules applied to your resources."; else null. */
+  scoreNote: string | null
+  /** Running only: when the run started; the page polls from it. Null in every other state. */
+  runningSince: number | null
+  /** Started in place (F3). Running has none, until the run has been active past the poll ceiling. */
   action: { kind: 'try_again' | 'evaluate_now' | 're_evaluate'; label: string } | null
 }
 
@@ -452,61 +458,75 @@ export interface FrameworksView {
 
 /**
  * The compliance panel's buttons (the mock, founder F2c): Out of date and not found "Re-evaluate now", Failed
- * "Try again", Never evaluated "Evaluate now"; each a link to /compliance/frameworks until F3 runs it in place.
+ * "Try again", Never evaluated "Evaluate now"; F3 starts each in place.
  */
 export const RE_EVALUATE_NOW = 'Re-evaluate now'
 
-const byNewest = (a: ComplianceScan, b: ComplianceScan) =>
-  (parse(b.created_at) ?? 0) - (parse(a.created_at) ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+/** What the page knows that the scan list may not show yet (F3): a run it just started, per framework. */
+export interface EvaluationOverlay {
+  /** The latest time the page knows of (at least `now`); the poll ceiling is measured with it. */
+  clock: number
+  /** Framework id → this page's start, while the list doesn't show that run. */
+  startedLocally: Readonly<Record<string, LocalStart>>
+}
 
 /**
  * The scan list is the org's newest scans across every framework, so a framework
  * with no scan in it has either never been evaluated or was evaluated before the
  * list's window. `historyComplete` (the list came back shorter than its limit) is
  * the only case where "never" is known; otherwise the model says it didn't find
- * the last evaluation, and shows no score.
+ * the last evaluation, and shows no score. The state itself is lib/compliance's,
+ * shared with the Compliance page; the wording is this page's.
  */
-export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[], now: number, historyComplete = false): FrameworkView {
-  const own = scans.filter((s) => s.framework_id === f.id).sort(byNewest)
-  const latest = own[0]
-  const lastDone = own.find((s) => s.status === 'completed' && formatScore(s.compliance_score) !== null)
-  const lastEvaluatedIso = lastDone ? lastDone.completed_at ?? lastDone.created_at : null
-  const base = { id: f.id, name: f.name, lastEvaluated: formatDay(lastEvaluatedIso, now), lastEvaluatedAt: parse(lastEvaluatedIso) }
-  const view = (state: FrameworkState, text: string, score: string | null, action: FrameworkView['action']): FrameworkView =>
-    ({ ...base, state, label: FRAMEWORK_STATE_LABEL[state], text, score, action })
+export function describeFramework(
+  f: ComplianceFramework,
+  scans: ComplianceScan[],
+  now: number,
+  historyComplete = false,
+  overlay: EvaluationOverlay = { clock: now, startedLocally: {} },
+): FrameworkView {
+  const e = evaluateFramework(f.id, scans, Math.max(now, overlay.clock), historyComplete, overlay.startedLocally[f.id] ?? null)
+  const lastEvaluated = e.lastDone ? formatDay(e.lastDone.completed_at ?? e.lastDone.created_at, now) : null
+  const base = { id: f.id, name: f.name, lastEvaluated, lastEvaluatedAt: e.lastEvaluatedAt }
+  const view = (text: string, action: FrameworkView['action'], extra: Partial<FrameworkView> = {}): FrameworkView =>
+    ({ ...base, state: e.state, label: FRAMEWORK_STATE_LABEL[e.state], text, score: null, scoreNote: null, runningSince: null, action, ...extra })
+  const reEvaluate = { kind: 're_evaluate', label: RE_EVALUATE_NOW } as const
 
-  if (latest && (latest.status === 'pending' || latest.status === 'running')) {
-    const started = formatTime(latest.started_at ?? latest.created_at, now)
-    return view('running', `Started ${started ?? 'recently'}. The previous result is hidden until this run finishes.`, null, null)
+  switch (e.state) {
+    case 'running': {
+      const started = e.startedAt === null ? null : formatTime(new Date(e.startedAt).toISOString(), now)
+      // Past the poll ceiling the run may never end (nothing marks a crashed run failed): say so, and offer the
+      // start again; a 409 answer keeps this text (founder answer, Oct 27).
+      return e.overdue
+        ? view(`Still running — started ${started ?? 'recently'}, taking longer than usual.`, reEvaluate, { runningSince: e.startedAt })
+        : view(`Started ${started ?? 'recently'}. The previous result is hidden until this run finishes.`, null, { runningSince: e.startedAt })
+    }
+    case 'failed': {
+      const on = formatDay(e.latest!.completed_at ?? e.latest!.started_at ?? e.latest!.created_at, now)
+      return view(`The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, { kind: 'try_again', label: 'Try again' })
+    }
+    case 'never':
+      return view(SECURITY_COPY.neverEvaluated, { kind: 'evaluate_now', label: 'Evaluate now' })
+    // A completed scan without usable counts was an evaluation: never "never".
+    case 'not_found':
+      return view(SECURITY_COPY.evaluationNotFound, reEvaluate)
+    case 'out_of_date':
+      return view(`Last evaluated ${lastEvaluated}, over 7 days ago. Findings may have changed.`, reEvaluate)
+    case 'current':
+      return e.score?.kind === 'score'
+        ? view(`Evaluated ${lastEvaluated} · ${e.score.value}%`, null, { score: e.score.value })
+        : view(`Evaluated ${lastEvaluated} · —`, null, { scoreNote: EVALUATION_COPY.noRulesApplied })
   }
-  if (latest && latest.status === 'failed') {
-    const on = formatDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
-    return view('failed', `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, null, { kind: 'try_again', label: 'Try again' })
-  }
-  if (!latest) {
-    return historyComplete
-      ? view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: 'Evaluate now' })
-      : view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: RE_EVALUATE_NOW })
-  }
-  const score = latest.status === 'completed' ? formatScore(latest.compliance_score) : null
-  // A completed scan without a usable score: there was an evaluation, so never "never".
-  if (score === null || base.lastEvaluatedAt === null) {
-    return view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: RE_EVALUATE_NOW })
-  }
-  if (now - base.lastEvaluatedAt >= FRAMEWORK_STALE_AFTER_MS) {
-    return view('out_of_date', `Last evaluated ${base.lastEvaluated}, over 7 days ago. Findings may have changed.`, null, { kind: 're_evaluate', label: RE_EVALUATE_NOW })
-  }
-  return view('current', `Evaluated ${base.lastEvaluated} · ${score}%`, score, null)
 }
 
-function frameworksView(i: SecurityInputs, now: number): FrameworksView {
+function frameworksView(i: SecurityInputs, now: number, overlay?: EvaluationOverlay): FrameworksView {
   const f = i.frameworks
   if (f.status === 'loading') return { status: 'loading', note: null, action: null, frameworks: [] }
-  if (f.status === 'plan') return { status: 'plan', note: SECURITY_COPY.frameworksPlan, action: { label: 'See plans', href: '/settings/billing/upgrade' }, frameworks: [] }
+  if (f.status === 'plan') return { status: 'plan', note: SECURITY_COPY.frameworksPlan, action: SEE_PLANS, frameworks: [] }
   if (f.status === 'error') return { status: 'error', note: SECURITY_COPY.frameworksError, action: null, frameworks: [] }
   const { scans, scansLimit } = f.data
   const historyComplete = Number.isInteger(scansLimit) && scansLimit > 0 && scans.length < scansLimit
-  return { status: 'ready', note: null, action: null, frameworks: f.data.frameworks.map((fw) => describeFramework(fw, scans, now, historyComplete)) }
+  return { status: 'ready', note: null, action: null, frameworks: f.data.frameworks.map((fw) => describeFramework(fw, scans, now, historyComplete, overlay)) }
 }
 
 const STATE_PRIORITY: Record<FrameworkState, number> = { failed: 0, out_of_date: 1, not_found: 2, never: 3, running: 4, current: 5 }
@@ -695,7 +715,8 @@ export interface SecurityView {
   empty: Record<FilterKey, string> | null
 }
 
-export function describeSecurity(i: SecurityInputs, now: number): SecurityView {
+/** `overlay`: runs this page started that the scan list doesn't show yet, and the poll clock (F3). */
+export function describeSecurity(i: SecurityInputs, now: number, overlay?: EvaluationOverlay): SecurityView {
   const account = i.accountFindings.status === 'ready'
     ? i.accountFindings.data.map((f) => accountRow(f, now)).filter((r): r is FindingRow => r !== null)
     : []
@@ -714,7 +735,7 @@ export function describeSecurity(i: SecurityInputs, now: number): SecurityView {
     { key: 'dismissed', label: FILTER_LABELS.dismissed, count: accountOk ? count('dismissed') : null, complete: accountOk },
   ]
 
-  const frameworks = frameworksView(i, now)
+  const frameworks = frameworksView(i, now, overlay)
   const a = i.anomalies
   const anomalies = a.status === 'ready' && Number.isFinite(a.data.active) && a.data.active >= 0
     ? (a.data.active === 0 ? SECURITY_COPY.anomaliesNone : `${a.data.active} open`)

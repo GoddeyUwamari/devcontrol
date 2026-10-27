@@ -153,6 +153,7 @@ export const framework = (id: string, name: string) => ({
   id, organization_id: 'org-1', name, description: null, framework_type: 'custom', enabled: true, is_default: false,
   standard_name: null, version: null, created_at: iso(40 * DAY), updated_at: iso(40 * DAY),
 })
+/** The page's score comes from the counts (9 of 10 counted → 90%, D1); `score` is only the stored compliance_score. */
 export const scan = (id: string, framework_id: string, status: string, score: unknown, msAgo: number) => ({
   id, organization_id: 'org-1', framework_id, scan_type: 'manual', status, total_resources: 10, compliant_resources: 9,
   non_compliant_resources: 1, compliance_score: score, critical_issues: 0, high_issues: 0, medium_issues: 0, low_issues: 0,

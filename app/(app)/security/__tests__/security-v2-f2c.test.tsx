@@ -236,7 +236,7 @@ describe('severity pills (F2c fix 3)', () => {
 })
 
 describe('compliance panel buttons (F2c fix 5, the mock\'s state labels)', () => {
-  it('Out of date "Re-evaluate now", Failed "Try again", Never evaluated "Evaluate now", each to /compliance/frameworks; Current has none', async () => {
+  it('Out of date "Re-evaluate now", Failed "Try again", Never evaluated "Evaluate now", each started in place (F3); Current has none', async () => {
     await show({
       'GET /api/compliance-frameworks': ok([framework('fw-old', 'Old'), framework('fw-fail', 'Failing'), framework('fw-new', 'New'), framework('fw-ok', 'Fine')]),
       [`GET ${SCANS_PATH}`]: ok([
@@ -248,10 +248,12 @@ describe('compliance panel buttons (F2c fix 5, the mock\'s state labels)', () =>
     const byState = Object.fromEntries(screen.getAllByTestId('security-framework').map((el) => [el.dataset.state, el]))
     for (const [state, label] of [['out_of_date', 'Re-evaluate now'], ['failed', 'Try again'], ['never', 'Evaluate now']]) {
       expect(byState[state], state).toBeDefined()
-      const links = within(byState[state]).getAllByRole('link')
-      expect(links.map((l) => l.textContent), state).toEqual([label])
-      expect(links[0], state).toHaveAttribute('href', '/compliance/frameworks')
+      expect(within(byState[state]).queryByRole('link'), state).toBeNull()
+      const buttons = within(byState[state]).getAllByRole('button')
+      expect(buttons.map((b) => b.textContent), state).toEqual([label])
+      expect(buttons[0], state).toBeEnabled()
     }
+    expect(within(byState.current).queryByRole('button')).toBeNull()
     expect(within(byState.current).queryByRole('link')).toBeNull()
   })
 })
