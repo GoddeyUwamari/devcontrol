@@ -61,9 +61,12 @@ export const PAGE_COPY = {
   frameworksHeading: 'Compliance frameworks',
   manage: 'Manage →',
 
-  anomaliesCard: 'Anomalies',
+  // The bottom link cards, each with the page's trailing arrow (F2c; "Anomaly Rules →" is new, founder-approved).
+  anomaliesCard: 'Anomalies →',
   anomaliesCardText: 'Unusual activity and its history',
-  auditCard: 'Audit logs',
+  anomalyRulesCard: 'Anomaly Rules →',
+  anomalyRulesCardText: 'Custom detection thresholds',
+  auditCard: 'Audit logs →',
   auditCardText: 'Who did what, and when',
 } as const
 
@@ -108,6 +111,7 @@ export const PLAIN_SERVER_MESSAGES: readonly string[] = [
 export const PAGE_HREF = {
   frameworks: '/compliance/frameworks',
   anomalies: '/anomalies',
+  anomalyRules: '/anomalies/rules',
   auditLogs: '/audit-logs',
 } as const
 

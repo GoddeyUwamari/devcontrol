@@ -80,7 +80,7 @@ describe('requests', () => {
 })
 
 describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
-  it('header, banner, tiles, then findings beside the side column, then the two link cards, in that order', async () => {
+  it('header, banner, tiles, then findings beside the side column, then the three link cards, in that order', async () => {
     const { container } = await show()
     expect(screen.getByRole('heading', { level: 1, name: 'Security Overview' })).toBeInTheDocument()
     expect(screen.getByText("What's exposed, what to fix first, and what we checked in your AWS account.")).toBeInTheDocument()
@@ -92,8 +92,9 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
       screen.getByRole('heading', { name: 'Score, last 30 days' }),
       screen.getByRole('heading', { name: 'What we checked' }),
       screen.getByRole('heading', { name: 'Compliance frameworks' }),
-      screen.getByRole('link', { name: /^Anomalies\s*Unusual activity and its history$/ }),
-      screen.getByRole('link', { name: /^Audit logs\s*Who did what, and when$/ }),
+      screen.getByRole('link', { name: /^Anomalies →\s*Unusual activity and its history$/ }),
+      screen.getByRole('link', { name: /^Anomaly Rules →\s*Custom detection thresholds$/ }),
+      screen.getByRole('link', { name: /^Audit logs →\s*Who did what, and when$/ }),
     ]
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING, `${i}`).toBeTruthy()
@@ -266,14 +267,14 @@ describe('the scan limit: one value for the request and the model (carried item 
     const row = screen.getByTestId('security-framework')
     expect(within(row).getByRole('link', { name: 'Re-evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
   })
-  it('49 of 50 is the whole history: "Never evaluated" and "Evaluate now"', async () => {
+  it('49 of 50 is the whole history: "Never evaluated" and "Re-evaluate now" (F2c)', async () => {
     await show({ [`GET ${SCANS_PATH}`]: ok(others(49)) })
     expect(screen.getByTestId('security-tile-compliance')).toHaveTextContent('Never evaluated')
-    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
+    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Re-evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
   })
-  it('a failed run: "Try again" links to the frameworks page', async () => {
+  it('a failed run: "Re-evaluate now" links to the frameworks page (F2c)', async () => {
     await show({ [`GET ${SCANS_PATH}`]: ok([scan('s-f', 'fw-1', 'failed', null, DAY)]) })
-    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/compliance/frameworks')
+    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Re-evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
   })
 })
 

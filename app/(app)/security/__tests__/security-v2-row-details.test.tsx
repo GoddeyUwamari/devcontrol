@@ -86,7 +86,7 @@ describe('Review / Hide (e2 21)', () => {
   it('aria-expanded and the accessible name follow the real state; the panel exists only while open', async () => {
     await show()
     const title = rowOf(ADMIN).querySelectorAll('td')[1].querySelector('span > span')!.textContent ?? ''
-    expect(title).toMatch(/example-admin-sg/)
+    expect(title).toBe('Port 22 open to the internet')
     const toggle = toggleOf(ADMIN)
     expect(toggle).toHaveAccessibleName(`Show details for ${title}`)
     expect(toggle).toHaveTextContent('Review')

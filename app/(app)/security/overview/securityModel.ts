@@ -32,6 +32,7 @@ import {
   guidanceFor,
   guidanceKeyForAccountFinding,
   guidanceKeyForResourceIssue,
+  shortTitle,
   type FixGuidance,
   type GuidanceKey,
 } from './fixGuidance'
@@ -150,7 +151,10 @@ export interface FindingRow {
   findingId: string | null
   scope: 'account' | 'resource'
   severity: string
+  /** The list's short title for a row with a guidance key, else the finding's own (safe) title. */
   title: string
+  /** The scanner's full description, the expanded row's first line; null when it is already the title. */
+  description: string | null
   where: FindingWhere
   status: RowStatus
   /** "First found Oct 3" (account findings only; resource findings have no first-found date yet). */
@@ -178,22 +182,40 @@ function withGuidance(key: GuidanceKey | null) {
   return { guidanceKey: key, guidance: guidanceFor(key) ?? null, webHint: key === 'sg_open_web' ? WEB_SERVER_HINT : null }
 }
 
+/** The short title when the row has one, with the full description kept for the expanded row. */
+function titles(key: GuidanceKey | null, evidence: unknown, own: string) {
+  const short = shortTitle(key, evidence)
+  return short === null ? { title: own, description: null } : { title: short, description: own }
+}
+
+/**
+ * The mock's "Where" for an account finding ("launch-wizard-1 · Security group · us-east-1"): a security group by
+ * its name alone, since its id is in the description; the id only when there is no name.
+ */
+function accountWhere(f: AccountSecurityFinding): FindingWhere {
+  const where = findingWhere(f)
+  const e = f.evidence && typeof f.evidence === 'object' ? (f.evidence as unknown as Record<string, unknown>) : null
+  const name = e?.security_group_name
+  return f.category === 'networking' && typeof name === 'string' && name.length > 0 ? { ...where, name } : where
+}
+
 function accountRow(f: AccountSecurityFinding, now: number): FindingRow | null {
   const status = ACCOUNT_STATUS[f.derived_status]
   if (!status) return null
   const day = formatDay(f.detected_at, now)
+  const key = guidanceKeyForAccountFinding(f)
   return {
     id: `account:${f.id}`,
     findingId: f.id,
     scope: 'account',
     severity: f.severity,
-    title: safeTitle(f),
-    where: findingWhere(f),
+    ...titles(key, f.evidence, safeTitle(f)),
+    where: accountWhere(f),
     status,
     firstFound: day ? `First found ${day}` : null,
     firstFoundAt: parse(f.detected_at),
     recommendation: f.recommendation ? maskText(f.recommendation) : null,
-    ...withGuidance(guidanceKeyForAccountFinding(f)),
+    ...withGuidance(key),
     policyStatement: null,
     canDisposition: true,
     review: null,
@@ -212,6 +234,7 @@ function resourceRows(source: ResourceFindingsSource): FindingRow[] {
         scope: 'resource' as const,
         severity: s.priority_severity as string,
         title: maskText(s.reason ?? ''),
+        description: null,
         where: { name: shortArn(s.name), kind: typeLabel(s.type), region: s.aws_region ?? s.region },
         status: 'open' as const,
         firstFound: null,
@@ -231,7 +254,7 @@ function resourceRows(source: ResourceFindingsSource): FindingRow[] {
       findingId: null,
       scope: 'resource' as const,
       severity: issue.severity,
-      title: maskText(issue.issue),
+      ...titles(key, null, maskText(issue.issue)),
       where: { ...where, kind: typeLabel(r.resource_type) },
       status: 'open' as const,
       firstFound: null,
@@ -427,6 +450,12 @@ export interface FrameworksView {
   frameworks: FrameworkView[]
 }
 
+/**
+ * The compliance panel's button for Out of date, Failed, Never evaluated and not found (founder, F2c): one label,
+ * "Re-evaluate now", a link to /compliance/frameworks until F3 runs it in place. `kind` keeps what F3 will do.
+ */
+export const RE_EVALUATE_NOW = 'Re-evaluate now'
+
 const byNewest = (a: ComplianceScan, b: ComplianceScan) =>
   (parse(b.created_at) ?? 0) - (parse(a.created_at) ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
 
@@ -452,20 +481,20 @@ export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[
   }
   if (latest && latest.status === 'failed') {
     const on = formatDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
-    return view('failed', `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, null, { kind: 'try_again', label: 'Try again' })
+    return view('failed', `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, null, { kind: 'try_again', label: RE_EVALUATE_NOW })
   }
   if (!latest) {
     return historyComplete
-      ? view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: 'Evaluate now' })
-      : view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate now' })
+      ? view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: RE_EVALUATE_NOW })
+      : view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: RE_EVALUATE_NOW })
   }
   const score = latest.status === 'completed' ? formatScore(latest.compliance_score) : null
   // A completed scan without a usable score: there was an evaluation, so never "never".
   if (score === null || base.lastEvaluatedAt === null) {
-    return view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: 'Re-evaluate now' })
+    return view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: RE_EVALUATE_NOW })
   }
   if (now - base.lastEvaluatedAt >= FRAMEWORK_STALE_AFTER_MS) {
-    return view('out_of_date', `Last evaluated ${base.lastEvaluated}, over 7 days ago. Findings may have changed.`, null, null)
+    return view('out_of_date', `Last evaluated ${base.lastEvaluated}, over 7 days ago. Findings may have changed.`, null, { kind: 're_evaluate', label: RE_EVALUATE_NOW })
   }
   return view('current', `Evaluated ${base.lastEvaluated} · ${score}%`, score, null)
 }

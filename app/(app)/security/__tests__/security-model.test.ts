@@ -166,8 +166,8 @@ describe('rows', () => {
 
   it('open = active or acknowledged; accepted and dismissed have their own filters; resolved is not shown', () => {
     expect(filterRows(view.rows, 'all').map((r) => r.title)).toEqual([
-      'Security group "example-sg" (sg-0123456789abcdef0) allows port 443 from anywhere (0.0.0.0/0)',
-      'IAM user "example-user" has an access key (…0001) that is 120 days old',
+      'Port 443 open to the internet',
+      'Access key older than 90 days',
       'S3 bucket accepts HTTP',
     ])
     expect(filterRows(view.rows, 'accepted').map((r) => r.title)).toEqual(['Accepted one'])
@@ -394,14 +394,14 @@ describe('frameworks', () => {
     expect(JSON.stringify(v)).not.toContain('95')
     expect(one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'pending', null, 60_000)]).state).toBe('running')
   })
-  it('failed hides the previous score and offers Try again', () => {
+  it('failed hides the previous score and offers Re-evaluate now (F2c)', () => {
     const v = one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'failed', null, DAY)])
-    expect(v).toMatchObject({ state: 'failed', score: null, text: 'The last run failed on Oct 22. No score is shown as current.', action: { kind: 'try_again', label: 'Try again' } })
+    expect(v).toMatchObject({ state: 'failed', score: null, text: 'The last run failed on Oct 22. No score is shown as current.', action: { kind: 'try_again', label: 'Re-evaluate now' } })
     expect(JSON.stringify(v)).not.toContain('95')
   })
   it('never evaluated only when the scan list is the whole history', () => {
     for (const scans of [[], [scan('other', 'completed', 90, DAY)]]) {
-      expect(describeFramework(fw('fw-1'), scans, NOW, true)).toMatchObject({ state: 'never', label: 'Never evaluated', text: 'No evaluation yet.', score: null, action: { kind: 'evaluate_now', label: 'Evaluate now' } })
+      expect(describeFramework(fw('fw-1'), scans, NOW, true)).toMatchObject({ state: 'never', label: 'Never evaluated', text: 'No evaluation yet.', score: null, action: { kind: 'evaluate_now', label: 'Re-evaluate now' } })
     }
   })
   it('not in the list and the history may be cut off: "Last evaluation not found", no score', () => {

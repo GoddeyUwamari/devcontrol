@@ -6,6 +6,13 @@ import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
 import type { TrendView } from './securityModel'
 import { PAGE_COPY } from './securityCopy'
 
+/**
+ * The Y axis gets its own width inside the chart (no negative left margin), so the widest label, "100", is drawn
+ * whole: a margin of -24 used to pull the axis left and clip it to "00". The top margin holds the label's upper half.
+ */
+export const TREND_MARGIN = { top: 8, right: 4, bottom: 0, left: 0 } as const
+export const TREND_Y_AXIS_WIDTH = 36
+
 /** The daily history (not the live score), its change, and when it's taken. */
 export function ScoreTrend({ trend }: { trend: TrendView | null }) {
   return (
@@ -19,10 +26,10 @@ export function ScoreTrend({ trend }: { trend: TrendView | null }) {
         <>
           <div aria-hidden="true" className="h-40 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trend.points} margin={{ top: 4, right: 4, bottom: 0, left: -24 }}>
+              <AreaChart data={trend.points} margin={TREND_MARGIN}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
                 <XAxis dataKey="label" tick={CHART_TICK} tickLine={false} axisLine={false} minTickGap={24} />
-                <YAxis domain={[0, 100]} tick={CHART_TICK} tickLine={false} axisLine={false} width={48} />
+                <YAxis domain={[0, 100]} tick={CHART_TICK} tickLine={false} axisLine={false} width={TREND_Y_AXIS_WIDTH} />
                 <Tooltip {...CHART_TOOLTIP} />
                 <Area type="monotone" dataKey="score" stroke="#6D28D9" fill="#EDE9FE" strokeWidth={2} isAnimationActive={false} />
               </AreaChart>

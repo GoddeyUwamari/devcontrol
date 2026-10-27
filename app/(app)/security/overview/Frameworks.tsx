@@ -7,8 +7,8 @@ import { PAGE_COPY, PAGE_HREF } from './securityCopy'
 const LINK = 'inline-flex min-h-11 w-fit items-center text-ui font-semibold text-ink-accent hover:underline'
 
 /**
- * Each framework's state (M5). In F2 every action ("Evaluate now", "Re-evaluate now", "Try again") is a link
- * to /compliance/frameworks; running an evaluation from here comes later (founder decision 4).
+ * Each framework's state (M5). Out of date, Failed, Never evaluated and not found show "Re-evaluate now" (F2c), a
+ * link to /compliance/frameworks; running an evaluation from here comes later (founder decision 4).
  */
 export function Frameworks({ view }: { view: FrameworksView }) {
   return (

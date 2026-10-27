@@ -7,7 +7,7 @@ import { PAGE_COPY } from './securityCopy'
 import { CopyStatement } from './CopyStatement'
 
 /**
- * A row's details: the approved fix guidance (only for a row with a guidance key; a row without one shows its own
+ * A row's details: the scanner's full description (unlabelled, when the list shows a short title), the approved fix guidance (only for a row with a guidance key; a row without one shows its own
  * recommendation), the web-server hint on open web ports, then the account-finding decisions or, for a resource
  * finding, the Infrastructure link and its note (navigation only). On an S3 HTTPS-only row, "Copy policy statement"
  * sits under "Risk of the fix", beside that Risk text, so the text is shown once and next to the button (e2 9).
@@ -17,6 +17,7 @@ export function FindingPanel({ row, actions }: { row: FindingRow; actions: React
   const copyable = g !== null && row.guidanceKey === 's3_https_only' && row.policyStatement !== null
   return (
     <div data-testid="security-panel" className="flex flex-col gap-4">
+      {row.description && <p data-testid="security-row-description" className="m-0 text-body text-ink">{row.description}</p>}
       {g ? (
         <dl className="m-0 grid gap-3">
           <Entry term={PAGE_COPY.whyItMatters}>{g.whyItMatters}</Entry>
