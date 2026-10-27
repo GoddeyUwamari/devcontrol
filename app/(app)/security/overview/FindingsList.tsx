@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Num } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
 import {
@@ -8,6 +8,7 @@ import {
   type FilterKey, type FilterView, type FindingRow, type SecurityView,
 } from './securityModel'
 import { LIST_LIMIT, PAGE_COPY } from './securityCopy'
+import { FindingPanel } from './FindingPanel'
 
 const SEVERITY_INK: Record<string, string> = {
   critical: 'text-ink-danger',
@@ -33,30 +34,55 @@ function FilterButton({ filter, on, onClick }: { filter: FilterView; on: boolean
 
 const CELL = 'border-t border-slate-100 px-4 py-3 align-top'
 
-/** One read-only row: severity, the issue (with its status chip and first-found date), where, scope; Action is empty until F2b. */
+/**
+ * One row: severity, the issue (with its status chip and first-found date), where, scope, and "Review" / "Hide",
+ * which shows or hides the row's details in a full-width row below it. aria-expanded follows the real state.
+ */
 function Row({ row }: { row: FindingRow }) {
+  const [open, setOpen] = useState(false)
+  const panelId = useId()
   const status = STATUS_LABEL[row.status]
   const where = [row.where.name, row.where.kind, row.where.region].filter(Boolean).join(' · ')
   return (
-    <tr data-testid="security-row" data-row-id={row.id}>
-      <td className={cn(CELL, 'text-ui font-semibold', SEVERITY_INK[row.severity] ?? 'text-ink-body')}>{SEVERITY_LABEL[row.severity] ?? row.severity}</td>
-      <td className={CELL}>
-        <span className="flex min-w-0 flex-col items-start gap-0.5">
-          <span className="text-ui text-ink">{row.title}</span>
-          {status && <span data-testid="security-row-status" className="rounded-md bg-slate-100 px-2 py-0.5 text-label text-ink-body">{status}</span>}
-          {row.firstFound && <span className="text-meta text-ink-muted">{row.firstFound}</span>}
-        </span>
-      </td>
-      <td className={cn(CELL, 'text-meta text-ink-muted')}>{where}</td>
-      <td className={cn(CELL, 'text-ui text-ink-body')}>{SCOPE_LABEL[row.scope]}</td>
-      <td className={CELL} />
-    </tr>
+    <>
+      <tr data-testid="security-row" data-row-id={row.id}>
+        <td className={cn(CELL, 'text-ui font-semibold', SEVERITY_INK[row.severity] ?? 'text-ink-body')}>{SEVERITY_LABEL[row.severity] ?? row.severity}</td>
+        <td className={CELL}>
+          <span className="flex min-w-0 flex-col items-start gap-0.5">
+            <span className="text-ui text-ink">{row.title}</span>
+            {status && <span data-testid="security-row-status" className="rounded-md bg-slate-100 px-2 py-0.5 text-label text-ink-body">{status}</span>}
+            {row.firstFound && <span className="text-meta text-ink-muted">{row.firstFound}</span>}
+          </span>
+        </td>
+        <td className={cn(CELL, 'text-meta text-ink-muted')}>{where}</td>
+        <td className={cn(CELL, 'text-ui text-ink-body')}>{SCOPE_LABEL[row.scope]}</td>
+        <td className={CELL}>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={open ? panelId : undefined}
+            aria-label={open ? PAGE_COPY.hideDetails(row.title) : PAGE_COPY.showDetails(row.title)}
+            onClick={() => setOpen(!open)}
+            className={cn(PRESSABLE, pressed(false))}
+          >
+            {open ? PAGE_COPY.hide : PAGE_COPY.review}
+          </button>
+        </td>
+      </tr>
+      {open && (
+        <tr id={panelId} data-testid="security-row-panel">
+          <td colSpan={PAGE_COPY.tableHeaders.length} className="border-t border-slate-100 bg-slate-50 px-4 py-4">
+            <FindingPanel row={row} actions={null} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
 const HEADER = 'bg-slate-50 px-4 py-2 text-left text-label text-ink-muted'
 
-/** The mock's header row; "Action" stays visible over the empty column, so F2b's actions don't shift the layout. */
+/** The mock's header row (founder decision, §5 of the F2 decisions). */
 function HeaderRow() {
   return (
     <tr>
