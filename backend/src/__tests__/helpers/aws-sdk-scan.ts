@@ -7,7 +7,9 @@
  * A command is keyed `<package>:<exported name>`, e.g.
  * `client-lambda:ListFunctionsCommand`. A paginator is keyed by its own name.
  * Any way of reaching the SDK that the scan does not model is reported in
- * `unmodeled`, and each test fails on it.
+ * `unmodeled`, and each test fails on it. That includes constructing an SDK
+ * export that is neither a *Client nor a *Command (an aggregated service class
+ * such as `Lambda`) and calling a method on what it constructs.
  */
 import fs from 'fs';
 import path from 'path';
@@ -51,6 +53,14 @@ export function scanSourceNodes(fileLabel: string, source: string): NodeScanResu
     uses.push({ key, site: at(siteNode), file: fileLabel, sourceFile: file, node });
   /** Local name → `<package>:<exported name>`. */
   const tracked = new Map<string, string>();
+  /**
+   * Value imports that are neither a client, a command nor a paginator (shapes,
+   * enums, exceptions, aggregated service classes such as `Lambda`). Using one
+   * as a type or in `instanceof` is fine; constructing one is not modeled.
+   */
+  const otherValues = new Map<string, string>();
+  /** Names bound to a constructed object of one of those exports. */
+  const constructedOthers = new Set<string>();
 
   for (const statement of file.statements) {
     if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
@@ -75,6 +85,7 @@ export function scanSourceNodes(fileLabel: string, source: string): NodeScanResu
       for (const element of bindings.elements) {
         const exported = (element.propertyName ?? element.name).text;
         if (TRACKED_EXPORT.test(exported)) tracked.set(element.name.text, `${pkg}:${exported}`);
+        else if (!clause.isTypeOnly && !element.isTypeOnly && !/Client$/.test(exported)) otherValues.set(element.name.text, `${pkg}:${exported}`);
       }
     }
   }
@@ -103,6 +114,16 @@ export function scanSourceNodes(fileLabel: string, source: string): NodeScanResu
         else unmodeled.push(`${at(node)}: ${isRequire ? 'require' : 'import()'} of ${arg.text}`);
       }
     }
+    if (ts.isIdentifier(node) && otherValues.has(node.text) && ts.isNewExpression(node.parent) && node.parent.expression === node) {
+      const construction = node.parent;
+      unmodeled.push(`${at(node)}: new ${node.text}() constructs ${otherValues.get(node.text)}, which is neither a *Client nor a *Command`);
+      const holder = construction.parent;
+      if (ts.isPropertyAccessExpression(holder) && holder.expression === construction) {
+        unmodeled.push(`${at(holder.name)}: ${holder.name.text}() called on a constructed ${node.text}`);
+      } else if (ts.isVariableDeclaration(holder) && holder.initializer === construction && ts.isIdentifier(holder.name)) {
+        constructedOthers.add(holder.name.text);
+      }
+    }
     if (ts.isIdentifier(node) && tracked.has(node.text)) {
       const parent = node.parent;
       const key = tracked.get(node.text)!;
@@ -119,6 +140,16 @@ export function scanSourceNodes(fileLabel: string, source: string): NodeScanResu
     ts.forEachChild(node, visit);
   };
   visit(file);
+
+  /** Method calls on a name bound to one of those constructions. */
+  const visitCalls = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && ts.isIdentifier(node.expression.expression) && constructedOthers.has(node.expression.expression.text)) {
+      unmodeled.push(`${at(node.expression.name)}: ${node.expression.name.text}() called on ${node.expression.expression.text}, a constructed SDK object that is neither a client nor a command`);
+    }
+    ts.forEachChild(node, visitCalls);
+  };
+  if (constructedOthers.size > 0) visitCalls(file);
   return { uses, unmodeled };
 }
 

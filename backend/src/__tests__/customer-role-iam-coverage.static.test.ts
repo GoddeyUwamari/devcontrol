@@ -393,6 +393,26 @@ describe('customer role: scanner and evaluator self-checks', () => {
     expect(unmodeled).toHaveLength(6);
   });
 
+  it('reports an aggregated service class and the calls made on it', () => {
+    const { uses, unmodeled } = scanSource('z.ts', [
+      "import { Lambda, LambdaClient, NoSuchEntityException } from '@aws-sdk/client-lambda';",
+      "import { Instance } from '@aws-sdk/client-ec2';",
+      "const config = await new Lambda({}).getFunction({ FunctionName: 'f' });",
+      'const lambda = new Lambda({});',
+      "await lambda.getFunction({ FunctionName: 'g' });",
+      'const client = new LambdaClient({});',
+      'const shape: Instance = {};',
+      'if (err instanceof NoSuchEntityException) {}',
+    ].join('\n'));
+    expect(uses).toEqual([]);
+    expect(unmodeled).toEqual([
+      'z.ts:3: new Lambda() constructs client-lambda:Lambda, which is neither a *Client nor a *Command',
+      'z.ts:3: getFunction() called on a constructed Lambda',
+      'z.ts:4: new Lambda() constructs client-lambda:Lambda, which is neither a *Client nor a *Command',
+      'z.ts:5: getFunction() called on lambda, a constructed SDK object that is neither a client nor a command',
+    ]);
+  });
+
   it('matches IAM wildcards case-insensitively for actions and gives Deny precedence', () => {
     expect(wildcardMatch('ec2:Describe*', 'EC2:describeinstances', true)).toBe(true);
     expect(wildcardMatch('s3:GetBucket?cl', 's3:GetBucketAcl', true)).toBe(true);

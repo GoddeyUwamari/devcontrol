@@ -58,8 +58,8 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-ec2:DescribeAddressesCommand': metadataOnly('Elastic IP allocation and association IDs'),
   'client-ec2:DescribeReservedInstancesCommand': metadataOnly('reservation type, count, term and dates'),
   'client-ec2:DescribeRegionsCommand': metadataOnly('region names, endpoints and opt-in status'),
-  'client-rds:DescribeDBInstancesCommand': metadataOnly('instance class, engine, status, storage, endpoints; master secret only as an ARN'),
-  'client-rds:DescribeDBClustersCommand': metadataOnly('cluster class, engine, members, status; master secret only as an ARN'),
+  'client-rds:DescribeDBInstancesCommand': metadataOnly('instance class, engine, status, storage, endpoints; master secret only as an ARN; PendingModifiedValues.MasterUserPassword is masked by AWS and never read'),
+  'client-rds:DescribeDBClustersCommand': metadataOnly('cluster class, engine, members, status; master secret only as an ARN; PendingModifiedValues.MasterUserPassword is masked by AWS and never read'),
   'client-s3:ListBucketsCommand': metadataOnly('bucket names and creation dates'),
   'client-s3:GetBucketLocationCommand': metadataOnly('the bucket region'),
   'client-s3:GetBucketEncryptionCommand': metadataOnly('default encryption algorithm and key ARN'),
@@ -94,7 +94,7 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-cloudwatch:GetMetricStatisticsCommand': metadataOnly('metric datapoints'),
   'client-cloudwatch:DescribeAlarmsCommand': metadataOnly('alarm names, metrics, thresholds, states and actions'),
   'client-ecs:DescribeServicesCommand': metadataOnly('service status, counts, deployments; the task definition only as an ARN'),
-  'client-eks:DescribeClusterCommand': metadataOnly('cluster version, endpoint, status, public CA certificate'),
+  'client-eks:DescribeClusterCommand': metadataOnly('cluster version, endpoint, status, public CA certificate, and for a connected cluster connectorConfig.activationCode (a credential-like registration code); only status, health.issues and version are read (cloudwatch.service.ts:1087-1088, :1124)'),
   'client-dynamodb:DescribeTableCommand': metadataOnly('table schema, throughput, size and indexes; no items'),
   'client-application-auto-scaling:DescribeScalableTargetsCommand': metadataOnly('scaling targets and capacity bounds'),
   'client-backup:ListRecoveryPointsByResourceCommand': metadataOnly('recovery point ARNs, status and dates'),
@@ -182,6 +182,31 @@ function bindsProjection(file: ts.SourceFile, fileLabel: string, name: string, m
   });
 }
 
+/**
+ * Declarations of `name` in the file other than the projection's own binding
+ * (its unaliased import, or its top-level declaration in its module). Any of
+ * these could shadow the projection at the call site, so each one fails.
+ */
+function otherDeclarations(file: ts.SourceFile, fileLabel: string, name: string, module: string): ts.Node[] {
+  const own = (decl: ts.Node) => (fileLabel === module
+    ? ts.isFunctionDeclaration(decl) && decl.parent === file
+    : ts.isImportSpecifier(decl) && !decl.propertyName);
+  const found: ts.Node[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === name) {
+      const decl = node.parent;
+      const declares = (ts.isVariableDeclaration(decl) || ts.isFunctionDeclaration(decl) || ts.isFunctionExpression(decl)
+        || ts.isParameter(decl) || ts.isBindingElement(decl) || ts.isClassDeclaration(decl) || ts.isClassExpression(decl)
+        || ts.isImportSpecifier(decl) || ts.isImportClause(decl) || ts.isNamespaceImport(decl) || ts.isImportEqualsDeclaration(decl)
+        || ts.isEnumDeclaration(decl) || ts.isModuleDeclaration(decl)) && decl.name === node;
+      if (declares && !own(decl)) found.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return found;
+}
+
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /** What is wrong with how one call site uses a sanitised command's response; empty when it is acceptable. */
@@ -191,6 +216,9 @@ export function callSiteViolations(use: CommandUseNode, rule: Sanitised): string
   const problems: string[] = [];
   if (!bindsProjection(file, use.file, rule.sanitiser, rule.module)) {
     problems.push(`${use.site}: ${rule.sanitiser} is not imported from ${rule.module}`);
+  }
+  for (const shadow of otherDeclarations(file, use.file, rule.sanitiser, rule.module)) {
+    problems.push(`${at(shadow)}: another declaration of ${rule.sanitiser} could stand in for the projection`);
   }
 
   const construction = use.node.parent;
@@ -377,6 +405,46 @@ describe('AWS response classification: self-checks', () => {
     ['the response destructured', ['const { Things } = await client.send(new ListThingsCommand({}));', 'return Things;']],
   ])('rejects %s', (_label, lines) => {
     expect(check(['async function f() {', ...lines, '}'])).not.toEqual([]);
+  });
+
+  it('rejects a local declaration that shares the projection\'s name', () => {
+    expect(check([
+      'async function f() {',
+      '  const projectThing = (t) => t;',
+      '  const page = await client.send(new ListThingsCommand({}));',
+      '  return (page.Things ?? []).map(projectThing);',
+      '}',
+    ])).toEqual([
+      `${path.join('services', 'site.ts')}:4: another declaration of projectThing could stand in for the projection`,
+    ]);
+    expect(check([
+      'async function f(projectThing) {',
+      '  const page = await client.send(new ListThingsCommand({}));',
+      '  return (page.Things ?? []).map(projectThing);',
+      '}',
+    ])).toEqual([
+      `${path.join('services', 'site.ts')}:3: another declaration of projectThing could stand in for the projection`,
+    ]);
+  });
+
+  it('reports an aggregated service class and the calls made on it as unmodeled', () => {
+    const { uses, unmodeled } = scanSourceNodes('z.ts', [
+      "import { Lambda, LambdaClient, NoSuchEntityException } from '@aws-sdk/client-lambda';",
+      "import { Instance } from '@aws-sdk/client-ec2';",
+      "const config = await new Lambda({}).getFunction({ FunctionName: 'f' });",
+      'const lambda = new Lambda({});',
+      "await lambda.getFunction({ FunctionName: 'g' });",
+      'const client = new LambdaClient({});',
+      'const shape: Instance = {};',
+      'if (err instanceof NoSuchEntityException) {}',
+    ].join('\n'));
+    expect(uses).toEqual([]);
+    expect(unmodeled).toEqual([
+      'z.ts:3: new Lambda() constructs client-lambda:Lambda, which is neither a *Client nor a *Command',
+      'z.ts:3: getFunction() called on a constructed Lambda',
+      'z.ts:4: new Lambda() constructs client-lambda:Lambda, which is neither a *Client nor a *Command',
+      'z.ts:5: getFunction() called on lambda, a constructed SDK object that is neither a client nor a command',
+    ]);
   });
 
   it('rejects a projection that is not imported from its module', () => {
