@@ -136,8 +136,9 @@ function inputs(over: Partial<SecurityInputs> = {}): SecurityInputs {
 
 // ── Formatting ──
 
-describe('one formatter for dates, times and scores (UTC)', () => {
-  it('formats a day in UTC, adding the year only outside the current year', () => {
+// The suite runs in UTC; security-model-tz.test.ts covers a zone west of UTC (founder answer Q8: local time).
+describe('one formatter for dates and times (the viewer\'s local time)', () => {
+  it('formats a day, adding the year only outside the current year', () => {
     expect(formatDay('2026-10-03T23:30:00Z', NOW)).toBe('Oct 3')
     expect(formatDay('2026-10-04T00:30:00Z', NOW)).toBe('Oct 4')
     expect(formatDay('2025-12-31T23:59:00Z', NOW)).toBe('Dec 31, 2025')
@@ -145,8 +146,8 @@ describe('one formatter for dates, times and scores (UTC)', () => {
     expect(formatDay('not a date', NOW)).toBeNull()
     expect(formatDay(null, NOW)).toBeNull()
   })
-  it('formats a time with the shared Services format, in UTC', () => {
-    expect(formatTime('2026-10-23T14:05:00Z', NOW)).toBe('today, 2:05 PM UTC')
+  it('formats a time as "today, 2:05 PM", with no zone suffix', () => {
+    expect(formatTime('2026-10-23T14:05:00Z', NOW)).toBe('today, 2:05 PM')
     expect(formatTime(undefined, NOW)).toBeNull()
   })
 })
@@ -182,7 +183,7 @@ describe('rows', () => {
     expect(view.filters[0].count).toBe(view.filters[1].count! + view.filters[2].count!)
   })
 
-  it('account rows carry "First found <day>" in UTC and actions; resource rows carry a review link only', () => {
+  it('account rows carry "First found <day>" and actions; resource rows carry a review link only', () => {
     const acc = view.rows.find((r) => r.scope === 'account')!
     expect(acc.firstFound).toBe('First found Oct 13')
     expect(acc.canDisposition).toBe(true)
@@ -392,7 +393,7 @@ describe('frameworks', () => {
   })
   it('running hides the previous score', () => {
     const v = one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'running', null, 600_000)])
-    expect(v).toMatchObject({ state: 'running', score: null, action: null, text: 'Started today, 2:50 PM UTC. The previous result is hidden until this run finishes.' })
+    expect(v).toMatchObject({ state: 'running', score: null, action: null, text: 'Started today, 2:50 PM. The previous result is hidden until this run finishes.' })
     expect(JSON.stringify(v)).not.toContain('95')
     expect(one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'pending', null, 60_000)]).state).toBe('running')
   })
@@ -475,7 +476,7 @@ describe('frameworks', () => {
     const v = describeFramework(fw('fw-1'), [scan('fw-1', 'completed', 95, 2 * DAY)], NOW, false, { clock: NOW, startedLocally: { 'fw-1': { at: NOW - 60_000, scanId: 's-new' } } })
     expect(v).toMatchObject({
       state: 'running', score: null, action: null, runningSince: NOW - 60_000,
-      text: 'Started today, 2:59 PM UTC. The previous result is hidden until this run finishes.',
+      text: 'Started today, 2:59 PM. The previous result is hidden until this run finishes.',
     })
     expect(JSON.stringify(v)).not.toContain('95')
   })
@@ -484,15 +485,15 @@ describe('frameworks', () => {
     expect(at(EVALUATION_POLL_CEILING_MS - 1000)).toMatchObject({ state: 'running', action: null })
     const overdue = at(EVALUATION_POLL_CEILING_MS)
     expect(overdue).toMatchObject({ state: 'running', score: null, action: { kind: 're_evaluate', label: 'Re-evaluate now' } })
-    expect(overdue.text).toBe('Still running — started today, 2:45 PM UTC, taking longer than usual.')
-    expect(at(EVALUATION_POLL_CEILING_MS - 1000).text).toBe('Started today, 2:45 PM UTC. The previous result is hidden until this run finishes.')
+    expect(overdue.text).toBe('Still running — started today, 2:45 PM, taking longer than usual.')
+    expect(at(EVALUATION_POLL_CEILING_MS - 1000).text).toBe('Started today, 2:45 PM. The previous result is hidden until this run finishes.')
   })
   it('a 409 on the overdue run\'s "Re-evaluate now" keeps the same text and action', () => {
     const scans = [scan('fw-1', 'running', null, EVALUATION_POLL_CEILING_MS)]
     const before = describeFramework(fw('fw-1'), scans, NOW)
     const after409 = describeFramework(fw('fw-1'), scans, NOW, false, { clock: NOW, startedLocally: { 'fw-1': { at: NOW, scanId: null } } })
     expect(after409).toEqual(before)
-    expect(after409.text).toBe('Still running — started today, 2:45 PM UTC, taking longer than usual.')
+    expect(after409.text).toBe('Still running — started today, 2:45 PM, taking longer than usual.')
   })
   it('the poll clock, not only the day-level now, decides the ceiling', () => {
     const scans = [scan('fw-1', 'running', null, 60_000)]

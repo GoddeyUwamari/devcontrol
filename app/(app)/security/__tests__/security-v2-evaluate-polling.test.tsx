@@ -108,7 +108,7 @@ describe('the 15-minute ceiling (a run nothing ever ends)', () => {
     await advance(15 * SEC)
     expect(reads()).toBe(2)
     expect(row()).toHaveAttribute('data-state', 'running')
-    expect(row()).toHaveTextContent('Still running — started today, 2:45 PM UTC, taking longer than usual.')
+    expect(row()).toHaveTextContent('Still running — started today, 2:45 PM, taking longer than usual.')
     expect(row()).not.toHaveTextContent('The previous result is hidden')
     expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
     await advance(10 * MIN)
@@ -119,7 +119,7 @@ describe('the 15-minute ceiling (a run nothing ever ends)', () => {
     h.routes['POST /api/compliance-frameworks/fw-1/scan'] = failWith(409, 'SCAN_IN_PROGRESS')
     await show([scan('s-stuck', 'fw-1', 'running', null, DAY), DONE])
     const before = row().textContent
-    expect(before).toContain('Still running — started yesterday, 3:00 PM UTC, taking longer than usual.')
+    expect(before).toContain('Still running — started yesterday, 3:00 PM, taking longer than usual.')
     fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
     await advance(0)
     await advance(0)
