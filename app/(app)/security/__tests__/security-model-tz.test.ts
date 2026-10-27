@@ -32,7 +32,7 @@ describe('UTC dates west of UTC', () => {
     expect(view.trend?.points.map((p) => p.label)).toEqual(['Oct 21', 'Oct 23'])
     const fw = describeFramework(
       { id: 'a', name: 'A' } as never,
-      [{ id: 's', framework_id: 'a', status: 'completed', compliance_score: 90, completed_at: '2026-10-23T01:00:00Z', created_at: '2026-10-23T01:00:00Z', started_at: null } as never],
+      [{ id: 's', framework_id: 'a', status: 'completed', compliant_resources: 9, non_compliant_resources: 1, completed_at: '2026-10-23T01:00:00Z', created_at: '2026-10-23T01:00:00Z', started_at: null } as never],
       NOW,
     )
     expect(fw.text).toBe('Evaluated Oct 23 · 90%')

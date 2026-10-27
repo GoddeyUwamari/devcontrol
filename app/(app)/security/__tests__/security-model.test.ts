@@ -10,6 +10,7 @@ import type { AccountSecurityFinding } from '@/lib/services/account-security-fin
 import type { AWSService, ServicesCoverage } from '@/lib/services/aws-services.service'
 import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
 import type { RiskScore, RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
+import { EVALUATION_POLL_CEILING_MS } from '@/lib/compliance/evaluation'
 import {
   FRAMEWORK_STALE_AFTER_MS,
   SECURITY_COPY,
@@ -17,7 +18,6 @@ import {
   describeSecurity,
   filterRows,
   formatDay,
-  formatScore,
   formatScanWhen,
   formatTime,
   groupRows,
@@ -106,9 +106,18 @@ const fw = (id: string, name = id): ComplianceFramework => ({
   id, organization_id: 'org-1', name, description: null, framework_type: 'custom', enabled: true, is_default: false,
   standard_name: null, version: null, created_at: iso(40 * DAY), updated_at: iso(40 * DAY),
 })
+/**
+ * `score` sets the stored counts (D1: the score is compliant ÷ counted): 90 → 9000 of 10000 compliant; null → no
+ * usable counts. The stored compliance_score is set to a decoy the page must never print.
+ */
+const countsFor = (score: unknown) => {
+  if (score === null || score === undefined) return { compliant_resources: null, non_compliant_resources: null }
+  const compliant = Math.round(Number(score) * 100)
+  return { compliant_resources: compliant, non_compliant_resources: 10_000 - compliant }
+}
 const scan = (framework_id: string, status: ComplianceScan['status'], score: unknown, msAgo: number, id = `${framework_id}-${status}-${msAgo}`): ComplianceScan => ({
-  id, organization_id: 'org-1', framework_id, scan_type: 'manual', status, total_resources: 10, compliant_resources: 0,
-  non_compliant_resources: 10, compliance_score: score as number | null, critical_issues: 0, high_issues: 0, medium_issues: 0, low_issues: 0,
+  id, organization_id: 'org-1', framework_id, scan_type: 'manual', status, total_resources: 10, ...(countsFor(score) as { compliant_resources: number; non_compliant_resources: number }),
+  compliance_score: '13.37' as unknown as number, critical_issues: 0, high_issues: 0, medium_issues: 0, low_issues: 0,
   started_at: iso(msAgo), completed_at: status === 'completed' || status === 'failed' ? iso(msAgo) : null, duration_seconds: 1, created_at: iso(msAgo),
 })
 
@@ -139,13 +148,6 @@ describe('one formatter for dates, times and scores (UTC)', () => {
   it('formats a time with the shared Services format, in UTC', () => {
     expect(formatTime('2026-10-23T14:05:00Z', NOW)).toBe('today, 2:05 PM UTC')
     expect(formatTime(undefined, NOW)).toBeNull()
-  })
-  it('formats a score as a whole percent from a string or number, never rounding up', () => {
-    expect(formatScore('0.00')).toBe('0')
-    expect(formatScore('87.50')).toBe('87')
-    expect(formatScore(99.6)).toBe('99')
-    expect(formatScore(100)).toBe('100')
-    for (const bad of [null, undefined, '', ' ', 'abc', NaN, Infinity, {}]) expect(formatScore(bad), String(bad)).toBeNull()
   })
 })
 
@@ -389,8 +391,8 @@ describe('frameworks', () => {
     expect(FRAMEWORK_STALE_AFTER_MS).toBe(7 * DAY)
   })
   it('running hides the previous score', () => {
-    const v = one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'running', null, 3_600_000)])
-    expect(v).toMatchObject({ state: 'running', score: null, action: null, text: 'Started today, 2:00 PM UTC. The previous result is hidden until this run finishes.' })
+    const v = one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'running', null, 600_000)])
+    expect(v).toMatchObject({ state: 'running', score: null, action: null, text: 'Started today, 2:50 PM UTC. The previous result is hidden until this run finishes.' })
     expect(JSON.stringify(v)).not.toContain('95')
     expect(one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'pending', null, 60_000)]).state).toBe('running')
   })
@@ -456,6 +458,42 @@ describe('frameworks', () => {
     const tileA = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('a')], scans: [scan('a', 'completed', 90, DAY)], scansLimit: 50 }) }), NOW).tiles.compliance!
     expect(tileA).toEqual({ label: 'Current', lastEvaluated: `Last evaluated ${a.lastEvaluated}` })
     expect(a.text).toBe(`Evaluated ${a.lastEvaluated} · 90%`)
+  })
+  it('the score comes from the stored counts, never the stored compliance_score (D1)', () => {
+    const v = one([scan('fw-1', 'completed', 90, DAY)])
+    expect(v).toMatchObject({ state: 'current', text: 'Evaluated Oct 22 · 90%', score: '90', scoreNote: null })
+    expect(JSON.stringify(v)).not.toContain('13.37')
+    expect(JSON.stringify(v)).not.toContain('13%')
+  })
+  it('no counted resource: "—" with "No rules applied to your resources.", never 0% or 100% (D1)', () => {
+    const none = { ...scan('fw-1', 'completed', 0, DAY), compliant_resources: 0, non_compliant_resources: 0 }
+    const v = one([none])
+    expect(v).toMatchObject({ state: 'current', text: 'Evaluated Oct 22 · —', score: null, scoreNote: 'No rules applied to your resources.' })
+    expect(JSON.stringify(v)).not.toMatch(/\d%/)
+  })
+  it('a run this page started shows Running before the list has it, and hides the previous score', () => {
+    const v = describeFramework(fw('fw-1'), [scan('fw-1', 'completed', 95, 2 * DAY)], NOW, false, { clock: NOW, startedLocally: { 'fw-1': NOW - 60_000 } })
+    expect(v).toMatchObject({
+      state: 'running', score: null, action: null, runningSince: NOW - 60_000,
+      text: 'Started today, 2:59 PM UTC. The previous result is hidden until this run finishes.',
+    })
+    expect(JSON.stringify(v)).not.toContain('95')
+  })
+  it('a run active past the 15-minute ceiling keeps the Running text and offers "Re-evaluate now" again', () => {
+    const at = (msAgo: number) => describeFramework(fw('fw-1'), [scan('fw-1', 'running', null, msAgo)], NOW)
+    expect(at(EVALUATION_POLL_CEILING_MS - 1000)).toMatchObject({ state: 'running', action: null })
+    const overdue = at(EVALUATION_POLL_CEILING_MS)
+    expect(overdue).toMatchObject({ state: 'running', score: null, action: { kind: 're_evaluate', label: 'Re-evaluate now' } })
+    expect(overdue.text).toBe('Started today, 2:45 PM UTC. The previous result is hidden until this run finishes.')
+  })
+  it('the poll clock, not only the day-level now, decides the ceiling', () => {
+    const scans = [scan('fw-1', 'running', null, 60_000)]
+    expect(describeFramework(fw('fw-1'), scans, NOW).action).toBeNull()
+    expect(describeFramework(fw('fw-1'), scans, NOW, false, { clock: NOW + EVALUATION_POLL_CEILING_MS, startedLocally: {} }).action)
+      .toEqual({ kind: 're_evaluate', label: 'Re-evaluate now' })
+  })
+  it('another framework\'s running scan never makes this one Running', () => {
+    expect(one([scan('fw-1', 'completed', 90, DAY), scan('fw-2', 'running', null, 60_000)])).toMatchObject({ state: 'current', score: '90' })
   })
   it('a failed framework outranks an out-of-date one on the tile', () => {
     const view = describeSecurity(inputs({ frameworks: ready({ frameworks: [fw('a'), fw('b')], scans: [scan('a', 'completed', 90, 9 * DAY), scan('b', 'failed', null, DAY)], scansLimit: 50 }) }), NOW)
