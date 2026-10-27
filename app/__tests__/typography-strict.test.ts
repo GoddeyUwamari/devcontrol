@@ -73,6 +73,10 @@ const SECURITY_DIRS = ['app/(app)/security/', 'lib/security/']
 const SECURITY_LEGACY = ['app/(app)/security/page.tsx']
 const SECURITY = [
   'app/(app)/security/overview/BottomLinks.tsx',
+  'app/(app)/security/overview/CopyStatement.tsx',
+  'app/(app)/security/overview/DispositionDialog.tsx',
+  'app/(app)/security/overview/FindingActions.tsx',
+  'app/(app)/security/overview/FindingPanel.tsx',
   'app/(app)/security/overview/FindingsList.tsx',
   'app/(app)/security/overview/Frameworks.tsx',
   'app/(app)/security/overview/ScoreTrend.tsx',
@@ -84,6 +88,7 @@ const SECURITY = [
   'app/(app)/security/overview/fixGuidance.ts',
   'app/(app)/security/overview/securityCopy.ts',
   'app/(app)/security/overview/securityModel.ts',
+  'app/(app)/security/overview/useFindingDisposition.ts',
   'app/(app)/security/securityV2Flag.ts',
   'lib/security/findingDisplay.ts',
 ]
