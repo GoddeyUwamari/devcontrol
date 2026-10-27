@@ -12,7 +12,7 @@ import type { ComplianceFramework, ComplianceScan } from '@/lib/services/complia
 import { riskScoreService, type RiskScore, type RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
-import { EVALUATION_POLL_CEILING_MS, activeRunStarts, evaluationPollInterval } from '@/lib/compliance/evaluation'
+import { EVALUATION_POLL_CEILING_MS, activeRunStarts, evaluationPollInterval, type LocalStart } from '@/lib/compliance/evaluation'
 import { useStartEvaluation } from '@/lib/compliance/useStartEvaluation'
 import { useNowEachLocalDay } from '../../services/useNowEachLocalDay'
 import { describeSecurity, type EvaluationOverlay, type ResourceFindingsSource, type ResourceWithIssues, type SecLoadable } from './securityModel'
@@ -113,12 +113,12 @@ export default function SecurityOverviewV2() {
   // seen already past the ceiling; never by render.
   const [ceilingTick, setCeilingTick] = useState(0)
   const listedScanIds = new Set(frameworksQuery.data?.scans.map((s) => s.id) ?? [])
-  const startedLocally: Record<string, number> = {}
+  const startedLocally: Record<string, LocalStart> = {}
   for (const [frameworkId, local] of Object.entries(evaluation.started)) {
-    if (local.scanId === null || !listedScanIds.has(local.scanId)) startedLocally[frameworkId] = local.at
+    if (local.scanId === null || !listedScanIds.has(local.scanId)) startedLocally[frameworkId] = local
   }
   const overlay: EvaluationOverlay = {
-    clock: Math.max(now, ceilingTick, ...Object.values(startedLocally)),
+    clock: Math.max(now, ceilingTick, ...Object.values(startedLocally).map((local) => local.at)),
     startedLocally,
   }
 

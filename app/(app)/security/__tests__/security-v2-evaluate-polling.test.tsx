@@ -14,7 +14,7 @@ const m = vi.hoisted(() => {
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import SecurityOverviewV2 from '../overview/SecurityOverviewV2'
-import { SCANS_PATH, connectedRoutes, installFetch, newClient, ok, renderWith, scan, type Harness } from './security-v2-fixtures'
+import { SCANS_PATH, connectedRoutes, failWith, installFetch, newClient, ok, renderWith, scan, type Harness } from './security-v2-fixtures'
 
 vi.mock('@/lib/api', async () => (await import('./security-v2-fixtures')).apiModule(m.h as never))
 vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
@@ -108,10 +108,30 @@ describe('the 15-minute ceiling (a run nothing ever ends)', () => {
     await advance(15 * SEC)
     expect(reads()).toBe(2)
     expect(row()).toHaveAttribute('data-state', 'running')
-    expect(row()).toHaveTextContent('Started today, 2:45 PM UTC. The previous result is hidden until this run finishes.')
+    expect(row()).toHaveTextContent('Still running — started today, 2:45 PM UTC, taking longer than usual.')
+    expect(row()).not.toHaveTextContent('The previous result is hidden')
     expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
     await advance(10 * MIN)
     expect(reads()).toBe(2)
+  })
+
+  it('"Re-evaluate now" on the overdue run answered 409: the same text, no error, no new polling', async () => {
+    h.routes['POST /api/compliance-frameworks/fw-1/scan'] = failWith(409, 'SCAN_IN_PROGRESS')
+    await show([scan('s-stuck', 'fw-1', 'running', null, DAY), DONE])
+    const before = row().textContent
+    expect(before).toContain('Still running — started yesterday, 3:00 PM UTC, taking longer than usual.')
+    fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
+    await advance(0)
+    await advance(0)
+    expect(h.posts).toHaveLength(1)
+    expect(reads()).toBe(2)
+    expect(row()).toHaveAttribute('data-state', 'running')
+    expect(row().textContent).toBe(before)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
+    await advance(10 * MIN)
+    expect(reads()).toBe(2)
+    expect(row().textContent).toBe(before)
   })
 
   it('a run already past the ceiling when the page opens: no polling, the action is there', async () => {

@@ -26,7 +26,7 @@ import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type Findin
 import { typeLabel } from '../../services/AttentionTable'
 import { formatWhen, hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
-import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, evaluateFramework, type EvaluationState } from '@/lib/compliance/evaluation'
+import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, evaluateFramework, type EvaluationState, type LocalStart } from '@/lib/compliance/evaluation'
 import {
   WEB_SERVER_HINT,
   buildHttpsOnlyStatement,
@@ -77,6 +77,9 @@ export interface SecurityInputs {
 }
 
 // ── Copy ──
+
+/** The upgrade page, after "Compliance frameworks are on the Enterprise plan." (the card, and a start answered 402). */
+export const SEE_PLANS = { label: 'See plans', href: '/settings/billing/upgrade' } as const
 
 export const SECURITY_COPY = {
   incomplete: "Some checks couldn't load, so this may be incomplete.",
@@ -463,8 +466,8 @@ export const RE_EVALUATE_NOW = 'Re-evaluate now'
 export interface EvaluationOverlay {
   /** The latest time the page knows of (at least `now`); the poll ceiling is measured with it. */
   clock: number
-  /** Framework id → when this page's start was answered, while the list doesn't show that run. */
-  startedLocally: Readonly<Record<string, number>>
+  /** Framework id → this page's start, while the list doesn't show that run. */
+  startedLocally: Readonly<Record<string, LocalStart>>
 }
 
 /**
@@ -492,8 +495,11 @@ export function describeFramework(
   switch (e.state) {
     case 'running': {
       const started = e.startedAt === null ? null : formatTime(new Date(e.startedAt).toISOString(), now)
-      return view(`Started ${started ?? 'recently'}. The previous result is hidden until this run finishes.`,
-        e.overdue ? reEvaluate : null, { runningSince: e.startedAt })
+      // Past the poll ceiling the run may never end (nothing marks a crashed run failed): say so, and offer the
+      // start again; a 409 answer keeps this text (founder answer, Oct 27).
+      return e.overdue
+        ? view(`Still running — started ${started ?? 'recently'}, taking longer than usual.`, reEvaluate, { runningSince: e.startedAt })
+        : view(`Started ${started ?? 'recently'}. The previous result is hidden until this run finishes.`, null, { runningSince: e.startedAt })
     }
     case 'failed': {
       const on = formatDay(e.latest!.completed_at ?? e.latest!.started_at ?? e.latest!.created_at, now)
@@ -516,7 +522,7 @@ export function describeFramework(
 function frameworksView(i: SecurityInputs, now: number, overlay?: EvaluationOverlay): FrameworksView {
   const f = i.frameworks
   if (f.status === 'loading') return { status: 'loading', note: null, action: null, frameworks: [] }
-  if (f.status === 'plan') return { status: 'plan', note: SECURITY_COPY.frameworksPlan, action: { label: 'See plans', href: '/settings/billing/upgrade' }, frameworks: [] }
+  if (f.status === 'plan') return { status: 'plan', note: SECURITY_COPY.frameworksPlan, action: SEE_PLANS, frameworks: [] }
   if (f.status === 'error') return { status: 'error', note: SECURITY_COPY.frameworksError, action: null, frameworks: [] }
   const { scans, scansLimit } = f.data
   const historyComplete = Number.isInteger(scansLimit) && scansLimit > 0 && scans.length < scansLimit

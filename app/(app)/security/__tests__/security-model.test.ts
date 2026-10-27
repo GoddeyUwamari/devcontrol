@@ -472,19 +472,27 @@ describe('frameworks', () => {
     expect(JSON.stringify(v)).not.toMatch(/\d%/)
   })
   it('a run this page started shows Running before the list has it, and hides the previous score', () => {
-    const v = describeFramework(fw('fw-1'), [scan('fw-1', 'completed', 95, 2 * DAY)], NOW, false, { clock: NOW, startedLocally: { 'fw-1': NOW - 60_000 } })
+    const v = describeFramework(fw('fw-1'), [scan('fw-1', 'completed', 95, 2 * DAY)], NOW, false, { clock: NOW, startedLocally: { 'fw-1': { at: NOW - 60_000, scanId: 's-new' } } })
     expect(v).toMatchObject({
       state: 'running', score: null, action: null, runningSince: NOW - 60_000,
       text: 'Started today, 2:59 PM UTC. The previous result is hidden until this run finishes.',
     })
     expect(JSON.stringify(v)).not.toContain('95')
   })
-  it('a run active past the 15-minute ceiling keeps the Running text and offers "Re-evaluate now" again', () => {
+  it('a run active past the 15-minute ceiling says it is taking longer than usual and offers "Re-evaluate now" again', () => {
     const at = (msAgo: number) => describeFramework(fw('fw-1'), [scan('fw-1', 'running', null, msAgo)], NOW)
     expect(at(EVALUATION_POLL_CEILING_MS - 1000)).toMatchObject({ state: 'running', action: null })
     const overdue = at(EVALUATION_POLL_CEILING_MS)
     expect(overdue).toMatchObject({ state: 'running', score: null, action: { kind: 're_evaluate', label: 'Re-evaluate now' } })
-    expect(overdue.text).toBe('Started today, 2:45 PM UTC. The previous result is hidden until this run finishes.')
+    expect(overdue.text).toBe('Still running — started today, 2:45 PM UTC, taking longer than usual.')
+    expect(at(EVALUATION_POLL_CEILING_MS - 1000).text).toBe('Started today, 2:45 PM UTC. The previous result is hidden until this run finishes.')
+  })
+  it('a 409 on the overdue run\'s "Re-evaluate now" keeps the same text and action', () => {
+    const scans = [scan('fw-1', 'running', null, EVALUATION_POLL_CEILING_MS)]
+    const before = describeFramework(fw('fw-1'), scans, NOW)
+    const after409 = describeFramework(fw('fw-1'), scans, NOW, false, { clock: NOW, startedLocally: { 'fw-1': { at: NOW, scanId: null } } })
+    expect(after409).toEqual(before)
+    expect(after409.text).toBe('Still running — started today, 2:45 PM UTC, taking longer than usual.')
   })
   it('the poll clock, not only the day-level now, decides the ceiling', () => {
     const scans = [scan('fw-1', 'running', null, 60_000)]

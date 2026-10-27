@@ -2,17 +2,10 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import type { LocalStart } from './evaluation'
 
 /** Why a start didn't happen: a viewer (403), a plan below Enterprise (402), or anything else. */
 export type StartProblem = 'viewer' | 'plan' | 'failed'
-
-/** A run this page started (or found already running, 409) that the scan list may not show yet. */
-export interface LocalStart {
-  /** When the server answered (this browser's clock). */
-  at: number
-  /** The new run's id from a 200; null after a 409, which names no run. */
-  scanId: string | null
-}
 
 const without = <T,>(record: Readonly<Record<string, T>>, id: string): Record<string, T> =>
   Object.fromEntries(Object.entries(record).filter(([key]) => key !== id))

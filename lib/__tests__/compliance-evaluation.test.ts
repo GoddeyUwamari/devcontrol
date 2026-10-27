@@ -85,10 +85,16 @@ describe('evaluateFramework: the five states (safeguard 2) plus not found', () =
     expect(evaluateFramework('a', [run('a', 'completed', DAY, [null, null])], NOW, true)).toMatchObject({ state: 'not_found', score: null })
   })
   it('a run started on this page and not listed yet is Running from that moment', () => {
-    expect(evaluateFramework('a', [run('a', 'completed', DAY)], NOW, true, NOW - 2000)).toMatchObject({ state: 'running', startedAt: NOW - 2000, score: null })
+    expect(evaluateFramework('a', [run('a', 'completed', DAY)], NOW, true, { at: NOW - 2000, scanId: 's-new' })).toMatchObject({ state: 'running', startedAt: NOW - 2000, score: null })
+    // A 409 (no run id) with nothing active in the list: Running from the answer until the list is read again.
+    expect(evaluateFramework('a', [run('a', 'completed', DAY)], NOW, true, { at: NOW - 2000, scanId: null })).toMatchObject({ state: 'running', startedAt: NOW - 2000 })
   })
-  it('the newer of a listed active run and a local start is the start time', () => {
-    expect(evaluateFramework('a', [run('a', 'running', 20 * 60_000)], NOW, true, NOW - 1000).startedAt).toBe(NOW - 1000)
+  it('the newer of a listed active run and a new run started here is the start time', () => {
+    expect(evaluateFramework('a', [run('a', 'running', 20 * 60_000)], NOW, true, { at: NOW - 1000, scanId: 's-new' }).startedAt).toBe(NOW - 1000)
+  })
+  it('a 409 (no run id) never restarts a listed active run: past the ceiling it stays overdue', () => {
+    const e = evaluateFramework('a', [run('a', 'running', 20 * 60_000)], NOW, true, { at: NOW - 1000, scanId: null })
+    expect(e).toMatchObject({ state: 'running', startedAt: NOW - 20 * 60_000, overdue: true })
   })
   it('overdue from the ceiling on', () => {
     expect(evaluateFramework('a', [run('a', 'running', EVALUATION_POLL_CEILING_MS - 1)], NOW).overdue).toBe(false)

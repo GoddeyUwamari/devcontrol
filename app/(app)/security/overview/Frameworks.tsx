@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { EVALUATION_COPY } from '@/lib/compliance/evaluation'
 import type { StartProblem } from '@/lib/compliance/useStartEvaluation'
-import { SECURITY_COPY, type FrameworksView } from './securityModel'
+import { SECURITY_COPY, SEE_PLANS, type FrameworksView } from './securityModel'
 import { PAGE_COPY, PAGE_HREF } from './securityCopy'
 
 const LINK = 'inline-flex min-h-11 w-fit items-center text-ui font-semibold text-ink-accent hover:underline'
@@ -71,6 +71,7 @@ export function Frameworks({ view, role, starting, problems, onStart }: {
                 {f.action && reason && (
                   <p id={reasonId} role={problem && !roleReason ? 'alert' : undefined} className="m-0 text-meta text-ink-muted">{reason}</p>
                 )}
+                {f.action && !roleReason && problem === 'plan' && <Link href={SEE_PLANS.href} className={LINK}>{SEE_PLANS.label}</Link>}
               </li>
             )
           })}

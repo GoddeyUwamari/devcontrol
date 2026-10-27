@@ -163,7 +163,6 @@ describe('a start that didn\'t happen keeps the previous state', () => {
     [500, "Couldn't start the evaluation. Try again."],
     [404, "Couldn't start the evaluation. Try again."],
     [403, "Viewers can't start an evaluation"],
-    [402, 'Compliance frameworks are on the Enterprise plan.'],
   ])('%i → %s', async (status, text) => {
     const client = await show({ [START]: failWith(status, 'Failed to execute scan') })
     const before = row().textContent
@@ -177,6 +176,24 @@ describe('a start that didn\'t happen keeps the previous state', () => {
     expect(row().textContent).toBe(`${before}${text}`)
     // The action is still there to try again.
     expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
+  })
+  it('402 → the Enterprise plan sentence, then "See plans" to the upgrade page', async () => {
+    const client = await show({ [START]: failWith(402, 'TIER_REQUIRED') })
+    const before = row().textContent
+    expect(within(row()).queryByRole('link', { name: 'See plans' })).toBeNull()
+    fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
+    await waitFor(() => expect(row()).toHaveTextContent('Compliance frameworks are on the Enterprise plan.'))
+    await settled(client)
+    expect(row()).toHaveAttribute('data-state', 'out_of_date')
+    expect(row().textContent).toBe(`${before}Compliance frameworks are on the Enterprise plan.See plans`)
+    expect(within(row()).getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/settings/billing/upgrade')
+    expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
+  })
+  it('only a 402 shows "See plans"', async () => {
+    await show({ [START]: failWith(500, 'Failed to execute scan') })
+    fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
+    await waitFor(() => expect(row()).toHaveTextContent("Couldn't start the evaluation. Try again."))
+    expect(within(row()).queryByRole('link', { name: 'See plans' })).toBeNull()
   })
   it('a network error (no response) is a failed start', async () => {
     await show({ [START]: { status: 0 } })

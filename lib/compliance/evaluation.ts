@@ -84,17 +84,27 @@ export interface FrameworkEvaluation {
   overdue: boolean
 }
 
+/** A run this page started (or found already running, 409) that the scan list may not show yet. */
+export interface LocalStart {
+  /** When the server answered (this browser's clock). */
+  at: number
+  /** The new run's id from a 200; null after a 409, which names no run. */
+  scanId: string | null
+}
+
 /**
  * A framework's state from the org's newest runs (all frameworks together). `historyComplete`: the list
  * came back shorter than its limit, so a framework with no run in it was never evaluated. `startedLocally`:
- * when this page started a run of this framework that the list doesn't show yet.
+ * a run this page started of this framework that the list doesn't show yet. One without a run id (a 409)
+ * names no new run, so an active run in the list keeps its own start: a run past the ceiling stays overdue
+ * when its "Re-evaluate now" is answered 409 (founder answer, Oct 27).
  */
 export function evaluateFramework(
   frameworkId: string,
   scans: ComplianceScan[],
   now: number,
   historyComplete = false,
-  startedLocally: number | null = null,
+  startedLocally: LocalStart | null = null,
 ): FrameworkEvaluation {
   const own = scans.filter((s) => s.framework_id === frameworkId).sort(byNewest)
   const latest = own[0] ?? null
@@ -103,7 +113,8 @@ export function evaluateFramework(
   const base = { latest, lastDone, lastEvaluatedAt, score: null, startedAt: null, overdue: false }
 
   const listedStart = latest && isActive(latest) ? runStartedAt(latest) ?? now : null
-  const startedAt = startedLocally !== null ? Math.max(startedLocally, listedStart ?? -Infinity) : listedStart
+  const localAt = startedLocally && !(startedLocally.scanId === null && listedStart !== null) ? startedLocally.at : null
+  const startedAt = localAt !== null ? Math.max(localAt, listedStart ?? -Infinity) : listedStart
   if (startedAt !== null) {
     return { ...base, state: 'running', startedAt, overdue: now - startedAt >= EVALUATION_POLL_CEILING_MS }
   }
