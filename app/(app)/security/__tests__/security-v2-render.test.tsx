@@ -267,14 +267,14 @@ describe('the scan limit: one value for the request and the model (carried item 
     const row = screen.getByTestId('security-framework')
     expect(within(row).getByRole('link', { name: 'Re-evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
   })
-  it('49 of 50 is the whole history: "Never evaluated" and "Re-evaluate now" (F2c)', async () => {
+  it('49 of 50 is the whole history: "Never evaluated" and "Evaluate now"', async () => {
     await show({ [`GET ${SCANS_PATH}`]: ok(others(49)) })
     expect(screen.getByTestId('security-tile-compliance')).toHaveTextContent('Never evaluated')
-    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Re-evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
+    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
   })
-  it('a failed run: "Re-evaluate now" links to the frameworks page (F2c)', async () => {
+  it('a failed run: "Try again" links to the frameworks page', async () => {
     await show({ [`GET ${SCANS_PATH}`]: ok([scan('s-f', 'fw-1', 'failed', null, DAY)]) })
-    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Re-evaluate now' })).toHaveAttribute('href', '/compliance/frameworks')
+    expect(within(screen.getByTestId('security-framework')).getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/compliance/frameworks')
   })
 })
 

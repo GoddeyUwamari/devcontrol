@@ -451,8 +451,8 @@ export interface FrameworksView {
 }
 
 /**
- * The compliance panel's button for Out of date, Failed, Never evaluated and not found (founder, F2c): one label,
- * "Re-evaluate now", a link to /compliance/frameworks until F3 runs it in place. `kind` keeps what F3 will do.
+ * The compliance panel's buttons (the mock, founder F2c): Out of date and not found "Re-evaluate now", Failed
+ * "Try again", Never evaluated "Evaluate now"; each a link to /compliance/frameworks until F3 runs it in place.
  */
 export const RE_EVALUATE_NOW = 'Re-evaluate now'
 
@@ -481,11 +481,11 @@ export function describeFramework(f: ComplianceFramework, scans: ComplianceScan[
   }
   if (latest && latest.status === 'failed') {
     const on = formatDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
-    return view('failed', `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, null, { kind: 'try_again', label: RE_EVALUATE_NOW })
+    return view('failed', `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`, null, { kind: 'try_again', label: 'Try again' })
   }
   if (!latest) {
     return historyComplete
-      ? view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: RE_EVALUATE_NOW })
+      ? view('never', SECURITY_COPY.neverEvaluated, null, { kind: 'evaluate_now', label: 'Evaluate now' })
       : view('not_found', SECURITY_COPY.evaluationNotFound, null, { kind: 're_evaluate', label: RE_EVALUATE_NOW })
   }
   const score = latest.status === 'completed' ? formatScore(latest.compliance_score) : null

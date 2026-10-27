@@ -394,14 +394,14 @@ describe('frameworks', () => {
     expect(JSON.stringify(v)).not.toContain('95')
     expect(one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'pending', null, 60_000)]).state).toBe('running')
   })
-  it('failed hides the previous score and offers Re-evaluate now (F2c)', () => {
+  it('failed hides the previous score and offers Try again', () => {
     const v = one([scan('fw-1', 'completed', 95, 2 * DAY), scan('fw-1', 'failed', null, DAY)])
-    expect(v).toMatchObject({ state: 'failed', score: null, text: 'The last run failed on Oct 22. No score is shown as current.', action: { kind: 'try_again', label: 'Re-evaluate now' } })
+    expect(v).toMatchObject({ state: 'failed', score: null, text: 'The last run failed on Oct 22. No score is shown as current.', action: { kind: 'try_again', label: 'Try again' } })
     expect(JSON.stringify(v)).not.toContain('95')
   })
   it('never evaluated only when the scan list is the whole history', () => {
     for (const scans of [[], [scan('other', 'completed', 90, DAY)]]) {
-      expect(describeFramework(fw('fw-1'), scans, NOW, true)).toMatchObject({ state: 'never', label: 'Never evaluated', text: 'No evaluation yet.', score: null, action: { kind: 'evaluate_now', label: 'Re-evaluate now' } })
+      expect(describeFramework(fw('fw-1'), scans, NOW, true)).toMatchObject({ state: 'never', label: 'Never evaluated', text: 'No evaluation yet.', score: null, action: { kind: 'evaluate_now', label: 'Evaluate now' } })
     }
   })
   it('not in the list and the history may be cut off: "Last evaluation not found", no score', () => {

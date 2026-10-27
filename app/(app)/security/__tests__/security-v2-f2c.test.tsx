@@ -174,6 +174,29 @@ describe('row titles (F2c fix 1)', () => {
   })
 })
 
+describe('accessible names include the resource (F2c)', () => {
+  const second = sg('af-ssh-2', 'critical', 'tcp', 22, 22, `Security group "example-other-sg" (${SG}) allows port 22 from anywhere (0.0.0.0/0)`)
+  ;(second.evidence as Record<string, unknown>).security_group_name = 'example-other-sg'
+
+  it('two rows with the same issue get different names: "<title> on <resource name>", both ways', async () => {
+    await show({ 'GET /api/security/account-findings': ok([...ACCOUNT, second]) })
+    const a = within(rowOf('account:af-ssh')).getByRole('button', { name: /^Show details for / })
+    const b = within(rowOf('account:af-ssh-2')).getByRole('button', { name: /^Show details for / })
+    expect(titleOf('account:af-ssh')).toBe(titleOf('account:af-ssh-2'))
+    expect(a).toHaveAccessibleName('Show details for Port 22 open to the internet on launch-wizard-1')
+    expect(b).toHaveAccessibleName('Show details for Port 22 open to the internet on example-other-sg')
+    fireEvent.click(a)
+    expect(a).toHaveAccessibleName('Hide details for Port 22 open to the internet on launch-wizard-1')
+  })
+
+  it('a row with no resource name keeps the plain form', async () => {
+    await show({ 'GET /api/aws-resources/compliance': ok([{ ...RESOURCES[0], resource_name: null, resource_arn: null }]) })
+    const id = 'resource:res-b:s3.https_only'
+    expect(whereOf(id)).toBe('… · S3 · eu-west-1')
+    expect(within(rowOf(id)).getByRole('button', { name: /^Show details for / })).toHaveAccessibleName('Show details for S3 bucket accepts HTTP')
+  })
+})
+
 describe('web-server hint in the list (F2c fix 2)', () => {
   it('shows under the open web port title only', async () => {
     await show()
@@ -205,8 +228,8 @@ describe('severity pills (F2c fix 3)', () => {
   })
 })
 
-describe('compliance panel: "Re-evaluate now" (F2c fix 5)', () => {
-  it('Out of date, Failed and Never evaluated each link to /compliance/frameworks; Current has no button', async () => {
+describe('compliance panel buttons (F2c fix 5, the mock\'s state labels)', () => {
+  it('Out of date "Re-evaluate now", Failed "Try again", Never evaluated "Evaluate now", each to /compliance/frameworks; Current has none', async () => {
     await show({
       'GET /api/compliance-frameworks': ok([framework('fw-old', 'Old'), framework('fw-fail', 'Failing'), framework('fw-new', 'New'), framework('fw-ok', 'Fine')]),
       [`GET ${SCANS_PATH}`]: ok([
@@ -216,9 +239,11 @@ describe('compliance panel: "Re-evaluate now" (F2c fix 5)', () => {
       ]),
     })
     const byState = Object.fromEntries(screen.getAllByTestId('security-framework').map((el) => [el.dataset.state, el]))
-    for (const state of ['out_of_date', 'failed', 'never']) {
+    for (const [state, label] of [['out_of_date', 'Re-evaluate now'], ['failed', 'Try again'], ['never', 'Evaluate now']]) {
       expect(byState[state], state).toBeDefined()
-      expect(within(byState[state]).getByRole('link', { name: 'Re-evaluate now' }), state).toHaveAttribute('href', '/compliance/frameworks')
+      const links = within(byState[state]).getAllByRole('link')
+      expect(links.map((l) => l.textContent), state).toEqual([label])
+      expect(links[0], state).toHaveAttribute('href', '/compliance/frameworks')
     }
     expect(within(byState.current).queryByRole('link')).toBeNull()
   })

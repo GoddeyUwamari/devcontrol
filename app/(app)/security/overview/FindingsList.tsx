@@ -5,6 +5,7 @@ import { Num } from '@/components/ui/typography'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import type { SeverityLevel } from '@/lib/utils/severity-colors'
 import { cn } from '@/lib/utils'
+import { HIDDEN } from '@/lib/security/findingDisplay'
 import {
   SCOPE_LABEL, SECURITY_COPY, SEVERITY_LABEL, STATUS_LABEL, filterRows, groupRows,
   type FilterKey, type FilterView, type FindingRow, type SecurityView,
@@ -43,6 +44,8 @@ function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | 
   const panelId = useId()
   const status = STATUS_LABEL[row.status]
   const where = [row.where.name, row.where.kind, row.where.region].filter(Boolean).join(' · ')
+  // The accessible name says which resource; a row with no name ("…" or empty) keeps the plain form.
+  const resource = row.where.name && row.where.name !== HIDDEN ? row.where.name : undefined
   return (
     <>
       <tr data-testid="security-row" data-row-id={row.id}>
@@ -64,7 +67,7 @@ function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | 
             type="button"
             aria-expanded={open}
             aria-controls={open ? panelId : undefined}
-            aria-label={open ? PAGE_COPY.hideDetails(row.title) : PAGE_COPY.showDetails(row.title)}
+            aria-label={open ? PAGE_COPY.hideDetails(row.title, resource) : PAGE_COPY.showDetails(row.title, resource)}
             onClick={() => setOpen(!open)}
             className={cn(PRESSABLE, pressed(false))}
           >
