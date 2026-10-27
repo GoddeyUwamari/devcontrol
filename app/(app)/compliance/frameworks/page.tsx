@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { EVALUATION_COPY, SEE_PLANS, START_PROBLEM_TEXT } from '@/lib/compliance/evaluation';
 import { FRAMEWORK_SCANS_LIMIT, useFrameworkEvaluations, type FrameworkResults } from '@/lib/compliance/useFrameworkEvaluations';
 import { useNowEachLocalDay } from '../../services/useNowEachLocalDay';
-import { COMPLIANCE_COPY, MEMBER_ROLES, describeCompliance, describeSecurityHub, type Loadable } from './complianceModel';
+import { ADMIN_ROLES, COMPLIANCE_COPY, MEMBER_ROLES, describeCompliance, describeSecurityHub, type Loadable } from './complianceModel';
 
 type DemoFramework = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing'; rulesCount: number; lastScanAt: Date; isCustom?: boolean };
 
@@ -385,10 +385,12 @@ function ComplianceResultsPage() {
   const [detailsFramework, setDetailsFramework] = useState<ComplianceFramework | null>(null);
   const [scanResults, setScanResults] = useState<string | null>(null);
 
-  // Q2: the server's floors (requireMember; requireAdmin for the Security Hub sync). A role not read yet fails closed.
+  // Q2: the server's floors (requireMember; requireAdmin for the Security Hub sync, security-hub.routes.ts:61). A role
+  // not read yet fails closed.
   const canMember = role !== null && MEMBER_ROLES.includes(role);
   const isViewer = role !== null && !canMember;
-  const canSync = role !== null && !isViewer;
+  const canSync = role !== null && ADMIN_ROLES.includes(role);
+  const syncReason = role !== null && !canSync ? COMPLIANCE_COPY.onlyAdminsSyncSecurityHub : null;
 
   const handleCreate = async (data: Record<string, unknown>) => {
     try {
@@ -515,6 +517,17 @@ function ComplianceResultsPage() {
       {view.status === 'error' && (
         <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-4"><p className="text-ui text-ink-danger">{COMPLIANCE_COPY.loadFailed}</p></div>
       )}
+
+      {/* A failed newest run surfaces at the top, with "Try again" for that framework (founder answer 1, Oct 27). */}
+      {view.failed.map((f) => (
+        <div key={f.frameworkId} data-testid="compliance-failed-banner" className="bg-red-50 border border-red-200 rounded-xl px-4 py-3.5 mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <p className="text-ui font-semibold text-ink-danger">{f.title}</p>
+            <p className="text-meta text-ink-body leading-relaxed">{f.text}</p>
+          </div>
+          {startControl(f.frameworkId, COMPLIANCE_COPY.tryAgain, 'failed-banner')}
+        </div>
+      ))}
 
       {/* D2 / Q4: the out-of-date banner. */}
       {view.banner && (
@@ -689,12 +702,12 @@ function ComplianceResultsPage() {
               type="button"
               onClick={() => triggerSecurityHubSync()}
               disabled={shSyncing || !canSync}
-              aria-describedby={isViewer ? 'security-hub-sync-reason' : undefined}
+              aria-describedby={syncReason ? 'security-hub-sync-reason' : undefined}
               className="flex items-center gap-1.5 bg-white text-violet-600 border border-violet-200 rounded-lg px-3 py-1.5 text-label cursor-pointer hover:bg-violet-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
               <RefreshCw size={11} className={shSyncing ? 'animate-spin' : ''} /> {shSyncing ? 'Syncing…' : 'Sync Security Hub'}
             </button>
-            {isViewer && <p id="security-hub-sync-reason" className={REASON}>{COMPLIANCE_COPY.viewerCantSyncSecurityHub}</p>}
+            {syncReason && <p id="security-hub-sync-reason" className={REASON}>{syncReason}</p>}
             <a href="/docs" className="text-label text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
               Learn more <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </a>

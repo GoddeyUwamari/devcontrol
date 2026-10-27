@@ -25,7 +25,7 @@ import {
   type FrameworkEvaluation,
 } from '@/lib/compliance/evaluation'
 import type { FrameworkResults } from '@/lib/compliance/useFrameworkEvaluations'
-import { formatLocalWhen } from '@/lib/utils/localTime'
+import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'plan' } | { status: 'error' } | { status: 'ready'; data: T }
 
@@ -42,7 +42,11 @@ export const COMPLIANCE_COPY = {
   review: 'Review',
   runScan: 'Run Scan',
   viewerCantAddFrameworks: "Viewers can't add frameworks.",
-  viewerCantSyncSecurityHub: "Viewers can't sync Security Hub.",
+  // The sync is requireAdmin (security-hub.routes.ts:61): members and viewers alike (founder follow-up, Oct 27).
+  onlyAdminsSyncSecurityHub: 'Only admins can sync Security Hub.',
+  // The failed banner (founder answer 1 on the F3b calls): the mock's text, with "Try again".
+  failedTitle: 'The last evaluation failed',
+  tryAgain: 'Try again',
   // D3: the Security Hub card body, per state (Q5: in place of the "isn't enabled" text).
   shNotEnabled: 'Turn it on in your AWS account, then sync to evaluate CIS, PCI DSS and NIST.',
   shMissingPermission: "DevControl can't read Security Hub — the connected role is missing a permission.",
@@ -57,9 +61,9 @@ export const TILE_LABELS = {
   frameworks: 'Frameworks',
 } as const
 
-/** Roles the server lets add frameworks, edit rules and start runs (requireMember). The Security Hub sync is
- * requireAdmin: a viewer sees the reason; a member's click is answered by the server (no member reason is approved). */
+/** Roles the server lets add frameworks, edit rules and start runs (requireMember), and sync Security Hub (requireAdmin). */
 export const MEMBER_ROLES: readonly string[] = ['owner', 'admin', 'member']
+export const ADMIN_ROLES: readonly string[] = ['owner', 'admin']
 
 // ── Security Hub (D3) ──
 
@@ -124,6 +128,9 @@ export type BannerView =
   | { kind: 'one'; text: string; frameworkId: string }
   | { kind: 'many'; text: string }
 
+/** A framework whose newest run failed: surfaced at the top, with "Try again" for that framework. */
+export interface FailedBannerView { frameworkId: string; title: string; text: string }
+
 export interface HistoryRow {
   id: string
   frameworkId: string
@@ -138,6 +145,8 @@ export interface ComplianceView {
   status: Loadable<unknown>['status']
   tiles: { score: Tile; critical: Tile; high: Tile; frameworks: Tile }
   banner: BannerView | null
+  /** One per enabled framework whose newest run failed, the most recent failure first. */
+  failed: FailedBannerView[]
   history: HistoryRow[]
 }
 
@@ -225,6 +234,23 @@ function banner(results: Loadable<FrameworkResults>, now: number, overlay: Evalu
   return { kind: 'one', frameworkId: framework.id, text: `Results are out of date — ${framework.name} was last evaluated ${whenOf(e.lastDone!, now)}.` }
 }
 
+/** The Security page's failed text, with the day of the failed run (completed, else started, else created). */
+function failedBanners(results: Loadable<FrameworkResults>, now: number, overlay: EvaluationOverlay): FailedBannerView[] {
+  if (results.status !== 'ready') return []
+  return evaluateAll(results.data, now, overlay)
+    .filter((x) => x.e.state === 'failed')
+    .map(({ framework, e }) => ({ framework, latest: e.latest! }))
+    .sort((a, b) => byNewest(a.latest, b.latest))
+    .map(({ framework, latest }) => {
+      const on = formatLocalDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
+      return {
+        frameworkId: framework.id,
+        title: COMPLIANCE_COPY.failedTitle,
+        text: `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`,
+      }
+    })
+}
+
 function historyText(s: ComplianceScan, name: string, now: number): { text: string; note: string | null } {
   if (s.status === 'completed') {
     const score = scanScore(s)
@@ -266,6 +292,7 @@ export function describeCompliance(
     status: results.status,
     tiles: { ...scoreTiles(results, now, overlay), frameworks: frameworksTile(results, sh) },
     banner: banner(results, now, overlay),
+    failed: failedBanners(results, now, overlay),
     history: history(results, now, overlay),
   }
 }

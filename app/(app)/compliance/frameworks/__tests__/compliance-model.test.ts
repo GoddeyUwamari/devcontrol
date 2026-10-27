@@ -149,6 +149,32 @@ describe('out-of-date banner (D2, Q4)', () => {
   })
 })
 
+describe('failed banner (founder answer 1 on the F3b calls)', () => {
+  it('a failed newest run surfaces with the mock\'s text and that framework', () => {
+    expect(view(ready([A], [run('fw-a', 'completed', 3 * DAY), run('fw-a', 'failed', DAY)])).failed).toEqual([
+      { frameworkId: 'fw-a', title: 'The last evaluation failed', text: 'The last run failed on Oct 26. No score is shown as current.' },
+    ])
+  })
+  it('never for a running, current, out-of-date or never-evaluated framework', () => {
+    expect(view(ready([A], [run('fw-a', 'failed', 2 * DAY), run('fw-a', 'running', MIN)])).failed).toEqual([])
+    expect(view(ready([A], [run('fw-a', 'failed', 2 * DAY), run('fw-a', 'completed', DAY)])).failed).toEqual([])
+    expect(view(ready([A], [run('fw-a', 'completed', 9 * DAY)])).failed).toEqual([])
+    expect(view(ready([A], [])).failed).toEqual([])
+  })
+  it('one per failed framework, the most recent failure first; a disabled framework is never shown', () => {
+    const off = fw('fw-off', 'Example disabled', { enabled: false })
+    const v = view(ready([A, B, off], [run('fw-a', 'failed', 3 * DAY), run('fw-b', 'failed', DAY), run('fw-off', 'failed', HOUR)]))
+    expect(v.failed.map((f) => [f.frameworkId, f.text])).toEqual([
+      ['fw-b', 'The last run failed on Oct 26. No score is shown as current.'],
+      ['fw-a', 'The last run failed on Oct 24. No score is shown as current.'],
+    ])
+  })
+  it('a 402 or a failed read has no failed banner (D7)', () => {
+    expect(view({ status: 'plan' }).failed).toEqual([])
+    expect(view({ status: 'error' }).failed).toEqual([])
+  })
+})
+
 describe('frameworks tile (Q1)', () => {
   const shOn = (evaluated: SecurityHubInput['evaluated']): SecurityHubInput => ({ failed: false, capability: capability(), evaluated })
   it('counts frameworks, never runs', () => {

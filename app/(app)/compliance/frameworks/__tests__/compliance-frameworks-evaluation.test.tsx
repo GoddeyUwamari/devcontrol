@@ -46,6 +46,7 @@ beforeEach(() => {
   h.routes = { [FRAMEWORKS]: ok([A]), [SCANS]: ok([scan('s-1', 'fw-1', 'completed', '0.00', 2 * DAY)]) }
   m.role = 'owner'
   Object.assign(m.sh, { capability: null, cis: null, pci: null, nist: null, error: null, syncing: false })
+  m.sh.triggerSync.mockClear()
 })
 
 async function show(routes: Record<string, Route> = {}) {
@@ -183,6 +184,28 @@ describe('out-of-date banner (D2, Q4)', () => {
   })
 })
 
+describe('failed banner (founder answer 1 on the F3b calls)', () => {
+  it('a failed newest run: "The last evaluation failed" with "Try again", which starts that framework\'s run', async () => {
+    await show({ [SCANS]: ok([scan('s-2', 'fw-1', 'failed', null, DAY), scan('s-1', 'fw-1', 'completed', null, 2 * DAY)]), [START]: ok({ scanId: 's-new' }) })
+    const banner = screen.getByTestId('compliance-failed-banner')
+    expect(banner).toHaveTextContent('The last evaluation failed')
+    expect(banner).toHaveTextContent('The last run failed on Oct 22. No score is shown as current.')
+    fireEvent.click(within(banner).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(h.posts).toEqual([{ path: '/api/compliance-frameworks/fw-1/scan', body: {} }]))
+  })
+  it('no failed banner while a newer run is running, or once a newer run completed', async () => {
+    await show({ [SCANS]: ok([scan('s-3', 'fw-1', 'running', null, 1000), scan('s-2', 'fw-1', 'failed', null, DAY)]) })
+    expect(screen.queryByTestId('compliance-failed-banner')).toBeNull()
+  })
+  it('a viewer sees "Try again" disabled with the viewer reason', async () => {
+    m.role = 'viewer'
+    await show({ [SCANS]: ok([scan('s-2', 'fw-1', 'failed', null, DAY)]) })
+    const tryAgain = within(screen.getByTestId('compliance-failed-banner')).getByRole('button', { name: 'Try again' })
+    expect(tryAgain).toBeDisabled()
+    expect(tryAgain).toHaveAccessibleDescription("Viewers can't start an evaluation")
+  })
+})
+
 describe('frameworks tile (Q1)', () => {
   it('counts enabled frameworks, never runs', async () => {
     await show({
@@ -210,7 +233,7 @@ describe('viewer reasons (Q2)', () => {
     expect(run).toHaveAccessibleDescription("Viewers can't start an evaluation")
     const sync = screen.getByRole('button', { name: /Sync Security Hub/ })
     expect(sync).toBeDisabled()
-    expect(sync).toHaveAccessibleDescription("Viewers can't sync Security Hub.")
+    expect(sync).toHaveAccessibleDescription('Only admins can sync Security Hub.')
     fireEvent.click(run)
     fireEvent.click(sync)
     expect(h.posts).toEqual([])
@@ -225,12 +248,28 @@ describe('viewer reasons (Q2)', () => {
     expect(within(row()).getByRole('button', { name: 'Run Scan' })).toBeDisabled()
     expect(document.body.textContent).not.toContain('Viewers can')
   })
-  it.each(['member', 'admin', 'owner'])('%s: the controls are enabled', async (role) => {
+  it.each(['member', 'admin', 'owner'])('%s: adding frameworks and starting runs are enabled', async (role) => {
     m.role = role
     await show()
     expect(screen.getByRole('button', { name: /Add Framework/ })).toBeEnabled()
     expect(within(row()).getByRole('button', { name: 'Run Scan' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /Sync Security Hub/ })).toBeEnabled()
+  })
+  // The sync is requireAdmin on the server (security-hub.routes.ts:61, rbac.middleware.ts:48): owner and admin only.
+  it.each([
+    ['owner', true], ['admin', true], ['member', false], ['viewer', false],
+  ])('Sync Security Hub as %s: enabled = %s; otherwise "Only admins can sync Security Hub." and nothing is sent', async (role, enabled) => {
+    m.role = role
+    await show()
+    const sync = screen.getByRole('button', { name: /Sync Security Hub/ })
+    if (enabled) {
+      expect(sync).toBeEnabled()
+      expect(document.body.textContent).not.toContain('Only admins can sync Security Hub.')
+      return
+    }
+    expect(sync).toBeDisabled()
+    expect(sync).toHaveAccessibleDescription('Only admins can sync Security Hub.')
+    fireEvent.click(sync)
+    expect(m.sh.triggerSync).not.toHaveBeenCalled()
   })
 })
 
