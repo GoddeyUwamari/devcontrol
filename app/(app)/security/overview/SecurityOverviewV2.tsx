@@ -147,7 +147,7 @@ export default function SecurityOverviewV2() {
         onRetryAnomalies={() => anomaliesQuery.refetch()}
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <FindingsList view={view} />
+        <FindingsList view={view} role={role} orgId={orgId} />
         <div className="flex min-w-0 flex-col gap-6">
           <ScoreTrend trend={view.trend} />
           <SecurityChecked lines={view.checked} />

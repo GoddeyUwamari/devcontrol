@@ -35,8 +35,22 @@ export const PAGE_COPY = {
   showing: (shown: number, total: number) => `Showing ${shown} of ${total}`,
   showAll: (total: number) => `Show all ${total}`,
   showFewer: 'Show fewer',
-  // The findings table's column headers (the mock). Action is empty in F2a's read-only list.
+  // The findings table's column headers (the mock). Action holds each row's Review / Hide.
   tableHeaders: ['Severity', 'Issue', 'Where', 'Scope', 'Action'],
+
+  // The expanded row (e2 7, 8, 21).
+  review: 'Review',
+  hide: 'Hide',
+  showDetails: (title: string) => `Show details for ${title}`,
+  hideDetails: (title: string) => `Hide details for ${title}`,
+  whyItMatters: 'Why it matters',
+  nextStep: 'Next step',
+  fixRisk: 'Risk of the fix',
+  copyStatement: 'Copy policy statement',
+  copied: 'Copied',
+  copyFailed: "Couldn't copy to the clipboard.",
+  // Resource findings before B4: navigation only (the F2b brief, quoting the mock).
+  resourceNote: "This opens the Infrastructure page. It doesn't fix anything. Acknowledge, Accept risk and Dismiss for resource findings come in a later release.",
 
   trendHeading: 'Score, last 30 days',
   checkedHeading: 'What we checked',
@@ -52,6 +66,44 @@ export const PAGE_COPY = {
   auditCard: 'Audit logs',
   auditCardText: 'Who did what, and when',
 } as const
+
+/**
+ * Account-finding decisions (F2b): decision 3, e2 10–12, and the F2b answers S1, S2, D2, D3. The dialog keeps the
+ * legacy text (SEC/page.tsx) except the sentence the mock's score note replaces; the toasts are the legacy ones.
+ */
+export const ACTION_COPY = {
+  acknowledge: 'Acknowledge',
+  acceptRisk: 'Accept risk…',
+  dismiss: 'Dismiss',
+  viewerCantChange: "Viewers can't change findings",
+  adminsOnly: 'Admins only',
+
+  dismissTitle: 'Dismiss finding',
+  acceptTitle: 'Accept risk',
+  scoreNote: "Accepting or dismissing records your decision. It doesn't change anything in AWS, and the score still counts this finding until a complete scan shows it's fixed.",
+  justification: 'A justification is required.',
+  reasonLabel: 'Reason (required)',
+  reasonHint: 'Why? (required)',
+  cancel: 'Cancel',
+  confirmDismiss: 'Dismiss',
+  confirmAccept: 'Accept risk',
+
+  acknowledged: 'Finding acknowledged',
+  dismissed: 'Finding dismissed',
+  accepted: 'Risk accepted',
+  toastDescription: 'This records your decision — it does not change anything in AWS. Only a future scan can mark it Verified Resolved.',
+
+  failed: 'Action failed',
+  failedTryAgain: 'Action failed. Try again.',
+} as const
+
+/** The server messages shown after "Action failed" (D2); any other message reads "Action failed. Try again." */
+export const PLAIN_SERVER_MESSAGES: readonly string[] = [
+  'Insufficient permissions',
+  'Finding not found',
+  'This finding is already verified resolved and cannot be dispositioned',
+  'A non-empty note is required to accept risk for this finding',
+]
 
 export const PAGE_HREF = {
   frameworks: '/compliance/frameworks',

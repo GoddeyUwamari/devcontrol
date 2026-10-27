@@ -13,27 +13,32 @@ const NOW = Date.parse(NOW_ISO)
 const DAY = 86_400_000
 export const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
 
-export type Route = { status: number; body?: unknown } | 'pending'
-export interface Harness { log: string[]; routes: Record<string, Route> }
+/** `wait`: the answer is held until that promise settles (to look at the page while a request is in flight). */
+export type Route = { status: number; body?: unknown; wait?: Promise<unknown> } | 'pending'
+export interface Harness { log: string[]; routes: Record<string, Route>; posts?: { path: string; body: unknown }[] }
 
 export const ok = (data: unknown): Route => ({ status: 200, body: { success: true, data } })
 export const raw = (body: unknown): Route => ({ status: 200, body })
 export const fail = (status: number): Route => ({ status })
+/** An error status with the server's JSON error body. */
+export const failWith = (status: number, error: string): Route => ({ status, body: { success: false, error } })
 
 /** Answers a logged request from the route table: 200 with its body, another status as an axios-style error, or never. */
 export function answer(h: Harness, method: string, path: string): Promise<{ data: unknown }> {
   h.log.push(`${method} ${path}`)
   const route = h.routes[`${method} ${path}`] ?? { status: 404 }
   if (route === 'pending') return new Promise(() => {})
-  if (route.status === 200) return Promise.resolve({ data: route.body })
-  return Promise.reject(Object.assign(new Error(`Request failed with status code ${route.status}`), { response: { status: route.status, data: {} } }))
+  const settle = () => route.status === 200
+    ? Promise.resolve({ data: route.body })
+    : Promise.reject(Object.assign(new Error(`Request failed with status code ${route.status}`), { response: { status: route.status, data: route.body ?? {} } }))
+  return route.wait ? route.wait.then(settle, settle) : settle()
 }
 
 /** The '@/lib/api' module, answered by the harness. */
 export function apiModule(h: Harness) {
   const api = {
     get: (path: string) => answer(h, 'GET', path),
-    post: (path: string) => answer(h, 'POST', path),
+    post: (path: string, body?: unknown) => { h.posts?.push({ path, body }); return answer(h, 'POST', path) },
     put: (path: string) => answer(h, 'PUT', path),
     delete: (path: string) => answer(h, 'DELETE', path),
   }
