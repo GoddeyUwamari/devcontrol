@@ -18,7 +18,6 @@ import {
   LambdaClient,
   ListFunctionsCommand,
   ListTagsCommand,
-  FunctionConfiguration,
 } from '@aws-sdk/client-lambda';
 import {
   ElasticLoadBalancingV2Client,
@@ -37,9 +36,14 @@ import {
 import {
   CloudFrontClient,
   ListDistributionsCommand,
-  DistributionSummary,
 } from '@aws-sdk/client-cloudfront';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
+import {
+  CloudFrontDistributionFields,
+  LambdaFunctionFields,
+  projectCloudFrontDistribution,
+  projectLambdaFunction,
+} from './aws-response-projections';
 import { AWSClients } from './aws-client-factory.service';
 import { ScanContext } from './scan-context';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from './platform-sts';
@@ -2704,12 +2708,12 @@ export class AWSResourceDiscoveryService {
         'Lambda functions: ListFunctions',
         async (token) => {
           const page = await lambdaClient.send(new ListFunctionsCommand({ Marker: token }));
-          return { items: page.Functions || [], nextToken: page.NextMarker };
+          return { items: (page.Functions ?? []).map(projectLambdaFunction), nextToken: page.NextMarker };
         },
         MAX_LIST_FUNCTIONS_PAGES
       );
       onListing?.(listing);
-      const functions: FunctionConfiguration[] = listing.items;
+      const functions: LambdaFunctionFields[] = listing.items;
       this.logIfPaginated('Lambda functions', listing.pages, functions.length);
 
       for (const func of functions) {
@@ -2896,16 +2900,14 @@ export class AWSResourceDiscoveryService {
         if (page.DistributionList?.IsTruncated && !page.DistributionList.NextMarker) {
           throw new Error('ListDistributions returned a truncated page with no NextMarker');
         }
-        return { items: page.DistributionList?.Items || [], nextToken: page.DistributionList?.NextMarker };
+        return { items: (page.DistributionList?.Items ?? []).map(projectCloudFrontDistribution), nextToken: page.DistributionList?.NextMarker };
       });
       onListing?.(listing);
-      const distributions: DistributionSummary[] = listing.items;
+      const distributions: CloudFrontDistributionFields[] = listing.items;
       this.logIfPaginated('CloudFront distributions', listing.pages, distributions.length);
 
       for (const dist of distributions) {
         if (!dist.ARN || !dist.Id) continue;
-
-        const origins = (dist.Origins?.Items || []).map((o: any) => o.DomainName);
 
         resources.push({
           organization_id: organizationId,
@@ -2922,7 +2924,7 @@ export class AWSResourceDiscoveryService {
             domain_name: dist.DomainName,
             status: dist.Status,
             price_class: dist.PriceClass,
-            origins,
+            origins: dist.OriginDomainNames,
             is_enabled: dist.Enabled,
             http_version: dist.HttpVersion,
             last_modified: dist.LastModifiedTime?.toISOString(),

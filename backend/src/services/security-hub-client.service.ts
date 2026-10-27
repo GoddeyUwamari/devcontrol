@@ -56,7 +56,13 @@ function classifyError(err: unknown): { status: SecurityHubCapabilityStatus; mes
   return { status: 'ERROR', message };
 }
 
-function normalizeFinding(finding: AwsSecurityFinding): SecurityHubFindingEvidence | null {
+/**
+ * The finding fields DevControl keeps, copied one by one; everything else on the
+ * finding (resource details, product fields, descriptions) is never read. Applied
+ * to each GetFindings page right after the call (see
+ * __tests__/aws-response-classification.static.test.ts).
+ */
+export function normalizeFinding(finding: AwsSecurityFinding): SecurityHubFindingEvidence | null {
   if (!finding.Id || !finding.ProductArn || !finding.CreatedAt || !finding.UpdatedAt) {
     // Malformed response from AWS -- skip rather than store a partially-identified row.
     return null;

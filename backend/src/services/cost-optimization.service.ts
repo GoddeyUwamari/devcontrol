@@ -13,6 +13,7 @@ import {
 } from '@aws-sdk/client-ec2';
 import { S3Client, ListBucketsCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
+import { projectLambdaFunction } from './aws-response-projections';
 import { PoolClient } from 'pg';
 import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
 import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
@@ -899,7 +900,7 @@ class CostOptimizationService {
         'low-usage Lambda: ListFunctions',
         async (token) => {
           const page = await lambdaClient.send(new ListFunctionsCommand({ Marker: token }));
-          return { items: page.Functions || [], nextToken: page.NextMarker };
+          return { items: (page.Functions ?? []).map(projectLambdaFunction), nextToken: page.NextMarker };
         },
         MAX_LIST_FUNCTIONS_PAGES
       );
