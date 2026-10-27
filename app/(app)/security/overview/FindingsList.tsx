@@ -9,6 +9,7 @@ import {
 } from './securityModel'
 import { LIST_LIMIT, PAGE_COPY } from './securityCopy'
 import { FindingPanel } from './FindingPanel'
+import { FindingActions } from './FindingActions'
 
 const SEVERITY_INK: Record<string, string> = {
   critical: 'text-ink-danger',
@@ -38,7 +39,7 @@ const CELL = 'border-t border-slate-100 px-4 py-3 align-top'
  * One row: severity, the issue (with its status chip and first-found date), where, scope, and "Review" / "Hide",
  * which shows or hides the row's details in a full-width row below it. aria-expanded follows the real state.
  */
-function Row({ row }: { row: FindingRow }) {
+function Row({ row, role, orgId }: { row: FindingRow; role: string | null; orgId: string | null }) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const status = STATUS_LABEL[row.status]
@@ -72,7 +73,7 @@ function Row({ row }: { row: FindingRow }) {
       {open && (
         <tr id={panelId} data-testid="security-row-panel">
           <td colSpan={PAGE_COPY.tableHeaders.length} className="border-t border-slate-100 bg-slate-50 px-4 py-4">
-            <FindingPanel row={row} actions={null} />
+            <FindingPanel row={row} actions={row.canDisposition ? <FindingActions row={row} role={role} orgId={orgId} /> : null} />
           </td>
         </tr>
       )}
@@ -96,7 +97,7 @@ function HeaderRow() {
  * the findings load, and the page scrolls to it once, after they settle, when the URL asks for it: the
  * redesign is loaded lazily, so the browser's own jump can run before the section exists.
  */
-export function FindingsList({ view }: { view: SecurityView }) {
+export function FindingsList({ view, role, orgId }: { view: SecurityView; role: string | null; orgId: string | null }) {
   const [filter, setFilter] = useState<FilterKey>('all')
   const [grouped, setGrouped] = useState(false)
   const [showAll, setShowAll] = useState(false)
@@ -155,10 +156,10 @@ export function FindingsList({ view }: { view: SecurityView }) {
                         <h3 className="m-0 text-ui font-semibold text-ink">{g.label}</h3>
                       </th>
                     </tr>
-                    {g.rows.map((row) => <Row key={row.id} row={row} />)}
+                    {g.rows.map((row) => <Row key={row.id} row={row} role={role} orgId={orgId} />)}
                   </tbody>
                 ))
-              : <tbody>{shown.map((row) => <Row key={row.id} row={row} />)}</tbody>}
+              : <tbody>{shown.map((row) => <Row key={row.id} row={row} role={role} orgId={orgId} />)}</tbody>}
           </table>
         </div>
       )}
