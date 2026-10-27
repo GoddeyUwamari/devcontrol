@@ -153,6 +153,10 @@ describe('row titles (F2c fix 1)', () => {
     await show()
     expect(whereOf('account:af-web')).toBe('launch-wizard-1 · Security group · us-east-1')
     expect(whereOf('account:af-web')).not.toContain(SG)
+    // Each part is whole inside a nowrap span, so the cell wraps only between the " · " parts.
+    const parts = within(cells('account:af-web')[2]).getAllByTestId('security-where-part')
+    expect(parts.map((p) => p.textContent)).toEqual(['launch-wizard-1', 'Security group', 'us-east-1'])
+    for (const p of parts) expect(p.className, p.textContent!).toContain('whitespace-nowrap')
     expect(within(findings()).getByText(TITLES[0][1]).closest('table')!.textContent).not.toContain(SG)
   })
 
@@ -253,13 +257,31 @@ describe('bottom link cards (F2c fix 6)', () => {
   it('three cards with a trailing arrow, in order, with their hrefs; they stack on phones', async () => {
     await show()
     const cards = [
-      screen.getByRole('link', { name: /^Anomalies →\s*Unusual activity and its history$/ }),
-      screen.getByRole('link', { name: /^Anomaly Rules →\s*Custom detection thresholds$/ }),
-      screen.getByRole('link', { name: /^Audit logs →\s*Who did what, and when$/ }),
+      screen.getByRole('link', { name: /^Anomalies\s*Unusual activity and its history$/ }),
+      screen.getByRole('link', { name: /^Anomaly Rules\s*Custom detection thresholds$/ }),
+      screen.getByRole('link', { name: /^Audit logs\s*Who did what, and when$/ }),
     ]
     expect(cards.map((c) => c.getAttribute('href'))).toEqual(['/anomalies', '/anomalies/rules', '/audit-logs'])
     const grid = cards[0].parentElement!
     expect([...grid.children]).toEqual(cards)
     expect(grid.className).toContain('grid-cols-1')
+  })
+
+  it('the arrow sits outside the title, pinned right and aria-hidden; the card stays one link', async () => {
+    await show()
+    for (const [title, text] of [['Anomalies', 'Unusual activity and its history'], ['Anomaly Rules', 'Custom detection thresholds'], ['Audit logs', 'Who did what, and when']]) {
+      // The accessible name is exactly the title + description: the arrow adds nothing.
+      const card = screen.getByRole('link', { name: new RegExp(`^${title}\\s*${text}$`) })
+      const titleEl = within(card).getByText(title)
+      expect(titleEl.textContent, title).toBe(title)
+      const arrow = within(card).getByTestId('security-card-arrow')
+      expect(arrow, title).toHaveAttribute('aria-hidden', 'true')
+      expect(arrow.textContent, title).toBe('→')
+      expect(titleEl.contains(arrow), title).toBe(false)
+      expect(card.lastElementChild, title).toBe(arrow)
+      expect(card.className, title).toContain('items-center')
+      expect(arrow.className, title).toContain('shrink-0')
+      expect(within(card).queryAllByRole('link'), title).toHaveLength(0)
+    }
   })
 })

@@ -92,9 +92,9 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
       screen.getByRole('heading', { name: 'Score, last 30 days' }),
       screen.getByRole('heading', { name: 'What we checked' }),
       screen.getByRole('heading', { name: 'Compliance frameworks' }),
-      screen.getByRole('link', { name: /^Anomalies →\s*Unusual activity and its history$/ }),
-      screen.getByRole('link', { name: /^Anomaly Rules →\s*Custom detection thresholds$/ }),
-      screen.getByRole('link', { name: /^Audit logs →\s*Who did what, and when$/ }),
+      screen.getByRole('link', { name: /^Anomalies\s*Unusual activity and its history$/ }),
+      screen.getByRole('link', { name: /^Anomaly Rules\s*Custom detection thresholds$/ }),
+      screen.getByRole('link', { name: /^Audit logs\s*Who did what, and when$/ }),
     ]
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING, `${i}`).toBeTruthy()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { Num } from '@/components/ui/typography'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import type { SeverityLevel } from '@/lib/utils/severity-colors'
@@ -43,7 +43,10 @@ function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | 
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const status = STATUS_LABEL[row.status]
-  const where = [row.where.name, row.where.kind, row.where.region].filter(Boolean).join(' · ')
+  // Each part stays whole ("us-east-1", "Security group"); the cell wraps only between the " · "-separated parts.
+  const where = [row.where.name, row.where.kind, row.where.region].filter(Boolean).map((part, i) => (
+    <Fragment key={i}>{i > 0 && ' · '}<span data-testid="security-where-part" className="whitespace-nowrap">{part}</span></Fragment>
+  ))
   // The accessible name says which resource; a row with no name ("…" or empty) keeps the plain form.
   const resource = row.where.name && row.where.name !== HIDDEN ? row.where.name : undefined
   return (
