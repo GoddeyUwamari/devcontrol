@@ -172,3 +172,16 @@ export function buildHttpsOnlyStatement(bucket: string): string {
     Condition: { Bool: { 'aws:SecureTransport': 'false' } },
   })
 }
+
+/** True only for text that is valid JSON for exactly one policy statement (an object with a Sid, not a policy or a list). */
+export function isOneStatement(text: unknown): text is string {
+  if (typeof text !== 'string') return false
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return !!parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      && typeof (parsed as Record<string, unknown>).Sid === 'string'
+      && !Object.hasOwn(parsed, 'Statement') && !Object.hasOwn(parsed, 'Version')
+  } catch {
+    return false
+  }
+}

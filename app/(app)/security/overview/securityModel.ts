@@ -96,7 +96,7 @@ export const SECURITY_COPY = {
   trendNone: 'No score history yet',
   trendError: "Couldn't load score history.",
   trendCaption: 'Daily, at 02:00 UTC.',
-  reviewInInfrastructure: 'Review in Infrastructure',
+  reviewInInfrastructure: 'Review in Infrastructure →',
   reviewHref: '/infrastructure',
   iamRoles: 'IAM roles and policies',
   scanRunning: 'Scan running…',
@@ -146,6 +146,8 @@ export type RowStatus = 'open' | 'acknowledged' | 'accepted' | 'dismissed'
 
 export interface FindingRow {
   id: string
+  /** The account finding's own id, for its decision requests; null for resource findings. */
+  findingId: string | null
   scope: 'account' | 'resource'
   severity: string
   title: string
@@ -182,6 +184,7 @@ function accountRow(f: AccountSecurityFinding, now: number): FindingRow | null {
   const day = formatDay(f.detected_at, now)
   return {
     id: `account:${f.id}`,
+    findingId: f.id,
     scope: 'account',
     severity: f.severity,
     title: safeTitle(f),
@@ -205,6 +208,7 @@ function resourceRows(source: ResourceFindingsSource): FindingRow[] {
       .filter((s) => s.attention_cause === 'finding' && (s.priority_severity === 'critical' || s.priority_severity === 'high'))
       .map((s) => ({
         id: `resource:${s.id}`,
+        findingId: null,
         scope: 'resource' as const,
         severity: s.priority_severity as string,
         title: maskText(s.reason ?? ''),
@@ -224,6 +228,7 @@ function resourceRows(source: ResourceFindingsSource): FindingRow[] {
     const where = resourceWhere(r)
     return {
       id: `resource:${r.id}:${issue.findingKey ?? i}`,
+      findingId: null,
       scope: 'resource' as const,
       severity: issue.severity,
       title: maskText(issue.issue),

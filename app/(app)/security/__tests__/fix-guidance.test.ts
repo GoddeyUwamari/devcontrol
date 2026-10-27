@@ -7,6 +7,7 @@ import {
   guidanceFor,
   guidanceKeyForAccountFinding,
   guidanceKeyForResourceIssue,
+  isOneStatement,
   sgPortClass,
 } from '../overview/fixGuidance'
 
@@ -244,5 +245,21 @@ describe('the HTTPS-only policy statement', () => {
     expect(parsed).not.toHaveProperty('Statement')
     expect(parsed.Effect).toBe('Deny')
     expect(parsed.Condition).toEqual({ Bool: { 'aws:SecureTransport': 'false' } })
+  })
+})
+
+describe('isOneStatement (the Copy button is enabled only for this)', () => {
+  it('accepts the built statement', () => {
+    expect(isOneStatement(buildHttpsOnlyStatement('example-bucket'))).toBe(true)
+  })
+  it.each([
+    ['two statements', JSON.stringify([JSON.parse(buildHttpsOnlyStatement('a')), JSON.parse(buildHttpsOnlyStatement('b'))])],
+    ['a whole policy', JSON.stringify({ Version: '2012-10-17', Statement: [JSON.parse(buildHttpsOnlyStatement('a'))] })],
+    ['invalid JSON', `${buildHttpsOnlyStatement('a')},`],
+    ['no Sid', '{"Effect":"Deny"}'],
+    ['null', 'null'],
+    ['not a string', 42],
+  ])('rejects %s', (_, text) => {
+    expect(isOneStatement(text)).toBe(false)
   })
 })

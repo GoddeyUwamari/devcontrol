@@ -184,10 +184,14 @@ describe('rows', () => {
     const acc = view.rows.find((r) => r.scope === 'account')!
     expect(acc.firstFound).toBe('First found Oct 13')
     expect(acc.canDisposition).toBe(true)
+    // The raw id the decision requests use (approved): the display id is never parsed.
+    expect(acc.id).toBe(`account:${acc.findingId}`)
+    expect(acc.findingId).toMatch(/^[^:]+$/)
     const res = view.rows.find((r) => r.scope === 'resource')!
     expect(res.firstFound).toBeNull()
     expect(res.canDisposition).toBe(false)
-    expect(res.review).toEqual({ text: 'Review in Infrastructure', href: '/infrastructure' })
+    expect(res.findingId).toBeNull()
+    expect(res.review).toEqual({ text: 'Review in Infrastructure →', href: '/infrastructure' })
   })
 
   it('the web-server hint only on an open web port, the policy statement only on HTTPS-only with a bucket name', () => {
