@@ -138,7 +138,6 @@ export default function SSOSettingsPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 bg-gray-50 min-h-screen">
         <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">SSO & SAML</h1>
           <p className="text-gray-500 text-sm mt-1.5">Configure SAML 2.0 single sign-on for your organization.</p>
         </div>
@@ -164,7 +163,6 @@ export default function SSOSettingsPage() {
 
       {/* Header */}
       <div className="mb-8">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Security</p>
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">SSO & SAML</h1>
         <p className="text-gray-500 text-sm mt-1.5">
           Configure SAML 2.0 single sign-on. Your IdP will authenticate users and redirect back to DevControl.

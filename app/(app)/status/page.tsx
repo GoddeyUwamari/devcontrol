@@ -30,7 +30,6 @@ export default function StatusPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-xs font-bold text-violet-600 uppercase tracking-widest mb-1.5">Observability</p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">DevControl Service Status</h1>
           <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-2xl">
             Whether DevControl&apos;s own API and database are responding. This page does not report on your AWS resources.

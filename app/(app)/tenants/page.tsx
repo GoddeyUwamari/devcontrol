@@ -143,7 +143,6 @@ export default function TenantsPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 mb-1.5">Enterprise</p>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Multi-Account Monitoring</h1>
           <p className="text-gray-500 text-sm mt-1.5">Monitor revenue, churn risk, and expansion signals across your tenant base.</p>
         </div>
@@ -177,9 +176,6 @@ export default function TenantsPage() {
       {/* PAGE HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#7C3AED', margin: '0 0 6px' }}>
-            Infrastructure
-          </p>
           <h1 style={{ fontSize: '1.875rem', fontWeight: 700, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
             Tenant Intelligence
           </h1>

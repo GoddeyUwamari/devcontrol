@@ -212,7 +212,6 @@ export default function ComplianceFrameworksPage() {
         {/* Page header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
           <div>
-            <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">Security</p>
             <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Compliance Intelligence</h1>
             <p className={PAGE_SUBTITLE_CLASS}>Detect compliance gaps and misconfigurations across your AWS environment — before they become audit failures.</p>
           </div>
@@ -446,10 +445,9 @@ export default function ComplianceFrameworksPage() {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
 
-      {/* Breadcrumb + header */}
+      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
         <div>
-          <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">Security / Compliance</p>
           <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Compliance</h1>
           <p className={PAGE_SUBTITLE_CLASS}>Track your compliance posture across industry standards and frameworks.</p>
         </div>

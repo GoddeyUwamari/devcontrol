@@ -188,7 +188,6 @@ export default function AnomalyRulesPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-label uppercase tracking-[0.04em] text-violet-700 mb-1.5">Security</p>
           <h1 className={PAGE_TITLE_CLASS}>Custom Anomaly Rules</h1>
           <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>Define custom detection thresholds and conditions for your infrastructure.</p>
         </div>
@@ -214,7 +213,6 @@ export default function AnomalyRulesPage() {
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-label uppercase tracking-[0.04em] text-violet-700 mb-1.5">Security</p>
           <h1 className={PAGE_TITLE_CLASS}>Custom Anomaly Rules</h1>
           <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>
             Define custom detection thresholds and alert conditions for your AWS infrastructure.

@@ -501,7 +501,6 @@ export default function EfficiencyPage() {
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-label font-semibold text-violet-600 uppercase tracking-[0.04em]" style={{ marginBottom: '6px' }}>Costs</p>
           <h1 className={PAGE_TITLE_CLASS} style={{ margin: '0 0 6px' }}>Cloud Efficiency Overview</h1>
           <p className={PAGE_SUBTITLE_CLASS}>Resource efficiency, spend breakdown, and cost-to-value analysis across your AWS environment.</p>
         </div>

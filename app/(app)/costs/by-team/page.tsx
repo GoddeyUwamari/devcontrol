@@ -113,7 +113,6 @@ export default function CostsByTeamPage() {
     return (
       <div className="max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen">
         <div className="mb-8">
-          <p className="text-label font-semibold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
           <h1 className={PAGE_TITLE_CLASS}>Cost Attribution</h1>
           <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>Attribution of AWS spend to teams, services, and resource types.</p>
         </div>
@@ -160,7 +159,6 @@ export default function CostsByTeamPage() {
       {/* ── HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <p className="text-label font-semibold uppercase tracking-widest text-violet-700 mb-1.5">Costs</p>
           <h1 className={PAGE_TITLE_CLASS}>Cost Attribution</h1>
           <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>
             Attribution of AWS spend to teams, services, and resource types.
