@@ -48,8 +48,10 @@ export function DispositionDialog({ action, busy, onSubmit, onClose, returnFocus
       <DialogContent
         className="max-w-md"
         onCloseAutoFocus={(event) => {
+          // Back to the opener; if a confirmed decision removed its row, the list has already moved focus.
+          event.preventDefault()
           const target = returnFocusTo()
-          if (target) { event.preventDefault(); target.focus() }
+          if (target?.isConnected) target.focus()
         }}
       >
         <DialogHeader>

@@ -19,8 +19,14 @@ const BUTTON = 'inline-flex min-h-11 items-center rounded-lg border border-slate
  * Accept risk is admins only (decision 3). An unknown role (null on the first render) fails closed: disabled.
  * The server stays the boundary; this only mirrors its rules.
  */
-export function FindingActions({ row, role, orgId }: { row: FindingRow; role: string | null; orgId: string | null }) {
-  const { run, busy } = useFindingDisposition(orgId)
+export function FindingActions({ row, role, orgId, onConfirmed }: {
+  row: FindingRow
+  role: string | null
+  orgId: string | null
+  /** Called once the server has confirmed, just before the list changes (the list then moves focus if needed). */
+  onConfirmed?: () => void
+}) {
+  const { run, busy } = useFindingDisposition(orgId, onConfirmed)
   const [dialog, setDialog] = useState<'dismiss' | 'accept-risk' | null>(null)
   const opener = useRef<'dismiss' | 'accept-risk'>('dismiss')
   const dismissButton = useRef<HTMLButtonElement>(null)

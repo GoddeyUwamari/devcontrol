@@ -39,7 +39,7 @@ const CELL = 'border-t border-slate-100 px-4 py-3 align-top'
  * One row: severity, the issue (with its status chip and first-found date), where, scope, and "Review" / "Hide",
  * which shows or hides the row's details in a full-width row below it. aria-expanded follows the real state.
  */
-function Row({ row, role, orgId }: { row: FindingRow; role: string | null; orgId: string | null }) {
+function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | null; orgId: string | null; onDecided: (rowId: string) => void }) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const status = STATUS_LABEL[row.status]
@@ -73,7 +73,7 @@ function Row({ row, role, orgId }: { row: FindingRow; role: string | null; orgId
       {open && (
         <tr id={panelId} data-testid="security-row-panel">
           <td colSpan={PAGE_COPY.tableHeaders.length} className="border-t border-slate-100 bg-slate-50 px-4 py-4">
-            <FindingPanel row={row} actions={row.canDisposition ? <FindingActions row={row} role={role} orgId={orgId} /> : null} />
+            <FindingPanel row={row} actions={row.canDisposition ? <FindingActions row={row} role={role} orgId={orgId} onConfirmed={() => onDecided(row.id)} /> : null} />
           </td>
         </tr>
       )}
@@ -102,8 +102,12 @@ export function FindingsList({ view, role, orgId }: { view: SecurityView; role: 
   const [grouped, setGrouped] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const section = useRef<HTMLElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
   const scrolled = useRef(false)
   const settled = view.empty !== null
+  // The rows as last shown, and a confirmed decision waiting for the list to change (founder decision on focus).
+  const order = useRef<string[]>([])
+  const pendingFocus = useRef<{ rowId: string; before: string[] } | null>(null)
 
   useEffect(() => {
     if (!settled || scrolled.current) return
@@ -113,7 +117,34 @@ export function FindingsList({ view, role, orgId }: { view: SecurityView; role: 
 
   const rows = filterRows(view.rows, filter)
   const shown = grouped || showAll ? rows : rows.slice(0, LIST_LIMIT)
+  const groups = grouped ? groupRows(rows) : null
+  const ids = (groups ? groups.flatMap((g) => g.rows) : shown).map((r) => r.id)
   const note = view.tiles.findings?.note ?? null
+
+  /**
+   * When a confirmed decision moves a row out of the current filter, keyboard focus goes to the next row's
+   * Review button, else the previous row's, else (the list is now empty) the "Security findings" heading.
+   * The toast announces the result; no new text. A row that stays in the filter keeps focus where it is.
+   */
+  useEffect(() => {
+    const pending = pendingFocus.current
+    order.current = ids
+    if (!pending) return
+    pendingFocus.current = null
+    if (ids.includes(pending.rowId)) return
+    const at = pending.before.indexOf(pending.rowId)
+    const target = pending.before.slice(at + 1).find((id) => ids.includes(id))
+      ?? pending.before.slice(0, Math.max(at, 0)).reverse().find((id) => ids.includes(id))
+    const rowEl = target
+      ? [...(section.current?.querySelectorAll<HTMLElement>('[data-testid="security-row"]') ?? [])].find((r) => r.dataset.rowId === target)
+      : undefined
+    ;(rowEl?.querySelector<HTMLElement>('button[aria-expanded]') ?? heading.current)?.focus()
+  })
+
+  const onDecided = (rowId: string) => {
+    // Set just before the confirmed row is written to the cache, so the next render is the changed list.
+    pendingFocus.current = { rowId, before: order.current }
+  }
 
   return (
     <section
@@ -123,7 +154,7 @@ export function FindingsList({ view, role, orgId }: { view: SecurityView; role: 
       aria-busy={!settled || undefined}
       className="flex min-w-0 flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:p-6"
     >
-      <h2 id="security-findings-heading" className="m-0 text-section text-ink">{PAGE_COPY.findingsHeading}</h2>
+      <h2 id="security-findings-heading" ref={heading} tabIndex={-1} className="m-0 text-section text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-600">{PAGE_COPY.findingsHeading}</h2>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
@@ -149,17 +180,17 @@ export function FindingsList({ view, role, orgId }: { view: SecurityView; role: 
           <table className="w-full min-w-[640px] border-collapse">
             <thead><HeaderRow /></thead>
             {grouped
-              ? groupRows(rows).map((g) => (
+              ? groups!.map((g) => (
                   <tbody key={g.key} data-testid="security-group">
                     <tr>
                       <th scope="rowgroup" colSpan={PAGE_COPY.tableHeaders.length} className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-left">
                         <h3 className="m-0 text-ui font-semibold text-ink">{g.label}</h3>
                       </th>
                     </tr>
-                    {g.rows.map((row) => <Row key={row.id} row={row} role={role} orgId={orgId} />)}
+                    {g.rows.map((row) => <Row key={row.id} row={row} role={role} orgId={orgId} onDecided={onDecided} />)}
                   </tbody>
                 ))
-              : <tbody>{shown.map((row) => <Row key={row.id} row={row} role={role} orgId={orgId} />)}</tbody>}
+              : <tbody>{shown.map((row) => <Row key={row.id} row={row} role={role} orgId={orgId} onDecided={onDecided} />)}</tbody>}
           </table>
         </div>
       )}

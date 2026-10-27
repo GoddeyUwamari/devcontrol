@@ -48,7 +48,7 @@ function request(action: DispositionAction, findingId: string, note: string | un
  * row written into the findings cache, the toast shown and the list refetched. Anything else is a failure: nothing
  * in the cache changes, no success is shown, and the caller keeps what the user typed.
  */
-export function useFindingDisposition(orgId: string | null) {
+export function useFindingDisposition(orgId: string | null, onConfirmed?: () => void) {
   const queryClient = useQueryClient()
   const [busy, setBusy] = useState(false)
 
@@ -64,6 +64,7 @@ export function useFindingDisposition(orgId: string | null) {
       if (!confirmed || confirmed.id !== findingId || confirmed.disposition !== EXPECTED_DISPOSITION[action]) {
         return { ok: false, failure: actionFailure(null) }
       }
+      onConfirmed?.()
       queryClient.setQueryData<AccountSecurityFinding[]>(['account-security-findings', orgId], (rows) =>
         rows?.map((row) => (row.id === findingId ? confirmed : row)))
       toast.success(SUCCESS_TOAST[action], { description: ACTION_COPY.toastDescription })

@@ -281,3 +281,68 @@ describe('the note dialog (e2 10; S1, S2, D3; accessibility)', () => {
     expect(h.posts).toEqual([])
   })
 })
+
+describe('focus after a confirmed decision moves the row out of the filter (founder decision)', () => {
+  const ids = () => within(findings()).getAllByTestId('security-row').map((r) => r.dataset.rowId!)
+  const toggleIn = (id: string) => within(rowOf(id)).getByRole('button', { name: /^(Show|Hide) details for / })
+  async function dismissVia(id: string) {
+    fireEvent.click(button(expand(id), 'Dismiss'))
+    const dialog = screen.getByRole('dialog', { name: 'Dismiss finding' })
+    fireEvent.change(within(dialog).getByLabelText('Reason (required)'), { target: { value: 'test-only reason' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(m.toast.success).toHaveBeenCalled())
+  }
+
+  it('to the next row\'s Review button', async () => {
+    await show({ [`POST ${BASE}/dismiss`]: ok(decided('dismissed')) })
+    h.routes[LIST] = ok(withDecision('dismissed'))
+    const before = ids()
+    expect(before.indexOf(ADMIN)).toBeLessThan(before.length - 1)
+    const next = before[before.indexOf(ADMIN) + 1]
+    await dismissVia(ADMIN)
+    await waitFor(() => expect(rowOf(ADMIN)).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(toggleIn(next)))
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(document.activeElement).toBe(toggleIn(next))
+  })
+  it('to the previous row\'s Review button when it was the last row', async () => {
+    const key = FINDINGS.find((f) => f.id === 'af-key')!
+    await show({
+      'GET /api/aws-resources/compliance': ok([]),
+      'POST /api/security/account-findings/af-key/dismiss': ok({ ...key, disposition: 'dismissed', derived_status: 'dismissed' }),
+    })
+    h.routes[LIST] = ok(FINDINGS.map((f) => (f.id === 'af-key' ? { ...f, disposition: 'dismissed', derived_status: 'dismissed' } : f)))
+    const before = ids()
+    expect(before[before.length - 1]).toBe('account:af-key')
+    const previous = before[before.length - 2]
+    await dismissVia('account:af-key')
+    await waitFor(() => expect(rowOf('account:af-key')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(toggleIn(previous)))
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(document.activeElement).toBe(toggleIn(previous))
+  })
+  it('to the "Security findings" heading when the list is now empty', async () => {
+    const dis = FINDINGS.find((f) => f.id === 'af-dis')!
+    await show({ 'POST /api/security/account-findings/af-dis/acknowledge': ok({ ...dis, disposition: 'acknowledged', derived_status: 'acknowledged' }) })
+    h.routes[LIST] = ok(FINDINGS.map((f) => (f.id === 'af-dis' ? { ...f, disposition: 'acknowledged', derived_status: 'acknowledged' } : f)))
+    fireEvent.click(screen.getByTestId('security-filter-dismissed'))
+    expect(ids()).toEqual(['account:af-dis'])
+    const ack = button(expand('account:af-dis'), 'Acknowledge')
+    ack.focus()
+    fireEvent.click(ack)
+    await waitFor(() => expect(m.toast.success).toHaveBeenCalled())
+    await waitFor(() => expect(within(findings()).queryAllByTestId('security-row')).toHaveLength(0))
+    const heading = screen.getByRole('heading', { name: 'Security findings' })
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    await waitFor(() => expect(document.activeElement).toBe(heading))
+  })
+  it('a row that stays in the filter keeps focus where it was', async () => {
+    await show({ [`POST ${BASE}/acknowledge`]: ok(decided('acknowledged')) })
+    h.routes[LIST] = ok(withDecision('acknowledged'))
+    const ack = button(expand(ADMIN), 'Acknowledge')
+    ack.focus()
+    fireEvent.click(ack)
+    await waitFor(() => expect(statusOf(ADMIN)).toBe('Acknowledged'))
+    expect(document.activeElement).toBe(ack)
+  })
+})
