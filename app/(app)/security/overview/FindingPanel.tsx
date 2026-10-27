@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import type { FindingRow } from './securityModel'
 import { PAGE_COPY } from './securityCopy'
+import { RegionText } from './RegionText'
 import { CopyStatement } from './CopyStatement'
 
 /**
@@ -17,7 +18,7 @@ export function FindingPanel({ row, actions }: { row: FindingRow; actions: React
   const copyable = g !== null && row.guidanceKey === 's3_https_only' && row.policyStatement !== null
   return (
     <div data-testid="security-panel" className="flex flex-col gap-4">
-      {row.description && <p data-testid="security-row-description" className="m-0 text-body text-ink">{row.description}</p>}
+      {row.description && <p data-testid="security-row-description" className="m-0 text-body text-ink"><RegionText text={row.description} /></p>}
       {g ? (
         <dl className="m-0 grid gap-3">
           <Entry term={PAGE_COPY.whyItMatters}>{g.whyItMatters}</Entry>
@@ -27,7 +28,7 @@ export function FindingPanel({ row, actions }: { row: FindingRow; actions: React
           </Entry>
         </dl>
       ) : row.recommendation && (
-        <p className="m-0 text-body text-ink-body">{row.recommendation}</p>
+        <p className="m-0 text-body text-ink-body"><RegionText text={row.recommendation} /></p>
       )}
 
       {row.webHint && <p data-testid="security-web-hint" className="m-0 text-body text-ink-body">{row.webHint}</p>}

@@ -153,10 +153,13 @@ describe('row titles (F2c fix 1)', () => {
     await show()
     expect(whereOf('account:af-web')).toBe('launch-wizard-1 · Security group · us-east-1')
     expect(whereOf('account:af-web')).not.toContain(SG)
-    // Each part is whole inside a nowrap span, so the cell wraps only between the " · " parts.
-    const parts = within(cells('account:af-web')[2]).getAllByTestId('security-where-part')
-    expect(parts.map((p) => p.textContent)).toEqual(['launch-wizard-1', 'Security group', 'us-east-1'])
-    for (const p of parts) expect(p.className, p.textContent!).toContain('whitespace-nowrap')
+    // The type and region stay whole in nowrap spans; the name may wrap anywhere.
+    const [name, type, region] = within(cells('account:af-web')[2]).getAllByTestId('security-where-part')
+    expect([name, type, region].map((p) => p.textContent)).toEqual(['launch-wizard-1', 'Security group', 'us-east-1'])
+    expect(name).not.toHaveClass('whitespace-nowrap')
+    expect(name).toHaveClass('wrap-anywhere')
+    expect(type).toHaveClass('whitespace-nowrap')
+    expect(region).toHaveClass('whitespace-nowrap')
     expect(within(findings()).getByText(TITLES[0][1]).closest('table')!.textContent).not.toContain(SG)
   })
 

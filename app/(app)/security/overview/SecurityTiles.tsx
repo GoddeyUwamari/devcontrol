@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Num } from '@/components/ui/typography'
 import type { SecurityView } from './securityModel'
 import { PAGE_COPY, PAGE_HREF } from './securityCopy'
+import { RegionText } from './RegionText'
 
 const LINK = 'mt-auto inline-flex min-h-11 w-fit items-center text-ui font-semibold text-ink-accent hover:underline'
 const RETRY = 'inline-flex min-h-11 w-fit items-center rounded-lg border border-slate-300 bg-white px-3 text-ui font-semibold text-ink hover:bg-slate-50'
@@ -36,7 +37,7 @@ export function SecurityTiles({ tiles, anomaliesError, onRetryScore, onRetryAnom
         {score.value !== null
           ? <p className="m-0 text-kpi text-ink"><Num>{score.value}</Num><span className="text-body text-ink-muted">{PAGE_COPY.scoreSuffix}</span></p>
           : <Dash />}
-        {score.caption && <p className="m-0 text-meta text-ink-muted">{score.caption}</p>}
+        {score.caption && <p className="m-0 text-meta text-ink-muted"><RegionText text={score.caption} /></p>}
         {score.retry && <button type="button" onClick={onRetryScore} className={RETRY}>{PAGE_COPY.retry}</button>}
       </Tile>
 

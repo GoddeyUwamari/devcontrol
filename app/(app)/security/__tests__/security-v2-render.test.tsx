@@ -121,6 +121,21 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
     expect(screen.getByTestId('security-tile-anomalies')).toHaveTextContent('2 open')
     expect(screen.getByRole('link', { name: 'Manage →' })).toHaveAttribute('href', '/compliance/frameworks')
   })
+  it('score caption: every region code stays on one line; the rest wraps', async () => {
+    await show()
+    const tile = screen.getByTestId('security-tile-score')
+    expect(tile).toHaveTextContent('resources in us-east-1 and S3 buckets in all regions, security groups in us-east-1, IAM users.')
+    const regions = within(tile).getAllByTestId('security-region')
+    expect(regions.map((r) => r.textContent)).toEqual(['us-east-1', 'us-east-1'])
+    for (const r of regions) expect(r).toHaveClass('whitespace-nowrap')
+    expect(regions[0].parentElement).not.toHaveClass('whitespace-nowrap')
+  })
+  it('"What we checked": the region code in "Security groups (us-east-1)" stays on one line', async () => {
+    await show()
+    const line = screen.getByTestId('security-checked-security-groups')
+    expect(within(line).getByTestId('security-region')).toHaveTextContent('us-east-1')
+    expect(within(line).getByTestId('security-region')).toHaveClass('whitespace-nowrap')
+  })
   it('the banner: headline left, "Not checked yet" right', async () => {
     await show()
     const banner = screen.getByTestId('security-banner')

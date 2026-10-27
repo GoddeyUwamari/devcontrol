@@ -12,6 +12,7 @@ import {
 } from './securityModel'
 import { LIST_LIMIT, PAGE_COPY } from './securityCopy'
 import { FindingPanel } from './FindingPanel'
+import { RegionText } from './RegionText'
 import { FindingActions } from './FindingActions'
 
 const SEVERITY_LEVELS: readonly string[] = ['critical', 'high', 'medium', 'low']
@@ -43,10 +44,12 @@ function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | 
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const status = STATUS_LABEL[row.status]
-  // Each part stays whole ("us-east-1", "Security group"); the cell wraps only between the " · "-separated parts.
-  const where = [row.where.name, row.where.kind, row.where.region].filter(Boolean).map((part, i) => (
-    <Fragment key={i}>{i > 0 && ' · '}<span data-testid="security-where-part" className="whitespace-nowrap">{part}</span></Fragment>
-  ))
+  // The type and region stay whole ("Security group", "us-east-1"); a long name may wrap anywhere.
+  const where = ([[row.where.name, 'wrap-anywhere'], [row.where.kind, 'whitespace-nowrap'], [row.where.region, 'whitespace-nowrap']] as const)
+    .filter(([part]) => part)
+    .map(([part, wrap], i) => (
+      <Fragment key={i}>{i > 0 && ' · '}<span data-testid="security-where-part" className={wrap}>{part}</span></Fragment>
+    ))
   // The accessible name says which resource; a row with no name ("…" or empty) keeps the plain form.
   const resource = row.where.name && row.where.name !== HIDDEN ? row.where.name : undefined
   return (
@@ -57,7 +60,7 @@ function Row({ row, role, orgId, onDecided }: { row: FindingRow; role: string | 
         </td>
         <td className={CELL}>
           <span className="flex min-w-0 flex-col items-start gap-0.5">
-            <span className="text-ui text-ink">{row.title}</span>
+            <span className="text-ui text-ink"><RegionText text={row.title} /></span>
             {row.webHint && <span data-testid="security-row-web-hint" className="text-meta text-ink-muted">{row.webHint}</span>}
             {status && <span data-testid="security-row-status" className="rounded-md bg-slate-100 px-2 py-0.5 text-label text-ink-body">{status}</span>}
             {row.firstFound && <span className="text-meta text-ink-muted">{row.firstFound}</span>}

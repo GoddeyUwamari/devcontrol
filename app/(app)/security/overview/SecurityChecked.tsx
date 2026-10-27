@@ -7,6 +7,7 @@ import { isServicesV2Enabled } from '../../services/servicesV2Flag'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
 import type { CheckedLine } from './securityModel'
 import { PAGE_COPY } from './securityCopy'
+import { RegionText } from './RegionText'
 
 /** What the score and findings rest on, and what they don't (plan §4). */
 export function SecurityChecked({ lines }: { lines: CheckedLine[] }) {
@@ -19,7 +20,7 @@ export function SecurityChecked({ lines }: { lines: CheckedLine[] }) {
         <ul className="m-0 flex list-none flex-col gap-2 p-0 text-ui">
           {lines.map((line) => (
             <li key={line.key} data-testid={`security-checked-${line.key}`} className="flex flex-wrap justify-between gap-x-3 text-ink-body">
-              <span>{line.label}</span>
+              <span><RegionText text={line.label} /></span>
               {line.status && (
                 <span className={cn('font-semibold', line.status === 'checked' ? 'text-ink-success' : 'text-ink-muted')}>
                   {line.status === 'checked' ? PAGE_COPY.checked : PAGE_COPY.notChecked}
