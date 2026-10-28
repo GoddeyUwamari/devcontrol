@@ -17,6 +17,7 @@
  * two windows are split and dispatched concurrently.
  */
 import { CloudWatchClient, GetMetricDataCommand, StatusCode } from '@aws-sdk/client-cloudwatch'
+import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy'
 
 export type BatchDimension = { Name: string; Value: string }
 
@@ -48,8 +49,36 @@ export interface BatchSeriesResult {
 // `.get(id)` for every query it submitted, whether or not AWS ever returned a result for it.
 export type BatchMetricResults = Map<string, BatchSeriesResult | null>
 
+/**
+ * How one query ended, which a `null` series cannot say:
+ *   complete       the query completed and returned at least one datapoint;
+ *   empty          the query completed and returned no datapoints;
+ *   access_denied  StatusCode Forbidden, or the request was refused;
+ *   throttled      the request was throttled (after the SDK's own retries);
+ *   query_failed   StatusCode InternalError or PartialData, the request failed
+ *                  otherwise, the query's Id never came back, or its results
+ *                  spanned more than one NextToken page (whose values the
+ *                  series below would hold only the last page of).
+ */
+export type QueryOutcome = 'complete' | 'empty' | 'access_denied' | 'throttled' | 'query_failed'
+
+export interface BatchQueryStatus {
+  outcome: QueryOutcome
+  // Newest datapoint timestamp; null unless outcome is 'complete'.
+  newestTimestamp: Date | null
+}
+
+export type BatchQueryStatuses = Map<string, BatchQueryStatus>
+
 // AWS hard limit: a single GetMetricData call accepts at most 500 MetricDataQuery entries.
 const MAX_QUERIES_PER_REQUEST = 500
+
+/** The outcome a whole failed request gives each of its queries. */
+function requestFailureOutcome(err: unknown): QueryOutcome {
+  if (isThrottlingError(err)) return 'throttled'
+  if (isAccessDeniedError(err)) return 'access_denied'
+  return 'query_failed'
+}
 
 /**
  * Fetches a set of CloudWatch metrics, all sharing one [startTime, endTime) window, in as
@@ -78,16 +107,40 @@ export async function fetchMetricDataBatch(
   startTime: Date,
   endTime: Date
 ): Promise<BatchMetricResults> {
+  return (await fetchMetricDataBatchWithStatus(client, queries, startTime, endTime)).results
+}
+
+/**
+ * The same requests as fetchMetricDataBatch(), returning its unchanged `results` map
+ * alongside each query's QueryOutcome. `results` is filled by exactly the code
+ * fetchMetricDataBatch() always ran, so the two never disagree on a value; `statuses`
+ * only adds what that map collapses to null.
+ */
+export async function fetchMetricDataBatchWithStatus(
+  client: CloudWatchClient,
+  queries: BatchMetricQuery[],
+  startTime: Date,
+  endTime: Date
+): Promise<{ results: BatchMetricResults; statuses: BatchQueryStatuses }> {
   const results: BatchMetricResults = new Map()
-  if (queries.length === 0) return results
+  const statuses: BatchQueryStatuses = new Map()
+  if (queries.length === 0) return { results, statuses }
   for (const q of queries) results.set(q.id, null)
 
   for (let offset = 0; offset < queries.length; offset += MAX_QUERIES_PER_REQUEST) {
     const chunk = queries.slice(offset, offset + MAX_QUERIES_PER_REQUEST)
-    await fetchChunk(client, chunk, startTime, endTime, results)
+    await fetchChunk(client, chunk, startTime, endTime, results, statuses)
   }
 
-  return results
+  return { results, statuses }
+}
+
+function newestOf(timestamps: Date[]): Date | null {
+  let newest: Date | null = null
+  for (const ts of timestamps) {
+    if (ts instanceof Date && !isNaN(ts.getTime()) && (newest === null || ts > newest)) newest = ts
+  }
+  return newest
 }
 
 async function fetchChunk(
@@ -95,8 +148,12 @@ async function fetchChunk(
   chunk: BatchMetricQuery[],
   startTime: Date,
   endTime: Date,
-  results: BatchMetricResults
+  results: BatchMetricResults,
+  statuses: BatchQueryStatuses
 ): Promise<void> {
+  // Pages each Id appeared on, and its outcome on the last of them.
+  const pagesSeen = new Map<string, number>()
+  const seen = new Map<string, BatchQueryStatus>()
   try {
     let nextToken: string | undefined
     do {
@@ -121,8 +178,10 @@ async function fetchChunk(
         // Map by Id, never by array position -- GetMetricData does not document that
         // MetricDataResults preserves MetricDataQueries' order.
         if (!result.Id) continue
-        if (result.StatusCode === StatusCode.INTERNAL_ERROR || result.StatusCode === StatusCode.FORBIDDEN) continue
+        pagesSeen.set(result.Id, (pagesSeen.get(result.Id) ?? 0) + 1)
         const values = result.Values ?? []
+        seen.set(result.Id, statusOf(result.StatusCode, values.length, result.Timestamps ?? []))
+        if (result.StatusCode === StatusCode.INTERNAL_ERROR || result.StatusCode === StatusCode.FORBIDDEN) continue
         if (values.length === 0) continue
         results.set(result.Id, { timestamps: result.Timestamps ?? [], values })
       }
@@ -133,7 +192,27 @@ async function fetchChunk(
     console.error('[CloudWatch] GetMetricData batch request failed:', err)
     // Every id in this chunk stays null (already pre-seeded in fetchMetricDataBatch) --
     // other chunks are unaffected, since this catch only wraps this one chunk's requests.
+    // The whole request failed, so no query in it completed, whatever an earlier page said.
+    const outcome = requestFailureOutcome(err)
+    for (const q of chunk) statuses.set(q.id, { outcome, newestTimestamp: null })
+    return
   }
+
+  for (const q of chunk) {
+    const status = seen.get(q.id)
+    if (!status || (pagesSeen.get(q.id) ?? 0) > 1) {
+      statuses.set(q.id, { outcome: 'query_failed', newestTimestamp: null })
+    } else {
+      statuses.set(q.id, status)
+    }
+  }
+}
+
+function statusOf(statusCode: string | undefined, valueCount: number, timestamps: Date[]): BatchQueryStatus {
+  if (statusCode === StatusCode.FORBIDDEN) return { outcome: 'access_denied', newestTimestamp: null }
+  if (statusCode !== StatusCode.COMPLETE) return { outcome: 'query_failed', newestTimestamp: null }
+  if (valueCount === 0) return { outcome: 'empty', newestTimestamp: null }
+  return { outcome: 'complete', newestTimestamp: newestOf(timestamps) }
 }
 
 /**
