@@ -123,13 +123,13 @@ describe('transitions', () => {
     expect(screen.queryByTestId('compliance-stale-banner')).toBeNull()
   })
 
-  it('failed → retry → current: the failed row\'s "Re-evaluate now" retries it', async () => {
+  it('failed → retry → current: the failed row\'s "Try again" retries it', async () => {
     h.routes[START] = ok({ scanId: 's-new' })
     await show([failed('s-2', DAY), scan('s-1', 'fw-1', 'completed', '0.00', 2 * DAY)])
     expect(score()).toHaveTextContent('No score is shown as current.')
     const failedRow = screen.getAllByTestId('evaluation-history-row')[0]
     expect(failedRow).toHaveAttribute('data-status', 'failed')
-    await start(within(failedRow).getByRole('button', { name: 'Re-evaluate now' }), [running('s-new', 0), failed('s-2', DAY), scan('s-1', 'fw-1', 'completed', '0.00', 2 * DAY)])
+    await start(within(failedRow).getByRole('button', { name: 'Try again' }), [running('s-new', 0), failed('s-2', DAY), scan('s-1', 'fw-1', 'completed', '0.00', 2 * DAY)])
     expect(historyTexts()[0]).toContain('Running')
     list([done('s-new', 0), failed('s-2', DAY), scan('s-1', 'fw-1', 'completed', '0.00', 2 * DAY)])
     await advance(5 * SEC)

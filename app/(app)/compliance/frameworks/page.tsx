@@ -518,16 +518,15 @@ function ComplianceResultsPage() {
         <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-5 py-3.5 mb-4"><p className="text-ui text-ink-danger">{COMPLIANCE_COPY.loadFailed}</p></div>
       )}
 
-      {/* A failed newest run surfaces at the top, with "Try again" for that framework (founder answer 1, Oct 27). */}
-      {view.failed.map((f) => (
-        <div key={f.frameworkId} data-testid="compliance-failed-banner" className="bg-red-50 border border-red-200 rounded-xl px-4 py-3.5 mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-          <div>
-            <p className="text-ui font-semibold text-ink-danger">{f.title}</p>
-            <p className="text-meta text-ink-body leading-relaxed">{f.text}</p>
-          </div>
-          {startControl(f.frameworkId, COMPLIANCE_COPY.tryAgain, 'failed-banner')}
+      {/* Failed newest runs surface at the top, above the out-of-date banner (founder wording, Oct 28). */}
+      {view.failed && (
+        <div data-testid="compliance-failed-banner" className="bg-red-50 border border-red-200 rounded-xl px-4 py-3.5 mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <p className="text-meta text-ink-danger leading-relaxed">{view.failed.text}</p>
+          {view.failed.kind === 'one'
+            ? startControl(view.failed.frameworkId, COMPLIANCE_COPY.tryAgain, 'failed-banner')
+            : <a href="#evaluation-history" className={PLAN_LINK}>{COMPLIANCE_COPY.review}</a>}
         </div>
-      ))}
+      )}
 
       {/* D2 / Q4: the out-of-date banner. */}
       {view.banner && (
@@ -737,7 +736,7 @@ function ComplianceResultsPage() {
                     <p className="text-ui text-slate-900">{row.text}</p>
                     {row.note && <p className="text-meta text-ink-muted">{row.note}</p>}
                   </div>
-                  {row.canReEvaluate && startControl(row.frameworkId, COMPLIANCE_COPY.reEvaluateNow, `history-${row.id}`)}
+                  {row.canReEvaluate && startControl(row.frameworkId, row.action, `history-${row.id}`)}
                 </div>
               ))}
             </div>

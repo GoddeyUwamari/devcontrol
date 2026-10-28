@@ -44,8 +44,7 @@ export const COMPLIANCE_COPY = {
   viewerCantAddFrameworks: "Viewers can't add frameworks.",
   // The sync is requireAdmin (security-hub.routes.ts:61): members and viewers alike (founder follow-up, Oct 27).
   onlyAdminsSyncSecurityHub: 'Only admins can sync Security Hub.',
-  // The failed banner (founder answer 1 on the F3b calls): the mock's text, with "Try again".
-  failedTitle: 'The last evaluation failed',
+  // The failed banner (founder wording, Oct 28): mirrors the out-of-date banner; "Try again" on the newest failed run.
   tryAgain: 'Try again',
   // D3: the Security Hub card body, per state (Q5: in place of the "isn't enabled" text).
   shNotEnabled: 'Turn it on in your AWS account, then sync to evaluate CIS, PCI DSS and NIST.',
@@ -128,8 +127,8 @@ export type BannerView =
   | { kind: 'one'; text: string; frameworkId: string }
   | { kind: 'many'; text: string }
 
-/** A framework whose newest run failed: surfaced at the top, with "Try again" for that framework. */
-export interface FailedBannerView { frameworkId: string; title: string; text: string }
+/** Frameworks whose newest run failed: one named with "Try again", or a count with "Review" (founder wording, Oct 28). */
+export type FailedBannerView = BannerView
 
 export interface HistoryRow {
   id: string
@@ -139,14 +138,16 @@ export interface HistoryRow {
   note: string | null
   /** Q4: the newest row of each framework that isn't running offers "Re-evaluate now". */
   canReEvaluate: boolean
+  /** The action's label: "Try again" on a framework's newest run when it failed, otherwise "Re-evaluate now". */
+  action: string
 }
 
 export interface ComplianceView {
   status: Loadable<unknown>['status']
   tiles: { score: Tile; critical: Tile; high: Tile; frameworks: Tile }
   banner: BannerView | null
-  /** One per enabled framework whose newest run failed, the most recent failure first. */
-  failed: FailedBannerView[]
+  /** The enabled frameworks whose newest run failed; shown alongside the out-of-date banner, never instead of it. */
+  failed: FailedBannerView | null
   history: HistoryRow[]
 }
 
@@ -234,21 +235,20 @@ function banner(results: Loadable<FrameworkResults>, now: number, overlay: Evalu
   return { kind: 'one', frameworkId: framework.id, text: `Results are out of date — ${framework.name} was last evaluated ${whenOf(e.lastDone!, now)}.` }
 }
 
-/** The Security page's failed text, with the day of the failed run (completed, else started, else created). */
-function failedBanners(results: Loadable<FrameworkResults>, now: number, overlay: EvaluationOverlay): FailedBannerView[] {
-  if (results.status !== 'ready') return []
-  return evaluateAll(results.data, now, overlay)
-    .filter((x) => x.e.state === 'failed')
-    .map(({ framework, e }) => ({ framework, latest: e.latest! }))
-    .sort((a, b) => byNewest(a.latest, b.latest))
-    .map(({ framework, latest }) => {
-      const on = formatLocalDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
-      return {
-        frameworkId: framework.id,
-        title: COMPLIANCE_COPY.failedTitle,
-        text: `The last run failed${on ? ` on ${on}` : ''}. No score is shown as current.`,
-      }
-    })
+/** With the day of the failed run (completed, else started, else created). */
+function failedBanner(results: Loadable<FrameworkResults>, now: number, overlay: EvaluationOverlay): FailedBannerView | null {
+  if (results.status !== 'ready') return null
+  const failed = evaluateAll(results.data, now, overlay).filter((x) => x.e.state === 'failed')
+  if (failed.length === 0) return null
+  if (failed.length > 1) return { kind: 'many', text: `${failed.length} frameworks failed their last evaluation.` }
+  const { framework, e } = failed[0]
+  const latest = e.latest!
+  const on = formatLocalDay(latest.completed_at ?? latest.started_at ?? latest.created_at, now)
+  return {
+    kind: 'one',
+    frameworkId: framework.id,
+    text: `The last evaluation of ${framework.name} failed${on ? ` on ${on}` : ''}. ${COMPLIANCE_COPY.noScoreCurrent}`,
+  }
 }
 
 function historyText(s: ComplianceScan, name: string, now: number): { text: string; note: string | null } {
@@ -278,7 +278,8 @@ function history(results: Loadable<FrameworkResults>, now: number, overlay: Eval
     // Only the newest row of a framework still in the list, and not while a run of it is live.
     const canReEvaluate = !!framework && !!e && !offered.has(s.framework_id) && (e.state !== 'running' || e.overdue)
     offered.add(s.framework_id)
-    return { id: s.id, frameworkId: s.framework_id, status: s.status, canReEvaluate, ...historyText(s, framework?.name ?? 'Custom framework', now) }
+    const action = canReEvaluate && s.status === 'failed' && e!.state === 'failed' ? COMPLIANCE_COPY.tryAgain : COMPLIANCE_COPY.reEvaluateNow
+    return { id: s.id, frameworkId: s.framework_id, status: s.status, canReEvaluate, action, ...historyText(s, framework?.name ?? 'Custom framework', now) }
   })
 }
 
@@ -292,7 +293,7 @@ export function describeCompliance(
     status: results.status,
     tiles: { ...scoreTiles(results, now, overlay), frameworks: frameworksTile(results, sh) },
     banner: banner(results, now, overlay),
-    failed: failedBanners(results, now, overlay),
+    failed: failedBanner(results, now, overlay),
     history: history(results, now, overlay),
   }
 }

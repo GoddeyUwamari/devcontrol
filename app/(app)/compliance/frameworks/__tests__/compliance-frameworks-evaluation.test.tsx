@@ -184,14 +184,38 @@ describe('out-of-date banner (D2, Q4)', () => {
   })
 })
 
-describe('failed banner (founder answer 1 on the F3b calls)', () => {
-  it('a failed newest run: "The last evaluation failed" with "Try again", which starts that framework\'s run', async () => {
+describe('failed banner (founder wording, Oct 28)', () => {
+  it('one failed framework: named, with "Try again", which starts that framework\'s run', async () => {
     await show({ [SCANS]: ok([scan('s-2', 'fw-1', 'failed', null, DAY), scan('s-1', 'fw-1', 'completed', null, 2 * DAY)]), [START]: ok({ scanId: 's-new' }) })
     const banner = screen.getByTestId('compliance-failed-banner')
-    expect(banner).toHaveTextContent('The last evaluation failed')
-    expect(banner).toHaveTextContent('The last run failed on Oct 22. No score is shown as current.')
+    expect(banner).toHaveTextContent('The last evaluation of Example baseline failed on Oct 22. No score is shown as current.')
+    expect(within(banner).queryByRole('link', { name: 'Review' })).toBeNull()
     fireEvent.click(within(banner).getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(h.posts).toEqual([{ path: '/api/compliance-frameworks/fw-1/scan', body: {} }]))
+  })
+  it('two or more: one banner with the count and Review; each newest failed row in the history has "Try again"', async () => {
+    await show({
+      [FRAMEWORKS]: ok([A, framework('fw-2', 'Example tagging')]),
+      [SCANS]: ok([scan('s-2', 'fw-2', 'failed', null, DAY), scan('s-1', 'fw-1', 'failed', null, 2 * DAY)]),
+    })
+    const banners = screen.getAllByTestId('compliance-failed-banner')
+    expect(banners).toHaveLength(1)
+    expect(banners[0]).toHaveTextContent('2 frameworks failed their last evaluation.')
+    expect(within(banners[0]).getByRole('link', { name: 'Review' })).toHaveAttribute('href', '#evaluation-history')
+    expect(within(banners[0]).queryByRole('button')).toBeNull()
+    expect(document.getElementById('evaluation-history')).not.toBeNull()
+    expect(screen.getAllByTestId('evaluation-history-row').map((r) => within(r).getByRole('button').textContent?.trim())).toEqual(['Try again', 'Try again'])
+  })
+  it('failed and out of date at the same time: both banners show, the failed one first', async () => {
+    await show({
+      [FRAMEWORKS]: ok([A, framework('fw-2', 'Example tagging')]),
+      [SCANS]: ok([scan('s-2', 'fw-1', 'failed', null, DAY), scan('s-1', 'fw-2', 'completed', null, 9 * DAY)]),
+    })
+    const failed = screen.getByTestId('compliance-failed-banner')
+    const stale = screen.getByTestId('compliance-stale-banner')
+    expect(failed).toHaveTextContent('The last evaluation of Example baseline failed on Oct 22.')
+    expect(stale).toHaveTextContent('Results are out of date — Example tagging was last evaluated Oct 14, 3:00 PM.')
+    expect(failed.compareDocumentPosition(stale) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
   it('no failed banner while a newer run is running, or once a newer run completed', async () => {
     await show({ [SCANS]: ok([scan('s-3', 'fw-1', 'running', null, 1000), scan('s-2', 'fw-1', 'failed', null, DAY)]) })
