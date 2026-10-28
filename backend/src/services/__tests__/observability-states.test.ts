@@ -10,6 +10,8 @@ import {
   ResourceEvidence,
   RowContext,
   accountIdOfResourceArn,
+  aggregateOutcome,
+  checkCompleted,
   checkObserved,
   observabilityRowFor,
   typeSummaryOf,
@@ -184,6 +186,19 @@ describe('observabilityRowFor: check_status', () => {
       ctx()
     )
     expect(denied).toMatchObject({ check_status: 'unknown', unknown_reason: 'access_denied' })
+  })
+
+  it('(review F8) a check that recorded no query is unknown/query_failed, never passing, never a completed collection', () => {
+    expect(aggregateOutcome([])).toBe('query_failed')
+    const nothing = cw({}, { newestDatapointAt: null })
+    const r = observabilityRowFor(inv('ec2'), row('healthy'), nothing, ctx())
+    expect(r).toMatchObject({ check_status: 'unknown', unknown_reason: 'query_failed', telemetry: 'unknown', last_seen: null })
+    expect(checkCompleted(nothing, ctx())).toBe(false)
+    expect(checkObserved(nothing, ctx())).toBe(false)
+    expect(typeSummaryOf([r]).ec2).toEqual({ count: 1, passing: 0, needs_attention: 0, failing: 0, other: 1 })
+    // A resource no query could be built for (marked unsupported) stays not_supported.
+    const unbuildable = { kind: 'point_in_time' as const, queries: {}, newestDatapointAt: null, unsupported: true }
+    expect(observabilityRowFor(inv('ecs'), row('unknown'), unbuildable, ctx())).toMatchObject({ check_status: 'unknown', unknown_reason: 'not_supported' })
   })
 
   it('(S10) a throttled activity query never gives no_activity', () => {

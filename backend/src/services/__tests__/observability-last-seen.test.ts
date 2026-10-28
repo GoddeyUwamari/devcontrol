@@ -165,6 +165,43 @@ describe('checked_at', () => {
   })
 })
 
+describe('a check that recorded no query (review F8)', () => {
+  it('makes the collection partial: checked_at never advances, and nothing is stored as observed', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('no-query')
+    const id = idsByName['web-running']
+    const resources = [{
+      id, resource_id: 'i-1234567890abcdef0', resource_name: 'web-running', resource_type: 'ec2',
+      resource_arn: `arn:aws:ec2:${REGION}:${accountId}:instance/i-1234567890abcdef0`, region: REGION, status: 'running', metadata: null,
+    }]
+    const healthyRow = {
+      resourceId: 'i-1234567890abcdef0', resourceDbId: id, resourceSortName: 'web-running', name: 'web-running', description: '',
+      resourceType: 'ec2', status: 'healthy', uptime: 100, responseTimeMs: null, errorRate: null, critical: true, monitored: true,
+    }
+    const build = (queries: Record<string, string>, sweepAt: Date) =>
+      (new CloudWatchService() as any).buildObservabilitySnapshot({
+        organizationId: orgId, accountId, region: REGION, range: '1h', sweepAt, resources, services: [healthyRow],
+        evidence: new Map([[id, { kind: 'cloudwatch', queries, newestDatapointAt: Object.keys(queries).length ? DATAPOINT_AT : null }]]),
+        failedBlocks: new Set(),
+      })
+
+    const first = await build({}, new Date('2026-10-28T10:00:00.000Z'))
+    expect(first.collection).toBe('partial')
+    expect(first.checkedAt).toBeNull()
+    expect(first.rows[0].row).toMatchObject({ check_status: 'unknown', unknown_reason: 'query_failed', telemetry: 'unknown' })
+    expect(await storedRow(orgId)).toEqual([])
+
+    const complete = await build({ statusCheckFailed: 'complete', cpu: 'complete' }, new Date('2026-10-28T10:05:00.000Z'))
+    expect(complete.collection).toBe('complete')
+    expect(complete.checkedAt).toBe('2026-10-28T10:05:00.000Z')
+
+    const again = await build({}, new Date('2026-10-28T10:10:00.000Z'))
+    expect(again.collection).toBe('partial')
+    expect(again.checkedAt).toBe('2026-10-28T10:05:00.000Z')
+    const stored = await storedRow(orgId)
+    expect(stored[0].last_successful_check_at.toISOString()).toBe('2026-10-28T10:05:00.000Z')
+  })
+})
+
 describe('inventory coverage', () => {
   it('(P6) capped from the newest finished discovery job: truncated -> true, clean -> false, none -> null', async () => {
     const { orgId } = await newOrg('coverage')

@@ -148,8 +148,13 @@ export function accountIdOfResourceArn(arn: string | null | undefined): string |
 
 const FAILURE_ORDER: QueryOutcome[] = ['access_denied', 'throttled', 'query_failed']
 
-/** The worst failure among the outcomes; else 'empty' when every one is empty; else 'complete'. */
+/**
+ * The worst failure among the outcomes; else 'empty' when every one is empty; else
+ * 'complete'. No outcomes at all is query_failed: a check that ran no query measured
+ * nothing, so it can never count as a completed collection.
+ */
 export function aggregateOutcome(outcomes: QueryOutcome[]): QueryOutcome {
+  if (outcomes.length === 0) return 'query_failed'
   for (const failure of FAILURE_ORDER) if (outcomes.includes(failure)) return failure
   if (outcomes.length > 0 && outcomes.every((o) => o === 'empty')) return 'empty'
   return 'complete'
@@ -247,6 +252,9 @@ function verdictFor(
   // Evaluated type, but no row: its dimension could not be resolved.
   if (!row || !evidence) return unknown('not_supported')
 
+  // A resource the check can't evaluate at all (no query could be built for it) is
+  // not_supported, not a failed collection.
+  if (evidence.unsupported && Object.keys(evidence.queries).length === 0) return unknown('not_supported')
   const all = aggregateOutcome(Object.values(evidence.queries))
   if (isFailure(all)) return unknown(all)
 
@@ -254,7 +262,9 @@ function verdictFor(
     .filter(([key]) => evidence.kind === 'point_in_time' || key !== 'describe')
     .map(([, outcome]) => outcome)
   const telemetryOutcome = aggregateOutcome(datapointOutcomes)
-  const telemetry: TelemetryState = evidence.unsupported ? 'unknown' : telemetryOutcome === 'empty' ? 'no_telemetry' : 'reporting'
+  // No datapoint query at all is no telemetry evidence either way: unknown.
+  const telemetry: TelemetryState =
+    evidence.unsupported || isFailure(telemetryOutcome) ? 'unknown' : telemetryOutcome === 'empty' ? 'no_telemetry' : 'reporting'
 
   let activity: ActivityState | null = null
   if (evidence.activity) {
