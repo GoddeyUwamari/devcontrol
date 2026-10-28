@@ -9,6 +9,8 @@
 import { Client } from 'pg'
 import * as fs from 'fs'
 import * as path from 'path'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getMigrationFiles } = require('../../../../database/migrate.js')
 
 const ADMIN_DIR = path.join(__dirname, '../../../../database/migrations-admin')
 const MIGRATION_FILE = '202610281200_create_resource_telemetry_observations.sql'
@@ -37,6 +39,14 @@ describe('202610281200_create_resource_telemetry_observations', () => {
       'CREATE TABLE resource_telemetry_observations',
       'CREATE TABLE observability_collection_scopes',
     ])
+  })
+
+  it('is administrative: invisible to the ordinary path, after 202610191200, and its rollback is never selected', () => {
+    expect(getMigrationFiles(path.join(__dirname, '../../../../database/migrations'))).not.toContain(MIGRATION_FILE)
+    const adminFiles: string[] = getMigrationFiles(ADMIN_DIR)
+    expect(adminFiles).toContain(MIGRATION_FILE)
+    expect(adminFiles).not.toContain('202610281200_create_resource_telemetry_observations_rollback.sql')
+    expect(adminFiles.indexOf(MIGRATION_FILE)).toBeGreaterThan(adminFiles.indexOf('202610191200_create_multi_region_scan_foundation.sql'))
   })
 
   it('every non-key column is nullable', async () => {

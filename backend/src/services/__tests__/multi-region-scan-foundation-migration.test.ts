@@ -561,7 +561,8 @@ describe(`${MIGRATION_FILE}: re-run and refusals`, () => {
     const adminFiles: string[] = getMigrationFiles(ADMIN_DIR);
     expect(adminFiles).toContain(MIGRATION_FILE);
     expect(adminFiles).not.toContain(ROLLBACK_FILE);
-    expect(adminFiles[adminFiles.length - 1]).toBe(MIGRATION_FILE);
+    // Runs after the admin migration that preceded it (a later admin migration may sort after it).
+    expect(adminFiles.indexOf(MIGRATION_FILE)).toBeGreaterThan(adminFiles.indexOf('202610161210_create_resource_health_evaluations.sql'));
   });
 });
 
