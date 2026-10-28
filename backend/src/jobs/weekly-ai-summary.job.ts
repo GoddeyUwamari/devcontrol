@@ -388,23 +388,4 @@ Questions? Reply to this email or contact support.
 
     return text;
   }
-
-  /**
-   * Test email configuration
-   */
-  async testEmailConfig(): Promise<boolean> {
-    if (!this.resend) {
-      console.error('[Weekly AI Summary] Resend client not configured');
-      return false;
-    }
-
-    try {
-      // Resend doesn't have a verify method, so we just check if the client is initialized
-      console.log('[Weekly AI Summary] Resend client verified (API key configured)');
-      return true;
-    } catch (error: any) {
-      console.error('[Weekly AI Summary] Resend config test failed:', error.message);
-      return false;
-    }
-  }
 }

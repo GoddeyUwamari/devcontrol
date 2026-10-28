@@ -369,5 +369,10 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-// Start the server
-startServer();
+// Start the server. Jest imports this module to check every route's auth
+// (__tests__/route-auth-inventory.test.ts) and must not start it.
+if (!process.env.JEST_WORKER_ID) {
+  startServer();
+}
+
+export default app;

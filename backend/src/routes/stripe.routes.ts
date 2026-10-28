@@ -11,10 +11,9 @@ const router = Router();
 // Webhook route MUST come FIRST. Raw body is already applied at the app
 // level in server.ts (RAW_BODY_PATHS) before requests reach this router —
 // do not re-apply express.raw() here, it would double-parse the body.
-router.post(
-  '/webhook',
-  stripeController.handleWebhook.bind(stripeController)
-);
+export const stripeWebhookHandler = stripeController.handleWebhook.bind(stripeController);
+
+router.post('/webhook', stripeWebhookHandler);
 
 // All other Stripe routes require authentication
 router.post(

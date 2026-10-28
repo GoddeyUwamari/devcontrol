@@ -48,7 +48,7 @@ async function resolveServiceId(repoName: string, organizationId: string): Promi
 // records completed deploy-backend job runs as `deployments` rows, which
 // feeds Deployment Frequency, Lead Time, Change Failure Rate and MTTR on the
 // DORA metrics page.
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+export async function githubWebhookHandler(req: Request, res: Response): Promise<void> {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) {
     console.error('[github-webhook] GITHUB_WEBHOOK_SECRET is not configured');
@@ -155,6 +155,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       res.status(500).json({ success: false, error: 'Failed to record deployment' });
     }
   });
-});
+}
+
+router.post('/', githubWebhookHandler);
 
 export default router;

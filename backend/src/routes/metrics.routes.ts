@@ -14,7 +14,7 @@ function tokenMatches(presented: string, expected: string): boolean {
 
 // Without METRICS_TOKEN, or without the right bearer token, the request falls
 // through to the app's 404 handler so the endpoint looks like any unknown path.
-function requireMetricsToken(req: Request, res: Response, next: NextFunction): void {
+export function requireMetricsToken(req: Request, res: Response, next: NextFunction): void {
   const expected = process.env.METRICS_TOKEN
   if (!expected) {
     return next('router')
