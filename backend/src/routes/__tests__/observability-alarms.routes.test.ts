@@ -26,6 +26,7 @@ jest.mock('../../services/aws-client-factory.service', () => ({
 }));
 
 import observabilityAlarmsRoutes from '../observability-alarms.routes';
+import { cloudWatchAlarmsService } from '../../services/cloudwatch-alarms.service';
 import observabilityRoutes from '../observability.routes';
 import { AWSClientFactory, assumedRoleSourceOf } from '../../services/aws-client-factory.service';
 import * as accountsRepository from '../../repositories/aws-accounts.repository';
@@ -98,6 +99,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   sends.length = 0;
+  // The route's singleton caches for 60 s; without this, a later test is answered from an earlier one's cache.
+  cloudWatchAlarmsService.clearCacheForTests();
   // The caller's real eligible account, assumed by a fake: its CloudWatch answers for that row only.
   jest.spyOn(AWSClientFactory, 'createClients').mockImplementation(async (organizationId: string) => {
     const account = await requireEligibleAwsAccount(appPool, organizationId);
@@ -156,12 +159,17 @@ describe('GET /api/observability/alarms', () => {
 
   it('each organization gets only its own account\'s alarms; the query string selects nothing', async () => {
     const a = await (await get(orgA, 'viewer', `?org=${orgB.orgId}&account_id=${accountRowB}&region=eu-west-1`)).json();
+    // Each request read AWS (the cache was cleared) and only through its caller's own account row.
+    expect(sends.length).toBeGreaterThan(0);
+    expect(new Set(sends.map((s) => s.accountRowId))).toEqual(new Set([accountRowA]));
+    sends.length = 0;
     const b = await (await get(orgB, 'viewer', `?org=${orgA.orgId}&account_id=${accountRowA}&region=us-east-1`)).json();
+    expect(sends.length).toBeGreaterThan(0);
+    expect(new Set(sends.map((s) => s.accountRowId))).toEqual(new Set([accountRowB]));
     expect(a.data.region).toBe('us-east-1');
     expect(a.data.in_alarm.map((i: { name: string }) => i.name)).toEqual(['org-a-alarm']);
     expect(b.data.region).toBe('eu-west-1');
     expect(b.data.in_alarm.map((i: { name: string }) => i.name)).toEqual(['org-b-alarm', 'org-b-second']);
-    expect(sends.every((s) => s.accountRowId === accountRowA || s.accountRowId === accountRowB)).toBe(true);
     const text = JSON.stringify(a) + JSON.stringify(b);
     expect(text).not.toMatch(/arn:aws:|description not kept|\b\d{12}\b/);
   });
