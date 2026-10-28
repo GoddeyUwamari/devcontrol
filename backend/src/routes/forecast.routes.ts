@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Pool } from 'pg';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requirePro } from '../middleware/subscription.middleware';
 import { ForecastController } from '../controllers/forecast.controller';
 
 export const createForecastRoutes = (pool: Pool): Router => {
@@ -9,7 +10,9 @@ export const createForecastRoutes = (pool: Pool): Router => {
 
   // All routes require authentication — scopes forecast generation to the
   // caller's own organization instead of falling back to the hardcoded default.
+  // Forecasting is a Pro feature, checked on the server for every route.
   router.use(authenticateToken);
+  router.use(requirePro);
 
   /**
    * GET /api/forecast

@@ -1,7 +1,8 @@
 /**
  * Remediation Workflow Routes
- * All execution endpoints are Enterprise-only and require admin/owner role.
- * Creating a draft is Enterprise-only and requires member, admin or owner.
+ * Every route, reads included, is Enterprise-only.
+ * Execution endpoints require admin/owner role.
+ * Creating a draft requires member, admin or owner.
  * IMPORTANT: No AWS action is taken without explicit human approval.
  */
 
@@ -53,8 +54,10 @@ export function createRemediationRoutes(pool: Pool): Router {
   const service = new RemediationService(pool);
   const recommendations = new CostRecommendationsRepository();
 
-  // All routes require authentication
+  // All routes require authentication and an Enterprise plan, reads included.
+  // The plan is checked before any role gate.
   router.use(authenticateToken);
+  router.use(requireEnterprise);
 
   // ─── List workflows ──────────────────────────────────────────────────────
   router.get('/', async (req: Request, res: Response) => {
@@ -70,7 +73,7 @@ export function createRemediationRoutes(pool: Pool): Router {
 
   // ─── Create workflow ─────────────────────────────────────────────────────
   // A draft only: two database rows, no AWS call. Viewers are refused.
-  router.post('/', requireEnterprise, requireMember, async (req: Request, res: Response) => {
+  router.post('/', requireMember, async (req: Request, res: Response) => {
     try {
       const {
         recommendationId,
@@ -168,7 +171,7 @@ export function createRemediationRoutes(pool: Pool): Router {
   });
 
   // ─── Approve ─────────────────────────────────────────────────────────────
-  router.post('/:id/approve', requireEnterprise, async (req: Request, res: Response) => {
+  router.post('/:id/approve', async (req: Request, res: Response) => {
     if (!requireAdminOrOwner(req, res)) return;
 
     try {
@@ -187,7 +190,7 @@ export function createRemediationRoutes(pool: Pool): Router {
   });
 
   // ─── Reject ──────────────────────────────────────────────────────────────
-  router.post('/:id/reject', requireEnterprise, async (req: Request, res: Response) => {
+  router.post('/:id/reject', async (req: Request, res: Response) => {
     if (!requireAdminOrOwner(req, res)) return;
 
     try {
@@ -210,7 +213,6 @@ export function createRemediationRoutes(pool: Pool): Router {
   // ─── Execute — Enterprise only, admin/owner only, rate-limited ───────────
   router.post(
     '/:id/execute',
-    requireEnterprise,
     remediationExecuteRateLimiter,
     async (req: Request, res: Response) => {
       if (!requireAdminOrOwner(req, res)) return;
@@ -241,7 +243,7 @@ export function createRemediationRoutes(pool: Pool): Router {
   );
 
   // ─── Rollback ─────────────────────────────────────────────────────────────
-  router.post('/:id/rollback', requireEnterprise, async (req: Request, res: Response) => {
+  router.post('/:id/rollback', async (req: Request, res: Response) => {
     if (!requireAdminOrOwner(req, res)) return;
 
     try {
