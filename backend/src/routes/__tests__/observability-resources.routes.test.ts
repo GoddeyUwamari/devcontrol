@@ -9,10 +9,13 @@
  * cloudwatch-metrics-pagination.test.ts. Placeholders only.
  */
 import express from 'express'
+import fs from 'fs'
+import path from 'path'
 import http from 'http'
 import { Pool } from 'pg'
 import observabilityResourcesRoutes from '../observability-resources.routes'
 import cloudwatchRoutes from '../cloudwatch.routes'
+import observabilityRoutes from '../observability.routes'
 import { authService } from '../../services/auth.service'
 import { AWSClientFactory } from '../../services/aws-client-factory.service'
 import awsCostService from '../../services/aws-cost.service'
@@ -48,7 +51,10 @@ let baseUrl: string
 beforeAll(async () => {
   const app = express()
   app.use(express.json())
+  // As server.ts mounts them (/api/system serves the shared observability router only).
+  app.use('/api/observability', observabilityRoutes)
   app.use('/api/observability', observabilityResourcesRoutes)
+  app.use('/api/system', observabilityRoutes)
   app.use('/api/cloudwatch', cloudwatchRoutes)
   server = http.createServer(app)
   await new Promise<void>((resolve) => server.listen(0, resolve))
@@ -261,6 +267,18 @@ describe('GET /api/observability/resources', () => {
     // The old route keeps its meaning: data null.
     const legacy = await get('/cloudwatch/metrics?refresh=true')
     expect(legacy.body).toEqual({ success: true, data: null, connected: false })
+  })
+
+  it('is not served under /api/system', async () => {
+    await mixedOrg('system-path')
+    const res = await fetch(`${baseUrl}/system/resources`, { headers: { Authorization: 'Bearer test-token' } })
+    expect(res.status).toBe(404)
+  })
+
+  it('server.ts mounts it at /api/observability only', () => {
+    const server = fs.readFileSync(path.join(__dirname, '..', '..', 'server.ts'), 'utf-8')
+    const mounts = server.match(/app\.use\([^)]*observabilityResourcesRoutes\)/g)
+    expect(mounts).toEqual(["app.use('/api/observability', observabilityResourcesRoutes)"])
   })
 
   it('(R10) the platform identity being unavailable is a 503; a malformed cursor is a 400', async () => {
