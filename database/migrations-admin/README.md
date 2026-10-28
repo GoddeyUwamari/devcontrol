@@ -86,8 +86,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202609040035_add_account_security_findings_disposition.sql`**,
 **`202610102024_drop_auto_detect_resource_ownership.sql`**,
 **`202610112300_create_framework_evaluation_persistence.sql`**,
-**`202610161210_create_resource_health_evaluations.sql`**, and
-**`202610191200_create_multi_region_scan_foundation.sql`**.
+**`202610161210_create_resource_health_evaluations.sql`**,
+**`202610191200_create_multi_region_scan_foundation.sql`**, and
+**`202610281200_create_resource_telemetry_observations.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -855,3 +856,41 @@ foreign key uses it; a reused constraint
 (`aws_resources_compliance_evaluation_ref_key` in production) is never
 dropped. It never cascades: it refuses if anything else references the two
 tables. Roll back the application release that uses these tables first.
+
+## Classification -- `202610281200_create_resource_telemetry_observations.sql`
+
+Creates two tenant tables for the Observability page's memory beyond one
+metrics window: `resource_telemetry_observations` (per organization, AWS
+account, region and resource: the newest CloudWatch datapoint seen and the
+last completed check) and `observability_collection_scopes` (per
+organization, AWS account and region: the last fully successful collection,
+and the latest attempt's outcome). Administrative for two reasons: the
+composite foreign key references the `postgres`-owned `aws_resources (id,
+organization_id)`, and ENABLE/FORCE ROW LEVEL SECURITY plus the tenant
+policies need the tables' owner.
+
+Additive only: two new tables, every non-key column nullable, no change to
+any existing table. It reuses the existing `(id, organization_id)` unique
+constraint on `aws_resources` (added or reused by `202610112300`) and refuses
+to run without one; it never alters `aws_resources`. It refuses to run when
+either table already exists. `devcontrol` receives SELECT, INSERT and UPDATE
+only.
+
+The application treats an empty or missing table as "no stored history", so
+the order between this migration and the release that reads it does not
+affect availability. It is applied before that release is merged, so Last
+seen starts accumulating from the first sweep.
+
+### Rollback
+
+`202610281200_create_resource_telemetry_observations_rollback.sql`, manual
+only (as postgres, one transaction):
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202610281200_create_resource_telemetry_observations_rollback.sql
+```
+
+It drops the two tables and this migration's `schema_migrations` row, and
+refuses if anything else references them. No release needs rolling back
+first; stored Last seen history is discarded.
