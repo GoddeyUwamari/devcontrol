@@ -153,11 +153,12 @@ describe('routing', () => {
 })
 
 describe('readiness — six criteria', () => {
-  it('renders a tab for each of the six configured criteria', () => {
+  it('renders a tab for each of the six configured criteria, labelled code · name', () => {
     renderPage()
     for (const c of SIX_CRITERIA) {
-      expect(screen.getByRole('tab', { name: c.criterionId })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: `${c.criterionId} · ${c.name}` })).toBeInTheDocument()
     }
+    expect(screen.getByRole('tab', { name: 'CC6.1 · Encryption at rest' })).toBeInTheDocument()
   })
 
   it('shows the truthful not-yet-evaluated state for an unevaluated criterion, never a synthetic positive', () => {
@@ -185,10 +186,63 @@ describe('readiness — six criteria', () => {
       error: null,
     }
     renderPage()
-    expect(screen.getByText(/3 supports/)).toBeInTheDocument()
-    expect(screen.getByText(/1 contradicts/)).toBeInTheDocument()
-    expect(screen.getByText(/2 unknown/)).toBeInTheDocument()
-    expect(screen.getByText(/Evaluation computed at/)).toBeInTheDocument()
+    expect(screen.getByText('3 support')).toBeInTheDocument()
+    expect(screen.getByText('1 contradict')).toBeInTheDocument()
+    expect(screen.getByText('2 unknown')).toBeInTheDocument()
+    expect(screen.getByText(/^Evaluated /)).toBeInTheDocument()
+    expect(screen.queryByText(/Evaluation computed at/)).not.toBeInTheDocument()
+  })
+
+  it('shows "Evaluated" in the shared local-time format: no seconds, no year in the current year', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-28T12:00:00.000Z'))
+    try {
+      readinessState = {
+        data: [
+          { ...SIX_CRITERIA[0], evaluated: true, evidenceSummary: { supports: 1, contradicts: 0, unknown: 0 }, computedAt: '2026-10-20T08:00:00.000Z' },
+          ...SIX_CRITERIA.slice(1),
+        ],
+        isLoading: false,
+        error: null,
+      }
+      renderPage()
+      const line = screen.getByText(/^Evaluated /).textContent ?? ''
+      expect(line).toMatch(/^Evaluated Oct (19|20|21), \d{1,2}:\d{2} (AM|PM)$/)
+      expect(line).not.toContain('2026')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('mutes a zero count and colours contradict red only above zero', () => {
+    readinessState = {
+      data: [
+        { ...SIX_CRITERIA[0], evaluated: true, evidenceSummary: { supports: 5, contradicts: 0, unknown: 0 }, computedAt: '2026-09-18T09:00:00.000Z' },
+        ...SIX_CRITERIA.slice(1),
+      ],
+      isLoading: false,
+      error: null,
+    }
+    const { unmount } = renderPage()
+    expect(screen.getByText('5 support').className).toContain('text-emerald-700')
+    const zeroContradict = screen.getByText('0 contradict')
+    expect(zeroContradict.className).toContain('text-ink-muted')
+    expect(zeroContradict.className).not.toMatch(/danger|red/)
+    expect(screen.getByText('0 unknown').className).toContain('text-ink-muted')
+    unmount()
+
+    readinessState = {
+      data: [
+        { ...SIX_CRITERIA[0], evaluated: true, evidenceSummary: { supports: 0, contradicts: 2, unknown: 0 }, computedAt: '2026-09-18T09:00:00.000Z' },
+        ...SIX_CRITERIA.slice(1),
+      ],
+      isLoading: false,
+      error: null,
+    }
+    renderPage()
+    expect(screen.getByText('2 contradict').className).toContain('text-ink-danger')
+    expect(screen.getByText('0 support').className).toContain('text-ink-muted')
+    expect(screen.getByText('0 support').className).not.toContain('emerald')
   })
 })
 
@@ -234,7 +288,59 @@ describe('technical evidence (AWS-Observed)', () => {
       error: null,
     }
     renderPage()
-    expect(screen.getByText('Organization-level observation')).toBeInTheDocument()
+    expect(screen.getByText('AWS account')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Copy ARN' })).not.toBeInTheDocument()
+  })
+
+  it('heads a row "<Type> · <ID>", keeps the full ARN on the copy button, and shows one Observed line without Schema', () => {
+    const arn = 'arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0'
+    evidenceState = {
+      data: [{ criterionId: 'CC6.1', resourceArn: arn, resourceType: 'ec2', provenance: 'OBSERVED', result: 'SUPPORTS', observedAt: '2026-09-18T00:00:00.000Z', collectedAt: '2026-09-18T00:00:00.000Z', source: {}, explanation: 'AWS discovery reported is_encrypted=true for this ec2 resource.', schemaVersion: 1 }],
+      isLoading: false,
+      error: null,
+    }
+    renderPage()
+    expect(screen.getByText('EC2 instance · i-1234567890abcdef0')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy ARN' })).toHaveAttribute('title', arn)
+    expect(screen.queryByText(arn)).not.toBeInTheDocument()
+    expect(screen.getByText('All attached volumes encrypted')).toBeInTheDocument()
+    expect(screen.getAllByText(/^Observed /)).toHaveLength(1)
+    const text = document.body.textContent ?? ''
+    expect(text).not.toMatch(/Collected at|Observed at|Schema v/)
+  })
+
+  it('shows "Active finding" with the finding_key only in the row tooltip, under an IAM user heading', () => {
+    const findingKey = 'f'.repeat(64)
+    evidenceState = {
+      data: [{ criterionId: 'CC6.2', resourceArn: 'arn:aws:iam::123456789012:user/example.user', resourceType: 'iam_user', provenance: 'OBSERVED', result: 'CONTRADICTS', observedAt: null, collectedAt: '2026-09-18T00:00:00.000Z', source: {}, explanation: `An active account-level finding exists (finding_key=${findingKey}).`, schemaVersion: 1 }],
+      isLoading: false,
+      error: null,
+    }
+    renderPage()
+    expect(screen.getByText('IAM user · example.user')).toBeInTheDocument()
+    const line = screen.getByText('Active finding')
+    expect(line.closest('[title]')).toHaveAttribute('title', findingKey)
+    expect(document.body.textContent).not.toContain(findingKey)
+  })
+
+  it('heads a security-group row "Security group · <sg id>"', () => {
+    evidenceState = {
+      data: [{ criterionId: 'CC7.1', resourceArn: 'arn:aws:ec2:us-east-1:123456789012:security-group/sg-1234567890abcdef0', resourceType: 'security_group', provenance: 'OBSERVED', result: 'CONTRADICTS', observedAt: null, collectedAt: '2026-09-18T00:00:00.000Z', source: {}, explanation: 'x', schemaVersion: 1 }],
+      isLoading: false,
+      error: null,
+    }
+    renderPage()
+    expect(screen.getByText('Security group · sg-1234567890abcdef0')).toBeInTheDocument()
+  })
+
+  it('falls back to collectedAt for the Observed line when observedAt is null', () => {
+    evidenceState = {
+      data: [{ criterionId: 'CC6.1', resourceArn: 'arn:aws:s3:::example-bucket', resourceType: 's3', provenance: 'OBSERVED', result: 'SUPPORTS', observedAt: null, collectedAt: '2026-09-18T00:00:00.000Z', source: {}, explanation: 'x', schemaVersion: 1 }],
+      isLoading: false,
+      error: null,
+    }
+    renderPage()
+    expect(screen.getByText(/^Observed (Sep 1[78]), \d{1,2}:\d{2} (AM|PM)$/)).toBeInTheDocument()
   })
 
   it('shows the truthful empty state when no technical evidence exists yet', () => {

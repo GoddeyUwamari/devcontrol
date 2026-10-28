@@ -16,6 +16,12 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { cn } from '@/lib/utils';
+import { formatLocalWhen } from '@/lib/utils/localTime';
+
+/** A zero count is muted, never coloured: contradict is red only above 0. */
+function countClass(count: number, nonZeroClass: string): string {
+  return count > 0 ? nonZeroClass : 'text-ink-muted';
+}
 
 /**
  * SOC 2 Readiness detail page. Uses GET /api/soc2/readiness (all six criteria) and
@@ -100,8 +106,8 @@ export default function Soc2ReadinessDetailPage() {
         >
           <TabsList className="flex-wrap h-auto justify-start mb-4">
             {criteria.map((c) => (
-              <TabsTrigger key={c.criterionId} value={c.criterionId} className="text-label">
-                {c.criterionId}
+              <TabsTrigger key={c.criterionId} value={c.criterionId} className="text-label whitespace-normal text-left">
+                {c.criterionId} · {c.name}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -120,13 +126,17 @@ export default function Soc2ReadinessDetailPage() {
 
                 {c.evaluated && c.evidenceSummary ? (
                   <div className="text-meta text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
-                    <span className="font-semibold text-emerald-700">{c.evidenceSummary.supports} supports</span>
+                    <span className={countClass(c.evidenceSummary.supports, 'font-semibold text-emerald-700')}>
+                      {c.evidenceSummary.supports} support
+                    </span>
                     {' · '}
-                    <span className="font-semibold text-ink-danger">{c.evidenceSummary.contradicts} contradicts</span>
+                    <span className={countClass(c.evidenceSummary.contradicts, 'font-semibold text-ink-danger')}>
+                      {c.evidenceSummary.contradicts} contradict
+                    </span>
                     {' · '}
-                    <span>{c.evidenceSummary.unknown} unknown</span>
+                    <span className={countClass(c.evidenceSummary.unknown, '')}>{c.evidenceSummary.unknown} unknown</span>
                     {c.computedAt && (
-                      <p className="text-meta text-ink-muted mt-1">Evaluation computed at {new Date(c.computedAt).toLocaleString()}</p>
+                      <p className="text-meta text-ink-muted mt-1">Evaluated {formatLocalWhen(c.computedAt, Date.now())}</p>
                     )}
                   </div>
                 ) : (
