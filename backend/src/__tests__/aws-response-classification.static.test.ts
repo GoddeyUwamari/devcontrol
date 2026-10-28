@@ -388,7 +388,10 @@ describe('AWS response classification', () => {
     ]);
     expect(sites('client-cloudfront:ListDistributionsCommand')).toEqual([path.join('services', 'awsResourceDiscovery.ts')]);
     expect(sites('client-securityhub:GetFindingsCommand')).toEqual([path.join('services', 'security-hub-client.service.ts')]);
-    expect(sites('client-cloudwatch:DescribeAlarmsCommand')).toEqual([path.join('services', 'observability-readiness.service.ts')]);
+    expect(sites('client-cloudwatch:DescribeAlarmsCommand')).toEqual([
+      path.join('services', 'cloudwatch-alarms.service.ts'),
+      path.join('services', 'observability-readiness.service.ts'),
+    ]);
   });
 });
 

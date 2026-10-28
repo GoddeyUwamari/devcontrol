@@ -18,6 +18,7 @@ import {
   projectLambdaFunction,
   projectMetricAlarm,
 } from '../aws-response-projections';
+import { compositeAlarmItem, listAlarms, metricAlarmItem } from '../cloudwatch-alarms.service';
 import { normalizeFinding, SecurityHubClientService } from '../security-hub-client.service';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import costOptimizationService from '../cost-optimization.service';
@@ -429,5 +430,29 @@ describe('projectCompositeAlarm', () => {
     const projected = projectCompositeAlarm(compositeAlarm());
     expect(projected).toEqual({ AlarmName: 'orders-degraded', StateValue: 'ALARM', StateTransitionedTimestamp: TRANSITIONED });
     expect(JSON.stringify(projected)).not.toContain('marker-not-kept');
+  });
+});
+
+describe('DescribeAlarms through the alarms endpoint', () => {
+  it('lists both alarm types and returns nothing from the response beyond the item fields', async () => {
+    const send = jest.fn().mockResolvedValue({ MetricAlarms: [metricAlarm()], CompositeAlarms: [compositeAlarm()] });
+    const cloudWatch = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), send);
+    const listing = await listAlarms(cloudWatch, 'ALARM', 1);
+    const items = listing.items.map((a) => (a.kind === 'metric' ? metricAlarmItem(a.alarm) : compositeAlarmItem(a.alarm)));
+    expect(items).toEqual([
+      {
+        name: 'orders-cpu-high', type: 'metric', namespace: 'AWS/EC2', metric: 'CPUUtilization',
+        comparison: 'GreaterThanThreshold', threshold: 80, state_since: TRANSITIONED.toISOString(),
+        resource: { type: 'ec2', id: 'i-0123456789abcdef0' },
+      },
+      {
+        name: 'orders-degraded', type: 'composite', namespace: null, metric: null,
+        comparison: null, threshold: null, state_since: TRANSITIONED.toISOString(), resource: null,
+      },
+    ]);
+    const out = everything(items);
+    expect(out).not.toContain('marker-not-kept');
+    expect(out).not.toContain('arn:aws:');
+    expect(out).not.toContain(UPDATED.toISOString());
   });
 });
