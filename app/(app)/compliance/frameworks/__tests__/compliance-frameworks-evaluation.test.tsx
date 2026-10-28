@@ -329,4 +329,24 @@ describe('Security Hub card (D3, Q5, Q6)', () => {
     expect(screen.getByTestId('standard-nist')).toHaveTextContent('Not yet available')
     expect(tile('Frameworks')).toHaveTextContent('1 custom · 1 Security Hub standard')
   })
+  it.each([
+    ['not enabled', cap('NOT_AVAILABLE'), null, true],
+    ['never synced', null, null, false],
+    ['connected', cap('ENABLED'), null, false],
+    ['permission required', cap('NOT_GRANTED'), null, false],
+    ['check failed', cap('ERROR'), null, false],
+    ['check failed (the read failed)', null, 'Failed to load Security Hub status', false],
+  ])('top banner (F3c, conflict 1): %s', async (_, capability, error, shown) => {
+    Object.assign(m.sh, { capability, error })
+    await show()
+    const banner = screen.queryByTestId('security-hub-banner')
+    if (!shown) {
+      expect(banner).toBeNull()
+      expect(document.body.textContent).not.toContain("Security Hub isn't enabled")
+      return
+    }
+    expect(banner).toHaveTextContent("Security Hub isn't enabled, so CIS, PCI DSS and NIST can't be evaluated yet. None of these frameworks are certifications.")
+    expect(within(banner!).getByRole('link', { name: 'Enable Security Hub ↓' })).toHaveAttribute('href', '#security-hub')
+    expect(document.getElementById('security-hub')).toBe(screen.getByTestId('security-hub-card'))
+  })
 })
