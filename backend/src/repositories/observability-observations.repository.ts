@@ -145,10 +145,13 @@ export async function recordObservations(
 }
 
 /**
- * Whether the organization's newest finished discovery job reported a cut-off
- * listing or a truncated Resource Explorer index: true or false from that job,
- * null when there is no finished job or it can't be read. Only false supports
- * a full-account coverage claim.
+ * Whether the organization's newest discovery job reported a cut-off
+ * listing or a truncated Resource Explorer index. Only a job that completed can
+ * answer: true when it reported either, false when it reported neither. null when
+ * there is no job, the newest one did not complete (it failed, was interrupted, or
+ * is still running or pending: its inventory is not proven complete, whatever it
+ * reported), or it can't be read.
+ * Only false supports a full-account coverage claim.
  */
 export async function readInventoryCapped(
   db: Pick<Pool, 'connect'>,
@@ -160,14 +163,14 @@ export async function readInventoryCapped(
     const c = client
     return await inTenantTransaction(c, organizationId, async () => {
       const { rows } = await c.query(
-        `SELECT to_jsonb(j) -> 'warnings' AS warnings_column, j.error_message
+        `SELECT j.status, to_jsonb(j) -> 'warnings' AS warnings_column, j.error_message
            FROM resource_discovery_jobs j
-          WHERE j.organization_id = $1 AND j.status IN ('completed', 'failed') AND j.completed_at IS NOT NULL
-          ORDER BY j.completed_at DESC
+          WHERE j.organization_id = $1
+          ORDER BY j.created_at DESC, j.id DESC
           LIMIT 1`,
         [organizationId]
       )
-      if (rows.length === 0) return { capped: null, reasons: [] }
+      if (rows.length === 0 || rows[0].status !== 'completed') return { capped: null, reasons: [] }
       const reasons = jobWarnings(rows[0].warnings_column, rows[0].error_message).filter(
         (code) => code === DISCOVERY_WARNING_LISTING_TRUNCATED || code === DISCOVERY_WARNING_TRUNCATED_INDEX
       )

@@ -24,7 +24,9 @@
  * Precedence (first match wins): outside_account, outside_region, not measured
  * (or stopped, for a stopped RDS instance), a failed type block, no evaluated
  * row (not_supported), a query that did not complete, a deliberate stop, a
- * resource the check can't evaluate, then the evaluator's own verdict.
+ * resource the check can't evaluate, an Inactive Lambda function (no_activity),
+ * a completed activity query at zero (no_activity, unless the evaluator found a
+ * real failure), then the evaluator's own verdict.
  *
  * The legacy CloudWatchServiceHealth rows are read, never changed: this module
  * adds states beside them.
@@ -265,6 +267,14 @@ function verdictFor(
     return { check_status: 'stopped', unknown_reason: null, telemetry, activity }
   }
   if (evidence.unsupported) return unknown('not_supported', telemetry, activity)
+  // An Inactive function is one AWS reclaimed for being idle (invoking it reactivates it):
+  // idle, not failing. Failed stays failing below.
+  if (resource.resource_type === 'lambda' && resource.status === 'Inactive') return unknown('no_activity', telemetry, activity)
+  // D3: a completed activity query at zero (nothing ran, no traffic) is never passing,
+  // whatever the evaluator concluded from it; only a real failure verdict stays failing.
+  if (activity === 'no_activity' && row.status !== 'critical' && row.status !== 'down') {
+    return unknown('no_activity', telemetry, activity)
+  }
 
   switch (row.status) {
     case 'healthy':
@@ -295,7 +305,7 @@ export function observabilityRowFor(
   let lastSeenSource: ObservabilityRow['last_seen_source'] = null
   if (inScope && !isNotMeasured(resource)) {
     if (evidence?.kind === 'point_in_time') {
-      lastSeen = latest(ctx.stored?.lastSuccessfulCheckAt, checkCompleted(evidence, ctx) ? ctx.sweepAt : null)
+      lastSeen = latest(ctx.stored?.lastSuccessfulCheckAt, checkObserved(evidence, ctx) ? ctx.sweepAt : null)
       lastSeenSource = lastSeen ? 'observation' : null
     } else {
       lastSeen = latest(ctx.stored?.lastDatapointAt, evidence?.newestDatapointAt)
@@ -313,6 +323,18 @@ export function observabilityRowFor(
     last_seen_source: lastSeenSource,
     metrics: row && inScope ? labelledMetrics(resource.resource_type, row, evidence, ctx.rangeLabel) : [],
   }
+}
+
+/**
+ * Whether this sweep observed the resource: for a CloudWatch check, every query it needs
+ * completed (empty counts); for a point-in-time check, the describe call returned a
+ * verdict -- a completed call that returned nothing for the resource (EBS
+ * insufficient-data, or no entry) is no observation, so Last seen never becomes "now"
+ * for a resource AWS said nothing about.
+ */
+export function checkObserved(evidence: ResourceEvidence | undefined, ctx: Pick<RowContext, 'blockFailed'>): boolean {
+  if (!checkCompleted(evidence, ctx)) return false
+  return evidence!.kind !== 'point_in_time' || Object.values(evidence!.queries).every((o) => o === 'complete')
 }
 
 /** Whether every query the resource's check needs completed this sweep (empty counts as completed). */

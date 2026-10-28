@@ -10,6 +10,7 @@ import {
   ResourceEvidence,
   RowContext,
   accountIdOfResourceArn,
+  checkObserved,
   observabilityRowFor,
   typeSummaryOf,
 } from '../observability-states'
@@ -137,6 +138,54 @@ describe('observabilityRowFor: check_status', () => {
     expect(r).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_activity', activity: 'no_activity', telemetry: 'no_telemetry' })
   })
 
+  it('(S9b, D3, review F2) a completed activity query at zero is unknown/no_activity even when the evaluator says healthy', () => {
+    const lambda = observabilityRowFor(
+      inv('lambda'),
+      row('healthy'),
+      cw({ invocations: 'complete', errors: 'complete', duration: 'empty' }, { activity: { key: 'invocations', value: 0 } }),
+      ctx()
+    )
+    expect(lambda).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_activity', activity: 'no_activity' })
+    const alb = observabilityRowFor(
+      inv('load-balancer', { metadata: { type: 'application' } }),
+      row('healthy', { responseTimeMs: 20 }),
+      cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'empty' }, { activity: { key: 'requestSum', value: 0 } }),
+      ctx()
+    )
+    expect(alb).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_activity', activity: 'no_activity' })
+    // Counted in "other", never in passing.
+    expect(typeSummaryOf([lambda, alb])).toEqual({
+      lambda: { count: 1, passing: 0, needs_attention: 0, failing: 0, other: 1 },
+      'load-balancer': { count: 1, passing: 0, needs_attention: 0, failing: 0, other: 1 },
+    })
+    // A real failure verdict is not hidden by inactivity.
+    const failed = observabilityRowFor(
+      inv('lambda', { status: 'Failed' }),
+      row('down'),
+      cw({ invocations: 'empty', errors: 'empty', duration: 'empty' }, { activity: { key: 'invocations', value: null } }),
+      ctx()
+    )
+    expect(failed.check_status).toBe('failing')
+  })
+
+  it('(review F5) a Lambda function AWS reports Inactive is unknown/no_activity, not failing', () => {
+    const inactive = observabilityRowFor(
+      inv('lambda', { status: 'Inactive' }),
+      row('down'),
+      cw({ invocations: 'empty', errors: 'empty', duration: 'empty' }, { activity: { key: 'invocations', value: null } }),
+      ctx()
+    )
+    expect(inactive).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_activity', activity: 'no_activity' })
+    // A failed query still says so, before inactivity.
+    const denied = observabilityRowFor(
+      inv('lambda', { status: 'Inactive' }),
+      row('down'),
+      cw({ invocations: 'access_denied', errors: 'empty', duration: 'empty' }, { activity: { key: 'invocations', value: null } }),
+      ctx()
+    )
+    expect(denied).toMatchObject({ check_status: 'unknown', unknown_reason: 'access_denied' })
+  })
+
   it('(S10) a throttled activity query never gives no_activity', () => {
     const r = observabilityRowFor(
       inv('lambda'),
@@ -243,6 +292,17 @@ describe('observabilityRowFor: last_seen', () => {
     expect(observabilityRowFor(inv('ec2'), row('healthy'), ec2Ok, ctx({ stored: undefined })).last_seen).toBe(T1.toISOString())
     const none = observabilityRowFor(inv('ec2'), row('unknown'), cw({ statusCheckFailed: 'empty', cpu: 'empty' }), ctx())
     expect(none).toMatchObject({ last_seen: null, last_seen_source: null })
+  })
+
+  it('(review F4) an EBS volume AWS returned no verdict for never shows "now": stored observation or null', () => {
+    const noVerdict = { kind: 'point_in_time' as const, queries: { describe: 'empty' as const }, newestDatapointAt: null }
+    const fresh = observabilityRowFor(inv('ebs'), row('unknown'), noVerdict, ctx())
+    expect(fresh).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_telemetry', telemetry: 'no_telemetry', last_seen: null, last_seen_source: null })
+    const stored = observabilityRowFor(inv('ebs'), row('unknown'), noVerdict, ctx({ stored: { lastDatapointAt: null, lastSuccessfulCheckAt: T0 } }))
+    expect(stored.last_seen).toBe(T0.toISOString())
+    expect(checkObserved(noVerdict, ctx())).toBe(false)
+    // A verdict is an observation made by this sweep.
+    expect(checkObserved({ ...noVerdict, queries: { describe: 'complete' } }, ctx())).toBe(true)
   })
 
   it('a point-in-time check that failed shows the last successful observation, not this sweep', () => {

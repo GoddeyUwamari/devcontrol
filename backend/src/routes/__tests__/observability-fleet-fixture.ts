@@ -163,6 +163,8 @@ export interface FakeAwsOptions {
   accountId: string
   // The timestamp every datapoint carries (default DATAPOINT_AT).
   datapointAt?: Date
+  // VolumeStatus.Status every EBS volume reports (default 'ok').
+  volumeStatus?: string
 }
 
 /** Fake clients in the shape AWSClientFactory.createClients returns. */
@@ -199,7 +201,7 @@ export function fakeClients(options: FakeAwsOptions): any {
     // A real EC2Client (the SDK's paginators refuse any other object) whose send is replaced.
     ec2: Object.assign(new EC2Client({ region: REGION }), {
       send: async (command: any) => ({
-        VolumeStatuses: (command.input.VolumeIds ?? []).map((id: string) => ({ VolumeId: id, VolumeStatus: { Status: 'ok' }, Events: [] })),
+        VolumeStatuses: (command.input.VolumeIds ?? []).map((id: string) => ({ VolumeId: id, VolumeStatus: { Status: options.volumeStatus ?? 'ok' }, Events: [] })),
       }),
     }),
     rds: {

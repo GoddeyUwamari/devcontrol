@@ -17,7 +17,7 @@ import {
   ObservabilityRow,
   ResourceEvidence,
   TypeSummary,
-  checkCompleted,
+  checkObserved,
   isNotMeasured,
   observabilityRowFor,
   typeSummaryOf,
@@ -2286,7 +2286,7 @@ export class CloudWatchService {
     for (const { resource, row, ctx } of firstPass) {
       if (row.unknown_reason === 'outside_account' || row.unknown_reason === 'outside_region' || isNotMeasured(resource)) continue
       const e = evidence.get(resource.id)
-      const completed = checkCompleted(e, ctx)
+      const completed = checkObserved(e, ctx)
       writes.push({
         resourceDbId: resource.id,
         lastDatapointAt: e?.kind === 'cloudwatch' ? e.newestDatapointAt : null,

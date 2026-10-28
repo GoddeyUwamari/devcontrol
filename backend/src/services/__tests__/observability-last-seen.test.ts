@@ -36,8 +36,8 @@ const oneEc2 = (accountId: string) => mixedFleet(accountId).filter((r) => r.name
 const ec2 = (behaviour: MetricBehaviour) => ({ 'i-1234567890abcdef0': behaviour })
 const ok: MetricBehaviour = { kind: 'values', byMetric: { StatusCheckFailed: 0, CPUUtilization: 12 } }
 
-async function sweep(orgId: string, accountId: string, metrics: Record<string, MetricBehaviour>, datapointAt?: Date) {
-  jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics, accountId, datapointAt }))
+async function sweep(orgId: string, accountId: string, metrics: Record<string, MetricBehaviour>, datapointAt?: Date, volumeStatus?: string) {
+  jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics, accountId, datapointAt, volumeStatus }))
   const result = await new CloudWatchService().getMetrics(orgId, '1h', true)
   jest.restoreAllMocks()
   jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 0 } as any)
@@ -111,6 +111,25 @@ describe('Last seen across sweeps', () => {
     expect(row).toMatchObject({ last_seen: null, last_seen_source: null, telemetry: 'no_telemetry' })
   })
 
+  it('(review F4) an EBS volume with no verdict: Last seen stays the stored observation or null, never this sweep', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('ebs-no-verdict', (a) => mixedFleet(a).filter((r) => r.name === 'data-vol'))
+    const ebsRow = (snapshot: any) => snapshot.rows.find((r: any) => r.row.name === 'data-vol').row
+
+    const first = await sweep(orgId, accountId, {}, undefined, 'insufficient-data')
+    expect(ebsRow(first.snapshot)).toMatchObject({ unknown_reason: 'no_telemetry', last_seen: null, last_seen_source: null })
+    expect(await storedRow(orgId)).toEqual([])
+
+    const ok = await sweep(orgId, accountId, {}, undefined, 'ok')
+    const observedAt = ebsRow(ok.snapshot).last_seen
+    expect(ok.snapshot.rows.length).toBe(1)
+    expect(observedAt).not.toBeNull()
+
+    const later = await sweep(orgId, accountId, {}, undefined, 'insufficient-data')
+    expect(ebsRow(later.snapshot)).toMatchObject({ telemetry: 'no_telemetry', last_seen: observedAt, last_seen_source: 'observation' })
+    const stored = await pool.query('SELECT last_successful_check_at FROM resource_telemetry_observations WHERE resource_id = $1', [idsByName['data-vol']])
+    expect(stored.rows[0].last_successful_check_at.toISOString()).toBe(observedAt)
+  })
+
   it('outside-account and outside-region resources are never recorded', async () => {
     const { orgId, accountId } = await newOrg('scope', (a) => mixedFleet(a).filter((r) => r.name === 'web-other-region' || r.name === 'web-other-account'))
     const { snapshot } = await sweep(orgId, accountId, {
@@ -160,9 +179,33 @@ describe('inventory coverage', () => {
     await pool.query(`INSERT INTO resource_discovery_jobs (organization_id, status, completed_at, warnings) VALUES ($1, 'completed', NOW(), '[]'::jsonb)`, [orgId])
     expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: false, reasons: [] })
 
-    // A job still running is not a finished inventory.
-    await pool.query(`INSERT INTO resource_discovery_jobs (organization_id, status, warnings) VALUES ($1, 'running', '["deletion_detection_paused_truncated_index"]'::jsonb)`, [orgId])
-    expect((await readInventoryCapped(appPool, orgId)).capped).toBe(false)
+  })
+
+  it('(review F1) only a completed newest job answers: a newer failed, interrupted, running or pending job gives null', async () => {
+    const { orgId } = await newOrg('coverage-failed')
+    const job = (status: string, extra = '', values: unknown[] = []) =>
+      pool.query(
+        `INSERT INTO resource_discovery_jobs (organization_id, status, completed_at, warnings, error_message)
+         VALUES ($1, $2, ${status === 'completed' || status === 'failed' ? 'NOW()' : 'NULL'}, '[]'::jsonb, $3)${extra}`,
+        [orgId, status, ...values]
+      )
+    // A clean completed job: false.
+    await job('completed', '', [null])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: false, reasons: [] })
+    // A newer job that failed (a listing errored) carries no truncation code, yet proves nothing.
+    await job('failed', '', ['AccessDenied listing instances'])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: null, reasons: [] })
+    // Interrupted (discovery marks it failed with this message).
+    await job('failed', '', ['Discovery was interrupted'])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: null, reasons: [] })
+    // Still running, or pending: not proven either.
+    await job('running', '', [null])
+    expect((await readInventoryCapped(appPool, orgId)).capped).toBeNull()
+    await job('pending', '', [null])
+    expect((await readInventoryCapped(appPool, orgId)).capped).toBeNull()
+    // A newer completed job answers again.
+    await job('completed', '', [null])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: false, reasons: [] })
   })
 })
 
@@ -232,6 +275,46 @@ describe('storage isolation and failure', () => {
     expect(otherAccount.stored.size).toBe(0)
     const otherRegion = await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: 'eu-west-1' }, [], 'complete', new Date())
     expect(otherRegion.stored.size).toBe(0)
+  })
+
+  it('(review F6) the stored-observation read names the organization itself: two orgs, same account and region, superuser (no RLS)', async () => {
+    const a = await newOrg('shared-scope-a')
+    const b = await newOrg('shared-scope-b')
+    // Both organizations' rows under one account and region, written and read as the superuser test role,
+    // which row-level security never restricts: only the read's own organization predicate separates them.
+    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION })
+    await recordObservations(appPool, scope(b.orgId), [
+      { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    const readA = await recordObservations(appPool, scope(a.orgId), [
+      { resourceDbId: a.idsByName['web-running'], lastDatapointAt: EARLIER, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    expect([...readA.stored.keys()]).toEqual([a.idsByName['web-running']])
+    const readB = await recordObservations(appPool, scope(b.orgId), [], 'complete', new Date())
+    expect([...readB.stored.keys()]).toEqual([b.idsByName['web-running']])
+  })
+
+  it('(review F6) the real write and read path works as devcontrol under FORCE RLS, and sees only its own organization', async () => {
+    const a = await newOrg('as-devcontrol-a')
+    const b = await newOrg('as-devcontrol-b')
+    const asDevcontrolDb = {
+      connect: async () => {
+        const c = await pool.connect()
+        await c.query('SET ROLE devcontrol')
+        const release = c.release.bind(c)
+        return Object.assign(c, { release: () => { c.query('RESET ROLE').finally(() => release()) } })
+      },
+    } as any
+    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION })
+    const wroteB = await recordObservations(asDevcontrolDb, scope(b.orgId), [
+      { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    expect(wroteB.persisted).toBe(true)
+    const readA = await recordObservations(asDevcontrolDb, scope(a.orgId), [
+      { resourceDbId: a.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    expect(readA.persisted).toBe(true)
+    expect([...readA.stored.keys()]).toEqual([a.idsByName['web-running']])
   })
 
   it('(L6) a missing table is no stored history, never an error; checked_at falls back to this sweep only when complete', async () => {
