@@ -2,11 +2,29 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../config/database';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
+import { requireEnterprise } from '../middleware/subscription.middleware';
 
 const router = Router();
 
-// All tenant routes require authentication
+// All tenant routes require authentication and an Enterprise plan. The plan
+// is checked before any role gate.
 router.use(authenticate);
+router.use(requireEnterprise);
+
+const TENANT_PLANS = ['free', 'starter', 'pro', 'enterprise'];
+const TENANT_STATUSES = ['active', 'inactive'];
+
+/**
+ * Logs a failed tenant query without the error object: a database error's
+ * detail can quote the row, including the tenant's name and email.
+ */
+function logTenantError(operation: string, error: any): void {
+  console.error(`[Tenants] ${operation} error:`, {
+    name: error?.name,
+    code: error?.code,
+    message: error?.message,
+  });
+}
 
 // Resolve org ID: use authenticated user's org or fall back to demo org
 function getOrgId(req: Request): string | null {
@@ -48,7 +66,8 @@ router.get('/', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: tenants });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    logTenantError('list', error);
+    res.status(500).json({ success: false, error: 'Failed to load tenants' });
   }
 });
 
@@ -80,7 +99,8 @@ router.get('/stats', async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    logTenantError('stats', error);
+    res.status(500).json({ success: false, error: 'Failed to load tenant stats' });
   }
 });
 
@@ -93,6 +113,9 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     const { name, email, plan = 'free' } = req.body;
     if (!name || !email) {
       return res.status(400).json({ success: false, error: 'name and email are required' });
+    }
+    if (!TENANT_PLANS.includes(plan)) {
+      return res.status(400).json({ success: false, error: `plan must be one of: ${TENANT_PLANS.join(', ')}` });
     }
 
     const result = await pool.query(
@@ -118,7 +141,8 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    logTenantError('create', error);
+    res.status(500).json({ success: false, error: 'Failed to create tenant' });
   }
 });
 
@@ -130,6 +154,12 @@ router.patch('/:id', requireAdmin, async (req: Request, res: Response) => {
 
     const { id } = req.params;
     const { name, email, status, plan } = req.body;
+    if (status !== undefined && !TENANT_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, error: `status must be one of: ${TENANT_STATUSES.join(', ')}` });
+    }
+    if (plan !== undefined && !TENANT_PLANS.includes(plan)) {
+      return res.status(400).json({ success: false, error: `plan must be one of: ${TENANT_PLANS.join(', ')}` });
+    }
 
     const fields: string[] = [];
     const params: any[] = [];
@@ -154,7 +184,8 @@ router.patch('/:id', requireAdmin, async (req: Request, res: Response) => {
     const r = result.rows[0];
     res.json({ success: true, data: { id: r.id, name: r.name, email: r.email, status: r.status, plan: r.plan, createdAt: r.created_at, updatedAt: r.updated_at } });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    logTenantError('update', error);
+    res.status(500).json({ success: false, error: 'Failed to update tenant' });
   }
 });
 
@@ -173,7 +204,8 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
     if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Tenant not found' });
     res.json({ success: true, message: 'Tenant deleted' });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    logTenantError('delete', error);
+    res.status(500).json({ success: false, error: 'Failed to delete tenant' });
   }
 });
 

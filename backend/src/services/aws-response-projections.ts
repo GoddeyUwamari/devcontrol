@@ -11,6 +11,7 @@
  */
 import type { FunctionConfiguration } from '@aws-sdk/client-lambda';
 import type { DistributionSummary } from '@aws-sdk/client-cloudfront';
+import type { CompositeAlarm, MetricAlarm } from '@aws-sdk/client-cloudwatch';
 
 /** The function fields discovery and the cost detectors read from ListFunctions. */
 export type LambdaFunctionFields = Pick<
@@ -63,5 +64,59 @@ export function projectCloudFrontDistribution(distribution: DistributionSummary)
     HttpVersion: distribution.HttpVersion,
     LastModifiedTime: distribution.LastModifiedTime,
     OriginDomainNames: (distribution.Origins?.Items ?? []).map((origin) => origin.DomainName),
+  };
+}
+
+/**
+ * The metric alarm fields readiness and the alarms endpoint read from
+ * DescribeAlarms. Descriptions, state reasons, metric-math queries and every
+ * action ARN are left out: actions are kept only as whether any alarm action
+ * exists, and metric math only as whether the alarm uses it.
+ */
+export interface MetricAlarmFields
+  extends Pick<
+    MetricAlarm,
+    | 'AlarmName'
+    | 'AlarmArn'
+    | 'StateValue'
+    | 'StateTransitionedTimestamp'
+    | 'Namespace'
+    | 'MetricName'
+    | 'ComparisonOperator'
+    | 'Threshold'
+    | 'TreatMissingData'
+    | 'ActionsEnabled'
+  > {
+  Dimensions: Array<{ Name: string | undefined; Value: string | undefined }>;
+  HasAlarmActions: boolean;
+  UsesMetricMath: boolean;
+}
+
+export function projectMetricAlarm(alarm: MetricAlarm): MetricAlarmFields {
+  return {
+    AlarmName: alarm.AlarmName,
+    AlarmArn: alarm.AlarmArn,
+    StateValue: alarm.StateValue,
+    StateTransitionedTimestamp: alarm.StateTransitionedTimestamp,
+    Namespace: alarm.Namespace,
+    MetricName: alarm.MetricName,
+    ComparisonOperator: alarm.ComparisonOperator,
+    Threshold: alarm.Threshold,
+    TreatMissingData: alarm.TreatMissingData,
+    ActionsEnabled: alarm.ActionsEnabled,
+    Dimensions: (alarm.Dimensions ?? []).map((d) => ({ Name: d.Name, Value: d.Value })),
+    HasAlarmActions: (alarm.AlarmActions ?? []).length > 0,
+    UsesMetricMath: (alarm.Metrics ?? []).length > 0,
+  };
+}
+
+/** The composite alarm fields the alarms endpoint reads: no rule, description, actions or ARN. */
+export type CompositeAlarmFields = Pick<CompositeAlarm, 'AlarmName' | 'StateValue' | 'StateTransitionedTimestamp'>;
+
+export function projectCompositeAlarm(alarm: CompositeAlarm): CompositeAlarmFields {
+  return {
+    AlarmName: alarm.AlarmName,
+    StateValue: alarm.StateValue,
+    StateTransitionedTimestamp: alarm.StateTransitionedTimestamp,
   };
 }
