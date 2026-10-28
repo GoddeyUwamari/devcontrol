@@ -309,6 +309,30 @@ describe('technical evidence (AWS-Observed)', () => {
     expect(text).not.toMatch(/Collected at|Observed at|Schema v/)
   })
 
+  it('shows "Active finding" with the finding_key only in the row tooltip, under an IAM user heading', () => {
+    const findingKey = 'f'.repeat(64)
+    evidenceState = {
+      data: [{ criterionId: 'CC6.2', resourceArn: 'arn:aws:iam::123456789012:user/example.user', resourceType: 'iam_user', provenance: 'OBSERVED', result: 'CONTRADICTS', observedAt: null, collectedAt: '2026-09-18T00:00:00.000Z', source: {}, explanation: `An active account-level finding exists (finding_key=${findingKey}).`, schemaVersion: 1 }],
+      isLoading: false,
+      error: null,
+    }
+    renderPage()
+    expect(screen.getByText('IAM user · example.user')).toBeInTheDocument()
+    const line = screen.getByText('Active finding')
+    expect(line.closest('[title]')).toHaveAttribute('title', findingKey)
+    expect(document.body.textContent).not.toContain(findingKey)
+  })
+
+  it('heads a security-group row "Security group · <sg id>"', () => {
+    evidenceState = {
+      data: [{ criterionId: 'CC7.1', resourceArn: 'arn:aws:ec2:us-east-1:123456789012:security-group/sg-1234567890abcdef0', resourceType: 'security_group', provenance: 'OBSERVED', result: 'CONTRADICTS', observedAt: null, collectedAt: '2026-09-18T00:00:00.000Z', source: {}, explanation: 'x', schemaVersion: 1 }],
+      isLoading: false,
+      error: null,
+    }
+    renderPage()
+    expect(screen.getByText('Security group · sg-1234567890abcdef0')).toBeInTheDocument()
+  })
+
   it('falls back to collectedAt for the Observed line when observedAt is null', () => {
     evidenceState = {
       data: [{ criterionId: 'CC6.1', resourceArn: 'arn:aws:s3:::example-bucket', resourceType: 's3', provenance: 'OBSERVED', result: 'SUPPORTS', observedAt: null, collectedAt: '2026-09-18T00:00:00.000Z', source: {}, explanation: 'x', schemaVersion: 1 }],

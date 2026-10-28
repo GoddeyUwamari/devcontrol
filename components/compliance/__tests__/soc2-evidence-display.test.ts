@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evidenceHeading, evidenceResultLine } from '../soc2-evidence-display'
+import { evidenceHeading, evidenceResultLine, evidenceResultTitle } from '../soc2-evidence-display'
 
 const ACCOUNT = '123456789012'
 
@@ -12,6 +12,16 @@ describe('evidenceHeading', () => {
     expect(evidenceHeading('aurora', `arn:aws:rds:us-east-1:${ACCOUNT}:cluster:example-cluster`)).toBe('Aurora cluster · example-cluster')
   })
 
+  it('heads IAM user rows by user name and security-group rows by group ID', () => {
+    expect(evidenceHeading('iam_user', `arn:aws:iam::${ACCOUNT}:user/example.user`)).toBe('IAM user · example.user')
+    expect(evidenceHeading('iam_user', `arn:aws:iam::${ACCOUNT}:user/team/example.user`)).toBe('IAM user · example.user')
+    expect(evidenceHeading('security_group', `arn:aws:ec2:us-east-1:${ACCOUNT}:security-group/sg-1234567890abcdef0`))
+      .toBe('Security group · sg-1234567890abcdef0')
+    // The scanner writes '*' when the account ID is unknown.
+    expect(evidenceHeading('security_group', 'arn:aws:ec2:us-east-1:*:security-group/sg-1234567890abcdef0'))
+      .toBe('Security group · sg-1234567890abcdef0')
+  })
+
   it('heads an aggregate row (no ARN) "AWS account"', () => {
     expect(evidenceHeading('organization', null)).toBe('AWS account')
   })
@@ -20,8 +30,11 @@ describe('evidenceHeading', () => {
     const odd = `arn:aws:ec2:us-east-1:${ACCOUNT}:snapshot/snap-example`
     expect(evidenceHeading('ec2', odd)).toBe(odd)
     expect(evidenceHeading('s3', 'not-an-arn')).toBe('not-an-arn')
-    const user = `arn:aws:iam::${ACCOUNT}:user/example.user`
-    expect(evidenceHeading('iam_user', user)).toBe(user)
+    const role = `arn:aws:iam::${ACCOUNT}:role/example-role`
+    expect(evidenceHeading('iam_user', role)).toBe(role)
+    const sgOdd = `arn:aws:ec2:us-east-1:${ACCOUNT}:security-group-rule/sgr-example`
+    expect(evidenceHeading('security_group', sgOdd)).toBe(sgOdd)
+    expect(evidenceHeading('security_group', 'sg-not-an-arn')).toBe('sg-not-an-arn')
   })
 
   describe('access keys', () => {
@@ -80,10 +93,16 @@ describe('evidenceResultLine', () => {
     expect(evidenceResultLine(
       'The S3 public-access evaluation recorded no ACL or bucket-policy public-exposure finding for this bucket, and the organization’s most recent discovery job completed successfully.'
     )).toBe('No public ACL or bucket-policy exposure. The latest discovery completed.')
-    expect(evidenceResultLine('An active account-level finding exists (finding_key=abc123).')).toBe('Active finding: abc123')
+    expect(evidenceResultLine('An active account-level finding exists (finding_key=abc123).')).toBe('Active finding')
     expect(evidenceResultLine('2 active finding(s) of this type exist for the organization.')).toBe('2 active finding(s)')
     expect(evidenceResultLine('Zero active findings of this type, and the organization’s most recent discovery job completed successfully.'))
       .toBe('No active findings. The latest discovery completed.')
+  })
+
+  it('moves an active finding\'s finding_key to the tooltip; other rows have none', () => {
+    expect(evidenceResultTitle('An active account-level finding exists (finding_key=abc123).')).toBe('abc123')
+    expect(evidenceResultTitle('2 active finding(s) of this type exist for the organization.')).toBeUndefined()
+    expect(evidenceResultTitle('AWS discovery reported is_public=false for this rds resource.')).toBeUndefined()
   })
 
   it('leaves every other explanation unchanged', () => {

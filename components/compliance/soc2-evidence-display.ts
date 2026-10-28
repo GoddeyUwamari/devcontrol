@@ -12,6 +12,9 @@ function arnResource(arn: string): string | null {
   return ARN.exec(arn)?.[1] ?? null
 }
 
+/** An IAM user ARN's resource part, `user/<optional path/>name`; captures the name. */
+const IAM_USER = /^user\/(?:.*\/)?([^/]+)$/
+
 /** Resource type -> heading label, and how its ID is read from the ARN's resource part. */
 const HEADINGS: Record<string, { label: string; id: RegExp }> = {
   ec2: { label: 'EC2 instance', id: /^instance\/(i-[\w-]+)$/ },
@@ -19,6 +22,8 @@ const HEADINGS: Record<string, { label: string; id: RegExp }> = {
   s3: { label: 'S3 bucket', id: /^([^/:]+)$/ },
   rds: { label: 'RDS instance', id: /^db:(.+)$/ },
   aurora: { label: 'Aurora cluster', id: /^cluster:(.+)$/ },
+  iam_user: { label: 'IAM user', id: IAM_USER },
+  security_group: { label: 'Security group', id: /^security-group\/(sg-[\w-]+)$/ },
 }
 
 const ACCESS_KEY = /^(.*)#access-key#(.+)$/
@@ -36,7 +41,7 @@ export function evidenceHeading(resourceType: string, resourceArn: string | null
     if (key) {
       const [, userPart, keyId] = key
       // An unexpected user part is shown whole; the key ID is masked either way.
-      const userName = /^user\/(?:.*\/)?([^/]+)$/.exec(arnResource(userPart) ?? '')?.[1] ?? userPart
+      const userName = IAM_USER.exec(arnResource(userPart) ?? '')?.[1] ?? userPart
       return `Access key · ${userName} · …${keyId.slice(-4)}`
     }
     return resourceArn
@@ -88,9 +93,14 @@ export function evidenceResultLine(explanation: string): string {
   if ((m = PUBLIC.exec(explanation))) return PUBLIC_LINES[m[1] as FieldValue]
   if ((m = BACKUP.exec(explanation))) return BACKUP_LINES[m[1] as FieldValue]
   if ((m = S3_PUBLIC_FINDING.exec(explanation))) return `Public access: ${m[1]}`
-  if ((m = ACTIVE_FINDING.exec(explanation))) return `Active finding: ${m[1]}`
+  if (ACTIVE_FINDING.test(explanation)) return 'Active finding'
   if ((m = ACTIVE_COUNT.exec(explanation))) return `${m[1]} active finding(s)`
   if (explanation === S3_NO_PUBLIC_FINDING) return 'No public ACL or bucket-policy exposure. The latest discovery completed.'
   if (explanation === NO_ACTIVE_FINDINGS) return 'No active findings. The latest discovery completed.'
   return explanation
+}
+
+/** The row's tooltip: the finding_key an "Active finding" row no longer shows in its text. */
+export function evidenceResultTitle(explanation: string): string | undefined {
+  return ACTIVE_FINDING.exec(explanation)?.[1]
 }

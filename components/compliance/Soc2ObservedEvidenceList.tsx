@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useSoc2Evidence } from '@/lib/hooks/useSoc2Readiness';
 import { formatLocalWhen } from '@/lib/utils/localTime';
 import { EvidenceResultBadge, ProvenanceBadge } from './soc2-badges';
-import { evidenceHeading, evidenceResultLine } from './soc2-evidence-display';
+import { evidenceHeading, evidenceResultLine, evidenceResultTitle } from './soc2-evidence-display';
 
 /**
  * AWS-Observed Evidence -- Phase 2 technical observations only (provenance is always
@@ -59,7 +59,11 @@ export function Soc2ObservedEvidenceList({ criterionId }: { criterionId: string 
   return (
     <div className="flex flex-col gap-2.5">
       {evidence.map((obs, idx) => (
-        <div key={`${obs.resourceArn ?? 'org-level'}-${idx}`} className="border border-slate-100 rounded-lg p-4">
+        <div
+          key={`${obs.resourceArn ?? 'org-level'}-${idx}`}
+          className="border border-slate-100 rounded-lg p-4"
+          title={evidenceResultTitle(obs.explanation)}
+        >
           <div className="flex items-start justify-between gap-3 mb-2">
             <div className="min-w-0 flex items-start gap-1.5">
               <p className="text-label text-slate-900 break-all">
