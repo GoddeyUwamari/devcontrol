@@ -53,7 +53,7 @@ export interface AuroraClusterInfo {
 
 export type DescribeAuroraClustersResult =
   | { status: 'described'; clustersById: Map<string, AuroraClusterInfo> }
-  | { status: 'unavailable'; reason: string };
+  | { status: 'unavailable'; reason: string; error?: unknown };
 
 /**
  * One unfiltered, paginated DescribeDBClusters call for the whole region --
@@ -85,6 +85,6 @@ export async function describeAuroraClusters(client: RDSClient): Promise<Describ
     }
     return { status: 'described', clustersById };
   } catch (error: any) {
-    return { status: 'unavailable', reason: error?.message || error?.name || 'Unknown error' };
+    return { status: 'unavailable', reason: error?.message || error?.name || 'Unknown error', error };
   }
 }

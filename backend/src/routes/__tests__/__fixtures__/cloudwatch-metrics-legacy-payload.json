@@ -1,0 +1,398 @@
+{
+  "success": true,
+  "data": {
+    "accountId": "<account-id>",
+    "nickname": null,
+    "region": "us-east-1",
+    "uptime": 100,
+    "avgResponseTimeMs": 740,
+    "requestsPerMinute": 2,
+    "errorRate": 0,
+    "monthlyCost": 42,
+    "trendPercent": 0,
+    "responseTimeHistory": [
+      {
+        "timestamp": 1793181300000,
+        "value": 740
+      }
+    ],
+    "coverage": {
+      "ec2": true,
+      "loadBalancer": true,
+      "rds": true,
+      "lambda": true,
+      "dynamodb": true,
+      "ecs": true,
+      "eks": true,
+      "ebs": true,
+      "cloudfront": true,
+      "aurora": true
+    },
+    "resourceCounts": {
+      "ec2": {
+        "shown": 5,
+        "total": 5
+      },
+      "loadBalancer": {
+        "shown": 1,
+        "total": 1
+      },
+      "rds": {
+        "shown": 1,
+        "total": 1
+      },
+      "lambda": {
+        "shown": 1,
+        "total": 1
+      },
+      "dynamodb": {
+        "shown": 1,
+        "total": 1
+      },
+      "ecs": {
+        "shown": 1,
+        "total": 1
+      },
+      "eks": {
+        "shown": 1,
+        "total": 1
+      },
+      "ebs": {
+        "shown": 1,
+        "total": 1
+      },
+      "cloudfront": {
+        "shown": 1,
+        "total": 1
+      },
+      "aurora": {
+        "shown": 1,
+        "total": 1
+      }
+    },
+    "healthSummary": {
+      "total": 14,
+      "healthy": 8,
+      "degraded": 1,
+      "critical": 0,
+      "down": 0,
+      "monitored": 9
+    },
+    "systemStatus": "degraded",
+    "services": [
+      {
+        "resourceId": "i-0cccccccccccccccc",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "web-denied",
+        "name": "web-denied",
+        "description": "EC2 · i-0cccccccccccccccc",
+        "resourceType": "ec2",
+        "status": "unknown",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": true,
+        "monitored": false
+      },
+      {
+        "resourceId": "i-0eeeeeeeeeeeeeeee",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "web-other-account",
+        "name": "web-other-account",
+        "description": "EC2 · i-0eeeeeeeeeeeeeeee",
+        "resourceType": "ec2",
+        "status": "healthy",
+        "uptime": 100,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": true,
+        "monitored": true,
+        "metrics": [
+          {
+            "label": "CPU",
+            "value": 5,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "resourceId": "i-0dddddddddddddddd",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "web-other-region",
+        "name": "web-other-region",
+        "description": "EC2 · i-0dddddddddddddddd",
+        "resourceType": "ec2",
+        "status": "healthy",
+        "uptime": 100,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": true,
+        "monitored": true,
+        "metrics": [
+          {
+            "label": "CPU",
+            "value": 5,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "resourceId": "i-1234567890abcdef0",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "web-running",
+        "name": "web-running",
+        "description": "EC2 · i-1234567890abcdef0",
+        "resourceType": "ec2",
+        "status": "healthy",
+        "uptime": 100,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": true,
+        "monitored": true,
+        "metrics": [
+          {
+            "label": "CPU",
+            "value": 12,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "resourceId": "i-0bbbbbbbbbbbbbbbb",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "web-stopped",
+        "name": "web-stopped",
+        "description": "EC2 · i-0bbbbbbbbbbbbbbbb",
+        "resourceType": "ec2",
+        "status": "down",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": true,
+        "monitored": false
+      },
+      {
+        "resourceId": "example-alb",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "app-alb",
+        "name": "app-alb",
+        "description": "Application Load Balancer",
+        "resourceType": "load-balancer",
+        "status": "degraded",
+        "uptime": null,
+        "responseTimeMs": 740,
+        "errorRate": 0,
+        "critical": false,
+        "monitored": true,
+        "metrics": [
+          {
+            "label": "Requests/min",
+            "value": 2
+          },
+          {
+            "label": "Error rate",
+            "value": 0,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "resourceId": "example-db",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "example-db",
+        "name": "example-db",
+        "description": "RDS · postgres",
+        "resourceType": "rds",
+        "status": "healthy",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": true,
+        "monitored": false
+      },
+      {
+        "resourceId": "idle-fn",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "idle-fn",
+        "name": "idle-fn",
+        "description": "Lambda · nodejs20.x",
+        "resourceType": "lambda",
+        "status": "unknown",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": false,
+        "monitored": false,
+        "metrics": []
+      },
+      {
+        "resourceId": "orders",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "orders",
+        "name": "orders",
+        "description": "DynamoDB table",
+        "resourceType": "dynamodb",
+        "status": "unknown",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": false,
+        "monitored": false,
+        "reason": "No CloudWatch telemetry available for this table in the selected window",
+        "signals": {
+          "systemErrors": null,
+          "throttledRequests": null
+        },
+        "metrics": []
+      },
+      {
+        "resourceId": "api-svc",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "api-svc",
+        "name": "api-svc",
+        "description": "ECS · cluster-a",
+        "resourceType": "ecs",
+        "status": "healthy",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": false,
+        "monitored": true,
+        "reason": null,
+        "signals": {
+          "desiredCount": 2,
+          "runningCount": 2,
+          "pendingCount": 0
+        },
+        "metrics": [
+          {
+            "label": "Running",
+            "value": 2
+          },
+          {
+            "label": "Desired",
+            "value": 2
+          },
+          {
+            "label": "Pending",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "resourceId": "k8s",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "k8s",
+        "name": "k8s",
+        "description": "EKS · Kubernetes 1.30",
+        "resourceType": "eks",
+        "status": "healthy",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": false,
+        "monitored": true,
+        "reason": null,
+        "signals": {
+          "issueCount": 0
+        },
+        "metrics": [
+          {
+            "label": "Health issues",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "resourceId": "vol-0123456789abcdef0",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "data-vol",
+        "name": "data-vol",
+        "description": "EBS · gp3",
+        "resourceType": "ebs",
+        "status": "healthy",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": false,
+        "monitored": true,
+        "reason": null,
+        "signals": {
+          "eventCount": 0
+        },
+        "metrics": [
+          {
+            "label": "Status check events",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "resourceId": "E2EXAMPLE1",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "cdn",
+        "name": "cdn",
+        "description": "CloudFront distribution",
+        "resourceType": "cloudfront",
+        "status": "healthy",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": 1,
+        "critical": false,
+        "monitored": true,
+        "reason": null,
+        "signals": {
+          "totalErrorPct": 1,
+          "rate4xxPct": 1,
+          "rate5xxPct": 0
+        },
+        "metrics": [
+          {
+            "label": "4xx rate",
+            "value": 1,
+            "unit": "%"
+          },
+          {
+            "label": "5xx rate",
+            "value": 0,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "resourceId": "aurora-main",
+        "resourceDbId": "<aws-resources-id>",
+        "resourceSortName": "aurora-main",
+        "name": "aurora-main",
+        "description": "Aurora · aurora-postgresql",
+        "resourceType": "aurora",
+        "status": "healthy",
+        "uptime": null,
+        "responseTimeMs": null,
+        "errorRate": null,
+        "critical": true,
+        "monitored": true,
+        "reason": null,
+        "signals": {
+          "cpuPercent": 30,
+          "lagMs": null
+        },
+        "metrics": [
+          {
+            "label": "CPU",
+            "value": 30,
+            "unit": "%"
+          }
+        ]
+      }
+    ],
+    "capturedAt": "<captured-at>",
+    "pagination": {
+      "shown": 14,
+      "total": 14,
+      "hasMore": false,
+      "cursor": null
+    }
+  },
+  "connected": true
+}

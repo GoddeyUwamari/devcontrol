@@ -246,6 +246,12 @@ export class CloudWatchAlarmsService {
     private readonly now: () => number = Date.now
   ) {}
 
+  /** Tests only: forgets every cached and in-flight result, so one test's answer never serves the next. */
+  clearCacheForTests(): void {
+    this.cache.clear()
+    this.inFlight.clear()
+  }
+
   /** Organization, account (its row and its AWS account ID, which may be unrecorded) and region. */
   private static cacheKey(organizationId: string, account: AwsAccountRow, region: string): string {
     return `${organizationId}:${account.id}:${account.account_id ?? ''}:${region}`

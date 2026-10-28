@@ -584,6 +584,9 @@ describe('AWS response classification: commands with more than one item list', (
       `client-x:ListPartsCommand: ${rule.test} does not test projectGadget`,
     ]);
     const spreadGadget = sources[rule.module].replace('{ Id: g.Id }', '{ ...g }');
-    expect(check("import { projectWidget } from './proj';", [], (label) => (label === rule.module ? spreadGadget : sources[label]))).not.toEqual([]);
+    expect(check("import { projectWidget } from './proj';", [], (label) => (label === rule.module ? spreadGadget : sources[label]))).toEqual([
+      `client-x:ListPartsCommand: ${path.join('services', 'proj.ts')}:5: spread in projectGadget`,
+      `client-x:ListPartsCommand: ${path.join('services', 'proj.ts')}:5: projectGadget uses g other than to read one field`,
+    ]);
   });
 });

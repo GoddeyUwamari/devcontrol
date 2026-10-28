@@ -56,6 +56,7 @@ import { createRemediationRoutes } from './routes/remediation.routes';
 import { createComplianceRoutes } from './routes/compliance.routes'
 import observabilityRoutes from './routes/observability.routes';
 import observabilityAlarmsRoutes from './routes/observability-alarms.routes';
+import observabilityResourcesRoutes from './routes/observability-resources.routes';
 
 loadEnv();
 
@@ -210,6 +211,7 @@ console.log('[Compliance] Routes registered');
 // Observability Readiness
 app.use('/api/observability', observabilityRoutes);
 app.use('/api/observability', observabilityAlarmsRoutes);
+app.use('/api/observability', observabilityResourcesRoutes);
 app.use('/api/system', observabilityRoutes);
 console.log('[Observability] Routes registered');
 

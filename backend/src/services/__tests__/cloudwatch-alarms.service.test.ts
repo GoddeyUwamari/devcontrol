@@ -317,6 +317,22 @@ describe('CloudWatchAlarmsService', () => {
     expect(inAlarmCapped).toMatchObject({ status: 'ok', in_alarm_complete: false, configured_count: IN_ALARM_MAX_PAGES + 1, configured_count_complete: true, truncated: true });
     expect(inAlarmCapped.status === 'ok' && inAlarmCapped.in_alarm).toHaveLength(IN_ALARM_MAX_PAGES);
 
+    // A pass that ends exactly at its cap (last page has no NextToken) is complete, not truncated.
+    const atConfiguredCap = Array.from({ length: CONFIGURED_MAX_PAGES }, (_, i) => metric(`cap-${i}`, { StateValue: i < 2 ? 'ALARM' : 'OK' }));
+    useAccount(ORG_A, accountRow('row-at-cap', ORG_A, ACCOUNT_A), { metric: atConfiguredCap, perPage: 1 });
+    expect(await service().getAlarms(ORG_A)).toMatchObject({
+      status: 'ok',
+      configured_count: CONFIGURED_MAX_PAGES,
+      configured_count_complete: true,
+      in_alarm_complete: true,
+      truncated: false,
+    });
+    const atInAlarmCap = Array.from({ length: IN_ALARM_MAX_PAGES }, (_, i) => metric(`firing-cap-${i}`));
+    useAccount(ORG_B, accountRow('row-b-at-cap', ORG_B, ACCOUNT_B), { metric: atInAlarmCap, perPage: 1 });
+    const inAlarmAtCap = await service().getAlarms(ORG_B);
+    expect(inAlarmAtCap).toMatchObject({ status: 'ok', in_alarm_complete: true, configured_count: IN_ALARM_MAX_PAGES, configured_count_complete: true, truncated: false });
+    expect(inAlarmAtCap.status === 'ok' && inAlarmAtCap.in_alarm).toHaveLength(IN_ALARM_MAX_PAGES);
+
     useAccount(ORG_A, accountRow('row-loop', ORG_A, ACCOUNT_C), { metric: [metric('a')], repeatToken: 'same' });
     expectError(await service().getAlarms(ORG_A), 'failed');
   });

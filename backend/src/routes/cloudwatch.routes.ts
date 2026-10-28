@@ -60,8 +60,11 @@ router.get('/metrics', authenticateToken, async (req, res) => {
     }
     const pageSize = clampPageSize(req.query.pageSize)
     const { services, pagination } = paginateServices(metrics.services, cursor, pageSize)
+    // OB2's observability states are served by GET /api/observability/resources only;
+    // this response stays exactly what it was.
+    const { observability: _observability, ...legacy } = metrics
 
-    res.json({ success: true, data: { ...metrics, services, pagination }, connected: true })
+    res.json({ success: true, data: { ...legacy, services, pagination }, connected: true })
   } catch (err) {
     if (isPlatformAwsCredentialsUnavailable(err)) {
       return res.status(503).json({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE })

@@ -1,0 +1,394 @@
+/**
+ * OB2: Last seen, checked at and inventory coverage across sweeps, against
+ * real Postgres with the 202610281200 tables (CI bootstrap), and the storage's
+ * isolation by organization, AWS account and region.
+ *
+ * The sweep tests drive CloudWatchService.getMetrics() (a fresh instance per
+ * test, so no cache is shared) with fake AWS clients. The connecting role is a
+ * superuser in CI and locally, which row-level security never restricts, so
+ * the RLS assertions run after SET LOCAL ROLE devcontrol in a transaction that
+ * is always rolled back. Placeholders only.
+ */
+import { Pool, PoolClient } from 'pg'
+import { CloudWatchService } from '../cloudwatch.service'
+import { AWSClientFactory } from '../aws-client-factory.service'
+import awsCostService from '../aws-cost.service'
+import { pool as appPool, requestContext } from '../../config/database'
+import { recordObservations, readInventoryCapped } from '../../repositories/observability-observations.repository'
+import { DATAPOINT_AT, deleteFleetOrgs, fakeClients, insertFleetOrg, mixedFleet, MetricBehaviour, REGION } from '../../routes/__tests__/observability-fleet-fixture'
+
+function dbConfig() {
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME || 'platform_portal',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+  }
+}
+
+const pool = new Pool(dbConfig())
+const createdOrgIds: string[] = []
+const EARLIER = new Date('2026-10-27T18:20:00.000Z')
+const OTHER_ACCOUNT = '111122223333'
+
+const oneEc2 = (accountId: string) => mixedFleet(accountId).filter((r) => r.name === 'web-running')
+const ec2 = (behaviour: MetricBehaviour) => ({ 'i-1234567890abcdef0': behaviour })
+const ok: MetricBehaviour = { kind: 'values', byMetric: { StatusCheckFailed: 0, CPUUtilization: 12 } }
+
+async function sweep(orgId: string, accountId: string, metrics: Record<string, MetricBehaviour>, datapointAt?: Date, volumeStatus?: string) {
+  jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics, accountId, datapointAt, volumeStatus }))
+  const result = await new CloudWatchService().getMetrics(orgId, '1h', true)
+  jest.restoreAllMocks()
+  jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 0 } as any)
+  const snapshot = result!.observability!
+  return { snapshot, row: snapshot.rows.find((r) => r.row.name === 'web-running')?.row as any }
+}
+
+async function storedRow(orgId: string) {
+  const { rows } = await pool.query(
+    `SELECT aws_account_id, region, last_datapoint_at, last_successful_check_at FROM resource_telemetry_observations WHERE organization_id = $1`,
+    [orgId]
+  )
+  return rows
+}
+
+async function newOrg(label: string, fleetFor = oneEc2) {
+  const fleet = await insertFleetOrg(pool, label, fleetFor)
+  createdOrgIds.push(fleet.orgId)
+  return fleet
+}
+
+beforeEach(() => {
+  jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 0 } as any)
+})
+afterEach(() => jest.restoreAllMocks())
+afterAll(async () => {
+  await deleteFleetOrgs(pool, createdOrgIds)
+  await pool.end()
+})
+
+describe('Last seen across sweeps', () => {
+  it('(L1-L3) persisted, kept through an empty window and a denied one, while telemetry reports each sweep', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('sequence')
+
+    // L1: a datapoint is observed and stored under (org, account, region, resource).
+    const first = await sweep(orgId, accountId, ec2(ok))
+    expect(first.row).toMatchObject({ check_status: 'passing', telemetry: 'reporting', last_seen: DATAPOINT_AT.toISOString() })
+    const afterFirst = await storedRow(orgId)
+    expect(afterFirst).toHaveLength(1)
+    expect(afterFirst[0]).toMatchObject({ aws_account_id: accountId, region: REGION, last_datapoint_at: DATAPOINT_AT })
+    const firstCheck: Date = afterFirst[0].last_successful_check_at
+    expect(firstCheck).toBeInstanceOf(Date)
+    const { rows: ids } = await pool.query('SELECT resource_id FROM resource_telemetry_observations WHERE organization_id = $1', [orgId])
+    expect(ids[0].resource_id).toBe(idsByName['web-running'])
+
+    // L2: a later window with no datapoints keeps Last seen; telemetry is this sweep's, not stale.
+    const second = await sweep(orgId, accountId, ec2({ kind: 'empty' }))
+    expect(second.row).toMatchObject({ telemetry: 'no_telemetry', unknown_reason: 'no_telemetry', last_seen: DATAPOINT_AT.toISOString() })
+    const afterSecond = await storedRow(orgId)
+    expect(afterSecond[0].last_datapoint_at).toEqual(DATAPOINT_AT)
+    expect(afterSecond[0].last_successful_check_at.getTime()).toBeGreaterThanOrEqual(firstCheck.getTime())
+
+    // L3: a denied query keeps Last seen and does not advance the last successful check.
+    const third = await sweep(orgId, accountId, ec2({ kind: 'forbidden' }))
+    expect(third.row).toMatchObject({ check_status: 'unknown', unknown_reason: 'access_denied', telemetry: 'unknown', last_seen: DATAPOINT_AT.toISOString() })
+    const afterThird = await storedRow(orgId)
+    expect(afterThird[0].last_successful_check_at).toEqual(afterSecond[0].last_successful_check_at)
+  })
+
+  it('(L4) an older datapoint never moves Last seen back', async () => {
+    const { orgId, accountId } = await newOrg('older')
+    await sweep(orgId, accountId, ec2(ok))
+    const older = await sweep(orgId, accountId, ec2(ok), EARLIER)
+    expect(older.row.last_seen).toBe(DATAPOINT_AT.toISOString())
+    expect((await storedRow(orgId))[0].last_datapoint_at).toEqual(DATAPOINT_AT)
+  })
+
+  it('(L5) with nothing stored and no datapoint, Last seen is null', async () => {
+    const { orgId, accountId } = await newOrg('nothing')
+    const { row } = await sweep(orgId, accountId, ec2({ kind: 'empty' }))
+    expect(row).toMatchObject({ last_seen: null, last_seen_source: null, telemetry: 'no_telemetry' })
+  })
+
+  it('(review F4) an EBS volume with no verdict: Last seen stays the stored observation or null, never this sweep', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('ebs-no-verdict', (a) => mixedFleet(a).filter((r) => r.name === 'data-vol'))
+    const ebsRow = (snapshot: any) => snapshot.rows.find((r: any) => r.row.name === 'data-vol').row
+
+    const first = await sweep(orgId, accountId, {}, undefined, 'insufficient-data')
+    expect(ebsRow(first.snapshot)).toMatchObject({ unknown_reason: 'no_telemetry', last_seen: null, last_seen_source: null })
+    expect(await storedRow(orgId)).toEqual([])
+
+    const ok = await sweep(orgId, accountId, {}, undefined, 'ok')
+    const observedAt = ebsRow(ok.snapshot).last_seen
+    expect(ok.snapshot.rows.length).toBe(1)
+    expect(observedAt).not.toBeNull()
+
+    const later = await sweep(orgId, accountId, {}, undefined, 'insufficient-data')
+    expect(ebsRow(later.snapshot)).toMatchObject({ telemetry: 'no_telemetry', last_seen: observedAt, last_seen_source: 'observation' })
+    const stored = await pool.query('SELECT last_successful_check_at FROM resource_telemetry_observations WHERE resource_id = $1', [idsByName['data-vol']])
+    expect(stored.rows[0].last_successful_check_at.toISOString()).toBe(observedAt)
+  })
+
+  it('outside-account and outside-region resources are never recorded', async () => {
+    const { orgId, accountId } = await newOrg('scope', (a) => mixedFleet(a).filter((r) => r.name === 'web-other-region' || r.name === 'web-other-account'))
+    const { snapshot } = await sweep(orgId, accountId, {
+      'i-0dddddddddddddddd': ok,
+      'i-0eeeeeeeeeeeeeeee': ok,
+    })
+    expect(snapshot.rows.map((r) => r.row.unknown_reason).sort()).toEqual(['outside_account', 'outside_region'])
+    expect(await storedRow(orgId)).toEqual([])
+  })
+})
+
+describe('checked_at', () => {
+  it('(P3) a partial sweep never advances the last fully successful check', async () => {
+    const { orgId, accountId } = await newOrg('checked-at')
+    const before = Date.now()
+    const complete = await sweep(orgId, accountId, ec2(ok))
+    expect(complete.snapshot.collection).toBe('complete')
+    const checkedAt = complete.snapshot.checkedAt!
+    expect(new Date(checkedAt).getTime()).toBeGreaterThanOrEqual(before - 1000)
+
+    const partial = await sweep(orgId, accountId, ec2({ kind: 'forbidden' }))
+    expect(partial.snapshot.collection).toBe('partial')
+    expect(partial.snapshot.checkedAt).toBe(checkedAt)
+
+    const { rows } = await pool.query(`SELECT last_attempt_outcome FROM observability_collection_scopes WHERE organization_id = $1`, [orgId])
+    expect(rows).toEqual([{ last_attempt_outcome: 'partial' }])
+  })
+
+  it('(P4) a first sweep that is partial has no checked_at', async () => {
+    const { orgId, accountId } = await newOrg('first-partial')
+    const { snapshot } = await sweep(orgId, accountId, ec2({ kind: 'forbidden' }))
+    expect(snapshot.checkedAt).toBeNull()
+  })
+})
+
+describe('a check that recorded no query (review F8)', () => {
+  it('makes the collection partial: checked_at never advances, and nothing is stored as observed', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('no-query')
+    const id = idsByName['web-running']
+    const resources = [{
+      id, resource_id: 'i-1234567890abcdef0', resource_name: 'web-running', resource_type: 'ec2',
+      resource_arn: `arn:aws:ec2:${REGION}:${accountId}:instance/i-1234567890abcdef0`, region: REGION, status: 'running', metadata: null,
+    }]
+    const healthyRow = {
+      resourceId: 'i-1234567890abcdef0', resourceDbId: id, resourceSortName: 'web-running', name: 'web-running', description: '',
+      resourceType: 'ec2', status: 'healthy', uptime: 100, responseTimeMs: null, errorRate: null, critical: true, monitored: true,
+    }
+    const build = (queries: Record<string, string>, sweepAt: Date) =>
+      (new CloudWatchService() as any).buildObservabilitySnapshot({
+        organizationId: orgId, accountId, region: REGION, range: '1h', sweepAt, resources, services: [healthyRow],
+        evidence: new Map([[id, { kind: 'cloudwatch', queries, newestDatapointAt: Object.keys(queries).length ? DATAPOINT_AT : null }]]),
+        failedBlocks: new Set(),
+      })
+
+    const first = await build({}, new Date('2026-10-28T10:00:00.000Z'))
+    expect(first.collection).toBe('partial')
+    expect(first.checkedAt).toBeNull()
+    expect(first.rows[0].row).toMatchObject({ check_status: 'unknown', unknown_reason: 'query_failed', telemetry: 'unknown' })
+    expect(await storedRow(orgId)).toEqual([])
+
+    const complete = await build({ statusCheckFailed: 'complete', cpu: 'complete' }, new Date('2026-10-28T10:05:00.000Z'))
+    expect(complete.collection).toBe('complete')
+    expect(complete.checkedAt).toBe('2026-10-28T10:05:00.000Z')
+
+    const again = await build({}, new Date('2026-10-28T10:10:00.000Z'))
+    expect(again.collection).toBe('partial')
+    expect(again.checkedAt).toBe('2026-10-28T10:05:00.000Z')
+    const stored = await storedRow(orgId)
+    expect(stored[0].last_successful_check_at.toISOString()).toBe('2026-10-28T10:05:00.000Z')
+  })
+})
+
+describe('inventory coverage', () => {
+  it('(P6) capped from the newest finished discovery job: truncated -> true, clean -> false, none -> null', async () => {
+    const { orgId } = await newOrg('coverage')
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: null, reasons: [] })
+
+    await pool.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, completed_at, warnings) VALUES ($1, 'completed', NOW() - INTERVAL '2 hours', '["discovery_listing_truncated"]'::jsonb)`,
+      [orgId]
+    )
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: true, reasons: ['discovery_listing_truncated'] })
+
+    await pool.query(`INSERT INTO resource_discovery_jobs (organization_id, status, completed_at, warnings) VALUES ($1, 'completed', NOW(), '[]'::jsonb)`, [orgId])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: false, reasons: [] })
+
+  })
+
+  it('(review F1) only a completed newest job answers: a newer failed, interrupted, running or pending job gives null', async () => {
+    const { orgId } = await newOrg('coverage-failed')
+    const job = (status: string, extra = '', values: unknown[] = []) =>
+      pool.query(
+        `INSERT INTO resource_discovery_jobs (organization_id, status, completed_at, warnings, error_message)
+         VALUES ($1, $2, ${status === 'completed' || status === 'failed' ? 'NOW()' : 'NULL'}, '[]'::jsonb, $3)${extra}`,
+        [orgId, status, ...values]
+      )
+    // A clean completed job: false.
+    await job('completed', '', [null])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: false, reasons: [] })
+    // A newer job that failed (a listing errored) carries no truncation code, yet proves nothing.
+    await job('failed', '', ['AccessDenied listing instances'])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: null, reasons: [] })
+    // Interrupted (discovery marks it failed with this message).
+    await job('failed', '', ['Discovery was interrupted'])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: null, reasons: [] })
+    // Still running, or pending: not proven either.
+    await job('running', '', [null])
+    expect((await readInventoryCapped(appPool, orgId)).capped).toBeNull()
+    await job('pending', '', [null])
+    expect((await readInventoryCapped(appPool, orgId)).capped).toBeNull()
+    // A newer completed job answers again.
+    await job('completed', '', [null])
+    expect(await readInventoryCapped(appPool, orgId)).toEqual({ capped: false, reasons: [] })
+  })
+})
+
+describe('storage isolation and failure', () => {
+  async function asDevcontrol<T>(organizationId: string, work: (c: PoolClient) => Promise<T>): Promise<T> {
+    const c = await pool.connect()
+    try {
+      await c.query('BEGIN')
+      await c.query('SET LOCAL ROLE devcontrol')
+      const { rows } = await c.query(`SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`)
+      expect(rows[0]).toEqual({ rolsuper: false, rolbypassrls: false })
+      await c.query(`SELECT set_config('app.current_organization_id', $1, true)`, [organizationId])
+      return await work(c)
+    } finally {
+      await c.query('ROLLBACK').catch(() => {})
+      c.release()
+    }
+  }
+
+  it('(L7) RLS: devcontrol tagged as org A sees none of org B, and cannot write for org B', async () => {
+    const a = await newOrg('rls-a')
+    const b = await newOrg('rls-b')
+    await recordObservations(appPool, { organizationId: b.orgId, awsAccountId: b.accountId, region: REGION }, [
+      { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+
+    await asDevcontrol(a.orgId, async (c) => {
+      const seen = await c.query(`SELECT organization_id FROM resource_telemetry_observations WHERE organization_id = $1`, [b.orgId])
+      expect(seen.rows).toEqual([])
+      const scopes = await c.query(`SELECT organization_id FROM observability_collection_scopes WHERE organization_id = $1`, [b.orgId])
+      expect(scopes.rows).toEqual([])
+      await c.query('SAVEPOINT s')
+      await expect(
+        c.query(
+          `INSERT INTO resource_telemetry_observations (organization_id, aws_account_id, region, resource_id, last_datapoint_at) VALUES ($1, $2, $3, $4, NOW())`,
+          [b.orgId, b.accountId, REGION, b.idsByName['web-running']]
+        )
+      ).rejects.toThrow(/row-level security/)
+      await c.query('ROLLBACK TO SAVEPOINT s')
+    })
+  })
+
+  it('(L7b) devcontrol has SELECT, INSERT, UPDATE and nothing else; both tables force RLS', async () => {
+    const { rows } = await pool.query(
+      `SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privileges
+         FROM information_schema.role_table_grants
+        WHERE grantee = 'devcontrol' AND table_name IN ('resource_telemetry_observations', 'observability_collection_scopes')
+        GROUP BY table_name ORDER BY table_name`
+    )
+    expect(rows).toEqual([
+      { table_name: 'observability_collection_scopes', privileges: 'INSERT,SELECT,UPDATE' },
+      { table_name: 'resource_telemetry_observations', privileges: 'INSERT,SELECT,UPDATE' },
+    ])
+    const { rows: rls } = await pool.query(
+      `SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('resource_telemetry_observations', 'observability_collection_scopes') ORDER BY relname`
+    )
+    expect(rls.every((r: any) => r.relrowsecurity && r.relforcerowsecurity)).toBe(true)
+  })
+
+  it('(L8/L9) a read names org, account and region: another account or region gets nothing', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('scope-keys')
+    const write = [{ resourceDbId: idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null }]
+    const own = await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION }, write, 'complete', new Date())
+    expect(own.stored.get(idsByName['web-running'])?.lastDatapointAt).toEqual(DATAPOINT_AT)
+
+    const otherAccount = await recordObservations(appPool, { organizationId: orgId, awsAccountId: OTHER_ACCOUNT, region: REGION }, [], 'complete', new Date())
+    expect(otherAccount.stored.size).toBe(0)
+    const otherRegion = await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: 'eu-west-1' }, [], 'complete', new Date())
+    expect(otherRegion.stored.size).toBe(0)
+  })
+
+  it('(review F6) the stored-observation read names the organization itself: two orgs, same account and region, superuser (no RLS)', async () => {
+    const a = await newOrg('shared-scope-a')
+    const b = await newOrg('shared-scope-b')
+    // Both organizations' rows under one account and region, written and read as the superuser test role,
+    // which row-level security never restricts: only the read's own organization predicate separates them.
+    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION })
+    await recordObservations(appPool, scope(b.orgId), [
+      { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    const readA = await recordObservations(appPool, scope(a.orgId), [
+      { resourceDbId: a.idsByName['web-running'], lastDatapointAt: EARLIER, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    expect([...readA.stored.keys()]).toEqual([a.idsByName['web-running']])
+    const readB = await recordObservations(appPool, scope(b.orgId), [], 'complete', new Date())
+    expect([...readB.stored.keys()]).toEqual([b.idsByName['web-running']])
+  })
+
+  it('(review F6) the real write and read path works as devcontrol under FORCE RLS, and sees only its own organization', async () => {
+    const a = await newOrg('as-devcontrol-a')
+    const b = await newOrg('as-devcontrol-b')
+    const asDevcontrolDb = {
+      connect: async () => {
+        const c = await pool.connect()
+        await c.query('SET ROLE devcontrol')
+        const release = c.release.bind(c)
+        return Object.assign(c, { release: () => { c.query('RESET ROLE').finally(() => release()) } })
+      },
+    } as any
+    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION })
+    const wroteB = await recordObservations(asDevcontrolDb, scope(b.orgId), [
+      { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    expect(wroteB.persisted).toBe(true)
+    const readA = await recordObservations(asDevcontrolDb, scope(a.orgId), [
+      { resourceDbId: a.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    expect(readA.persisted).toBe(true)
+    expect([...readA.stored.keys()]).toEqual([a.idsByName['web-running']])
+  })
+
+  it('(L6) a missing table is no stored history, never an error; checked_at falls back to this sweep only when complete', async () => {
+    const missing = Object.assign(new Error('relation "resource_telemetry_observations" does not exist'), { code: '42P01' })
+    const fakeDb = {
+      connect: async () => ({
+        query: async (sql: string) => {
+          if (/^(BEGIN|ROLLBACK)|set_config/.test(sql)) return { rows: [] }
+          throw missing
+        },
+        release: () => {},
+      }),
+    } as any
+    const sweepAt = new Date('2026-10-28T10:00:00.000Z')
+    const scope = { organizationId: '00000000-0000-4000-8000-00000000000a', awsAccountId: OTHER_ACCOUNT, region: REGION }
+    expect(await recordObservations(fakeDb, scope, [], 'complete', sweepAt)).toEqual({ stored: new Map(), lastFullSuccessAt: sweepAt, persisted: false })
+    expect(await recordObservations(fakeDb, scope, [], 'partial', sweepAt)).toEqual({ stored: new Map(), lastFullSuccessAt: null, persisted: false })
+  })
+
+  it('(L10) writes use their own connection, never the request one (which may already be released)', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('own-connection')
+    const released = { query: () => Promise.reject(new Error('request connection already released')) } as any
+    const result = await requestContext.run(released, () =>
+      recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION }, [
+        { resourceDbId: idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+      ], 'complete', new Date())
+    )
+    expect(result.persisted).toBe(true)
+    expect(await storedRow(orgId)).toHaveLength(1)
+  })
+
+  it('deleting the resource deletes its observations (composite foreign key, cascade)', async () => {
+    const { orgId, accountId, idsByName } = await newOrg('cascade')
+    await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION }, [
+      { resourceDbId: idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
+    ], 'complete', new Date())
+    await pool.query('DELETE FROM aws_resources WHERE id = $1', [idsByName['web-running']])
+    expect(await storedRow(orgId)).toEqual([])
+  })
+})
