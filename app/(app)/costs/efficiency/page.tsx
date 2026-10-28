@@ -14,6 +14,7 @@ import {
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
@@ -281,7 +282,10 @@ export default function EfficiencyPage() {
   const demoMode         = useDemoMode()
   const { enabled: salesDemo } = useSalesDemo()
   const isDemoActive     = demoMode || salesDemo
-  const { canAccess }    = usePlan('pro')
+  const plan             = usePlan('pro')
+  const { canAccess }    = plan
+  // Nothing loads until the workspace is known; /api/anomalies is Pro-only.
+  const planKnown        = plan.isKnown
 
   const [barGrouping,    setBarGrouping]    = useState<'service' | 'region' | 'team'>('service')
   const [scatterFilter,  setScatterFilter]  = useState<'all' | 'at-risk' | 'efficient' | 'strategic' | 'low-roi'>('all')
@@ -292,13 +296,13 @@ export default function EfficiencyPage() {
       const all = await infrastructureService.getAll()
       return all.filter(r => (r.resourceType as string) !== 'AWS_COST_TOTAL')
     },
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && planKnown,
   })
 
   const { data: savingsStats, isLoading: savingsLoading, isError: savingsError } = useQuery({
     queryKey: ['cost-recommendations-stats'],
     queryFn: costRecommendationsService.getStats,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && planKnown,
   })
 
   // Source A — month-to-date spend as an evidence section (actual Cost Explorer /
@@ -309,7 +313,7 @@ export default function EfficiencyPage() {
     queryFn: platformStatsService.getCostSummary,
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && planKnown,
   })
 
   // Same endpoint app/(app)/dashboard/page.tsx uses for its cost trend chart —
@@ -330,7 +334,7 @@ export default function EfficiencyPage() {
     },
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && planKnown,
   })
 
   // Same anomalyService the Security and Anomalies pages already use.
@@ -342,7 +346,7 @@ export default function EfficiencyPage() {
     },
     staleTime: 60_000,
     refetchOnWindowFocus: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && planKnown && plan.isPro,
   })
 
   // ── Derived real data ──
@@ -491,6 +495,9 @@ export default function EfficiencyPage() {
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
+  if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
 
   return (
     <div

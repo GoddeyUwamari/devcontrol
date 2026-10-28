@@ -6,7 +6,8 @@ import {
   Lock, Shield, CheckCircle2, XCircle, Play, RotateCcw,
   Clock, AlertTriangle, ChevronRight, X, Loader2, RefreshCw,
 } from 'lucide-react';
-import { useAuth } from '@/lib/contexts/auth-context';
+import { usePlan } from '@/lib/hooks/use-plan';
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
 import { remediationService, RemediationWorkflow, WorkflowStatus } from '@/lib/services/remediation.service';
 import { logError } from '@/lib/safe-log';
 
@@ -314,8 +315,9 @@ function WorkflowDetailPanel({
 type TabFilter = 'all' | 'pending_approval' | 'approved' | 'completed' | 'failed';
 
 export default function RemediationPage() {
-  const { organization } = useAuth();
-  const isEnterprise = organization?.subscriptionTier === 'enterprise';
+  const plan = usePlan();
+  // Only a known Enterprise plan loads workflows; unknown is never treated as free.
+  const isEnterprise = plan.isKnown && plan.isEnterprise;
   const qc = useQueryClient();
 
   const [tab, setTab] = useState<TabFilter>('all');
@@ -335,13 +337,13 @@ export default function RemediationPage() {
   const { data: detail } = useQuery<RemediationWorkflow>({
     queryKey: ['remediation-detail', selected?.id],
     queryFn: () => remediationService.get(selected!.id),
-    enabled: !!selected,
+    enabled: isEnterprise && !!selected,
   });
 
   const panelWorkflow = detail ?? selected;
 
   const mutate = (fn: () => Promise<RemediationWorkflow>) => async () => {
-    if (!panelWorkflow) return;
+    if (!panelWorkflow || !isEnterprise) return;
     setActingId(panelWorkflow.id);
     try {
       const updated = await fn();
@@ -376,6 +378,9 @@ export default function RemediationPage() {
     { key: 'completed',        label: 'Completed' },
     { key: 'failed',           label: 'Failed' },
   ];
+
+  if (plan.status === 'loading') return <PlanLoadingState />;
+  if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
 
   // ── Non-enterprise locked state ──────────────────────────────────────────
   if (!isEnterprise) {

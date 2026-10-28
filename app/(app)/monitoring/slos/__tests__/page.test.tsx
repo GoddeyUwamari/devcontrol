@@ -78,7 +78,7 @@ describe('SLO Dashboard page — Enterprise gate is real, not a client-side demo
 
   it('shows the upgrade paywall for a non-Enterprise org, even with the demo flag set', async () => {
     localStorage.setItem('devcontrol_demo_mode', 'true')
-    mockUsePlan.mockReturnValue({ isEnterprise: false })
+    mockUsePlan.mockReturnValue({ status: 'known', isKnown: true, isEnterprise: false })
 
     render(<SLODashboardPage />)
 
@@ -91,7 +91,7 @@ describe('SLO Dashboard page — Enterprise gate is real, not a client-side demo
 describe('SLO Dashboard page — real API-backed states for an Enterprise org', () => {
   beforeEach(() => {
     localStorage.clear()
-    mockUsePlan.mockReturnValue({ isEnterprise: true })
+    mockUsePlan.mockReturnValue({ status: 'known', isKnown: true, isEnterprise: true })
   })
   afterEach(() => { vi.clearAllMocks() })
 

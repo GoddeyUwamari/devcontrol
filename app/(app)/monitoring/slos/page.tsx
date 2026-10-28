@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import sloService, {
   SloDefinition, SloWithEvaluation, CreateSloPayload, SloIndicator, SloResourceType,
   SLI_RESOURCE_TYPE, SLI_LABEL,
@@ -50,7 +51,9 @@ function formatObserved(evaluation: SloWithEvaluation['evaluation'], sli: SloInd
 }
 
 export default function SLODashboardPage() {
-  const { isEnterprise } = usePlan()
+  const plan = usePlan()
+  // Only a known Enterprise plan loads SLOs; unknown is never treated as free.
+  const isEnterprise = plan.isKnown && plan.isEnterprise
 
   const [items, setItems] = useState<SloWithEvaluation[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -65,7 +68,7 @@ export default function SLODashboardPage() {
   const [resourceOptionsLoading, setResourceOptionsLoading] = useState(false)
 
   const loadSlos = useCallback(async () => {
-    if (!isEnterprise) { setIsLoading(false); return }
+    if (!isEnterprise) return
     setLoadError(null)
     try {
       const data = await sloService.evaluateAll()
@@ -136,6 +139,9 @@ export default function SLODashboardPage() {
       setDeletingId(null)
     }
   }
+
+  if (plan.status === 'loading') return <PlanLoadingState />
+  if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
 
   // ── Enterprise gate — UX only. The real security boundary is requireEnterprise on
   // every /api/slos route (backend/src/routes/slo.routes.ts); this just avoids showing

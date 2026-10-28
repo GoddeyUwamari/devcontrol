@@ -26,7 +26,7 @@ function renderPage() {
 
 beforeEach(() => {
   localStorage.clear();
-  mockUseAuth.mockReturnValue({ organization: { id: "org-1", subscriptionTier: "enterprise" } });
+  mockUseAuth.mockReturnValue({ organization: { id: "org-1", subscriptionTier: "enterprise" }, organizationStatus: "ready" });
   fetchMock = vi.fn().mockResolvedValue({ json: async () => ({ success: true, data: null }) });
   vi.stubGlobal("fetch", fetchMock);
 });

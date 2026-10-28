@@ -10,7 +10,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 const SCAN_MESSAGE = 'No anomalies recorded. Anomaly detection on measured data is not currently active.'
 
-vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ isPro: true }) }))
+vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ status: 'known', isKnown: true, isPro: true }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/services/anomaly.service', () => ({
   anomalyService: {

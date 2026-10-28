@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/contexts/auth-context";
+import { usePlan } from "@/lib/hooks/use-plan";
+import { PlanLoadingState, WorkspaceLoadError } from "@/components/plan/plan-status";
 import { tokenManager } from "@/lib/services/auth.service";
 import { Lock, ShieldCheck, Copy, Check, Trash2, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 
@@ -49,7 +51,9 @@ function authHeaders() {
 
 export default function SSOSettingsPage() {
   const { organization } = useAuth();
-  const isEnterprise = organization?.subscriptionTier === "enterprise";
+  const plan = usePlan();
+  // Only a known Enterprise plan loads the SSO config; unknown is never treated as free.
+  const isEnterprise = plan.isKnown && plan.isEnterprise;
   const qc = useQueryClient();
 
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
@@ -132,6 +136,9 @@ export default function SSOSettingsPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (plan.status === "loading") return <PlanLoadingState />;
+  if (plan.status === "error") return <WorkspaceLoadError onRetry={plan.retry} />;
 
   // ── Locked state for non-enterprise ──────────────────────────────────────
   if (!isEnterprise) {

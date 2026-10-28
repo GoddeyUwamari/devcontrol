@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { anomalyService } from '@/lib/services/anomaly.service';
 import { logError } from '@/lib/safe-log';
 import { usePlan } from '@/lib/hooks/use-plan';
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
 import {
   AlertTriangle, AlertCircle, RefreshCw, Brain,
@@ -24,7 +25,11 @@ const severityConfig: Record<string, { color: string; bg: string; border: string
 const confidenceLabel = (score: number) => score >= 80 ? 'High' : score >= 50 ? 'Medium' : 'Low';
 
 export default function AnomaliesPage() {
-  const { isPro } = usePlan();
+  const plan = usePlan();
+  // Only a known Pro-or-above plan loads anomalies; unknown is never treated as free.
+  const isPro = plan.isKnown && plan.isPro;
+  // Custom rules (/api/anomaly-rules) are Enterprise-only.
+  const isEnterprise = plan.isKnown && plan.isEnterprise;
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
   const [anomalies, setAnomalies] = useState<AnomalyDetection[]>([]);
   const [stats, setStats] = useState<AnomalyStats | null>(null);
@@ -44,15 +49,19 @@ export default function AnomaliesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const loadAnomalies = useCallback(async () => {
+    if (!isPro) return;
     try {
       const data = await anomalyService.getAnomalies(filter);
       setAnomalies(data.anomalies); setStats(data.stats);
     } catch (error: any) {
       if (error?.status === 402) setShowUpgradeBanner(true);
     } finally { setIsLoading(false); }
-  }, [filter]);
+  }, [filter, isPro]);
 
-  useEffect(() => { loadAnomalies(); const i = setInterval(loadAnomalies, 300000); return () => clearInterval(i); }, [loadAnomalies]);
+  useEffect(() => {
+    if (!isPro) return;
+    loadAnomalies(); const i = setInterval(loadAnomalies, 300000); return () => clearInterval(i);
+  }, [loadAnomalies, isPro]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -62,11 +71,17 @@ export default function AnomaliesPage() {
   }, [openMenuId]);
 
   useEffect(() => {
+    if (!isPro) return;
     anomalyService.getLastScan().then(t => { setLastScanTime(t); setLastScanLoading(false); }).catch(() => setLastScanLoading(false));
+  }, [isPro]);
+
+  useEffect(() => {
+    if (!isEnterprise) return;
     customAnomalyRulesService.getRules().then(setRules).catch(() => {});
-  }, []);
+  }, [isEnterprise]);
 
   const triggerScan = async () => {
+    if (!isPro) return;
     setIsScanning(true); setLastScanResult(null);
     try { const r = await anomalyService.triggerScan(); setLastScanResult(r.message); setLastScanTime(new Date()); await loadAnomalies(); }
     catch { setLastScanResult('Scan failed. Please try again.'); }
@@ -105,6 +120,9 @@ export default function AnomaliesPage() {
   const systemsImpacted = new Set(anomalies.filter(a => a.status === 'active').map(a => a.resourceName ?? a.resourceType).filter(Boolean)).size;
   const criticalAnomalies = anomalies.filter(a => a.severity === 'critical' && a.status === 'active');
   const topAnomaly = criticalAnomalies[0] ?? anomalies[0];
+
+  if (plan.status === 'loading') return <PlanLoadingState />;
+  if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
 
   if (!isPro) {
     return (
