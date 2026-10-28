@@ -5,7 +5,9 @@ import { Copy, ShieldCheck } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSoc2Evidence } from '@/lib/hooks/useSoc2Readiness';
+import { formatLocalWhen } from '@/lib/utils/localTime';
 import { EvidenceResultBadge, ProvenanceBadge } from './soc2-badges';
+import { evidenceHeading, evidenceResultLine } from './soc2-evidence-display';
 
 /**
  * AWS-Observed Evidence -- Phase 2 technical observations only (provenance is always
@@ -52,26 +54,28 @@ export function Soc2ObservedEvidenceList({ criterionId }: { criterionId: string 
     );
   }
 
+  const now = Date.now();
+
   return (
     <div className="flex flex-col gap-2.5">
       {evidence.map((obs, idx) => (
         <div key={`${obs.resourceArn ?? 'org-level'}-${idx}`} className="border border-slate-100 rounded-lg p-4">
           <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="min-w-0">
-              <p className="text-label text-slate-900">{obs.resourceType}</p>
-              {obs.resourceArn ? (
+            <div className="min-w-0 flex items-start gap-1.5">
+              <p className="text-label text-slate-900 break-all">
+                {evidenceHeading(obs.resourceType, obs.resourceArn)}
+              </p>
+              {obs.resourceArn && (
                 <button
                   type="button"
                   onClick={() => handleCopy(obs.resourceArn as string)}
-                  className="text-meta text-ink-muted hover:text-violet-600 inline-flex items-center gap-1 mt-0.5 break-all text-left"
-                  title="Copy ARN"
+                  className="text-meta text-ink-muted hover:text-violet-600 inline-flex items-center gap-1 shrink-0"
+                  title={obs.resourceArn}
+                  aria-label="Copy ARN"
                 >
                   <Copy size={11} className="shrink-0" />
-                  {obs.resourceArn}
-                  {copied === obs.resourceArn && <span className="text-ink-success ml-1">Copied</span>}
+                  {copied === obs.resourceArn && <span className="text-ink-success">Copied</span>}
                 </button>
-              ) : (
-                <p className="text-meta text-ink-muted mt-0.5">Organization-level observation</p>
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -79,12 +83,8 @@ export function Soc2ObservedEvidenceList({ criterionId }: { criterionId: string 
               <EvidenceResultBadge result={obs.result} />
             </div>
           </div>
-          <p className="text-meta text-slate-600 leading-relaxed mb-2">{obs.explanation}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-meta text-ink-muted">
-            <span>Collected at {new Date(obs.collectedAt).toLocaleString()}</span>
-            {obs.observedAt && <span>Observed at {new Date(obs.observedAt).toLocaleString()}</span>}
-            <span>Schema v{obs.schemaVersion}</span>
-          </div>
+          <p className="text-meta text-slate-600 leading-relaxed mb-2">{evidenceResultLine(obs.explanation)}</p>
+          <p className="text-meta text-ink-muted">Observed {formatLocalWhen(obs.observedAt ?? obs.collectedAt, now)}</p>
         </div>
       ))}
     </div>
