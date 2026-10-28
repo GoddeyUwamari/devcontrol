@@ -5,7 +5,8 @@
  *
  * Authentication always supplies an organization, so that state cannot be
  * produced through it. The middleware is replaced here with one that admits a
- * chosen caller, which is the only stub besides the data layer.
+ * chosen caller; the plan gate admits everyone. Those are the only stubs
+ * besides the data layer.
  */
 import fs from 'fs';
 import path from 'path';
@@ -28,6 +29,13 @@ jest.mock('../../middleware/auth.middleware', () => {
   };
   return { authenticate, authenticateToken: authenticate };
 });
+
+// The forecast's Pro plan gate reads Postgres; it is covered with a real
+// database by plan-server-enforcement.test.ts. Here it admits every caller,
+// so the organization handling below is what is under test.
+jest.mock('../../middleware/subscription.middleware', () => ({
+  requirePro: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
 
 /** The organization the removed fallback used to select. */
 const FORMER_FALLBACK = 'a8ea4c8f-5f93-4073-b627-160c61aa064f';

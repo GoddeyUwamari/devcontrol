@@ -4,6 +4,18 @@ import { CostForecastService } from '../services/cost-forecast.service';
 import { ForecastAIService } from '../services/forecast-ai.service';
 import { ScenarioPlanningService } from '../services/scenario-planning.service';
 
+/**
+ * Logs a failed forecast without the error object. The response never
+ * carries the error's text: AWS errors can name accounts and roles.
+ */
+function logForecastError(label: string, error: any): void {
+  console.error(`[Forecast Controller] ${label}:`, {
+    name: error?.name,
+    code: error?.code,
+    message: error?.message,
+  });
+}
+
 export class ForecastController {
   private forecastService: CostForecastService;
   private aiService: ForecastAIService;
@@ -41,10 +53,10 @@ export class ForecastController {
         forecast,
       });
     } catch (error: any) {
-      console.error('[Forecast Controller] Error:', error);
+      logForecastError('Error', error);
       res.status(500).json({
         success: false,
-        error: error.message
+        error: 'Failed to generate forecast'
       });
     }
   };
@@ -63,7 +75,7 @@ export class ForecastController {
       const { type, params } = req.body;
 
       if (!type) {
-        return res.status(400).json({ error: 'Scenario type required' });
+        return res.status(400).json({ success: false, error: 'Scenario type required' });
       }
 
       const scenario = await this.scenarioService.generateScenario(
@@ -77,10 +89,10 @@ export class ForecastController {
         scenario,
       });
     } catch (error: any) {
-      console.error('[Forecast Controller] Scenario error:', error);
+      logForecastError('Scenario error', error);
       res.status(500).json({
         success: false,
-        error: error.message
+        error: 'Failed to generate scenario'
       });
     }
   };
