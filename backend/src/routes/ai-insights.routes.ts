@@ -68,36 +68,6 @@ router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLim
   }
 });
 
-// GET /api/ai-insights/test-email-config
-// Test email configuration without sending
-router.get('/test-email-config', async (req, res) => {
-  try {
-    const { WeeklyAISummaryJob } = await import('../jobs/weekly-ai-summary.job');
-
-    const job = new WeeklyAISummaryJob(pool);
-    const isConfigured = await job.testEmailConfig();
-
-    res.json({
-      success: isConfigured,
-      message: isConfigured
-        ? 'Email configuration is valid and ready to send'
-        : 'Email configuration failed - check SMTP settings',
-      smtp: {
-        host: process.env.SMTP_HOST || 'Not configured',
-        port: process.env.SMTP_PORT || 'Not configured',
-        user: process.env.SMTP_USER || 'Not configured',
-        configured: !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
-      }
-    });
-  } catch (error: any) {
-    console.error('[AI Insights] Email config test error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // GET /api/ai-insights/preview-weekly-summary
 // Preview the caller's own org's weekly summary evidence and wording without sending email
 router.get('/preview-weekly-summary', async (req, res) => {
