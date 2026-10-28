@@ -49,7 +49,7 @@ describe('Optimization Controls page — Enterprise gate is real, not a client-s
   beforeEach(() => vi.clearAllMocks())
 
   it('shows the upgrade paywall for a non-Enterprise org and never calls the configuration endpoint', async () => {
-    mockUsePlan.mockReturnValue({ isEnterprise: false })
+    mockUsePlan.mockReturnValue({ status: 'known', isKnown: true, isEnterprise: false })
 
     render(<OptimizationControlsPage />)
 
@@ -62,7 +62,7 @@ describe('Optimization Controls page — Enterprise gate is real, not a client-s
 describe('Optimization Controls page — real API-backed states for an Enterprise org', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUsePlan.mockReturnValue({ isEnterprise: true })
+    mockUsePlan.mockReturnValue({ status: 'known', isKnown: true, isEnterprise: true })
   })
 
   it('renders default values and source for both configurable rules', async () => {

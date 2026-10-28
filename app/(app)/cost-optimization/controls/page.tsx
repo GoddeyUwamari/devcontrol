@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import {
   costRecommendationsService,
   EffectiveOptimizationRuleConfig,
@@ -49,7 +50,9 @@ function validate(config: EffectiveOptimizationRuleConfig, raw: string): string 
 }
 
 export default function OptimizationControlsPage() {
-  const { isEnterprise } = usePlan()
+  const plan = usePlan()
+  // Only a known Enterprise plan loads the controls; unknown is never treated as free.
+  const isEnterprise = plan.isKnown && plan.isEnterprise
 
   const [configs, setConfigs] = useState<EffectiveOptimizationRuleConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -60,7 +63,7 @@ export default function OptimizationControlsPage() {
   const [resettingKey, setResettingKey] = useState<string | null>(null)
 
   const loadConfig = useCallback(async () => {
-    if (!isEnterprise) { setIsLoading(false); return }
+    if (!isEnterprise) return
     setIsLoading(true)
     setLoadError(null)
     try {
@@ -122,6 +125,9 @@ export default function OptimizationControlsPage() {
       setResettingKey(null)
     }
   }
+
+  if (plan.status === 'loading') return <PlanLoadingState />
+  if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
 
   // ── Enterprise gate — UX only. The real security boundary is
   // requireEnterprise on every /optimization-rules/configuration route

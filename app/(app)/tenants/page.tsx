@@ -17,6 +17,7 @@ import { useDebounce } from '@/hooks/useDebounce'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { api } from '@/lib/api'
 import { Tenant } from '@/lib/types'
 import { toast } from 'sonner'
@@ -72,7 +73,9 @@ export default function TenantsPage() {
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
-  const { isEnterprise } = usePlan()
+  const plan = usePlan()
+  // Only a known Enterprise plan loads tenant data; unknown is never treated as free.
+  const entitled = plan.isKnown && plan.isEnterprise
 
   // FIX 1: corrected API path from /api/auth/tenants → /api/tenants
   const { data: tenants, isLoading, error, refetch } = useQuery<Tenant[]>({
@@ -83,7 +86,7 @@ export default function TenantsPage() {
       })
       return response.data.data || []
     },
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && entitled,
   })
 
   // FIX 2: Add Tenant modal state
@@ -93,6 +96,7 @@ export default function TenantsPage() {
 
   const handleAddTenant = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!entitled) return
     try {
       setIsSubmitting(true)
       await api.post('/api/tenants', addForm)
@@ -139,7 +143,10 @@ export default function TenantsPage() {
 
   const isAuthError = !isDemoActive && !!error && ((error as any)?.response?.status === 401 || (error as any)?.status === 401)
 
-  if (!isEnterprise && !isDemoActive) {
+  if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
+  if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+
+  if (!entitled && !isDemoActive) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">

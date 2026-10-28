@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import customAnomalyRulesService, {
@@ -97,7 +98,9 @@ function conditionLabel(rule: CustomAnomalyRule): string {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function AnomalyRulesPage() {
-  const { isEnterprise } = usePlan()
+  const plan = usePlan()
+  // Only a known Enterprise plan loads rules; unknown is never treated as free.
+  const isEnterprise = plan.isKnown && plan.isEnterprise
   const demoMode = useDemoMode()
   const { enabled: salesDemo } = useSalesDemo()
   const isDemoActive = demoMode || salesDemo
@@ -112,7 +115,7 @@ export default function AnomalyRulesPage() {
 
   const loadRules = useCallback(async () => {
     if (isDemoActive) { setRules(DEMO_RULES); setIsLoading(false); return }
-    if (!isEnterprise) { setIsLoading(false); return }
+    if (!isEnterprise) return
     try {
       const data = await customAnomalyRulesService.getRules()
       setRules(data)
@@ -121,7 +124,7 @@ export default function AnomalyRulesPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [isDemoActive])
+  }, [isDemoActive, isEnterprise])
 
   useEffect(() => { loadRules() }, [loadRules])
 
@@ -184,6 +187,9 @@ export default function AnomalyRulesPage() {
   }
 
   // ── Enterprise gate ──
+  if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
+  if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+
   if (!isEnterprise && !isDemoActive) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
