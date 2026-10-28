@@ -40,7 +40,6 @@ export const COMPLIANCE_COPY = {
   noFrameworks: 'No frameworks yet.',
   reEvaluateNow: 'Re-evaluate now',
   review: 'Review',
-  runScan: 'Run Scan',
   viewerCantAddFrameworks: "Viewers can't add frameworks.",
   // The sync is requireAdmin (security-hub.routes.ts:61): members and viewers alike (founder follow-up, Oct 27).
   onlyAdminsSyncSecurityHub: 'Only admins can sync Security Hub.',
@@ -51,6 +50,12 @@ export const COMPLIANCE_COPY = {
   shMissingPermission: "DevControl can't read Security Hub — the connected role is missing a permission.",
   shCheckFailed: "Couldn't check Security Hub. Try again later.",
   needsSecurityHub: 'Needs Security Hub',
+  // Part C, shown only when Security Hub reports not enabled (F3c answer to conflict 1, Oct 28).
+  shNotEnabledBanner: "Security Hub isn't enabled, so CIS, PCI DSS and NIST can't be evaluated yet. None of these frameworks are certifications.",
+  enableSecurityHub: 'Enable Security Hub ↓',
+  // The score tile names the framework whose newer run hides its score (F3b review finding 2).
+  evaluationRunning: 'evaluation running',
+  lastEvaluationFailed: 'last evaluation failed',
 } as const
 
 export const TILE_LABELS = {
@@ -213,7 +218,10 @@ function scoreTiles(results: Loadable<FrameworkResults>, now: number, overlay: E
   // D7 / Q3: a newer run of this framework is running, failed, or has no usable result: no score is current.
   if (e.state !== 'current' && e.state !== 'out_of_date') {
     const sub = COMPLIANCE_COPY.noScoreCurrent
-    return { score: all(TILE_LABELS.score, sub), critical: all(TILE_LABELS.critical, sub), high: all(TILE_LABELS.high, sub) }
+    const scoreSub = e.state === 'running' ? `${framework.name} · ${COMPLIANCE_COPY.evaluationRunning}`
+      : e.state === 'failed' ? `${framework.name} · ${COMPLIANCE_COPY.lastEvaluationFailed}`
+      : sub
+    return { score: all(TILE_LABELS.score, scoreSub), critical: all(TILE_LABELS.critical, sub), high: all(TILE_LABELS.high, sub) }
   }
   const done = e.lastDone!
   const stale = e.state === 'out_of_date' ? COMPLIANCE_COPY.outOfDate : ''

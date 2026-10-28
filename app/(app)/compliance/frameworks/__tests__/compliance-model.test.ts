@@ -72,14 +72,15 @@ describe('score tile (D1, D2)', () => {
     ['running', 'running' as const],
     ['pending', 'pending' as const],
     ['failed', 'failed' as const],
-  ])('a newer %s run of the tile\'s framework: "—" and "No score is shown as current." on all three (D7)', (_, status) => {
+  ])('a newer %s run of the tile\'s framework: "—" on all three; the score tile names the framework (D7, F3b review 2)', (_, status) => {
     const v = view(ready([A], [run('fw-a', 'completed', DAY), run('fw-a', status, MIN)]))
-    for (const t of [v.tiles.score, v.tiles.critical, v.tiles.high]) expect(t).toMatchObject({ value: '—', sub: 'No score is shown as current.' })
+    expect(v.tiles.score).toMatchObject({ value: '—', sub: status === 'failed' ? 'Example baseline · last evaluation failed' : 'Example baseline · evaluation running' })
+    for (const t of [v.tiles.critical, v.tiles.high]) expect(t).toMatchObject({ value: '—', sub: 'No score is shown as current.' })
     expect(JSON.stringify(v.tiles)).not.toContain('90%')
   })
   it('a run this page started and the list doesn\'t show yet hides the score too', () => {
     const v = view(ready([A], [run('fw-a', 'completed', DAY)]), noSh, { clock: NOW, startedLocally: { 'fw-a': { at: NOW, scanId: 's-new' } } })
-    expect(v.tiles.score).toMatchObject({ value: '—', sub: 'No score is shown as current.' })
+    expect(v.tiles.score).toMatchObject({ value: '—', sub: 'Example baseline · evaluation running' })
   })
   it('Q3: another framework\'s running run never hides this framework\'s score', () => {
     const v = view(ready([A, B], [run('fw-a', 'completed', HOUR), run('fw-b', 'completed', 2 * DAY), run('fw-b', 'running', MIN)]))
