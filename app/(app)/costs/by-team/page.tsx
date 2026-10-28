@@ -8,6 +8,7 @@ import {
 } from 'recharts'
 import { Users, DollarSign, TrendingUp, Lock, Download } from 'lucide-react'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
@@ -76,7 +77,9 @@ const DemoDataBadge = () => (
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function CostsByTeamPage() {
-  const { isFree } = usePlan()
+  const plan = usePlan()
+  // Only a known Starter-or-above plan loads data here; unknown is never treated as free.
+  const entitled = plan.isKnown && !plan.isFree
   const demoMode = useDemoMode()
   const { enabled: salesDemo } = useSalesDemo()
   const isDemoActive = demoMode || salesDemo
@@ -94,13 +97,13 @@ export default function CostsByTeamPage() {
     queryFn: platformStatsService.getDashboardStats,
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && entitled,
   })
 
   const { data: awsAccounts } = useQuery({
     queryKey: ['aws-accounts'],
     queryFn: awsAccountsService.getAccounts,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && entitled,
   })
 
   const data = isDemoActive ? DEMO_DATA : null
@@ -108,8 +111,11 @@ export default function CostsByTeamPage() {
   const isAwsConnected = isDemoActive || (awsAccounts?.length ?? 0) > 0
   const spend = describeStatsSpend(platformStats, { isLoading: statsLoading, isError: statsError })
 
+  if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
+  if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+
   // ── Free gate ──
-  if (isFree && !isDemoActive) {
+  if (!entitled && !isDemoActive) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen">
         <div className="mb-8">

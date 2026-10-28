@@ -19,7 +19,7 @@ import type { CostSummary } from '@/lib/types'
 import EfficiencyPage from '../page'
 
 vi.mock('next/link', () => ({ default: ({ href, children, ...rest }: any) => <a href={href} {...rest}>{children}</a> }))
-vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ canAccess: true }) }))
+vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ status: 'known', isKnown: true, isPro: true, canAccess: true }) }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: () => ({ enabled: false }) }))
 

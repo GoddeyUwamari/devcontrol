@@ -21,7 +21,7 @@ const getDashboardStats = vi.hoisted(() => vi.fn())
 const getCosts = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/hooks/use-plan', () => ({
-  usePlan: () => ({ isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true }),
+  usePlan: () => ({ status: 'known', isKnown: true, isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true }),
 }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => demo.on }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: () => ({ enabled: false }) }))

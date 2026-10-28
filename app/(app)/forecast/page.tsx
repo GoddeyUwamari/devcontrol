@@ -16,6 +16,7 @@ import {
   Zap, Loader2, Brain, Minus, RefreshCw, ChevronRight, Info, Lock,
 } from 'lucide-react';
 import { usePlan } from '@/lib/hooks/use-plan';
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
 import { toast } from 'sonner';
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,9 @@ export default function ForecastPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'forecast' | 'scenarios'>('forecast');
   const router = useRouter();
+  const plan = usePlan();
+  // Only a known Pro-or-above plan loads the forecast; unknown is never treated as free.
+  const isPro = plan.isKnown && plan.isPro;
 
   const [customParams, setCustomParams] = useState({
     trafficMultiplier: 2,
@@ -40,7 +44,10 @@ export default function ForecastPage() {
     customAdjustment: 10,
   });
 
-  useEffect(() => { loadForecast(); }, []);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  useEffect(() => { if (isPro) loadForecast(); }, [isPro]);
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(0);
@@ -59,15 +66,16 @@ export default function ForecastPage() {
     setIsLoading(true);
     try {
       const data = await forecastService.getForecast('90d');
-      setForecast(data);
+      if (mountedRef.current) setForecast(data);
     } catch (error: unknown) {
-      toast.error('Failed to load forecast data');
+      if (mountedRef.current) toast.error('Failed to load forecast data');
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
   };
 
   const generateScenario = async (type: ScenarioType, params: Record<string, unknown>) => {
+    if (!isPro) return;
     try {
       toast.info('Generating scenario...', { icon: <Loader2 className="h-4 w-4 animate-spin" /> });
       const scenario = await forecastService.generateScenario(type, params);
@@ -128,7 +136,8 @@ export default function ForecastPage() {
   const getVolatilityLabel = () => { if (!forecast) return 'Unknown'; if (forecast.volatility < 30) return 'Low'; if (forecast.volatility < 60) return 'Medium'; return 'High'; };
   const getVolatilityColor = () => { if (!forecast) return 'text-gray-600'; if (forecast.volatility < 30) return 'text-ink-success'; if (forecast.volatility < 60) return 'text-ink-warning'; return 'text-ink-danger'; };
 
-  const { isPro } = usePlan();
+  if (plan.status === 'loading') return <PlanLoadingState />;
+  if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
 
   if (!isPro) {
     return (

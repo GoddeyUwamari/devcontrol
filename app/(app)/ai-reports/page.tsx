@@ -10,6 +10,7 @@ import {
   ChevronUp, ChevronDown, Lock,
 } from 'lucide-react'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { toast } from 'sonner'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -92,7 +93,9 @@ const DEMO_REPORTS = [
 
 export default function AIReportsPage() {
   const router = useRouter()
-  const { isPro } = usePlan()
+  const plan = usePlan()
+  // Only a known Pro-or-above plan loads reports; unknown is never treated as free.
+  const isPro = plan.isKnown && plan.isPro
   const { generateReport, getReportHistory, deleteReport, bulkDeleteReports, isGenerating, isFetchingHistory, error } = useAIReports()
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false)
   const [currentReport, setCurrentReport] = useState<GeneratedReport | null>(null)
@@ -113,7 +116,7 @@ export default function AIReportsPage() {
     return () => document.removeEventListener('click', close)
   }, [openMenuId])
 
-  useEffect(() => { loadReportHistory() }, [])
+  useEffect(() => { if (isPro) loadReportHistory() }, [isPro])
 
   const loadReportHistory = async () => {
     try {
@@ -125,7 +128,7 @@ export default function AIReportsPage() {
   }
 
   const handleGenerateReport = async (reportType: string = 'weekly_summary') => {
-    if (generatingType !== null) return
+    if (generatingType !== null || !isPro) return
     setGeneratingType(reportType)
     const typeMap: Record<string, string> = { cost_analysis: 'cost_analysis', security: 'security_insights', infrastructure: 'infrastructure_health', executive: 'executive_summary' }
     try {
@@ -182,6 +185,9 @@ export default function AIReportsPage() {
   const isLoading = isFetchingHistory
   const handleViewReport = (id: string) => router.push(`/ai-reports/${id}`)
   const handleDownloadReport = (id: string) => router.push(`/ai-reports/${id}?print=1`)
+
+  if (plan.status === 'loading') return <PlanLoadingState />
+  if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
 
   if (!isPro) {
     return (

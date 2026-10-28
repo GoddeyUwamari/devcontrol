@@ -11,7 +11,7 @@ const getForecast = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/hooks/use-plan', () => ({
-  usePlan: () => ({ isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true }),
+  usePlan: () => ({ status: 'known', isKnown: true, isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true }),
 }))
 vi.mock('@/lib/services/forecast.service', () => ({ forecastService: { getForecast, generateScenario: vi.fn() } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
