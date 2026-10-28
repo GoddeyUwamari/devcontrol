@@ -8,8 +8,21 @@ import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
 import { findEligibleAwsAccount, hasEligibleAwsAccount } from '../repositories/aws-accounts.repository'
-import { fetchMetricDataBatch, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult } from './cloudwatch-metric-batch.util'
+import { fetchMetricDataBatchWithStatus, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult, BatchQueryStatuses, QueryOutcome } from './cloudwatch-metric-batch.util'
 import { describeAuroraClusters, AuroraClusterInfo } from './aurora-cluster.util'
+import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy'
+import { parseAwsAccountId } from '../utils/awsAccountId'
+import {
+  EvidenceSink,
+  ObservabilityRow,
+  ResourceEvidence,
+  TypeSummary,
+  checkCompleted,
+  isNotMeasured,
+  observabilityRowFor,
+  typeSummaryOf,
+} from './observability-states'
+import { recordObservations, readInventoryCapped, ObservationWrite } from '../repositories/observability-observations.repository'
 
 export type MonitoringRange = '5m' | '15m' | '1h' | '3h' | '24h' | '7d'
 
@@ -129,6 +142,31 @@ export interface CloudWatchMetrics {
   // since pagination is not part of what Phase 2A caches. See cloudwatch.routes.ts.
   pagination?: { shown: number; total: number; hasMore: boolean; cursor: string | null }
   capturedAt: string
+  // OB2: explicit per-resource states for GET /api/observability/resources, computed in
+  // the same sweep. Never part of the /api/cloudwatch/metrics response: that route
+  // removes it, so its payload is unchanged.
+  observability?: ObservabilitySnapshot
+}
+
+/** One resource's observability row, with the keys the new route pages by (never serialized). */
+export interface ObservabilitySnapshotRow {
+  row: ObservabilityRow
+  sortName: string | null
+  dbId: string
+}
+
+export interface ObservabilitySnapshot {
+  region: string
+  range: MonitoringRange
+  // complete: every in-scope query completed; partial: at least one did not, or a type block failed.
+  collection: 'complete' | 'partial'
+  // The scope's last fully successful collection (this one when complete); null when unknown.
+  checkedAt: string | null
+  inventoryCapped: boolean | null
+  inventoryCappedReasons: string[]
+  typeSummary: Record<string, TypeSummary>
+  // Complete fleet, in the order the route pages it.
+  rows: ObservabilitySnapshotRow[]
 }
 
 export interface ResourceCoverageCount {
@@ -166,8 +204,11 @@ interface InventoryRow {
   id: string
   resource_id: string
   resource_name: string | null
-  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront' | 'aurora'
+  // OB2: api-gateway and s3 are read only to be listed as not measured.
+  resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront' | 'aurora' | 'api-gateway' | 's3'
   resource_arn: string
+  // OB2: the region discovery recorded. Absent on the SLO query path, which never reads it.
+  region?: string | null
   status: string | null
   metadata: Record<string, any> | null
 }
@@ -663,6 +704,79 @@ interface CachedMetricsEntry {
   cachedAt: number
 }
 
+// OB2: the order GET /api/observability/resources pages rows in -- the legacy services[]
+// type order, then the types listed only as not measured -- then name (NULLS LAST), then id.
+export const OBSERVABILITY_TYPE_ORDER: Record<string, number> = {
+  ec2: 0,
+  'load-balancer': 1,
+  rds: 2,
+  lambda: 3,
+  dynamodb: 4,
+  ecs: 5,
+  eks: 6,
+  ebs: 7,
+  cloudfront: 8,
+  aurora: 9,
+  'api-gateway': 10,
+  s3: 11,
+}
+
+export function compareObservabilityKeys(
+  a: { row: { resource_type: string }; sortName: string | null; dbId: string },
+  b: { row: { resource_type: string }; sortName: string | null; dbId: string }
+): number {
+  const ta = OBSERVABILITY_TYPE_ORDER[a.row.resource_type] ?? 99
+  const tb = OBSERVABILITY_TYPE_ORDER[b.row.resource_type] ?? 99
+  if (ta !== tb) return ta - tb
+  if (a.sortName === null && b.sortName !== null) return 1
+  if (a.sortName !== null && b.sortName === null) return -1
+  if (a.sortName !== b.sortName) return (a.sortName as string) < (b.sortName as string) ? -1 : 1
+  if (a.dbId !== b.dbId) return a.dbId < b.dbId ? -1 : 1
+  return 0
+}
+
+// OB2: the sparse activity metric per type -- an idle function or a load balancer with no
+// traffic publishes no datapoint for it, which is "no activity", never missing telemetry.
+const ACTIVITY_METRIC_KEYS: Partial<Record<CloudWatchServiceHealth['resourceType'], string>> = {
+  lambda: 'invocations',
+  'load-balancer': 'requestSum',
+}
+
+/**
+ * OB2: one resource's evidence from its current-window GetMetricData queries -- how each
+ * ended and the newest datapoint among them. Previous-window (trend-only) queries are not
+ * part of any check, so they are not required.
+ */
+function cloudWatchEvidence(
+  metrics: Array<{ key: string; window?: 'current' | 'previous' }>,
+  ids: Record<string, string>,
+  statuses: BatchQueryStatuses,
+  activityKey: string | undefined,
+  values: Record<string, number | null>
+): ResourceEvidence {
+  const queries: Record<string, QueryOutcome> = {}
+  let newest: Date | null = null
+  for (const metric of metrics) {
+    if (metric.window === 'previous') continue
+    const status = statuses.get(ids[metric.key])
+    queries[metric.key] = status?.outcome ?? 'query_failed'
+    if (status?.newestTimestamp && (newest === null || status.newestTimestamp > newest)) newest = status.newestTimestamp
+  }
+  return {
+    kind: 'cloudwatch',
+    queries,
+    newestDatapointAt: newest,
+    ...(activityKey ? { activity: { key: activityKey, value: values[activityKey] ?? null } } : {}),
+  }
+}
+
+/** OB2: the outcome a failed AWS describe call gives the resources it covered. */
+function describeFailureOutcome(err: unknown): QueryOutcome {
+  if (isThrottlingError(err)) return 'throttled'
+  if (isAccessDeniedError(err)) return 'access_denied'
+  return 'query_failed'
+}
+
 export class CloudWatchService {
   // Keyed by `${organizationId}:${resolvedRange}` -- see metricsCacheKey(). This cache is
   // an efficiency layer only; it never widens who can see what. Every cached entry was
@@ -694,10 +808,10 @@ export class CloudWatchService {
     // downstream in computeMetrics()'s services[] concatenation), then resource_name ASC
     // NULLS LAST, then id ASC -- being stable across requests within a cache window.
     const { rows } = await pool.query(
-      `SELECT id, resource_id, resource_name, resource_type, resource_arn, status, metadata
+      `SELECT id, resource_id, resource_name, resource_type, resource_arn, region, status, metadata
        FROM aws_resources
        WHERE organization_id = $1
-         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks', 'ebs', 'cloudfront', 'aurora')
+         AND resource_type IN ('ec2', 'rds', 'load-balancer', 'lambda', 'dynamodb', 'ecs', 'eks', 'ebs', 'cloudfront', 'aurora', 'api-gateway', 's3')
          AND status != 'terminated'
        ORDER BY resource_name ASC NULLS LAST, id ASC`,
       [organizationId]
@@ -816,7 +930,8 @@ export class CloudWatchService {
     previousStart: Date,
     now: Date,
     periodSeconds: number,
-    lookbackSeconds: number
+    lookbackSeconds: number,
+    evidence?: EvidenceSink
   ): Promise<{
     evaluations: Array<{ service: CloudWatchServiceHealth; extra: TExtra }>
     currentSeriesByResource: Array<Record<string, BatchSeriesResult | null>>
@@ -873,10 +988,12 @@ export class CloudWatchService {
     // is empty and fetchMetricDataBatch() returns immediately with no AWS call at all --
     // dispatched via the same Promise.all() regardless, so the two windows are always
     // concurrent when both are real requests (ALB today), never serialized.
-    const [currentResults, previousResults] = await Promise.all([
-      fetchMetricDataBatch(client, currentQueries, currentStart, now),
-      fetchMetricDataBatch(client, previousQueries, previousStart, currentStart),
+    const [current, previous] = await Promise.all([
+      fetchMetricDataBatchWithStatus(client, currentQueries, currentStart, now),
+      fetchMetricDataBatchWithStatus(client, previousQueries, previousStart, currentStart),
     ])
+    const currentResults = current.results
+    const previousResults = previous.results
 
     const currentSeriesByResource: Array<Record<string, BatchSeriesResult | null>> = contexts.map(() => ({}))
     const evaluations = contexts.map((ctx, resourceIndex) => {
@@ -888,6 +1005,12 @@ export class CloudWatchService {
         if (!isPrevious) currentSeriesByResource[resourceIndex][metric.key] = series
         values[metric.key] = reduceSeriesToScalar(series, metric.statistic)
       })
+      if (evidence) {
+        evidence.set(
+          ctx.resource.id,
+          cloudWatchEvidence(capability.metrics, idsByResource[resourceIndex], current.statuses, ACTIVITY_METRIC_KEYS[capability.resourceType], values)
+        )
+      }
       return capability.healthRule(ctx.resource, values, { lookbackSeconds, dims: ctx.dims })
     })
 
@@ -906,10 +1029,13 @@ export class CloudWatchService {
    * downstream — the shared *output* contract is what matters, not a shared internal
    * execution engine that ECS doesn't naturally fit.
    */
-  private async evaluateEcsService(client: ECSClient, resource: InventoryRow): Promise<CloudWatchServiceHealth> {
+  private async evaluateEcsService(client: ECSClient, resource: InventoryRow, evidence?: EvidenceSink): Promise<CloudWatchServiceHealth> {
     const parsed = parseEcsClusterAndService(resource.resource_arn)
+    const record = (describe: QueryOutcome | null, unsupported = false) =>
+      evidence?.set(resource.id, { kind: 'point_in_time', queries: describe ? { describe } : {}, newestDatapointAt: null, unsupported })
 
     if (!parsed) {
+      record(null, true)
       return {
         resourceId: resource.resource_id,
         resourceDbId: resource.id,
@@ -936,6 +1062,7 @@ export class CloudWatchService {
       const hasFailure = (response.failures?.length ?? 0) > 0
 
       if (!svc || hasFailure) {
+        record('complete', true)
         return {
           resourceId: resource.resource_id,
           resourceDbId: resource.id,
@@ -985,6 +1112,7 @@ export class CloudWatchService {
         status = 'unknown'
         reason = `Unrecognized ECS service status: ${ecsStatus ?? 'none'}`
       }
+      record('complete', status === 'unknown')
 
       return {
         resourceId: resource.resource_id,
@@ -1009,6 +1137,7 @@ export class CloudWatchService {
       }
     } catch (err) {
       console.error(`[ECS] DescribeServices failed for ${parsed.cluster}/${parsed.service}:`, err)
+      record(describeFailureOutcome(err))
       return {
         resourceId: resource.resource_id,
         resourceDbId: resource.id,
@@ -1061,12 +1190,15 @@ export class CloudWatchService {
    * here means "AWS reports no control-plane problems," not "the cluster's workloads
    * are healthy."
    */
-  private async evaluateEksService(client: EKSClient, resource: InventoryRow): Promise<CloudWatchServiceHealth> {
+  private async evaluateEksService(client: EKSClient, resource: InventoryRow, evidence?: EvidenceSink): Promise<CloudWatchServiceHealth> {
+    const record = (describe: QueryOutcome, unsupported = false) =>
+      evidence?.set(resource.id, { kind: 'point_in_time', queries: { describe }, newestDatapointAt: null, unsupported })
     try {
       const response = await client.send(new DescribeClusterCommand({ name: resource.resource_id }))
       const cluster = response.cluster
 
       if (!cluster) {
+        record('complete', true)
         return {
           resourceId: resource.resource_id,
           resourceDbId: resource.id,
@@ -1115,6 +1247,7 @@ export class CloudWatchService {
         status = 'unknown'
         reason = `Unrecognized or unsupported EKS cluster status: ${clusterStatus ?? 'none'}`
       }
+      record('complete', status === 'unknown')
 
       return {
         resourceId: resource.resource_id,
@@ -1137,6 +1270,7 @@ export class CloudWatchService {
       }
     } catch (err) {
       console.error(`[EKS] DescribeCluster failed for ${resource.resource_id}:`, err)
+      record(describeFailureOutcome(err))
       return {
         resourceId: resource.resource_id,
         resourceDbId: resource.id,
@@ -1181,10 +1315,12 @@ export class CloudWatchService {
    * signal here — that is orphaned-resource/cost-waste territory (see
    * orphanedResourceDetector.ts), a different concern from "is this volume healthy."
    */
-  private async evaluateEbsVolumes(client: EC2Client, volumes: InventoryRow[]): Promise<CloudWatchServiceHealth[]> {
+  private async evaluateEbsVolumes(client: EC2Client, volumes: InventoryRow[], evidence?: EvidenceSink): Promise<CloudWatchServiceHealth[]> {
     if (volumes.length === 0) return []
 
     const statusByVolumeId = new Map<string, VolumeStatusItem>()
+    // OB2: how the chunk holding each volume ended, when it failed.
+    const failureByVolumeId = new Map<string, QueryOutcome>()
     const CHUNK_SIZE = 200
     for (let offset = 0; offset < volumes.length; offset += CHUNK_SIZE) {
       const chunkIds = volumes.slice(offset, offset + CHUNK_SIZE).map((v) => v.resource_id)
@@ -1200,6 +1336,8 @@ export class CloudWatchService {
         // already fetched, or not yet attempted, are unaffected, mirroring
         // fetchMetricDataBatch's per-chunk failure isolation.
         console.error('[EBS] DescribeVolumeStatus failed for a chunk of volumes:', err)
+        const outcome = describeFailureOutcome(err)
+        for (const id of chunkIds) failureByVolumeId.set(id, outcome)
       }
     }
 
@@ -1246,6 +1384,18 @@ export class CloudWatchService {
         reason = 'No volume status check data available for this volume'
         monitored = false
       }
+
+      // OB2: a completed call that returned no verdict for the volume (insufficient-data,
+      // or no entry) is no telemetry; a failed call is that failure. A lifecycle verdict
+      // (error/deleting/deleted) comes from inventory and needs no live status.
+      const failure = failureByVolumeId.get(volume.resource_id)
+      const lifecycleVerdict = state === 'error' || state === 'deleting' || state === 'deleted'
+      const verdict = checkStatus === 'ok' || checkStatus === 'impaired' || checkStatus === 'warning'
+      evidence?.set(volume.id, {
+        kind: 'point_in_time',
+        queries: { describe: lifecycleVerdict || verdict ? 'complete' : (failure ?? 'empty') },
+        newestDatapointAt: null,
+      })
 
       return {
         resourceId: volume.resource_id,
@@ -1301,7 +1451,8 @@ export class CloudWatchService {
     distributions: InventoryRow[],
     currentStart: Date,
     now: Date,
-    periodSeconds: number
+    periodSeconds: number,
+    evidence?: EvidenceSink
   ): Promise<CloudWatchServiceHealth[]> {
     if (distributions.length === 0) return []
 
@@ -1334,7 +1485,7 @@ export class CloudWatchService {
       })
     })
 
-    const results = await fetchMetricDataBatch(cloudWatchUsEast1, queries, currentStart, now)
+    const { results, statuses } = await fetchMetricDataBatchWithStatus(cloudWatchUsEast1, queries, currentStart, now)
 
     return distributions.map((dist, distIndex) => {
       const totalErrorRate = reduceSeriesToScalar(
@@ -1352,6 +1503,13 @@ export class CloudWatchService {
 
       const isEnabled = dist.metadata?.is_enabled
       const isDeployed = dist.status === 'active'
+      if (evidence) {
+        evidence.set(dist.id, {
+          ...cloudWatchEvidence(metricDefs, idsByDistribution[distIndex], statuses, undefined, {}),
+          // A disabled distribution is a deliberate stop, like a stopped instance.
+          stopped: isEnabled === false,
+        })
+      }
 
       let status: CloudWatchServiceHealth['status']
       let reason: string | null
@@ -1455,13 +1613,18 @@ export class CloudWatchService {
     clusters: InventoryRow[],
     currentStart: Date,
     now: Date,
-    periodSeconds: number
+    periodSeconds: number,
+    evidence?: EvidenceSink
   ): Promise<CloudWatchServiceHealth[]> {
     if (clusters.length === 0) return []
 
     const controlPlane = await describeAuroraClusters(rdsClient)
 
     if (controlPlane.status === 'unavailable') {
+      const outcome = describeFailureOutcome(controlPlane.error)
+      for (const cluster of clusters) {
+        evidence?.set(cluster.id, { kind: 'cloudwatch', queries: { describe: outcome }, newestDatapointAt: null })
+      }
       // Whole-fleet control-plane failure -- every Aurora row this cycle is unknown, never
       // fabricated from stale CloudWatch data. Mirrors EBS's whole-chunk-failure isolation.
       return clusters.map((cluster) => ({
@@ -1489,6 +1652,9 @@ export class CloudWatchService {
 
     for (const resource of clusters) {
       const info = controlPlane.clustersById.get(resource.resource_id)
+      if (!info || !info.isAuroraEngine) {
+        evidence?.set(resource.id, { kind: 'cloudwatch', queries: { describe: 'complete' }, newestDatapointAt: null, unsupported: true })
+      }
       if (!info) {
         results.push({
           resourceId: resource.resource_id,
@@ -1557,7 +1723,7 @@ export class CloudWatchService {
       })
     })
 
-    const metricResults = await fetchMetricDataBatch(cloudWatchClient, queries, currentStart, now)
+    const { results: metricResults, statuses: metricStatuses } = await fetchMetricDataBatchWithStatus(cloudWatchClient, queries, currentStart, now)
 
     evaluable.forEach((entry, index) => {
       const { resource, info } = entry
@@ -1569,6 +1735,19 @@ export class CloudWatchService {
       const lagMs = info.hasReader ? rawLagMs : null
 
       const controlStatus = info.status ?? null
+      if (evidence) {
+        // Replica lag is part of the check only when the cluster has a reader.
+        const required = metricDefs.filter((m) => m.key === 'cpu' || info.hasReader)
+        const fromMetrics = cloudWatchEvidence(required, idsByCluster[index], metricStatuses, undefined, {})
+        const known = controlStatus === 'available' || controlStatus === 'failing-over' || controlStatus === 'deleting'
+          || controlStatus === 'stopped' || controlStatus === 'stopping'
+        evidence.set(resource.id, {
+          ...fromMetrics,
+          queries: { describe: 'complete', ...fromMetrics.queries },
+          stopped: controlStatus === 'stopped' || controlStatus === 'stopping',
+          unsupported: !known,
+        })
+      }
       let status: CloudWatchServiceHealth['status']
       let reason: string | null
       let monitored: boolean
@@ -1662,12 +1841,17 @@ export class CloudWatchService {
     }
     if (!clients.enabled) return null
 
-    const { lookbackSeconds, periodSeconds } = RANGE_CONFIG[resolveRange(range)]
+    const resolvedRange = resolveRange(range)
+    const { lookbackSeconds, periodSeconds } = RANGE_CONFIG[resolvedRange]
     const now = new Date()
     const currentStart = new Date(now.getTime() - lookbackSeconds * 1000)
     const previousStart = new Date(currentStart.getTime() - lookbackSeconds * 1000)
 
     const resources = await this.getResourceInventory(organizationId)
+    // OB2: how each resource's queries ended (written by the evaluators below), and the
+    // types whose whole evaluation block failed. Read only to build `observability`.
+    const evidence: EvidenceSink = new Map()
+    const failedBlocks = new Set<string>()
     const ec2InstancesAll = resources.filter((r) => r.resource_type === 'ec2')
     const rdsInstancesAll = resources.filter((r) => r.resource_type === 'rds')
     const albsAll = resources.filter((r) => r.resource_type === 'load-balancer' && r.metadata?.type === 'application')
@@ -1740,11 +1924,12 @@ export class CloudWatchService {
     const ec2Task = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
         const { evaluations } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch, resourceTypeRegistry.ec2, ec2Instances, 'ec2', currentStart, previousStart, now, periodSeconds, lookbackSeconds
+          clients.cloudWatch, resourceTypeRegistry.ec2, ec2Instances, 'ec2', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
         )
         return evaluations.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] EC2 evaluation block failed unexpectedly:', err)
+        failedBlocks.add('ec2')
         return []
       }
     })()
@@ -1761,6 +1946,7 @@ export class CloudWatchService {
         return results.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] RDS evaluation block failed unexpectedly:', err)
+        failedBlocks.add('rds')
         return []
       }
     })()
@@ -1768,11 +1954,12 @@ export class CloudWatchService {
     const lambdaTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
         const { evaluations } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch, resourceTypeRegistry.lambda, lambdaFunctions, 'lambda', currentStart, previousStart, now, periodSeconds, lookbackSeconds
+          clients.cloudWatch, resourceTypeRegistry.lambda, lambdaFunctions, 'lambda', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
         )
         return evaluations.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] Lambda evaluation block failed unexpectedly:', err)
+        failedBlocks.add('lambda')
         return []
       }
     })()
@@ -1780,11 +1967,12 @@ export class CloudWatchService {
     const dynamoTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
         const { evaluations } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch, resourceTypeRegistry.dynamodb, dynamoTables, 'dynamodb', currentStart, previousStart, now, periodSeconds, lookbackSeconds
+          clients.cloudWatch, resourceTypeRegistry.dynamodb, dynamoTables, 'dynamodb', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
         )
         return evaluations.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] DynamoDB evaluation block failed unexpectedly:', err)
+        failedBlocks.add('dynamodb')
         return []
       }
     })()
@@ -1792,9 +1980,10 @@ export class CloudWatchService {
     // ECS bypasses evaluateResource() entirely — see evaluateEcsService() doc comment.
     const ecsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await Promise.all(ecsServicesInventory.map((svc) => this.evaluateEcsService(clients.ecs, svc)))
+        return await Promise.all(ecsServicesInventory.map((svc) => this.evaluateEcsService(clients.ecs, svc, evidence)))
       } catch (err) {
         console.error('[CloudWatch] ECS evaluation block failed unexpectedly:', err)
+        failedBlocks.add('ecs')
         return []
       }
     })()
@@ -1802,9 +1991,10 @@ export class CloudWatchService {
     // EKS also bypasses evaluateResource() entirely — see evaluateEksService() doc comment.
     const eksTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await Promise.all(eksClustersInventory.map((cluster) => this.evaluateEksService(clients.eks, cluster)))
+        return await Promise.all(eksClustersInventory.map((cluster) => this.evaluateEksService(clients.eks, cluster, evidence)))
       } catch (err) {
         console.error('[CloudWatch] EKS evaluation block failed unexpectedly:', err)
+        failedBlocks.add('eks')
         return []
       }
     })()
@@ -1814,9 +2004,10 @@ export class CloudWatchService {
     // isolated inside that method, same failure-isolation guarantee as every other block.
     const ebsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await this.evaluateEbsVolumes(clients.ec2, ebsVolumes)
+        return await this.evaluateEbsVolumes(clients.ec2, ebsVolumes, evidence)
       } catch (err) {
         console.error('[CloudWatch] EBS evaluation block failed unexpectedly:', err)
+        failedBlocks.add('ebs')
         return []
       }
     })()
@@ -1827,9 +2018,10 @@ export class CloudWatchService {
     const cloudfrontTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
         const cloudWatchUsEast1 = clients.getCloudWatchClientForRegion('us-east-1')
-        return await this.evaluateCloudFrontDistributions(cloudWatchUsEast1, cloudfrontDistributions, currentStart, now, periodSeconds)
+        return await this.evaluateCloudFrontDistributions(cloudWatchUsEast1, cloudfrontDistributions, currentStart, now, periodSeconds, evidence)
       } catch (err) {
         console.error('[CloudWatch] CloudFront evaluation block failed unexpectedly:', err)
+        failedBlocks.add('cloudfront')
         return []
       }
     })()
@@ -1839,9 +2031,10 @@ export class CloudWatchService {
     // dedicated regional client the way CloudFront's global-service metrics require.
     const auroraTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await this.evaluateAuroraClusters(clients.rds, clients.cloudWatch, auroraClusters, currentStart, now, periodSeconds)
+        return await this.evaluateAuroraClusters(clients.rds, clients.cloudWatch, auroraClusters, currentStart, now, periodSeconds, evidence)
       } catch (err) {
         console.error('[CloudWatch] Aurora evaluation block failed unexpectedly:', err)
+        failedBlocks.add('aurora')
         return []
       }
     })()
@@ -1879,7 +2072,8 @@ export class CloudWatchService {
           previousStart,
           now,
           periodSeconds,
-          lookbackSeconds
+          lookbackSeconds,
+          evidence
         )
 
         const albServices = albEvaluations.map((r) => r.service)
@@ -1935,6 +2129,7 @@ export class CloudWatchService {
         return { services: albServices, avgResponseTimeMs, requestsPerMinute, errorRate, trendPercent, responseTimeHistory }
       } catch (err) {
         console.error('[CloudWatch] ALB evaluation block failed unexpectedly:', err)
+        failedBlocks.add('load-balancer')
         return empty
       }
     })()
@@ -2003,6 +2198,18 @@ export class CloudWatchService {
           ? 'degraded'
           : 'healthy'
 
+    const observability = await this.buildObservabilitySnapshot({
+      organizationId,
+      accountId: clients.accountId ?? parseAwsAccountId(account.account_id),
+      region: clients.region,
+      range: resolvedRange,
+      sweepAt: now,
+      resources,
+      services: allServices,
+      evidence,
+      failedBlocks,
+    })
+
     return {
       accountId: account.account_id,
       nickname: account.nickname,
@@ -2031,6 +2238,89 @@ export class CloudWatchService {
       systemStatus,
       services: allServices,
       capturedAt: new Date().toISOString(),
+      observability,
+    }
+  }
+
+  /**
+   * OB2: the explicit per-resource states for GET /api/observability/resources, from this
+   * sweep's rows and evidence plus stored history. Records this sweep's observations
+   * first, so Last seen survives a later window with no datapoints. Never throws for
+   * storage: with no stored history it reports what this sweep saw.
+   */
+  private async buildObservabilitySnapshot(input: {
+    organizationId: string
+    accountId: string | null
+    region: string
+    range: MonitoringRange
+    sweepAt: Date
+    resources: InventoryRow[]
+    services: CloudWatchServiceHealth[]
+    evidence: EvidenceSink
+    failedBlocks: Set<string>
+  }): Promise<ObservabilitySnapshot> {
+    const { organizationId, accountId, region, range, sweepAt, resources, services, evidence, failedBlocks } = input
+    const rowsById = new Map(services.map((s) => [s.resourceDbId, s]))
+    const contextFor = (resource: InventoryRow) => ({
+      accountId,
+      region,
+      rangeLabel: range,
+      sweepAt,
+      blockFailed: failedBlocks.has(resource.resource_type),
+    })
+
+    // First pass without stored history: which rows are in scope, what to record, and
+    // whether every in-scope query completed.
+    const firstPass = resources.map((resource) => {
+      const ctx = { ...contextFor(resource), stored: undefined }
+      const row = observabilityRowFor(resource, rowsById.get(resource.id), evidence.get(resource.id), ctx)
+      return { resource, row, ctx }
+    })
+    const collection: ObservabilitySnapshot['collection'] = firstPass.some(
+      ({ row }) => row.unknown_reason === 'access_denied' || row.unknown_reason === 'throttled' || row.unknown_reason === 'query_failed'
+    )
+      ? 'partial'
+      : 'complete'
+
+    const writes: ObservationWrite[] = []
+    for (const { resource, row, ctx } of firstPass) {
+      if (row.unknown_reason === 'outside_account' || row.unknown_reason === 'outside_region' || isNotMeasured(resource)) continue
+      const e = evidence.get(resource.id)
+      const completed = checkCompleted(e, ctx)
+      writes.push({
+        resourceDbId: resource.id,
+        lastDatapointAt: e?.kind === 'cloudwatch' ? e.newestDatapointAt : null,
+        lastSuccessfulCheckAt: completed ? sweepAt : null,
+      })
+    }
+
+    // Stored history is keyed by a 12-digit account; without one nothing is read or written.
+    const [recorded, coverage] = await Promise.all([
+      accountId
+        ? recordObservations(pool, { organizationId, awsAccountId: accountId, region }, writes, collection, sweepAt)
+        : Promise.resolve({ stored: new Map(), lastFullSuccessAt: collection === 'complete' ? sweepAt : null, persisted: false }),
+      readInventoryCapped(pool, organizationId),
+    ])
+
+    const rows: ObservabilitySnapshotRow[] = firstPass.map(({ resource, ctx }) => ({
+      row: observabilityRowFor(resource, rowsById.get(resource.id), evidence.get(resource.id), {
+        ...ctx,
+        stored: recorded.stored.get(resource.id),
+      }),
+      sortName: resource.resource_name,
+      dbId: resource.id,
+    }))
+    rows.sort((a, b) => compareObservabilityKeys(a, b))
+
+    return {
+      region,
+      range,
+      collection,
+      checkedAt: recorded.lastFullSuccessAt ? recorded.lastFullSuccessAt.toISOString() : null,
+      inventoryCapped: coverage.capped,
+      inventoryCappedReasons: coverage.reasons,
+      typeSummary: typeSummaryOf(rows.map((r) => r.row)),
+      rows,
     }
   }
 

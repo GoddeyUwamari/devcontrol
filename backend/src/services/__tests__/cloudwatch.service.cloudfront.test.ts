@@ -18,7 +18,11 @@ import * as batchUtil from '../cloudwatch-metric-batch.util';
 
 jest.mock('../cloudwatch-metric-batch.util', () => {
   const actual = jest.requireActual('../cloudwatch-metric-batch.util');
-  return { ...actual, fetchMetricDataBatch: jest.fn() };
+  const fetchMetricDataBatch = jest.fn();
+  // OB2: the service fetches through fetchMetricDataBatchWithStatus(); its values come
+  // from this suite's fetchMetricDataBatch mock, unchanged (statuses are not under test here).
+  const fetchMetricDataBatchWithStatus = async (...args: unknown[]) => ({ results: await fetchMetricDataBatch(...args), statuses: new Map() });
+  return { ...actual, fetchMetricDataBatch, fetchMetricDataBatchWithStatus };
 });
 
 const fetchMetricDataBatch = batchUtil.fetchMetricDataBatch as jest.Mock;
