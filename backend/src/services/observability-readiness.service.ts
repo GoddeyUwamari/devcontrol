@@ -1,8 +1,8 @@
 import {
   DescribeAlarmsCommand,
   type CloudWatchClient,
-  type MetricAlarm,
 } from '@aws-sdk/client-cloudwatch'
+import { projectMetricAlarm, type MetricAlarmFields } from './aws-response-projections'
 import { pool } from '../config/database'
 import { AWSClientFactory } from './aws-client-factory.service'
 import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
@@ -163,10 +163,10 @@ export type AlarmDisqualifier =
  *   data_unverified   = TreatMissingData notBreaching/ignore: silence reads
  *                       as healthy, so the alarm can't show the metric exists
  */
-export function alarmDisqualifiers(alarm: MetricAlarm): AlarmDisqualifier[] {
+export function alarmDisqualifiers(alarm: MetricAlarmFields): AlarmDisqualifier[] {
   const reasons: AlarmDisqualifier[] = []
   if (alarm.StateValue !== 'OK' && alarm.StateValue !== 'ALARM') reasons.push('insufficient_data')
-  if (alarm.ActionsEnabled !== true || (alarm.AlarmActions ?? []).length === 0) reasons.push('no_actions')
+  if (alarm.ActionsEnabled !== true || !alarm.HasAlarmActions) reasons.push('no_actions')
   if (alarm.TreatMissingData === 'notBreaching' || alarm.TreatMissingData === 'ignore') reasons.push('data_unverified')
   return reasons
 }
@@ -181,9 +181,9 @@ type AlarmClassification =
   | { kind: 'unsupported'; reason: UnsupportedAlarmReason }
 
 /** What an alarm targets, from its namespace and exact dimensions only -- never its name or Dimensions[0]. */
-export function classifyAlarm(alarm: MetricAlarm): AlarmClassification {
-  if ((alarm.Metrics ?? []).length > 0) return { kind: 'unsupported', reason: 'metric_math' }
-  const dimensions = alarm.Dimensions ?? []
+export function classifyAlarm(alarm: MetricAlarmFields): AlarmClassification {
+  if (alarm.UsesMetricMath) return { kind: 'unsupported', reason: 'metric_math' }
+  const dimensions = alarm.Dimensions
   if (dimensions.length === 0) return { kind: 'unsupported', reason: 'dimensionless' }
   for (const type of ['ec2', 'rds'] as const) {
     const { namespace, dimensionKey } = alarmTarget(type)
@@ -197,15 +197,15 @@ export function classifyAlarm(alarm: MetricAlarm): AlarmClassification {
 }
 
 /** Every metric alarm in the client's account and region. Throws on any failed page. */
-export async function describeAllMetricAlarms(client: CloudWatchClient): Promise<MetricAlarm[]> {
-  const alarms: MetricAlarm[] = []
+export async function describeAllMetricAlarms(client: CloudWatchClient): Promise<MetricAlarmFields[]> {
+  const alarms: MetricAlarmFields[] = []
   const seenTokens = new Set<string>()
   let nextToken: string | undefined
   do {
     const page = await client.send(
       new DescribeAlarmsCommand({ AlarmTypes: ['MetricAlarm'], MaxRecords: 100, NextToken: nextToken })
     )
-    alarms.push(...(page.MetricAlarms ?? []))
+    alarms.push(...(page.MetricAlarms ?? []).map(projectMetricAlarm))
     nextToken = page.NextToken || undefined
     if (nextToken) {
       if (seenTokens.has(nextToken)) throw new Error('DescribeAlarms returned a repeated NextToken')
@@ -472,7 +472,7 @@ export class ObservabilityReadinessService {
 
     // Read alarms only when some type has a usable gate: a failure then is
     // this evaluation's failure, not a guess about a type with no inventory.
-    let alarms: MetricAlarm[] | null = null
+    let alarms: MetricAlarmFields[] | null = null
     let alarmsError = false
     if (COVERAGE_TYPES.some(t => gates[t].kind === 'usable')) {
       try {
@@ -491,7 +491,7 @@ export class ObservabilityReadinessService {
     run: GatedDiscoveryRun | null
     gates: Record<CoverageResourceType, DiscoveryGate>
     inventory: InventoryRow[]
-    alarms: MetricAlarm[] | null
+    alarms: MetricAlarmFields[] | null
     alarmsError: boolean
     region: string
     scope: InventoryScope
@@ -612,9 +612,9 @@ export class ObservabilityReadinessService {
   }
 
   private buildAlarmSection(
-    classified: Array<{ alarm: MetricAlarm; target: AlarmClassification }>,
+    classified: Array<{ alarm: MetricAlarmFields; target: AlarmClassification }>,
     inScopeIds: Record<CoverageResourceType, Set<string> | null>,
-    alarms: MetricAlarm[] | null,
+    alarms: MetricAlarmFields[] | null,
     alarmsError: boolean,
     gates: Record<CoverageResourceType, DiscoveryGate>,
     scope: InventoryScope,
