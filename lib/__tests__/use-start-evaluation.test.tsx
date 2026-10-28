@@ -11,7 +11,10 @@ import { useStartEvaluation } from '@/lib/compliance/useStartEvaluation'
 const post = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/api', () => ({ api: { post } }))
 
-const reject = (status?: number) => Promise.reject(Object.assign(new Error('Request failed'), status === undefined ? {} : { response: { status, data: { error: 'Failed to execute scan' } } }))
+const reject = (status?: number, error = 'Failed to execute scan') =>
+  Promise.reject(Object.assign(new Error('Request failed'), status === undefined ? {} : { response: { status, data: { success: false, error } } }))
+/** The controller's 409 when this framework already has an active run (compliance-frameworks.controller.ts executeScan). */
+const inProgress = () => reject(409, 'SCAN_IN_PROGRESS')
 
 /** Lets React render the state set before the list read, as a real network read would. */
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -73,9 +76,19 @@ describe('useStartEvaluation', () => {
     expect(await trackedDuringRefresh()).toEqual({ during: { at: expect.any(Number), scanId: null }, after: undefined, problems: {} })
   })
 
-  it('a 409 is Running while the list is read, then the list is the truth; never a problem', async () => {
-    post.mockImplementation(() => reject(409))
+  it('a 409 SCAN_IN_PROGRESS is Running while the list is read, then the list is the truth; never a problem', async () => {
+    post.mockImplementation(inProgress)
     expect(await trackedDuringRefresh()).toEqual({ during: { at: expect.any(Number), scanId: null }, after: undefined, problems: {} })
+  })
+
+  it('any other 409 is a failed start, never Running (founder addition 2)', async () => {
+    post.mockImplementation(() => reject(409, 'CONFLICT'))
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    const { result } = renderHook(() => useStartEvaluation(refresh))
+    await act(async () => { await result.current.start('fw-1') })
+    expect(result.current.problems).toEqual({ 'fw-1': 'failed' })
+    expect(result.current.started).toEqual({})
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it.each([

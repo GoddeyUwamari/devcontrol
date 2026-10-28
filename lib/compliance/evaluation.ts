@@ -28,7 +28,27 @@ export const EVALUATION_COPY = {
   noRulesApplied: 'No rules applied to your resources.',
   viewerCantStart: "Viewers can't start an evaluation",
   startFailed: "Couldn't start the evaluation. Try again.",
+  enterprisePlan: 'Compliance frameworks are on the Enterprise plan.',
 } as const
+
+/** The upgrade page, after EVALUATION_COPY.enterprisePlan (both pages' plan state, and a start answered 402). */
+export const SEE_PLANS = { label: 'See plans', href: '/settings/billing/upgrade' } as const
+
+/** The server's member floor on POST /:id/scan (requireMember); the UI only mirrors it, the server decides. */
+export const CAN_START_EVALUATION: readonly string[] = ['owner', 'admin', 'member']
+
+/** The 409 body's code when this framework already has an active run (the per-framework lock, CCS:136-153). */
+export const SCAN_IN_PROGRESS = 'SCAN_IN_PROGRESS'
+
+/** Why a start didn't happen: a viewer (403), a plan below Enterprise (402), or anything else. */
+export type StartProblem = 'viewer' | 'plan' | 'failed'
+
+/** What each page shows under the action when a start didn't happen; a 402 adds SEE_PLANS. */
+export const START_PROBLEM_TEXT: Readonly<Record<StartProblem, string>> = {
+  viewer: EVALUATION_COPY.viewerCantStart,
+  plan: EVALUATION_COPY.enterprisePlan,
+  failed: EVALUATION_COPY.startFailed,
+}
 
 export type ScanScore =
   | { kind: 'score'; value: string }
@@ -90,6 +110,13 @@ export interface LocalStart {
   at: number
   /** The new run's id from a 200; null after a 409, which names no run. */
   scanId: string | null
+}
+
+/** The page's view of runs it started: `clock` is the latest time it knows of (the ceiling is measured with it). */
+export interface EvaluationOverlay {
+  clock: number
+  /** Framework id → this page's start, while the list doesn't show that run. */
+  startedLocally: Readonly<Record<string, LocalStart>>
 }
 
 /**

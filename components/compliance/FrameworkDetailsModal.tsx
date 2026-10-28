@@ -7,9 +7,19 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Plus, Edit, Trash2, AlertTriangle } from 'lucide-react';
 import { ComplianceFramework } from '@/lib/services/compliance-frameworks.service';
 import { useFrameworkDetails } from '@/lib/hooks/useComplianceFrameworks';
+import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useState } from 'react';
 import { CreateRuleModal } from './CreateRuleModal';
 import { useToast } from '@/components/ui/use-toast';
+
+/** The server's floor on adding, editing and deleting rules (requireMember); the UI only mirrors it. */
+const CAN_CHANGE_RULES = ['owner', 'admin', 'member'];
+
+export const RULE_VIEWER_REASONS = {
+  add: "Viewers can't add rules.",
+  edit: "Viewers can't edit rules.",
+  delete: "Viewers can't delete rules.",
+} as const;
 
 interface FrameworkDetailsModalProps {
   open: boolean;
@@ -22,6 +32,10 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
   const [createRuleOpen, setCreateRuleOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
   const { toast } = useToast();
+  // A role not read yet fails closed (disabled, no reason); a viewer sees why (founder answer Q2).
+  const role = useCurrentRole();
+  const canChange = role !== null && CAN_CHANGE_RULES.includes(role);
+  const isViewer = role !== null && !canChange;
 
   const handleCreateRule = async (data: any) => {
     try {
@@ -119,11 +133,21 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
               <h3 className="font-semibold text-gray-900">
                 Rules ({rules.length})
               </h3>
-              <Button onClick={() => setCreateRuleOpen(true)} size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Rule
-              </Button>
+              <div className="flex flex-col items-end gap-1">
+                <Button onClick={() => setCreateRuleOpen(true)} size="sm" disabled={!canChange} aria-describedby={isViewer ? 'rule-add-reason' : undefined}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Rule
+                </Button>
+                {isViewer && <p id="rule-add-reason" className="text-meta text-ink-muted">{RULE_VIEWER_REASONS.add}</p>}
+              </div>
             </div>
+
+            {isViewer && rules.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <p id="rule-edit-reason" className="text-meta text-ink-muted">{RULE_VIEWER_REASONS.edit}</p>
+                <p id="rule-delete-reason" className="text-meta text-ink-muted">{RULE_VIEWER_REASONS.delete}</p>
+              </div>
+            )}
 
             {/* Loading State */}
             {loading && (
@@ -137,7 +161,7 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
               <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed">
                 <AlertTriangle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600 mb-4">No rules defined yet</p>
-                <Button onClick={() => setCreateRuleOpen(true)}>
+                <Button onClick={() => setCreateRuleOpen(true)} disabled={!canChange} aria-describedby={isViewer ? 'rule-add-reason' : undefined}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add Your First Rule
                 </Button>
@@ -167,13 +191,16 @@ export function FrameworkDetailsModal({ open, onClose, framework }: FrameworkDet
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => setEditingRule(rule)}>
+                          <Button variant="outline" size="sm" onClick={() => setEditingRule(rule)} disabled={!canChange} aria-label="Edit rule" aria-describedby={isViewer ? 'rule-edit-reason' : undefined}>
                             <Edit className="h-3 w-3" />
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleDeleteRule(rule.id)}
+                            disabled={!canChange}
+                            aria-label="Delete rule"
+                            aria-describedby={isViewer ? 'rule-delete-reason' : undefined}
                             className="text-red-600"
                           >
                             <Trash2 className="h-3 w-3" />

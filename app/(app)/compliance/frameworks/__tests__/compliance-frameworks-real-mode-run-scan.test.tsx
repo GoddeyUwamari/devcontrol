@@ -14,9 +14,10 @@
  * or component.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import ComplianceFrameworksPage from '../page'
 import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
+import { renderSeeded } from './seeded-render'
 
 class ResizeObserverStub {
   observe() {}
@@ -24,6 +25,16 @@ class ResizeObserverStub {
   disconnect() {}
 }
 ;(globalThis as any).ResizeObserver ??= ResizeObserverStub
+
+// F3b: real mode reads through React Query (seeded by renderSeeded from the state below) and starts runs through
+// the shared start hook's api.post.
+const mockApiPost = vi.fn()
+vi.mock('@/lib/api', () => {
+  const api = { get: () => new Promise(() => {}), post: (...args: unknown[]) => mockApiPost(...args), put: vi.fn(), delete: vi.fn() }
+  return { default: api, api, handleApiResponse: (r: { data: { data: unknown } }) => r.data.data }
+})
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
+vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'owner' }))
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -106,7 +117,8 @@ function makeFramework(overrides: Partial<ComplianceFramework> = {}): Compliance
 }
 
 function renderPage() {
-  return render(<ComplianceFrameworksPage />)
+  const loaded = !frameworksState.loading && !scansState.loading
+  return renderSeeded(<ComplianceFrameworksPage />, loaded ? { frameworks: frameworksState.frameworks, scans: scansState.scans } : null)
 }
 
 beforeEach(() => {
@@ -128,14 +140,16 @@ describe('real mode -- "Run Scan" entry point on the custom framework list', () 
     expect(screen.getAllByText('Run Scan')).toHaveLength(2)
   })
 
-  it('clicking Run Scan calls the existing executeScan chain with that framework\'s actual ID', async () => {
+  it('clicking Run Scan starts that framework\'s evaluation through the shared start hook, with its actual ID (F3b)', async () => {
+    mockApiPost.mockResolvedValue({ data: { success: true, data: { scanId: 'scan-1' } } })
     frameworksState = { frameworks: [makeFramework({ id: 'fw-42', name: 'Production AWS Baseline' })], loading: false, error: null }
     renderPage()
 
     fireEvent.click(screen.getByText('Run Scan'))
 
-    expect(mockExecuteScan).toHaveBeenCalledTimes(1)
-    expect(mockExecuteScan).toHaveBeenCalledWith('fw-42')
+    expect(mockApiPost).toHaveBeenCalledTimes(1)
+    expect(mockApiPost).toHaveBeenCalledWith('/api/compliance-frameworks/fw-42/scan', {})
+    expect(mockExecuteScan).not.toHaveBeenCalled()
   })
 
   it('does not introduce a Run Scan control for the official framework cards', () => {

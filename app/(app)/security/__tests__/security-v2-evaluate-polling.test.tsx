@@ -11,7 +11,7 @@ const m = vi.hoisted(() => {
   }
 })
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import SecurityOverviewV2 from '../overview/SecurityOverviewV2'
 import { SCANS_PATH, connectedRoutes, failWith, installFetch, newClient, ok, renderWith, scan, type Harness } from './security-v2-fixtures'
@@ -108,7 +108,7 @@ describe('the 15-minute ceiling (a run nothing ever ends)', () => {
     await advance(15 * SEC)
     expect(reads()).toBe(2)
     expect(row()).toHaveAttribute('data-state', 'running')
-    expect(row()).toHaveTextContent('Still running — started today, 2:45 PM UTC, taking longer than usual.')
+    expect(row()).toHaveTextContent('Still running — started today, 2:45 PM, taking longer than usual.')
     expect(row()).not.toHaveTextContent('The previous result is hidden')
     expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
     await advance(10 * MIN)
@@ -119,7 +119,7 @@ describe('the 15-minute ceiling (a run nothing ever ends)', () => {
     h.routes['POST /api/compliance-frameworks/fw-1/scan'] = failWith(409, 'SCAN_IN_PROGRESS')
     await show([scan('s-stuck', 'fw-1', 'running', null, DAY), DONE])
     const before = row().textContent
-    expect(before).toContain('Still running — started yesterday, 3:00 PM UTC, taking longer than usual.')
+    expect(before).toContain('Still running — started yesterday, 3:00 PM, taking longer than usual.')
     fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
     await advance(0)
     await advance(0)
@@ -151,5 +151,32 @@ describe('the 15-minute ceiling (a run nothing ever ends)', () => {
     expect(within(row()).queryByRole('button')).toBeNull()
     await advance(15 * MIN)
     expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
+  })
+})
+
+/** React Query reads document.visibilityState for "focused" unless a page sets it; this is what a browser does. */
+function setVisibility(state: 'hidden' | 'visible') {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+  window.dispatchEvent(new Event('visibilitychange'))
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
+describe('a hidden tab (F3a review finding 2)', () => {
+  afterEach(() => setVisibility('visible'))
+
+  it('polling pauses while the tab is hidden and resumes when it is visible again', async () => {
+    await show([scan('s-run', 'fw-1', 'running', null, 10 * SEC), DONE])
+    await advance(5 * SEC)
+    expect(reads()).toBe(2)
+    setVisibility('hidden')
+    await advance(60 * SEC)
+    expect(reads()).toBe(2)
+    expect(row()).toHaveAttribute('data-state', 'running')
+    setVisibility('visible')
+    // The next tick reads again; after that read the run is over a minute old, so the rate is 15 s.
+    await advance(15 * SEC)
+    expect(reads()).toBe(3)
+    await advance(15 * SEC)
+    expect(reads()).toBe(4)
   })
 })

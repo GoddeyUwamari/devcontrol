@@ -77,11 +77,22 @@
  *     certification, or a Type II audit.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import ComplianceFrameworksPage from '../page'
 import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
+import { renderSeeded } from './seeded-render'
 
 const mockPush = vi.fn()
+// F3b: real mode reads through React Query (seeded by renderSeeded from the state below) and starts runs through
+// the shared start hook's api.post.
+const mockApiPost = vi.fn()
+vi.mock('@/lib/api', () => {
+  const api = { get: () => new Promise(() => {}), post: (...args: unknown[]) => mockApiPost(...args), put: vi.fn(), delete: vi.fn() }
+  return { default: api, api, handleApiResponse: (r: { data: { data: unknown } }) => r.data.data }
+})
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
+vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'owner' }))
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }))
@@ -278,7 +289,8 @@ function makeScan(overrides: Partial<ComplianceScan> = {}): ComplianceScan {
 }
 
 function renderPage() {
-  return render(<ComplianceFrameworksPage />)
+  const loaded = !frameworksState.loading && !scansState.loading
+  return renderSeeded(<ComplianceFrameworksPage />, loaded ? { frameworks: frameworksState.frameworks, scans: scansState.scans } : null)
 }
 
 beforeEach(() => {
@@ -320,11 +332,11 @@ describe('Test 1 — real mode, no completed evaluation', () => {
     expect(screen.queryByText('11')).not.toBeInTheDocument()
   })
 
-  it('shows 0 active evaluations for the Frameworks KPI', () => {
+  it('the Frameworks KPI counts frameworks, never runs: 0 and "No frameworks yet." (F3b, Q1)', () => {
     renderPage()
     expect(screen.getByText('Frameworks')).toBeInTheDocument()
     expect(screen.getByText('0')).toBeInTheDocument()
-    expect(screen.getByText('Active evaluations')).toBeInTheDocument()
+    expect(screen.getByText('No frameworks yet.')).toBeInTheDocument()
   })
 
   it('shows the honest empty state for Active Evaluations', () => {
@@ -335,7 +347,17 @@ describe('Test 1 — real mode, no completed evaluation', () => {
 })
 
 describe('Test 2 — real mode, completed evaluation', () => {
-  it('displays the exact persisted compliance_score / critical_issues / high_issues values', () => {
+  // F3b: the tiles describe an enabled framework's latest evaluation (D2), so the scan's framework is listed; the
+  // score is compliant ÷ (compliant + non-compliant) from the counts (D1), never the stored compliance_score (84).
+  beforeEach(() => {
+    frameworksState = {
+      frameworks: [{ id: 'fw-1', organization_id: 'org-1', name: 'Production AWS Baseline', description: null, framework_type: 'custom', enabled: true, is_default: false, standard_name: null, version: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }],
+      loading: false,
+      error: null,
+    }
+  })
+
+  it('displays the score from the counts and the exact persisted critical_issues / high_issues values', () => {
     scansState = {
       scans: [makeScan({ compliance_score: 84, critical_issues: 2, high_issues: 7 })],
       loading: false,
@@ -343,13 +365,14 @@ describe('Test 2 — real mode, completed evaluation', () => {
     }
     renderPage()
 
-    expect(screen.getAllByText('84%').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('80%').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText('84%')).not.toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.queryByText('—')).not.toBeInTheDocument()
   })
 
-  it('agrees between the KPI strip and the Active Evaluations list for the same scan', () => {
+  it('agrees between the KPI strip and the evaluation history for the same scan', () => {
     scansState = {
       scans: [makeScan({ compliance_score: 84, critical_issues: 2, high_issues: 7 })],
       loading: false,
@@ -357,15 +380,18 @@ describe('Test 2 — real mode, completed evaluation', () => {
     }
     renderPage()
 
-    // 84% appears once in the KPI strip and once next to the evaluation row.
-    expect(screen.getAllByText('84%').length).toBe(2)
+    // 80% is the KPI value and ends the evaluation's history row.
+    expect(screen.getAllByText('80%')).toHaveLength(1)
+    expect(screen.getByTestId('evaluation-history-row')).toHaveTextContent('Production AWS Baseline · Completed')
+    expect(screen.getByTestId('evaluation-history-row')).toHaveTextContent('· 80%')
   })
 
   it('picks the most recently completed scan when multiple exist', () => {
     scansState = {
       scans: [
-        makeScan({ id: 'old', compliance_score: 50, critical_issues: 9, high_issues: 9, completed_at: new Date(Date.now() - 100000).toISOString() }),
-        makeScan({ id: 'new', compliance_score: 91, critical_issues: 1, high_issues: 3, completed_at: new Date().toISOString() }),
+        // Created when it completed: runs are ordered by creation time (lib/compliance/evaluation byNewest).
+        makeScan({ id: 'old', compliant_resources: 5, non_compliant_resources: 5, critical_issues: 9, high_issues: 9, created_at: new Date(Date.now() - 100000).toISOString(), completed_at: new Date(Date.now() - 100000).toISOString() }),
+        makeScan({ id: 'new', compliant_resources: 91, non_compliant_resources: 9, critical_issues: 1, high_issues: 3, completed_at: new Date().toISOString() }),
       ],
       loading: false,
       error: null,
@@ -554,10 +580,11 @@ describe('REAL MODE + ZERO FRAMEWORK EVALUATIONS — no dead-code regression of 
 })
 
 describe('AWS Security Hub panel — real mode', () => {
-  it('shows a "Not connected" status and never implies Security Hub is already integrated', () => {
+  it('shows a "Not checked yet" status (F3b, Q5) and never implies Security Hub is already integrated', () => {
     renderPage()
     expect(screen.getByText('AWS Security Hub')).toBeInTheDocument()
-    expect(screen.getByText('Not connected')).toBeInTheDocument()
+    expect(screen.getByText('Not checked yet')).toBeInTheDocument()
+    expect(screen.queryByText('Not connected')).not.toBeInTheDocument()
     expect(screen.queryByText('Enable Security Hub')).not.toBeInTheDocument()
   })
 })

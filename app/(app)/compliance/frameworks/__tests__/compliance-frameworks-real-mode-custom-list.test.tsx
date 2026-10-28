@@ -16,9 +16,10 @@
  * No new modal, hook, or API call.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import ComplianceFrameworksPage from '../page'
 import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
+import { renderSeeded } from './seeded-render'
 
 class ResizeObserverStub {
   observe() {}
@@ -26,6 +27,16 @@ class ResizeObserverStub {
   disconnect() {}
 }
 ;(globalThis as any).ResizeObserver ??= ResizeObserverStub
+
+// F3b: real mode reads through React Query (seeded by renderSeeded from the state below) and starts runs through
+// the shared start hook's api.post.
+const mockApiPost = vi.fn()
+vi.mock('@/lib/api', () => {
+  const api = { get: () => new Promise(() => {}), post: (...args: unknown[]) => mockApiPost(...args), put: vi.fn(), delete: vi.fn() }
+  return { default: api, api, handleApiResponse: (r: { data: { data: unknown } }) => r.data.data }
+})
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
+vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'owner' }))
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -106,7 +117,8 @@ function makeFramework(overrides: Partial<ComplianceFramework> = {}): Compliance
 }
 
 function renderPage() {
-  return render(<ComplianceFrameworksPage />)
+  const loaded = !frameworksState.loading && !scansState.loading
+  return renderSeeded(<ComplianceFrameworksPage />, loaded ? { frameworks: frameworksState.frameworks, scans: scansState.scans } : null)
 }
 
 beforeEach(() => {

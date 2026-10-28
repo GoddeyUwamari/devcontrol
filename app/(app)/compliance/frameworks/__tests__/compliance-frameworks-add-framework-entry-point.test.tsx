@@ -18,9 +18,10 @@
  * change to demo mode's own (already-dead) button.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import ComplianceFrameworksPage from '../page'
 import type { ComplianceFramework, ComplianceScan } from '@/lib/services/compliance-frameworks.service'
+import { renderSeeded } from './seeded-render'
 
 // jsdom has no ResizeObserver; CreateFrameworkModal's Radix Checkbox needs one
 // to mount. Scoped to this file only -- not a shared/global test setup change.
@@ -46,6 +47,15 @@ vi.mock('@/lib/demo/sales-demo-data', () => ({
 }))
 
 const mockCreateFramework = vi.fn().mockResolvedValue(undefined)
+
+// F3b: real mode reads through React Query (seeded by renderSeeded) and creates through the service's api.post.
+const mockApiPost = vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'fw-new' } } })
+vi.mock('@/lib/api', () => {
+  const api = { get: () => new Promise(() => {}), post: (...args: unknown[]) => mockApiPost(...args), put: vi.fn(), delete: vi.fn() }
+  return { default: api, api, handleApiResponse: (r: { data: { data: unknown } }) => r.data.data }
+})
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
+vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'owner' }))
 
 let frameworksState: { frameworks: ComplianceFramework[]; loading: boolean; error: string | null } = {
   frameworks: [],
@@ -95,7 +105,7 @@ vi.mock('@/lib/hooks/useComplianceFrameworks', () => ({
 }))
 
 function renderPage() {
-  return render(<ComplianceFrameworksPage />)
+  return renderSeeded(<ComplianceFrameworksPage />, { frameworks: frameworksState.frameworks, scans: scansState.scans })
 }
 
 beforeEach(() => {
@@ -122,17 +132,19 @@ describe('real mode -- "Add Framework" entry point', () => {
     expect(screen.getByRole('heading', { name: /Create Compliance Framework/i })).toBeInTheDocument()
   })
 
-  it('submitting the modal calls the existing createFramework handler unchanged', async () => {
+  it('submitting the modal creates the framework through the existing service (POST /api/compliance-frameworks)', async () => {
     renderPage()
     fireEvent.click(screen.getByText('Add Framework'))
 
     fireEvent.change(screen.getByLabelText(/Framework Name/i), { target: { value: 'Production AWS Baseline' } })
     fireEvent.click(screen.getByRole('button', { name: /Create Framework/i }))
 
-    expect(mockCreateFramework).toHaveBeenCalledTimes(1)
-    expect(mockCreateFramework).toHaveBeenCalledWith(
+    await waitFor(() => expect(mockApiPost).toHaveBeenCalledTimes(1))
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/api/compliance-frameworks',
       expect.objectContaining({ name: 'Production AWS Baseline', framework_type: 'custom' })
     )
+    expect(mockCreateFramework).not.toHaveBeenCalled()
   })
 
   it('the button is not present anywhere outside the real-mode header (no second entry point introduced elsewhere)', () => {

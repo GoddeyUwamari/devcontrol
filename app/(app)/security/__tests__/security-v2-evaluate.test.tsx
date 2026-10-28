@@ -31,7 +31,7 @@ Element.prototype.scrollIntoView = function scrollIntoView() {}
 
 const DAY = 86_400_000
 const START = 'POST /api/compliance-frameworks/fw-1/scan'
-const RUNNING_TEXT = 'Started today, 3:00 PM UTC. The previous result is hidden until this run finishes.'
+const RUNNING_TEXT = 'Started today, 3:00 PM. The previous result is hidden until this run finishes.'
 const STALE = scan('s-old', 'fw-1', 'completed', '90', 9 * DAY)
 
 beforeEach(() => {
@@ -145,7 +145,7 @@ describe('409: a run is already active (D5)', () => {
     await settled(client)
     expect(h.log.filter((l) => l === `GET ${SCANS_PATH}`).length).toBe(reads + 1)
     expect(row()).toHaveAttribute('data-state', 'running')
-    expect(row()).toHaveTextContent('Started today, 2:59 PM UTC.')
+    expect(row()).toHaveTextContent('Started today, 2:59 PM.')
   })
   it('when the refreshed list shows no active run, the list is the truth again', async () => {
     const client = await show({ [START]: failWith(409, 'SCAN_IN_PROGRESS') })

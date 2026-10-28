@@ -13,8 +13,8 @@
  * - "No critical …" statements need every source they depend on to have loaded.
  * - Open = an account finding that is active or acknowledged, or any current
  *   resource finding (resource findings have no dispositions yet).
- * - Dates are UTC; compliance dates, times and scores, the first-found dates and
- *   the trend labels all come from the one formatter section below.
+ * - Dates and times are the viewer's local time, through lib/utils/localTime (the one formatter shared with
+ *   the Compliance page, founder answer Q8); only the trend's daily labels are UTC calendar days.
  * - A running or failed framework never shows an earlier score as current.
  * - No full access key ID or ARN in any string (lib/security/findingDisplay).
  */
@@ -24,9 +24,10 @@ import type { ComplianceFramework, ComplianceScan } from '@/lib/services/complia
 import type { RiskScore, RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
 import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type FindingWhere } from '@/lib/security/findingDisplay'
 import { typeLabel } from '../../services/AttentionTable'
-import { formatWhen, hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
+import { hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
+import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
-import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, evaluateFramework, type EvaluationState, type LocalStart } from '@/lib/compliance/evaluation'
+import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, SEE_PLANS, evaluateFramework, type EvaluationOverlay, type EvaluationState } from '@/lib/compliance/evaluation'
 import {
   WEB_SERVER_HINT,
   buildHttpsOnlyStatement,
@@ -78,8 +79,8 @@ export interface SecurityInputs {
 
 // ── Copy ──
 
-/** The upgrade page, after "Compliance frameworks are on the Enterprise plan." (the card, and a start answered 402). */
-export const SEE_PLANS = { label: 'See plans', href: '/settings/billing/upgrade' } as const
+// The upgrade link and the Enterprise sentence are shared with the Compliance page (lib/compliance/evaluation).
+export { SEE_PLANS }
 
 export const SECURITY_COPY = {
   incomplete: "Some checks couldn't load, so this may be incomplete.",
@@ -92,7 +93,7 @@ export const SECURITY_COPY = {
   scorePlan: 'The score is on the Pro plan.',
   scoreError: "Couldn't load the score.",
   anomaliesNone: 'None open',
-  frameworksPlan: 'Compliance frameworks are on the Enterprise plan.',
+  frameworksPlan: EVALUATION_COPY.enterprisePlan,
   frameworksError: "Couldn't load compliance frameworks.",
   neverEvaluated: 'No evaluation yet.',
   noFrameworks: 'No frameworks yet.',
@@ -118,7 +119,7 @@ const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2,
 const rank = (s: string) => SEVERITY_RANK[s] ?? 4
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
 
-// ── Formatting: one place for every date, time and score on the page (UTC) ──
+// ── Formatting: one place for every date and time on the page (local time, founder answer Q8) ──
 
 const parse = (iso: string | null | undefined): number | null => {
   if (typeof iso !== 'string') return null
@@ -126,17 +127,19 @@ const parse = (iso: string | null | undefined): number | null => {
   return Number.isFinite(at) ? at : null
 }
 
-/** "Oct 3", or "Oct 3, 2025" outside the current UTC year; null for a missing or invalid date. */
+/** "Oct 3", or "Oct 3, 2025" outside the current year, in local time; null for a missing or invalid date. */
 export function formatDay(iso: string | null | undefined, now: number): string | null {
-  const at = parse(iso)
-  if (at === null) return null
-  const sameYear = new Date(at).getUTCFullYear() === new Date(now).getUTCFullYear()
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) }).format(at)
+  return formatLocalDay(iso, now)
 }
 
-/** "today, 4:12 PM UTC" (the Services/Infrastructure time format, in UTC); null for a missing or invalid time. */
+/** "today, 4:12 PM", "yesterday, 4:12 PM" or "Oct 3, 4:12 PM", in local time; null for a missing or invalid time. */
 export function formatTime(iso: string | null | undefined, now: number): string | null {
-  return parse(iso) === null ? null : `${formatWhen(iso!, now, 'UTC')} UTC`
+  return formatLocalWhen(iso, now)
+}
+
+/** A trend point's day: a UTC calendar date ("Daily, at 02:00 UTC."), so it is labelled in UTC, never shifted a day. */
+function trendDay(iso: string, now: number): string | null {
+  return formatLocalDay(iso, now, 'UTC')
 }
 
 // Compliance scores come from lib/compliance/evaluation's scanScore (the stored counts, D1); the stored
@@ -463,12 +466,7 @@ export interface FrameworksView {
 export const RE_EVALUATE_NOW = 'Re-evaluate now'
 
 /** What the page knows that the scan list may not show yet (F3): a run it just started, per framework. */
-export interface EvaluationOverlay {
-  /** The latest time the page knows of (at least `now`); the poll ceiling is measured with it. */
-  clock: number
-  /** Framework id → this page's start, while the list doesn't show that run. */
-  startedLocally: Readonly<Record<string, LocalStart>>
-}
+export type { EvaluationOverlay }
 
 /**
  * The scan list is the org's newest scans across every framework, so a framework
@@ -561,7 +559,7 @@ function trendView(i: SecurityInputs, now: number): TrendView | null {
   const points = [...(t.data.history ?? [])]
     .filter((p) => Number.isFinite(p.score) && parse(p.date) !== null)
     .sort((a, b) => parse(a.date)! - parse(b.date)!)
-    .map((p) => ({ label: formatDay(p.date, now)!, score: p.score }))
+    .map((p) => ({ label: trendDay(p.date, now)!, score: p.score }))
   if (points.length === 0) return { note: SECURITY_COPY.trendNone, points, delta: null, caption }
   let delta: string | null = null
   if (points.length >= 2) {
@@ -605,19 +603,9 @@ export type ScanLineState = 'finished' | 'running' | 'failed' | 'none'
 /** The header's dot and line. The dot is decorative; `text` carries the meaning. */
 export interface ScanLine { state: ScanLineState; text: string }
 
-function cleanTime(text: string): string {
-  // Newer ICU puts a narrow no-break space before AM/PM (as regionCoverage's formatWhen).
-  return text.replace(/[\u202f\u00a0]/g, ' ')
-}
-
-/** "today, 4:12 PM" or "Oct 19, 4:12 PM" in the viewer's local time, no zone suffix (founder answer 6); null for a missing or invalid time. */
+/** The header's scan time in the viewer's local time, no zone suffix (founder answers 6 and Q8); null for a missing or invalid time. */
 export function formatScanWhen(iso: string | null | undefined, now: number): string | null {
-  const at = parse(iso)
-  if (at === null) return null
-  const day = (ms: number) => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(ms)
-  const time = cleanTime(new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(at))
-  if (day(at) === day(now)) return `today, ${time}`
-  return `${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(at)}, ${time}`
+  return formatLocalWhen(iso, now)
 }
 
 /**
