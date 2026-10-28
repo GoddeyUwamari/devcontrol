@@ -106,7 +106,7 @@ describe('reads (D1, D7)', () => {
     ]) })
     expect(screen.getAllByTestId('evaluation-history-row').map((r) => r.getAttribute('data-status'))).toEqual(['failed', 'completed', 'completed'])
     expect(screen.getAllByTestId('evaluation-history-row')[0]).toHaveTextContent('Example baseline · Failed yesterday, 3:00 PM')
-    expect(tile('Overall Compliance Score')).toHaveTextContent('No score is shown as current.')
+    expect(tile('Overall Compliance Score')).toHaveTextContent('Example baseline · last evaluation failed')
   })
 })
 
@@ -114,14 +114,14 @@ describe('starting a run (D5, 409 contract)', () => {
   it('posts once to the existing endpoint; the button is disabled while the start is in flight', async () => {
     const gate = held()
     await show({ [START]: { status: 200, body: { success: true, data: { scanId: 's-new' } }, wait: gate.wait } })
-    const button = within(row()).getByRole('button', { name: 'Run Scan' })
+    const button = within(row()).getByRole('button', { name: 'Re-evaluate now' })
     fireEvent.click(button)
     await waitFor(() => expect(button).toBeDisabled())
     fireEvent.click(button)
     expect(h.posts).toEqual([{ path: '/api/compliance-frameworks/fw-1/scan', body: {} }])
     h.routes[SCANS] = ok([scan('s-new', 'fw-1', 'running', null, 0), scan('s-1', 'fw-1', 'completed', '0.00', 2 * DAY)])
     gate.release()
-    await waitFor(() => expect(tile('Overall Compliance Score')).toHaveTextContent('No score is shown as current.'))
+    await waitFor(() => expect(tile('Overall Compliance Score')).toHaveTextContent('Example baseline · evaluation running'))
     expect(screen.getAllByTestId('evaluation-history-row')[0]).toHaveTextContent('Example baseline · Running · started today, 3:00 PM')
     expect(button).toBeEnabled()
   })
@@ -129,7 +129,7 @@ describe('starting a run (D5, 409 contract)', () => {
   it('a 409 SCAN_IN_PROGRESS is Running, never "Couldn\'t start", and reads the list again', async () => {
     await show({ [START]: failWith(409, 'SCAN_IN_PROGRESS') })
     const before = reads()
-    fireEvent.click(within(row()).getByRole('button', { name: 'Run Scan' }))
+    fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
     await waitFor(() => expect(reads()).toBe(before + 1))
     expect(document.body.textContent).not.toContain("Couldn't start")
   })
@@ -141,7 +141,7 @@ describe('starting a run (D5, 409 contract)', () => {
     [403, 'Insufficient permissions', "Viewers can't start an evaluation"],
   ])('%i %s → %s, and the previous state stays', async (status, code, text) => {
     await show({ [START]: failWith(status, code) })
-    fireEvent.click(within(row()).getByRole('button', { name: 'Run Scan' }))
+    fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
     await waitFor(() => expect(within(row()).getByRole('alert')).toHaveTextContent(text))
     expect(tile('Overall Compliance Score')).toHaveTextContent('90%')
     expect(document.body.textContent).not.toContain(code)
@@ -149,7 +149,7 @@ describe('starting a run (D5, 409 contract)', () => {
 
   it('402 → the Enterprise sentence and See plans under the button', async () => {
     await show({ [START]: failWith(402, 'TIER_REQUIRED') })
-    fireEvent.click(within(row()).getByRole('button', { name: 'Run Scan' }))
+    fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
     await waitFor(() => expect(within(row()).getByRole('alert')).toHaveTextContent('Compliance frameworks are on the Enterprise plan.'))
     expect(within(row()).getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/settings/billing/upgrade')
   })
@@ -252,7 +252,7 @@ describe('viewer reasons (Q2)', () => {
     const add = screen.getByRole('button', { name: /Add Framework/ })
     expect(add).toBeDisabled()
     expect(add).toHaveAccessibleDescription("Viewers can't add frameworks.")
-    const run = within(row()).getByRole('button', { name: 'Run Scan' })
+    const run = within(row()).getByRole('button', { name: 'Re-evaluate now' })
     expect(run).toBeDisabled()
     expect(run).toHaveAccessibleDescription("Viewers can't start an evaluation")
     const sync = screen.getByRole('button', { name: /Sync Security Hub/ })
@@ -269,14 +269,14 @@ describe('viewer reasons (Q2)', () => {
     m.role = null
     await show()
     expect(screen.getByRole('button', { name: /Add Framework/ })).toBeDisabled()
-    expect(within(row()).getByRole('button', { name: 'Run Scan' })).toBeDisabled()
+    expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeDisabled()
     expect(document.body.textContent).not.toContain('Viewers can')
   })
   it.each(['member', 'admin', 'owner'])('%s: adding frameworks and starting runs are enabled', async (role) => {
     m.role = role
     await show()
     expect(screen.getByRole('button', { name: /Add Framework/ })).toBeEnabled()
-    expect(within(row()).getByRole('button', { name: 'Run Scan' })).toBeEnabled()
+    expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
   })
   // The sync is requireAdmin on the server (security-hub.routes.ts:61, rbac.middleware.ts:48): owner and admin only.
   it.each([
@@ -328,5 +328,25 @@ describe('Security Hub card (D3, Q5, Q6)', () => {
     expect(screen.getByTestId('standard-pci')).toHaveTextContent('Not yet available')
     expect(screen.getByTestId('standard-nist')).toHaveTextContent('Not yet available')
     expect(tile('Frameworks')).toHaveTextContent('1 custom · 1 Security Hub standard')
+  })
+  it.each([
+    ['not enabled', cap('NOT_AVAILABLE'), null, true],
+    ['never synced', null, null, false],
+    ['connected', cap('ENABLED'), null, false],
+    ['permission required', cap('NOT_GRANTED'), null, false],
+    ['check failed', cap('ERROR'), null, false],
+    ['check failed (the read failed)', null, 'Failed to load Security Hub status', false],
+  ])('top banner (F3c, conflict 1): %s', async (_, capability, error, shown) => {
+    Object.assign(m.sh, { capability, error })
+    await show()
+    const banner = screen.queryByTestId('security-hub-banner')
+    if (!shown) {
+      expect(banner).toBeNull()
+      expect(document.body.textContent).not.toContain("Security Hub isn't enabled")
+      return
+    }
+    expect(banner).toHaveTextContent("Security Hub isn't enabled, so CIS, PCI DSS and NIST can't be evaluated yet. None of these frameworks are certifications.")
+    expect(within(banner!).getByRole('link', { name: 'Enable Security Hub ↓' })).toHaveAttribute('href', '#security-hub')
+    expect(document.getElementById('security-hub')).toBe(screen.getByTestId('security-hub-card'))
   })
 })

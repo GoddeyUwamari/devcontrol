@@ -137,7 +137,7 @@ describe('real mode -- "Run Scan" entry point on the custom framework list', () 
       error: null,
     }
     renderPage()
-    expect(screen.getAllByText('Run Scan')).toHaveLength(2)
+    expect(screen.getAllByText('Re-evaluate now')).toHaveLength(2)
   })
 
   it('clicking Run Scan starts that framework\'s evaluation through the shared start hook, with its actual ID (F3b)', async () => {
@@ -145,7 +145,7 @@ describe('real mode -- "Run Scan" entry point on the custom framework list', () 
     frameworksState = { frameworks: [makeFramework({ id: 'fw-42', name: 'Production AWS Baseline' })], loading: false, error: null }
     renderPage()
 
-    fireEvent.click(screen.getByText('Run Scan'))
+    fireEvent.click(screen.getByText('Re-evaluate now'))
 
     expect(mockApiPost).toHaveBeenCalledTimes(1)
     expect(mockApiPost).toHaveBeenCalledWith('/api/compliance-frameworks/fw-42/scan', {})
@@ -157,7 +157,7 @@ describe('real mode -- "Run Scan" entry point on the custom framework list', () 
     renderPage()
     // The one Run Scan control belongs to the custom-framework row, not the
     // static CIS/SOC2/NIST/PCI-DSS cards, which never render this text at all.
-    expect(screen.getAllByText('Run Scan')).toHaveLength(1)
+    expect(screen.getAllByText('Re-evaluate now')).toHaveLength(1)
     expect(screen.queryByText('CIS AWS Foundations')).toBeInTheDocument()
     expect(screen.queryByText('SOC 2 Readiness')).toBeInTheDocument()
   })
@@ -171,7 +171,7 @@ describe('real mode -- "Run Scan" entry point on the custom framework list', () 
   it('does not render a duplicate Run Scan control per row', () => {
     frameworksState = { frameworks: [makeFramework({ id: 'fw-1' })], loading: false, error: null }
     renderPage()
-    const buttons = screen.getAllByText('Run Scan')
+    const buttons = screen.getAllByText('Re-evaluate now')
     expect(buttons).toHaveLength(1)
   })
 })

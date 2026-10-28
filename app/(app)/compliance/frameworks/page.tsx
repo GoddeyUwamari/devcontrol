@@ -58,10 +58,10 @@ const FRAMEWORK_STANDARDS: Array<{
   // entry uses it.
   attribution: 'security_hub' | 'not_implemented' | 'soc2_evidence';
 }> = [
-  { key: 'cis', badge: 'CIS AWS', badgeBg: '#EEEDFE', badgeColor: '#3C3489', name: 'CIS AWS Foundations', desc: 'Industry-standard security configuration guidelines for AWS infrastructure.', attribution: 'security_hub' },
+  { key: 'cis', badge: 'CIS AWS', badgeBg: '#EEEDFE', badgeColor: '#3C3489', name: 'CIS AWS Foundations', desc: 'AWS security configuration guidelines.', attribution: 'security_hub' },
   { key: 'soc2', badge: 'SOC 2', badgeBg: '#E1F5EE', badgeColor: '#085041', name: 'SOC 2 Readiness', desc: 'Technical and customer-provided supporting evidence for SOC 2 criteria — not a certification or Type II audit.', attribution: 'soc2_evidence' },
-  { key: 'nist', badge: 'NIST 800-53', badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST 800-53 Rev. 5', desc: 'Security and privacy controls framework for federal information systems and organizations — coverage reflects AWS Security Hub’s interpretation of NIST SP 800-53 Rev. 5, limited to a DevControl-verified technical subset.', attribution: 'security_hub' },
-  { key: 'pci', badge: 'PCI-DSS', badgeBg: '#FAEEDA', badgeColor: '#633806', name: 'PCI DSS v4.0.1', desc: 'Payment card industry data security standards for handling cardholder data — Compliance Readiness based on partial AWS/Security Hub evidence, not certification.', attribution: 'security_hub' },
+  { key: 'nist', badge: 'NIST 800-53', badgeBg: '#E6F1FB', badgeColor: '#0C447C', name: 'NIST 800-53 Rev. 5', desc: 'Federal security and privacy controls. Partial coverage, through Security Hub.', attribution: 'security_hub' },
+  { key: 'pci', badge: 'PCI-DSS', badgeBg: '#FAEEDA', badgeColor: '#633806', name: 'PCI DSS v4.0.1', desc: 'Card-data security standard. Readiness only, from partial evidence.', attribution: 'security_hub' },
 ];
 
 /** Demo and sales demo: the sample page, unchanged (no real data is read for its numbers). */
@@ -310,7 +310,7 @@ function DemoCompliancePage() {
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button onClick={() => handleRunScan(f.id)} className="flex items-center gap-1.5 bg-white text-ink-muted border border-slate-200 rounded-lg px-3.5 py-2 text-label cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap">
-                    <RefreshCw size={11} /> Run Scan
+                    <RefreshCw size={11} /> Re-evaluate now
                   </button>
                   <button onClick={() => handleViewDetails(f.id)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-label cursor-pointer transition-colors whitespace-nowrap">
                     <FileText size={11} /> View Details
@@ -411,7 +411,6 @@ function ComplianceResultsPage() {
   // A failed read with nothing known is "Couldn't check"; a failed sync keeps the state that was read.
   const shInput = { failed: !!shError && shCapability === null, capability: shCapability, evaluated: { cis: cisEvaluated, pci: pciEvaluated, nist: nistEvaluated } };
   const sh = describeSecurityHub(shInput);
-  const shNeverSynced = sh.state === 'never_synced';
 
   function frameworkSubtext(standardEnabled: boolean | null | undefined, standardLabel: string): string {
     switch (sh.state) {
@@ -497,21 +496,16 @@ function ComplianceResultsPage() {
         </div>
       </div>
 
-      {/* AWS Security Hub attribution banner */}
-      <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3.5 mb-4 flex items-start gap-2.5">
-        <Info size={14} className="text-violet-600 mt-0.5 shrink-0" />
-        <p className="text-meta text-violet-900 leading-relaxed">
-          {shNeverSynced ? (
-            <>
-              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub once it&apos;s connected and synchronized — it is not currently connected to DevControl. NIST coverage reflects AWS Security Hub&apos;s own interpretation of the NIST SP 800-53 Rev. 5 guidelines, limited to a DevControl-verified technical subset — not a certification. <strong>SOC 2</strong> readiness — technical evidence DevControl observes plus supporting evidence your organization provides, not a full Type II audit or certification — is available separately.
-            </>
-          ) : (
-            <>
-              <strong>CIS, PCI DSS v4.0.1, and NIST SP 800-53 Rev. 5</strong> can be evaluated through AWS Security Hub ({sh.pill.toLowerCase()}) — PCI DSS v4.0.1 and NIST SP 800-53 Rev. 5 coverage each reflect only the AWS/Security Hub evidence DevControl currently supports and are partial, not a certification or full-compliance claim. <strong>SOC 2</strong> readiness — technical evidence DevControl observes plus supporting evidence your organization provides, not a full Type II audit or certification — is available separately.
-            </>
-          )}
-        </p>
-      </div>
+      {/* Part C: only when Security Hub reports not enabled; no banner in the other four states (F3c, Oct 28). */}
+      {sh.state === 'not_available' && (
+        <div data-testid="security-hub-banner" className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3.5 mb-4 flex items-start gap-2.5">
+          <Info size={14} className="text-violet-600 mt-0.5 shrink-0" />
+          <p className="text-meta text-violet-900 leading-relaxed">
+            {COMPLIANCE_COPY.shNotEnabledBanner}{' '}
+            <a href="#security-hub" className={PLAN_LINK}>{COMPLIANCE_COPY.enableSecurityHub}</a>
+          </p>
+        </div>
+      )}
 
       {/* D7: a failed read is said so, never shown as an empty page. */}
       {view.status === 'error' && (
@@ -573,7 +567,7 @@ function ComplianceResultsPage() {
                   {f.description && <p className="text-meta text-ink-muted">{f.description}</p>}
                 </div>
                 <div className="flex gap-2 flex-wrap items-start shrink-0">
-                  {startControl(f.id, COMPLIANCE_COPY.runScan, 'custom-framework')}
+                  {startControl(f.id, COMPLIANCE_COPY.reEvaluateNow, 'custom-framework')}
                   <button
                     onClick={() => setDetailsFramework(f)}
                     className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-label cursor-pointer transition-colors whitespace-nowrap"
@@ -659,7 +653,7 @@ function ComplianceResultsPage() {
       </div>
 
       {/* AWS Security Hub informational panel */}
-      <div data-testid="security-hub-card" className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7 mb-6">
+      <div id="security-hub" data-testid="security-hub-card" className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex-1">
             <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1.5">AWS Security Hub</p>
@@ -717,7 +711,7 @@ function ComplianceResultsPage() {
       {/* Evaluation history (D4): every run, failed ones included. Not shown below Enterprise or after a failed read. */}
       {(view.status === 'loading' || view.status === 'ready') && (
         <>
-          <p id="evaluation-history" className="text-label text-ink-muted uppercase tracking-[0.04em] mb-4">Active Evaluations</p>
+          <p id="evaluation-history" className="text-label text-ink-muted uppercase tracking-[0.04em] mb-4">Evaluation history</p>
           {view.status === 'loading' ? (
             <div className="bg-white rounded-2xl p-12 text-center border border-slate-100 mb-6">
               <RefreshCw size={22} className="text-slate-300 mx-auto mb-3 animate-spin" />
@@ -746,7 +740,7 @@ function ComplianceResultsPage() {
 
       {/* Security / read-only footer messaging */}
       <p className="text-meta text-ink-muted text-center">
-        DevControl evaluations use secure, read-only access by default — optional remediation actions require separate, explicit permission and your approval.
+        DevControl uses read-only access by default. Remediation actions need separate permission and your approval.
       </p>
 
       <CreateFrameworkModal open={createModalOpen} onClose={() => setCreateModalOpen(false)} onSubmit={(data) => handleCreate(data as Record<string, unknown>)} isEditing={false} />
