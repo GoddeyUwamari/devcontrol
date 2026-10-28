@@ -39,6 +39,21 @@ function postSignInPath(redirectTo: string | undefined): string {
 }
 
 /**
+ * Whether `organization` -- and so the plan -- is established for the
+ * signed-in identity:
+ * - idle: no signed-in user
+ * - loading: no org-bearing response has succeeded yet for this identity
+ * - ready: one has (/api/auth/me, /api/organizations, login, registration
+ *   or creating an organization), with at least one organization
+ * - error: a load and its one automatic retry failed on both sources, or
+ *   the user has no organization
+ */
+export type OrganizationStatus = "idle" | "loading" | "ready" | "error";
+
+/** How long a failed first organization load waits before its one automatic retry. */
+export const ORG_LOAD_RETRY_MS = 1500;
+
+/**
  * Auth Context Value Interface
  */
 interface AuthContextValue {
@@ -46,6 +61,7 @@ interface AuthContextValue {
   user: User | null;
   organization: Organization | null;
   organizations: Organization[];
+  organizationStatus: OrganizationStatus;
   isAuthenticated: boolean;
   isLoading: boolean;
 
@@ -60,6 +76,8 @@ interface AuthContextValue {
   switchOrganization: (organizationId: string) => Promise<void>;
   setCurrentOrganization: (org: Organization) => void;
   refreshOrganizations: () => Promise<void>;
+  /** Loads the organization again after `error`; returns the running load if one is in flight. */
+  retryOrganizationLoad: () => Promise<void>;
   createOrganization: (name: string, slug?: string, displayName?: string, description?: string) => Promise<Organization>;
 }
 
@@ -110,7 +128,79 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [organizationStatus, setOrganizationStatusState] = useState<OrganizationStatus>("idle");
   const [isLoading, setIsLoading] = useState(true);
+
+  // Organization load bookkeeping. Every org-bearing request takes a sequence
+  // number when it is sent; a response is applied only if it was sent after
+  // the last applied one, so a late, older response never overwrites a newer
+  // one. The generation changes with the identity (login, registration,
+  // logout, forced logout, creating an organization): a response or retry
+  // timer from an earlier generation is dropped.
+  const orgSeqRef = useRef(0);
+  const appliedOrgSeqRef = useRef(0);
+  const generationRef = useRef(0);
+  const statusRef = useRef<OrganizationStatus>("idle");
+  const mountedRef = useRef(true);
+  const attemptRef = useRef<Promise<void> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set below, once startOrganizationLoad exists; initializeAuth and the
+  // retry timer call it through this ref.
+  const startOrganizationLoadRef = useRef<(autoRetry: boolean) => Promise<void>>(
+    async () => {}
+  );
+
+  const setOrganizationStatus = useCallback((status: OrganizationStatus) => {
+    statusRef.current = status;
+    setOrganizationStatusState(status);
+  }, []);
+
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
+  /** A new identity: drops every in-flight response and pending retry of the previous one. */
+  const startNewGeneration = useCallback(
+    (status: OrganizationStatus) => {
+      generationRef.current += 1;
+      appliedOrgSeqRef.current = orgSeqRef.current;
+      attemptRef.current = null;
+      clearRetryTimer();
+      setOrganizationStatus(status);
+    },
+    [clearRetryTimer, setOrganizationStatus]
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearRetryTimer();
+    };
+  }, [clearRetryTimer]);
+
+  /**
+   * Applies an organization list from a response sent with `seq` in
+   * `generation`. Returns whether the workspace is ready afterwards. A failed
+   * or empty response never clears an organization already applied.
+   */
+  const applyOrganizationList = useCallback(
+    (orgs: Organization[], seq: number, generation: number): boolean => {
+      if (!mountedRef.current || generation !== generationRef.current) return false;
+      if (seq <= appliedOrgSeqRef.current) return statusRef.current === "ready";
+      appliedOrgSeqRef.current = seq;
+      setOrganizations(orgs);
+      if (orgs.length > 0) {
+        setOrganization(orgs[0]);
+        setOrganizationStatus("ready");
+      }
+      return statusRef.current === "ready";
+    },
+    [setOrganizationStatus]
+  );
 
   /**
    * Initialize authentication state from localStorage
@@ -131,8 +221,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Kick off background refreshes — do NOT await them here so that
         // isLoading drops immediately and the cached user is shown right away.
         // Errors in these background calls must not clear the user state.
-        refreshUser().catch((error) => logError("Failed to refresh user", error));
-        refreshOrganizations().catch((error) => logError("Failed to fetch organizations", error));
+        // The organization stays "loading" until one of them succeeds.
+        startOrganizationLoadRef.current(true).catch((error) =>
+          logError("Failed to load organization", error)
+        );
       } else {
         console.log("🔐 No token or cached user, user not authenticated");
       }
@@ -152,20 +244,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [initializeAuth]);
 
   /**
+   * GET /api/organizations. Returns whether the workspace is ready afterwards.
+   */
+  const loadOrganizations = useCallback(async (): Promise<boolean> => {
+    const generation = generationRef.current;
+    const seq = ++orgSeqRef.current;
+    try {
+      const orgs = await organizationsService.getAll();
+      return applyOrganizationList(Array.isArray(orgs) ? orgs : [], seq, generation);
+    } catch (error) {
+      logError("Failed to fetch organizations", error);
+      return false;
+    }
+  }, [applyOrganizationList]);
+
+  /**
    * Refresh organizations
    */
   const refreshOrganizations = useCallback(async () => {
-    try {
-      const orgs = await organizationsService.getAll();
-      setOrganizations(orgs);
-
-      if (orgs.length > 0) {
-        setOrganization(orgs[0]);
-      }
-    } catch (error) {
-      logError("Failed to fetch organizations", error);
-    }
-  }, []);
+    await loadOrganizations();
+  }, [loadOrganizations]);
 
   /**
    * Login method
@@ -195,15 +293,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         tokenManager.setAuthCookie(accessToken);
 
         setUser(user);
+        startNewGeneration("loading");
 
         // Set organization from login response
         if (organization) {
-          setOrganization(organization);
-          setOrganizations([organization]);
+          applyOrganizationList([organization], ++orgSeqRef.current, generationRef.current);
         }
 
         // Fetch all user's organizations in background
-        refreshOrganizations().catch((error) => logError("Failed to fetch organizations", error));
+        if (statusRef.current === "ready") {
+          refreshOrganizations().catch((error) => logError("Failed to fetch organizations", error));
+        } else {
+          startOrganizationLoadRef.current(true).catch((error) =>
+            logError("Failed to load organization", error)
+          );
+        }
 
         toast.success("Welcome back!", {
           description: `Logged in as ${user?.email ?? email}`,
@@ -238,7 +342,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
     },
-    [router, refreshOrganizations, queryClient]
+    [router, refreshOrganizations, queryClient, startNewGeneration, applyOrganizationList]
   );
 
   /**
@@ -268,11 +372,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
           // Update state
           setUser(response.data.user);
+          startNewGeneration("loading");
 
           // Set organization from registration response
           if (response.data.organization) {
-            setOrganization(response.data.organization);
-            setOrganizations([response.data.organization]);
+            applyOrganizationList(
+              [response.data.organization],
+              ++orgSeqRef.current,
+              generationRef.current
+            );
+          }
+          if (statusRef.current !== "ready") {
+            startOrganizationLoadRef.current(true).catch((error) =>
+              logError("Failed to load organization", error)
+            );
           }
 
           toast.success("Account created successfully!", {
@@ -314,7 +427,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
     },
-    [router, queryClient]
+    [router, queryClient, startNewGeneration, applyOrganizationList]
   );
 
   /**
@@ -335,6 +448,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       setOrganization(null);
       setOrganizations([]);
+      startNewGeneration("idle");
 
       // Identity ended: drop its cached queries before navigating away, so a
       // later login in this same tab starts from an empty cache.
@@ -351,47 +465,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
         router.push("/login");
       }
     }
-  }, [router, queryClient]);
+  }, [router, queryClient, startNewGeneration]);
 
   /**
-   * Refresh user data
+   * GET /api/auth/me, with the expired-token recovery below. Returns whether
+   * the workspace is ready afterwards.
    */
-  const refreshUser = useCallback(async () => {
-    const applyUserResponse = (response: User) => {
+  const loadUser = useCallback(async (): Promise<boolean> => {
+    const generation = generationRef.current;
+
+    /** One /me request; its organization list is applied in send order. */
+    const fetchAndApplyUser = async (): Promise<boolean> => {
+      const seq = ++orgSeqRef.current;
+      const response = await authService.getCurrentUser();
+      if (!mountedRef.current || generation !== generationRef.current) return false;
       const { organizations: userOrgs, ...userData } = response as any;
       setUser(userData);
       tokenManager.setUser(userData);
       if (userOrgs && Array.isArray(userOrgs)) {
-        setOrganizations(userOrgs);
-        if (userOrgs.length > 0) {
-          setOrganization(userOrgs[0]);
-        }
+        return applyOrganizationList(userOrgs, seq, generation);
       }
+      return statusRef.current === "ready";
     };
 
-    const adoptRotatedSession = async (usedRefreshToken: string): Promise<boolean> => {
+    /** null when the session could not be adopted; otherwise whether the workspace is ready. */
+    const adoptRotatedSession = async (
+      usedRefreshToken: string
+    ): Promise<{ ready: boolean } | null> => {
       const rotated = () => {
         const current = tokenManager.getRefreshToken();
         return !!current && current !== usedRefreshToken;
       };
       if (!rotated()) {
         await new Promise((resolve) => setTimeout(resolve, REFRESH_RACE_RECHECK_MS));
-        if (!rotated()) return false;
+        if (!rotated()) return null;
       }
       const accessToken = tokenManager.getAccessToken();
-      if (!accessToken) return false;
+      if (!accessToken) return null;
       try {
         tokenManager.setAuthCookie(accessToken);
-        applyUserResponse(await authService.getCurrentUser());
-        return true;
+        return { ready: await fetchAndApplyUser() };
       } catch {
-        return false;
+        return null;
       }
     };
 
     try {
-      const response = await authService.getCurrentUser();
-      applyUserResponse(response);
+      return await fetchAndApplyUser();
     } catch (error: any) {
       const status = error?.response?.status;
 
@@ -406,15 +526,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
             tokenManager.setRefreshToken(newRefreshToken);
             tokenManager.setAuthCookie(accessToken);
             // Retry with new token
-            const retryResponse = await authService.getCurrentUser();
-            applyUserResponse(retryResponse);
-            return;
+            return await fetchAndApplyUser();
           } catch {
             // Refresh tokens are single-use: another tab may have rotated this
             // one first. If it has (now or after one short wait), continue with
             // the session it stored instead of logging out.
-            if (await adoptRotatedSession(storedRefreshToken)) {
-              return;
+            const adopted = await adoptRotatedSession(storedRefreshToken);
+            if (adopted) {
+              return adopted.ready;
             }
             // Refresh token also rejected — fall through to forced logout
           }
@@ -426,6 +545,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(null);
         setOrganization(null);
         setOrganizations([]);
+        startNewGeneration("idle");
         // Same identity-ended reset as logout() -- this path doesn't call it.
         // Unlike logout(), a pending invitation is kept: an invitee whose
         // stale session expires on /accept-invitation must get back to it.
@@ -440,8 +560,64 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // the cached user state is still valid.
         logError("Failed to refresh user", error);
       }
+      return false;
     }
-  }, [router, queryClient]);
+  }, [router, queryClient, applyOrganizationList, startNewGeneration]);
+
+  /**
+   * Refresh user data
+   */
+  const refreshUser = useCallback(async () => {
+    await loadUser();
+  }, [loadUser]);
+
+  /**
+   * One organization load: /api/auth/me and /api/organizations together, as
+   * on page load. Ready as soon as either succeeds. If both fail, the first
+   * load (autoRetry) tries once more after ORG_LOAD_RETRY_MS; any other load
+   * goes straight to "error". Never two loads at once: a call while one is
+   * running returns it. A failure never changes a workspace already ready.
+   */
+  const startOrganizationLoad = useCallback(
+    (autoRetry: boolean): Promise<void> => {
+      if (attemptRef.current) return attemptRef.current;
+      clearRetryTimer();
+      const generation = generationRef.current;
+      if (statusRef.current !== "ready") setOrganizationStatus("loading");
+
+      const attempt: Promise<void> = Promise.all([
+        loadUser().catch(() => false),
+        loadOrganizations().catch(() => false),
+      ]).then(
+        ([fromUser, fromOrganizations]) => {
+          if (attemptRef.current === attempt) attemptRef.current = null;
+          if (!mountedRef.current || generation !== generationRef.current) return;
+          if (fromUser || fromOrganizations || statusRef.current === "ready") return;
+          if (autoRetry) {
+            retryTimerRef.current = setTimeout(() => {
+              retryTimerRef.current = null;
+              if (!mountedRef.current || generation !== generationRef.current) return;
+              startOrganizationLoadRef.current(false).catch((error) =>
+                logError("Failed to load organization", error)
+              );
+            }, ORG_LOAD_RETRY_MS);
+          } else {
+            setOrganizationStatus("error");
+          }
+        }
+      );
+      attemptRef.current = attempt;
+      return attempt;
+    },
+    [loadUser, loadOrganizations, clearRetryTimer, setOrganizationStatus]
+  );
+  startOrganizationLoadRef.current = startOrganizationLoad;
+
+  /** Manual "Try again": one load, no automatic retry after it. */
+  const retryOrganizationLoad = useCallback(
+    () => startOrganizationLoadRef.current(false),
+    []
+  );
 
   /**
    * The backend reports MEMBERSHIP_REVOKED (via lib/api.ts) when this
@@ -492,9 +668,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setOrganizations((prev) => [...prev, newOrg]);
 
         // Switch to new organization. Drop the previous organization's cached
-        // data first, so none of it is ever shown as the new one's.
+        // data first, so none of it is ever shown as the new one's. No
+        // earlier organization response may replace it afterwards.
         await resetCachesForIdentityChange(queryClient);
+        startNewGeneration("loading");
+        appliedOrgSeqRef.current = ++orgSeqRef.current;
         setOrganization(newOrg);
+        setOrganizationStatus("ready");
 
         toast.success("Organization created!", {
           description: `${newOrg.name} is ready to use`,
@@ -513,7 +693,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
     },
-    [queryClient]
+    [queryClient, startNewGeneration, setOrganizationStatus]
   );
 
   /**
@@ -552,6 +732,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Set current organization
    */
   const setCurrentOrganization = useCallback((org: Organization) => {
+    appliedOrgSeqRef.current = ++orgSeqRef.current;
     setOrganization(org);
   }, []);
 
@@ -568,6 +749,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user,
       organization,
       organizations,
+      organizationStatus,
       isAuthenticated,
       isLoading,
       login,
@@ -577,12 +759,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       switchOrganization,
       setCurrentOrganization,
       refreshOrganizations,
+      retryOrganizationLoad,
       createOrganization,
     }),
     [
       user,
       organization,
       organizations,
+      organizationStatus,
       isAuthenticated,
       isLoading,
       login,
@@ -592,6 +776,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       switchOrganization,
       setCurrentOrganization,
       refreshOrganizations,
+      retryOrganizationLoad,
       createOrganization,
     ]
   );
