@@ -4,13 +4,15 @@
  *
  * The app is built by importing server.ts (which does not start under Jest),
  * then its router stack is walked in registration order; see
- * helpers/route-walker.ts. No server is started, no environment file is read
- * and nothing connects to Postgres or AWS.
+ * helpers/route-walker.ts, including what "protected" does not cover. No
+ * server is started, no environment file is read, and no SQL runs: every pg
+ * pool rejects and records connect()/query() from before the import
+ * (helpers/route-test-setup.ts), and the import is checked to have made none.
  *
  * The walker's own rules are pinned by the self-tests at the bottom, on small
  * synthetic apps.
  */
-import './helpers/record-mount-paths';
+import { dbConnect, dbQuery } from './helpers/route-test-setup';
 import express, { Request, Response, NextFunction } from 'express';
 import { walkApp, checkInventory, isProtected, Walk } from './helpers/route-walker';
 import app from '../server';
@@ -24,6 +26,10 @@ jest.mock('../config/validateEnv', () => ({ validateEnv: jest.fn() }));
 jest.mock('../services/ai-insights.service', () => ({
   AIInsightsService: jest.fn().mockImplementation(() => ({})),
 }));
+// Constructed at route import; it would create its table on the app pool.
+jest.mock('../services/nl-query-analytics.service', () => ({
+  NLQueryAnalyticsService: jest.fn().mockImplementation(() => ({ initializeTable: jest.fn(async () => undefined) })),
+}));
 
 const AUTHENTICATION: ReadonlySet<RouteFunction> = new Set([authenticate]);
 
@@ -32,6 +38,11 @@ describe('route auth inventory (real app)', () => {
 
   beforeAll(() => {
     walk = walkApp(app);
+  });
+
+  it('importing the app ran no SQL', () => {
+    expect(dbConnect).not.toHaveBeenCalled();
+    expect(dbQuery).not.toHaveBeenCalled();
   });
 
   it('authenticateToken is the same function as authenticate', () => {
@@ -172,6 +183,54 @@ describe('route walker', () => {
     expect(unsupported).toEqual([
       'route with a non-string path under /',
       'middleware "router" under / has a non-string mount path',
+    ]);
+  });
+
+  it('(j) auth on a literal sibling mount does not protect a route whose own param would match it', () => {
+    const walk = routesOf(app => {
+      const intelligence = express.Router();
+      intelligence.use(auth);
+      intelligence.get('/', handler);
+      const services = express.Router();
+      services.get('/:id', handler);
+      app.use('/x/intelligence', intelligence);
+      app.use('/x', services);
+    });
+    expect(isProtected(find(walk, 'GET', '/x/intelligence'), AUTH)).toBe(true);
+    expect(isProtected(find(walk, 'GET', '/x/:id'), AUTH)).toBe(false);
+  });
+
+  it('(k) a sub-app is reported whether it is mounted on the app or on a router', () => {
+    const viaRouter = express();
+    const r = express.Router();
+    r.use('/sub', express().get('/', handler));
+    viaRouter.use('/api', r);
+    expect(walkApp(viaRouter).unsupported).toEqual(['sub-app mounted under /api/sub']);
+
+    const viaApp = express();
+    viaApp.use('/sub', express().get('/', handler));
+    expect(walkApp(viaApp).unsupported).toEqual(['a sub-app is mounted with app.use()']);
+  });
+
+  it('(l) a param callback on a router or on the app is reported', () => {
+    const onRouter = express();
+    const r = express.Router();
+    r.param('id', (_req, _res, next) => next());
+    r.get('/:id', auth, handler);
+    onRouter.use('/p', r);
+    expect(walkApp(onRouter).unsupported).toEqual(['param callback for :id under /p']);
+
+    const onApp = express();
+    onApp.param('id', (_req, _res, next) => next());
+    onApp.get('/:id', auth, handler);
+    expect(walkApp(onApp).unsupported).toEqual(['param callback for :id under /']);
+  });
+
+  it('(m) an unsupported registration fails the inventory', () => {
+    const synthetic = express();
+    synthetic.use('/sub', express().get('/', handler));
+    expect(checkInventory(walkApp(synthetic), [], AUTH)).toEqual([
+      'unsupported registration: a sub-app is mounted with app.use()',
     ]);
   });
 });

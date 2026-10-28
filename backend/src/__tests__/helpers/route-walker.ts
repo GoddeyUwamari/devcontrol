@@ -8,14 +8,25 @@
  * Express 4 keeps only a compiled RegExp for a use() mount path, so
  * installMountPathRecorder() wraps Router#use to store the literal path on
  * every layer it creates. It must run before the app's modules are loaded.
- * Anything the walker cannot model (a non-string path, a sub-app, a layer
- * created before the recorder was installed) is reported as unsupported, never
- * skipped.
+ * Anything the walker cannot model is reported as unsupported, which fails the
+ * inventory, never skipped: a non-string path, a sub-app (mounted on the app
+ * or on any router), a router.param/app.param callback (it runs before a
+ * route's own middleware), or a layer created before the recorder was
+ * installed.
+ *
+ * What "protected" means, and what it does NOT cover: `authenticate` is
+ * somewhere in the chain before the route's final handler. It does not check
+ * that nothing ahead of `authenticate` sends a response -- middleware placed
+ * before it that answers the request (or a plain middleware that ends every
+ * request, express.static-style) is not detected. A router hidden behind a
+ * wrapper function (`(req, res, next) => router(req, res, next)`) looks like
+ * plain middleware, so its routes are invisible to the walk.
  */
 import express from 'express';
 import type { PublicRoute, RouteFunction } from '../../config/public-routes';
 
 const MOUNT_PATH = Symbol('mountPath');
+const HAS_SUB_APP = Symbol('hasSubApp');
 
 export interface WalkedRoute {
   method: string;
@@ -32,7 +43,6 @@ export interface Walk {
   unsupported: string[];
 }
 
-const recorderProblems: string[] = [];
 let installed = false;
 
 export function installMountPathRecorder(): void {
@@ -58,9 +68,7 @@ export function installMountPathRecorder(): void {
   const originalAppUse = appProto.use;
   appProto.use = function recordingAppUse(this: any, ...args: any[]) {
     for (const arg of args.flat(Infinity)) {
-      if (arg && typeof arg.handle === 'function' && typeof arg.set === 'function') {
-        recorderProblems.push('a sub-app is mounted with app.use()');
-      }
+      if (isApp(arg)) this[HAS_SUB_APP] = true;
     }
     return originalAppUse.apply(this, args);
   };
@@ -71,23 +79,33 @@ export function joinPath(...parts: string[]): string {
   return joined.length > 1 ? joined.replace(/\/$/, '') : '/';
 }
 
-/** Whether a request for `path` enters middleware mounted at `prefix`. */
+/**
+ * Whether every request for `path` enters middleware mounted at `prefix`.
+ * Only a param in the prefix matches any segment: a route's own `:id` does not
+ * match a literal mount, since `/x/intelligence` middleware never runs for
+ * `/x/123`.
+ */
 function covers(prefix: string, path: string): boolean {
   if (prefix === '/') return true;
   const want = prefix.split('/').filter(Boolean);
   const have = path.split('/').filter(Boolean);
   if (have.length < want.length) return false;
-  return want.every((seg, i) => seg.startsWith(':') || have[i].startsWith(':') || seg === have[i]);
+  return want.every((seg, i) => seg.startsWith(':') || seg === have[i]);
 }
 
-function isRouter(handle: unknown): handle is { stack: any[] } {
+function isApp(handle: any): boolean {
+  return !!handle && typeof handle.handle === 'function' && typeof handle.set === 'function';
+}
+
+function isRouter(handle: unknown): boolean {
   return typeof handle === 'function' && Object.getPrototypeOf(handle) === express.Router;
 }
 
 export function walkApp(app: any): Walk {
   if (!installed) throw new Error('installMountPathRecorder() must run before the app is built');
   const routes: WalkedRoute[] = [];
-  const unsupported = [...recorderProblems];
+  const unsupported: string[] = [];
+  if (app[HAS_SUB_APP]) unsupported.push('a sub-app is mounted with app.use()');
   // Middleware seen so far, with the full path it is mounted under. A nested
   // router's own middleware stays here after the walk leaves it: Express runs
   // it for every later request that enters that router's prefix, including
@@ -95,8 +113,10 @@ export function walkApp(app: any): Walk {
   const seen: { fn: RouteFunction; prefix: string }[] = [];
 
   let mounts = 0;
-  const walk = (stack: any[], prefix: string, family: string) => {
-    for (const layer of stack) {
+  const walk = (router: any, prefix: string, family: string) => {
+    const params = Object.keys(router.params ?? {});
+    if (params.length > 0) unsupported.push(`param callback for ${params.map(p => `:${p}`).join(', ')} under ${prefix}`);
+    for (const layer of router.stack) {
       if (layer.route) {
         const route = layer.route;
         if (typeof route.path !== 'string') {
@@ -126,8 +146,10 @@ export function walkApp(app: any): Walk {
         continue;
       }
       const scope = joinPath(prefix, mount);
-      if (isRouter(layer.handle)) {
-        walk(layer.handle.stack, scope, `${scope} #${++mounts}`);
+      if (isApp(layer.handle)) {
+        unsupported.push(`sub-app mounted under ${scope}`);
+      } else if (isRouter(layer.handle)) {
+        walk(layer.handle, scope, `${scope} #${++mounts}`);
       } else {
         seen.push({ fn: layer.handle, prefix: scope });
       }
@@ -135,7 +157,7 @@ export function walkApp(app: any): Walk {
   };
 
   app.lazyrouter?.();
-  walk(app._router.stack, '/', '/ #0');
+  walk(app._router, '/', '/ #0');
   return { routes, unsupported };
 }
 

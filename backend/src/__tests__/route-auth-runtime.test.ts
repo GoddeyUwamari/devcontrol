@@ -9,12 +9,13 @@
  * request without their credential, again without touching the database.
  *
  * The app listens on a loopback port only; no environment file is read and
- * no external service is called.
+ * no external service is called. Every pg pool rejects and records
+ * connect()/query() from before the app is imported
+ * (helpers/route-test-setup.ts): the import and each test must make none.
  */
-import './helpers/record-mount-paths';
+import { dbConnect, dbQuery } from './helpers/route-test-setup';
 import http from 'http';
 import { AddressInfo } from 'net';
-import { Pool } from 'pg';
 import { walkApp, isProtected, WalkedRoute } from './helpers/route-walker';
 import app from '../server';
 import { authenticate } from '../middleware/auth.middleware';
@@ -25,6 +26,10 @@ jest.mock('../config/validateEnv', () => ({ validateEnv: jest.fn() }));
 jest.mock('../services/ai-insights.service', () => ({
   AIInsightsService: jest.fn().mockImplementation(() => ({})),
 }));
+// Constructed at route import; it would create its table on the app pool.
+jest.mock('../services/nl-query-analytics.service', () => ({
+  NLQueryAnalyticsService: jest.fn().mockImplementation(() => ({ initializeTable: jest.fn(async () => undefined) })),
+}));
 
 
 const NO_TOKEN = { success: false, error: 'No authentication token provided' };
@@ -32,13 +37,8 @@ const PARAM_VALUE = '00000000-0000-4000-8000-000000000000';
 
 let server: http.Server;
 let baseUrl: string;
-let connectSpy: jest.SpyInstance;
-let querySpy: jest.SpyInstance;
 
 beforeAll(async () => {
-  // Every pg pool, including the app's (config/database.ts wraps it in a Proxy).
-  connectSpy = jest.spyOn(Pool.prototype, 'connect').mockImplementation(() => { throw new Error('the database was touched'); });
-  querySpy = jest.spyOn(Pool.prototype, 'query').mockImplementation(() => { throw new Error('the database was touched'); });
   server = http.createServer(app).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -49,9 +49,28 @@ afterAll(async () => {
   jest.restoreAllMocks();
 });
 
+// Cleared after every test, so one database touch fails only the test that made it.
 afterEach(() => {
-  expect(connectSpy).not.toHaveBeenCalled();
-  expect(querySpy).not.toHaveBeenCalled();
+  try {
+    expect(dbConnect).not.toHaveBeenCalled();
+    expect(dbQuery).not.toHaveBeenCalled();
+  } finally {
+    dbConnect.mockClear();
+    dbQuery.mockClear();
+  }
+});
+
+describe('database check', () => {
+  it('importing the app ran no SQL', () => {
+    expect(dbConnect).not.toHaveBeenCalled();
+    expect(dbQuery).not.toHaveBeenCalled();
+  });
+
+  it('sees a query made while a module is imported', async () => {
+    await import('./helpers/query-at-import');
+    expect(dbQuery).toHaveBeenCalledTimes(1);
+    dbQuery.mockClear();
+  });
 });
 
 function onePerRouter(): WalkedRoute[] {
