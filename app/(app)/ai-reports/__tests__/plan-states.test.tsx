@@ -21,8 +21,8 @@ import AIReportsPage from '../page'
 
 describePlanStates('/ai-reports', {
   render: () => <AIReportsPage />,
-  entitledTier: 'enterprise',
-  notEntitledTier: 'free',
+  entitledTier: 'pro',
+  notEntitledTier: 'starter',
   reset: () => getReportHistory.mockClear(),
   paidCalls: () => getReportHistory.mock.calls.length,
   content: /Uncover Cost Savings, Risks, and Insights/,

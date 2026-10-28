@@ -44,8 +44,13 @@ export default function ForecastPage() {
     customAdjustment: 10,
   });
 
+  // Set in the effect body, not only at creation: StrictMode's mount →
+  // cleanup → mount must leave it true.
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => { if (isPro) loadForecast(); }, [isPro]);
 

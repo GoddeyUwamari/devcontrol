@@ -3,8 +3,11 @@
  * or fails, and GET /api/forecast only for a known Pro-or-above plan
  * (formerly requested on every mount, for every plan).
  */
+import { StrictMode } from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AuthProvider } from '@/lib/contexts/auth-context'
 import {
   describePlanStates, fakeOrgSources, flush, org, renderWithAuth, seedSession,
 } from '@/lib/contexts/__tests__/org-load-harness'
@@ -61,6 +64,36 @@ describe('/forecast: unmounting while the plan loads', () => {
     view.unmount()
     await src.meOk(0, [org('enterprise')])
     expect(getForecast).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+})
+
+describe('/forecast under React StrictMode', () => {
+  it('opened with a known Pro plan, shows the forecast -- not a spinner that never ends', async () => {
+    localStorage.clear()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    seedSession()
+    resetForecast()
+    const src = fakeOrgSources()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    // The page mounts once the plan is already known (a client-side
+    // navigation), so StrictMode's mount → cleanup → mount hits it directly.
+    const tree = (page: boolean) => (
+      <StrictMode>
+        <QueryClientProvider client={client}>
+          <AuthProvider>{page ? <ForecastPage /> : <div>elsewhere</div>}</AuthProvider>
+        </QueryClientProvider>
+      </StrictMode>
+    )
+    const view = render(tree(false))
+    await flush()
+    await src.orgsOk(0, [org('pro')])
+    view.rerender(tree(true))
+
+    expect(await screen.findByText('Cost Forecasting')).toBeTruthy()
+    expect(screen.queryByText('Generating AI-powered forecast...')).toBeNull()
+    expect(screen.queryByTestId('plan-loading')).toBeNull()
+    expect(getForecast).toHaveBeenCalled()
     vi.restoreAllMocks()
   })
 })
