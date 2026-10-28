@@ -1,5 +1,6 @@
 /**
- * The projections applied to ListFunctions, ListDistributions and GetFindings
+ * The projections applied to ListFunctions, ListDistributions, GetFindings and
+ * DescribeAlarms
  * keep exactly the fields DevControl uses, and nothing else from the response
  * reaches what discovery, the cost detector or the Security Hub client return
  * or log. Each fixture fills fields DevControl does not use with marker values
@@ -9,9 +10,14 @@
  */
 import { LambdaClient, type FunctionConfiguration } from '@aws-sdk/client-lambda';
 import { CloudFrontClient, type DistributionSummary } from '@aws-sdk/client-cloudfront';
-import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
+import { CloudWatchClient, type CompositeAlarm, type MetricAlarm } from '@aws-sdk/client-cloudwatch';
 import { SecurityHubClient, type AwsSecurityFinding } from '@aws-sdk/client-securityhub';
-import { projectCloudFrontDistribution, projectLambdaFunction } from '../aws-response-projections';
+import {
+  projectCloudFrontDistribution,
+  projectCompositeAlarm,
+  projectLambdaFunction,
+  projectMetricAlarm,
+} from '../aws-response-projections';
 import { normalizeFinding, SecurityHubClientService } from '../security-hub-client.service';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import costOptimizationService from '../cost-optimization.service';
@@ -321,5 +327,107 @@ describe('normalizeFinding', () => {
     expect(pages).toHaveLength(1);
     expect(pages[0].findings).toEqual([normalizeFinding(finding())].map((f) => ({ ...f, lastSeenAt: expect.any(String) })));
     expect(everything(pages)).not.toContain(MARKER);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CloudWatch alarms (DescribeAlarms)
+// ---------------------------------------------------------------------------
+
+const ACTION_ARN = 'arn:aws:sns:us-east-1:111122223333:marker-not-kept-topic';
+const TRANSITIONED = new Date('2026-10-27T08:00:00.000Z');
+const UPDATED = new Date('2026-10-28T09:30:00.000Z');
+
+const metricAlarm = (overrides: Partial<MetricAlarm> = {}): MetricAlarm => ({
+  AlarmName: 'orders-cpu-high',
+  AlarmArn: 'arn:aws:cloudwatch:us-east-1:111122223333:alarm:orders-cpu-high',
+  AlarmDescription: MARKER,
+  AlarmConfigurationUpdatedTimestamp: new Date('2026-01-01T00:00:00.000Z'),
+  ActionsEnabled: true,
+  OKActions: [ACTION_ARN],
+  AlarmActions: [ACTION_ARN],
+  InsufficientDataActions: [ACTION_ARN],
+  StateValue: 'ALARM',
+  StateReason: MARKER,
+  StateReasonData: `{"note":"${MARKER}"}`,
+  StateUpdatedTimestamp: UPDATED,
+  StateTransitionedTimestamp: TRANSITIONED,
+  MetricName: 'CPUUtilization',
+  Namespace: 'AWS/EC2',
+  Statistic: 'Average',
+  Dimensions: [{ Name: 'InstanceId', Value: 'i-0123456789abcdef0' }],
+  Period: 300,
+  EvaluationPeriods: 3,
+  DatapointsToAlarm: 2,
+  Threshold: 80,
+  ComparisonOperator: 'GreaterThanThreshold',
+  TreatMissingData: 'missing',
+  EvaluateLowSampleCountPercentile: MARKER,
+  ThresholdMetricId: MARKER,
+  ...overrides,
+});
+
+const compositeAlarm = (overrides: Partial<CompositeAlarm> = {}): CompositeAlarm => ({
+  AlarmName: 'orders-degraded',
+  AlarmArn: 'arn:aws:cloudwatch:us-east-1:111122223333:alarm:marker-not-kept-composite',
+  AlarmDescription: MARKER,
+  AlarmRule: `ALARM("${MARKER}")`,
+  ActionsEnabled: true,
+  OKActions: [ACTION_ARN],
+  AlarmActions: [ACTION_ARN],
+  InsufficientDataActions: [ACTION_ARN],
+  StateValue: 'ALARM',
+  StateReason: MARKER,
+  StateReasonData: MARKER,
+  StateUpdatedTimestamp: UPDATED,
+  StateTransitionedTimestamp: TRANSITIONED,
+  ActionsSuppressor: 'arn:aws:cloudwatch:us-east-1:111122223333:alarm:marker-not-kept-suppressor',
+  ActionsSuppressedBy: 'Alarm',
+  ActionsSuppressedReason: MARKER,
+  ...overrides,
+});
+
+describe('projectMetricAlarm', () => {
+  it('keeps exactly the fields readiness and the alarms endpoint use', () => {
+    expect(projectMetricAlarm(metricAlarm())).toEqual({
+      AlarmName: 'orders-cpu-high',
+      AlarmArn: 'arn:aws:cloudwatch:us-east-1:111122223333:alarm:orders-cpu-high',
+      StateValue: 'ALARM',
+      StateTransitionedTimestamp: TRANSITIONED,
+      Namespace: 'AWS/EC2',
+      MetricName: 'CPUUtilization',
+      ComparisonOperator: 'GreaterThanThreshold',
+      Threshold: 80,
+      TreatMissingData: 'missing',
+      ActionsEnabled: true,
+      Dimensions: [{ Name: 'InstanceId', Value: 'i-0123456789abcdef0' }],
+      HasAlarmActions: true,
+      UsesMetricMath: false,
+    });
+  });
+
+  it('has no other key, no marker, and no action ARN', () => {
+    const projected = projectMetricAlarm(metricAlarm({ Metrics: [{ Id: 'm1', Expression: MARKER, Label: MARKER }] }));
+    expect(Object.keys(projected).sort()).toEqual([
+      'ActionsEnabled', 'AlarmArn', 'AlarmName', 'ComparisonOperator', 'Dimensions', 'HasAlarmActions', 'MetricName',
+      'Namespace', 'StateTransitionedTimestamp', 'StateValue', 'Threshold', 'TreatMissingData', 'UsesMetricMath',
+    ]);
+    expect(projected.UsesMetricMath).toBe(true);
+    expect(JSON.stringify(projected)).not.toContain(MARKER);
+    expect(JSON.stringify(projected)).not.toContain(ACTION_ARN);
+  });
+
+  it('keeps only whether alarm actions exist', () => {
+    expect(projectMetricAlarm(metricAlarm({ AlarmActions: [] })).HasAlarmActions).toBe(false);
+    expect(projectMetricAlarm(metricAlarm({ AlarmActions: undefined })).HasAlarmActions).toBe(false);
+    expect(projectMetricAlarm({ AlarmName: 'bare' })).toMatchObject({ AlarmName: 'bare', Dimensions: [], HasAlarmActions: false, UsesMetricMath: false });
+  });
+});
+
+describe('projectCompositeAlarm', () => {
+  it('keeps only the name, state and when the state last changed', () => {
+    const projected = projectCompositeAlarm(compositeAlarm());
+    expect(projected).toEqual({ AlarmName: 'orders-degraded', StateValue: 'ALARM', StateTransitionedTimestamp: TRANSITIONED });
+    expect(JSON.stringify(projected)).not.toContain('marker-not-kept');
   });
 });

@@ -10,11 +10,14 @@
  * (helpers/aws-sdk-scan.ts), not from a list, so a new command fails here
  * until it is classified, and a classification nothing uses fails too.
  *
- * For a sanitised command, at every call site:
+ * A sanitised command names one or more item lists, each with its own
+ * projection (DescribeAlarms returns metric and composite alarms in separate
+ * lists). At every call site:
  *   - the awaited send() result is bound to one name;
- *   - that name is read only for the listed paging fields, or for its items,
- *     passed one by one through the projection: `(page.Items ?? []).map(project)`.
- * The projection must be exported from its module with a declared return
+ *   - that name is read only for the listed paging fields, or for an item list,
+ *     passed one by one through that list's projection:
+ *     `(page.Items ?? []).map(project)`.
+ * Each projection must be exported from its module with a declared return
  * type, read its argument only through property access (no spread, no
  * Object.assign, no passing it on whole), and be named in its test file.
  */
@@ -28,16 +31,21 @@ interface MetadataOnly {
   reason: string;
 }
 
-interface Sanitised {
-  kind: 'sanitised';
+interface Projection {
+  /** The response path of the items each call of this projection receives. */
+  items: string[];
   /** The projection's exported function name. */
   sanitiser: string;
-  /** The module that exports it, relative to backend/src. */
+}
+
+interface Sanitised {
+  kind: 'sanitised';
+  /** One entry per item list in the response. */
+  projections: Projection[];
+  /** The module that exports the projections, relative to backend/src. */
   module: string;
-  /** Its test file, relative to backend/src. */
+  /** Their test file, relative to backend/src. */
   test: string;
-  /** The response path of the items each projection call receives. */
-  items: string[];
   /** Response paths that may be read directly (paging only). */
   paging: string[][];
 }
@@ -73,10 +81,9 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-s3-control:GetPublicAccessBlockCommand': metadataOnly('account-level Block Public Access flags'),
   'client-lambda:ListFunctionsCommand': {
     kind: 'sanitised',
-    sanitiser: 'projectLambdaFunction',
+    projections: [{ items: ['Functions'], sanitiser: 'projectLambdaFunction' }],
     module: PROJECTIONS,
     test: PROJECTIONS_TEST,
-    items: ['Functions'],
     paging: [['NextMarker']],
   },
   'client-lambda:ListTagsCommand': metadataOnly('function tags'),
@@ -84,15 +91,23 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-elastic-load-balancing-v2:DescribeTagsCommand': metadataOnly('load balancer tags'),
   'client-cloudfront:ListDistributionsCommand': {
     kind: 'sanitised',
-    sanitiser: 'projectCloudFrontDistribution',
+    projections: [{ items: ['DistributionList', 'Items'], sanitiser: 'projectCloudFrontDistribution' }],
     module: PROJECTIONS,
     test: PROJECTIONS_TEST,
-    items: ['DistributionList', 'Items'],
     paging: [['DistributionList', 'IsTruncated'], ['DistributionList', 'NextMarker']],
   },
   'client-cloudwatch:GetMetricDataCommand': metadataOnly('metric datapoints'),
   'client-cloudwatch:GetMetricStatisticsCommand': metadataOnly('metric datapoints'),
-  'client-cloudwatch:DescribeAlarmsCommand': metadataOnly('alarm names, metrics, thresholds, states and actions'),
+  'client-cloudwatch:DescribeAlarmsCommand': {
+    kind: 'sanitised',
+    projections: [
+      { items: ['MetricAlarms'], sanitiser: 'projectMetricAlarm' },
+      { items: ['CompositeAlarms'], sanitiser: 'projectCompositeAlarm' },
+    ],
+    module: PROJECTIONS,
+    test: PROJECTIONS_TEST,
+    paging: [['NextToken']],
+  },
   'client-ecs:DescribeServicesCommand': metadataOnly('service status, counts, deployments; the task definition only as an ARN'),
   'client-eks:DescribeClusterCommand': metadataOnly('cluster version, endpoint, status, public CA certificate, and for a connected cluster connectorConfig.activationCode (a credential-like registration code); only status, health.issues and version are read (cloudwatch.service.ts:1087-1088, :1124)'),
   'client-dynamodb:DescribeTableCommand': metadataOnly('table schema, throughput, size and indexes; no items'),
@@ -108,10 +123,9 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-securityhub:DescribeStandardsCommand': metadataOnly('standard names and descriptions'),
   'client-securityhub:GetFindingsCommand': {
     kind: 'sanitised',
-    sanitiser: 'normalizeFinding',
+    projections: [{ items: ['Findings'], sanitiser: 'normalizeFinding' }],
     module: path.join('services', 'security-hub-client.service.ts'),
     test: PROJECTIONS_TEST,
-    items: ['Findings'],
     paging: [['NextToken']],
   },
   'client-ec2:StartInstancesCommand': metadataOnly('instance state changes'),
@@ -214,12 +228,18 @@ export function callSiteViolations(use: CommandUseNode, rule: Sanitised): string
   const file = use.sourceFile;
   const at = (node: ts.Node) => `${use.file}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}`;
   const problems: string[] = [];
-  if (!bindsProjection(file, use.file, rule.sanitiser, rule.module)) {
-    problems.push(`${use.site}: ${rule.sanitiser} is not imported from ${rule.module}`);
-  }
-  for (const shadow of otherDeclarations(file, use.file, rule.sanitiser, rule.module)) {
-    problems.push(`${at(shadow)}: another declaration of ${rule.sanitiser} could stand in for the projection`);
-  }
+  // Each projection the site applies must be the real one: imported from its module, never shadowed.
+  const applied = new Set<string>();
+  const checkBindings = () => {
+    for (const sanitiser of applied) {
+      if (!bindsProjection(file, use.file, sanitiser, rule.module)) {
+        problems.push(`${use.site}: ${sanitiser} is not imported from ${rule.module}`);
+      }
+      for (const shadow of otherDeclarations(file, use.file, sanitiser, rule.module)) {
+        problems.push(`${at(shadow)}: another declaration of ${sanitiser} could stand in for the projection`);
+      }
+    }
+  };
 
   const construction = use.node.parent;
   const send = construction?.parent;
@@ -230,7 +250,11 @@ export function callSiteViolations(use: CommandUseNode, rule: Sanitised): string
     && ts.isPropertyAccessExpression(send.expression) && send.expression.name.text === 'send'
     && !!awaited && ts.isAwaitExpression(awaited)
     && !!declaration && ts.isVariableDeclaration(declaration) && declaration.initializer === awaited && ts.isIdentifier(declaration.name);
-  if (!bound) return [...problems, `${use.site}: the response must be bound to one name: const page = await client.send(new ${use.key.split(':')[1]}(...))`];
+  if (!bound) {
+    for (const p of rule.projections) applied.add(p.sanitiser);
+    checkBindings();
+    return [...problems, `${use.site}: the response must be bound to one name: const page = await client.send(new ${use.key.split(':')[1]}(...))`];
+  }
 
   const decl = declaration as ts.VariableDeclaration;
   const responseName = (decl.name as ts.Identifier).text;
@@ -246,10 +270,12 @@ export function callSiteViolations(use: CommandUseNode, rule: Sanitised): string
     }
     if (rule.paging.some((p) => sameList(p, accessPath))) return;
 
+    const projection = rule.projections.find((p) => sameList(accessPath, [...p.items, 'map']) || sameList(accessPath, p.items));
+    const expected = projection?.sanitiser ?? rule.projections.map((p) => p.sanitiser).join(' or ');
     let mapAccess: ts.Node | undefined;
-    if (sameList(accessPath, [...rule.items, 'map'])) {
+    if (projection && sameList(accessPath, [...projection.items, 'map'])) {
       mapAccess = top;
-    } else if (sameList(accessPath, rule.items)) {
+    } else if (projection) {
       let current: ts.Node = top;
       while (ts.isParenthesizedExpression(current.parent)) current = current.parent;
       const fallback = current.parent;
@@ -264,9 +290,11 @@ export function callSiteViolations(use: CommandUseNode, rule: Sanitised): string
     }
     const call = mapAccess?.parent;
     const projected = !!call && ts.isCallExpression(call) && call.expression === mapAccess
-      && call.arguments.length === 1 && ts.isIdentifier(call.arguments[0]) && call.arguments[0].text === rule.sanitiser;
+      && call.arguments.length === 1 && ts.isIdentifier(call.arguments[0]) && call.arguments[0].text === expected;
     if (!projected) {
-      problems.push(`${at(ref)}: ${responseName}${accessPath.map((p) => `.${p}`).join('')} is used other than through ${rule.sanitiser}`);
+      problems.push(`${at(ref)}: ${responseName}${accessPath.map((p) => `.${p}`).join('')} is used other than through ${expected}`);
+    } else {
+      applied.add(expected);
     }
   };
 
@@ -279,6 +307,7 @@ export function callSiteViolations(use: CommandUseNode, rule: Sanitised): string
     ts.forEachChild(node, visit);
   };
   visit(scope);
+  checkBindings();
   return problems;
 }
 
@@ -302,13 +331,16 @@ export function classificationViolations(
       if (entry.reason.trim().length < MIN_REASON_LENGTH) problems.push(`${key}: metadata only needs a reason (what the response holds)`);
       continue;
     }
+    if (entry.projections.length === 0) problems.push(`${key}: a sanitised command must name at least one item list and its projection`);
     const moduleSource = readSource(entry.module);
-    if (moduleSource === undefined) problems.push(`${key}: ${entry.module} does not exist`);
-    else problems.push(...projectionViolations(entry.module, moduleSource, entry.sanitiser).map((p) => `${key}: ${p}`));
     const testSource = readSource(entry.test);
+    if (moduleSource === undefined) problems.push(`${key}: ${entry.module} does not exist`);
     if (testSource === undefined) problems.push(`${key}: test file ${entry.test} does not exist`);
-    else if (!new RegExp(`\\b${entry.sanitiser}\\b`).test(testSource)) problems.push(`${key}: ${entry.test} does not test ${entry.sanitiser}`);
-    if (entry.items.length === 0) problems.push(`${key}: a sanitised command must name its item path`);
+    for (const { items, sanitiser } of entry.projections) {
+      if (items.length === 0) problems.push(`${key}: ${sanitiser} must name its item path`);
+      if (moduleSource !== undefined) problems.push(...projectionViolations(entry.module, moduleSource, sanitiser).map((p) => `${key}: ${p}`));
+      if (testSource !== undefined && !new RegExp(`\\b${sanitiser}\\b`).test(testSource)) problems.push(`${key}: ${entry.test} does not test ${sanitiser}`);
+    }
   }
   return problems;
 }
@@ -342,6 +374,7 @@ describe('AWS response classification', () => {
     const sanitised = Object.entries(RESPONSE_CLASSIFICATION).filter(([, c]) => c.kind === 'sanitised').map(([k]) => k).sort();
     expect(sanitised).toEqual([
       'client-cloudfront:ListDistributionsCommand',
+      'client-cloudwatch:DescribeAlarmsCommand',
       'client-lambda:ListFunctionsCommand',
       'client-securityhub:GetFindingsCommand',
     ]);
@@ -355,16 +388,16 @@ describe('AWS response classification', () => {
     ]);
     expect(sites('client-cloudfront:ListDistributionsCommand')).toEqual([path.join('services', 'awsResourceDiscovery.ts')]);
     expect(sites('client-securityhub:GetFindingsCommand')).toEqual([path.join('services', 'security-hub-client.service.ts')]);
+    expect(sites('client-cloudwatch:DescribeAlarmsCommand')).toEqual([path.join('services', 'observability-readiness.service.ts')]);
   });
 });
 
 describe('AWS response classification: self-checks', () => {
   const rule: Sanitised = {
     kind: 'sanitised',
-    sanitiser: 'projectThing',
+    projections: [{ items: ['Things'], sanitiser: 'projectThing' }],
     module: path.join('services', 'proj.ts'),
     test: path.join('services', '__tests__', 'proj.test.ts'),
-    items: ['Things'],
     paging: [['NextToken']],
   };
   const classification: Record<string, Classification> = { 'client-x:ListThingsCommand': rule };
@@ -480,5 +513,74 @@ describe('AWS response classification: self-checks', () => {
     expect(classificationViolations([], classification, (label) => (label === rule.test ? 'nothing here' : sources[label]))).toEqual([
       `client-x:ListThingsCommand: ${rule.test} does not test projectThing`,
     ]);
+  });
+});
+
+describe('AWS response classification: commands with more than one item list', () => {
+  const rule: Sanitised = {
+    kind: 'sanitised',
+    projections: [
+      { items: ['Widgets'], sanitiser: 'projectWidget' },
+      { items: ['Gadgets'], sanitiser: 'projectGadget' },
+    ],
+    module: path.join('services', 'proj.ts'),
+    test: path.join('services', '__tests__', 'proj.test.ts'),
+    paging: [['NextToken']],
+  };
+  const classification: Record<string, Classification> = { 'client-x:ListPartsCommand': rule };
+  const sources: Record<string, string> = {
+    [rule.module]: [
+      'export function projectWidget(w: Widget): WidgetFields {\n  return { Id: w.Id };\n}',
+      'export function projectGadget(g: Gadget): GadgetFields {\n  return { Id: g.Id };\n}',
+    ].join('\n'),
+    [rule.test]: 'projectWidget projectGadget',
+  };
+  const check = (imports: string, body: string[], read: (label: string) => string | undefined = (label) => sources[label]) => {
+    const { uses } = scanSourceNodes(path.join('services', 'site.ts'), [
+      "import { ListPartsCommand } from '@aws-sdk/client-x';",
+      imports,
+      'async function f(token) {',
+      '  const page = await client.send(new ListPartsCommand({ NextToken: token }));',
+      ...body,
+      '}',
+    ].join('\n'));
+    return classificationViolations(uses, classification, read);
+  };
+
+  it('accepts each list through its own projection, and a site that reads only one list', () => {
+    expect(check("import { projectWidget, projectGadget } from './proj';", [
+      '  return [(page.Widgets ?? []).map(projectWidget), (page.Gadgets ?? []).map(projectGadget), page.NextToken];',
+    ])).toEqual([]);
+    expect(check("import { projectWidget } from './proj';", ['  return (page.Widgets ?? []).map(projectWidget);'])).toEqual([]);
+  });
+
+  it('rejects a list mapped through the other list\'s projection', () => {
+    expect(check("import { projectWidget } from './proj';", ['  return (page.Gadgets ?? []).map(projectWidget);'])).toEqual([
+      `${path.join('services', 'site.ts')}:5: page.Gadgets is used other than through projectGadget`,
+    ]);
+  });
+
+  it('rejects a second list read raw', () => {
+    expect(check("import { projectWidget } from './proj';", [
+      '  return [(page.Widgets ?? []).map(projectWidget), page.Gadgets];',
+    ])).toEqual([
+      `${path.join('services', 'site.ts')}:5: page.Gadgets is used other than through projectGadget`,
+    ]);
+  });
+
+  it('rejects the second projection imported from elsewhere', () => {
+    expect(check("import { projectWidget } from './proj';\nimport { projectGadget } from './elsewhere';", [
+      '  return [(page.Widgets ?? []).map(projectWidget), (page.Gadgets ?? []).map(projectGadget)];',
+    ])).toEqual([
+      `${path.join('services', 'site.ts')}:5: projectGadget is not imported from ${rule.module}`,
+    ]);
+  });
+
+  it('requires every projection to be tested and acceptable', () => {
+    expect(check("import { projectWidget } from './proj';", [], (label) => (label === rule.test ? 'projectWidget' : sources[label]))).toEqual([
+      `client-x:ListPartsCommand: ${rule.test} does not test projectGadget`,
+    ]);
+    const spreadGadget = sources[rule.module].replace('{ Id: g.Id }', '{ ...g }');
+    expect(check("import { projectWidget } from './proj';", [], (label) => (label === rule.module ? spreadGadget : sources[label]))).not.toEqual([]);
   });
 });
