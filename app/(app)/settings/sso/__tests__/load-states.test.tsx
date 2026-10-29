@@ -56,6 +56,7 @@ describe("SSO settings: loading the config", () => {
 
   it.each([
     ["a 500", () => res(500, { success: false, error: "Failed to fetch SSO configuration" })],
+    ["a 500 whose body has no success field", () => res(500, { error: "Internal Server Error" })],
     ["a non-JSON 502", () => res(502, "<html>Bad gateway</html>")],
     ["a network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
     ["another 402", () => res(402, resourceLimitBody())],
