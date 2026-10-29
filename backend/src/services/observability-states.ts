@@ -334,14 +334,13 @@ function completedCount(evidence: ResourceEvidence, key: string): number {
 }
 
 /**
- * RDS instance (R1-R5): the status discovery recorded decides transitional /
- * unrecognised (stopped and failing were decided before any query outcome); an available instance -- or one in storage-optimization, which is fully
+ * RDS instance (R1-R5): an unrecognised status is unknown (stopped, failing and
+ * transitional were decided before any query outcome); an available instance -- or one in storage-optimization, which is fully
  * available meanwhile (R1 amendment; its status_detail names it) -- is judged by its core
  * metrics, all of which must have data. Query failures and stops were handled before this.
  */
 function rdsVerdict(resource: InventoryView, evidence: ResourceEvidence, telemetry: TelemetryState): Verdict {
   const status = resource.status ?? ''
-  if (RDS_TRANSITIONAL(status)) return judged('needs_attention', telemetry, null, status)
   if (!RDS_JUDGED_BY_METRICS.has(status)) return unknown('not_supported', telemetry, null, status || null)
   const detail = status === 'available' ? null : status
 
@@ -416,14 +415,16 @@ function verdictFor(
     if (resource.resource_type === 'rds' && resource.status === 'stopped') return judged('stopped', 'unknown', null)
     return judged('not_measured', 'unknown', null)
   }
-  // Founder decision (Oct 29): an RDS status from discovery that means stopped or failing
-  // stands even when a metric query (or the whole RDS block) failed or returned nothing;
+  // Founder decisions (Oct 29): an RDS status from discovery that means stopped, failing or
+  // transitional stands even when a metric query (or the whole RDS block) failed or returned nothing;
   // metrics decide only the instances that are serving.
   if (resource.resource_type === 'rds') {
     const status = resource.status ?? ''
     const telemetry = ctx.blockFailed || !evidence ? 'unknown' : telemetryOf(evidence)
     if (RDS_STOPPED.has(status)) return judged('stopped', telemetry, null)
     if (RDS_FAILING(status)) return judged('failing', telemetry, null, status)
+    // Transitional states stand the same way (founder decision, Oct 29).
+    if (RDS_TRANSITIONAL(status)) return judged('needs_attention', telemetry, null, status)
   }
   if (ctx.blockFailed) return unknown('query_failed')
   // Evaluated type, but no row: its dimension could not be resolved.

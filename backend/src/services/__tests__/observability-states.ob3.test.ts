@@ -102,6 +102,25 @@ describe('OB3 RDS instance', () => {
     expect(rdsRow({ status: 'available' }, rdsValues({ cpu: null }), { cpu: 'access_denied' })).toMatchObject({ check_status: 'unknown', unknown_reason: 'access_denied' })
   })
 
+  it('(Oct 29 decision, transitional) a transitional status stands as needs_attention over a failed or empty metric query, or a failed block', () => {
+    const none = { cpu: null, connections: null, connectionsMax: null, freeStorageMin: null }
+    expect(rdsRow({ status: 'rebooting' }, rdsValues({ cpu: null }), { cpu: 'access_denied' })).toMatchObject({
+      check_status: 'needs_attention',
+      unknown_reason: null,
+      status_detail: 'rebooting',
+      telemetry: 'unknown',
+    })
+    expect(rdsRow({ status: 'configuring-log-exports' }, none, { cpu: 'throttled', connections: 'throttled', connectionsMax: 'throttled', freeStorageMin: 'throttled' })).toMatchObject({
+      check_status: 'needs_attention',
+      status_detail: 'configuring-log-exports',
+    })
+    expect(rdsRow({ status: 'modifying' }, none)).toMatchObject({ check_status: 'needs_attention', status_detail: 'modifying', telemetry: 'no_telemetry' })
+    expect(observabilityRowFor(rds({ status: 'maintenance' }), undefined, undefined, ctx({ blockFailed: true }))).toMatchObject({ check_status: 'needs_attention', status_detail: 'maintenance' })
+    // Unknown stays only for serving instances whose metrics fail, and for unrecognised statuses.
+    expect(rdsRow({ status: 'storage-optimization' }, rdsValues({ cpu: null }), { cpu: 'access_denied' })).toMatchObject({ check_status: 'unknown', unknown_reason: 'access_denied' })
+    expect(rdsRow({ status: 'creating' }, rdsValues({ cpu: null }), { cpu: 'access_denied' }).check_status).toBe('unknown')
+  })
+
   it('(R1) the known transitional states need attention, with the status name', () => {
     for (const status of ['modifying', 'rebooting', 'backing-up', 'upgrading', 'maintenance', 'configuring-enhanced-monitoring', 'starting']) {
       expect(rdsRow({ status })).toMatchObject({ check_status: 'needs_attention', unknown_reason: null, status_detail: status })
