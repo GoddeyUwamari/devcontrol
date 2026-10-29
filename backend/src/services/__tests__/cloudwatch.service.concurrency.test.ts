@@ -428,7 +428,7 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
       }
       return {
         MetricDataResults: queries.map((q) => {
-          const metricIndex = Number(q.Id.split('_')[1]); // 0=latencySec, 1=requestSum, 2=errorSum
+          const metricIndex = Number(q.Id.split('_')[1]); // 0=latencySec, 1=requestSum, 2=errorSum, 4=elb5xxSum (OB3)
           if (metricIndex === 0) return { Id: q.Id, StatusCode: 'Complete', Timestamps: [command.input.StartTime, command.input.EndTime], Values: [0.08, 0.12] }; // avg 100ms
           if (metricIndex === 1) return { Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [600] };
           return { Id: q.Id, StatusCode: 'Complete', Timestamps: [new Date()], Values: [0] };
@@ -442,7 +442,8 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
 
     // Never combined into one request -- exactly two independent calls.
     expect(calls).toHaveLength(2);
-    const currentCall = calls.find((c) => c.queries.length === 3);
+    // OB3: the current batch carries HTTPCode_ELB_5XX_Count as a fourth query.
+    const currentCall = calls.find((c) => c.queries.length === 4);
     const previousCall = calls.find((c) => c.queries.length === 1);
     expect(currentCall).toBeDefined();
     expect(previousCall).toBeDefined();
@@ -451,7 +452,7 @@ describe('CloudWatchService.computeMetrics — type-level concurrency (Phase 2B)
     expect(previousCall!.endTime.getTime()).toBe(currentCall!.startTime.getTime());
     expect(previousCall!.startTime.getTime()).toBeLessThan(previousCall!.endTime.getTime());
     // Independent query-Id spaces: previous batch's single query still uses the same
-    // resource-index-based scheme, disjoint from the current batch's three Ids by
+    // resource-index-based scheme, disjoint from the current batch's four Ids by
     // construction (different metric index suffix).
     expect(previousCall!.queries[0].Id).not.toBe(currentCall!.queries[0].Id);
 

@@ -16,8 +16,8 @@
  * behind a single call; see cloudwatch.service.ts's evaluateCapabilityBatch() for how the
  * two windows are split and dispatched concurrently.
  */
-import { CloudWatchClient, GetMetricDataCommand, StatusCode } from '@aws-sdk/client-cloudwatch'
-import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy'
+import { CloudWatchClient, GetMetricDataCommand, MetricDataResult, StatusCode } from '@aws-sdk/client-cloudwatch'
+import { isAccessDeniedError, isThrottlingError, listAllPages, Listing } from '../utils/awsCallPolicy'
 
 export type BatchDimension = { Name: string; Value: string }
 
@@ -36,7 +36,8 @@ export interface BatchMetricQuery {
   // already means "max across replicas" at a point in time; requesting the Maximum
   // statistic additionally catches a lag spike within the period that Average would
   // smooth away -- see cloudwatch.service.ts's evaluateAuroraClusters()).
-  stat: 'Average' | 'Sum' | 'Maximum'
+  // 'Minimum' added for RDS FreeStorageSpace (OB3): the lowest free space in the window.
+  stat: 'Average' | 'Sum' | 'Maximum' | 'Minimum'
 }
 
 export interface BatchSeriesResult {
@@ -55,10 +56,10 @@ export type BatchMetricResults = Map<string, BatchSeriesResult | null>
  *   empty          the query completed and returned no datapoints;
  *   access_denied  StatusCode Forbidden, or the request was refused;
  *   throttled      the request was throttled (after the SDK's own retries);
- *   query_failed   StatusCode InternalError or PartialData, the request failed
- *                  otherwise, the query's Id never came back, or its results
- *                  spanned more than one NextToken page (whose values the
- *                  series below would hold only the last page of).
+ *   query_failed   StatusCode InternalError, or PartialData on the query's last
+ *                  page, the request failed otherwise, the query's Id never came
+ *                  back, its pages repeated a timestamp, or its chunk stopped at
+ *                  the page limit with pages left.
  */
 export type QueryOutcome = 'complete' | 'empty' | 'access_denied' | 'throttled' | 'query_failed'
 
@@ -91,8 +92,9 @@ function requestFailureOutcome(err: unknown): QueryOutcome {
  * GetMetricStatistics-based fetch already tolerated an incomplete window without
  * distinguishing it from a complete one.
  *
- * Handles NextToken pagination per chunk defensively (not expected to trigger at today's
- * datapoint volumes -- see the Phase 2C scoping audit -- but never assumed away).
+ * Reads every NextToken page of each chunk (at most listAllPages' page limit) and
+ * appends each query's datapoints across its pages. Not expected to trigger at today's
+ * datapoint volumes -- see the Phase 2C scoping audit -- but never assumed away.
  *
  * If an entire chunk's request throws (network/auth/throttling), every query id in that
  * chunk maps to `null`; other chunks already fetched, or not yet attempted, are
@@ -151,12 +153,9 @@ async function fetchChunk(
   results: BatchMetricResults,
   statuses: BatchQueryStatuses
 ): Promise<void> {
-  // Pages each Id appeared on, and its outcome on the last of them.
-  const pagesSeen = new Map<string, number>()
-  const seen = new Map<string, BatchQueryStatus>()
+  let listing: Listing<MetricDataResult>
   try {
-    let nextToken: string | undefined
-    do {
+    listing = await listAllPages('CloudWatch: GetMetricData', async (nextToken) => {
       const response = await client.send(
         new GetMetricDataCommand({
           MetricDataQueries: chunk.map((q) => ({
@@ -173,21 +172,8 @@ async function fetchChunk(
           NextToken: nextToken,
         })
       )
-
-      for (const result of response.MetricDataResults ?? []) {
-        // Map by Id, never by array position -- GetMetricData does not document that
-        // MetricDataResults preserves MetricDataQueries' order.
-        if (!result.Id) continue
-        pagesSeen.set(result.Id, (pagesSeen.get(result.Id) ?? 0) + 1)
-        const values = result.Values ?? []
-        seen.set(result.Id, statusOf(result.StatusCode, values.length, result.Timestamps ?? []))
-        if (result.StatusCode === StatusCode.INTERNAL_ERROR || result.StatusCode === StatusCode.FORBIDDEN) continue
-        if (values.length === 0) continue
-        results.set(result.Id, { timestamps: result.Timestamps ?? [], values })
-      }
-
-      nextToken = response.NextToken
-    } while (nextToken)
+      return { items: response.MetricDataResults ?? [], nextToken: response.NextToken }
+    })
   } catch (err) {
     console.error('[CloudWatch] GetMetricData batch request failed:', err)
     // Every id in this chunk stays null (already pre-seeded in fetchMetricDataBatch) --
@@ -198,14 +184,67 @@ async function fetchChunk(
     return
   }
 
-  for (const q of chunk) {
-    const status = seen.get(q.id)
-    if (!status || (pagesSeen.get(q.id) ?? 0) > 1) {
-      statuses.set(q.id, { outcome: 'query_failed', newestTimestamp: null })
-    } else {
-      statuses.set(q.id, status)
-    }
+  // Every page's results for an Id, in page order. A query whose datapoints did not fit
+  // one response continues on the next page, so its series is all of its pages together.
+  const pagesById = new Map<string, MetricDataResult[]>()
+  for (const result of listing.items) {
+    // Map by Id, never by array position -- GetMetricData does not document that
+    // MetricDataResults preserves MetricDataQueries' order.
+    if (!result.Id) continue
+    const pages = pagesById.get(result.Id)
+    if (pages) pages.push(result)
+    else pagesById.set(result.Id, [result])
   }
+
+  for (const q of chunk) {
+    const pages = pagesById.get(q.id)
+    if (!pages) {
+      statuses.set(q.id, { outcome: 'query_failed', newestTimestamp: null })
+      continue
+    }
+    const merged = mergePages(pages)
+    if (merged.series) results.set(q.id, merged.series)
+    // Stopped at the page limit with pages left: no query in this chunk is known complete.
+    statuses.set(q.id, listing.complete ? merged.status : { outcome: 'query_failed', newestTimestamp: null })
+  }
+}
+
+/**
+ * One query's pages as one series and one outcome. Pages answered Forbidden or
+ * InternalError contribute no values (as a single page never did); the worst of them
+ * decides the outcome; otherwise the query is complete only if its last page says
+ * Complete -- a page with no NextToken after it does not make a PartialData query
+ * complete. A timestamp a later page repeats from an earlier one can't be merged without
+ * counting a datapoint twice, so that query has no series and is query_failed.
+ */
+function mergePages(pages: MetricDataResult[]): { series: BatchSeriesResult | null; status: BatchQueryStatus } {
+  const timestamps: Date[] = []
+  const values: number[] = []
+  // Timestamps on earlier pages: one page is taken as AWS sent it, as it always was.
+  const earlierPages = new Set<number>()
+  let duplicate = false
+  for (const page of pages) {
+    if (page.StatusCode === StatusCode.INTERNAL_ERROR || page.StatusCode === StatusCode.FORBIDDEN) continue
+    const pageValues = page.Values ?? []
+    const pageTimestamps = page.Timestamps ?? []
+    const thisPage: number[] = []
+    for (let i = 0; i < pageValues.length; i++) {
+      const ts = pageTimestamps[i]
+      if (!(ts instanceof Date)) continue
+      if (earlierPages.has(ts.getTime())) duplicate = true
+      thisPage.push(ts.getTime())
+    }
+    for (const t of thisPage) earlierPages.add(t)
+    timestamps.push(...pageTimestamps)
+    values.push(...pageValues)
+  }
+
+  const failed = { series: null, status: { outcome: 'query_failed' as const, newestTimestamp: null } }
+  if (duplicate) return failed
+  const series = values.length > 0 ? { timestamps, values } : null
+  if (pages.some((p) => p.StatusCode === StatusCode.FORBIDDEN)) return { series, status: { outcome: 'access_denied', newestTimestamp: null } }
+  if (pages.some((p) => p.StatusCode === StatusCode.INTERNAL_ERROR)) return { series, status: { outcome: 'query_failed', newestTimestamp: null } }
+  return { series, status: statusOf(pages[pages.length - 1].StatusCode, values.length, timestamps) }
 }
 
 function statusOf(statusCode: string | undefined, valueCount: number, timestamps: Date[]): BatchQueryStatus {
@@ -223,13 +262,18 @@ function statusOf(statusCode: string | undefined, valueCount: number, timestamps
  * {Sum, Average} objects. A null series, or a series with zero datapoints, is null --
  * never fabricated as 0.
  */
-export function reduceSeriesToScalar(series: BatchSeriesResult | null, stat: 'Average' | 'Sum' | 'Maximum'): number | null {
+export function reduceSeriesToScalar(series: BatchSeriesResult | null, stat: BatchMetricQuery['stat']): number | null {
   if (series === null || series.values.length === 0) return null
   if (stat === 'Sum') {
     return series.values.reduce((sum, v) => sum + v, 0)
   }
   if (stat === 'Maximum') {
     return Math.max(...series.values)
+  }
+  if (stat === 'Minimum') {
+    let min = series.values[0]
+    for (const v of series.values) if (v < min) min = v
+    return min
   }
   return series.values.reduce((sum, v) => sum + v, 0) / series.values.length
 }

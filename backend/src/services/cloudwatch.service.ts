@@ -18,6 +18,7 @@ import {
   ResourceEvidence,
   TypeSummary,
   checkObserved,
+  isAuroraMemberInstance,
   isNotMeasured,
   observabilityRowFor,
   typeSummaryOf,
@@ -215,14 +216,24 @@ interface InventoryRow {
 
 type Dimension = { Name: string; Value: string }
 
-interface MetricDefinition {
+type MetricDefinition = {
   // Key this metric's fetched value is stored under in the `values` map passed to healthRule.
   key: string
   metricName: string
-  statistic: 'Average' | 'Sum'
   // 'previous' fetches the same metric for the prior lookback window (used for trend
   // comparisons). Defaults to 'current'.
   window?: 'current' | 'previous'
+} & (
+  | { statistic: 'Average' | 'Sum'; sweepOnly?: false }
+  // OB3: fetched only by the full-account sweep (evaluateCapabilityBatch), for the
+  // observability states; never by evaluateResource() (the SLO path), and never read by
+  // a healthRule, so neither SLO evaluation nor the legacy rows change.
+  | { statistic: 'Average' | 'Sum' | 'Minimum' | 'Maximum'; sweepOnly: true }
+)
+
+/** A metric evaluateResource() (the SLO path) fetches: every metric except OB3's sweep-only ones. */
+function isSloPathMetric(metric: MetricDefinition): metric is Extract<MetricDefinition, { statistic: 'Average' | 'Sum'; sweepOnly?: false }> {
+  return metric.sweepOnly !== true
 }
 
 interface HealthRuleContext {
@@ -249,13 +260,16 @@ interface HealthRuleContext {
 interface ResourceCapability<TExtra = void> {
   resourceType: CloudWatchServiceHealth['resourceType']
   // Null namespace/dimensionKey means this resource type has no CloudWatch metrics wired
-  // up (e.g. RDS today) — the engine skips the CloudWatch fetch entirely and calls
+  // up — the engine skips the CloudWatch fetch entirely and calls
   // healthRule with an empty values map.
   cloudwatchNamespace: string | null
   dimensionKey: string | null
   // Returns null when the resource can't be mapped to a CloudWatch dimension value
   // (e.g. a malformed ALB ARN) — the engine treats that resource as unfetchable.
   getDimensionValue: (resource: InventoryRow) => string | null
+  // OB3: a resource the sweep evaluates without querying (its healthRule runs with no
+  // values and no evidence is recorded), e.g. an Aurora member instance among RDS rows.
+  skipQueries?: (resource: InventoryRow) => boolean
   metrics: MetricDefinition[]
   healthRule: (
     resource: InventoryRow,
@@ -366,11 +380,21 @@ const ec2Capability: ResourceCapability = {
 
 const rdsCapability: ResourceCapability = {
   resourceType: 'rds',
-  // No CloudWatch metrics wired for RDS yet — inventory-only, shown honestly as such.
-  cloudwatchNamespace: null,
-  dimensionKey: null,
-  getDimensionValue: () => null,
-  metrics: [],
+  // OB3: CloudWatch metrics are fetched for the observability states only (sweepOnly);
+  // the legacy row below stays inventory-only (monitored: false), unchanged.
+  cloudwatchNamespace: 'AWS/RDS',
+  dimensionKey: 'DBInstanceIdentifier',
+  // Discovery stores DBInstanceIdentifier as resource_id.
+  getDimensionValue: (r) => r.resource_id,
+  // An Aurora member instance is measured by its cluster's aurora row (founder decision R4).
+  skipQueries: (r) => isAuroraMemberInstance(r),
+  metrics: [
+    { key: 'cpu', metricName: 'CPUUtilization', statistic: 'Average', sweepOnly: true },
+    { key: 'connections', metricName: 'DatabaseConnections', statistic: 'Average', sweepOnly: true },
+    { key: 'connectionsMax', metricName: 'DatabaseConnections', statistic: 'Maximum', sweepOnly: true },
+    // The lowest free space in the window.
+    { key: 'freeStorageMin', metricName: 'FreeStorageSpace', statistic: 'Minimum', sweepOnly: true },
+  ],
   healthRule: (r) => ({
     service: {
       resourceId: r.resource_id,
@@ -401,6 +425,10 @@ const loadBalancerCapability: ResourceCapability<AlbExtra> = {
     { key: 'requestSum', metricName: 'RequestCount', statistic: 'Sum', window: 'current' },
     { key: 'errorSum', metricName: 'HTTPCode_Target_5XX_Count', statistic: 'Sum', window: 'current' },
     { key: 'previousLatencySec', metricName: 'TargetResponseTime', statistic: 'Average', window: 'previous' },
+    // OB3: 5xx the load balancer itself returned, on the same LoadBalancer dimension and
+    // window as RequestCount and the target 5xx above (appended, so earlier query Ids keep
+    // their indices).
+    { key: 'elb5xxSum', metricName: 'HTTPCode_ELB_5XX_Count', statistic: 'Sum', window: 'current', sweepOnly: true },
   ],
   healthRule: (alb, values, { lookbackSeconds, dims }) => {
     const latencySec = values.latencySec
@@ -455,6 +483,8 @@ const lambdaCapability: ResourceCapability = {
     { key: 'invocations', metricName: 'Invocations', statistic: 'Sum' },
     { key: 'errors', metricName: 'Errors', statistic: 'Sum' },
     { key: 'duration', metricName: 'Duration', statistic: 'Average' },
+    // OB3: throttled invocations (not counted in Invocations).
+    { key: 'throttles', metricName: 'Throttles', statistic: 'Sum', sweepOnly: true },
   ],
   healthRule: (fn, values) => {
     const invocations = values.invocations
@@ -609,7 +639,9 @@ type ValidationLevel = 'compiled' | 'deployed' | 'live_verified'
 
 const CAPABILITY_VALIDATION_STATUS: Record<CloudWatchServiceHealth['resourceType'], ValidationLevel> = {
   ec2: 'live_verified',
-  rds: 'live_verified',
+  // OB3: was live_verified for its inventory-only row; its AWS/RDS CloudWatch metrics
+  // (observability states) have not been evaluated against a real instance yet.
+  rds: 'deployed',
   'load-balancer': 'live_verified',
   lambda: 'live_verified',
   // Only the no-data/Unknown path has been exercised against a real (disposable) inventory
@@ -755,16 +787,19 @@ function cloudWatchEvidence(
   values: Record<string, number | null>
 ): ResourceEvidence {
   const queries: Record<string, QueryOutcome> = {}
+  const currentValues: Record<string, number | null> = {}
   let newest: Date | null = null
   for (const metric of metrics) {
     if (metric.window === 'previous') continue
     const status = statuses.get(ids[metric.key])
     queries[metric.key] = status?.outcome ?? 'query_failed'
+    currentValues[metric.key] = values[metric.key] ?? null
     if (status?.newestTimestamp && (newest === null || status.newestTimestamp > newest)) newest = status.newestTimestamp
   }
   return {
     kind: 'cloudwatch',
     queries,
+    values: currentValues,
     newestDatapointAt: newest,
     ...(activityKey ? { activity: { key: activityKey, value: values[activityKey] ?? null } } : {}),
   }
@@ -854,8 +889,9 @@ export class CloudWatchService {
 
   /**
    * Generic engine: given a resource and its registry capability definition, fetches
-   * every metric the capability declares (skipping the CloudWatch call entirely for
-   * capabilities with no namespace/dimension wired up, e.g. RDS) and hands the raw
+   * every metric the capability declares except OB3's sweep-only ones (skipping the
+   * CloudWatch call entirely for capabilities with no namespace/dimension wired up) and
+   * hands the raw
    * values to the capability's healthRule to produce the resource's health row.
    * Returns null when the resource can't be mapped to a CloudWatch dimension value.
    */
@@ -879,7 +915,7 @@ export class CloudWatchService {
 
       const namespace = capability.cloudwatchNamespace
       const entries = await Promise.all(
-        capability.metrics.map(async (metric) => {
+        capability.metrics.filter(isSloPathMetric).map(async (metric) => {
           const [start, end] = metric.window === 'previous' ? [previousStart, currentStart] : [currentStart, now]
           const value = await this.getMetricStat(client, namespace, metric.metricName, dims, start, end, periodSeconds, metric.statistic)
           return [metric.key, value] as const
@@ -898,9 +934,9 @@ export class CloudWatchService {
    * has -- this function only changes how the raw values are fetched, never what they
    * mean. Used today by EC2/Lambda/DynamoDB (a single current-window batch) and ALB (a
    * current-window batch plus a second, independent previous-window batch, dispatched
-   * concurrently -- see the two-window split below). RDS has no CloudWatch metrics wired
-   * and still goes through the unbatched evaluateResource() in its own task, since there
-   * is no AWS call to batch there either way; evaluateResourceForSlo() also still uses
+   * concurrently -- see the two-window split below), and since OB3 RDS (sweep-only
+   * metrics; an Aurora member instance is evaluated without queries, see skipQueries).
+   * evaluateResourceForSlo() still uses
    * evaluateResource() directly for its single-named-resource lookups, unaffected by this
    * phase.
    *
@@ -937,10 +973,9 @@ export class CloudWatchService {
     currentSeriesByResource: Array<Record<string, BatchSeriesResult | null>>
   }> {
     if (!capability.cloudwatchNamespace || !capability.dimensionKey) {
-      // No CloudWatch metrics wired for this capability (e.g. RDS) -- every resource's
-      // healthRule runs with an empty values map, exactly as evaluateResource() did
-      // before, with no AWS call at all. (Not exercised via this method in practice today
-      // -- RDS's task still calls evaluateResource() directly -- kept here only so this
+      // No CloudWatch metrics wired for this capability -- every resource's healthRule
+      // runs with an empty values map, exactly as evaluateResource() does, with no AWS
+      // call at all. (No registered capability takes this path today; kept so this
       // method stays a correct, general-purpose replacement for evaluateResource().)
       return {
         evaluations: resources.map((r) => capability.healthRule(r, {}, { lookbackSeconds, dims: [] })),
@@ -951,11 +986,11 @@ export class CloudWatchService {
     const namespace = capability.cloudwatchNamespace
     const dimensionKey = capability.dimensionKey
 
-    const contexts: Array<{ resource: InventoryRow; dims: Dimension[] }> = []
+    const contexts: Array<{ resource: InventoryRow; dims: Dimension[]; queried: boolean }> = []
     for (const resource of resources) {
       const dimValue = capability.getDimensionValue(resource)
       if (dimValue === null) continue
-      contexts.push({ resource, dims: [{ Name: dimensionKey, Value: dimValue }] })
+      contexts.push({ resource, dims: [{ Name: dimensionKey, Value: dimValue }], queried: !capability.skipQueries?.(resource) })
     }
 
     const currentQueries: BatchMetricQuery[] = []
@@ -965,6 +1000,7 @@ export class CloudWatchService {
     const idsByResource: Array<Record<string, string>> = contexts.map(() => ({}))
 
     contexts.forEach((ctx, resourceIndex) => {
+      if (!ctx.queried) return
       capability.metrics.forEach((metric, metricIndex) => {
         const id = `${typePrefix}${resourceIndex}_${metricIndex}`
         idsByResource[resourceIndex][metric.key] = id
@@ -997,6 +1033,7 @@ export class CloudWatchService {
 
     const currentSeriesByResource: Array<Record<string, BatchSeriesResult | null>> = contexts.map(() => ({}))
     const evaluations = contexts.map((ctx, resourceIndex) => {
+      if (!ctx.queried) return capability.healthRule(ctx.resource, {}, { lookbackSeconds, dims: ctx.dims })
       const values: Record<string, number | null> = {}
       capability.metrics.forEach((metric) => {
         const id = idsByResource[resourceIndex][metric.key]
@@ -1934,16 +1971,14 @@ export class CloudWatchService {
       }
     })()
 
+    // OB3: RDS is batched like EC2. Its metrics feed only the observability states; its
+    // legacy row is still the inventory-only healthRule.
     const rdsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const results = (
-          await Promise.all(
-            rdsInstances.map((instance) =>
-              this.evaluateResource(clients.cloudWatch, resourceTypeRegistry.rds, instance, currentStart, previousStart, now, periodSeconds, lookbackSeconds)
-            )
-          )
-        ).filter((r): r is NonNullable<typeof r> => r !== null)
-        return results.map((r) => r.service)
+        const { evaluations } = await this.evaluateCapabilityBatch(
+          clients.cloudWatch, resourceTypeRegistry.rds, rdsInstances, 'rds', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
+        )
+        return evaluations.map((r) => r.service)
       } catch (err) {
         console.error('[CloudWatch] RDS evaluation block failed unexpectedly:', err)
         failedBlocks.add('rds')

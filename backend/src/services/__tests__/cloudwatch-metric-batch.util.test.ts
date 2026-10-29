@@ -129,14 +129,14 @@ describe('fetchMetricDataBatch', () => {
     expect(results.get('q1')).toBeNull();
   });
 
-  it('(9) NextToken pagination: a second page is requested and merged with the first', async () => {
+  it('(9) NextToken pagination: a second page is requested and appended to the first', async () => {
     const send = jest.fn()
       .mockResolvedValueOnce({
         MetricDataResults: [{ Id: 'q0', StatusCode: 'PartialData', Timestamps: [startTime], Values: [1] }],
         NextToken: 'page-2',
       })
       .mockResolvedValueOnce({
-        MetricDataResults: [{ Id: 'q0', StatusCode: 'Complete', Timestamps: [startTime, endTime], Values: [1, 2] }],
+        MetricDataResults: [{ Id: 'q0', StatusCode: 'Complete', Timestamps: [endTime], Values: [2] }],
       });
     const client = withMockedSend(send);
 
@@ -144,11 +144,9 @@ describe('fetchMetricDataBatch', () => {
 
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[1][0].input.NextToken).toBe('page-2');
-    // The second page's result for the same Id replaces the first -- last-page-wins is
-    // this module's documented contract (callers needing an accumulated series across
-    // pages are not exercised by today's workload; see the Phase 2C scoping audit's
-    // pagination analysis for why this is not expected to matter at current caps).
-    expect(results.get('q0')?.values).toEqual([1, 2]);
+    // OB3: a query's datapoints continue across pages, so its series is every page's
+    // datapoints (it used to be the last page's only).
+    expect(results.get('q0')).toEqual({ timestamps: [startTime, endTime], values: [1, 2] });
   });
 
   it('(10) more than 500 queries are split into multiple chunked requests', async () => {

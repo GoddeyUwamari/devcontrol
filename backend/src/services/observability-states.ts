@@ -14,19 +14,26 @@
  *                   not_supported                                 a check exists, this resource can't be evaluated by it
  *                   no_activity                                   the activity query completed with zero (idle)
  *                   no_telemetry                                  every query completed with no datapoints
+ *                                                                 (RDS: any of its core queries did)
+ *                   not_enough_traffic                            a load balancer served fewer than 100
+ *                                                                 requests and fewer than 100 5xx in the range
  *   telemetry       reporting     a query completed with at least one datapoint
  *                                 (point-in-time types: the describe call returned a status)
  *                   no_telemetry  every query completed and returned nothing
  *                   unknown       otherwise, including not queried at all
  *   activity        active | no_activity, only for Lambda (Invocations) and ALB
- *                   (RequestCount), and only from a completed query; null otherwise
+ *                   (RequestCount, or any 5xx), and only from a completed query; null otherwise
+ *   status_detail   the AWS-reported state behind check_status when that state decided
+ *                   it (RDS: failing, transitional or unrecognised); null otherwise
  *
  * Precedence (first match wins): outside_account, outside_region, not measured
  * (or stopped, for a stopped RDS instance), a failed type block, no evaluated
  * row (not_supported), a query that did not complete, a deliberate stop, a
  * resource the check can't evaluate, an Inactive Lambda function (no_activity),
- * a completed activity query at zero (no_activity, unless the evaluator found a
- * real failure), then the evaluator's own verdict.
+ * the type's own OB3 rules (RDS status, storage and CPU; Lambda throttles, before
+ * idle; load balancer 5xx and latency), a completed activity query at zero
+ * (no_activity, unless the evaluator found a real failure), then the evaluator's
+ * own verdict.
  *
  * The legacy CloudWatchServiceHealth rows are read, never changed: this module
  * adds states beside them.
@@ -43,9 +50,10 @@ export type UnknownReason =
   | 'not_supported'
   | 'no_activity'
   | 'no_telemetry'
+  | 'not_enough_traffic'
 export type TelemetryState = 'reporting' | 'no_telemetry' | 'unknown'
 export type ActivityState = 'active' | 'no_activity'
-export type MetricStatistic = 'Average' | 'Sum' | 'Maximum'
+export type MetricStatistic = 'Average' | 'Sum' | 'Maximum' | 'Minimum'
 
 export interface ObservabilityMetric {
   label: string
@@ -65,6 +73,7 @@ export interface ObservabilityRow {
   unknown_reason: UnknownReason | null
   telemetry: TelemetryState
   activity: ActivityState | null
+  status_detail: string | null
   last_seen: string | null
   last_seen_source: 'datapoint' | 'observation' | null
   metrics: ObservabilityMetric[]
@@ -87,6 +96,8 @@ export interface ResourceEvidence {
   queries: Record<string, QueryOutcome>
   // The sparse activity query, for Lambda and ALB.
   activity?: { key: string; value: number | null }
+  // Each current-window query's value over the window, by metric key (null: no datapoints).
+  values?: Record<string, number | null>
   newestDatapointAt: Date | null
   // The check exists but this resource can't be evaluated by it (not found, unrecognized state...).
   unsupported?: boolean
@@ -129,9 +140,14 @@ export interface RowContext {
   stored: StoredObservation | undefined
 }
 
+/** An RDS instance that is a member of an Aurora cluster: its cluster's aurora row measures it. */
+export function isAuroraMemberInstance(resource: Pick<InventoryView, 'resource_type' | 'metadata'>): boolean {
+  return resource.resource_type === 'rds' && typeof resource.metadata?.engine === 'string' && resource.metadata.engine.startsWith('aurora')
+}
+
 /** Types with no check wired today: listed as not_measured, never as missing telemetry. */
 export function isNotMeasured(resource: Pick<InventoryView, 'resource_type' | 'metadata'>): boolean {
-  if (resource.resource_type === 'rds' || resource.resource_type === 'api-gateway' || resource.resource_type === 's3') return true
+  if (isAuroraMemberInstance(resource) || resource.resource_type === 'api-gateway' || resource.resource_type === 's3') return true
   return resource.resource_type === 'load-balancer' && resource.metadata?.type !== 'application'
 }
 
@@ -139,6 +155,28 @@ export function isNotMeasured(resource: Pick<InventoryView, 'resource_type' | 'm
 const REGIONLESS_TYPES = new Set(['cloudfront', 's3'])
 
 const EC2_STOPPED = new Set(['stopped', 'stopping', 'shutting-down'])
+const RDS_STOPPED = new Set(['stopped', 'stopping'])
+
+// RDS DBInstanceStatus values (founder decision R1). 'available' is judged by its metrics.
+const RDS_FAILING = (status: string) =>
+  status === 'failed' ||
+  status === 'storage-full' ||
+  status === 'restore-error' ||
+  status.startsWith('incompatible-') ||
+  status.startsWith('inaccessible-encryption-credentials')
+const RDS_TRANSITIONAL = (status: string) =>
+  ['modifying', 'rebooting', 'backing-up', 'upgrading', 'maintenance', 'starting'].includes(status) || status.startsWith('configuring-')
+
+/** Below this share of allocated storage left free, an RDS instance needs attention (R5). */
+export const RDS_FREE_STORAGE_MIN_RATIO = 0.1
+/** Average CPU at or above this, over the range, needs attention (R2; EC2's threshold). */
+export const RDS_CPU_ATTENTION_PERCENT = 80
+/** Load balancer 5xx: fewer requests and fewer 5xx than this in the range is not enough traffic to judge. */
+export const LB_MIN_REQUESTS = 100
+// errors x RATIO <= requests: at most 1% passes; at most 5% needs attention; more fails.
+const LB_5XX_PASS_RATIO = 100
+const LB_5XX_ATTENTION_RATIO = 20
+const BYTES_PER_GIB = 1024 ** 3
 
 /** The 12-digit account in a resource ARN (arn:partition:service:region:account:...); null when it has none. */
 export function accountIdOfResourceArn(arn: string | null | undefined): string | null {
@@ -180,7 +218,8 @@ function labelledMetrics(
   resourceType: string,
   row: EvaluatedRowView,
   evidence: ResourceEvidence | undefined,
-  rangeLabel: string
+  rangeLabel: string,
+  metadata: Record<string, any> | null
 ): ObservabilityMetric[] {
   const pointInTime = POINT_IN_TIME_TYPES.has(resourceType)
   const window = pointInTime ? 'current' : rangeLabel
@@ -195,12 +234,9 @@ function labelledMetrics(
     })
   }
   for (const m of row.metrics ?? []) {
-    // The legacy ALB error rate is 0 when the 5xx query returned nothing for any
-    // reason; here it is shown only when that query completed.
-    if (resourceType === 'load-balancer' && m.label === 'Error rate') {
-      const errorOutcome = evidence?.queries.errorSum
-      if (errorOutcome !== 'complete' && errorOutcome !== 'empty') continue
-    }
+    // The legacy ALB error rate counts target 5xx only and is 0 when that query returned
+    // nothing for any reason; the 5xx metrics below replace it here.
+    if (resourceType === 'load-balancer' && m.label === 'Error rate') continue
     metrics.push({
       label: m.label,
       value: m.value,
@@ -208,6 +244,48 @@ function labelledMetrics(
       statistic: pointInTime ? null : (STATISTICS[resourceType]?.[m.label] ?? null),
       window,
     })
+  }
+  if (evidence) metrics.push(...ob3Metrics(resourceType, evidence, metadata, window))
+  return metrics
+}
+
+const round = (value: number, places: number) => Math.round(value * 10 ** places) / 10 ** places
+
+/**
+ * OB3's metrics, read from the evidence's values: each only when its query completed
+ * (a completed count query with no datapoints is 0; any other completed query with no
+ * datapoints has no value to show).
+ */
+function ob3Metrics(resourceType: string, evidence: ResourceEvidence, metadata: Record<string, any> | null, window: string): ObservabilityMetric[] {
+  const completed = (key: string) => evidence.queries[key] === 'complete' || evidence.queries[key] === 'empty'
+  const value = (key: string) => (evidence.queries[key] === 'complete' ? (evidence.values?.[key] ?? null) : null)
+  const metrics: ObservabilityMetric[] = []
+  if (resourceType === 'load-balancer' && completed('errorSum') && completed('elb5xxSum')) {
+    const errors = (value('errorSum') ?? 0) + (value('elb5xxSum') ?? 0)
+    metrics.push({ label: '5xx errors', value: errors, statistic: 'Sum', window })
+    const requests = completed('requestSum') ? (value('requestSum') ?? 0) : null
+    if (requests !== null && requests > 0 && (requests >= LB_MIN_REQUESTS || errors >= LB_MIN_REQUESTS)) {
+      metrics.push({ label: '5xx rate', value: round((errors / requests) * 100, 2), unit: '%', statistic: 'Sum', window })
+    }
+  }
+  if (resourceType === 'lambda' && completed('throttles')) {
+    metrics.push({ label: 'Throttles', value: value('throttles') ?? 0, statistic: 'Sum', window })
+  }
+  if (resourceType === 'rds') {
+    const cpu = value('cpu')
+    const connections = value('connections')
+    const connectionsMax = value('connectionsMax')
+    const freeBytes = value('freeStorageMin')
+    if (cpu !== null) metrics.push({ label: 'CPU', value: round(cpu, 1), unit: '%', statistic: 'Average', window })
+    if (connections !== null) metrics.push({ label: 'Connections', value: round(connections, 1), statistic: 'Average', window })
+    if (connectionsMax !== null) metrics.push({ label: 'Connections (max)', value: connectionsMax, statistic: 'Maximum', window })
+    if (freeBytes !== null) {
+      metrics.push({ label: 'Free storage', value: round(freeBytes / BYTES_PER_GIB, 2), unit: 'GiB', statistic: 'Minimum', window })
+      const allocatedGiB = Number(metadata?.allocated_storage)
+      if (allocatedGiB > 0) {
+        metrics.push({ label: 'Free storage', value: round((freeBytes / (allocatedGiB * BYTES_PER_GIB)) * 100, 1), unit: '% of allocated', statistic: 'Minimum', window })
+      }
+    }
   }
   return metrics
 }
@@ -223,14 +301,75 @@ interface Verdict {
   unknown_reason: UnknownReason | null
   telemetry: TelemetryState
   activity: ActivityState | null
+  status_detail: string | null
 }
 
-const unknown = (reason: UnknownReason, telemetry: TelemetryState = 'unknown', activity: ActivityState | null = null): Verdict => ({
+const unknown = (reason: UnknownReason, telemetry: TelemetryState = 'unknown', activity: ActivityState | null = null, statusDetail: string | null = null): Verdict => ({
   check_status: 'unknown',
   unknown_reason: reason,
   telemetry,
   activity,
+  status_detail: statusDetail,
 })
+
+const judged = (check_status: CheckStatus, telemetry: TelemetryState, activity: ActivityState | null, statusDetail: string | null = null): Verdict => ({
+  check_status,
+  unknown_reason: null,
+  telemetry,
+  activity,
+  status_detail: statusDetail,
+})
+
+const SEVERITY: Record<'passing' | 'needs_attention' | 'failing', number> = { passing: 0, needs_attention: 1, failing: 2 }
+const worse = (a: 'passing' | 'needs_attention' | 'failing', b: 'passing' | 'needs_attention' | 'failing') => (SEVERITY[a] >= SEVERITY[b] ? a : b)
+
+/** A completed query's value over the window; a completed query with no datapoints is 0. */
+function completedCount(evidence: ResourceEvidence, key: string): number {
+  return evidence.queries[key] === 'complete' ? (evidence.values?.[key] ?? 0) : 0
+}
+
+/**
+ * RDS instance (R1-R5): the status discovery recorded decides failing / transitional /
+ * unrecognised; an available instance is judged by its core metrics, all of which must
+ * have data. Query failures and stops were handled before this.
+ */
+function rdsVerdict(resource: InventoryView, evidence: ResourceEvidence, telemetry: TelemetryState): Verdict {
+  const status = resource.status ?? ''
+  if (RDS_FAILING(status)) return judged('failing', telemetry, null, status)
+  if (RDS_TRANSITIONAL(status)) return judged('needs_attention', telemetry, null, status)
+  if (status !== 'available') return unknown('not_supported', telemetry, null, status || null)
+
+  if (Object.values(evidence.queries).some((o) => o !== 'complete')) return unknown('no_telemetry', telemetry)
+  const cpu = evidence.values?.cpu ?? null
+  const freeBytes = evidence.values?.freeStorageMin ?? null
+  if (cpu === null || freeBytes === null) return unknown('no_telemetry', telemetry)
+  const allocatedGiB = Number(resource.metadata?.allocated_storage)
+  if (!(allocatedGiB > 0)) return unknown('not_supported', telemetry)
+
+  const lowStorage = freeBytes < RDS_FREE_STORAGE_MIN_RATIO * allocatedGiB * BYTES_PER_GIB
+  const busyCpu = cpu >= RDS_CPU_ATTENTION_PERCENT
+  return judged(lowStorage || busyCpu ? 'needs_attention' : 'passing', telemetry, null)
+}
+
+/**
+ * Application load balancer (L1/L2): the 5xx rate (ELB + target 5xx over RequestCount,
+ * one LoadBalancer dimension, the selected range) and the existing average-latency
+ * verdict, the worse of the two. Nothing served and nothing failed is no_activity; fewer
+ * than 100 requests and fewer than 100 5xx is not enough traffic to judge.
+ */
+function albVerdict(row: EvaluatedRowView, evidence: ResourceEvidence, telemetry: TelemetryState): Verdict {
+  const requests = completedCount(evidence, 'requestSum')
+  const errors = completedCount(evidence, 'errorSum') + completedCount(evidence, 'elb5xxSum')
+  if (requests === 0 && errors === 0) return unknown('no_activity', telemetry, 'no_activity')
+  const activity: ActivityState = 'active'
+  if (requests < LB_MIN_REQUESTS && errors < LB_MIN_REQUESTS) return unknown('not_enough_traffic', telemetry, activity)
+
+  const fivexx = errors * LB_5XX_PASS_RATIO <= requests ? 'passing' : errors * LB_5XX_ATTENTION_RATIO <= requests ? 'needs_attention' : 'failing'
+  if (fivexx === 'failing') return judged('failing', telemetry, activity)
+  const latency = row.status === 'healthy' ? 'passing' : row.status === 'degraded' ? 'needs_attention' : null
+  if (latency === null) return unknown('no_telemetry', telemetry, activity)
+  return judged(worse(fivexx, latency), telemetry, activity)
+}
 
 function verdictFor(
   resource: InventoryView,
@@ -243,10 +382,8 @@ function verdictFor(
   // A row with no recorded region can't be shown to be in the queried one.
   if (!REGIONLESS_TYPES.has(resource.resource_type) && resource.region !== ctx.region) return unknown('outside_region')
   if (isNotMeasured(resource)) {
-    if (resource.resource_type === 'rds' && resource.status === 'stopped') {
-      return { check_status: 'stopped', unknown_reason: null, telemetry: 'unknown', activity: null }
-    }
-    return { check_status: 'not_measured', unknown_reason: null, telemetry: 'unknown', activity: null }
+    if (resource.resource_type === 'rds' && resource.status === 'stopped') return judged('stopped', 'unknown', null)
+    return judged('not_measured', 'unknown', null)
   }
   if (ctx.blockFailed) return unknown('query_failed')
   // Evaluated type, but no row: its dimension could not be resolved.
@@ -273,10 +410,24 @@ function verdictFor(
     else if (outcome === 'complete') activity = 'active'
   }
 
-  if (evidence.stopped || (resource.resource_type === 'ec2' && EC2_STOPPED.has(resource.status ?? ''))) {
-    return { check_status: 'stopped', unknown_reason: null, telemetry, activity }
+  if (
+    evidence.stopped ||
+    (resource.resource_type === 'ec2' && EC2_STOPPED.has(resource.status ?? '')) ||
+    (resource.resource_type === 'rds' && RDS_STOPPED.has(resource.status ?? ''))
+  ) {
+    return judged('stopped', telemetry, activity)
   }
   if (evidence.unsupported) return unknown('not_supported', telemetry, activity)
+
+  if (resource.resource_type === 'rds') return rdsVerdict(resource, evidence, telemetry)
+  if (resource.resource_type === 'load-balancer') return albVerdict(row, evidence, telemetry)
+  // T1: a throttled function needs attention, checked before idle -- throttled calls are
+  // not counted as invocations, so a fully throttled function looks idle (Inactive
+  // included: the legacy rule calls it down). A Failed function stays failing below.
+  if (resource.resource_type === 'lambda' && completedCount(evidence, 'throttles') > 0 && resource.status !== 'Failed' && row.status !== 'critical') {
+    return judged('needs_attention', telemetry, activity)
+  }
+
   // An Inactive function is one AWS reclaimed for being idle (invoking it reactivates it):
   // idle, not failing. Failed stays failing below.
   if (resource.resource_type === 'lambda' && resource.status === 'Inactive') return unknown('no_activity', telemetry, activity)
@@ -288,12 +439,12 @@ function verdictFor(
 
   switch (row.status) {
     case 'healthy':
-      return { check_status: 'passing', unknown_reason: null, telemetry, activity }
+      return judged('passing', telemetry, activity)
     case 'degraded':
-      return { check_status: 'needs_attention', unknown_reason: null, telemetry, activity }
+      return judged('needs_attention', telemetry, activity)
     case 'critical':
     case 'down':
-      return { check_status: 'failing', unknown_reason: null, telemetry, activity }
+      return judged('failing', telemetry, activity)
     default:
       if (activity === 'no_activity') return unknown('no_activity', telemetry, activity)
       if (telemetry === 'no_telemetry') return unknown('no_telemetry', telemetry, activity)
@@ -331,7 +482,7 @@ export function observabilityRowFor(
     ...verdict,
     last_seen: lastSeen ? lastSeen.toISOString() : null,
     last_seen_source: lastSeenSource,
-    metrics: row && inScope ? labelledMetrics(resource.resource_type, row, evidence, ctx.rangeLabel) : [],
+    metrics: row && inScope ? labelledMetrics(resource.resource_type, row, evidence, ctx.rangeLabel, resource.metadata) : [],
   }
 }
 
