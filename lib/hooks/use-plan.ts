@@ -5,8 +5,9 @@ type Tier = 'free' | 'starter' | 'pro' | 'enterprise';
 /**
  * loading: the organization (and so the plan) isn't established yet.
  * known: it is, with a recognised tier.
- * error: it couldn't be loaded, there is no organization, or its tier is
- * missing or unrecognised. Never treated as free.
+ * error: it couldn't be loaded, the user is a member of no workspace
+ * (`noWorkspace`), or its tier is missing or unrecognised. Never treated as
+ * free.
  */
 export type PlanStatus = 'loading' | 'known' | 'error';
 
@@ -29,7 +30,7 @@ export function usePlan() {
   const status: PlanStatus =
     organizationStatus === 'ready'
       ? isTier(organization?.subscriptionTier) ? 'known' : 'error'
-      : organizationStatus === 'error' ? 'error' : 'loading';
+      : organizationStatus === 'error' || organizationStatus === 'none' ? 'error' : 'loading';
 
   return {
     tier,
@@ -41,5 +42,7 @@ export function usePlan() {
     status,
     isKnown: status === 'known',
     retry: retryOrganizationLoad,
+    /** A successful response confirmed the user has no workspace (status is 'error'). */
+    noWorkspace: organizationStatus === 'none',
   };
 }

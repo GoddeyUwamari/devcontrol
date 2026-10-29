@@ -5,8 +5,10 @@
  * Runs the real AuthProvider over fake /api/auth/me and /api/organizations
  * requests that the test settles one by one (org-load-harness). Ready once
  * either succeeds; one automatic retry when both fail on the first load,
- * then "error" until a load succeeds; a response sent earlier never
- * overwrites one sent later; responses from before a logout are dropped.
+ * then "error" until a load succeeds -- or "none" when a successful
+ * response confirmed an empty organization list; a response sent earlier
+ * never overwrites one sent later; responses from before a logout are
+ * dropped.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act } from "@testing-library/react";
@@ -292,17 +294,24 @@ describe("organizationStatus on a hard refresh", () => {
     expect(error.mock.calls.flat().join(" ")).not.toMatch(/unmounted|act\(/);
   });
 
-  it("C13: a successful empty organization list is an error after its retry, never ready", async () => {
+  it("C13: a successful empty organization list is \"none\" after its retry, never ready", async () => {
     const src = fakeOrgSources();
     await mount();
     await src.meOk(0, []);
     await src.orgsOk(0, []);
     expect(auth.organizationStatus).toBe("loading");
     await advanceToAutoRetry();
+    expect(src.me).toHaveLength(2);
+    expect(src.orgs).toHaveLength(2);
     await src.meOk(1, []);
     await src.orgsOk(1, []);
-    expect(auth.organizationStatus).toBe("error");
+    expect(auth.organizationStatus).toBe("none");
     expect(auth.organization).toBeNull();
+    // No further automatic attempts.
+    await act(async () => {
+      vi.advanceTimersByTime(ORG_LOAD_RETRY_MS * 10);
+    });
+    expect(src.me).toHaveLength(2);
   });
 
   it("C14: login is ready from the login response, before the background refresh lands", async () => {
@@ -355,6 +364,111 @@ describe("organizationStatus on a hard refresh", () => {
     });
     expect(src.me).toHaveLength(1);
     expect(src.orgs).toHaveLength(1);
+  });
+});
+
+describe("organizationStatus: no workspace", () => {
+  it("Z1: one confirmed-empty response is enough: /me [] with /organizations failing (twice) → none", async () => {
+    const src = fakeOrgSources();
+    await mount();
+    await src.meOk(0, []);
+    await src.orgsFail(0);
+    await advanceToAutoRetry();
+    await src.failBoth(1);
+    expect(auth.organizationStatus).toBe("none");
+  });
+
+  it("Z2: failures only (twice) → error, never none", async () => {
+    const src = fakeOrgSources();
+    await mount();
+    await src.failBoth(0);
+    await advanceToAutoRetry();
+    await src.failBoth(1);
+    expect(auth.organizationStatus).toBe("error");
+  });
+
+  it("Z3: /organizations answering something other than a list is a failure, not an empty list", async () => {
+    const src = fakeOrgSources();
+    await mount();
+    await act(async () => { src.orgs[0].resolve(undefined); });
+    await src.meFail(0);
+    await advanceToAutoRetry();
+    await act(async () => { src.orgs[1].resolve({ data: [] }); });
+    await src.meFail(1);
+    expect(auth.organizationStatus).toBe("error");
+  });
+
+  it("Z4: none, then a refresh that lists an organization → ready", async () => {
+    const src = fakeOrgSources();
+    await mount();
+    await src.meOk(0, []);
+    await src.orgsOk(0, []);
+    await advanceToAutoRetry();
+    await src.meOk(1, []);
+    await src.orgsOk(1, []);
+    expect(auth.organizationStatus).toBe("none");
+    const refresh = auth.refreshOrganizations();
+    await src.orgsOk(2, [org("pro")]);
+    await act(async () => { await refresh; });
+    expect(auth.organizationStatus).toBe("ready");
+    expect(auth.organization?.subscriptionTier).toBe("pro");
+  });
+
+  it("Z5: once ready, a later empty list keeps the workspace", async () => {
+    const src = fakeOrgSources();
+    await mount();
+    await src.meOk(0, [org("enterprise")]);
+    await src.orgsOk(0, []);
+    expect(auth.organizationStatus).toBe("ready");
+    const refresh = auth.refreshOrganizations();
+    await src.orgsOk(1, []);
+    await act(async () => { await refresh; });
+    expect(auth.organizationStatus).toBe("ready");
+    expect(auth.organization?.subscriptionTier).toBe("enterprise");
+  });
+
+  it("Z6: an empty list followed by a newer one with an organization → ready", async () => {
+    const src = fakeOrgSources();
+    await mount();
+    // /me is sent first; /organizations (sent after it) lists an organization.
+    await src.meOk(0, []);
+    await src.orgsOk(0, [org("pro")]);
+    expect(auth.organizationStatus).toBe("ready");
+    await advanceToAutoRetry();
+    expect(src.me).toHaveLength(1);
+  });
+
+  it("Z7: an expired session (refresh rejected) is idle and redirected, never none", async () => {
+    const src = fakeOrgSources();
+    vi.spyOn(authService, "refreshToken").mockRejectedValue(unauthorized());
+    await mount();
+    await src.orgsOk(0, []);
+    await act(async () => {
+      src.me[0].reject(unauthorized());
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(auth.organizationStatus).toBe("idle");
+    expect(push).toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(ORG_LOAD_RETRY_MS * 10);
+    });
+    expect(auth.organizationStatus).toBe("idle");
+  });
+
+  it("Z8: logout during an empty attempt → idle, and the pending retry never makes it none", async () => {
+    const src = fakeOrgSources();
+    vi.spyOn(authService, "logout").mockResolvedValue(undefined as never);
+    await mount();
+    await src.meOk(0, []);
+    await src.orgsOk(0, []);
+    await act(async () => { await auth.logout(); });
+    await act(async () => {
+      vi.advanceTimersByTime(ORG_LOAD_RETRY_MS * 10);
+    });
+    expect(auth.organizationStatus).toBe("idle");
+    expect(src.me).toHaveLength(1);
   });
 });
 

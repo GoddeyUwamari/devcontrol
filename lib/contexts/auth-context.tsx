@@ -45,10 +45,12 @@ function postSignInPath(redirectTo: string | undefined): string {
  * - loading: no org-bearing response has succeeded yet for this identity
  * - ready: one has (/api/auth/me, /api/organizations, login, registration
  *   or creating an organization), with at least one organization
- * - error: a load and its one automatic retry failed on both sources, or
- *   the user has no organization
+ * - error: a load and its one automatic retry failed on both sources
+ * - none: a successful /api/auth/me or /api/organizations response, the
+ *   newest one applied, listed no organization (after the same one
+ *   automatic retry): the user is a member of no workspace
  */
-export type OrganizationStatus = "idle" | "loading" | "ready" | "error";
+export type OrganizationStatus = "idle" | "loading" | "ready" | "error" | "none";
 
 /** How long a failed first organization load waits before its one automatic retry. */
 export const ORG_LOAD_RETRY_MS = 1500;
@@ -141,6 +143,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const appliedOrgSeqRef = useRef(0);
   const generationRef = useRef(0);
   const statusRef = useRef<OrganizationStatus>("idle");
+  // Whether the newest applied organization list (this generation) was a
+  // real, empty list -- the only thing that makes the status "none".
+  const confirmedEmptyRef = useRef(false);
   const mountedRef = useRef(true);
   const attemptRef = useRef<Promise<void> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -167,6 +172,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     (status: OrganizationStatus) => {
       generationRef.current += 1;
       appliedOrgSeqRef.current = orgSeqRef.current;
+      confirmedEmptyRef.current = false;
       attemptRef.current = null;
       clearRetryTimer();
       setOrganizationStatus(status);
@@ -193,6 +199,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (seq <= appliedOrgSeqRef.current) return statusRef.current === "ready";
       appliedOrgSeqRef.current = seq;
       setOrganizations(orgs);
+      confirmedEmptyRef.current = orgs.length === 0;
       if (orgs.length > 0) {
         setOrganization(orgs[0]);
         setOrganizationStatus("ready");
@@ -251,7 +258,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const seq = ++orgSeqRef.current;
     try {
       const orgs = await organizationsService.getAll();
-      return applyOrganizationList(Array.isArray(orgs) ? orgs : [], seq, generation);
+      // Anything but a list is a failed read -- never "no organizations".
+      if (!Array.isArray(orgs)) {
+        logError("Failed to fetch organizations", new Error("Unexpected organizations response"));
+        return false;
+      }
+      return applyOrganizationList(orgs, seq, generation);
     } catch (error) {
       logError("Failed to fetch organizations", error);
       return false;
@@ -602,7 +614,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
               );
             }, ORG_LOAD_RETRY_MS);
           } else {
-            setOrganizationStatus("error");
+            setOrganizationStatus(confirmedEmptyRef.current ? "none" : "error");
           }
         }
       );

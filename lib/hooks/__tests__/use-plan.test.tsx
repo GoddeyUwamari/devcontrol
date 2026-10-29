@@ -73,3 +73,18 @@ describe("usePlan status", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("usePlan: no workspace", () => {
+  it("none → error, not known, noWorkspace; booleans fall back to free", () => {
+    const p = plan("none", undefined, false);
+    expect(p.status).toBe("error");
+    expect(p.isKnown).toBe(false);
+    expect(p.noWorkspace).toBe(true);
+    expect(p.tier).toBe("free");
+    expect(p.isEnterprise).toBe(false);
+  });
+
+  it.each(["idle", "loading", "ready", "error"])("%s → noWorkspace false", (s) => {
+    expect(plan(s, "pro").noWorkspace).toBe(false);
+  });
+});
