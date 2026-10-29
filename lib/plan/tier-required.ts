@@ -13,18 +13,12 @@
  * current one, not the required one); the link is SEE_PLANS.
  */
 import { SEE_PLANS } from '@/lib/compliance/evaluation'
+import { PLAN_DISPLAY_NAME, type PaidTier } from './plan-names'
 
-export type PaidTier = 'starter' | 'pro' | 'enterprise'
+export type { PaidTier }
 
 export interface TierRequired {
   requiredTier: PaidTier
-}
-
-/** Display names of the paid plans. */
-export const PLAN_NAME: Readonly<Record<PaidTier, string>> = {
-  starter: 'Starter',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
 }
 
 /** The upgrade page, labelled as on the Compliance page. */
@@ -32,14 +26,14 @@ export { SEE_PLANS }
 
 /** What a gated page says when the server answered TIER_REQUIRED. */
 export function planRequiredText({ requiredTier }: TierRequired): string {
-  return `This feature is on ${PLAN_NAME[requiredTier]}.`
+  return `This feature is on the ${PLAN_DISPLAY_NAME[requiredTier]} plan.`
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
 const isPaidTier = (value: unknown): value is PaidTier =>
-  typeof value === 'string' && Object.prototype.hasOwnProperty.call(PLAN_NAME, value)
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(PLAN_DISPLAY_NAME, value)
 
 /**
  * The TIER_REQUIRED 402 carried by an axios error (`response.status`,

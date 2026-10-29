@@ -51,7 +51,7 @@ describe('/anomalies: the server requires a higher plan', () => {
   it('402 TIER_REQUIRED → the gate naming the plan; no banner; the reload stops', async () => {
     const listCalls = stubAnomalies(() => json(402, tierRequiredBody('pro')))
     await renderWithKnownPlan(<AnomaliesPage />, 'pro')
-    expect(await screen.findByText('This feature is on Pro.')).toBeTruthy()
+    expect(await screen.findByText('This feature is on the Optimization Engine plan.')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe('/settings/billing/upgrade')
     expect(screen.queryByText('This feature requires the Pro plan.')).toBeNull()
     expect(screen.queryByText('Anomaly Detection')).toBeNull()

@@ -47,7 +47,7 @@ describe('/ai-reports: the server requires a higher plan', () => {
   it('history 402 TIER_REQUIRED → the gate naming the plan, no banner', async () => {
     stubReports(() => json(402, tierRequiredBody('pro')))
     await renderWithKnownPlan(<AIReportsPage />, 'pro')
-    expect(await screen.findByText('This feature is on Pro.')).toBeTruthy()
+    expect(await screen.findByText('This feature is on the Optimization Engine plan.')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe('/settings/billing/upgrade')
     expect(screen.queryByText('This feature requires the Pro plan.')).toBeNull()
     expect(screen.queryByText(CONTENT)).toBeNull()
@@ -67,7 +67,7 @@ describe('/ai-reports: the server requires a higher plan', () => {
     await renderWithKnownPlan(<AIReportsPage />, 'pro')
     await screen.findByText(CONTENT)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Generate Executive Summary/ })) })
-    expect(await screen.findByText('This feature is on Pro.')).toBeTruthy()
+    expect(await screen.findByText('This feature is on the Optimization Engine plan.')).toBeTruthy()
     expect(toast.error).not.toHaveBeenCalled()
   })
 

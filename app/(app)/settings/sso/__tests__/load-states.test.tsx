@@ -98,7 +98,7 @@ describe("SSO settings: loading the config", () => {
   it("402 TIER_REQUIRED → the gate naming the plan, no error message, no form", async () => {
     stubConfig(() => res(402, tierRequiredBody("enterprise", "/settings/billing?upgrade=enterprise")));
     await renderWithKnownPlan(<SSOSettingsPage />, "enterprise");
-    expect(await screen.findByText("This feature is on Enterprise.")).toBeTruthy();
+    expect(await screen.findByText("This feature is on the Revenue Protection plan.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "See plans" }).getAttribute("href")).toBe("/settings/billing/upgrade");
     expect(screen.queryByText(ERROR_TEXT)).toBeNull();
     expectNoForm();

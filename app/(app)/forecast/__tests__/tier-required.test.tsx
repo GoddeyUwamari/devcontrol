@@ -48,7 +48,7 @@ function stubForecastFetch(get: () => Response, scenario: () => Response = () =>
 }
 
 const expectPlanGate = (planName: string) => {
-  expect(screen.getByText(`This feature is on ${planName}.`)).toBeTruthy()
+  expect(screen.getByText(`This feature is on the ${planName} plan.`)).toBeTruthy()
   expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe('/settings/billing/upgrade')
   expect(screen.queryByText('Unable to Load Forecast')).toBeNull()
   expect(screen.queryByText('Cost Forecasting')).toBeNull()
@@ -69,8 +69,8 @@ describe('/forecast: the server requires a higher plan', () => {
   it('GET 402 TIER_REQUIRED → the gate naming the plan, no error card, no toast', async () => {
     stubForecastFetch(() => json(402, tierRequiredBody('pro', '/settings/billing?upgrade=starter')))
     await renderWithKnownPlan(<ForecastPage />, 'pro')
-    await screen.findByText('This feature is on Pro.')
-    expectPlanGate('Pro')
+    await screen.findByText('This feature is on the Optimization Engine plan.')
+    expectPlanGate('Optimization Engine')
     expect(toast.error).not.toHaveBeenCalled()
   })
 
@@ -94,8 +94,8 @@ describe('/forecast: the server requires a higher plan', () => {
     await act(async () => {
       fireEvent.click(await screen.findByText('Traffic Increase'))
     })
-    await screen.findByText('This feature is on Pro.')
-    expectPlanGate('Pro')
+    await screen.findByText('This feature is on the Optimization Engine plan.')
+    expectPlanGate('Optimization Engine')
     expect(toast.error).not.toHaveBeenCalled()
   })
 

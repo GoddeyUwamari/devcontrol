@@ -43,7 +43,7 @@ describe('/anomalies/rules: the server requires a higher plan', () => {
   it('402 TIER_REQUIRED → the gate naming the plan, not the failure state', async () => {
     stubApi(reject(axiosError(402, tierRequiredBody('enterprise'))))
     await renderWithKnownPlan(<Page />, 'enterprise')
-    expect(await screen.findByText('This feature is on Enterprise.')).toBeTruthy()
+    expect(await screen.findByText('This feature is on the Revenue Protection plan.')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe('/settings/billing/upgrade')
     expect(screen.queryByText('No custom rules yet')).toBeNull()
     expect(toast.error).not.toHaveBeenCalled()

@@ -31,7 +31,7 @@ function stubGet(impl: () => Promise<unknown>) {
 
 const expectPlanGate = (planName: string) => {
   expect(screen.getByRole('heading', { level: 1, name: 'Tenant Intelligence' })).toBeTruthy()
-  expect(screen.getByText(`This feature is on ${planName}.`)).toBeTruthy()
+  expect(screen.getByText(`This feature is on the ${planName} plan.`)).toBeTruthy()
   const link = screen.getByRole('link', { name: 'See plans' })
   expect(link.getAttribute('href')).toBe('/settings/billing/upgrade')
   expect(screen.queryByText(/status code 402/)).toBeNull()
@@ -51,16 +51,16 @@ describe('/tenants: the server requires a higher plan', () => {
   it('GET 402 TIER_REQUIRED → the gate naming the required plan, linking to the upgrade page (not upgrade.url)', async () => {
     stubGet(() => Promise.reject(axiosError(402, tierRequiredBody('enterprise', '/settings/billing?upgrade=starter'))))
     await renderWithKnownPlan(<TenantsPage />, 'enterprise')
-    await screen.findByText('This feature is on Enterprise.')
-    expectPlanGate('Enterprise')
+    await screen.findByText('This feature is on the Revenue Protection plan.')
+    expectPlanGate('Revenue Protection')
     expect(getCalls).toBe(1)
   })
 
   it('names the plan the server asked for', async () => {
     stubGet(() => Promise.reject(axiosError(402, tierRequiredBody('pro'))))
     await renderWithKnownPlan(<TenantsPage />, 'enterprise')
-    await screen.findByText('This feature is on Pro.')
-    expectPlanGate('Pro')
+    await screen.findByText('This feature is on the Optimization Engine plan.')
+    expectPlanGate('Optimization Engine')
   })
 
   it.each([
@@ -85,8 +85,8 @@ describe('/tenants: the server requires a higher plan', () => {
     await act(async () => {
       fireEvent.submit(screen.getByPlaceholderText('admin@company.com').closest('form')!)
     })
-    await screen.findByText('This feature is on Enterprise.')
-    expectPlanGate('Enterprise')
+    await screen.findByText('This feature is on the Revenue Protection plan.')
+    expectPlanGate('Revenue Protection')
     expect(toast.error).not.toHaveBeenCalled()
   })
 

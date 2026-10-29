@@ -55,7 +55,7 @@ function stubRemediation(list: () => unknown, detail: () => unknown = () => ok(W
 const reject = (err: unknown) => () => { throw err }
 
 const expectPlanGate = (planName: string) => {
-  expect(screen.getByText(`This feature is on ${planName}.`)).toBeTruthy()
+  expect(screen.getByText(`This feature is on the ${planName} plan.`)).toBeTruthy()
   expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe('/settings/billing/upgrade')
   expect(screen.queryByText('No workflows yet')).toBeNull()
   expect(screen.queryByText('Pending Approval')).toBeNull()
@@ -78,8 +78,8 @@ describe('/remediation: plan refusals and failed reads', () => {
   it('list 402 TIER_REQUIRED → the gate, not an empty list; the poll stops', async () => {
     stubRemediation(reject(axiosError(402, tierRequiredBody('enterprise'))))
     await renderWithKnownPlan(<RemediationPage />, 'enterprise')
-    await screen.findByText('This feature is on Enterprise.')
-    expectPlanGate('Enterprise')
+    await screen.findByText('This feature is on the Revenue Protection plan.')
+    expectPlanGate('Revenue Protection')
     expect(listCalls).toBe(1)
     await pollTwice()
     expect(listCalls).toBe(1)
@@ -114,8 +114,8 @@ describe('/remediation: plan refusals and failed reads', () => {
     stubRemediation(() => ok([WORKFLOW]), reject(axiosError(402, tierRequiredBody('enterprise'))))
     await renderWithKnownPlan(<RemediationPage />, 'enterprise')
     fireEvent.click(await screen.findByText('i-0abc'))
-    await screen.findByText('This feature is on Enterprise.')
-    expectPlanGate('Enterprise')
+    await screen.findByText('This feature is on the Revenue Protection plan.')
+    expectPlanGate('Revenue Protection')
     expect(detailCalls).toBe(1)
   })
 
@@ -144,7 +144,7 @@ describe('/remediation: plan refusals and failed reads', () => {
     await renderWithKnownPlan(<RemediationPage />, 'enterprise')
     fireEvent.click(await screen.findByText('i-0abc'))
     await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Approve' })) })
-    await screen.findByText('This feature is on Enterprise.')
-    expectPlanGate('Enterprise')
+    await screen.findByText('This feature is on the Revenue Protection plan.')
+    expectPlanGate('Revenue Protection')
   })
 })

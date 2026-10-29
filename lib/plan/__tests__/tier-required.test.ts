@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { PLAN_NAME, SEE_PLANS, planRequiredText, responseError, tierRequiredOf } from '../tier-required'
+import { PLAN_DISPLAY_NAME } from '../plan-names'
+import { SEE_PLANS, planRequiredText, responseError, tierRequiredOf } from '../tier-required'
 import { axiosError, tierRequiredBody } from './tier-required-fixture'
 
 describe('tierRequiredOf', () => {
@@ -43,10 +44,10 @@ describe('tierRequiredOf', () => {
 
 describe('copy', () => {
   it('names the plan and links to the upgrade page', () => {
-    expect(planRequiredText({ requiredTier: 'enterprise' })).toBe('This feature is on Enterprise.')
-    expect(planRequiredText({ requiredTier: 'pro' })).toBe('This feature is on Pro.')
-    expect(planRequiredText({ requiredTier: 'starter' })).toBe('This feature is on Starter.')
-    expect(PLAN_NAME).toEqual({ starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' })
+    expect(planRequiredText({ requiredTier: 'enterprise' })).toBe('This feature is on the Revenue Protection plan.')
+    expect(planRequiredText({ requiredTier: 'pro' })).toBe('This feature is on the Optimization Engine plan.')
+    expect(planRequiredText({ requiredTier: 'starter' })).toBe('This feature is on the Cost Control plan.')
+    expect(PLAN_DISPLAY_NAME).toEqual({ starter: 'Cost Control', pro: 'Optimization Engine', enterprise: 'Revenue Protection' })
     expect(SEE_PLANS).toEqual({ label: 'See plans', href: '/settings/billing/upgrade' })
   })
 })
