@@ -247,3 +247,17 @@ export function describePlanStates(name: string, cfg: PlanStatesConfig) {
     });
   });
 }
+
+/**
+ * A signed-in tab whose plan is already known as `tier` when the page's
+ * requests start (the server may still disagree -- e.g. a restricted plan).
+ */
+export async function renderWithKnownPlan(ui: ReactElement, tier: Tier) {
+  seedSession();
+  const src = fakeOrgSources();
+  const view = renderWithAuth(ui);
+  await flush();
+  await src.orgsOk(0, [org(tier)]);
+  await flush();
+  return { src, view };
+}

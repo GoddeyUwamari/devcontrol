@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
+import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
 import {
   costRecommendationsService,
   EffectiveOptimizationRuleConfig,
@@ -53,6 +54,8 @@ export default function OptimizationControlsPage() {
   const plan = usePlan()
   // Only a known Enterprise plan loads the controls; unknown is never treated as free.
   const isEnterprise = plan.isKnown && plan.isEnterprise
+  // Set when the server refused for the plan (e.g. a restricted or changed plan): its gate.
+  const [tierRequired, setTierRequired] = useState<TierRequired | null>(null)
 
   const [configs, setConfigs] = useState<EffectiveOptimizationRuleConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -70,7 +73,9 @@ export default function OptimizationControlsPage() {
       const data = await costRecommendationsService.getOptimizationRuleConfiguration()
       setConfigs(data)
       setDrafts(Object.fromEntries(data.map((c) => [keyFor(c), String(c.value)])))
-    } catch {
+    } catch (err) {
+      const required = tierRequiredOf(err)
+      if (required) { setTierRequired(required); return }
       setLoadError('Failed to load optimization controls. Please try again.')
       toast.error('Failed to load optimization controls')
     } finally {
@@ -135,7 +140,7 @@ export default function OptimizationControlsPage() {
   // showing the tuning UI to an org that could not use it anyway. The
   // read-only optimization-rules catalog itself remains available to every
   // tier -- only tuning is gated. ──
-  if (!isEnterprise) {
+  if (!isEnterprise || tierRequired) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen">
         <div className="mb-8">
@@ -148,14 +153,25 @@ export default function OptimizationControlsPage() {
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
           </div>
-          <h2 className="text-ui font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
-          <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
-            Optimization Controls are available on the Enterprise plan — tune the CPU utilization threshold for idle
-            EC2 detection and the invocation threshold for low-usage Lambda detection.
-          </p>
-          <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
-            Upgrade to Enterprise
-          </Link>
+          {tierRequired ? (
+            <>
+              <h2 className="text-ui font-semibold text-gray-900 mb-6">{planRequiredText(tierRequired)}</h2>
+              <Link href={SEE_PLANS.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
+                {SEE_PLANS.label}
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2 className="text-ui font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+              <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
+                Optimization Controls are available on the Enterprise plan — tune the CPU utilization threshold for idle
+                EC2 detection and the invocation threshold for low-usage Lambda detection.
+              </p>
+              <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
+                Upgrade to Enterprise
+              </Link>
+            </>
+          )}
         </div>
       </div>
     )

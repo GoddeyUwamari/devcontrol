@@ -38,7 +38,7 @@ describePlanStates('/tenants', {
   notEntitledTier: 'pro',
   reset: stubTenantsApi,
   paidCalls: () => tenantCalls.filter((u) => String(u).startsWith('/api/tenants')).length,
-  content: 'Tenant Intelligence',
+  content: 'Add Your First Tenant',
   gate: 'Upgrade to Enterprise',
 })
 

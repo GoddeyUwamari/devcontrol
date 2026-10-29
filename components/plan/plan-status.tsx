@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/lib/contexts/auth-context'
 
 const PAGE_FRAME = 'max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen'
 
@@ -23,9 +24,49 @@ export function PlanLoadingState() {
 
 /**
  * Shown by a plan-gated page when the organization couldn't be loaded --
- * never the upgrade gate, and never treated as the free plan.
+ * never the upgrade gate, and never treated as the free plan. When a
+ * successful response confirmed the user has no workspace, says so instead.
  */
 export function WorkspaceLoadError({ onRetry }: { onRetry: () => Promise<void> }) {
+  const { organizationStatus } = useAuth()
+  if (organizationStatus === 'none') return <NoWorkspace />
+  return <LoadFailed onRetry={onRetry} />
+}
+
+function NoWorkspace() {
+  const { logout } = useAuth()
+  const [signingOut, setSigningOut] = useState(false)
+
+  const handleSignOut = async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await logout()
+    } finally {
+      setSigningOut(false)
+    }
+  }
+
+  return (
+    <div className={PAGE_FRAME}>
+      <div role="alert" className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
+        <p className="text-ui font-semibold text-gray-900 mb-2">You&apos;re not a member of any workspace yet.</p>
+        <p className="text-ui text-ink-muted mb-4">If someone invited you, open the invitation link in your email.</p>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-800 px-5 py-2 rounded-lg text-ui font-semibold disabled:opacity-60"
+        >
+          {signingOut && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+          Sign out
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function LoadFailed({ onRetry }: { onRetry: () => Promise<void> }) {
   const [retrying, setRetrying] = useState(false)
 
   const handleRetry = async () => {

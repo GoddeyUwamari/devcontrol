@@ -120,7 +120,7 @@ export const mobileSections = [
     label: 'Infrastructure',
     items: [
       { label: 'Overview', href: '/infrastructure' },
-      { label: 'Tenants', href: '/infrastructure/tenants' },
+      { label: 'Tenants', href: '/tenants' },
     ],
   },
   {

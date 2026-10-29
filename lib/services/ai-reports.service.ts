@@ -163,9 +163,7 @@ class AIReportsServiceClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Failed to generate report' }));
-      const err = new Error(error.error || 'Failed to generate report');
-      (err as any).status = response.status;
-      throw err;
+      throw Object.assign(new Error(error.error || 'Failed to generate report'), { status: response.status, body: error });
     }
 
     const result = await response.json();
@@ -196,9 +194,7 @@ class AIReportsServiceClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Failed to fetch history' }));
-      const err = new Error(error.error || 'Failed to fetch history');
-      (err as any).status = response.status;
-      throw err;
+      throw Object.assign(new Error(error.error || 'Failed to fetch history'), { status: response.status, body: error });
     }
 
     const result = await response.json();

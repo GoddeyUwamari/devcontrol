@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/contexts/auth-context";
 import { usePlan } from "@/lib/hooks/use-plan";
 import { PlanLoadingState, WorkspaceLoadError } from "@/components/plan/plan-status";
 import { tokenManager } from "@/lib/services/auth.service";
+import { SEE_PLANS, planRequiredText, responseError, tierRequiredOf } from "@/lib/plan/tier-required";
 import { Lock, ShieldCheck, Copy, Check, Trash2, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -61,15 +62,24 @@ export default function SSOSettingsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const { data: config, isLoading } = useQuery<SSOConfig | null>({
+  const { data: config, isLoading, error: configError, refetch: refetchConfig, isFetching: configFetching } = useQuery<SSOConfig | null>({
     queryKey: ["sso-config"],
     enabled: isEnterprise,
     queryFn: async () => {
       const res = await fetch(`${API}/api/auth/saml/config`, { headers: authHeaders() });
+      if (!res.ok) throw await responseError(res, "Failed to load SSO configuration");
       const json = await res.json();
+      if (json?.success === false) throw new Error("Failed to load SSO configuration");
+      // 200 with data: null is "not configured yet".
       return json.data ?? null;
     },
   });
+  // The server refused for the plan (e.g. a restricted or changed plan): its gate.
+  const tierRequired = tierRequiredOf(configError);
+  // The load error replaces the form only when nothing has loaded yet; a
+  // failed reload (e.g. after a save) keeps the last loaded settings.
+  const configLoadFailed = configError != null && config === undefined;
+  const configReloadFailed = configError != null && config !== undefined;
 
   useEffect(() => {
     if (config) {
@@ -141,7 +151,7 @@ export default function SSOSettingsPage() {
   if (plan.status === "error") return <WorkspaceLoadError onRetry={plan.retry} />;
 
   // ── Locked state for non-enterprise ──────────────────────────────────────
-  if (!isEnterprise) {
+  if (!isEnterprise || tierRequired) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 bg-gray-50 min-h-screen">
         <div className="mb-8">
@@ -152,14 +162,24 @@ export default function SSOSettingsPage() {
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
-          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-            SAML SSO is available on the Enterprise plan. Upgrade to enable single sign-on for your entire team.
-          </p>
-          
-           <a href="/settings/billing?upgrade=enterprise" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
-  Upgrade to Enterprise
-</a>
+          {tierRequired ? (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">{planRequiredText(tierRequired)}</h2>
+              <a href={SEE_PLANS.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+                {SEE_PLANS.label}
+              </a>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+              <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+                SAML SSO is available on the Enterprise plan. Upgrade to enable single sign-on for your entire team.
+              </p>
+              <a href="/settings/billing?upgrade=enterprise" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+                Upgrade to Enterprise
+              </a>
+            </>
+          )}
         </div>
       </div>
     );
@@ -181,8 +201,35 @@ export default function SSOSettingsPage() {
           <Loader2 className="w-4 h-4 animate-spin" />
           <span className="text-sm">Loading SSO configuration…</span>
         </div>
+      ) : configLoadFailed ? (
+        <div role="alert" className="bg-white border border-gray-200 rounded-xl py-12 px-10 text-center">
+          <p className="text-sm font-semibold text-gray-900 mb-4">Couldn&apos;t load SSO settings.</p>
+          <button
+            type="button"
+            onClick={() => refetchConfig()}
+            disabled={configFetching}
+            className="inline-flex items-center gap-2 bg-white border border-gray-300 text-gray-800 px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-60"
+          >
+            {configFetching && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+            Try again
+          </button>
+        </div>
       ) : (
         <>
+          {configReloadFailed && (
+            <div role="status" className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 mb-6 text-sm text-amber-800">
+              <span>Couldn&apos;t refresh SSO settings. Showing the last loaded version.</span>
+              <button
+                type="button"
+                onClick={() => refetchConfig()}
+                disabled={configFetching}
+                className="ml-auto inline-flex items-center gap-1.5 font-semibold underline disabled:opacity-60"
+              >
+                {configFetching && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+                Try again
+              </button>
+            </div>
+          )}
           {/* SP Metadata */}
           {config && (
             <div className="bg-white border border-gray-200 rounded-xl px-8 py-7 mb-6">

@@ -5,6 +5,7 @@ import { anomalyService } from '@/lib/services/anomaly.service';
 import { logError } from '@/lib/safe-log';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
+import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
 import {
   AlertTriangle, AlertCircle, RefreshCw, Brain,
@@ -30,7 +31,8 @@ export default function AnomaliesPage() {
   const isPro = plan.isKnown && plan.isPro;
   // Custom rules (/api/anomaly-rules) are Enterprise-only.
   const isEnterprise = plan.isKnown && plan.isEnterprise;
-  const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
+  // Set when the server refused for the plan (e.g. a restricted or changed plan): its gate.
+  const [tierRequired, setTierRequired] = useState<TierRequired | null>(null);
   const [anomalies, setAnomalies] = useState<AnomalyDetection[]>([]);
   const [stats, setStats] = useState<AnomalyStats | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -54,14 +56,15 @@ export default function AnomaliesPage() {
       const data = await anomalyService.getAnomalies(filter);
       setAnomalies(data.anomalies); setStats(data.stats);
     } catch (error: any) {
-      if (error?.status === 402) setShowUpgradeBanner(true);
+      const required = tierRequiredOf(error);
+      if (required) setTierRequired(required);
     } finally { setIsLoading(false); }
   }, [filter, isPro]);
 
   useEffect(() => {
-    if (!isPro) return;
+    if (!isPro || tierRequired) return;
     loadAnomalies(); const i = setInterval(loadAnomalies, 300000); return () => clearInterval(i);
-  }, [loadAnomalies, isPro]);
+  }, [loadAnomalies, isPro, tierRequired]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -124,14 +127,23 @@ export default function AnomaliesPage() {
   if (plan.status === 'loading') return <PlanLoadingState />;
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
 
-  if (!isPro) {
+  if (!isPro || tierRequired) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-10">
         <div className="text-center max-w-sm">
           <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto mb-5"><Lock size={24} className="text-violet-600" /></div>
-          <h2 className="text-ui font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
-          <p className="text-ui text-ink-muted leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
-          <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">Upgrade to Pro</a>
+          {tierRequired ? (
+            <>
+              <h2 className="text-ui font-semibold text-slate-900 mb-6">{planRequiredText(tierRequired)}</h2>
+              <a href={SEE_PLANS.href} className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">{SEE_PLANS.label}</a>
+            </>
+          ) : (
+            <>
+              <h2 className="text-ui font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
+              <p className="text-ui text-ink-muted leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
+              <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">Upgrade to Pro</a>
+            </>
+          )}
         </div>
       </div>
     );
@@ -140,14 +152,6 @@ export default function AnomaliesPage() {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-
-      {/* Upgrade banner */}
-      {showUpgradeBanner && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-6 gap-3">
-          <div className="flex items-center gap-2.5"><span className="text-lg">⚠️</span><span className="text-ui font-medium text-amber-900">This feature requires the Pro plan.</span></div>
-          <a href="/settings/billing/upgrade" className="shrink-0 text-label text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">Upgrade to Pro</a>
-        </div>
-      )}
 
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">

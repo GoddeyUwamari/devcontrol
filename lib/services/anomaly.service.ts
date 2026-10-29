@@ -1,5 +1,6 @@
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
 import { demoModeService } from './demo-mode.service';
+import { responseError } from '@/lib/plan/tier-required';
 
 class AnomalyService {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL
@@ -70,9 +71,7 @@ class AnomalyService {
     });
 
     if (!response.ok) {
-      const err = new Error('Failed to fetch anomalies');
-      (err as any).status = response.status;
-      throw err;
+      throw await responseError(response, 'Failed to fetch anomalies');
     }
 
     return response.json();
