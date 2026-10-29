@@ -103,6 +103,36 @@ export interface TypeSummary {
   other: number
 }
 
+/**
+ * OB2.1: the explicit split behind TypeSummary.other, for a type and for the fleet.
+ *
+ *   count       = measured + neutral + not_measured + outside_scope
+ *   measured    = passing + needs_attention + failing + check_unknown
+ *                 (check_unknown: unknown for any reason that isn't neutral or out of scope)
+ *   check_failed: the check_unknown rows whose query failed, was denied or throttled
+ *   neutral     = stopped + no_activity + not_enough_traffic (never failing, never passing)
+ *   outside_scope: unknown/outside_region or unknown/outside_account (not checked here)
+ *   reporting + no_telemetry + unknown = measured (telemetry of the measured rows only)
+ */
+export interface ObservabilityBreakdown {
+  count: number
+  measured: number
+  passing: number
+  needs_attention: number
+  failing: number
+  check_unknown: number
+  check_failed: number
+  neutral: number
+  stopped: number
+  no_activity: number
+  not_enough_traffic: number
+  not_measured: number
+  outside_scope: number
+  reporting: number
+  no_telemetry: number
+  unknown: number
+}
+
 /** How one resource's queries ended, recorded by the evaluator that ran them. */
 export interface ResourceEvidence {
   // cloudwatch: GetMetricData queries (Aurora also records its describe call as 'describe').
@@ -591,4 +621,67 @@ export function typeSummaryOf(rows: Array<Pick<ObservabilityRow, 'resource_type'
     else s.other += 1
   }
   return summary
+}
+
+const emptyBreakdown = (): ObservabilityBreakdown => ({
+  count: 0,
+  measured: 0,
+  passing: 0,
+  needs_attention: 0,
+  failing: 0,
+  check_unknown: 0,
+  check_failed: 0,
+  neutral: 0,
+  stopped: 0,
+  no_activity: 0,
+  not_enough_traffic: 0,
+  not_measured: 0,
+  outside_scope: 0,
+  reporting: 0,
+  no_telemetry: 0,
+  unknown: 0,
+})
+
+function addToBreakdown(b: ObservabilityBreakdown, row: Pick<ObservabilityRow, 'check_status' | 'unknown_reason' | 'telemetry'>): void {
+  b.count += 1
+  if (row.check_status === 'not_measured') {
+    b.not_measured += 1
+    return
+  }
+  if (row.check_status === 'stopped') {
+    b.neutral += 1
+    b.stopped += 1
+    return
+  }
+  if (row.check_status === 'unknown') {
+    if (row.unknown_reason === 'outside_region' || row.unknown_reason === 'outside_account') {
+      b.outside_scope += 1
+      return
+    }
+    if (row.unknown_reason === 'no_activity' || row.unknown_reason === 'not_enough_traffic') {
+      b.neutral += 1
+      b[row.unknown_reason] += 1
+      return
+    }
+    b.check_unknown += 1
+    if (row.unknown_reason === 'access_denied' || row.unknown_reason === 'throttled' || row.unknown_reason === 'query_failed') b.check_failed += 1
+  } else {
+    b[row.check_status] += 1
+  }
+  b.measured += 1
+  b[row.telemetry] += 1
+}
+
+/** Per-type and fleet-wide breakdowns over every row (OB2.1). */
+export function breakdownOf(rows: Array<Pick<ObservabilityRow, 'resource_type' | 'check_status' | 'unknown_reason' | 'telemetry'>>): {
+  byType: Record<string, ObservabilityBreakdown>
+  fleet: ObservabilityBreakdown
+} {
+  const byType: Record<string, ObservabilityBreakdown> = {}
+  const fleet = emptyBreakdown()
+  for (const row of rows) {
+    addToBreakdown((byType[row.resource_type] ??= emptyBreakdown()), row)
+    addToBreakdown(fleet, row)
+  }
+  return { byType, fleet }
 }

@@ -1,0 +1,9 @@
+GET /api/alerts/history?status=firing&limit=20
+GET /api/alerts/history?status=firing&limit=20
+GET /api/cloudwatch/metrics?range=1h
+GET /api/cloudwatch/metrics?range=1h
+GET /api/cloudwatch/status
+GET /api/cloudwatch/status
+GET /api/prometheus/health
+GET /api/prometheus/snapshot
+GET /api/prometheus/snapshot

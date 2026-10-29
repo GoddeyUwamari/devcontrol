@@ -17,6 +17,8 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { alertHistoryService } from '@/lib/services/alert-history.service'
 import { checkCountsFrom, mapServiceRow, requestCloudWatchMetrics, RESOURCE_CHECKS_DEFAULT_RANGE, type HealthSummary, type PaginationMeta, type ServiceHealth, type SystemStatus } from '@/lib/resource-checks'
 import { logError } from '@/lib/safe-log'
+import dynamic from 'next/dynamic'
+import { isObservabilityV2Enabled } from './observabilityV2Flag'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const AWS_REGION = process.env.NEXT_PUBLIC_AWS_DEFAULT_REGION || 'us-east-1'
@@ -67,7 +69,7 @@ function checkSummaryLabel(status: 'healthy' | 'degraded' | 'critical' | 'down',
   return counts.noIssues > 0 ? 'No issues detected' : 'No check results yet'
 }
 
-export default function MonitoringPage() {
+function MonitoringContent() {
   const router = useRouter()
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
@@ -734,4 +736,17 @@ export default function MonitoringPage() {
       )}
     </div>
   )
+}
+
+const OperationalHealthV2 = dynamic(() => import('./operational-health/OperationalHealthV2'))
+
+/**
+ * NEXT_PUBLIC_OBSERVABILITY_V2 on (observabilityV2Flag.ts): the Operational Health page, whose module
+ * is loaded only then. Off, or in demo mode (until O4), the page above, unchanged.
+ */
+export default function MonitoringPage() {
+  const demoMode = useDemoMode()
+  const salesDemoMode = useSalesDemo((state) => state.enabled)
+  if (!isObservabilityV2Enabled() || demoMode || salesDemoMode) return <MonitoringContent />
+  return <OperationalHealthV2 />
 }

@@ -17,6 +17,8 @@ import {
   ObservabilityRow,
   ResourceEvidence,
   TypeSummary,
+  ObservabilityBreakdown,
+  breakdownOf,
   checkObserved,
   isAuroraMemberInstance,
   queryFailed,
@@ -167,6 +169,9 @@ export interface ObservabilitySnapshot {
   inventoryCapped: boolean | null
   inventoryCappedReasons: string[]
   typeSummary: Record<string, TypeSummary>
+  // OB2.1: the explicit split behind typeSummary's "other", per type and fleet-wide.
+  typeBreakdown: Record<string, ObservabilityBreakdown>
+  fleetSummary: ObservabilityBreakdown
   // Complete fleet, in the order the route pages it.
   rows: ObservabilitySnapshotRow[]
 }
@@ -2353,6 +2358,7 @@ export class CloudWatchService {
       dbId: resource.id,
     }))
     rows.sort((a, b) => compareObservabilityKeys(a, b))
+    const breakdown = breakdownOf(rows.map((r) => r.row))
 
     return {
       region,
@@ -2362,6 +2368,8 @@ export class CloudWatchService {
       inventoryCapped: coverage.capped,
       inventoryCappedReasons: coverage.reasons,
       typeSummary: typeSummaryOf(rows.map((r) => r.row)),
+      typeBreakdown: breakdown.byType,
+      fleetSummary: breakdown.fleet,
       rows,
     }
   }

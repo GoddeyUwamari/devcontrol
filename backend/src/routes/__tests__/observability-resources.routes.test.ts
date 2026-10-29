@@ -185,6 +185,57 @@ describe('GET /api/observability/resources', () => {
     expect(new Set(summaries).size).toBe(1)
   })
 
+  it('(R3b, OB2.1) fleet_summary and type_breakdown split "other" for the mixed fleet, identically on every page', async () => {
+    const { accountId } = await mixedOrg('breakdown')
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId }))
+
+    const { body } = await get('/observability/resources?range=1h&pageSize=100')
+    const data = body.data
+    expect(data.fleet_summary).toEqual({
+      count: 17,
+      measured: 10,
+      passing: 6,
+      needs_attention: 1,
+      failing: 0,
+      check_unknown: 3,
+      check_failed: 1,
+      neutral: 2,
+      stopped: 1,
+      no_activity: 1,
+      not_enough_traffic: 0,
+      not_measured: 3,
+      outside_scope: 2,
+      reporting: 7,
+      no_telemetry: 2,
+      unknown: 1,
+    })
+    expect(data.type_breakdown.ec2).toMatchObject({ count: 5, measured: 2, passing: 1, check_unknown: 1, check_failed: 1, neutral: 1, stopped: 1, outside_scope: 2, reporting: 1, unknown: 1 })
+    expect(data.type_breakdown['load-balancer']).toMatchObject({ count: 2, measured: 1, needs_attention: 1, not_measured: 1, reporting: 1 })
+    expect(data.type_breakdown.lambda).toMatchObject({ count: 1, measured: 0, neutral: 1, no_activity: 1 })
+    expect(data.type_breakdown.rds).toMatchObject({ count: 1, measured: 1, check_unknown: 1, check_failed: 0, no_telemetry: 1 })
+
+    // The breakdown and type_summary describe the same rows.
+    expect(Object.keys(data.type_breakdown).sort()).toEqual(Object.keys(data.type_summary).sort())
+    for (const [type, s] of Object.entries<any>(data.type_summary)) {
+      const b = data.type_breakdown[type]
+      expect([b.count, b.passing, b.needs_attention, b.failing]).toEqual([s.count, s.passing, s.needs_attention, s.failing])
+      expect(b.check_unknown + b.neutral + b.not_measured + b.outside_scope).toBe(s.other)
+    }
+
+    const small = await get('/observability/resources?range=1h&pageSize=5')
+    expect(small.body.data.fleet_summary).toEqual(data.fleet_summary)
+    expect(small.body.data.type_breakdown).toEqual(data.type_breakdown)
+  })
+
+  it('(R3c, OB2.1) no breakdown on a failed sweep', async () => {
+    await mixedOrg('breakdown-failed')
+    jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new Error('AWS_NOT_CONNECTED: org has not connected an AWS account'))
+    const { body } = await get('/observability/resources')
+    expect(body.data.status).toBe('failed')
+    expect(body.data).not.toHaveProperty('fleet_summary')
+    expect(body.data).not.toHaveProperty('type_breakdown')
+  })
+
   it('(R4) the query string selects no organization', async () => {
     const other = await insertFleetOrg(pool, 'other', (a) => mixedFleet(a).slice(0, 1))
     createdOrgIds.push(other.orgId)
