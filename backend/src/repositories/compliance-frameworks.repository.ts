@@ -443,7 +443,12 @@ export class ComplianceFrameworksRepository {
       error_message: string;
       results: Record<string, any>;
     }>,
-    client: Queryable = this.pool
+    client: Queryable = this.pool,
+    // When given, the update only applies while the scan is still in one of
+    // these statuses: a scan that already reached another state (for
+    // instance one marked failed by its timeout) is left as it is, and the
+    // call returns null.
+    onlyFromStatuses?: ComplianceScan['status'][]
   ): Promise<ComplianceScan | null> {
     const fields: string[] = [];
     const values: any[] = [];
@@ -458,16 +463,40 @@ export class ComplianceFrameworksRepository {
 
     if (fields.length === 0) return null;
 
+    const statusGuard = onlyFromStatuses ? ` AND status = ANY($${paramIndex + 1})` : '';
     const query = `
       UPDATE compliance_scans
       SET ${fields.join(', ')}
-      WHERE id = $${paramIndex}
+      WHERE id = $${paramIndex}${statusGuard}
       RETURNING *
     `;
 
     values.push(id);
+    if (onlyFromStatuses) values.push(onlyFromStatuses);
     const result = await client.query(query, values);
     return result.rows[0] || null;
+  }
+
+  /**
+   * Marks every pending or running scan of one framework failed with
+   * `errorMessage`, and returns how many it marked. Only safe while the
+   * caller holds that framework's scan lock (see CustomComplianceService):
+   * the lock is what proves no live scan owns these rows.
+   */
+  async failActiveScans(
+    organizationId: string,
+    frameworkId: string,
+    errorMessage: string,
+    completedAt: Date,
+    client: Queryable = this.pool
+  ): Promise<number> {
+    const result = await client.query(
+      `UPDATE compliance_scans
+       SET status = 'failed', error_message = $3, completed_at = $4
+       WHERE organization_id = $1 AND framework_id = $2 AND status IN ('pending', 'running')`,
+      [organizationId, frameworkId, errorMessage, completedAt]
+    );
+    return result.rowCount ?? 0;
   }
 
   async findScanById(id: string, client: Queryable = this.pool): Promise<ComplianceScan | null> {

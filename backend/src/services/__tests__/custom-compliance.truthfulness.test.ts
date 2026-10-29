@@ -121,14 +121,19 @@ describe('a scan records a not-evaluated rule as "skip" and does not count it', 
     const findings: any[] = [];
     let summary: any;
     svc.repository = {
-      updateScan: jest.fn(async (_id: string, update: any) => { if (update.status === 'completed') summary = update; }),
+      // Returns the updated row, as the real status-guarded update does (null would mean "no longer running").
+      updateScan: jest.fn(async (_id: string, update: any) => {
+        if (update.status === 'completed') summary = update;
+        return { id: 'scan-1', ...update };
+      }),
       findFrameworkWithRules: jest.fn(async () => ({ rules: RULES })),
       createFinding: jest.fn(async (finding: any) => { findings.push(finding); }),
       findScanById: jest.fn(async () => ({ id: 'scan-1' })),
     };
     svc.fetchResources = jest.fn(async () => resources);
     jest.spyOn(console, 'log').mockImplementation(() => {});
-    await svc.runScanBody({}, { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
+    // The client only carries the results transaction's BEGIN / SET LOCAL / COMMIT here.
+    await svc.runScanBody({ query: jest.fn(async () => ({ rows: [] })) }, { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
     jest.restoreAllMocks();
     return { summary, byRule: (resourceId: string) => Object.fromEntries(findings.filter((f) => f.resource_id === resourceId).map((f) => [f.rule_id, f])) };
   }
