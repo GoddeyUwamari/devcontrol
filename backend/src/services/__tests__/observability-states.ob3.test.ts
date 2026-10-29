@@ -95,9 +95,19 @@ describe('OB3 RDS instance', () => {
   })
 
   it('(R1) an unrecognised status is unknown, never judged by metrics', () => {
-    for (const status of ['storage-optimization', 'creating', 'some-future-state', 'unknown']) {
+    for (const status of ['creating', 'insufficient-capacity', 'some-future-state', 'unknown']) {
       expect(rdsRow({ status })).toMatchObject({ check_status: 'unknown', unknown_reason: 'not_supported', status_detail: status })
     }
+  })
+
+  it('(R1 amendment) storage-optimization is judged by its metrics like available, with the status name', () => {
+    const status = 'storage-optimization'
+    expect(rdsRow({ status })).toMatchObject({ check_status: 'passing', unknown_reason: null, status_detail: status })
+    expect(rdsRow({ status }, rdsValues({ freeStorageMin: 9.99 * GIB }))).toMatchObject({ check_status: 'needs_attention', status_detail: status })
+    expect(rdsRow({ status }, rdsValues({ cpu: 80 }))).toMatchObject({ check_status: 'needs_attention', status_detail: status })
+    expect(rdsRow({ status }, rdsValues({ cpu: null }))).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_telemetry', status_detail: status })
+    // available itself carries no status_detail.
+    expect(rdsRow().status_detail).toBeNull()
   })
 
   it('(R3) any core metric with no data is unknown/no_telemetry, never passing', () => {

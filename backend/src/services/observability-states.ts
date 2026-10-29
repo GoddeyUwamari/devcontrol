@@ -164,6 +164,9 @@ const RDS_FAILING = (status: string) =>
   status === 'restore-error' ||
   status.startsWith('incompatible-') ||
   status.startsWith('inaccessible-encryption-credentials')
+// Serving states judged by their metrics: storage-optimization keeps the instance fully
+// available (R1 amendment).
+const RDS_JUDGED_BY_METRICS = new Set(['available', 'storage-optimization'])
 const RDS_TRANSITIONAL = (status: string) =>
   ['modifying', 'rebooting', 'backing-up', 'upgrading', 'maintenance', 'starting'].includes(status) || status.startsWith('configuring-')
 
@@ -330,25 +333,27 @@ function completedCount(evidence: ResourceEvidence, key: string): number {
 
 /**
  * RDS instance (R1-R5): the status discovery recorded decides failing / transitional /
- * unrecognised; an available instance is judged by its core metrics, all of which must
- * have data. Query failures and stops were handled before this.
+ * unrecognised; an available instance -- or one in storage-optimization, which is fully
+ * available meanwhile (R1 amendment; its status_detail names it) -- is judged by its core
+ * metrics, all of which must have data. Query failures and stops were handled before this.
  */
 function rdsVerdict(resource: InventoryView, evidence: ResourceEvidence, telemetry: TelemetryState): Verdict {
   const status = resource.status ?? ''
   if (RDS_FAILING(status)) return judged('failing', telemetry, null, status)
   if (RDS_TRANSITIONAL(status)) return judged('needs_attention', telemetry, null, status)
-  if (status !== 'available') return unknown('not_supported', telemetry, null, status || null)
+  if (!RDS_JUDGED_BY_METRICS.has(status)) return unknown('not_supported', telemetry, null, status || null)
+  const detail = status === 'available' ? null : status
 
-  if (Object.values(evidence.queries).some((o) => o !== 'complete')) return unknown('no_telemetry', telemetry)
+  if (Object.values(evidence.queries).some((o) => o !== 'complete')) return unknown('no_telemetry', telemetry, null, detail)
   const cpu = evidence.values?.cpu ?? null
   const freeBytes = evidence.values?.freeStorageMin ?? null
-  if (cpu === null || freeBytes === null) return unknown('no_telemetry', telemetry)
+  if (cpu === null || freeBytes === null) return unknown('no_telemetry', telemetry, null, detail)
   const allocatedGiB = Number(resource.metadata?.allocated_storage)
-  if (!(allocatedGiB > 0)) return unknown('not_supported', telemetry)
+  if (!(allocatedGiB > 0)) return unknown('not_supported', telemetry, null, detail)
 
   const lowStorage = freeBytes < RDS_FREE_STORAGE_MIN_RATIO * allocatedGiB * BYTES_PER_GIB
   const busyCpu = cpu >= RDS_CPU_ATTENTION_PERCENT
-  return judged(lowStorage || busyCpu ? 'needs_attention' : 'passing', telemetry, null)
+  return judged(lowStorage || busyCpu ? 'needs_attention' : 'passing', telemetry, null, detail)
 }
 
 /**
