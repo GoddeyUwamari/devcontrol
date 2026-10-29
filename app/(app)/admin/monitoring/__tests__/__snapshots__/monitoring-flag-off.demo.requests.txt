@@ -1,0 +1,2 @@
+GET /api/prometheus/health
+GET /api/prometheus/snapshot

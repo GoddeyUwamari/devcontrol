@@ -1,0 +1,14 @@
+GET /api/alerts/history?status=firing&limit=20
+GET /api/alerts/history?status=firing&limit=20
+GET /api/cloudwatch/metrics?range=1h
+GET /api/cloudwatch/metrics?range=1h
+GET /api/cloudwatch/status
+GET /api/cloudwatch/status
+GET /api/prometheus/health
+GET /api/prometheus/query?query=histogram_quantile(0.95%2C%20rate(http_request_duration_seconds_bucket%7Bjob%3D%22devcontrol-api%22%7D%5B5m%5D))
+GET /api/prometheus/query?query=rate(http_request_duration_seconds_sum%7Bjob%3D%22devcontrol-api%22%7D%5B5m%5D)%20%2F%20rate(http_request_duration_seconds_count%7Bjob%3D%22devcontrol-api%22%7D%5B5m%5D)
+GET /api/prometheus/query?query=up%7Bjob%3D%22devcontrol-api%22%7D
+GET /api/prometheus/query?query=up%7Bjob%3D%22node-exporter%22%7D
+GET /api/prometheus/query?query=up%7Bjob%3D%22postgres-exporter%22%7D
+GET /api/prometheus/snapshot
+GET /api/prometheus/snapshot
