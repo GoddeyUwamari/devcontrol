@@ -198,6 +198,7 @@ describe('GET /api/observability/resources', () => {
       needs_attention: 1,
       failing: 0,
       check_unknown: 3,
+      check_failed: 1,
       neutral: 2,
       stopped: 1,
       no_activity: 1,
@@ -208,10 +209,10 @@ describe('GET /api/observability/resources', () => {
       no_telemetry: 2,
       unknown: 1,
     })
-    expect(data.type_breakdown.ec2).toMatchObject({ count: 5, measured: 2, passing: 1, check_unknown: 1, neutral: 1, stopped: 1, outside_scope: 2, reporting: 1, unknown: 1 })
+    expect(data.type_breakdown.ec2).toMatchObject({ count: 5, measured: 2, passing: 1, check_unknown: 1, check_failed: 1, neutral: 1, stopped: 1, outside_scope: 2, reporting: 1, unknown: 1 })
     expect(data.type_breakdown['load-balancer']).toMatchObject({ count: 2, measured: 1, needs_attention: 1, not_measured: 1, reporting: 1 })
     expect(data.type_breakdown.lambda).toMatchObject({ count: 1, measured: 0, neutral: 1, no_activity: 1 })
-    expect(data.type_breakdown.rds).toMatchObject({ count: 1, measured: 1, check_unknown: 1, no_telemetry: 1 })
+    expect(data.type_breakdown.rds).toMatchObject({ count: 1, measured: 1, check_unknown: 1, check_failed: 0, no_telemetry: 1 })
 
     // The breakdown and type_summary describe the same rows.
     expect(Object.keys(data.type_breakdown).sort()).toEqual(Object.keys(data.type_summary).sort())

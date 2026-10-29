@@ -14,6 +14,8 @@ export interface Breakdown {
   needs_attention: number
   failing: number
   check_unknown: number
+  /** The check_unknown rows whose query failed, was denied or throttled. */
+  check_failed: number
   neutral: number
   stopped: number
   no_activity: number

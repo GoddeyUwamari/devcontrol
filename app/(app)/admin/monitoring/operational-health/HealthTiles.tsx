@@ -64,7 +64,7 @@ function CountBody({ tile, suffix, caption, onRetry }: { tile: CountTile; suffix
 }
 
 /** Resource checks · Telemetry coverage · CloudWatch alarms · Region. */
-export function HealthTiles({ tiles, onRetry }: { tiles: TilesView; onRetry: () => void }) {
+export function HealthTiles({ tiles, onRetry, onRetryAlarms }: { tiles: TilesView; onRetry: () => void; onRetryAlarms: () => void }) {
   const { checks, telemetry, alarms, region } = tiles
   return (
     <section aria-label="Key numbers" className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
@@ -90,12 +90,14 @@ export function HealthTiles({ tiles, onRetry }: { tiles: TilesView; onRetry: () 
             <Dash />
             <p className="m-0 text-body text-ink-body">{alarms.reason}</p>
             {alarms.detail && <p className="m-0 text-meta text-ink-muted">{alarms.detail}</p>}
-            {alarms.retry && <Retry onRetry={onRetry} />}
+            {alarms.retry && <Retry onRetry={onRetryAlarms} />}
           </>
         )}
       </Tile>
-      <Tile testId="tile-region" title={PAGE_COPY.tileRegion} busy={false}>
-        {region ? <p className="m-0 font-mono text-section text-ink">{region}</p> : <Dash />}
+      <Tile testId="tile-region" title={PAGE_COPY.tileRegion} busy={region.state === 'loading'}>
+        {region.state === 'ok' ? <p className="m-0 font-mono text-section text-ink">{region.region}</p> : <Dash />}
+        {region.state === 'unavailable' && <p className="m-0 text-body text-ink-body">{region.reason}</p>}
+        {region.state === 'unavailable' && region.retry && <Retry onRetry={onRetry} />}
         <p className="m-0 text-meta text-ink-body">{PAGE_COPY.regionCaption}</p>
       </Tile>
     </section>

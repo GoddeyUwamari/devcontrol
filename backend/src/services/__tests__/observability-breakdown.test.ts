@@ -18,6 +18,7 @@ function expectInvariants(b: ObservabilityBreakdown) {
   expect(b.passing + b.needs_attention + b.failing + b.check_unknown).toBe(b.measured)
   expect(b.stopped + b.no_activity + b.not_enough_traffic).toBe(b.neutral)
   expect(b.reporting + b.no_telemetry + b.unknown).toBe(b.measured)
+  expect(b.check_failed).toBeLessThanOrEqual(b.check_unknown)
 }
 
 describe('breakdownOf', () => {
@@ -48,7 +49,8 @@ describe('breakdownOf', () => {
   it.each(['access_denied', 'throttled', 'query_failed', 'not_supported', 'no_telemetry'] as const)('(B5) unknown/%s is measured and check_unknown, never passing', (reason) => {
     const telemetry = reason === 'no_telemetry' ? 'no_telemetry' : 'unknown'
     const { fleet } = breakdownOf([r('ec2', 'unknown', telemetry, reason)])
-    expect(fleet).toMatchObject({ count: 1, measured: 1, passing: 0, check_unknown: 1, [telemetry]: 1 })
+    const failed = reason === 'access_denied' || reason === 'throttled' || reason === 'query_failed' ? 1 : 0
+    expect(fleet).toMatchObject({ count: 1, measured: 1, passing: 0, check_unknown: 1, check_failed: failed, [telemetry]: 1 })
     expectInvariants(fleet)
   })
 
@@ -86,6 +88,7 @@ describe('breakdownOf', () => {
       needs_attention: 1,
       failing: 1,
       check_unknown: 1,
+      check_failed: 1,
       neutral: 3,
       stopped: 1,
       no_activity: 1,

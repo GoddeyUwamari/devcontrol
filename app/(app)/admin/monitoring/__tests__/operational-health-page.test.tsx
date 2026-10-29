@@ -41,7 +41,7 @@ vi.mock('@/lib/api', () => {
 vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ status: m.plan.status, tier: m.plan.tier, isKnown: m.plan.status === 'known' }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-const ZERO = { count: 0, measured: 0, passing: 0, needs_attention: 0, failing: 0, check_unknown: 0, neutral: 0, stopped: 0, no_activity: 0, not_enough_traffic: 0, not_measured: 0, outside_scope: 0, reporting: 0, no_telemetry: 0, unknown: 0 }
+const ZERO = { count: 0, measured: 0, passing: 0, needs_attention: 0, failing: 0, check_unknown: 0, check_failed: 0, neutral: 0, stopped: 0, no_activity: 0, not_enough_traffic: 0, not_measured: 0, outside_scope: 0, reporting: 0, no_telemetry: 0, unknown: 0 }
 const EC2 = { ...ZERO, count: 2, measured: 2, passing: 2, reporting: 2 }
 
 const resourcesOk = (range = '1h', over: Record<string, unknown> = {}) => ({
@@ -383,6 +383,56 @@ describe('rendering', () => {
     fireEvent.click(within(screen.getByTestId('health-banner')).getByRole('button', { name: 'Retry' }))
     await flush()
     expect(resourceCalls().at(-1)!.path).toContain('refresh=true')
+  })
+
+  it('Retry on the alarms tile and row re-requests /alarms only (no resources sweep)', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await answer('/api/observability/resources', ok(resourcesOk()))
+    await answer('/api/observability/alarms', httpError(500), true)
+    const before = resourceCalls().length
+    fireEvent.click(within(screen.getByTestId('tile-alarms')).getByRole('button', { name: 'Retry' }))
+    await flush()
+    expect(resourceCalls()).toHaveLength(before)
+    expect(alarmCalls()).toHaveLength(2)
+    await answer('/api/observability/alarms', httpError(500), true)
+    fireEvent.click(within(screen.getByTestId('monitor-alarms')).getByRole('button', { name: 'Retry' }))
+    await flush()
+    expect(resourceCalls()).toHaveLength(before)
+    expect(alarmCalls()).toHaveLength(3)
+    await answer('/api/observability/alarms', ok(ALARMS_OK))
+    expect(screen.getByTestId('tile-alarms')).toHaveTextContent('0in ALARM3configured')
+    expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'green')
+  })
+
+  it('an alarms retry is superseded by a cycle that starts after it', async () => {
+    m.ignoreAbort = true
+    render(<OperationalHealthV2 />)
+    await flush()
+    await answer('/api/observability/resources', ok(resourcesOk()))
+    await answer('/api/observability/alarms', httpError(500), true)
+    fireEvent.click(within(screen.getByTestId('tile-alarms')).getByRole('button', { name: 'Retry' }))
+    await flush()
+    const retry = alarmCalls().at(-1)!
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await flush()
+    expect(retry.signal?.aborted).toBe(true)
+    await settle()
+    // The retry's late answer (2 in ALARM) must not replace the newer cycle's.
+    retry.resolve(ok({ ...ALARMS_OK, in_alarm: [{}, {}] }))
+    await flush()
+    expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'green')
+  })
+
+  it('F3: an older backend’s ok answer (no fleet_summary / type_breakdown) renders the source-failed state', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    const old: Record<string, unknown> = resourcesOk()
+    delete old.fleet_summary
+    delete old.type_breakdown
+    await settle(old)
+    expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'source_failed')
+    expect(within(screen.getByTestId('tile-checks')).getByText("Couldn't load checks.")).toBeInTheDocument()
   })
 
   it('stopped resources only: never red or amber', async () => {

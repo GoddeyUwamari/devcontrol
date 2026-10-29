@@ -24,7 +24,7 @@ import { RelatedLinks } from './RelatedLinks'
  */
 export default function OperationalHealthV2() {
   const [range, setRange] = useState<MonitoringRange>(DEFAULT_RANGE)
-  const { resources, alarms, busy, refresh } = useOperationalHealthData(range)
+  const { resources, alarms, busy, refresh, retryAlarms } = useOperationalHealthData(range)
   const planHook = usePlan()
   const plan: PlanInfo = { status: planHook.status, tier: planHook.tier }
   const { slo, retry: retrySlo } = useSloSummary(plan)
@@ -34,9 +34,9 @@ export default function OperationalHealthV2() {
     <main className="mx-auto flex max-w-[1240px] flex-col gap-5 px-4 py-6 sm:px-6">
       <HealthHeader view={headerView(resources, alarms)} range={range} onRange={setRange} onRefresh={refresh} busy={busy} />
       <HealthBanner banner={bannerView(resources, alarms)} onRetry={refresh} />
-      <HealthTiles tiles={tilesView(resources, alarms)} onRetry={refresh} />
+      <HealthTiles tiles={tilesView(resources, alarms)} onRetry={refresh} onRetryAlarms={retryAlarms} />
       <TypeCards cards={typeCards(resources)} />
-      <WhatWeMonitor groups={monitor.groups} planNote={monitor.planNote} seePlans={SEE_PLANS} onRetryAlarms={refresh} onRetrySlo={retrySlo} />
+      <WhatWeMonitor groups={monitor.groups} planNote={monitor.planNote} seePlans={SEE_PLANS} onRetryAlarms={retryAlarms} onRetrySlo={retrySlo} />
       <RelatedLinks />
     </main>
   )

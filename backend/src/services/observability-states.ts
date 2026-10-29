@@ -109,6 +109,7 @@ export interface TypeSummary {
  *   count       = measured + neutral + not_measured + outside_scope
  *   measured    = passing + needs_attention + failing + check_unknown
  *                 (check_unknown: unknown for any reason that isn't neutral or out of scope)
+ *   check_failed: the check_unknown rows whose query failed, was denied or throttled
  *   neutral     = stopped + no_activity + not_enough_traffic (never failing, never passing)
  *   outside_scope: unknown/outside_region or unknown/outside_account (not checked here)
  *   reporting + no_telemetry + unknown = measured (telemetry of the measured rows only)
@@ -120,6 +121,7 @@ export interface ObservabilityBreakdown {
   needs_attention: number
   failing: number
   check_unknown: number
+  check_failed: number
   neutral: number
   stopped: number
   no_activity: number
@@ -628,6 +630,7 @@ const emptyBreakdown = (): ObservabilityBreakdown => ({
   needs_attention: 0,
   failing: 0,
   check_unknown: 0,
+  check_failed: 0,
   neutral: 0,
   stopped: 0,
   no_activity: 0,
@@ -661,6 +664,7 @@ function addToBreakdown(b: ObservabilityBreakdown, row: Pick<ObservabilityRow, '
       return
     }
     b.check_unknown += 1
+    if (row.unknown_reason === 'access_denied' || row.unknown_reason === 'throttled' || row.unknown_reason === 'query_failed') b.check_failed += 1
   } else {
     b[row.check_status] += 1
   }

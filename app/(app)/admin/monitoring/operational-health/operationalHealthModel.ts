@@ -35,14 +35,10 @@ export type Tone = 'danger' | 'warning' | 'success' | 'neutral'
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 const n = (v: number) => v.toLocaleString()
 
-const resourcesOk = (s: Source<ResourcesData>): ResourcesOk | null => (s.state === 'ok' && s.data.status === 'ok' ? s.data : null)
+/** An ok answer with the OB2.1 fields; an older backend's ok answer (without them) counts as a source that didn't load. */
+const resourcesOk = (s: Source<ResourcesData>): ResourcesOk | null =>
+  s.state === 'ok' && s.data.status === 'ok' && s.data.fleet_summary && s.data.type_breakdown ? s.data : null
 const alarmsOk = (s: Source<AlarmsData>) => (s.state === 'ok' && s.data.status === 'ok' ? s.data : null)
-
-/** The alarms response failed (the request, or AWS), for a reason the page can retry. */
-function alarmsFailed(s: Source<AlarmsData>): boolean {
-  if (s.state === 'error') return true
-  return s.state === 'ok' && s.data.status === 'error' && s.data.reason !== 'not_connected' && s.data.reason !== 'multiple_accounts'
-}
 
 /** "at least N" when the backend says the count is a lower bound. */
 const atLeast = (value: number, complete: boolean) => (complete ? n(value) : `at least ${n(value)}`)
@@ -79,6 +75,7 @@ export function headerView(resources: Source<ResourcesData>, alarms: Source<Alar
   if (resources.state === 'loading') return { pill: null, lastCheck: null, incomplete: false, region }
   if (resources.state === 'error') return { pill: { tone: 'warning', text: "Couldn't check" }, lastCheck: null, incomplete: false, region }
   const data = resources.data
+  if (data.status === 'ok' && !resourcesOk(resources)) return { pill: { tone: 'warning', text: "Couldn't check" }, lastCheck: null, incomplete: false, region }
   if (data.status === 'not_connected') return { pill: { tone: 'neutral', text: 'AWS not connected' }, lastCheck: null, incomplete: false, region }
   if (data.status === 'multiple_accounts') return { pill: { tone: 'neutral', text: 'More than one AWS account' }, lastCheck: null, incomplete: false, region }
   if (data.status !== 'ok') {
@@ -142,8 +139,10 @@ export function bannerView(resources: Source<ResourcesData>, alarms: Source<Alar
   const a = alarmsOk(alarms)
   const f = r?.fleet_summary ?? null
   const resourcesFailed = !r
-  // A partial sweep, or an in-ALARM list that didn't complete, is a source that didn't fully load.
-  const sourceFailed = resourcesFailed || alarmsFailed(alarms) || r?.collection === 'partial' || a?.in_alarm_complete === false
+  // Past the not-connected and several-accounts banners, any alarms answer that isn't ok (not_connected and
+  // multiple_accounts included: the two requests disagreed), a partial sweep, or an in-ALARM list that didn't
+  // complete is a source that didn't fully load (F1).
+  const sourceFailed = resourcesFailed || !a || r?.collection === 'partial' || a.in_alarm_complete === false
 
   // Issues: a known problem beats missing data.
   const attention = f ? f.failing + f.needs_attention : 0
@@ -246,11 +245,13 @@ export type AlarmsTile =
   | { state: 'unavailable'; reason: string; detail: string | null; retry: boolean }
   | { state: 'ok'; inAlarm: string; configured: string; region: string }
 
+export type RegionTile = { state: 'loading' } | { state: 'ok'; region: string } | { state: 'unavailable'; reason: string; retry: boolean }
+
 export interface TilesView {
   checks: CountTile
   telemetry: CountTile
   alarms: AlarmsTile
-  region: string | null
+  region: RegionTile
 }
 
 const notMeasuredText = (f: Breakdown) => `Not measured: ${plural(f.not_measured, 'resource', 'resources')} (not counted)`
@@ -309,11 +310,13 @@ export function tilesView(resources: Source<ResourcesData>, alarms: Source<Alarm
   else if (alarms.state === 'error') alarmsTile = { state: 'unavailable', reason: PAGE_COPY.alarmsError, detail: null, retry: true }
   else if (alarms.data.status === 'error') {
     const reason = alarms.data.reason
+    // Retry only when resources disagree (the two requests raced an account change, F1).
+    const resourcesAgree = resources.state === 'ok' && resources.data.status === reason
     alarmsTile =
       reason === 'not_connected'
-        ? { state: 'unavailable', reason: 'AWS isn’t connected.', detail: null, retry: false }
+        ? { state: 'unavailable', reason: 'AWS isn’t connected.', detail: null, retry: !resourcesAgree }
         : reason === 'multiple_accounts'
-          ? { state: 'unavailable', reason: 'More than one AWS account is connected.', detail: null, retry: false }
+          ? { state: 'unavailable', reason: 'More than one AWS account is connected.', detail: null, retry: !resourcesAgree }
           : {
               state: 'unavailable',
               reason: PAGE_COPY.alarmsError,
@@ -325,7 +328,17 @@ export function tilesView(resources: Source<ResourcesData>, alarms: Source<Alarm
     alarmsTile = { state: 'ok', inAlarm: atLeast(d.in_alarm.length, d.in_alarm_complete), configured: atLeast(d.configured_count, d.configured_count_complete), region: d.region }
   }
 
-  return { checks, telemetry, alarms: alarmsTile, region: regionOf(resources, alarms) }
+  // F4: no region is "—" with the same reason as the other tiles.
+  const regionName = regionOf(resources, alarms)
+  const regionTile: RegionTile = regionName
+    ? { state: 'ok', region: regionName }
+    : resources.state === 'loading'
+      ? { state: 'loading' }
+      : blocked && blocked.state === 'unavailable'
+        ? { state: 'unavailable', reason: blocked.reason, retry: blocked.retry }
+        : { state: 'unavailable', reason: PAGE_COPY.checksError, retry: true }
+
+  return { checks, telemetry, alarms: alarmsTile, region: regionTile }
 }
 
 
@@ -405,7 +418,12 @@ function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo)
   const row = (state: MonitorState, stateText: string, reason: string | null = null): MonitorRow => ({ key, label, state, stateText, reason, link: null, retry: null })
 
   if (NOT_MEASURED_TYPES.has(type)) return row('not_measured', STATE_LABEL.not_measured)
-  if (plan.status === 'known' && plan.tier === 'free' && !FREE_DISCOVERED_TYPES.has(type)) return row('not_in_plan', STATE_LABEL.not_in_plan)
+  // F2: a type the Free plan doesn't discover depends on the plan; until it's known, never "No … found".
+  if (!FREE_DISCOVERED_TYPES.has(type)) {
+    if (plan.status === 'loading') return row('checking', STATE_LABEL.checking)
+    if (plan.status === 'error') return row('couldnt_check', STATE_LABEL.couldnt_check, "Your plan couldn't be loaded.")
+    if (plan.tier === 'free') return row('not_in_plan', STATE_LABEL.not_in_plan)
+  }
 
   if (resources.state === 'loading') return row('checking', STATE_LABEL.checking)
   const r = resourcesOk(resources)
@@ -426,9 +444,9 @@ function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo)
   }
   if (b.not_measured === b.count) return row('not_measured', STATE_LABEL.not_measured)
   if (b.measured > 0) {
-    if (b.passing + b.needs_attention + b.failing === 0 && b.unknown === b.measured) {
-      return row('couldnt_check', STATE_LABEL.couldnt_check, 'The checks failed or were denied.')
-    }
+    // F5: from check results, not telemetry. Couldn't check only when every measured check failed or was denied.
+    if (b.check_failed === b.measured) return row('couldnt_check', STATE_LABEL.couldnt_check, 'The checks failed or were denied.')
+    if (b.passing + b.needs_attention + b.failing === 0) return row('monitored', STATE_LABEL.monitored, 'No check result yet.')
     return row('monitored', STATE_LABEL.monitored)
   }
   if (b.no_activity + b.not_enough_traffic > 0 && b.stopped === 0) return row('no_activity', STATE_LABEL.no_activity)

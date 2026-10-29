@@ -35,6 +35,9 @@ export function useOperationalHealthData(range: MonitoringRange) {
 
   const seq = useRef(0)
   const controller = useRef<AbortController | null>(null)
+  // An alarms-only retry: superseded (and aborted) by any cycle that starts after it.
+  const alarmsSeq = useRef(0)
+  const alarmsController = useRef<AbortController | null>(null)
   const inFlight = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mounted = useRef(true)
@@ -50,6 +53,8 @@ export function useOperationalHealthData(range: MonitoringRange) {
   const run = useCallback((opts: { refresh: boolean; cancelInFlight: boolean }) => {
     if (inFlight.current && !opts.cancelInFlight) return
     controller.current?.abort()
+    alarmsController.current?.abort()
+    alarmsSeq.current += 1
     clearTimer()
     const mine = ++seq.current
     const ctrl = new AbortController()
@@ -105,6 +110,7 @@ export function useOperationalHealthData(range: MonitoringRange) {
     return () => {
       mounted.current = false
       controller.current?.abort()
+      alarmsController.current?.abort()
       clearTimer()
     }
   }, [])
@@ -128,5 +134,30 @@ export function useOperationalHealthData(range: MonitoringRange) {
   const refresh = useCallback(() => run({ refresh: true, cancelInFlight: true }), [run])
 
   const resources: Source<ResourcesData> = loaded && loaded.range === range ? loaded.source : { state: 'loading' }
-  return { resources, alarms, busy, refresh }
+  /**
+   * Retry on the alarms tile and row: GET /alarms only, no resources sweep. Skipped while a
+   * cycle runs (that cycle reads alarms too); a cycle that starts later wins over it. The last
+   * answer stays on screen until the retry answers, so the banner doesn't blink.
+   */
+  const retryAlarms = useCallback(() => {
+    if (inFlight.current) return
+    alarmsController.current?.abort()
+    const mine = ++alarmsSeq.current
+    const ctrl = new AbortController()
+    alarmsController.current = ctrl
+    const current = () => mounted.current && mine === alarmsSeq.current && !ctrl.signal.aborted
+    api
+      .get<{ success: boolean; data: AlarmsData }>('/api/observability/alarms', { signal: ctrl.signal })
+      .then((res) => {
+        if (!current()) return
+        const data = res.data?.data
+        setAlarms(data ? { state: 'ok', data } : { state: 'error', kind: 'failed' })
+      })
+      .catch((err) => {
+        if (!current()) return
+        setAlarms({ state: 'error', kind: statusOf(err) === 503 ? 'unavailable' : 'failed' })
+      })
+  }, [])
+
+  return { resources, alarms, busy, refresh, retryAlarms }
 }

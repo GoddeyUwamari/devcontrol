@@ -17,7 +17,7 @@ import {
 import type { AlarmsData, Breakdown, PlanInfo, ResourcesData, SloState, Source } from '../operational-health/observabilityTypes'
 
 const ZERO: Breakdown = {
-  count: 0, measured: 0, passing: 0, needs_attention: 0, failing: 0, check_unknown: 0,
+  count: 0, measured: 0, passing: 0, needs_attention: 0, failing: 0, check_unknown: 0, check_failed: 0,
   neutral: 0, stopped: 0, no_activity: 0, not_enough_traffic: 0, not_measured: 0, outside_scope: 0,
   reporting: 0, no_telemetry: 0, unknown: 0,
 }
@@ -131,6 +131,27 @@ describe('banner (D3 order)', () => {
     expect(b).toMatchObject({ kind: 'source_failed', tone: 'warning', headline: "Some checks couldn't load", action: { kind: 'retry' } })
   })
 
+  it.each(['not_connected', 'multiple_accounts'])('F1: alarms %s with healthy ok resources: a source that didn’t load, never green or "no alarms"', (reason) => {
+    const b = bannerView(healthy(), alarmsError(reason))!
+    expect(b).toMatchObject({ kind: 'source_failed', tone: 'warning', action: { kind: 'retry' } })
+    expect([b.headline, ...b.lines].join(' ')).not.toMatch(/no CloudWatch alarms are in ALARM/)
+  })
+
+  it.each(['not_connected', 'multiple_accounts'])('F1: alarms %s with a failing resource: issues, and says more may be missing', (reason) => {
+    const b = bannerView(okResources({ ec2: bd({ failing: 1 }) }), alarmsError(reason))!
+    expect(b.kind).toBe('issues')
+    expect(b.lines).toContain("Some checks couldn't load, so there may be more.")
+  })
+
+  it('F3: an ok answer without fleet_summary / type_breakdown (older backend) is a failed source, never a crash', () => {
+    const old = { state: 'ok', data: { status: 'ok', region: 'us-east-1', account_count: 1, multiple_accounts: false, range: '1h', collection: 'complete', checked_at: null, captured_at: '2026-10-29T14:59:00.000Z', inventory_capped: false, inventory_capped_reasons: [] } } as unknown as Source<ResourcesData>
+    expect(bannerView(old, okAlarms())!.kind).toBe('source_failed')
+    expect(typeCards(old)).toBeNull()
+    expect(tilesView(old, okAlarms()).checks).toMatchObject({ state: 'unavailable', retry: true })
+    expect(headerView(old, okAlarms()).pill).toEqual({ tone: 'warning', text: "Couldn't check" })
+    expect(rowOf(monitorView(old, okAlarms(), { state: 'none' }, known('pro'), SEE), 'type:ec2').state).toBe('couldnt_check')
+  })
+
   it('a failed source beats telemetry missing', () => {
     expect(bannerView(okResources({ ec2: bd({ passing: 1, check_unknown: 1, reporting: 1, no_telemetry: 1 }) }, { collection: 'partial' }), okAlarms())!.kind).toBe('source_failed')
   })
@@ -233,12 +254,25 @@ describe('tiles: error is "—", never 0', () => {
   ])('alarms %s: unavailable with the reason and Retry', (reason, detail, retry) => {
     expect(tilesView(healthy(), alarmsError(reason)).alarms).toEqual({ state: 'unavailable', reason: 'Couldn\'t read CloudWatch alarms. The banner can\'t say "no alarms".', detail, retry })
   })
-  it('alarms not connected: no Retry', () => {
+  it('alarms not connected: no Retry when resources agree', () => {
     expect(tilesView(notOk('not_connected'), alarmsError('not_connected')).alarms).toMatchObject({ state: 'unavailable', retry: false })
+    expect(tilesView(notOk('multiple_accounts'), alarmsError('multiple_accounts')).alarms).toMatchObject({ state: 'unavailable', retry: false })
   })
-  it('region from resources, else from alarms, else none', () => {
-    expect(tilesView({ state: 'error', kind: 'failed' }, okAlarms()).region).toBe('us-east-1')
-    expect(tilesView({ state: 'error', kind: 'failed' }, alarmsError('failed')).region).toBeNull()
+  it.each(['not_connected', 'multiple_accounts'])('alarms %s while resources are ok: Retry (the two requests disagreed)', (reason) => {
+    expect(tilesView(healthy(), alarmsError(reason)).alarms).toMatchObject({ state: 'unavailable', retry: true })
+  })
+  it('region from resources, else from alarms', () => {
+    expect(tilesView(healthy(), okAlarms()).region).toEqual({ state: 'ok', region: 'us-east-1' })
+    expect(tilesView({ state: 'error', kind: 'failed' }, okAlarms()).region).toEqual({ state: 'ok', region: 'us-east-1' })
+  })
+  it.each([
+    ['resources loading', loading, { state: 'loading' }],
+    ['resources request failed', { state: 'error', kind: 'failed' } as Source<ResourcesData>, { state: 'unavailable', reason: "Couldn't load checks.", retry: true }],
+    ['resources failed', notOk('failed', 'query_failed'), { state: 'unavailable', reason: "Couldn't load checks.", retry: true }],
+    ['not connected', notOk('not_connected'), { state: 'unavailable', reason: 'AWS isn’t connected.', retry: false }],
+    ['several accounts', notOk('multiple_accounts'), { state: 'unavailable', reason: 'More than one AWS account is connected.', retry: false }],
+  ])('F4: no region (%s): "—" always with a reason', (_name, resources, expected) => {
+    expect(tilesView(resources as Source<ResourcesData>, alarmsError('failed')).region).toEqual(expected)
   })
 })
 
@@ -292,22 +326,51 @@ describe('what we monitor', () => {
     expect(rowOf(v, 'type:ec2').state).toBe('monitored')
     expect(v.planNote).toBe(true)
   })
-  it('D8: plan unknown or loading: no plan note and no plan state (never guessed)', () => {
-    for (const plan of [{ status: 'loading', tier: 'free' }, { status: 'error', tier: 'free' }] as PlanInfo[]) {
-      const v = monitorView(healthy(), okAlarms(), slo, plan, SEE)
-      expect(v.planNote).toBe(false)
-      expect(rowOf(v, 'type:lambda').state).toBe('none_found')
+  it('F2: plan loading: types the Free plan skips say Checking…, never "No … found"; no plan note', () => {
+    const v = monitorView(healthy(), okAlarms(), slo, { status: 'loading', tier: 'free' }, SEE)
+    expect(v.planNote).toBe(false)
+    for (const t of ['lambda', 'load-balancer', 'ecs', 'eks', 'dynamodb', 'cloudfront', 'aurora']) {
+      expect(rowOf(v, `type:${t}`)).toMatchObject({ state: 'checking', stateText: 'Checking…' })
+    }
+    // Types every plan discovers are unaffected.
+    expect(rowOf(v, 'type:ec2').state).toBe('monitored')
+    expect(rowOf(v, 'type:rds').state).toBe('none_found')
+  })
+  it('F2: plan failed to load: Couldn’t check with the reason, never "No … found"; no plan note', () => {
+    const v = monitorView(healthy(), okAlarms(), slo, { status: 'error', tier: 'free' }, SEE)
+    expect(v.planNote).toBe(false)
+    for (const t of ['lambda', 'load-balancer', 'ecs', 'eks', 'dynamodb', 'cloudfront', 'aurora']) {
+      expect(rowOf(v, `type:${t}`)).toMatchObject({ state: 'couldnt_check', reason: "Your plan couldn't be loaded." })
+    }
+  })
+  it('F2: a known paid plan still says "No … found" when discovery completed', () => {
+    for (const tier of ['starter', 'pro', 'enterprise'] as const) {
+      expect(rowOf(monitorView(healthy(), okAlarms(), slo, known(tier), SEE), 'type:lambda')).toMatchObject({ state: 'none_found', stateText: 'No functions found' })
     }
   })
   it('no activity, couldn’t check (all queries failed), only outside scope', () => {
     const v = monitorView(
-      okResources({ lambda: bd({ no_activity: 2 }), ec2: bd({ check_unknown: 2, reporting: 0, unknown: 2 }), rds: bd({ outside_scope: 1 }) }),
+      okResources({ lambda: bd({ no_activity: 2 }), ec2: bd({ check_unknown: 2, check_failed: 2, reporting: 0, unknown: 2 }), rds: bd({ outside_scope: 1 }) }),
       okAlarms(), slo, known('pro'), SEE
     )
     expect(rowOf(v, 'type:lambda').state).toBe('no_activity')
     expect(rowOf(v, 'type:ec2')).toMatchObject({ state: 'couldnt_check', reason: 'The checks failed or were denied.' })
     expect(rowOf(v, 'type:rds').state).toBe('couldnt_check')
   })
+  it('F5: Couldn’t check follows check results, not telemetry', () => {
+    // Every measured row unknown/no_telemetry: the checks ran; there's no result, nothing failed.
+    const noTelemetry = rowOf(monitorView(okResources({ rds: bd({ check_unknown: 2, reporting: 0, no_telemetry: 2 }) }), okAlarms(), slo, known('pro'), SEE), 'type:rds')
+    expect(noTelemetry).toMatchObject({ state: 'monitored', reason: 'No check result yet.' })
+    // Telemetry unknown but the checks didn't fail (not_supported): not "failed or denied".
+    const notSupported = rowOf(monitorView(okResources({ ec2: bd({ check_unknown: 1, reporting: 0, unknown: 1 }) }), okAlarms(), slo, known('pro'), SEE), 'type:ec2')
+    expect(notSupported.state).toBe('monitored')
+    // Every measured check failed or was denied, whatever the telemetry says.
+    const failed = rowOf(monitorView(okResources({ ec2: bd({ check_unknown: 2, check_failed: 2, reporting: 2 }) }), okAlarms(), slo, known('pro'), SEE), 'type:ec2')
+    expect(failed).toMatchObject({ state: 'couldnt_check', reason: 'The checks failed or were denied.' })
+    // Some failed, some judged: monitored.
+    expect(rowOf(monitorView(okResources({ ec2: bd({ passing: 1, check_unknown: 1, check_failed: 1 }) }), okAlarms(), slo, known('pro'), SEE), 'type:ec2').state).toBe('monitored')
+  })
+
   it('resources failed: type rows can’t be checked, with the reason', () => {
     const row = rowOf(monitorView({ state: 'error', kind: 'failed' }, okAlarms(), slo, known('pro'), SEE), 'type:ec2')
     expect(row).toMatchObject({ state: 'couldnt_check', reason: "Resource checks couldn't load." })
