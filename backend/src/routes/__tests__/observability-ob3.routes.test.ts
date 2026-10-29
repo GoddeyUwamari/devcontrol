@@ -336,6 +336,30 @@ describe('OB3 query shape', () => {
   })
 })
 
+describe('OB3 review fixes through the sweep', () => {
+  it('a failing RDS status stands when its metrics are denied, and the collection is partial', async () => {
+    const fleet = await insertFleetOrg(pool, 'rds-denied', (accountId) => [
+      {
+        name: 'full-db',
+        type: 'rds',
+        resourceId: 'example-db',
+        arn: `arn:aws:rds:${REGION}:${accountId}:db:example-db`,
+        status: 'storage-full',
+        metadata: { engine: 'postgres', allocated_storage: 100 },
+      },
+    ])
+    createdOrgIds.push(fleet.orgId)
+    await signInAs(fleet.orgId)
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: { 'example-db': { kind: 'forbidden' } }, accountId: fleet.accountId }))
+
+    const { body } = await get('/observability/resources?range=1h&pageSize=100')
+    const r = byName(body.data.resources)
+    expect(r['full-db']).toMatchObject({ check_status: 'failing', unknown_reason: null, status_detail: 'storage-full', telemetry: 'unknown', metrics: [] })
+    expect(body.data.collection).toBe('partial')
+    expect(body.data.type_summary.rds).toEqual({ count: 1, passing: 0, needs_attention: 0, failing: 1, other: 0 })
+  })
+})
+
 describe('OB3 isolation and inventory coverage', () => {
   it('each organization\'s sweep queries and returns only its own resources, even with identical AWS identifiers', async () => {
     const a = await pagedOrg('iso-a', 'a-')

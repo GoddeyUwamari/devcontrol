@@ -222,7 +222,8 @@ function labelledMetrics(
   row: EvaluatedRowView,
   evidence: ResourceEvidence | undefined,
   rangeLabel: string,
-  metadata: Record<string, any> | null
+  metadata: Record<string, any> | null,
+  rateJudged: boolean
 ): ObservabilityMetric[] {
   const pointInTime = POINT_IN_TIME_TYPES.has(resourceType)
   const window = pointInTime ? 'current' : rangeLabel
@@ -248,7 +249,7 @@ function labelledMetrics(
       window,
     })
   }
-  if (evidence) metrics.push(...ob3Metrics(resourceType, evidence, metadata, window))
+  if (evidence) metrics.push(...ob3Metrics(resourceType, evidence, metadata, window, rateJudged))
   return metrics
 }
 
@@ -259,7 +260,7 @@ const round = (value: number, places: number) => Math.round(value * 10 ** places
  * (a completed count query with no datapoints is 0; any other completed query with no
  * datapoints has no value to show).
  */
-function ob3Metrics(resourceType: string, evidence: ResourceEvidence, metadata: Record<string, any> | null, window: string): ObservabilityMetric[] {
+function ob3Metrics(resourceType: string, evidence: ResourceEvidence, metadata: Record<string, any> | null, window: string, rateJudged: boolean): ObservabilityMetric[] {
   const completed = (key: string) => evidence.queries[key] === 'complete' || evidence.queries[key] === 'empty'
   const value = (key: string) => (evidence.queries[key] === 'complete' ? (evidence.values?.[key] ?? null) : null)
   const metrics: ObservabilityMetric[] = []
@@ -267,7 +268,8 @@ function ob3Metrics(resourceType: string, evidence: ResourceEvidence, metadata: 
     const errors = (value('errorSum') ?? 0) + (value('elb5xxSum') ?? 0)
     metrics.push({ label: '5xx errors', value: errors, statistic: 'Sum', window })
     const requests = completed('requestSum') ? (value('requestSum') ?? 0) : null
-    if (requests !== null && requests > 0 && (requests >= LB_MIN_REQUESTS || errors >= LB_MIN_REQUESTS)) {
+    // Only a rate the row's verdict was judged on (review fix 2).
+    if (rateJudged && requests !== null && requests > 0) {
       metrics.push({ label: '5xx rate', value: round((errors / requests) * 100, 2), unit: '%', statistic: 'Sum', window })
     }
   }
@@ -332,14 +334,13 @@ function completedCount(evidence: ResourceEvidence, key: string): number {
 }
 
 /**
- * RDS instance (R1-R5): the status discovery recorded decides failing / transitional /
- * unrecognised; an available instance -- or one in storage-optimization, which is fully
+ * RDS instance (R1-R5): the status discovery recorded decides transitional /
+ * unrecognised (stopped and failing were decided before any query outcome); an available instance -- or one in storage-optimization, which is fully
  * available meanwhile (R1 amendment; its status_detail names it) -- is judged by its core
  * metrics, all of which must have data. Query failures and stops were handled before this.
  */
 function rdsVerdict(resource: InventoryView, evidence: ResourceEvidence, telemetry: TelemetryState): Verdict {
   const status = resource.status ?? ''
-  if (RDS_FAILING(status)) return judged('failing', telemetry, null, status)
   if (RDS_TRANSITIONAL(status)) return judged('needs_attention', telemetry, null, status)
   if (!RDS_JUDGED_BY_METRICS.has(status)) return unknown('not_supported', telemetry, null, status || null)
   const detail = status === 'available' ? null : status
@@ -363,17 +364,42 @@ function rdsVerdict(resource: InventoryView, evidence: ResourceEvidence, telemet
  * than 100 requests and fewer than 100 5xx is not enough traffic to judge.
  */
 function albVerdict(row: EvaluatedRowView, evidence: ResourceEvidence, telemetry: TelemetryState): Verdict {
-  const requests = completedCount(evidence, 'requestSum')
-  const errors = completedCount(evidence, 'errorSum') + completedCount(evidence, 'elb5xxSum')
-  if (requests === 0 && errors === 0) return unknown('no_activity', telemetry, 'no_activity')
+  const fivexx = fiveXxResult(evidence)
+  if (fivexx === 'no_activity') return unknown('no_activity', telemetry, 'no_activity')
   const activity: ActivityState = 'active'
-  if (requests < LB_MIN_REQUESTS && errors < LB_MIN_REQUESTS) return unknown('not_enough_traffic', telemetry, activity)
-
-  const fivexx = errors * LB_5XX_PASS_RATIO <= requests ? 'passing' : errors * LB_5XX_ATTENTION_RATIO <= requests ? 'needs_attention' : 'failing'
-  if (fivexx === 'failing') return judged('failing', telemetry, activity)
+  // A required 5xx query with no recorded outcome measured nothing (failures returned earlier).
+  if (fivexx === null) return unknown('query_failed', telemetry, activity)
+  if (fivexx === 'not_enough_traffic') return unknown('not_enough_traffic', telemetry, activity)
+  // A 5xx problem stands whatever the latency (review fix 1); it was returned before this.
+  if (fivexx !== 'passing') return judged(fivexx, telemetry, activity)
   const latency = row.status === 'healthy' ? 'passing' : row.status === 'degraded' ? 'needs_attention' : null
   if (latency === null) return unknown('no_telemetry', telemetry, activity)
   return judged(worse(fivexx, latency), telemetry, activity)
+}
+
+const LB_5XX_RULE_KEYS = ['requestSum', 'errorSum', 'elb5xxSum']
+
+/**
+ * The 5xx rule on its own: nothing served and nothing failed (no_activity), too little
+ * traffic to judge, or the rate's result. Null unless all three of its queries completed.
+ */
+export function fiveXxResult(evidence: ResourceEvidence): 'no_activity' | 'not_enough_traffic' | 'passing' | 'needs_attention' | 'failing' | null {
+  if (!LB_5XX_RULE_KEYS.every((key) => evidence.queries[key] === 'complete' || evidence.queries[key] === 'empty')) return null
+  const requests = completedCount(evidence, 'requestSum')
+  const errors = completedCount(evidence, 'errorSum') + completedCount(evidence, 'elb5xxSum')
+  if (requests === 0 && errors === 0) return 'no_activity'
+  if (requests < LB_MIN_REQUESTS && errors < LB_MIN_REQUESTS) return 'not_enough_traffic'
+  return errors * LB_5XX_PASS_RATIO <= requests ? 'passing' : errors * LB_5XX_ATTENTION_RATIO <= requests ? 'needs_attention' : 'failing'
+}
+
+/** reporting / no_telemetry / unknown from how the datapoint queries ended. */
+function telemetryOf(evidence: ResourceEvidence): TelemetryState {
+  const datapointOutcomes = Object.entries(evidence.queries)
+    .filter(([key]) => evidence.kind === 'point_in_time' || key !== 'describe')
+    .map(([, outcome]) => outcome)
+  const telemetryOutcome = aggregateOutcome(datapointOutcomes)
+  // No datapoint query at all is no telemetry evidence either way: unknown.
+  return evidence.unsupported || isFailure(telemetryOutcome) ? 'unknown' : telemetryOutcome === 'empty' ? 'no_telemetry' : 'reporting'
 }
 
 function verdictFor(
@@ -390,6 +416,15 @@ function verdictFor(
     if (resource.resource_type === 'rds' && resource.status === 'stopped') return judged('stopped', 'unknown', null)
     return judged('not_measured', 'unknown', null)
   }
+  // Founder decision (Oct 29): an RDS status from discovery that means stopped or failing
+  // stands even when a metric query (or the whole RDS block) failed or returned nothing;
+  // metrics decide only the instances that are serving.
+  if (resource.resource_type === 'rds') {
+    const status = resource.status ?? ''
+    const telemetry = ctx.blockFailed || !evidence ? 'unknown' : telemetryOf(evidence)
+    if (RDS_STOPPED.has(status)) return judged('stopped', telemetry, null)
+    if (RDS_FAILING(status)) return judged('failing', telemetry, null, status)
+  }
   if (ctx.blockFailed) return unknown('query_failed')
   // Evaluated type, but no row: its dimension could not be resolved.
   if (!row || !evidence) return unknown('not_supported')
@@ -398,15 +433,14 @@ function verdictFor(
   // not_supported, not a failed collection.
   if (evidence.unsupported && Object.keys(evidence.queries).length === 0) return unknown('not_supported')
   const all = aggregateOutcome(Object.values(evidence.queries))
-  if (isFailure(all)) return unknown(all)
 
-  const datapointOutcomes = Object.entries(evidence.queries)
-    .filter(([key]) => evidence.kind === 'point_in_time' || key !== 'describe')
-    .map(([, outcome]) => outcome)
-  const telemetryOutcome = aggregateOutcome(datapointOutcomes)
-  // No datapoint query at all is no telemetry evidence either way: unknown.
-  const telemetry: TelemetryState =
-    evidence.unsupported || isFailure(telemetryOutcome) ? 'unknown' : telemetryOutcome === 'empty' ? 'no_telemetry' : 'reporting'
+  const telemetry = telemetryOf(evidence)
+  // A known 5xx problem beats missing or failed latency data (review fix 1).
+  if (resource.resource_type === 'load-balancer') {
+    const fivexx = fiveXxResult(evidence)
+    if (fivexx === 'needs_attention' || fivexx === 'failing') return judged(fivexx, telemetry, 'active')
+  }
+  if (isFailure(all)) return unknown(all)
 
   let activity: ActivityState | null = null
   if (evidence.activity) {
@@ -417,8 +451,7 @@ function verdictFor(
 
   if (
     evidence.stopped ||
-    (resource.resource_type === 'ec2' && EC2_STOPPED.has(resource.status ?? '')) ||
-    (resource.resource_type === 'rds' && RDS_STOPPED.has(resource.status ?? ''))
+    (resource.resource_type === 'ec2' && EC2_STOPPED.has(resource.status ?? ''))
   ) {
     return judged('stopped', telemetry, activity)
   }
@@ -457,6 +490,17 @@ function verdictFor(
   }
 }
 
+/**
+ * Whether the row's verdict used the 5xx rate: a 5xx problem always decides it; a passing
+ * rate only when the row was judged (not unknown, e.g. because the latency query failed).
+ */
+function rateJudgedFor(resource: InventoryView, evidence: ResourceEvidence | undefined, verdict: Verdict): boolean {
+  if (resource.resource_type !== 'load-balancer' || !evidence) return false
+  const fivexx = fiveXxResult(evidence)
+  if (fivexx === 'needs_attention' || fivexx === 'failing') return true
+  return fivexx === 'passing' && verdict.check_status !== 'unknown'
+}
+
 /** One resource's observability row. */
 export function observabilityRowFor(
   resource: InventoryView,
@@ -487,7 +531,7 @@ export function observabilityRowFor(
     ...verdict,
     last_seen: lastSeen ? lastSeen.toISOString() : null,
     last_seen_source: lastSeenSource,
-    metrics: row && inScope ? labelledMetrics(resource.resource_type, row, evidence, ctx.rangeLabel, resource.metadata) : [],
+    metrics: row && inScope ? labelledMetrics(resource.resource_type, row, evidence, ctx.rangeLabel, resource.metadata, rateJudgedFor(resource, evidence, verdict)) : [],
   }
 }
 
@@ -501,6 +545,15 @@ export function observabilityRowFor(
 export function checkObserved(evidence: ResourceEvidence | undefined, ctx: Pick<RowContext, 'blockFailed'>): boolean {
   if (!checkCompleted(evidence, ctx)) return false
   return evidence!.kind !== 'point_in_time' || Object.values(evidence!.queries).every((o) => o === 'complete')
+}
+
+/** Whether a query the resource's check needs did not complete this sweep (or its whole type block failed). */
+export function queryFailed(evidence: ResourceEvidence | undefined, ctx: Pick<RowContext, 'blockFailed'>): boolean {
+  if (ctx.blockFailed) return true
+  if (!evidence) return false
+  // No query could be built for it (not_supported): nothing failed.
+  if (evidence.unsupported && Object.keys(evidence.queries).length === 0) return false
+  return isFailure(aggregateOutcome(Object.values(evidence.queries)))
 }
 
 /** Whether every query the resource's check needs completed this sweep (empty counts as completed). */

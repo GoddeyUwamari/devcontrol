@@ -154,7 +154,11 @@ describe('observabilityRowFor: check_status', () => {
     const alb = observabilityRowFor(
       inv('load-balancer', { metadata: { type: 'application' } }),
       row('healthy', { responseTimeMs: 20 }),
-      cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'empty' }, { activity: { key: 'requestSum', value: 0 } }),
+      // OB3: an ALB's evidence carries all three 5xx-rule queries.
+      cw(
+        { latencySec: 'complete', requestSum: 'complete', errorSum: 'empty', elb5xxSum: 'empty' },
+        { activity: { key: 'requestSum', value: 0 }, values: { latencySec: 0.02, requestSum: 0, errorSum: null, elb5xxSum: null } }
+      ),
       ctx()
     )
     expect(alb).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_activity', activity: 'no_activity' })

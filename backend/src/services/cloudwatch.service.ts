@@ -19,6 +19,7 @@ import {
   TypeSummary,
   checkObserved,
   isAuroraMemberInstance,
+  queryFailed,
   isNotMeasured,
   observabilityRowFor,
   typeSummaryOf,
@@ -2311,8 +2312,14 @@ export class CloudWatchService {
       const row = observabilityRowFor(resource, rowsById.get(resource.id), evidence.get(resource.id), ctx)
       return { resource, row, ctx }
     })
+    // A query that did not complete makes the collection partial even when the row's
+    // state stands without it (an RDS status from discovery, a known 5xx problem).
     const collection: ObservabilitySnapshot['collection'] = firstPass.some(
-      ({ row }) => row.unknown_reason === 'access_denied' || row.unknown_reason === 'throttled' || row.unknown_reason === 'query_failed'
+      ({ resource, row, ctx }) =>
+        row.unknown_reason === 'access_denied' ||
+        row.unknown_reason === 'throttled' ||
+        row.unknown_reason === 'query_failed' ||
+        (row.unknown_reason !== 'outside_account' && row.unknown_reason !== 'outside_region' && !isNotMeasured(resource) && queryFailed(evidence.get(resource.id), ctx))
     )
       ? 'partial'
       : 'complete'

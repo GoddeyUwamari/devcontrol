@@ -4,7 +4,7 @@
  * 5xx rate -- with every threshold tested on both sides of its boundary. Founder
  * decisions R1-R5, T1, L1, L2 (ob3-step1.md). Pure: no AWS, no database. Placeholders only.
  */
-import { EvaluatedRowView, InventoryView, ResourceEvidence, RowContext, observabilityRowFor, typeSummaryOf } from '../observability-states'
+import { EvaluatedRowView, InventoryView, ResourceEvidence, RowContext, observabilityRowFor, queryFailed, typeSummaryOf } from '../observability-states'
 
 const ACCOUNT = '123456789012'
 const T1 = new Date('2026-10-29T09:55:00.000Z')
@@ -86,6 +86,20 @@ describe('OB3 RDS instance', () => {
     for (const status of ['failed', 'storage-full', 'restore-error', 'incompatible-parameters', 'incompatible-network', 'inaccessible-encryption-credentials', 'inaccessible-encryption-credentials-recoverable']) {
       expect(rdsRow({ status })).toMatchObject({ check_status: 'failing', unknown_reason: null, status_detail: status })
     }
+  })
+
+  it('(Oct 29 decision) a stopped or failing status from discovery stands when a metric query failed, returned nothing, or the block failed', () => {
+    const none = { cpu: null, connections: null, connectionsMax: null, freeStorageMin: null }
+    expect(rdsRow({ status: 'storage-full' }, rdsValues({ cpu: null }), { cpu: 'access_denied' })).toMatchObject({ check_status: 'failing', unknown_reason: null, status_detail: 'storage-full', telemetry: 'unknown' })
+    expect(rdsRow({ status: 'failed' }, none, { cpu: 'throttled', connections: 'throttled', connectionsMax: 'throttled', freeStorageMin: 'throttled' })).toMatchObject({ check_status: 'failing', status_detail: 'failed' })
+    expect(rdsRow({ status: 'incompatible-parameters' }, none)).toMatchObject({ check_status: 'failing', telemetry: 'no_telemetry' })
+    expect(rdsRow({ status: 'stopped' }, rdsValues({ freeStorageMin: null }), { freeStorageMin: 'query_failed' })).toMatchObject({ check_status: 'stopped', unknown_reason: null })
+    expect(observabilityRowFor(rds({ status: 'stopping' }), undefined, undefined, ctx({ blockFailed: true }))).toMatchObject({ check_status: 'stopped', telemetry: 'unknown' })
+    expect(observabilityRowFor(rds({ status: 'restore-error' }), undefined, undefined, ctx({ blockFailed: true }))).toMatchObject({ check_status: 'failing', status_detail: 'restore-error' })
+    // Still a failed collection: the query did not complete.
+    expect(queryFailed(cw(rdsValues({ cpu: null }), { cpu: 'access_denied' }), { blockFailed: false })).toBe(true)
+    // Metrics still decide a serving instance: a failed query there is unknown with its reason.
+    expect(rdsRow({ status: 'available' }, rdsValues({ cpu: null }), { cpu: 'access_denied' })).toMatchObject({ check_status: 'unknown', unknown_reason: 'access_denied' })
   })
 
   it('(R1) the known transitional states need attention, with the status name', () => {
@@ -264,6 +278,34 @@ describe('OB3 load balancer 5xx', () => {
     expect(verdict(lb(1000, 0, 0, 'unknown'))).toEqual(['unknown', 'no_telemetry'])
   })
 
+  it('(review fix 1) a 5xx problem stands when the latency query returned nothing or failed; a passing rate does not', () => {
+    // 2% 5xx, latency completed empty -> needs_attention (was unknown/no_telemetry).
+    expect(verdict(lb(1000, 0, 20, 'unknown'))).toEqual(['needs_attention', null])
+    // 6% 5xx, latency denied / throttled -> failing.
+    expect(verdict(lb(100, 0, 6, 'unknown', { latencySec: 'access_denied' }))).toEqual(['failing', null])
+    expect(lb(100, 0, 6, 'unknown', { latencySec: 'throttled' })).toMatchObject({ check_status: 'failing', telemetry: 'unknown', activity: 'active' })
+    expect(verdict(lb(1000, 0, 20, 'unknown', { latencySec: 'query_failed' }))).toEqual(['needs_attention', null])
+    // Still a failed collection.
+    expect(queryFailed(cw({ latencySec: null, requestSum: 100, errorSum: 6, elb5xxSum: null }, { latencySec: 'access_denied' }), { blockFailed: false })).toBe(true)
+    // A passing rate can't outweigh missing latency: unknown with the latency's reason.
+    expect(verdict(lb(1000, 0, 5, 'unknown', { latencySec: 'access_denied' }))).toEqual(['unknown', 'access_denied'])
+    expect(verdict(lb(1000, 0, 5, 'unknown'))).toEqual(['unknown', 'no_telemetry'])
+    // Not judged by the 5xx rule: latency failure decides.
+    expect(verdict(lb(99, 0, 0, 'unknown', { latencySec: 'access_denied' }))).toEqual(['unknown', 'access_denied'])
+  })
+
+  it('(review fix 2) "5xx rate" is shown only when the row was judged on it', () => {
+    const labels = (r: ReturnType<typeof lb>) => r.metrics.map((m) => m.label)
+    expect(labels(lb(1000, 0, 5))).toContain('5xx rate') // passing, judged
+    expect(labels(lb(1000, 0, 20, 'unknown'))).toContain('5xx rate') // needs_attention stands
+    expect(labels(lb(100, 0, 6, 'unknown', { latencySec: 'access_denied' }))).toContain('5xx rate') // failing stands
+    expect(labels(lb(1000, 0, 5, 'unknown', { latencySec: 'access_denied' }))).not.toContain('5xx rate') // row unknown
+    expect(labels(lb(1000, 0, 5, 'unknown'))).not.toContain('5xx rate') // row unknown/no_telemetry
+    expect(labels(lb(99, 0, 0))).not.toContain('5xx rate') // not_enough_traffic
+    // The count is still shown whenever its two queries completed.
+    expect(labels(lb(1000, 0, 5, 'unknown', { latencySec: 'access_denied' }))).toContain('5xx errors')
+  })
+
   it('any of the three queries incomplete is unknown with its reason, never a rate', () => {
     for (const [key, outcome] of [
       ['elb5xxSum', 'access_denied'],
@@ -274,6 +316,9 @@ describe('OB3 load balancer 5xx', () => {
       expect(verdict(r)).toEqual(['unknown', outcome])
       expect(r.metrics.map((m) => m.label)).not.toContain('5xx rate')
     }
+    // A 5xx query with no recorded outcome measured nothing: query_failed, never "not enough traffic".
+    const missing = observabilityRowFor(alb, row('healthy', { responseTimeMs: 200 }), cw({ latencySec: 0.2, requestSum: 1000, errorSum: null }), ctx())
+    expect(verdict(missing)).toEqual(['unknown', 'query_failed'])
   })
 
   it('not_enough_traffic is counted in "other", never passing', () => {
