@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
+import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
 import { toast } from 'sonner';
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis';
 import { cn } from '@/lib/utils';
@@ -36,6 +37,8 @@ export default function ForecastPage() {
   const plan = usePlan();
   // Only a known Pro-or-above plan loads the forecast; unknown is never treated as free.
   const isPro = plan.isKnown && plan.isPro;
+  // Set when the server refused for the plan: its gate, never an error card or toast.
+  const [tierRequired, setTierRequired] = useState<TierRequired | null>(null);
 
   const [customParams, setCustomParams] = useState({
     trafficMultiplier: 2,
@@ -73,7 +76,10 @@ export default function ForecastPage() {
       const data = await forecastService.getForecast('90d');
       if (mountedRef.current) setForecast(data);
     } catch (error: unknown) {
-      if (mountedRef.current) toast.error('Failed to load forecast data');
+      if (!mountedRef.current) return;
+      const required = tierRequiredOf(error);
+      if (required) setTierRequired(required);
+      else toast.error('Failed to load forecast data');
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
@@ -88,7 +94,9 @@ export default function ForecastPage() {
       setSelectedScenario(scenario);
       toast.success(`${scenario.name} scenario generated`);
     } catch (error: unknown) {
-      toast.error('Failed to generate scenario');
+      const required = tierRequiredOf(error);
+      if (required) setTierRequired(required);
+      else toast.error('Failed to generate scenario');
     }
   };
 
@@ -144,7 +152,7 @@ export default function ForecastPage() {
   if (plan.status === 'loading') return <PlanLoadingState />;
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
 
-  if (!isPro) {
+  if (!isPro || tierRequired) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen">
         <div className="mb-8">
@@ -155,13 +163,24 @@ export default function ForecastPage() {
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-violet-600" />
           </div>
-          <h2 className="text-ui font-semibold text-gray-900 mb-2">Pro Plan Required</h2>
-          <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
-            AI-powered forecasting is available on the Pro plan and above.
-          </p>
-          <a href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
-            Upgrade to Pro
-          </a>
+          {tierRequired ? (
+            <>
+              <h2 className="text-ui font-semibold text-gray-900 mb-6">{planRequiredText(tierRequired)}</h2>
+              <a href={SEE_PLANS.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
+                {SEE_PLANS.label}
+              </a>
+            </>
+          ) : (
+            <>
+              <h2 className="text-ui font-semibold text-gray-900 mb-2">Pro Plan Required</h2>
+              <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
+                AI-powered forecasting is available on the Pro plan and above.
+              </p>
+              <a href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
+                Upgrade to Pro
+              </a>
+            </>
+          )}
         </div>
       </div>
     )

@@ -1,5 +1,6 @@
 import { CostForecast, Scenario, ScenarioType, TimeSeriesPoint } from '@/types/forecast.types';
 import { demoModeService } from './demo-mode.service';
+import { responseError } from '@/lib/plan/tier-required';
 
 class ForecastService {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL
@@ -22,7 +23,7 @@ class ForecastService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch forecast');
+      throw await responseError(response, 'Failed to fetch forecast');
     }
 
     const data = await response.json();
@@ -73,7 +74,7 @@ class ForecastService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to generate scenario');
+      throw await responseError(response, 'Failed to generate scenario');
     }
 
     const data = await response.json();

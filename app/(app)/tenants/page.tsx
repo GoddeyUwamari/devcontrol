@@ -18,6 +18,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
+import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
 import { api } from '@/lib/api'
 import { Tenant } from '@/lib/types'
 import { toast } from 'sonner'
@@ -93,6 +94,8 @@ export default function TenantsPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [addForm, setAddForm] = useState({ name: '', email: '', plan: 'free' })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Set when adding a tenant was refused for the plan.
+  const [addTierRequired, setAddTierRequired] = useState<TierRequired | null>(null)
 
   const handleAddTenant = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -104,8 +107,14 @@ export default function TenantsPage() {
       setIsAddModalOpen(false)
       setAddForm({ name: '', email: '', plan: 'free' })
       queryClient.invalidateQueries({ queryKey: ['tenants'] })
-    } catch {
-      toast.error('Failed to add tenant')
+    } catch (err) {
+      const required = tierRequiredOf(err)
+      if (required) {
+        setIsAddModalOpen(false)
+        setAddTierRequired(required)
+      } else {
+        toast.error('Failed to add tenant')
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -146,24 +155,38 @@ export default function TenantsPage() {
   if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
   if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
 
-  if (!entitled && !isDemoActive) {
+  // The server refused for the plan (e.g. a restricted or changed plan): its gate, never an error or empty list.
+  const tierRequired = isDemoActive ? null : tierRequiredOf(error) ?? addTierRequired
+
+  if ((!entitled || tierRequired) && !isDemoActive) {
     return (
       <div className="max-w-[1320px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 min-h-screen">
         <div className="mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Multi-Account Monitoring</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Tenant Intelligence</h1>
           <p className="text-gray-500 text-sm mt-1.5">Monitor revenue, churn risk, and expansion signals across your tenant base.</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
-          <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-            Multi-account monitoring is available on the Enterprise plan. Track tenant health, churn risk, and expansion signals across all your accounts.
-          </p>
-          <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
-            Upgrade to Enterprise
-          </Link>
+          {tierRequired ? (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">{planRequiredText(tierRequired)}</h2>
+              <Link href={SEE_PLANS.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+                {SEE_PLANS.label}
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+              <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
+                Tenant Intelligence is available on the Enterprise plan. Track tenant health, churn risk, and expansion signals across your tenants.
+              </p>
+              <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+                Upgrade to Enterprise
+              </Link>
+            </>
+          )}
         </div>
       </div>
     )

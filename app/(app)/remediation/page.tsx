@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
+import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
 import { remediationService, RemediationWorkflow, WorkflowStatus } from '@/lib/services/remediation.service';
 import { logError } from '@/lib/safe-log';
 
@@ -63,6 +64,8 @@ function WorkflowDetailPanel({
   onExecute,
   onRollback,
   isActing,
+  detailFailed,
+  onRetryDetail,
 }: {
   workflow: RemediationWorkflow;
   onClose: () => void;
@@ -71,6 +74,9 @@ function WorkflowDetailPanel({
   onExecute: () => void;
   onRollback: () => void;
   isActing: boolean;
+  /** The full workflow (with its audit trail) couldn't be loaded. */
+  detailFailed: boolean;
+  onRetryDetail: () => void;
 }) {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -110,6 +116,8 @@ function WorkflowDetailPanel({
             <X style={{ width: 18, height: 18, color: '#9CA3AF' }} />
           </button>
         </div>
+
+        {detailFailed && <LoadFailed onRetry={onRetryDetail} />}
 
         {/* Status + Risk */}
         <div style={{ display: 'flex', gap: 8 }}>
@@ -310,6 +318,22 @@ function WorkflowDetailPanel({
   );
 }
 
+/** A failed read: never shown as an empty list or zero counts. */
+function LoadFailed({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div role="alert" style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '32px 24px', textAlign: 'center' }}>
+      <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', margin: '0 0 12px' }}>Couldn&apos;t load workflows.</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        style={{ background: '#fff', border: '1px solid #D1D5DB', color: '#374151', padding: '8px 18px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 type TabFilter = 'all' | 'pending_approval' | 'approved' | 'completed' | 'failed';
@@ -324,21 +348,32 @@ export default function RemediationPage() {
   const [selected, setSelected] = useState<RemediationWorkflow | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [actingId, setActingId] = useState<string | null>(null);
+  // Set when an action was refused for the plan.
+  const [actionTierRequired, setActionTierRequired] = useState<TierRequired | null>(null);
 
   const queryKey = ['remediation', tab];
-  const { data: workflows = [], isLoading, refetch } = useQuery<RemediationWorkflow[]>({
+  const listQuery = useQuery<RemediationWorkflow[]>({
     queryKey,
     queryFn: () => remediationService.list(tab === 'all' ? undefined : tab),
     enabled: isEnterprise,
-    refetchInterval: 10000, // poll while executing
+    // Poll while executing; not once the server has refused for the plan.
+    refetchInterval: (query) => (tierRequiredOf(query.state.error) ? false : 10000),
   });
+  const { data: workflows = [], isLoading, refetch } = listQuery;
+  // Failed with nothing loaded yet: an error, never an empty list.
+  const listFailed = listQuery.isError && listQuery.data === undefined;
 
   // Fetch full workflow (with audit log) when panel opens
-  const { data: detail } = useQuery<RemediationWorkflow>({
+  const detailQuery = useQuery<RemediationWorkflow>({
     queryKey: ['remediation-detail', selected?.id],
     queryFn: () => remediationService.get(selected!.id),
     enabled: isEnterprise && !!selected,
   });
+  const detail = detailQuery.data;
+
+  // The server refused for the plan (e.g. a restricted or changed plan): its gate.
+  const tierRequired =
+    tierRequiredOf(listQuery.error) ?? tierRequiredOf(detailQuery.error) ?? actionTierRequired;
 
   const panelWorkflow = detail ?? selected;
 
@@ -351,7 +386,9 @@ export default function RemediationPage() {
       qc.invalidateQueries({ queryKey: ['remediation-detail', updated.id] });
       setSelected(updated);
     } catch (err: any) {
-      logError('[Remediation] action error', err);
+      const required = tierRequiredOf(err);
+      if (required) setActionTierRequired(required);
+      else logError('[Remediation] action error', err);
     } finally {
       setActingId(null);
     }
@@ -383,7 +420,7 @@ export default function RemediationPage() {
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
 
   // ── Non-enterprise locked state ──────────────────────────────────────────
-  if (!isEnterprise) {
+  if (!isEnterprise || tierRequired) {
     return (
       <div style={{ maxWidth: 1320, margin: '0 auto', padding: '40px 56px 64px', background: '#F9FAFB', minHeight: '100vh' }}>
         <div style={{ marginBottom: 32 }}>
@@ -393,13 +430,24 @@ export default function RemediationPage() {
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Lock style={{ width: 24, height: 24, color: '#9CA3AF' }} />
           </div>
-          <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 10 }}>Enterprise Feature</h2>
-          <p style={{ color: '#6B7280', fontSize: '0.9rem', maxWidth: 460, margin: '0 auto 28px', lineHeight: 1.7 }}>
-            Auto-Remediation Workflows let your team create, review, approve, and execute infrastructure fixes — with full audit trails and rollback support.
-          </p>
-          <a href="/settings/billing?upgrade=enterprise" style={{ display: 'inline-block', background: '#7C3AED', color: '#fff', padding: '10px 28px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
-            Upgrade to Enterprise
-          </a>
+          {tierRequired ? (
+            <>
+              <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 28 }}>{planRequiredText(tierRequired)}</h2>
+              <a href={SEE_PLANS.href} style={{ display: 'inline-block', background: '#7C3AED', color: '#fff', padding: '10px 28px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
+                {SEE_PLANS.label}
+              </a>
+            </>
+          ) : (
+            <>
+              <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 10 }}>Enterprise Feature</h2>
+              <p style={{ color: '#6B7280', fontSize: '0.9rem', maxWidth: 460, margin: '0 auto 28px', lineHeight: 1.7 }}>
+                Auto-Remediation Workflows let your team create, review, approve, and execute infrastructure fixes — with full audit trails and rollback support.
+              </p>
+              <a href="/settings/billing?upgrade=enterprise" style={{ display: 'inline-block', background: '#7C3AED', color: '#fff', padding: '10px 28px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
+                Upgrade to Enterprise
+              </a>
+            </>
+          )}
         </div>
       </div>
     );
@@ -425,6 +473,9 @@ export default function RemediationPage() {
         </button>
       </div>
 
+      {listFailed ? (
+        <LoadFailed onRetry={() => refetch()} />
+      ) : (<>
       {/* KPI row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 20, marginBottom: 28 }}>
         {[
@@ -533,6 +584,7 @@ export default function RemediationPage() {
           })}
         </div>
       )}
+      </>)}
 
       {/* Detail panel */}
       {panelWorkflow && (
@@ -544,6 +596,8 @@ export default function RemediationPage() {
           onExecute={handleExecute}
           onRollback={handleRollback}
           isActing={actingId === panelWorkflow.id}
+          detailFailed={detailQuery.isError && detail === undefined}
+          onRetryDetail={() => detailQuery.refetch()}
         />
       )}
     </div>
