@@ -282,8 +282,7 @@ export default function EfficiencyPage() {
   const demoMode         = useDemoMode()
   const { enabled: salesDemo } = useSalesDemo()
   const isDemoActive     = demoMode || salesDemo
-  const plan             = usePlan('pro')
-  const { canAccess }    = plan
+  const plan             = usePlan()
   // Nothing loads until the workspace is known; /api/anomalies is Pro-only.
   const planKnown        = plan.isKnown
 
@@ -814,10 +813,10 @@ export default function EfficiencyPage() {
       </div>
 
       {/* ── PRO GATE ── */}
-      {!canAccess && !isDemoActive && (
+      {!isDemoActive && !plan.isPro && (
         <div style={{ background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '32px', textAlign: 'center', marginTop: '8px' }}>
           <p className="text-ui font-semibold text-ink" style={{ marginBottom: '8px' }}>Full Efficiency Analysis — Pro Plan</p>
-          <p className="text-meta text-ink-muted" style={{ marginBottom: '16px' }}>Upgrade to unlock detailed resource efficiency scoring, quadrant drill-down, and export.</p>
+          <p className="text-meta text-ink-muted" style={{ marginBottom: '16px' }}>Upgrade to unlock detailed resource efficiency scoring and quadrant drill-down.</p>
           <Link href="/settings/billing/upgrade" className="text-ui font-semibold text-white" style={{ background: '#7C3AED', padding: '10px 24px', borderRadius: '8px', textDecoration: 'none' }}>
             Upgrade to Pro
           </Link>

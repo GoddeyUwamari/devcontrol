@@ -3,7 +3,8 @@
  * requests /api/anomalies (Pro-only) only for a known Pro-or-above plan. A
  * non-Pro plan gets the page with the existing "not currently available"
  * anomalies text, never an absence claim. The page has no whole-page gate;
- * its Pro banner is left exactly as it was.
+ * its Pro banner shows for a known plan below Pro (presentation only: no
+ * request changes with it).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, screen } from '@testing-library/react'
@@ -32,6 +33,7 @@ import EfficiencyPage from '../page'
 let trendCalls = 0
 const CONTENT = 'Efficiency score by service'
 const NOT_AVAILABLE = 'Cost anomaly detection is not currently available.'
+const BANNER = 'Full Efficiency Analysis — Pro Plan'
 
 const freeReads = () =>
   getCostSummary.mock.calls.length + getAllResources.mock.calls.length + getStats.mock.calls.length + trendCalls
@@ -96,8 +98,7 @@ describe('/costs/efficiency: plan states', () => {
     expect(getAnomalies).not.toHaveBeenCalled()
     expect(screen.getByText(NOT_AVAILABLE)).toBeTruthy()
     expect(screen.queryByText('No cost anomalies detected')).toBeNull()
-    // The Pro banner is untouched by this change (its canAccess bug is separate).
-    expect(screen.queryByText(/Full Efficiency Analysis/)).toBeNull()
+    expect(screen.getByText(BANNER)).toBeTruthy()
   })
 
   it('loading → org fetch error: the retry message, no request', async () => {
@@ -108,6 +109,7 @@ describe('/costs/efficiency: plan states', () => {
     await src.failBoth(1)
     expect(await screen.findByText(WORKSPACE_ERROR)).toBeTruthy()
     expect(screen.queryByText(CONTENT)).toBeNull()
+    expect(screen.queryByText(BANNER)).toBeNull()
     expect(freeReads()).toBe(0)
     expect(getAnomalies).not.toHaveBeenCalled()
   })
@@ -125,5 +127,35 @@ describe('/costs/efficiency: plan states', () => {
     await src.meOk(2, [org('enterprise')])
     await screen.findByText(CONTENT)
     expect(getAnomalies).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('/costs/efficiency: the Pro banner', () => {
+  it.each([
+    ['free', true],
+    ['starter', true],
+    ['pro', false],
+    ['enterprise', false],
+  ] as const)('a known %s plan: banner shown = %s', async (tier, shown) => {
+    const src = await mount()
+    expect(screen.queryByText(BANNER)).toBeNull()
+    await src.orgsOk(0, [org(tier)])
+    await screen.findByText(CONTENT)
+    if (shown) {
+      expect(screen.getByText(BANNER)).toBeTruthy()
+      expect(screen.getByText('Upgrade to unlock detailed resource efficiency scoring and quadrant drill-down.')).toBeTruthy()
+      expect(screen.getByRole('link', { name: 'Upgrade to Pro' }).getAttribute('href')).toBe('/settings/billing/upgrade')
+    } else {
+      expect(screen.queryByText(BANNER)).toBeNull()
+    }
+    expect(screen.queryByText(/and export/)).toBeNull()
+  })
+
+  it('the banner changes no request: a free plan makes the same free reads and no anomalies read', async () => {
+    const src = await mount()
+    await src.orgsOk(0, [org('free')])
+    await screen.findByText(BANNER)
+    expect(freeReads()).toBeGreaterThan(0)
+    expect(getAnomalies).not.toHaveBeenCalled()
   })
 })
