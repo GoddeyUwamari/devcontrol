@@ -137,7 +137,9 @@ describe('GET /api/observability/resources', () => {
     expect(state('app-alb')).toEqual(['needs_attention', null, 'reporting', 'active'])
     expect(state('net-lb')).toEqual(['not_measured', null, 'unknown', null])
     expect(state('idle-fn')).toEqual(['unknown', 'no_activity', 'no_telemetry', 'no_activity'])
-    expect(state('example-db')).toEqual(['not_measured', null, 'unknown', null])
+    // OB3: RDS is measured; the fixture's fake returns no AWS/RDS datapoints, so this
+    // available instance is unknown/no_telemetry (R3), never passing.
+    expect(state('example-db')).toEqual(['unknown', 'no_telemetry', 'no_telemetry', null])
     expect(state('orders')).toEqual(['unknown', 'no_telemetry', 'no_telemetry', null])
     expect(state('api-svc')).toEqual(['passing', null, 'reporting', null])
     expect(state('k8s')).toEqual(['passing', null, 'reporting', null])
@@ -157,6 +159,7 @@ describe('GET /api/observability/resources', () => {
     expect(data.type_summary.ec2).toEqual({ count: 5, passing: 1, needs_attention: 0, failing: 0, other: 4 })
     expect(data.type_summary['load-balancer']).toEqual({ count: 2, passing: 0, needs_attention: 1, failing: 0, other: 1 })
     expect(data.type_summary.lambda).toEqual({ count: 1, passing: 0, needs_attention: 0, failing: 0, other: 1 })
+    expect(data.type_summary.rds).toEqual({ count: 1, passing: 0, needs_attention: 0, failing: 0, other: 1 })
     for (const s of Object.values<any>(data.type_summary)) expect(s.passing + s.needs_attention + s.failing + s.other).toBe(s.count)
     const counted = Object.values<any>(data.type_summary).reduce((n, s) => n + s.count, 0)
     expect(counted).toBe(data.pagination.total)

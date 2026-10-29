@@ -72,7 +72,10 @@ describe('observabilityRowFor: check_status', () => {
     const r = observabilityRowFor(
       inv('load-balancer', { metadata: { type: 'application' } }),
       row('degraded', { responseTimeMs: 740 }),
-      cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'empty' }, { activity: { key: 'requestSum', value: 120 } }),
+      cw(
+        { latencySec: 'complete', requestSum: 'complete', errorSum: 'empty', elb5xxSum: 'empty' },
+        { activity: { key: 'requestSum', value: 120 }, values: { latencySec: 0.74, requestSum: 120, errorSum: null, elb5xxSum: null } }
+      ),
       ctx()
     )
     expect(r).toMatchObject({ check_status: 'needs_attention', unknown_reason: null, activity: 'active' })
@@ -151,7 +154,11 @@ describe('observabilityRowFor: check_status', () => {
     const alb = observabilityRowFor(
       inv('load-balancer', { metadata: { type: 'application' } }),
       row('healthy', { responseTimeMs: 20 }),
-      cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'empty' }, { activity: { key: 'requestSum', value: 0 } }),
+      // OB3: an ALB's evidence carries all three 5xx-rule queries.
+      cw(
+        { latencySec: 'complete', requestSum: 'complete', errorSum: 'empty', elb5xxSum: 'empty' },
+        { activity: { key: 'requestSum', value: 0 }, values: { latencySec: 0.02, requestSum: 0, errorSum: null, elb5xxSum: null } }
+      ),
       ctx()
     )
     expect(alb).toMatchObject({ check_status: 'unknown', unknown_reason: 'no_activity', activity: 'no_activity' })
@@ -211,14 +218,17 @@ describe('observabilityRowFor: check_status', () => {
     expect(r).toMatchObject({ check_status: 'unknown', unknown_reason: 'throttled', activity: null })
   })
 
-  it('(S11) ALB error rate is shown only when the 5xx query completed', () => {
+  // OB3: the legacy target-only "Error rate" is replaced here by the 5xx metrics (ELB +
+  // target 5xx), shown only when both 5xx queries completed.
+  it('(S11) ALB 5xx metrics are shown only when the 5xx queries completed; the legacy Error rate never is', () => {
     const lb = inv('load-balancer', { metadata: { type: 'application' } })
     const legacy = row('healthy', { responseTimeMs: 120, metrics: [{ label: 'Requests/min', value: 2 }, { label: 'Error rate', value: 0, unit: '%' }] })
-    const completed = observabilityRowFor(lb, legacy, cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'empty' }), ctx())
-    expect(completed.metrics.map((m) => m.label)).toEqual(['Avg latency', 'Requests/min', 'Error rate'])
-    const denied = observabilityRowFor(lb, legacy, cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'access_denied' }), ctx())
+    const values = { latencySec: 0.12, requestSum: 120, errorSum: null, elb5xxSum: null }
+    const completed = observabilityRowFor(lb, legacy, cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'empty', elb5xxSum: 'empty' }, { values }), ctx())
+    expect(completed.metrics.map((m) => m.label)).toEqual(['Avg latency', 'Requests/min', '5xx errors', '5xx rate'])
+    const denied = observabilityRowFor(lb, legacy, cw({ latencySec: 'complete', requestSum: 'complete', errorSum: 'access_denied', elb5xxSum: 'empty' }, { values }), ctx())
     expect(denied.check_status).toBe('unknown')
-    expect(denied.metrics.map((m) => m.label)).not.toContain('Error rate')
+    expect(denied.metrics.map((m) => m.label)).toEqual(['Avg latency', 'Requests/min'])
   })
 
   it('(S12) a resource whose recorded region differs from the queried one is unknown/outside_region', () => {
@@ -237,13 +247,16 @@ describe('observabilityRowFor: check_status', () => {
     expect(accountIdOfResourceArn('arn:aws:s3:::logs-bucket')).toBeNull()
   })
 
-  it('(S13) RDS is not_measured (stopped when its inventory says stopped); NLB, API Gateway and S3 are not_measured', () => {
-    expect(observabilityRowFor(inv('rds', { status: 'available' }), row('healthy'), undefined, ctx())).toMatchObject({
+  // OB3: RDS instances are measured; only an Aurora member instance (its cluster row
+  // measures it, R4) stays not_measured.
+  it('(S13) an Aurora member RDS instance is not_measured (stopped when its inventory says stopped); NLB, API Gateway and S3 are not_measured', () => {
+    const auroraMember = { metadata: { engine: 'aurora-postgresql' } }
+    expect(observabilityRowFor(inv('rds', { status: 'available', ...auroraMember }), row('healthy'), undefined, ctx())).toMatchObject({
       check_status: 'not_measured',
       unknown_reason: null,
       telemetry: 'unknown',
     })
-    expect(observabilityRowFor(inv('rds', { status: 'stopped' }), row('down'), undefined, ctx()).check_status).toBe('stopped')
+    expect(observabilityRowFor(inv('rds', { status: 'stopped', ...auroraMember }), row('down'), undefined, ctx()).check_status).toBe('stopped')
     expect(observabilityRowFor(inv('load-balancer', { metadata: { type: 'network' } }), undefined, undefined, ctx()).check_status).toBe('not_measured')
     expect(observabilityRowFor(inv('api-gateway'), undefined, undefined, ctx()).check_status).toBe('not_measured')
     expect(observabilityRowFor(inv('s3', { region: null }), undefined, undefined, ctx()).check_status).toBe('not_measured')
@@ -269,7 +282,7 @@ describe('observabilityRowFor: check_status', () => {
       observabilityRowFor(inv('ec2'), row('degraded'), ec2Ok, ctx()),
       observabilityRowFor(inv('ec2'), row('critical'), ec2Ok, ctx()),
       observabilityRowFor(inv('ec2', { status: 'stopped' }), row('down'), cw({ statusCheckFailed: 'empty', cpu: 'empty' }), ctx()),
-      observabilityRowFor(inv('rds'), row('healthy'), undefined, ctx()),
+      observabilityRowFor(inv('rds', { metadata: { engine: 'aurora-mysql' } }), row('healthy'), undefined, ctx()),
     ]
     expect(rows.map((r) => r.check_status)).toEqual(['passing', 'needs_attention', 'failing', 'stopped', 'not_measured'])
     for (const r of rows) expect(r.unknown_reason).toBeNull()
