@@ -26,14 +26,30 @@
  *   status_detail   the AWS-reported state behind check_status when that state decided
  *                   it (RDS: failing, transitional or unrecognised); null otherwise
  *
- * Precedence (first match wins): outside_account, outside_region, not measured
- * (or stopped, for a stopped RDS instance), a failed type block, no evaluated
- * row (not_supported), a query that did not complete, a deliberate stop, a
- * resource the check can't evaluate, an Inactive Lambda function (no_activity),
- * the type's own OB3 rules (RDS status, storage and CPU; Lambda throttles, before
- * idle; load balancer 5xx and latency), a completed activity query at zero
- * (no_activity, unless the evaluator found a real failure), then the evaluator's
- * own verdict.
+ * Precedence (first match wins):
+ *   1. outside_account, then outside_region;
+ *   2. not measured (stopped, for a stopped Aurora member RDS instance);
+ *   3. an RDS status from discovery: stopped/stopping -> stopped, the failing list ->
+ *      failing, the transitional list -> needs_attention (with status_detail) -- even
+ *      when its metric queries or the whole RDS block failed or returned nothing;
+ *   4. a failed type block (unknown/query_failed);
+ *   5. no evaluated row or evidence, or no query could be built (not_supported);
+ *   6. a load balancer whose 5xx rule says needs_attention or failing (stands even
+ *      when the latency query failed or returned nothing);
+ *   7. a query that did not complete (unknown with its reason);
+ *   8. a deliberate stop (evidence says stopped; EC2 stopped/stopping/shutting-down);
+ *   9. a resource the check can't evaluate (not_supported);
+ *  10. RDS: an unrecognised status (not_supported), else available /
+ *      storage-optimization judged by its core metrics (no_telemetry if any is
+ *      empty; storage and CPU);
+ *  11. load balancer: no_activity, not_enough_traffic, then the worse of the 5xx and
+ *      latency results (no_telemetry when latency has no data);
+ *  12. Lambda: throttles > 0 -> needs_attention (before idle; not for a Failed function
+ *      or a critical verdict);
+ *  13. an Inactive Lambda function (no_activity);
+ *  14. a completed activity query at zero (no_activity, unless the evaluator found a
+ *      real failure);
+ *  15. the evaluator's own verdict.
  *
  * The legacy CloudWatchServiceHealth rows are read, never changed: this module
  * adds states beside them.
