@@ -50,6 +50,13 @@ const TIMEOUT_MARK_LOCK_TIMEOUT_MS = 5 * 1000;
 /** How long the timeout waits for the scan's session to exit after asking the server to end it. */
 const TERMINATE_WAIT_MS = 5 * 1000;
 
+/**
+ * How long a timed-out scan waits for its own connection to finish closing
+ * (to read the server's "terminating connection" notice) before it is handed
+ * back to the pool to be removed. Past it the socket is destroyed here first.
+ */
+const CLIENT_END_WAIT_MS = 2 * 1000;
+
 export const SCAN_TIMED_OUT_MESSAGE = 'Timed out after 10 minutes';
 export const SCAN_INTERRUPTED_MESSAGE = 'Interrupted: the server restarted during the scan';
 
@@ -243,9 +250,9 @@ export class CustomComplianceService {
    * synchronous throw at this call boundary before runScanBody's own try
    * block ever starts.
    *
-   * It also arms the scan's timeout (stopTimedOutScan). A timed-out scan's
-   * connection is destroyed, never returned to the pool: the timeout may be
-   * ending that session at the same moment.
+   * It also arms the scan's timeout (stopTimedOutScan). When the timeout
+   * ended the scan's session, the connection is destroyed, never returned to
+   * the pool, and only after it has finished closing (closeEndedClient).
    */
   private async handOffToLongRunningScan(
     claim: ScanClaim,
@@ -254,7 +261,8 @@ export class CustomComplianceService {
     resourceFilters?: Record<string, any>
   ): Promise<ComplianceScan> {
     const startedAt = Date.now();
-    const run: { timeout: Promise<void> | null } = { timeout: null };
+    // Resolves to whether the timeout ended the scan's session.
+    const run: { timeout: Promise<boolean> | null } = { timeout: null };
     const timer = setTimeout(() => {
       run.timeout = this.stopTimedOutScan(claim, frameworkId, organizationId, startedAt);
     }, this.scanTimeoutMs);
@@ -262,13 +270,14 @@ export class CustomComplianceService {
     try {
       return await this.runScanBody(claim.client, claim.scan, frameworkId, organizationId, resourceFilters);
     } catch (error) {
-      if (run.timeout) throw new ScanTimedOutError();
+      if (run.timeout && (await run.timeout)) throw new ScanTimedOutError();
       throw error;
     } finally {
       clearTimeout(timer);
+      const sessionEnded = run.timeout ? await run.timeout : false;
       let destroyWith: Error | undefined;
-      if (run.timeout) {
-        await run.timeout;
+      if (sessionEnded) {
+        await this.closeEndedClient(claim.client);
         destroyWith = new Error('Scan timed out');
       } else if (!(await this.unlockQuietly(claim.client, claim.lockKey))) {
         destroyWith = new Error('Scan lock release failed');
@@ -278,20 +287,55 @@ export class CustomComplianceService {
   }
 
   /**
+   * Waits, with the scan's 'error' listener still attached, until a
+   * connection whose session the timeout ended has finished closing. Released
+   * any earlier, the client could read the server's "terminating connection"
+   * notice only after pg-pool had put its own idle listener back, and the
+   * pool would emit 'error' (config/database.ts exits the process on that).
+   * If it hasn't closed within CLIENT_END_WAIT_MS, its socket is destroyed
+   * here, still under the scan's listener, before the pool sees it.
+   */
+  private async closeEndedClient(client: PoolClient): Promise<void> {
+    if (await this.waitForClientEnd(client, CLIENT_END_WAIT_MS)) return;
+    console.error('[CustomCompliance] Timed-out scan connection did not close in time; destroying it');
+    (client as unknown as { connection?: { stream?: { destroy: () => void } } }).connection?.stream?.destroy();
+    await this.waitForClientEnd(client, CLIENT_END_WAIT_MS);
+  }
+
+  private waitForClientEnd(client: PoolClient, timeoutMs: number): Promise<boolean> {
+    if ((client as unknown as { _ended?: boolean })._ended) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const onEnd = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        client.removeListener('end', onEnd);
+        resolve(false);
+      }, timeoutMs);
+      client.once('end', onEnd);
+    });
+  }
+
+  /**
    * Stops a scan that ran past its timeout: marks its row failed (only if it
    * is still pending or running), then ends its Postgres session. Ending the
    * session releases the scan lock and rolls back the scan's open results
    * transaction, and every later query on that connection fails, so the
    * scan can write nothing more. If the row is locked by the scan's own
    * final update, the session is ended first and the row marked after.
-   * Never rejects.
+   * A run that had already finished (the mark matched no row) is left alone:
+   * its session is not ended, and the scan unlocks and pools its connection
+   * as usual. If the mark itself failed, the session is still ended, so the
+   * lock is freed; the run is then recovered as interrupted.
+   * Resolves to whether it ended the session. Never rejects.
    */
   private async stopTimedOutScan(
     claim: ScanClaim,
     frameworkId: string,
     organizationId: string,
     startedAt: number
-  ): Promise<void> {
+  ): Promise<boolean> {
     const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
     console.warn(`[CustomCompliance] Scan timed out: framework ${frameworkId} after ${durationSeconds}s`);
 
@@ -301,6 +345,8 @@ export class CustomComplianceService {
     } catch (error: any) {
       console.error(`[CustomCompliance] Could not mark timed-out scan failed (framework ${frameworkId}):`, error?.message);
     }
+
+    if (marked === 'already_finished') return false;
 
     try {
       await this.endScanSession(claim.session);
@@ -315,6 +361,7 @@ export class CustomComplianceService {
         console.error(`[CustomCompliance] Could not mark timed-out scan failed (framework ${frameworkId}):`, error?.message);
       }
     }
+    return true;
   }
 
   /** One status-guarded update, on its own connection, so a scan blocked on its own connection can't hold it up. */
@@ -351,6 +398,9 @@ export class CustomComplianceService {
   private async endScanSession(session: ScanSession): Promise<void> {
     const client = await this.pool.connect();
     try {
+      // The two-argument pg_terminate_backend (wait up to TERMINATE_WAIT_MS
+      // for the session to exit) needs PostgreSQL 14 or later. Production
+      // runs 16; CI runs 14.
       await client.query(
         `SELECT pg_terminate_backend(pid, ${TERMINATE_WAIT_MS})
          FROM pg_stat_activity WHERE pid = $1 AND backend_start = $2::timestamptz`,

@@ -307,7 +307,7 @@ describe('scan timeout', () => {
   // locks: the scan already holds a KEY SHARE lock on its run row (its findings' foreign-key checks),
   // so Postgres lets its final UPDATE skip the row's wait queue, and lock order alone can't decide
   // who commits first.
-  it('2a: the timeout fires mid-scan but the completion commits before its mark -- the run stays completed', async () => {
+  it('2a: the timeout fires mid-scan but the completion commits before its mark -- the run stays completed, its session is not ended, and its connection is pooled as usual', async () => {
     const { orgId, frameworkId, ruleId } = await scannable(2);
     const service = new CustomComplianceService(pool, { scanTimeoutMs: 300 });
     const markResults: string[] = [];
@@ -322,6 +322,23 @@ describe('scan timeout', () => {
       const result = await realMark(...args);
       markResults.push(result);
       return result;
+    });
+    const endSession = jest.spyOn(service as any, 'endScanSession');
+    // The scan's own connection is the first one it checks out.
+    const scanReleases: unknown[][] = [];
+    let scanClientSeen = false;
+    jest.spyOn(pool, 'connect').mockImplementation(async (...args: any[]) => {
+      if (args.length > 0) return (originalConnect as any)(...args);
+      const client = await originalConnect();
+      if (!scanClientSeen) {
+        scanClientSeen = true;
+        const realRelease = client.release.bind(client);
+        jest.spyOn(client, 'release').mockImplementationOnce((...rArgs: any[]) => {
+          scanReleases.push(rArgs);
+          return realRelease(...rArgs);
+        });
+      }
+      return client;
     });
 
     const ruleBlocker = await lockRule(ruleId);
@@ -339,6 +356,8 @@ describe('scan timeout', () => {
       expect(error).toBeUndefined();
       expect(scan!.status).toBe('completed');
       expect(markResults).toEqual(['already_finished']);
+      expect(endSession).not.toHaveBeenCalled();
+      expect(scanReleases).toEqual([[undefined]]);
       const stored = await scanRow(scanId);
       expect(stored.status).toBe('completed');
       expect(stored.error_message).toBeNull();
@@ -393,6 +412,78 @@ describe('scan timeout', () => {
     } finally {
       openEnd();
       await ruleBlocker.release();
+    }
+  }, 20000);
+
+  it('2d: a session ended while the scan waits idle in its finally block, with the event loop busy, closes before release -- no pool error, no exit', async () => {
+    const { orgId, frameworkId, ruleId } = await scannable(2);
+    const service = new CustomComplianceService(pool, { scanTimeoutMs: 300 });
+    const sessions = captureSessions(service);
+
+    // Production's pool handler (config/database.ts) exits the process on a pool error.
+    const poolErrors: Error[] = [];
+    const exit = jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const onPoolError = (error: Error) => {
+      poolErrors.push(error);
+      process.exit(-1);
+    };
+    pool.on('error', onPoolError);
+
+    // The session end: terminate without waiting, then keep the event loop busy, so the
+    // server's "terminating connection" notice is still unread on the scan's socket when
+    // the timeout returns and the scan's finally block runs.
+    let openEnd!: () => void;
+    const endGate = new Promise<void>((resolve) => { openEnd = resolve; });
+    jest.spyOn(service as any, 'endScanSession').mockImplementation(async (...args: any[]) => {
+      const session = args[0] as Session;
+      await endGate;
+      await pool.query('SELECT pg_terminate_backend($1)', [session.pid]);
+      const until = Date.now() + 300;
+      while (Date.now() < until) { /* busy */ }
+    });
+    let finalUpdate!: (row: unknown) => void;
+    const finalUpdated = new Promise<unknown>((resolve) => { finalUpdate = resolve; });
+    const updateScan = ComplianceFrameworksRepository.prototype.updateScan;
+    jest.spyOn(ComplianceFrameworksRepository.prototype, 'updateScan').mockImplementation(async function (
+      this: ComplianceFrameworksRepository, ...args: Parameters<typeof updateScan>
+    ) {
+      const row = await updateScan.apply(this, args);
+      if (args[1].status === 'completed') finalUpdate(row);
+      return row;
+    });
+
+    const ruleBlocker = await lockRule(ruleId);
+    try {
+      const result = settle(service.executeScan(frameworkId, orgId));
+      const worker = await waitForSession(sessions);
+      await waitBehind(ruleBlocker.pid, 1, 'the scan blocked on its first finding');
+      const scanId = await waitForScanId(frameworkId);
+      await waitUntil(async () => (await scanRow(scanId)).status === 'failed', 'the timeout committed its mark');
+
+      await ruleBlocker.release();
+      expect(await finalUpdated).toBeNull();
+      // The late completion rolled back: the scan's session is idle, out of any transaction.
+      await waitUntil(async () => {
+        const { rows } = await pool.query('SELECT state FROM pg_stat_activity WHERE pid = $1', [worker.pid]);
+        return rows[0]?.state === 'idle';
+      }, 'the scan idle in its finally block');
+      openEnd();
+
+      const { error } = await result;
+      expect(error).toBeInstanceOf(ScanTimedOutError);
+      // Give any late socket event a chance to reach the pool.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(poolErrors).toEqual([]);
+      expect(exit).not.toHaveBeenCalled();
+      expect(await sessionAlive(worker)).toBe(false);
+      expect((await scanRow(scanId)).error_message).toBe(SCAN_TIMED_OUT_MESSAGE);
+      expect(await findingsCount(scanId)).toBe(0);
+      expect(await lockIsFree(orgId, frameworkId)).toBe(true);
+    } finally {
+      openEnd();
+      await ruleBlocker.release();
+      pool.removeListener('error', onPoolError);
     }
   }, 20000);
 
