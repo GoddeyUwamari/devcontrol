@@ -368,13 +368,23 @@ describe("organizationStatus on a hard refresh", () => {
 });
 
 describe("organizationStatus: no workspace", () => {
-  it("Z1: one confirmed-empty response is enough: /me [] with /organizations failing (twice) → none", async () => {
+  it("Z1: the latest attempt decides: /me [] first, then the retry fails on both → error, not none", async () => {
     const src = fakeOrgSources();
     await mount();
     await src.meOk(0, []);
     await src.orgsFail(0);
     await advanceToAutoRetry();
     await src.failBoth(1);
+    expect(auth.organizationStatus).toBe("error");
+  });
+
+  it("Z1b: the retry itself confirms an empty list (/me []) while /organizations fails → none", async () => {
+    const src = fakeOrgSources();
+    await mount();
+    await src.failBoth(0);
+    await advanceToAutoRetry();
+    await src.meOk(1, []);
+    await src.orgsFail(1);
     expect(auth.organizationStatus).toBe("none");
   });
 

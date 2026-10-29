@@ -76,6 +76,10 @@ export default function SSOSettingsPage() {
   });
   // The server refused for the plan (e.g. a restricted or changed plan): its gate.
   const tierRequired = tierRequiredOf(configError);
+  // The load error replaces the form only when nothing has loaded yet; a
+  // failed reload (e.g. after a save) keeps the last loaded settings.
+  const configLoadFailed = configError != null && config === undefined;
+  const configReloadFailed = configError != null && config !== undefined;
 
   useEffect(() => {
     if (config) {
@@ -197,7 +201,7 @@ export default function SSOSettingsPage() {
           <Loader2 className="w-4 h-4 animate-spin" />
           <span className="text-sm">Loading SSO configuration…</span>
         </div>
-      ) : configError ? (
+      ) : configLoadFailed ? (
         <div role="alert" className="bg-white border border-gray-200 rounded-xl py-12 px-10 text-center">
           <p className="text-sm font-semibold text-gray-900 mb-4">Couldn&apos;t load SSO settings.</p>
           <button
@@ -212,6 +216,20 @@ export default function SSOSettingsPage() {
         </div>
       ) : (
         <>
+          {configReloadFailed && (
+            <div role="status" className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 mb-6 text-sm text-amber-800">
+              <span>Couldn&apos;t refresh SSO settings. Showing the last loaded version.</span>
+              <button
+                type="button"
+                onClick={() => refetchConfig()}
+                disabled={configFetching}
+                className="ml-auto inline-flex items-center gap-1.5 font-semibold underline disabled:opacity-60"
+              >
+                {configFetching && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+                Try again
+              </button>
+            </div>
+          )}
           {/* SP Metadata */}
           {config && (
             <div className="bg-white border border-gray-200 rounded-xl px-8 py-7 mb-6">

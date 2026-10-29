@@ -38,6 +38,7 @@ function stubConfig(...answers: Array<() => Response | Promise<Response>>) {
 }
 
 const ERROR_TEXT = "Couldn't load SSO settings.";
+const RELOAD_NOTE = "Couldn't refresh SSO settings. Showing the last loaded version.";
 const expectNoForm = () => {
   expect(screen.queryByPlaceholderText("company.com, subsidiary.com")).toBeNull();
   expect(screen.queryByText("Service Provider Details")).toBeNull();
@@ -68,6 +69,7 @@ describe("SSO settings: loading the config", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
     expectNoForm();
     expect(screen.queryByText(/This feature is on/)).toBeNull();
+    expect(screen.queryByText(RELOAD_NOTE)).toBeNull();
   });
 
   it("Try again → the saved config", async () => {
@@ -93,6 +95,28 @@ describe("SSO settings: loading the config", () => {
     await renderWithKnownPlan(<SSOSettingsPage />, "enterprise");
     expect(await screen.findByText("Service Provider Details")).toBeTruthy();
     expect(screen.getByDisplayValue("example.test")).toBeTruthy();
+  });
+
+  it("a save whose reload fails keeps the saved form, with a non-blocking note; Try again clears it", async () => {
+    const gets = [() => res(200, { success: true, data: CONFIG }), () => res(500, { success: false }), () => res(200, { success: true, data: CONFIG })];
+    let g = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (!String(url).includes("/api/auth/saml/config")) return res(404, {});
+      if (init?.method === "POST") return res(200, { success: true, data: CONFIG });
+      return gets[Math.min(g++, gets.length - 1)]();
+    }));
+    await renderWithKnownPlan(<SSOSettingsPage />, "enterprise");
+    await screen.findByText("Service Provider Details");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Update Configuration" })); });
+    expect(await screen.findByText(RELOAD_NOTE)).toBeTruthy();
+    expect(screen.getByText("Service Provider Details")).toBeTruthy();
+    expect(screen.getByDisplayValue("example.test")).toBeTruthy();
+    expect(screen.queryByText(ERROR_TEXT)).toBeNull();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
+    await act(async () => {});
+    expect(screen.queryByText(RELOAD_NOTE)).toBeNull();
+    expect(screen.getByText("Service Provider Details")).toBeTruthy();
   });
 
   it("402 TIER_REQUIRED → the gate naming the plan, no error message, no form", async () => {

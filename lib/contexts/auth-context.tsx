@@ -587,13 +587,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * One organization load: /api/auth/me and /api/organizations together, as
    * on page load. Ready as soon as either succeeds. If both fail, the first
    * load (autoRetry) tries once more after ORG_LOAD_RETRY_MS; any other load
-   * goes straight to "error". Never two loads at once: a call while one is
+   * goes straight to "error" ("none" if this attempt itself got a
+   * successful empty list). Never two loads at once: a call while one is
    * running returns it. A failure never changes a workspace already ready.
    */
   const startOrganizationLoad = useCallback(
     (autoRetry: boolean): Promise<void> => {
       if (attemptRef.current) return attemptRef.current;
       clearRetryTimer();
+      // Only this attempt's own answers decide between "none" and "error".
+      confirmedEmptyRef.current = false;
       const generation = generationRef.current;
       if (statusRef.current !== "ready") setOrganizationStatus("loading");
 
