@@ -38,7 +38,7 @@ const json = (status: number, body: unknown) =>
 /** Answers /api/forecast GET and POST /scenario; everything else is not this test's concern. */
 function stubForecastFetch(get: () => Response, scenario: () => Response = () => json(500, {})) {
   const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     calls.push(String(url))
     if (String(url).includes('/api/forecast/scenario')) return scenario()
     if (String(url).includes('/api/forecast')) return get()
