@@ -415,7 +415,6 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'app/(app)/ai-reports/page.tsx', match: 'opacity-70', rule: 'opacity on content', count: 2, reason: "Busy dimming on the confirm dialog's Delete button while deleting, and on Generate Executive Summary while a report generates; kept until the solid disabled style lands in its own PR." },
   { file: 'app/(app)/ai-reports/page.tsx', match: 'opacity-60', rule: 'opacity on content', count: 1, reason: "Busy dimming on the Available Reports 'Generate →' buttons while another report generates; kept until the solid disabled style lands in its own PR." },
   { file: 'app/(app)/ai-reports/page.tsx', match: 'opacity-90', variant: 'hover:', rule: 'opacity on content', count: 1, reason: "Hover feedback on the 'Generate →' buttons (white text on the report-type fill), not resting content; kept, no visible change." },
-  { file: 'app/(app)/ai-reports/page.tsx', match: 'text-lg', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The Pro-plan banner's decorative warning emoji; kept, no visible change." },
   { file: 'app/(app)/ai-reports/page.tsx', match: 'text-3xl', rule: 'Tailwind size scale (use a role token)', count: 1, reason: "The empty state's decorative sparkles emoji; kept, no visible change." },
   { file: 'app/(app)/ai-reports/page.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "Recommended Next's decorative Shield icon (svg, not text) on its red-50 tile; kept, no visible change." },
   { file: 'app/(app)/ai-reports/page.tsx', match: 'text-slate-300', rule: 'text colour below AA on light surfaces', count: 1, reason: "The loading state's decorative RefreshCw icon (svg, not text); kept, no visible change." },
@@ -438,7 +437,6 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   // SM: the Security menu pages (reviewed exceptions). Status colour keys that also colour tints, rings, bars or
   // toggles; decorative icons, glyphs and dividers; disabled-state dimming (the "Disabled" badge and the solid disabled
   // style are deferred); and one fixed-width table column kept at its size.
-  { file: 'app/(app)/anomalies/page.tsx', match: 'text-lg', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'The decorative ⚠️ emoji in the Pro-plan banner (as on AI Reports and the Infrastructure limit prompt).' },
   { file: 'app/(app)/anomalies/page.tsx', match: "color: '#DC2626'", rule: 'inline text style', count: 1, reason: 'severityConfig.critical: the severity colour key (chip text on its own #FEF2F2 tint and border); kept unchanged.' },
   { file: 'app/(app)/anomalies/page.tsx', match: "color: '#D97706'", rule: 'inline text style', count: 1, reason: 'severityConfig.warning: the severity colour key (chip text on its own #FFFBEB tint and border); kept unchanged.' },
   { file: 'app/(app)/anomalies/page.tsx', match: "color: '#64748B'", rule: 'inline text style', count: 1, reason: 'severityConfig.info: the severity colour key (chip text on its own #F8FAFC tint and border); kept unchanged.' },
