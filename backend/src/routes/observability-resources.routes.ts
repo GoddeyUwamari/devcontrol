@@ -3,6 +3,10 @@
  * check, telemetry and activity state, Last seen, labelled metric values, a
  * per-type summary computed over the whole fleet, and the page-level scope
  * (region, account count, last fully successful check, inventory coverage).
+ * OB2.1 adds type_breakdown and fleet_summary: the explicit split behind
+ * type_summary's "other" (measured, neutral, not measured, outside scope, and
+ * the telemetry of the measured rows), per type and over the whole fleet, on
+ * status ok only; the other statuses' bodies are unchanged.
  *
  * Reads the same CloudWatchService.getMetrics() result as GET
  * /api/cloudwatch/metrics (same 45s cache and in-flight sweep, keyed by
@@ -132,6 +136,8 @@ router.get('/resources', authenticateToken, async (req, res) => {
         inventory_capped: snapshot.inventoryCapped,
         inventory_capped_reasons: snapshot.inventoryCappedReasons,
         type_summary: snapshot.typeSummary,
+        type_breakdown: snapshot.typeBreakdown,
+        fleet_summary: snapshot.fleetSummary,
         resources,
         pagination,
       },
