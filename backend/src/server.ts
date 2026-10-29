@@ -29,6 +29,7 @@ import { ScheduledReportsJob } from './jobs/scheduled-reports.job';
 import { WeeklyAISummaryJob } from './jobs/weekly-ai-summary.job';
 import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { GracePeriodEnforcementJob } from './jobs/grace-period-enforcement.job';
+import { CustomComplianceService } from './services/custom-compliance.service';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
 import { loadEnv } from './config/load-env';
@@ -302,6 +303,13 @@ const startServer = async () => {
     } else {
       httpServer.listen(PORT, onListening);
     }
+
+    // Marks failed the compliance scans a restart or crash left running. It
+    // only touches scans no live session holds, so it is safe while this or
+    // another process scans, and it runs on the local stack too (database only).
+    new CustomComplianceService(pool).recoverInterruptedScans().catch((error) => {
+      console.error('[CustomCompliance] Startup recovery failed:', error);
+    });
 
     // Update business metrics every 30s
     setInterval(async () => {

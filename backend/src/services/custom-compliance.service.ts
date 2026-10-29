@@ -31,6 +31,32 @@ const notEvaluated = (reason: string): RuleEvaluationResult => ({ pass: false, n
  */
 const SCAN_CONCURRENCY_LOCK_SALT = 3;
 
+/** The longest one scan may run before it is stopped and marked failed (founder decision, Oct 29). */
+export const SCAN_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** The longest any one statement of a scan's results transaction may run. */
+export const SCAN_STATEMENT_TIMEOUT_MS = 60 * 1000;
+
+/**
+ * The longest a scan's results transaction may sit idle between statements.
+ * Past it the server ends the session, which rolls the transaction back and
+ * frees the scan lock even when this process can no longer act.
+ */
+export const SCAN_IDLE_IN_TRANSACTION_TIMEOUT_MS = 10 * 1000;
+
+/** How long the timeout waits for the scan row's lock before ending the scan's session first. */
+const TIMEOUT_MARK_LOCK_TIMEOUT_MS = 5 * 1000;
+
+/** How long the timeout waits for the scan's session to exit after asking the server to end it. */
+const TERMINATE_WAIT_MS = 5 * 1000;
+
+export const SCAN_TIMED_OUT_MESSAGE = 'Timed out after 10 minutes';
+export const SCAN_INTERRUPTED_MESSAGE = 'Interrupted: the server restarted during the scan';
+
+const LOCK_NOT_AVAILABLE = '55P03';
+
+const SET_TENANT_SQL = "SELECT set_config('app.current_organization_id', $1, false)";
+
 /**
  * Thrown by executeScan() when another scan is already active (pending or
  * running) for this framework. No scan row is created when this is thrown.
@@ -42,17 +68,53 @@ export class ScanInProgressError extends Error {
   }
 }
 
+/** Thrown by executeScan() when the scan ran past its timeout and was marked failed. */
+export class ScanTimedOutError extends Error {
+  constructor() {
+    super(SCAN_TIMED_OUT_MESSAGE);
+    this.name = 'ScanTimedOutError';
+  }
+}
+
+/**
+ * The scan's row is no longer pending/running (its timeout marked it
+ * failed), so this worker's results transaction was rolled back and nothing
+ * of it was written.
+ */
+class ScanNoLongerActiveError extends Error {
+  constructor(scanId: string) {
+    super(`Scan ${scanId} is no longer running; its results were discarded`);
+    this.name = 'ScanNoLongerActiveError';
+  }
+}
+
 export type ScanStartResult =
   | { status: 'started'; scanId: string }
   | { status: 'already_in_progress' };
 
-type ScanClaim = { client: PoolClient; scan: ComplianceScan; lockKey: string };
+/** The Postgres session a scan runs on. pid plus backend_start never names a different session, even after pid reuse. */
+type ScanSession = { pid: number; backendStart: string };
+
+type ScanClaim = {
+  client: PoolClient;
+  scan: ComplianceScan;
+  lockKey: string;
+  session: ScanSession;
+  onClientError: (error: Error) => void;
+};
+
+export interface CustomComplianceServiceOptions {
+  /** Overrides SCAN_TIMEOUT_MS (tests). */
+  scanTimeoutMs?: number;
+}
 
 export class CustomComplianceService {
   private repository: ComplianceFrameworksRepository;
+  private scanTimeoutMs: number;
 
-  constructor(private pool: Pool) {
+  constructor(private pool: Pool, options: CustomComplianceServiceOptions = {}) {
     this.repository = new ComplianceFrameworksRepository(pool);
+    this.scanTimeoutMs = options.scanTimeoutMs ?? SCAN_TIMEOUT_MS;
   }
 
   /**
@@ -125,6 +187,12 @@ export class CustomComplianceService {
    * framework and inherently org-scoped (framework_id is unique per org via
    * compliance_frameworks_id_org_unique), so this never serializes unrelated
    * frameworks or unrelated organizations against each other.
+   *
+   * Holding the lock also proves that no live scan of this framework exists
+   * in any process: a scan writes only through the session that holds its
+   * lock, so if the lock was free, that session is gone. Any run row still
+   * pending or running is a dead scan's, and is marked failed (interrupted)
+   * here, under the same lock, before the new row is created.
    */
   private async acquireLockAndCreateScan(
     frameworkId: string,
@@ -134,24 +202,21 @@ export class CustomComplianceService {
   ): Promise<ScanClaim | null> {
     const client = await this.pool.connect();
     const lockKey = `${organizationId}:${frameworkId}`;
+    const onClientError = this.watchScanClient(client, lockKey);
     let lockAcquired = false;
 
     try {
-      await client.query(
-        "SELECT set_config('app.current_organization_id', $1, false)",
-        [organizationId]
-      );
+      await client.query(SET_TENANT_SQL, [organizationId]);
 
-      const { rows } = await client.query(
-        `SELECT pg_try_advisory_lock(hashtextextended($1, ${SCAN_CONCURRENCY_LOCK_SALT})) AS locked`,
-        [lockKey]
-      );
-
-      if (!rows[0].locked) {
-        client.release();
+      if (!(await this.tryLock(client, lockKey))) {
+        this.releaseScanClient(client, onClientError);
         return null;
       }
       lockAcquired = true;
+
+      await this.failInterruptedScans(client, organizationId, frameworkId);
+
+      const session = await this.readSession(client);
 
       const scan = await this.repository.createScan({
         organization_id: organizationId,
@@ -161,12 +226,10 @@ export class CustomComplianceService {
         triggered_by: userId,
       }, client);
 
-      return { client, scan, lockKey };
+      return { client, scan, lockKey, session, onClientError };
     } catch (error) {
-      if (lockAcquired) {
-        await this.unlockQuietly(client, lockKey);
-      }
-      client.release();
+      const unlocked = lockAcquired ? await this.unlockQuietly(client, lockKey) : true;
+      this.releaseScanClient(client, onClientError, unlocked ? undefined : new Error('Scan lock release failed'));
       throw error;
     }
   }
@@ -179,6 +242,10 @@ export class CustomComplianceService {
    * `claim.client` is unlocked and released on every path, including a
    * synchronous throw at this call boundary before runScanBody's own try
    * block ever starts.
+   *
+   * It also arms the scan's timeout (stopTimedOutScan). A timed-out scan's
+   * connection is destroyed, never returned to the pool: the timeout may be
+   * ending that session at the same moment.
    */
   private async handOffToLongRunningScan(
     claim: ScanClaim,
@@ -186,23 +253,219 @@ export class CustomComplianceService {
     organizationId: string,
     resourceFilters?: Record<string, any>
   ): Promise<ComplianceScan> {
+    const startedAt = Date.now();
+    const run: { timeout: Promise<void> | null } = { timeout: null };
+    const timer = setTimeout(() => {
+      run.timeout = this.stopTimedOutScan(claim, frameworkId, organizationId, startedAt);
+    }, this.scanTimeoutMs);
+
     try {
       return await this.runScanBody(claim.client, claim.scan, frameworkId, organizationId, resourceFilters);
+    } catch (error) {
+      if (run.timeout) throw new ScanTimedOutError();
+      throw error;
     } finally {
-      await this.unlockQuietly(claim.client, claim.lockKey);
-      claim.client.release();
+      clearTimeout(timer);
+      let destroyWith: Error | undefined;
+      if (run.timeout) {
+        await run.timeout;
+        destroyWith = new Error('Scan timed out');
+      } else if (!(await this.unlockQuietly(claim.client, claim.lockKey))) {
+        destroyWith = new Error('Scan lock release failed');
+      }
+      this.releaseScanClient(claim.client, claim.onClientError, destroyWith);
     }
   }
 
-  private async unlockQuietly(client: PoolClient, lockKey: string): Promise<void> {
+  /**
+   * Stops a scan that ran past its timeout: marks its row failed (only if it
+   * is still pending or running), then ends its Postgres session. Ending the
+   * session releases the scan lock and rolls back the scan's open results
+   * transaction, and every later query on that connection fails, so the
+   * scan can write nothing more. If the row is locked by the scan's own
+   * final update, the session is ended first and the row marked after.
+   * Never rejects.
+   */
+  private async stopTimedOutScan(
+    claim: ScanClaim,
+    frameworkId: string,
+    organizationId: string,
+    startedAt: number
+  ): Promise<void> {
+    const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
+    console.warn(`[CustomCompliance] Scan timed out: framework ${frameworkId} after ${durationSeconds}s`);
+
+    let marked: 'marked' | 'already_finished' | 'row_busy' | 'error' = 'error';
+    try {
+      marked = await this.markTimedOut(claim.scan.id, organizationId);
+    } catch (error: any) {
+      console.error(`[CustomCompliance] Could not mark timed-out scan failed (framework ${frameworkId}):`, error?.message);
+    }
+
+    try {
+      await this.endScanSession(claim.session);
+    } catch (error: any) {
+      console.error(`[CustomCompliance] Could not end timed-out scan session (framework ${frameworkId}):`, error?.message);
+    }
+
+    if (marked === 'row_busy') {
+      try {
+        await this.markTimedOut(claim.scan.id, organizationId);
+      } catch (error: any) {
+        console.error(`[CustomCompliance] Could not mark timed-out scan failed (framework ${frameworkId}):`, error?.message);
+      }
+    }
+  }
+
+  /** One status-guarded update, on its own connection, so a scan blocked on its own connection can't hold it up. */
+  private async markTimedOut(
+    scanId: string,
+    organizationId: string
+  ): Promise<'marked' | 'already_finished' | 'row_busy'> {
+    const client = await this.pool.connect();
+    let destroyWith: Error | undefined;
+    try {
+      await client.query(SET_TENANT_SQL, [organizationId]);
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL lock_timeout = ${TIMEOUT_MARK_LOCK_TIMEOUT_MS}`);
+      const updated = await this.repository.updateScan(scanId, {
+        status: 'failed',
+        error_message: SCAN_TIMED_OUT_MESSAGE,
+        completed_at: new Date(),
+      }, client, ['pending', 'running']);
+      await client.query('COMMIT');
+      return updated ? 'marked' : 'already_finished';
+    } catch (error: any) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError: any) {
+        destroyWith = rollbackError;
+      }
+      if (error?.code === LOCK_NOT_AVAILABLE) return 'row_busy';
+      throw error;
+    } finally {
+      client.release(destroyWith);
+    }
+  }
+
+  private async endScanSession(session: ScanSession): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `SELECT pg_terminate_backend(pid, ${TERMINATE_WAIT_MS})
+         FROM pg_stat_activity WHERE pid = $1 AND backend_start = $2::timestamptz`,
+        [session.pid, session.backendStart]
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Startup recovery: marks failed (interrupted) every pending or running
+   * scan whose session is gone -- a server restart or crash mid-scan. Same
+   * rule as the pre-start recovery in acquireLockAndCreateScan: a
+   * framework's rows are touched only while this connection holds that
+   * framework's scan lock, so a scan still live in this or any other process
+   * is left alone. Each organization is read with its own tenant tag, since
+   * row-level security hides every scan row from an untagged session.
+   * Returns how many runs it marked.
+   */
+  async recoverInterruptedScans(): Promise<number> {
+    const client = await this.pool.connect();
+    const onClientError = this.watchScanClient(client, 'startup recovery');
+    let destroyWith: Error | undefined;
+    let marked = 0;
+
+    try {
+      const { rows: organizations } = await client.query('SELECT id FROM organizations ORDER BY id');
+      for (const { id: organizationId } of organizations) {
+        await client.query(SET_TENANT_SQL, [organizationId]);
+        const { rows: frameworks } = await client.query(
+          `SELECT DISTINCT framework_id FROM compliance_scans
+           WHERE organization_id = $1 AND status IN ('pending', 'running')`,
+          [organizationId]
+        );
+
+        for (const { framework_id: frameworkId } of frameworks) {
+          const lockKey = `${organizationId}:${frameworkId}`;
+          if (!(await this.tryLock(client, lockKey))) continue;
+          try {
+            marked += await this.failInterruptedScans(client, organizationId, frameworkId);
+          } finally {
+            if (!(await this.unlockQuietly(client, lockKey))) {
+              destroyWith = new Error('Scan lock release failed');
+            }
+          }
+          if (destroyWith) throw destroyWith;
+        }
+      }
+      return marked;
+    } catch (error) {
+      destroyWith ??= error instanceof Error ? error : new Error(String(error));
+      throw error;
+    } finally {
+      this.releaseScanClient(client, onClientError, destroyWith);
+    }
+  }
+
+  /** Only while holding this framework's scan lock -- see acquireLockAndCreateScan. */
+  private async failInterruptedScans(client: PoolClient, organizationId: string, frameworkId: string): Promise<number> {
+    const count = await this.repository.failActiveScans(organizationId, frameworkId, SCAN_INTERRUPTED_MESSAGE, new Date(), client);
+    if (count > 0) {
+      console.warn(`[CustomCompliance] Marked ${count} interrupted scan(s) failed: framework ${frameworkId}`);
+    }
+    return count;
+  }
+
+  private async tryLock(client: PoolClient, lockKey: string): Promise<boolean> {
+    const { rows } = await client.query(
+      `SELECT pg_try_advisory_lock(hashtextextended($1, ${SCAN_CONCURRENCY_LOCK_SALT})) AS locked`,
+      [lockKey]
+    );
+    return rows[0].locked === true;
+  }
+
+  /** Returns false when the unlock failed: the caller must then destroy the connection, never pool it with the lock held. */
+  private async unlockQuietly(client: PoolClient, lockKey: string): Promise<boolean> {
     try {
       await client.query(
         `SELECT pg_advisory_unlock(hashtextextended($1, ${SCAN_CONCURRENCY_LOCK_SALT}))`,
         [lockKey]
       );
+      return true;
     } catch (error) {
       console.error(`[CustomCompliance] Failed to release advisory lock for ${lockKey}:`, error);
+      return false;
     }
+  }
+
+  private async readSession(client: PoolClient): Promise<ScanSession> {
+    const { rows } = await client.query(
+      'SELECT pid, backend_start::text AS backend_start FROM pg_stat_activity WHERE pid = pg_backend_pid()'
+    );
+    return { pid: rows[0].pid, backendStart: rows[0].backend_start };
+  }
+
+  /**
+   * pg-pool removes its own 'error' listener while a client is checked out,
+   * so a session the server ends (the timeout, idle_in_transaction_session_timeout,
+   * a database restart) would emit an unhandled 'error' and crash the
+   * process. The scan's own queries already fail on that connection; this
+   * only logs. Removed again before the client goes back to the pool.
+   */
+  private watchScanClient(client: PoolClient, label: string): (error: Error) => void {
+    const onClientError = (error: Error) => {
+      console.error(`[CustomCompliance] Scan connection ended (${label}):`, error.message);
+    };
+    client.on('error', onClientError);
+    return onClientError;
+  }
+
+  /** A `destroyWith` error destroys the connection instead of returning it to the pool. */
+  private releaseScanClient(client: PoolClient, onClientError: (error: Error) => void, destroyWith?: Error): void {
+    client.removeListener('error', onClientError);
+    client.release(destroyWith);
   }
 
   /**
@@ -211,6 +474,11 @@ export class CustomComplianceService {
    * them fall back to the AsyncLocalStorage-routed this.pool. The scan row
    * already exists (created by acquireLockAndCreateScan) by the time this
    * runs.
+   *
+   * Every status change is guarded on the status it leaves, and the
+   * findings and the final status are one transaction that commits only
+   * while the scan is still running: a scan its timeout already marked
+   * failed writes nothing, and a failed status is never overwritten.
    */
   private async runScanBody(
     client: PoolClient,
@@ -219,14 +487,23 @@ export class CustomComplianceService {
     organizationId: string,
     resourceFilters?: Record<string, any>
   ): Promise<ComplianceScan> {
+    let inTransaction = false;
     try {
-      // Update scan to running
-      await this.repository.updateScan(scan.id, {
+      // Update scan to running (committed on its own, so the run shows as running while it works)
+      const running = await this.repository.updateScan(scan.id, {
         status: 'running',
         started_at: new Date(),
-      }, client);
+      }, client, ['pending']);
+      if (!running) {
+        throw new ScanNoLongerActiveError(scan.id);
+      }
 
       const startTime = Date.now();
+
+      await client.query('BEGIN');
+      inTransaction = true;
+      await client.query(`SET LOCAL statement_timeout = ${SCAN_STATEMENT_TIMEOUT_MS}`);
+      await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${SCAN_IDLE_IN_TRANSACTION_TIMEOUT_MS}`);
 
       // Get framework and rules
       const frameworkData = await this.repository.findFrameworkWithRules(frameworkId, organizationId, client);
@@ -331,8 +608,9 @@ export class CustomComplianceService {
 
       const durationSeconds = Math.floor((Date.now() - startTime) / 1000);
 
-      // Update scan with results
-      await this.repository.updateScan(scan.id, {
+      // Update scan with results -- only while it is still running; otherwise
+      // the whole transaction, findings included, is rolled back below
+      const completed = await this.repository.updateScan(scan.id, {
         status: 'completed',
         total_resources: totalResources,
         compliant_resources: compliantResources,
@@ -345,21 +623,43 @@ export class CustomComplianceService {
         compliance_score: complianceScore,
         completed_at: new Date(),
         duration_seconds: durationSeconds,
-      }, client);
+      }, client, ['running']);
+      if (!completed) {
+        throw new ScanNoLongerActiveError(scan.id);
+      }
+
+      await client.query('COMMIT');
+      inTransaction = false;
 
       console.log(
         `[CustomCompliance] Scan ${scan.id} completed: ${compliantResources}/${resourcesScanned} compliant (${complianceScore.toFixed(1)}%)`
       );
 
-      return (await this.repository.findScanById(scan.id, client))!;
+      // The committed row itself (RETURNING *): no further query, so a
+      // timeout ending the session right after the commit can't turn a
+      // completed scan into an error.
+      return completed;
     } catch (error: any) {
+      if (inTransaction) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError: any) {
+          console.error(`[CustomCompliance] Scan ${scan.id} rollback failed:`, rollbackError?.message);
+        }
+      }
+
+      if (error instanceof ScanNoLongerActiveError) {
+        console.warn(`[CustomCompliance] ${error.message}`);
+        throw error;
+      }
+
       console.error(`[CustomCompliance] Scan ${scan.id} failed:`, error);
 
       await this.repository.updateScan(scan.id, {
         status: 'failed',
         error_message: error.message,
         completed_at: new Date(),
-      }, client);
+      }, client, ['pending', 'running']);
 
       throw error;
     }
