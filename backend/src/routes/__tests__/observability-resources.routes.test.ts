@@ -345,3 +345,140 @@ describe('GET /api/observability/resources', () => {
     expect(bad.status).toBe(400)
   })
 })
+
+describe('GET /api/observability/resources?table=1 (O2)', () => {
+  const TABLE_ORDER = [
+    'app-alb',
+    'example-db',
+    'orders',
+    'web-denied',
+    'api-svc',
+    'aurora-main',
+    'cdn',
+    'data-vol',
+    'k8s',
+    'web-running',
+    'idle-fn',
+    'web-stopped',
+    'web-other-account',
+    'web-other-region',
+    'logs-bucket',
+    'net-lb',
+    'rest-api',
+  ]
+
+  it('(R11) the mixed fleet in table order: needs attention, no telemetry, unknown, passing, no activity, stopped, outside scope, not measured', async () => {
+    const { accountId } = await mixedOrg('table-order')
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId }))
+    const { status, body } = await get('/observability/resources?range=1h&table=1')
+    expect(status).toBe(200)
+    const t = body.data.table
+    expect(t.rows.map((r: any) => r.name)).toEqual(TABLE_ORDER)
+    expect(t.query).toEqual({ q: '', filter: 'all', page: 1, page_size: 25, order: 'status' })
+    expect([t.total, t.pages]).toEqual([17, 1])
+    // Rows are the same objects resources[] carries, unchanged.
+    const r = byName(body.data.resources)
+    for (const row of t.rows) expect(row).toEqual(r[row.name])
+    // Everything else in the body is what it is without table=1.
+    expect(Object.keys(body.data)).toEqual([
+      'status',
+      'region',
+      'account_count',
+      'multiple_accounts',
+      'range',
+      'collection',
+      'checked_at',
+      'captured_at',
+      'inventory_capped',
+      'inventory_capped_reasons',
+      'type_summary',
+      'type_breakdown',
+      'fleet_summary',
+      'resources',
+      'pagination',
+      'table',
+    ])
+  })
+
+  it('(R12) facets and totals come from the same snapshot as fleet_summary and type_breakdown', async () => {
+    const { accountId } = await mixedOrg('table-facets')
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId }))
+    const { body } = await get('/observability/resources?range=1h&table=1')
+    const { fleet_summary: fleet, type_breakdown: byType, table } = body.data
+    expect(table.facets.all).toBe(fleet.count)
+    expect(table.facets.attention).toBe(fleet.failing + fleet.needs_attention)
+    expect(table.facets.types).toEqual(Object.fromEntries(Object.entries<any>(byType).map(([type, b]) => [type, b.count])))
+
+    const attention = await get('/observability/resources?range=1h&table=1&filter=attention')
+    expect(attention.body.data.table.rows.map((r: any) => r.name)).toEqual(['app-alb'])
+    expect(attention.body.data.table.facets).toEqual(table.facets)
+
+    const ec2 = await get('/observability/resources?range=1h&table=1&filter=ec2&q=WEB-')
+    expect(ec2.body.data.table.rows.map((r: any) => r.name)).toEqual(['web-denied', 'web-running', 'web-stopped', 'web-other-account', 'web-other-region'])
+    expect(ec2.body.data.table.facets).toEqual({ all: 5, attention: 0, types: { ec2: 5 } })
+
+    const byId = await get('/observability/resources?range=1h&table=1&q=vol-0123456789abcdef0')
+    expect(byId.body.data.table.rows.map((r: any) => r.name)).toEqual(['data-vol'])
+  })
+
+  it('(R13) page 2 of 1 is clamped to page 1; nothing matching is page 1 of 0', async () => {
+    const { accountId } = await mixedOrg('table-clamp')
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId }))
+    const clamped = await get('/observability/resources?range=1h&table=1&page=2')
+    expect([clamped.body.data.table.query.page, clamped.body.data.table.rows.length]).toEqual([1, 17])
+    const none = await get('/observability/resources?range=1h&table=1&q=no-such-resource&page=3')
+    expect(none.body.data.table).toMatchObject({ query: { page: 1 }, total: 0, pages: 0, rows: [], facets: { all: 0, attention: 0, types: {} } })
+  })
+
+  it('(R14) invalid table parameters are a 400; without table=1 they are ignored', async () => {
+    await mixedOrg('table-invalid')
+    for (const qs of ['filter=bogus', 'page=0', 'page=1.5', `q=${'x'.repeat(101)}`, 'q=a&q=b']) {
+      const res = await get(`/observability/resources?table=1&${qs}`)
+      expect([qs, res.status, res.body]).toEqual([qs, 400, { success: false, error: 'Invalid table query' }])
+    }
+  })
+
+  it('(R15) no table block on not_connected, multiple_accounts or failed', async () => {
+    const { rows } = await pool.query(`INSERT INTO organizations (name, slug, display_name) VALUES ($1, $1, $1) RETURNING id`, [
+      `obs-fixture-table-none-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ])
+    createdOrgIds.push(rows[0].id)
+    await signInAs(rows[0].id)
+    const none = await get('/observability/resources?table=1')
+    expect(none.body.data.status).toBe('not_connected')
+    expect(none.body.data).not.toHaveProperty('table')
+
+    await mixedOrg('table-two')
+    jest.spyOn(accountsRepository, 'countEligibleAwsAccounts').mockResolvedValue(2)
+    const two = await get('/observability/resources?table=1')
+    expect(two.body.data.status).toBe('multiple_accounts')
+    expect(two.body.data).not.toHaveProperty('table')
+    jest.restoreAllMocks()
+
+    await mixedOrg('table-failed')
+    jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new Error('AWS_NOT_CONNECTED: org has not connected an AWS account'))
+    const failed = await get('/observability/resources?table=1')
+    expect(failed.body.data.status).toBe('failed')
+    expect(failed.body.data).not.toHaveProperty('table')
+  })
+
+  it('(R16) search never reaches another organization, even with that organization\'s table cached', async () => {
+    // Org A is loaded first, so its snapshot is in the 45 s cache when org B asks.
+    const a = await insertFleetOrg(pool, 'table-other', (acct) => [{ ...mixedFleet(acct)[0], name: 'only-in-other-org' }])
+    createdOrgIds.push(a.orgId)
+    await signInAs(a.orgId)
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId: a.accountId }))
+    const seenByA = await get('/observability/resources?range=1h&table=1&q=only-in-other-org')
+    expect(seenByA.body.data.table.rows.map((r: any) => r.name)).toEqual(['only-in-other-org'])
+    jest.restoreAllMocks()
+    jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 42 } as any)
+
+    const { accountId } = await mixedOrg('table-own')
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId }))
+    const { body } = await get(`/observability/resources?range=1h&table=1&q=only-in-other-org&org=${a.orgId}&organizationId=${a.orgId}`)
+    expect(body.data.table).toMatchObject({ total: 0, rows: [], facets: { all: 0 } })
+    const all = await get('/observability/resources?range=1h&table=1')
+    expect(all.body.data.table.rows.map((r: any) => r.name)).not.toContain('only-in-other-org')
+    expect(all.body.data.table.total).toBe(17)
+  })
+})

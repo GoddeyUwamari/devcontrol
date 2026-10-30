@@ -105,10 +105,10 @@ afterEach(() => {
 })
 
 describe('requests', () => {
-  it('mount: one resources (1h, 25 rows) and one alarms request; no legacy route, no SLO request below Enterprise', async () => {
+  it('mount: one resources (1h, 1 legacy row plus the table) and one alarms request; no legacy route, no SLO request below Enterprise', async () => {
     render(<OperationalHealthV2 />)
     await flush()
-    expect(paths().sort()).toEqual(['/api/observability/alarms', '/api/observability/resources?range=1h&pageSize=25'])
+    expect(paths().sort()).toEqual(['/api/observability/alarms', '/api/observability/resources?range=1h&pageSize=1&table=1&filter=all&page=1'])
     await settle()
     expect(global.fetch).not.toHaveBeenCalled()
     expect(paths().some((p) => p.startsWith('/api/cloudwatch') || p.startsWith('/api/prometheus') || p.startsWith('/api/alerts'))).toBe(false)
@@ -121,7 +121,7 @@ describe('requests', () => {
     expect(screen.getByTestId('tile-checks')).not.toHaveAttribute('aria-busy')
     fireEvent.click(screen.getByRole('button', { name: 'Last 7d' }))
     await flush()
-    expect(resourceCalls().map((c) => c.path)).toEqual(['/api/observability/resources?range=1h&pageSize=25', '/api/observability/resources?range=7d&pageSize=25'])
+    expect(resourceCalls().map((c) => c.path)).toEqual(['/api/observability/resources?range=1h&pageSize=1&table=1&filter=all&page=1', '/api/observability/resources?range=7d&pageSize=1&table=1&filter=all&page=1'])
     expect(alarmCalls()).toHaveLength(2)
     expect(screen.getByTestId('tile-checks')).toHaveAttribute('aria-busy', 'true')
   })
@@ -179,7 +179,7 @@ describe('requests', () => {
     expect(refresh).not.toBeDisabled()
     fireEvent.click(refresh)
     await flush()
-    expect(resourceCalls().at(-1)!.path).toBe('/api/observability/resources?range=1h&pageSize=25&refresh=true')
+    expect(resourceCalls().at(-1)!.path).toBe('/api/observability/resources?range=1h&pageSize=1&table=1&filter=all&page=1&refresh=true')
     expect(alarmCalls().at(-1)!.path).toBe('/api/observability/alarms')
     expect(refresh).toBeDisabled()
   })
@@ -213,7 +213,7 @@ describe('requests', () => {
     expect(resourceCalls()).toHaveLength(1)
     await advance(1_000)
     expect(resourceCalls()).toHaveLength(2)
-    expect(resourceCalls()[1].path).toBe('/api/observability/resources?range=1h&pageSize=25')
+    expect(resourceCalls()[1].path).toBe('/api/observability/resources?range=1h&pageSize=1&table=1&filter=all&page=1')
     // Still in flight: no second poll however long it takes.
     await advance(180_000)
     expect(resourceCalls()).toHaveLength(2)

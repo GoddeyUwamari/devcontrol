@@ -27,6 +27,64 @@ export interface Breakdown {
   unknown: number
 }
 
+export type CheckStatus = 'passing' | 'needs_attention' | 'failing' | 'stopped' | 'not_measured' | 'unknown'
+export type UnknownReason =
+  | 'access_denied'
+  | 'throttled'
+  | 'query_failed'
+  | 'outside_region'
+  | 'outside_account'
+  | 'not_supported'
+  | 'no_activity'
+  | 'no_telemetry'
+  | 'not_enough_traffic'
+
+/** One labelled metric value (observability-states.ts ObservabilityMetric). */
+export interface ObservabilityMetric {
+  label: string
+  value: number
+  unit?: string
+  statistic: 'Average' | 'Sum' | 'Maximum' | 'Minimum' | null
+  /** The range (e.g. "1h") for a value over the window; "current" for a point-in-time value. */
+  window: string
+}
+
+/** One resource's row (observability-states.ts ObservabilityRow). */
+export interface ObservabilityRow {
+  resource_id: string
+  resource_type: string
+  name: string
+  region: string | null
+  check_status: CheckStatus
+  unknown_reason: UnknownReason | null
+  telemetry: 'reporting' | 'no_telemetry' | 'unknown'
+  activity: 'active' | 'no_activity' | null
+  status_detail: string | null
+  last_seen: string | null
+  last_seen_source: 'datapoint' | 'observation' | null
+  metrics: ObservabilityMetric[]
+}
+
+/** The Resource checks table's request (O2): sent as table=1&q=&filter=&page=. */
+export interface TableQuery {
+  q: string
+  /** all · attention (failing + needs attention) · a resource type */
+  filter: string
+  page: number
+}
+
+/** The table block, sent only with table=1 (observability-table.ts). */
+export interface TableBlock {
+  /** The request as the server applied it; page is clamped to the last page. */
+  query: TableQuery & { page_size: number; order: 'status' }
+  rows: ObservabilityRow[]
+  /** Rows matching q and filter. */
+  total: number
+  pages: number
+  /** Over the rows matching q, before the filter. */
+  facets: { all: number; attention: number; types: Record<string, number> }
+}
+
 export interface ResourcesOk {
   status: 'ok'
   region: string
@@ -40,6 +98,7 @@ export interface ResourcesOk {
   inventory_capped_reasons: string[]
   type_breakdown: Record<string, Breakdown>
   fleet_summary: Breakdown
+  table?: TableBlock
 }
 
 export interface ResourcesNotOk {
