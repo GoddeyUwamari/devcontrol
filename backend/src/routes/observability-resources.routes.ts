@@ -7,6 +7,10 @@
  * type_summary's "other" (measured, neutral, not measured, outside scope, and
  * the telemetry of the measured rows), per type and over the whole fleet, on
  * status ok only; the other statuses' bodies are unchanged.
+ * O2 adds `table` (status ok and table=1 only): the Resource checks table's
+ * page, searched, filtered and sorted by urgency over the same snapshot, with
+ * its total and filter counts (services/observability-table.ts). q, filter and
+ * page are read only with table=1; without it the response is unchanged.
  *
  * Reads the same CloudWatchService.getMetrics() result as GET
  * /api/cloudwatch/metrics (same 45s cache and in-flight sweep, keyed by
@@ -27,6 +31,7 @@ import { cloudWatchService, compareObservabilityKeys, OBSERVABILITY_TYPE_ORDER, 
 import { countEligibleAwsAccounts, AwsAccountAmbiguousError } from '../repositories/aws-accounts.repository'
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 import { clampPageSize, InvalidCursorError } from '../services/cloudwatch-pagination.util'
+import { InvalidTableQueryError, parseTableQuery, tableOf, TableQuery } from '../services/observability-table'
 
 const router = Router()
 
@@ -97,6 +102,16 @@ router.get('/resources', authenticateToken, async (req, res) => {
     throw err
   }
 
+  let tableQuery: TableQuery | null
+  try {
+    tableQuery = parseTableQuery(req.query as Record<string, unknown>)
+  } catch (err) {
+    if (err instanceof InvalidTableQueryError) {
+      return res.status(400).json({ success: false, error: 'Invalid table query' })
+    }
+    throw err
+  }
+
   let accountCount: number
   try {
     accountCount = await countEligibleAwsAccounts(pool, organizationId)
@@ -140,6 +155,8 @@ router.get('/resources', authenticateToken, async (req, res) => {
         fleet_summary: snapshot.fleetSummary,
         resources,
         pagination,
+        // O2: only with table=1, so every other response is unchanged.
+        ...(tableQuery ? { table: tableOf(snapshot.rows, tableQuery) } : {}),
       },
     })
   } catch (err) {
