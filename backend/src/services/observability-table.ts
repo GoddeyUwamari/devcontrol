@@ -117,7 +117,8 @@ export function tableOf(rows: ObservabilitySnapshotRow[], query: TableQuery): Ta
 
   return {
     query: { q: query.q, filter: query.filter, page, page_size: TABLE_PAGE_SIZE, order: 'status' },
-    rows: sorted.slice(start, start + TABLE_PAGE_SIZE).map((r) => r.row),
+    // O3b: a row's table-only metrics (a load balancer's request total) are added here only.
+    rows: sorted.slice(start, start + TABLE_PAGE_SIZE).map((r) => (r.tableMetrics ? { ...r.row, metrics: [...r.row.metrics, ...r.tableMetrics] } : r.row)),
     total: sorted.length,
     pages,
     facets,

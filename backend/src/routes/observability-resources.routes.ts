@@ -11,6 +11,10 @@
  * page, searched, filtered and sorted by urgency over the same snapshot, with
  * its total and filter counts (services/observability-table.ts). q, filter and
  * page are read only with table=1; without it the response is unchanged.
+ * O3b adds `lb_response_time` (status ok and lb_response_time=1 only): the load
+ * balancer response-time chart (services/observability-lb-response-time.ts), from
+ * the same sweep, so it adds no AWS call. Without the parameter the response is
+ * unchanged.
  *
  * Reads the same CloudWatchService.getMetrics() result as GET
  * /api/cloudwatch/metrics (same 45s cache and in-flight sweep, keyed by
@@ -157,6 +161,8 @@ router.get('/resources', authenticateToken, async (req, res) => {
         pagination,
         // O2: only with table=1, so every other response is unchanged.
         ...(tableQuery ? { table: tableOf(snapshot.rows, tableQuery) } : {}),
+        // O3b: only with lb_response_time=1, likewise.
+        ...(req.query.lb_response_time === '1' ? { lb_response_time: snapshot.lbResponseTime } : {}),
       },
     })
   } catch (err) {
