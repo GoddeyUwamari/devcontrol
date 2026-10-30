@@ -15,12 +15,14 @@
  *
  * Platform staff, whatever their organization role:
  *   - POST   /api/prometheus/diagnose   (probes the one Prometheus all organizations share)
+ *   - GET    /api/prometheus/query, /query_range, /targets, /config (proxy that one Prometheus)
  *
  * Real routes and real authentication (see role-gate-harness.ts). The data
  * layer is stubbed except for `tenants` and `alert_history`, which are real.
  */
 import fs from 'fs';
 import path from 'path';
+import axios from 'axios';
 import costRecommendationsRoutes from '../cost-recommendations.routes';
 import alertHistoryRoutes from '../alert-history.routes';
 import accountSecurityFindingsRoutes from '../account-security-findings.routes';
@@ -205,14 +207,71 @@ describe('POST /api/prometheus/snapshot writes only the caller\'s organization',
   });
 });
 
+async function grantPlatformStaff(userId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO platform_staff (user_id, status, added_at) VALUES ($1, 'active', NOW())
+     ON CONFLICT (user_id) DO UPDATE SET status = 'active', revoked_at = NULL, updated_at = NOW()`,
+    [userId]
+  );
+}
+
+describe('GET /api/prometheus query, query_range, targets and config', () => {
+  const PATHS = ['/prometheus/query?query=up', '/prometheus/query_range?query=up', '/prometheus/targets', '/prometheus/config'];
+  const PROMETHEUS_BODY = { status: 'success', data: { sentinel: true } };
+  let proxied: jest.SpyInstance;
+
+  beforeEach(() => {
+    proxied = jest.spyOn(axios, 'get').mockResolvedValue({ data: PROMETHEUS_BODY } as never);
+  });
+
+  describe.each(PATHS)('%s', (route) => {
+    it.each(ROLES)('refuses a %s who is not platform staff, and proxies nothing', async (role) => {
+      const response = await sendAs(org.orgId, org[role], 'GET', route);
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ success: false, error: 'Platform staff authorization required' });
+      expect(proxied).not.toHaveBeenCalled();
+    });
+
+    it('refuses a request without a token', async () => {
+      const response = await fetch(`${harness.url()}${route}`);
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ success: false, error: 'No authentication token provided' });
+      expect(proxied).not.toHaveBeenCalled();
+    });
+
+    it('answers platform staff, even one who is only a viewer in their organization', async () => {
+      const staffOrg = await harness.buildOrg();
+      await grantPlatformStaff(staffOrg.viewer);
+
+      const response = await sendAs(staffOrg.orgId, staffOrg.viewer, 'GET', route);
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(PROMETHEUS_BODY);
+      expect(proxied).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('refuses staff whose access was revoked', async () => {
+    const staffOrg = await harness.buildOrg();
+    await grantPlatformStaff(staffOrg.owner);
+    await pool.query(`UPDATE platform_staff SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1`, [staffOrg.owner]);
+
+    const response = await sendAs(staffOrg.orgId, staffOrg.owner, 'GET', '/prometheus/config');
+
+    expect(response.status).toBe(403);
+    expect(proxied).not.toHaveBeenCalled();
+  });
+
+  it('GET /health is unchanged: any member is answered', async () => {
+    const response = await sendAs(org.orgId, org.viewer, 'GET', '/prometheus/health');
+
+    expect(response.status).toBe(200);
+  });
+});
+
 describe('POST /api/prometheus/diagnose', () => {
-  async function grantPlatformStaff(userId: string): Promise<void> {
-    await pool.query(
-      `INSERT INTO platform_staff (user_id, status, added_at) VALUES ($1, 'active', NOW())
-       ON CONFLICT (user_id) DO UPDATE SET status = 'active', revoked_at = NULL, updated_at = NOW()`,
-      [userId]
-    );
-  }
 
   it('the diagnostic has no organization input: it probes the one shared instance', () => {
     expect(MonitoringDiagnosticService.prototype.diagnose.length).toBe(0);

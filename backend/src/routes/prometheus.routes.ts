@@ -13,12 +13,14 @@ router.use(authenticateToken)
 
 // Prometheus proxy endpoints — one shared Prometheus instance for the whole
 // platform (PROMETHEUS_URL), not per-org, so there's no organization_id to
-// scope these by; authenticateToken just requires a logged-in user.
-router.get('/query', controller.query.bind(controller))
-router.get('/query_range', controller.queryRange.bind(controller))
-router.get('/targets', controller.targets.bind(controller))
+// scope these by. Queries, targets and config describe platform
+// infrastructure, so they are platform staff only, like /diagnose below: no
+// organization role can authorize them. /health only reports reachability.
+router.get('/query', requirePlatformStaff, controller.query.bind(controller))
+router.get('/query_range', requirePlatformStaff, controller.queryRange.bind(controller))
+router.get('/targets', requirePlatformStaff, controller.targets.bind(controller))
 router.get('/health', controller.health.bind(controller))
-router.get('/config', controller.config.bind(controller))
+router.get('/config', requirePlatformStaff, controller.config.bind(controller))
 
 // POST /api/prometheus/diagnose
 // Runs a full connectivity diagnostic against the configured Prometheus endpoint.
