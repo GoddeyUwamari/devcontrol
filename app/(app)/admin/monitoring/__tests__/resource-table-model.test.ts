@@ -99,33 +99,32 @@ describe('keyMetricText: only what the row carries (D5)', () => {
     expect(keyMetricText(row({ check_status: 'failing', metrics: [] }))).toBeNull()
   })
 
-  it('load balancer: 5xx rate when sent, else the 5xx count; then response time; never a request count', () => {
-    const lb = (metrics: ObservabilityMetric[]) => keyMetricText(row({ resource_type: 'load-balancer', metrics }))
+  it('load balancer: the 5xx rate only when the verdict judged it (the API sends it only then), then response time; never the 5xx count or a request count', () => {
+    const lb = (over: Partial<ObservabilityRow>, metrics: ObservabilityMetric[]) => keyMetricText(row({ resource_type: 'load-balancer', ...over, metrics }))
     const latency = metric('Avg latency', 120, { unit: 'ms' })
     const requests = metric('Requests/min', 40, { statistic: 'Sum' })
-    expect(lb([metric('5xx errors', 2, { statistic: 'Sum' }), metric('5xx rate', 0.4, { unit: '%', statistic: 'Sum' }), latency, requests])).toBe(
-      '5xx 0.4% (1h sum) · Response 120 ms (1h average)'
-    )
-    expect(lb([metric('5xx errors', 2, { statistic: 'Sum' }), latency, requests])).toBe('5xx errors 2 (1h sum) · Response 120 ms (1h average)')
-    expect(lb([requests])).toBeNull()
+    const errors = metric('5xx errors', 2, { statistic: 'Sum' })
+    const rate = metric('5xx rate', 0.4, { unit: '%', statistic: 'Sum' })
+    // Judged (passing / needs attention / failing): the rate is sent.
+    expect(lb({ check_status: 'passing' }, [errors, rate, latency, requests])).toBe('5xx 0.4% (1h sum) · Response 120 ms (1h average)')
+    expect(lb({ check_status: 'failing' }, [errors, metric('5xx rate', 7.5, { unit: '%', statistic: 'Sum' })])).toBe('5xx 7.5% (1h sum)')
+    // Not judged (not enough traffic, or latency unknown): no rate is sent, and no 5xx value is shown.
+    expect(lb({ check_status: 'unknown', unknown_reason: 'not_enough_traffic' }, [errors, latency, requests])).toBe('Response 120 ms (1h average)')
+    expect(lb({ check_status: 'unknown', unknown_reason: 'query_failed' }, [errors, requests])).toBeNull()
   })
 
-  it('RDS: CPU and free storage as % of allocated, not GiB; connections are not key metrics', () => {
-    const text = keyMetricText(
-      row({
-        resource_type: 'rds',
-        metrics: [
-          metric('Connections', 4),
-          metric('CPU', 12, { unit: '%' }),
-          metric('Free storage', 80.5, { unit: 'GiB', statistic: 'Minimum' }),
-          metric('Free storage', 41.2, { unit: '% of allocated', statistic: 'Minimum' }),
-        ],
-      })
-    )
-    expect(text).toBe('CPU 12% (1h average) · Free storage 41.2% of allocated (1h minimum)')
+  it('RDS: CPU first, then free storage in GiB and % of allocated from the same query; connections are not key metrics', () => {
+    const rds = (metrics: ObservabilityMetric[]) => keyMetricText(row({ resource_type: 'rds', metrics }))
+    const cpu = metric('CPU', 12, { unit: '%' })
+    const gib = metric('Free storage', 80.5, { unit: 'GiB', statistic: 'Minimum' })
+    const pct = metric('Free storage', 41.2, { unit: '% of allocated', statistic: 'Minimum' })
+    expect(rds([metric('Connections', 4), cpu, gib, pct])).toBe('CPU 12% (1h average) · Free storage 80.5 GiB, 41.2% of allocated (1h minimum)')
+    // No allocated storage known: the API sends GiB only, and only GiB is shown.
+    expect(rds([cpu, gib])).toBe('CPU 12% (1h average) · Free storage 80.5 GiB (1h minimum)')
+    expect(rds([metric('Connections', 4)])).toBeNull()
   })
 
-  it('Lambda: duration and errors; throttles only above 0; no error %', () => {
+  it('Lambda: errors, then invocations; throttles (they drive needs attention) only above 0; no duration, no error %', () => {
     const fn = (throttles: number) =>
       keyMetricText(
         row({
@@ -133,8 +132,12 @@ describe('keyMetricText: only what the row carries (D5)', () => {
           metrics: [metric('Avg duration', 85, { unit: 'ms' }), metric('Invocations', 100, { statistic: 'Sum' }), metric('Errors', 2, { statistic: 'Sum' }), metric('Throttles', throttles, { statistic: 'Sum' })],
         })
       )
-    expect(fn(0)).toBe('Duration 85 ms (1h average) · Errors 2 (1h sum)')
-    expect(fn(3)).toBe('Duration 85 ms (1h average) · Errors 2 (1h sum) · Throttles 3 (1h sum)')
+    expect(fn(0)).toBe('Errors 2 (1h sum) · Invocations 100 (1h sum)')
+    expect(fn(3)).toBe('Errors 2 (1h sum) · Invocations 100 (1h sum) · Throttles 3 (1h sum)')
+  })
+
+  it('EC2: CPU only', () => {
+    expect(keyMetricText(row({ metrics: [metric('CPU', 3.1, { unit: '%' })] }))).toBe('CPU 3.1% (1h average)')
   })
 
   it.each([

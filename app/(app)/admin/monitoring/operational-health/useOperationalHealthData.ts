@@ -7,8 +7,11 @@ import { FIRST_PAGE } from './resourceTableModel'
 
 /** The poll interval; both backend caches are about this long (45 s resources, 60 s alarms). */
 export const POLL_MS = 60_000
-/** O1 decision D5: the legacy page of rows the response still carries (O2 reads `table` instead). */
-export const PAGE_SIZE = 25
+/**
+ * The legacy page of rows the response still carries. The page reads only the table
+ * block, so it asks for one row (O2 decision D13; was 25 under O1's D5).
+ */
+export const PAGE_SIZE = 1
 
 const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
 const statusOf = (err: unknown) => (err as { response?: { status?: number } } | null)?.response?.status

@@ -99,19 +99,11 @@ const find = (row: ObservabilityRow, label: string, unit?: string) =>
 export function keyMetricText(row: ObservabilityRow): string | null {
   const parts: string[] = []
   for (const def of KEY_METRICS[row.resource_type] ?? []) {
-    let metric: ObservabilityMetric | undefined
-    let name: string
-    if ('first' in def) {
-      const hit = def.first.map((d) => ({ d, m: find(row, d.label) })).find((x) => x.m)
-      if (!hit) continue
-      metric = hit.m
-      name = hit.d.name
-    } else {
-      metric = find(row, def.label, def.unit)
-      name = def.name
-      if (metric && def.positive && metric.value <= 0) continue
-    }
-    if (metric) parts.push(`${name} ${formatValue(metric)} ${metricWindow(metric)}`)
+    const metric = find(row, def.label, def.unit)
+    if (!metric || (def.positive && metric.value <= 0)) continue
+    const also = def.also ? find(row, def.also.label, def.also.unit) : undefined
+    const value = also ? `${formatValue(metric)}, ${formatValue(also)}` : formatValue(metric)
+    parts.push(`${def.name} ${value} ${metricWindow(metric)}`)
   }
   return parts.length > 0 ? parts.join(' · ') : null
 }
