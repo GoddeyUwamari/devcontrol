@@ -25,7 +25,7 @@ export default function BlogPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [emailSubscribe, setEmailSubscribe] = useState('');
-  const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'duplicate'>('idle');
+  const [subscribeStatus, setSubscribeStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   const width = useWindowWidth();
   const isMobile = width > 0 && width < 640;
@@ -35,17 +35,11 @@ export default function BlogPage() {
     if (!emailSubscribe || !emailSubscribe.includes('@')) return;
     setSubscribeStatus('loading');
     try {
-      const res = await api.post('/api/newsletter/subscribe', { email: emailSubscribe, source: 'blog' });
-      if (res.data?.message === 'Already subscribed') {
-        setSubscribeStatus('duplicate');
-        setEmailSubscribe('');
-      } else {
-        setSubscribeStatus('success');
-        setEmailSubscribe('');
-      }
-    } catch (err: any) {
-      if (err.response?.status === 200) setSubscribeStatus('duplicate');
-      else setSubscribeStatus('error');
+      await api.post('/api/newsletter/subscribe', { email: emailSubscribe, source: 'blog' });
+      setSubscribeStatus('success');
+      setEmailSubscribe('');
+    } catch {
+      setSubscribeStatus('error');
     }
   };
 
@@ -481,11 +475,6 @@ export default function BlogPage() {
           {subscribeStatus === 'success' && (
             <p style={{ fontSize: '0.8rem', color: '#059669', marginTop: '10px' }}>
               You&apos;re subscribed! We&apos;ll notify you of new posts.
-            </p>
-          )}
-          {subscribeStatus === 'duplicate' && (
-            <p style={{ fontSize: '0.8rem', color: '#7c3aed', marginTop: '10px' }}>
-              You&apos;re already subscribed.
             </p>
           )}
           {subscribeStatus === 'error' && (

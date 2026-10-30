@@ -1,5 +1,11 @@
 import { Request, Response } from 'express';
 import { pool } from '../config/database';
+import { safeErrorFields } from '../utils/safe-error-log';
+
+// Every successful signup gets this exact answer -- new, reactivated or
+// already subscribed -- so the endpoint cannot be used to learn whether an
+// email address is on the list.
+const SUBSCRIBED = { success: true, message: 'Subscribed successfully' };
 
 export const subscribe = async (req: Request, res: Response): Promise<void> => {
   const { email, source = 'blog' } = req.body;
@@ -26,10 +32,10 @@ export const subscribe = async (req: Request, res: Response): Promise<void> => {
           'UPDATE newsletter_subscribers SET is_active = true, subscribed_at = NOW() WHERE email = $1',
           [normalizedEmail]
         );
-        res.status(201).json({ success: true, message: 'Subscribed successfully' });
+        res.status(201).json(SUBSCRIBED);
         return;
       }
-      res.status(200).json({ success: true, message: 'Already subscribed' });
+      res.status(201).json(SUBSCRIBED);
       return;
     }
 
@@ -38,9 +44,10 @@ export const subscribe = async (req: Request, res: Response): Promise<void> => {
       [normalizedEmail, normalizedSource]
     );
 
-    res.status(201).json({ success: true, message: 'Subscribed successfully' });
+    res.status(201).json(SUBSCRIBED);
   } catch (err) {
-    console.error('Newsletter subscribe error:', err);
+    // Not the error object: a database error's detail can quote the email.
+    console.error('Newsletter subscribe error:', safeErrorFields(err));
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 };
