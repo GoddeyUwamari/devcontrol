@@ -16,7 +16,7 @@
  */
 import type { ObservabilityMetric, ObservabilityRow, ResourcesData, ResourcesOk, Source, TableBlock, TableQuery } from './observabilityTypes'
 import { formatCheckTime, relativeTime, type Tone } from './operationalHealthModel'
-import { KEY_METRICS, ROW_REASON, ROW_STATUS, TABLE_COPY, TYPE_LABEL, TYPE_NAME, TYPE_ORDER } from './operationalHealthCopy'
+import { KEY_METRICS, LB_FIVE_XX, ROW_REASON, ROW_STATUS, TABLE_COPY, TYPE_LABEL, TYPE_NAME, TYPE_ORDER } from './operationalHealthCopy'
 
 export const FIRST_PAGE: TableQuery = { q: '', filter: 'all', page: 1 }
 
@@ -95,10 +95,44 @@ export function metricWindow(m: ObservabilityMetric): string {
 const find = (row: ObservabilityRow, label: string, unit?: string) =>
   row.metrics.find((m) => m.label === label && (unit === undefined || m.unit === unit))
 
+const count = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+const requestsText = (n: number) => LB_FIVE_XX.requests(count(n), n === 1)
+
+/**
+ * A load balancer's "5xx X% of N requests" (O3b), only from the table row's own 5xx
+ * rate (sent only when judged), 5xx errors and Requests (completed queries only):
+ *   rate sent, 5xx <= N       "5xx 0.4% of 12,000 requests (over 1h)"
+ *   rate sent, 5xx > N        "150 5xx, 5 requests routed to targets (over 1h)" (decision 4)
+ *   no rate, N = 0, judged    "150 5xx, 0 requests routed to targets (over 1h)" (decision 6)
+ * Null otherwise (no Requests: the O2 text, never "of — requests").
+ */
+export function lbFiveXxText(row: ObservabilityRow): string | null {
+  const requests = find(row, 'Requests')
+  const errors = find(row, '5xx errors')
+  if (!requests || !errors || requests.window === 'current') return null
+  const rate = find(row, '5xx rate', '%')
+  if (rate) {
+    return errors.value > requests.value
+      ? LB_FIVE_XX.counts(count(errors.value), requestsText(requests.value), requests.window)
+      : LB_FIVE_XX.rateOf(formatValue(rate), requestsText(requests.value), requests.window)
+  }
+  // With no request routed, only the 5xx rule can have judged the row (L1: at least 100 5xx).
+  const judged = row.check_status === 'failing' || row.check_status === 'needs_attention'
+  if (requests.value === 0 && errors.value > 0 && judged) return LB_FIVE_XX.counts(count(errors.value), requestsText(0), requests.window)
+  return null
+}
+
 /** The type's key metrics that the row carries, joined; null when it carries none of them. */
 export function keyMetricText(row: ObservabilityRow): string | null {
   const parts: string[] = []
   for (const def of KEY_METRICS[row.resource_type] ?? []) {
+    if (row.resource_type === 'load-balancer' && def.label === '5xx rate') {
+      const fiveXx = lbFiveXxText(row)
+      if (fiveXx) {
+        parts.push(fiveXx)
+        continue
+      }
+    }
     const metric = find(row, def.label, def.unit)
     if (!metric || (def.positive && metric.value <= 0)) continue
     const also = def.also ? find(row, def.also.label, def.also.unit) : undefined

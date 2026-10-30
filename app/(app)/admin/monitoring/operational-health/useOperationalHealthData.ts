@@ -86,6 +86,8 @@ export function useOperationalHealthData(range: MonitoringRange) {
     if (requestedTable.q) params.set('q', requestedTable.q)
     params.set('filter', requestedTable.filter)
     params.set('page', String(requestedTable.page))
+    // O3b: the response-time chart, from the same sweep (no extra AWS call).
+    params.set('lb_response_time', '1')
     if (opts.refresh) params.set('refresh', 'true')
 
     const resourcesDone = api
