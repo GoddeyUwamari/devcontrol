@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import { ComplianceFrameworksRepository } from '../repositories/compliance-frameworks.repository';
 import { CustomComplianceService } from '../services/custom-compliance.service';
 import { isReservedFrameworkName } from '../utils/reservedFrameworkNames';
-import { assessTagPatternSafety } from '../utils/regexSafety';
+import { checkTagPattern } from '../utils/tagPatternMatcher';
 
 // V1 rule vocabulary. `custom_script` is deliberately excluded: it evaluated
 // customer-authored JavaScript via an unsandboxed `new Function(...)` in
@@ -101,10 +101,11 @@ function checkFrameworkBrandingViolation(data: {
  * must never reach CustomComplianceService's evaluator with either, and this
  * check runs whether or not the request also happens to be schema-valid
  * zod-wise (zod still accepts the historical 6-value enum; this is the actual
- * V1 enforcement). Also validates a tag_pattern-shaped `conditions.pattern`
- * for regex-safety whenever one is present in the payload, regardless of
- * whether rule_type itself is being changed in the same request (an update
- * can change just `conditions` on an existing tag_pattern rule).
+ * V1 enforcement). Also runs a tag_pattern-shaped `conditions.pattern`
+ * through the same check a scan applies (utils/tagPatternMatcher) whenever one
+ * is present in the payload, regardless of whether rule_type itself is being
+ * changed in the same request (an update can change just `conditions` on an
+ * existing tag_pattern rule).
  */
 function checkRuleTypeAndConditions(data: {
   rule_type?: string;
@@ -117,11 +118,10 @@ function checkRuleTypeAndConditions(data: {
     };
   }
 
-  const pattern = data.conditions?.pattern;
-  if (typeof pattern === 'string') {
-    const safety = assessTagPatternSafety(pattern);
-    if (!safety.safe) {
-      return { code: 'UNSAFE_REGEX_PATTERN', error: safety.reason };
+  if (data.conditions && 'pattern' in data.conditions) {
+    const check = checkTagPattern(data.conditions.pattern);
+    if (!check.ok) {
+      return { code: check.problem.code, error: check.problem.message };
     }
   }
 
