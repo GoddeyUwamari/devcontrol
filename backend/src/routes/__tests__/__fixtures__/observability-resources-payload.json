@@ -1,0 +1,4340 @@
+{
+  "range=1h&pageSize=100": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ok",
+        "region": "us-east-1",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "range": "1h",
+        "collection": "partial",
+        "checked_at": null,
+        "captured_at": "<captured-at>",
+        "inventory_capped": null,
+        "inventory_capped_reasons": [],
+        "type_summary": {
+          "ec2": {
+            "count": 5,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 4
+          },
+          "load-balancer": {
+            "count": 2,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "other": 1
+          },
+          "rds": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "lambda": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "dynamodb": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "ecs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "eks": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "ebs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "aurora": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "s3": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          }
+        },
+        "type_breakdown": {
+          "ec2": {
+            "count": 5,
+            "measured": 2,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 1,
+            "neutral": 1,
+            "stopped": 1,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 2,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 1
+          },
+          "load-balancer": {
+            "count": 2,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "rds": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "lambda": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 1,
+            "stopped": 0,
+            "no_activity": 1,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "dynamodb": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "ecs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "eks": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "ebs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "aurora": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "s3": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          }
+        },
+        "fleet_summary": {
+          "count": 17,
+          "measured": 10,
+          "passing": 6,
+          "needs_attention": 1,
+          "failing": 0,
+          "check_unknown": 3,
+          "check_failed": 1,
+          "neutral": 2,
+          "stopped": 1,
+          "no_activity": 1,
+          "not_enough_traffic": 0,
+          "not_measured": 3,
+          "outside_scope": 2,
+          "reporting": 7,
+          "no_telemetry": 2,
+          "unknown": 1
+        },
+        "resources": [
+          {
+            "resource_id": "i-0cccccccccccccccc",
+            "resource_type": "ec2",
+            "name": "web-denied",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "access_denied",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0eeeeeeeeeeeeeeee",
+            "resource_type": "ec2",
+            "name": "web-other-account",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_account",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0dddddddddddddddd",
+            "resource_type": "ec2",
+            "name": "web-other-region",
+            "region": "eu-west-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_region",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-1234567890abcdef0",
+            "resource_type": "ec2",
+            "name": "web-running",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 12,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "i-0bbbbbbbbbbbbbbbb",
+            "resource_type": "ec2",
+            "name": "web-stopped",
+            "region": "us-east-1",
+            "check_status": "stopped",
+            "unknown_reason": null,
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-alb",
+            "resource_type": "load-balancer",
+            "name": "app-alb",
+            "region": "us-east-1",
+            "check_status": "needs_attention",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": "active",
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "Avg latency",
+                "value": 740,
+                "unit": "ms",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "Requests/min",
+                "value": 2,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx errors",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "example-nlb",
+            "resource_type": "load-balancer",
+            "name": "net-lb",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-db",
+            "resource_type": "rds",
+            "name": "example-db",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "idle-fn",
+            "resource_type": "lambda",
+            "name": "idle-fn",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_activity",
+            "telemetry": "no_telemetry",
+            "activity": "no_activity",
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": [
+              {
+                "label": "Throttles",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "orders",
+            "resource_type": "dynamodb",
+            "name": "orders",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "api-svc",
+            "resource_type": "ecs",
+            "name": "api-svc",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Running",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Desired",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Pending",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "k8s",
+            "resource_type": "eks",
+            "name": "k8s",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Health issues",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "vol-0123456789abcdef0",
+            "resource_type": "ebs",
+            "name": "data-vol",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Status check events",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "E2EXAMPLE1",
+            "resource_type": "cloudfront",
+            "name": "cdn",
+            "region": "global",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "4xx rate",
+                "value": 1,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "aurora-main",
+            "resource_type": "aurora",
+            "name": "aurora-main",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 30,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "abcdef1234",
+            "resource_type": "api-gateway",
+            "name": "rest-api",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "logs-bucket",
+            "resource_type": "s3",
+            "name": "logs-bucket",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          }
+        ],
+        "pagination": {
+          "shown": 17,
+          "total": 17,
+          "has_more": false,
+          "cursor": null
+        }
+      }
+    }
+  },
+  "pageSize=5 (page 1)": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ok",
+        "region": "us-east-1",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "range": "1h",
+        "collection": "partial",
+        "checked_at": null,
+        "captured_at": "<captured-at>",
+        "inventory_capped": null,
+        "inventory_capped_reasons": [],
+        "type_summary": {
+          "ec2": {
+            "count": 5,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 4
+          },
+          "load-balancer": {
+            "count": 2,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "other": 1
+          },
+          "rds": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "lambda": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "dynamodb": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "ecs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "eks": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "ebs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "aurora": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "s3": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          }
+        },
+        "type_breakdown": {
+          "ec2": {
+            "count": 5,
+            "measured": 2,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 1,
+            "neutral": 1,
+            "stopped": 1,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 2,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 1
+          },
+          "load-balancer": {
+            "count": 2,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "rds": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "lambda": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 1,
+            "stopped": 0,
+            "no_activity": 1,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "dynamodb": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "ecs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "eks": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "ebs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "aurora": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "s3": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          }
+        },
+        "fleet_summary": {
+          "count": 17,
+          "measured": 10,
+          "passing": 6,
+          "needs_attention": 1,
+          "failing": 0,
+          "check_unknown": 3,
+          "check_failed": 1,
+          "neutral": 2,
+          "stopped": 1,
+          "no_activity": 1,
+          "not_enough_traffic": 0,
+          "not_measured": 3,
+          "outside_scope": 2,
+          "reporting": 7,
+          "no_telemetry": 2,
+          "unknown": 1
+        },
+        "resources": [
+          {
+            "resource_id": "i-0cccccccccccccccc",
+            "resource_type": "ec2",
+            "name": "web-denied",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "access_denied",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0eeeeeeeeeeeeeeee",
+            "resource_type": "ec2",
+            "name": "web-other-account",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_account",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0dddddddddddddddd",
+            "resource_type": "ec2",
+            "name": "web-other-region",
+            "region": "eu-west-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_region",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-1234567890abcdef0",
+            "resource_type": "ec2",
+            "name": "web-running",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 12,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "i-0bbbbbbbbbbbbbbbb",
+            "resource_type": "ec2",
+            "name": "web-stopped",
+            "region": "us-east-1",
+            "check_status": "stopped",
+            "unknown_reason": null,
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          }
+        ],
+        "pagination": {
+          "shown": 5,
+          "total": 17,
+          "has_more": true,
+          "cursor": "<cursor>"
+        }
+      }
+    }
+  },
+  "pageSize=5 (page 2)": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ok",
+        "region": "us-east-1",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "range": "1h",
+        "collection": "partial",
+        "checked_at": null,
+        "captured_at": "<captured-at>",
+        "inventory_capped": null,
+        "inventory_capped_reasons": [],
+        "type_summary": {
+          "ec2": {
+            "count": 5,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 4
+          },
+          "load-balancer": {
+            "count": 2,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "other": 1
+          },
+          "rds": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "lambda": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "dynamodb": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "ecs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "eks": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "ebs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "aurora": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "s3": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          }
+        },
+        "type_breakdown": {
+          "ec2": {
+            "count": 5,
+            "measured": 2,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 1,
+            "neutral": 1,
+            "stopped": 1,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 2,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 1
+          },
+          "load-balancer": {
+            "count": 2,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "rds": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "lambda": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 1,
+            "stopped": 0,
+            "no_activity": 1,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "dynamodb": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "ecs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "eks": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "ebs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "aurora": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "s3": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          }
+        },
+        "fleet_summary": {
+          "count": 17,
+          "measured": 10,
+          "passing": 6,
+          "needs_attention": 1,
+          "failing": 0,
+          "check_unknown": 3,
+          "check_failed": 1,
+          "neutral": 2,
+          "stopped": 1,
+          "no_activity": 1,
+          "not_enough_traffic": 0,
+          "not_measured": 3,
+          "outside_scope": 2,
+          "reporting": 7,
+          "no_telemetry": 2,
+          "unknown": 1
+        },
+        "resources": [
+          {
+            "resource_id": "example-alb",
+            "resource_type": "load-balancer",
+            "name": "app-alb",
+            "region": "us-east-1",
+            "check_status": "needs_attention",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": "active",
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "Avg latency",
+                "value": 740,
+                "unit": "ms",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "Requests/min",
+                "value": 2,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx errors",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "example-nlb",
+            "resource_type": "load-balancer",
+            "name": "net-lb",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-db",
+            "resource_type": "rds",
+            "name": "example-db",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "idle-fn",
+            "resource_type": "lambda",
+            "name": "idle-fn",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_activity",
+            "telemetry": "no_telemetry",
+            "activity": "no_activity",
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": [
+              {
+                "label": "Throttles",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "orders",
+            "resource_type": "dynamodb",
+            "name": "orders",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          }
+        ],
+        "pagination": {
+          "shown": 5,
+          "total": 17,
+          "has_more": true,
+          "cursor": "<cursor>"
+        }
+      }
+    }
+  },
+  "range=7d": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ok",
+        "region": "us-east-1",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "range": "7d",
+        "collection": "partial",
+        "checked_at": null,
+        "captured_at": "<captured-at>",
+        "inventory_capped": null,
+        "inventory_capped_reasons": [],
+        "type_summary": {
+          "ec2": {
+            "count": 5,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 4
+          },
+          "load-balancer": {
+            "count": 2,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "other": 1
+          },
+          "rds": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "lambda": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "dynamodb": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "ecs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "eks": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "ebs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "aurora": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "s3": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          }
+        },
+        "type_breakdown": {
+          "ec2": {
+            "count": 5,
+            "measured": 2,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 1,
+            "neutral": 1,
+            "stopped": 1,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 2,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 1
+          },
+          "load-balancer": {
+            "count": 2,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "rds": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "lambda": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 1,
+            "stopped": 0,
+            "no_activity": 1,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "dynamodb": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "ecs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "eks": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "ebs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "aurora": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "s3": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          }
+        },
+        "fleet_summary": {
+          "count": 17,
+          "measured": 10,
+          "passing": 6,
+          "needs_attention": 1,
+          "failing": 0,
+          "check_unknown": 3,
+          "check_failed": 1,
+          "neutral": 2,
+          "stopped": 1,
+          "no_activity": 1,
+          "not_enough_traffic": 0,
+          "not_measured": 3,
+          "outside_scope": 2,
+          "reporting": 7,
+          "no_telemetry": 2,
+          "unknown": 1
+        },
+        "resources": [
+          {
+            "resource_id": "i-0cccccccccccccccc",
+            "resource_type": "ec2",
+            "name": "web-denied",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "access_denied",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0eeeeeeeeeeeeeeee",
+            "resource_type": "ec2",
+            "name": "web-other-account",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_account",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0dddddddddddddddd",
+            "resource_type": "ec2",
+            "name": "web-other-region",
+            "region": "eu-west-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_region",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-1234567890abcdef0",
+            "resource_type": "ec2",
+            "name": "web-running",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 12,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "7d"
+              }
+            ]
+          },
+          {
+            "resource_id": "i-0bbbbbbbbbbbbbbbb",
+            "resource_type": "ec2",
+            "name": "web-stopped",
+            "region": "us-east-1",
+            "check_status": "stopped",
+            "unknown_reason": null,
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-alb",
+            "resource_type": "load-balancer",
+            "name": "app-alb",
+            "region": "us-east-1",
+            "check_status": "needs_attention",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": "active",
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "Avg latency",
+                "value": 740,
+                "unit": "ms",
+                "statistic": "Average",
+                "window": "7d"
+              },
+              {
+                "label": "Requests/min",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "7d"
+              },
+              {
+                "label": "5xx errors",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "7d"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Sum",
+                "window": "7d"
+              }
+            ]
+          },
+          {
+            "resource_id": "example-nlb",
+            "resource_type": "load-balancer",
+            "name": "net-lb",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-db",
+            "resource_type": "rds",
+            "name": "example-db",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "idle-fn",
+            "resource_type": "lambda",
+            "name": "idle-fn",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_activity",
+            "telemetry": "no_telemetry",
+            "activity": "no_activity",
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": [
+              {
+                "label": "Throttles",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "7d"
+              }
+            ]
+          },
+          {
+            "resource_id": "orders",
+            "resource_type": "dynamodb",
+            "name": "orders",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "api-svc",
+            "resource_type": "ecs",
+            "name": "api-svc",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Running",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Desired",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Pending",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "k8s",
+            "resource_type": "eks",
+            "name": "k8s",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Health issues",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "vol-0123456789abcdef0",
+            "resource_type": "ebs",
+            "name": "data-vol",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Status check events",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "E2EXAMPLE1",
+            "resource_type": "cloudfront",
+            "name": "cdn",
+            "region": "global",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "4xx rate",
+                "value": 1,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "7d"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "7d"
+              }
+            ]
+          },
+          {
+            "resource_id": "aurora-main",
+            "resource_type": "aurora",
+            "name": "aurora-main",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 30,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "7d"
+              }
+            ]
+          },
+          {
+            "resource_id": "abcdef1234",
+            "resource_type": "api-gateway",
+            "name": "rest-api",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "logs-bucket",
+            "resource_type": "s3",
+            "name": "logs-bucket",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          }
+        ],
+        "pagination": {
+          "shown": 17,
+          "total": 17,
+          "has_more": false,
+          "cursor": null
+        }
+      }
+    }
+  },
+  "q=web&filter=ec2&page=2 (no table)": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ok",
+        "region": "us-east-1",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "range": "1h",
+        "collection": "partial",
+        "checked_at": null,
+        "captured_at": "<captured-at>",
+        "inventory_capped": null,
+        "inventory_capped_reasons": [],
+        "type_summary": {
+          "ec2": {
+            "count": 5,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 4
+          },
+          "load-balancer": {
+            "count": 2,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "other": 1
+          },
+          "rds": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "lambda": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "dynamodb": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "ecs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "eks": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "ebs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "aurora": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "s3": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          }
+        },
+        "type_breakdown": {
+          "ec2": {
+            "count": 5,
+            "measured": 2,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 1,
+            "neutral": 1,
+            "stopped": 1,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 2,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 1
+          },
+          "load-balancer": {
+            "count": 2,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "rds": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "lambda": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 1,
+            "stopped": 0,
+            "no_activity": 1,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "dynamodb": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "ecs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "eks": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "ebs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "aurora": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "s3": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          }
+        },
+        "fleet_summary": {
+          "count": 17,
+          "measured": 10,
+          "passing": 6,
+          "needs_attention": 1,
+          "failing": 0,
+          "check_unknown": 3,
+          "check_failed": 1,
+          "neutral": 2,
+          "stopped": 1,
+          "no_activity": 1,
+          "not_enough_traffic": 0,
+          "not_measured": 3,
+          "outside_scope": 2,
+          "reporting": 7,
+          "no_telemetry": 2,
+          "unknown": 1
+        },
+        "resources": [
+          {
+            "resource_id": "i-0cccccccccccccccc",
+            "resource_type": "ec2",
+            "name": "web-denied",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "access_denied",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0eeeeeeeeeeeeeeee",
+            "resource_type": "ec2",
+            "name": "web-other-account",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_account",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0dddddddddddddddd",
+            "resource_type": "ec2",
+            "name": "web-other-region",
+            "region": "eu-west-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_region",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-1234567890abcdef0",
+            "resource_type": "ec2",
+            "name": "web-running",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 12,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "i-0bbbbbbbbbbbbbbbb",
+            "resource_type": "ec2",
+            "name": "web-stopped",
+            "region": "us-east-1",
+            "check_status": "stopped",
+            "unknown_reason": null,
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-alb",
+            "resource_type": "load-balancer",
+            "name": "app-alb",
+            "region": "us-east-1",
+            "check_status": "needs_attention",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": "active",
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "Avg latency",
+                "value": 740,
+                "unit": "ms",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "Requests/min",
+                "value": 2,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx errors",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "example-nlb",
+            "resource_type": "load-balancer",
+            "name": "net-lb",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-db",
+            "resource_type": "rds",
+            "name": "example-db",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "idle-fn",
+            "resource_type": "lambda",
+            "name": "idle-fn",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_activity",
+            "telemetry": "no_telemetry",
+            "activity": "no_activity",
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": [
+              {
+                "label": "Throttles",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "orders",
+            "resource_type": "dynamodb",
+            "name": "orders",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "api-svc",
+            "resource_type": "ecs",
+            "name": "api-svc",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Running",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Desired",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Pending",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "k8s",
+            "resource_type": "eks",
+            "name": "k8s",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Health issues",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "vol-0123456789abcdef0",
+            "resource_type": "ebs",
+            "name": "data-vol",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Status check events",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "E2EXAMPLE1",
+            "resource_type": "cloudfront",
+            "name": "cdn",
+            "region": "global",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "4xx rate",
+                "value": 1,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "aurora-main",
+            "resource_type": "aurora",
+            "name": "aurora-main",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 30,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "abcdef1234",
+            "resource_type": "api-gateway",
+            "name": "rest-api",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "logs-bucket",
+            "resource_type": "s3",
+            "name": "logs-bucket",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          }
+        ],
+        "pagination": {
+          "shown": 17,
+          "total": 17,
+          "has_more": false,
+          "cursor": null
+        }
+      }
+    }
+  },
+  "table=0&q=web": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ok",
+        "region": "us-east-1",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "range": "1h",
+        "collection": "partial",
+        "checked_at": null,
+        "captured_at": "<captured-at>",
+        "inventory_capped": null,
+        "inventory_capped_reasons": [],
+        "type_summary": {
+          "ec2": {
+            "count": 5,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 4
+          },
+          "load-balancer": {
+            "count": 2,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "other": 1
+          },
+          "rds": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "lambda": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "dynamodb": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "ecs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "eks": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "ebs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "aurora": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "s3": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          }
+        },
+        "type_breakdown": {
+          "ec2": {
+            "count": 5,
+            "measured": 2,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 1,
+            "neutral": 1,
+            "stopped": 1,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 2,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 1
+          },
+          "load-balancer": {
+            "count": 2,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "rds": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "lambda": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 1,
+            "stopped": 0,
+            "no_activity": 1,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "dynamodb": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "ecs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "eks": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "ebs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "aurora": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "s3": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          }
+        },
+        "fleet_summary": {
+          "count": 17,
+          "measured": 10,
+          "passing": 6,
+          "needs_attention": 1,
+          "failing": 0,
+          "check_unknown": 3,
+          "check_failed": 1,
+          "neutral": 2,
+          "stopped": 1,
+          "no_activity": 1,
+          "not_enough_traffic": 0,
+          "not_measured": 3,
+          "outside_scope": 2,
+          "reporting": 7,
+          "no_telemetry": 2,
+          "unknown": 1
+        },
+        "resources": [
+          {
+            "resource_id": "i-0cccccccccccccccc",
+            "resource_type": "ec2",
+            "name": "web-denied",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "access_denied",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0eeeeeeeeeeeeeeee",
+            "resource_type": "ec2",
+            "name": "web-other-account",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_account",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0dddddddddddddddd",
+            "resource_type": "ec2",
+            "name": "web-other-region",
+            "region": "eu-west-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_region",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-1234567890abcdef0",
+            "resource_type": "ec2",
+            "name": "web-running",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 12,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "i-0bbbbbbbbbbbbbbbb",
+            "resource_type": "ec2",
+            "name": "web-stopped",
+            "region": "us-east-1",
+            "check_status": "stopped",
+            "unknown_reason": null,
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-alb",
+            "resource_type": "load-balancer",
+            "name": "app-alb",
+            "region": "us-east-1",
+            "check_status": "needs_attention",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": "active",
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "Avg latency",
+                "value": 740,
+                "unit": "ms",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "Requests/min",
+                "value": 2,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx errors",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "example-nlb",
+            "resource_type": "load-balancer",
+            "name": "net-lb",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-db",
+            "resource_type": "rds",
+            "name": "example-db",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "idle-fn",
+            "resource_type": "lambda",
+            "name": "idle-fn",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_activity",
+            "telemetry": "no_telemetry",
+            "activity": "no_activity",
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": [
+              {
+                "label": "Throttles",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "orders",
+            "resource_type": "dynamodb",
+            "name": "orders",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "api-svc",
+            "resource_type": "ecs",
+            "name": "api-svc",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Running",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Desired",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Pending",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "k8s",
+            "resource_type": "eks",
+            "name": "k8s",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Health issues",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "vol-0123456789abcdef0",
+            "resource_type": "ebs",
+            "name": "data-vol",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Status check events",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "E2EXAMPLE1",
+            "resource_type": "cloudfront",
+            "name": "cdn",
+            "region": "global",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "4xx rate",
+                "value": 1,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "aurora-main",
+            "resource_type": "aurora",
+            "name": "aurora-main",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 30,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "abcdef1234",
+            "resource_type": "api-gateway",
+            "name": "rest-api",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "logs-bucket",
+            "resource_type": "s3",
+            "name": "logs-bucket",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          }
+        ],
+        "pagination": {
+          "shown": 17,
+          "total": 17,
+          "has_more": false,
+          "cursor": null
+        }
+      }
+    }
+  },
+  "table=true&filter=bogus&page=0": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "ok",
+        "region": "us-east-1",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "range": "1h",
+        "collection": "partial",
+        "checked_at": null,
+        "captured_at": "<captured-at>",
+        "inventory_capped": null,
+        "inventory_capped_reasons": [],
+        "type_summary": {
+          "ec2": {
+            "count": 5,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 4
+          },
+          "load-balancer": {
+            "count": 2,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "other": 1
+          },
+          "rds": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "lambda": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "dynamodb": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "ecs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "eks": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "ebs": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "aurora": {
+            "count": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          },
+          "s3": {
+            "count": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "other": 1
+          }
+        },
+        "type_breakdown": {
+          "ec2": {
+            "count": 5,
+            "measured": 2,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 1,
+            "neutral": 1,
+            "stopped": 1,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 2,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 1
+          },
+          "load-balancer": {
+            "count": 2,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 1,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "rds": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "lambda": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 1,
+            "stopped": 0,
+            "no_activity": 1,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "dynamodb": {
+            "count": 1,
+            "measured": 1,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 1,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 1,
+            "unknown": 0
+          },
+          "ecs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "eks": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "ebs": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "cloudfront": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "aurora": {
+            "count": 1,
+            "measured": 1,
+            "passing": 1,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 0,
+            "outside_scope": 0,
+            "reporting": 1,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "api-gateway": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          },
+          "s3": {
+            "count": 1,
+            "measured": 0,
+            "passing": 0,
+            "needs_attention": 0,
+            "failing": 0,
+            "check_unknown": 0,
+            "check_failed": 0,
+            "neutral": 0,
+            "stopped": 0,
+            "no_activity": 0,
+            "not_enough_traffic": 0,
+            "not_measured": 1,
+            "outside_scope": 0,
+            "reporting": 0,
+            "no_telemetry": 0,
+            "unknown": 0
+          }
+        },
+        "fleet_summary": {
+          "count": 17,
+          "measured": 10,
+          "passing": 6,
+          "needs_attention": 1,
+          "failing": 0,
+          "check_unknown": 3,
+          "check_failed": 1,
+          "neutral": 2,
+          "stopped": 1,
+          "no_activity": 1,
+          "not_enough_traffic": 0,
+          "not_measured": 3,
+          "outside_scope": 2,
+          "reporting": 7,
+          "no_telemetry": 2,
+          "unknown": 1
+        },
+        "resources": [
+          {
+            "resource_id": "i-0cccccccccccccccc",
+            "resource_type": "ec2",
+            "name": "web-denied",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "access_denied",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0eeeeeeeeeeeeeeee",
+            "resource_type": "ec2",
+            "name": "web-other-account",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_account",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-0dddddddddddddddd",
+            "resource_type": "ec2",
+            "name": "web-other-region",
+            "region": "eu-west-1",
+            "check_status": "unknown",
+            "unknown_reason": "outside_region",
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "i-1234567890abcdef0",
+            "resource_type": "ec2",
+            "name": "web-running",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 12,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "i-0bbbbbbbbbbbbbbbb",
+            "resource_type": "ec2",
+            "name": "web-stopped",
+            "region": "us-east-1",
+            "check_status": "stopped",
+            "unknown_reason": null,
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-alb",
+            "resource_type": "load-balancer",
+            "name": "app-alb",
+            "region": "us-east-1",
+            "check_status": "needs_attention",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": "active",
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "Avg latency",
+                "value": 740,
+                "unit": "ms",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "Requests/min",
+                "value": 2,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx errors",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "example-nlb",
+            "resource_type": "load-balancer",
+            "name": "net-lb",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "example-db",
+            "resource_type": "rds",
+            "name": "example-db",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "idle-fn",
+            "resource_type": "lambda",
+            "name": "idle-fn",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_activity",
+            "telemetry": "no_telemetry",
+            "activity": "no_activity",
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": [
+              {
+                "label": "Throttles",
+                "value": 0,
+                "statistic": "Sum",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "orders",
+            "resource_type": "dynamodb",
+            "name": "orders",
+            "region": "us-east-1",
+            "check_status": "unknown",
+            "unknown_reason": "no_telemetry",
+            "telemetry": "no_telemetry",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "api-svc",
+            "resource_type": "ecs",
+            "name": "api-svc",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Running",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Desired",
+                "value": 2,
+                "statistic": null,
+                "window": "current"
+              },
+              {
+                "label": "Pending",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "k8s",
+            "resource_type": "eks",
+            "name": "k8s",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Health issues",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "vol-0123456789abcdef0",
+            "resource_type": "ebs",
+            "name": "data-vol",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "<sweep-at>",
+            "last_seen_source": "observation",
+            "metrics": [
+              {
+                "label": "Status check events",
+                "value": 0,
+                "statistic": null,
+                "window": "current"
+              }
+            ]
+          },
+          {
+            "resource_id": "E2EXAMPLE1",
+            "resource_type": "cloudfront",
+            "name": "cdn",
+            "region": "global",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "4xx rate",
+                "value": 1,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              },
+              {
+                "label": "5xx rate",
+                "value": 0,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "aurora-main",
+            "resource_type": "aurora",
+            "name": "aurora-main",
+            "region": "us-east-1",
+            "check_status": "passing",
+            "unknown_reason": null,
+            "telemetry": "reporting",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": "2026-10-28T09:55:00.000Z",
+            "last_seen_source": "datapoint",
+            "metrics": [
+              {
+                "label": "CPU",
+                "value": 30,
+                "unit": "%",
+                "statistic": "Average",
+                "window": "1h"
+              }
+            ]
+          },
+          {
+            "resource_id": "abcdef1234",
+            "resource_type": "api-gateway",
+            "name": "rest-api",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          },
+          {
+            "resource_id": "logs-bucket",
+            "resource_type": "s3",
+            "name": "logs-bucket",
+            "region": "us-east-1",
+            "check_status": "not_measured",
+            "unknown_reason": null,
+            "telemetry": "unknown",
+            "activity": null,
+            "status_detail": null,
+            "last_seen": null,
+            "last_seen_source": null,
+            "metrics": []
+          }
+        ],
+        "pagination": {
+          "shown": 17,
+          "total": 17,
+          "has_more": false,
+          "cursor": null
+        }
+      }
+    }
+  },
+  "failed": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "failed",
+        "reason": "connection_failed",
+        "account_count": 1,
+        "multiple_accounts": false,
+        "region": null,
+        "checked_at": null,
+        "type_summary": null,
+        "resources": null,
+        "pagination": null
+      }
+    }
+  },
+  "not_connected": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "status": "not_connected",
+        "account_count": 0,
+        "multiple_accounts": false,
+        "region": null,
+        "checked_at": null,
+        "type_summary": null,
+        "resources": null,
+        "pagination": null
+      }
+    }
+  },
+  "invalid cursor": {
+    "status": 400,
+    "body": {
+      "success": false,
+      "error": "Invalid pagination cursor"
+    }
+  }
+}
