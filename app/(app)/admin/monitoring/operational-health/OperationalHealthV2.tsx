@@ -14,28 +14,36 @@ import { HealthTiles } from './HealthTiles'
 import { TypeCards } from './TypeCards'
 import { WhatWeMonitor } from './WhatWeMonitor'
 import { RelatedLinks } from './RelatedLinks'
+import { ResourceTable } from './ResourceTable'
+import { tableView } from './resourceTableModel'
 
 /**
  * The Operational Health page (NEXT_PUBLIC_OBSERVABILITY_V2), on every plan. Reads
  * GET /api/observability/resources and /alarms (useOperationalHealthData) and,
  * on Enterprise, GET /api/slos/evaluate once (useSloSummary). Never the legacy
- * /api/cloudwatch/* or /api/prometheus/* routes. O1: the top of the page; the
- * resource table, alarms list and response-time chart come in O2/O3.
+ * /api/cloudwatch/* or /api/prometheus/* routes. O1: the top of the page; O2:
+ * the Resource checks table; the alarms list and response-time chart come in O3.
  */
 export default function OperationalHealthV2() {
   const [range, setRange] = useState<MonitoringRange>(DEFAULT_RANGE)
-  const { resources, alarms, busy, refresh, retryAlarms } = useOperationalHealthData(range)
+  const { resources, alarms, busy, refresh, retryAlarms, table, tableSource, setTable } = useOperationalHealthData(range)
   const planHook = usePlan()
   const plan: PlanInfo = { status: planHook.status, tier: planHook.tier }
   const { slo, retry: retrySlo } = useSloSummary(plan)
 
   const monitor = monitorView(resources, alarms, slo, plan, SEE_PLANS)
+  // A new range starts the table at page 1; the search and filter are kept.
+  const onRange = (next: MonitoringRange) => {
+    setRange(next)
+    setTable({ page: 1 })
+  }
   return (
     <main className="mx-auto flex max-w-[1240px] flex-col gap-5 px-4 py-6 sm:px-6">
-      <HealthHeader view={headerView(resources, alarms)} range={range} onRange={setRange} onRefresh={refresh} busy={busy} />
+      <HealthHeader view={headerView(resources, alarms)} range={range} onRange={onRange} onRefresh={refresh} busy={busy} />
       <HealthBanner banner={bannerView(resources, alarms)} onRetry={refresh} />
       <HealthTiles tiles={tilesView(resources, alarms)} onRetry={refresh} onRetryAlarms={retryAlarms} />
       <TypeCards cards={typeCards(resources)} />
+      <ResourceTable view={tableView(tableSource.source, tableSource.query, undefined, resources)} query={table} onQuery={setTable} onRetry={refresh} />
       <WhatWeMonitor groups={monitor.groups} planNote={monitor.planNote} seePlans={SEE_PLANS} onRetryAlarms={retryAlarms} onRetrySlo={retrySlo} />
       <RelatedLinks />
     </main>

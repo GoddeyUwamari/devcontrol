@@ -2,15 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
-import type { AlarmsData, MonitoringRange, ResourcesData, Source } from './observabilityTypes'
+import type { AlarmsData, MonitoringRange, ResourcesData, Source, TableQuery } from './observabilityTypes'
+import { FIRST_PAGE } from './resourceTableModel'
 
 /** The poll interval; both backend caches are about this long (45 s resources, 60 s alarms). */
 export const POLL_MS = 60_000
-/** O1 decision D5: the first page of rows, which O2's table will reuse. */
+/** O1 decision D5: the legacy page of rows the response still carries (O2 reads `table` instead). */
 export const PAGE_SIZE = 25
 
 const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
 const statusOf = (err: unknown) => (err as { response?: { status?: number } } | null)?.response?.status
+const keyOf = (range: MonitoringRange, t: TableQuery) => JSON.stringify([range, t.q, t.filter, t.page])
+const sameTable = (a: TableQuery, b: TableQuery) => a.q === b.q && a.filter === b.filter && a.page === b.page
 
 /**
  * GET /api/observability/resources and GET /api/observability/alarms, as one
@@ -25,11 +28,18 @@ const statusOf = (err: unknown) => (err as { response?: { status?: number } } | 
  * - The next poll is scheduled 60 s after a cycle settles, and only while the
  *   tab is visible (decision D14); becoming visible runs a cycle at once.
  * - Unmount aborts the cycle and stops the poll.
+ * - O2: every resources request carries the table query (table=1, q, filter,
+ *   page). Changing it runs a cycle like a range change, and the poll, Refresh
+ *   and visibility cycles keep it. An answer is applied only if its echo has the
+ *   q and filter asked for; a page the server clamped is adopted without
+ *   another request.
  */
 export function useOperationalHealthData(range: MonitoringRange) {
-  // Stored with the range it was loaded for: under any other range it reads as loading,
-  // so numbers for one range are never shown under another.
-  const [loaded, setLoaded] = useState<{ range: MonitoringRange; source: Source<ResourcesData> } | null>(null)
+  // Stored with the range and table query it was loaded for: under any other range it reads
+  // as loading, so numbers for one range are never shown under another; the table reads as
+  // loading under any other table query.
+  const [loaded, setLoaded] = useState<{ range: MonitoringRange; table: TableQuery; source: Source<ResourcesData> } | null>(null)
+  const [table, setTableState] = useState<TableQuery>(FIRST_PAGE)
   const [alarms, setAlarms] = useState<Source<AlarmsData>>({ state: 'loading' })
   const [busy, setBusy] = useState(false)
 
@@ -42,6 +52,9 @@ export function useOperationalHealthData(range: MonitoringRange) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mounted = useRef(true)
   const rangeRef = useRef(range)
+  const tableRef = useRef(table)
+  // Set when an answer's clamped page is adopted: the state change it causes needs no request.
+  const answered = useRef<string | null>(null)
   // The poll timer calls the latest run through this ref.
   const runRef = useRef<(opts: { refresh: boolean; cancelInFlight: boolean }) => void>(() => {})
 
@@ -61,10 +74,15 @@ export function useOperationalHealthData(range: MonitoringRange) {
     controller.current = ctrl
     inFlight.current = true
     setBusy(true)
+    answered.current = null
     const requested = rangeRef.current
+    const requestedTable = tableRef.current
     const current = () => mounted.current && mine === seq.current && !ctrl.signal.aborted
 
-    const params = new URLSearchParams({ range: requested, pageSize: String(PAGE_SIZE) })
+    const params = new URLSearchParams({ range: requested, pageSize: String(PAGE_SIZE), table: '1' })
+    if (requestedTable.q) params.set('q', requestedTable.q)
+    params.set('filter', requestedTable.filter)
+    params.set('page', String(requestedTable.page))
     if (opts.refresh) params.set('refresh', 'true')
 
     const resourcesDone = api
@@ -73,12 +91,24 @@ export function useOperationalHealthData(range: MonitoringRange) {
         if (!current()) return
         const data = res.data?.data
         // A response for another range is never shown under this one.
-        if (!data || (data.status === 'ok' && data.range !== requested)) setLoaded({ range: requested, source: { state: 'error', kind: 'failed' } })
-        else setLoaded({ range: requested, source: { state: 'ok', data } })
+        if (!data || (data.status === 'ok' && data.range !== requested)) {
+          setLoaded({ range: requested, table: requestedTable, source: { state: 'error', kind: 'failed' } })
+          return
+        }
+        let applied = requestedTable
+        const echo = data.status === 'ok' ? data.table?.query : undefined
+        // The server moved a page that no longer exists to the last one: show that page as asked for.
+        if (echo && echo.q === requestedTable.q && echo.filter === requestedTable.filter && echo.page !== requestedTable.page) {
+          applied = { ...requestedTable, page: echo.page }
+          tableRef.current = applied
+          answered.current = keyOf(requested, applied)
+          setTableState(applied)
+        }
+        setLoaded({ range: requested, table: applied, source: { state: 'ok', data } })
       })
       .catch((err) => {
         if (!current()) return
-        setLoaded({ range: requested, source: { state: 'error', kind: statusOf(err) === 503 ? 'unavailable' : 'failed' } })
+        setLoaded({ range: requested, table: requestedTable, source: { state: 'error', kind: statusOf(err) === 503 ? 'unavailable' : 'failed' } })
       })
 
     const alarmsDone = api
@@ -115,11 +145,18 @@ export function useOperationalHealthData(range: MonitoringRange) {
     }
   }, [])
 
-  // Mount and every range change. Alarms don't depend on the range and are kept.
+  // Mount, every range change and every table query change. Alarms don't depend on either
+  // and are kept on screen until the new answer.
   useEffect(() => {
+    const next = { q: table.q, filter: table.filter, page: table.page }
     rangeRef.current = range
+    tableRef.current = next
+    if (answered.current === keyOf(range, next)) {
+      answered.current = null
+      return
+    }
     run({ refresh: false, cancelInFlight: true })
-  }, [range, run])
+  }, [range, table.q, table.filter, table.page, run])
 
   useEffect(() => {
     const onVisibility = () => {
@@ -134,6 +171,11 @@ export function useOperationalHealthData(range: MonitoringRange) {
   const refresh = useCallback(() => run({ refresh: true, cancelInFlight: true }), [run])
 
   const resources: Source<ResourcesData> = loaded && loaded.range === range ? loaded.source : { state: 'loading' }
+  /** The table's answer, and the query it answered; loading while another query is in flight. */
+  const tableSource: { query: TableQuery; source: Source<ResourcesData> } =
+    loaded && loaded.range === range && sameTable(loaded.table, table) ? { query: loaded.table, source: loaded.source } : { query: table, source: { state: 'loading' } }
+  /** Change the table query (merged into the current one). */
+  const setTable = useCallback((next: Partial<TableQuery>) => setTableState((t) => ({ ...t, ...next })), [])
   /**
    * Retry on the alarms tile and row: GET /alarms only, no resources sweep. Skipped while a
    * cycle runs (that cycle reads alarms too); a cycle that starts later wins over it. The last
@@ -159,5 +201,5 @@ export function useOperationalHealthData(range: MonitoringRange) {
       })
   }, [])
 
-  return { resources, alarms, busy, refresh, retryAlarms }
+  return { resources, alarms, busy, refresh, retryAlarms, table, tableSource, setTable }
 }
