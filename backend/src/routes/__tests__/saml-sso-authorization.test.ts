@@ -613,6 +613,151 @@ describe('SAML -- configuration and Enterprise gating', () => {
   });
 });
 
+// ─── SSO discovery: check-domain and initiate by domain ────────────────────
+//
+// check-domain answers only whether a domain signs in through SSO and where
+// the login page goes to start it. /initiate starts SSO from that domain;
+// ?orgId= is used only when no domain is given.
+
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+function testDomain(): string {
+  return `sso-${uniqueSuffix()}.example.test`.toLowerCase();
+}
+
+async function ssoDomainOrg(opts: { tier?: string; isActive?: boolean } = {}) {
+  const orgId = await insertOrg(opts.tier ?? 'enterprise');
+  const domain = testDomain();
+  await samlService.saveConfig(orgId, {
+    providerName: 'Discovery Test IdP',
+    idpEntityId: IDP_ENTITY_ID,
+    idpSsoUrl: IDP_SSO_URL,
+    idpCertificate: idpCert,
+    allowedDomains: [domain],
+    isActive: opts.isActive ?? true,
+  });
+  return { orgId, domain };
+}
+
+async function checkDomain(domain: string): Promise<{ status: number; text: string }> {
+  const res = await fetch(`${baseUrl}/check-domain?domain=${encodeURIComponent(domain)}`);
+  return { status: res.status, text: await res.text() };
+}
+
+/** GET /initiate with `query`: the IdP redirect's RelayState (the org it started for), or 'login' for the failure page. */
+async function initiateWith(query: string): Promise<{ status: number; started: string | 'login' }> {
+  const res = await fetch(`${baseUrl}/initiate?${query}`, { redirect: 'manual' });
+  if (res.status !== 302) return { status: res.status, started: 'login' };
+  const location = new URL(res.headers.get('location')!);
+  if (location.pathname === '/login') return { status: 302, started: 'login' };
+  expect(location.origin + location.pathname).toBe(IDP_SSO_URL);
+  return { status: 302, started: location.searchParams.get('RelayState')! };
+}
+
+describe('SAML -- check-domain', () => {
+  it('a domain with SSO: whether it has SSO and where to start it, nothing about the organization', async () => {
+    const { orgId, domain } = await ssoDomainOrg();
+
+    const { status, text } = await checkDomain(domain);
+
+    expect(status).toBe(200);
+    expect(JSON.parse(text)).toEqual({
+      success: true,
+      data: { hasSSO: true, initiatePath: `/api/auth/saml/initiate?domain=${encodeURIComponent(domain)}` },
+    });
+    expect(text).not.toContain(orgId);
+    expect(text).not.toMatch(UUID_PATTERN);
+    expect(text).not.toContain('Discovery Test IdP');
+  });
+
+  it('the domain is matched as stored: case and surrounding spaces do not matter', async () => {
+    const { domain } = await ssoDomainOrg();
+
+    const { text } = await checkDomain(`  ${domain.toUpperCase()} `);
+
+    expect(JSON.parse(text).data.initiatePath).toBe(`/api/auth/saml/initiate?domain=${encodeURIComponent(domain)}`);
+  });
+
+  it('a domain without SSO', async () => {
+    expect(JSON.parse((await checkDomain(testDomain())).text)).toEqual({ success: true, data: { hasSSO: false } });
+  });
+
+  it('an inactive configuration is not offered', async () => {
+    const { domain } = await ssoDomainOrg({ isActive: false });
+
+    expect(JSON.parse((await checkDomain(domain)).text)).toEqual({ success: true, data: { hasSSO: false } });
+  });
+
+  it('no domain is 400', async () => {
+    const res = await fetch(`${baseUrl}/check-domain`);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'domain query param is required' });
+  });
+
+  it('a failed lookup is 500 with a fixed message', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(samlService, 'getConfigByDomain').mockRejectedValue(new Error('lookup failed SENTINEL'));
+
+    const { status, text } = await checkDomain(testDomain());
+
+    expect(status).toBe(500);
+    expect(JSON.parse(text)).toEqual({ success: false, error: 'Failed to check domain' });
+  });
+});
+
+describe('SAML -- initiate by domain', () => {
+  it('starts SSO for the organization whose active Enterprise configuration lists the domain', async () => {
+    const { orgId, domain } = await ssoDomainOrg();
+
+    expect(await initiateWith(`domain=${encodeURIComponent(domain.toUpperCase())}`)).toEqual({ status: 302, started: orgId });
+  });
+
+  it('the path check-domain returns starts the same flow', async () => {
+    const { orgId, domain } = await ssoDomainOrg();
+    const { initiatePath } = JSON.parse((await checkDomain(domain)).text).data;
+
+    expect(await initiateWith(initiatePath.split('?')[1])).toEqual({ status: 302, started: orgId });
+  });
+
+  it.each([
+    ['an unknown domain', async () => testDomain()],
+    ['an inactive configuration', async () => (await ssoDomainOrg({ isActive: false })).domain],
+    ['an organization no longer on Enterprise', async () => (await ssoDomainOrg({ tier: 'pro' })).domain],
+  ])('%s goes to the login page with the fixed failure message', async (_label, domainFor) => {
+    const domain = await domainFor();
+
+    expect(await initiateWith(`domain=${encodeURIComponent(domain)}`)).toEqual({ status: 302, started: 'login' });
+  });
+
+  it('when both are sent the domain wins, and orgId is not tried when the domain fails', async () => {
+    const a = await ssoDomainOrg();
+    const b = await ssoDomainOrg();
+
+    expect(await initiateWith(`domain=${encodeURIComponent(a.domain)}&orgId=${b.orgId}`)).toEqual({
+      status: 302,
+      started: a.orgId,
+    });
+    expect(await initiateWith(`domain=${encodeURIComponent(testDomain())}&orgId=${b.orgId}`)).toEqual({
+      status: 302,
+      started: 'login',
+    });
+  });
+
+  it('orgId alone still starts SSO (login pages served before this change)', async () => {
+    const { orgId } = await ssoDomainOrg();
+
+    expect(await initiateWith(`orgId=${orgId}`)).toEqual({ status: 302, started: orgId });
+  });
+
+  it('neither is 400', async () => {
+    const res = await fetch(`${baseUrl}/initiate`, { redirect: 'manual' });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'domain query param is required' });
+  });
+});
+
 // ─── Clock-skew tolerance ───────────────────────────────────────────────────
 //
 // node-saml applies acceptedClockSkewMs to NotBefore/NotOnOrAfter only:

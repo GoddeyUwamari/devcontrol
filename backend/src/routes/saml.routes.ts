@@ -19,6 +19,16 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3010';
 // SSO is configured, or why an assertion was refused.
 const SSO_FAILED_MESSAGE = 'SSO sign-in failed. Contact your organization owner if this persists.';
 
+/** An email domain from the query string, as the SSO configuration stores it. */
+function queryDomain(value: unknown): string {
+  return typeof value === 'string' ? value.toLowerCase().trim() : '';
+}
+
+/** Where the login page sends the browser to start SSO for `domain`. */
+function initiatePath(domain: string): string {
+  return `/api/auth/saml/initiate?domain=${encodeURIComponent(domain)}`;
+}
+
 /**
  * Replacing or removing an org's IdP decides who can sign in as whom --
  * whoever controls the IdP can assert any member's email, owners included --
@@ -47,9 +57,11 @@ export function createSAMLRoutes(): Router {
   const router = Router();
 
   // ─── Public: check if a domain has SSO configured ────────────────────────
+  // Answers only whether the domain signs in through SSO and where the login
+  // page goes to start it -- no organization or identity-provider details.
   router.get('/check-domain', authRateLimiter, async (req: Request, res: Response) => {
     try {
-      const domain = (req.query.domain as string || '').toLowerCase().trim();
+      const domain = queryDomain(req.query.domain);
       if (!domain) {
         res.status(400).json({ success: false, error: 'domain query param is required' });
         return;
@@ -61,14 +73,7 @@ export function createSAMLRoutes(): Router {
         return;
       }
 
-      res.json({
-        success: true,
-        data: {
-          hasSSO: true,
-          organizationId: config.organizationId,
-          providerName: config.providerName,
-        },
-      });
+      res.json({ success: true, data: { hasSSO: true, initiatePath: initiatePath(domain) } });
     } catch (err) {
       console.error('[SAML] check-domain error:', err);
       res.status(500).json({ success: false, error: 'Failed to check domain' });
@@ -76,11 +81,23 @@ export function createSAMLRoutes(): Router {
   });
 
   // ─── Public: initiate SAML SSO (redirects browser to IdP) ────────────────
+  // Started by email domain (?domain=, what check-domain hands the login
+  // page). ?orgId= is still accepted, only when no domain is given. Either
+  // way getInitiateUrl applies the same checks: an active configuration and
+  // an Enterprise organization.
   router.get('/initiate', samlInitiateRateLimiter, async (req: Request, res: Response) => {
     try {
-      const orgId = req.query.orgId as string;
+      const domain = queryDomain(req.query.domain);
+      let orgId: string | undefined;
+      if (domain) {
+        const config = await samlService.getConfigByDomain(domain);
+        if (!config) throw new Error('No active SSO configuration for this domain');
+        orgId = config.organizationId;
+      } else {
+        orgId = typeof req.query.orgId === 'string' && req.query.orgId ? req.query.orgId : undefined;
+      }
       if (!orgId) {
-        res.status(400).json({ success: false, error: 'orgId query param is required' });
+        res.status(400).json({ success: false, error: 'domain query param is required' });
         return;
       }
 

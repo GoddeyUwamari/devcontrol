@@ -10,6 +10,7 @@ import { loginSchema, type LoginFormData } from "@/lib/validations/auth.schema";
 import { useAuth } from "@/lib/contexts/auth-context";
 import { useHydrated } from "@/lib/hooks/useHydrated";
 import { takeUrlCredentials } from "@/lib/url-credentials";
+import { goToSso, ssoInitiateUrl } from "@/lib/sso-initiate";
 import { Button } from "@/components/marketing-ui/button";
 import { Input } from "@/components/marketing-ui/input";
 import { Label } from "@/components/marketing-ui/label";
@@ -66,8 +67,13 @@ function LoginContent() {
         setSsoError("No SSO is configured for this domain. Contact your administrator.");
         return;
       }
-      // Redirect browser to SAML initiate (which issues 302 to IdP)
-      window.location.href = `${API}/api/auth/saml/initiate?orgId=${json.data.organizationId}`;
+      const url = ssoInitiateUrl(API, json.data);
+      if (!url) {
+        setSsoError("Failed to look up SSO configuration. Please try again.");
+        return;
+      }
+      // SAML initiate issues a 302 to the identity provider.
+      goToSso(url);
     } catch {
       setSsoError("Failed to look up SSO configuration. Please try again.");
     } finally {
