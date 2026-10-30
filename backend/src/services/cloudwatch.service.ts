@@ -2369,7 +2369,9 @@ export class CloudWatchService {
         ...ctx,
         stored: recorded.stored.get(resource.id),
       })
-      const tableMetrics = requestsTableMetric(row, evidence.get(resource.id), range)
+      // A failed type block's evidence may say "complete" (it failed after its queries
+      // returned), but its rows weren't evaluated: no request total from it.
+      const tableMetrics = ctx.blockFailed ? [] : requestsTableMetric(row, evidence.get(resource.id), range)
       return { row, sortName: resource.resource_name, dbId: resource.id, ...(tableMetrics.length > 0 ? { tableMetrics } : {}) }
     })
     rows.sort((a, b) => compareObservabilityKeys(a, b))
@@ -2380,11 +2382,17 @@ export class CloudWatchService {
     const { lookbackSeconds, periodSeconds } = RANGE_CONFIG[range]
     const window = { range, windowStart: new Date(sweepAt.getTime() - lookbackSeconds * 1000), windowEnd: sweepAt, periodSeconds }
     let lbResponseTime: LbResponseTimeBlock
-    try {
-      lbResponseTime = buildLbResponseTime({ ...window, rows, evidence, latencySeries: input.latencySeries ?? new Map(), sweepAt })
-    } catch (err) {
-      console.error('[Observability] load balancer response time could not be built:', err instanceof Error ? err.name : typeof err)
+    if (failedBlocks.has('load-balancer')) {
+      // The load balancer block failed, possibly after its batch returned complete
+      // outcomes: its rows weren't evaluated, so the block is failed, never complete.
       lbResponseTime = failedLbResponseTime(window)
+    } else {
+      try {
+        lbResponseTime = buildLbResponseTime({ ...window, rows, evidence, latencySeries: input.latencySeries ?? new Map(), sweepAt })
+      } catch (err) {
+        console.error('[Observability] load balancer response time could not be built:', err instanceof Error ? err.name : typeof err)
+        lbResponseTime = failedLbResponseTime(window)
+      }
     }
 
     return {

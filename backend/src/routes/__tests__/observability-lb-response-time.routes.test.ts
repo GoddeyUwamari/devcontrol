@@ -9,7 +9,10 @@
  *   a Network Load Balancer is never counted or charted; a gap is never filled;
  * - failed queries give a failed block with no checked_at; the 45 s sweep cache is
  *   shared per organization and range only;
- * - no plan gate: a free organization gets the block (no 402).
+ * - no plan gate: a free organization gets the block (no 402);
+ * - after review: a block that failed after its batch returned is failed (no checked_at,
+ *   no request total); a refresh's partial answer replaces a complete one; a failing
+ *   second GetMetricData chunk leaves only its load balancers unread.
  * Placeholders only.
  */
 import express from 'express'
@@ -19,6 +22,7 @@ import observabilityResourcesRoutes from '../observability-resources.routes'
 import { authService } from '../../services/auth.service'
 import { AWSClientFactory } from '../../services/aws-client-factory.service'
 import awsCostService from '../../services/aws-cost.service'
+import { resourceTypeRegistry } from '../../services/cloudwatch.service'
 import { ensureSharedFixtureTable } from './shared-fixture-tables'
 import { FleetResource, REGION, deleteFleetOrgs, fakeClients, insertFleetOrg } from './observability-fleet-fixture'
 
@@ -348,5 +352,100 @@ describe('plan access (decision 10)', () => {
     expect(status).toBe(200)
     expect(body.success).toBe(true)
     expect(body.data.lb_response_time.state).toBe('ok')
+  })
+})
+
+describe('after review: failures that must never read as complete', () => {
+  it('(L2) the load balancer block fails after its batch returned → failed block, no checked_at, no request total on its rows', async () => {
+    const { orgId, accountId } = await lbOrg('block-throws')
+    await signInAs(orgId)
+    const sent: Sent[] = []
+    const series: Series = { ...SERIES, [DOWN_DIM]: { TargetResponseTime: { points: [[P1, 0.3]] }, RequestCount: { points: [[P1, 5]] } } }
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clientsFor(accountId, series, sent) as any)
+    // Every query completes; then evaluating the first ALB throws (the evidence is already recorded).
+    jest.spyOn(resourceTypeRegistry['load-balancer'], 'healthRule').mockImplementation(() => {
+      throw new Error('evaluation failed')
+    })
+
+    const { body } = await get('/observability/resources?range=1h&pageSize=100&table=1&lb_response_time=1')
+    expect(sent.some((q) => q.metricName === 'TargetResponseTime')).toBe(true)
+    expect(body.data.lb_response_time).toMatchObject({ state: 'failed', charted: null, eligible_count: null, collection: 'partial', checked_at: null, selection_complete: false })
+    for (const name of ['busy-alb', 'quiet-alb', 'down-alb']) {
+      const row = body.data.table.rows.find((r: any) => r.name === name)
+      expect([row.check_status, row.unknown_reason]).toEqual(['unknown', 'query_failed'])
+      expect(metricLabels(row)).not.toContain('Requests')
+    }
+    expect(body.data.collection).toBe('partial')
+  })
+
+  it('(L5a) a refresh replaces a complete answer with a partial one: newest wins, no checked_at, no fallback', async () => {
+    const { orgId, accountId } = await lbOrg('refresh-partial')
+    await signInAs(orgId)
+    const complete: Series = { ...SERIES, [DOWN_DIM]: { TargetResponseTime: { points: [[P1, 0.3]] }, RequestCount: { points: [[P1, 5]] } } }
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clientsFor(accountId, complete, []) as any)
+
+    const first = await get('/observability/resources?range=3h&pageSize=1&lb_response_time=1')
+    expect(first.body.data.lb_response_time).toMatchObject({ collection: 'complete', state: 'ok' })
+    expect(typeof first.body.data.lb_response_time.checked_at).toBe('string')
+
+    // The busiest ALB's RequestCount is now throttled-like (InternalError).
+    const partial: Series = { ...complete, [BUSY_DIM]: { ...complete[BUSY_DIM], RequestCount: { status: 'InternalError' } } }
+    createClients.mockResolvedValue(clientsFor(accountId, partial, []) as any)
+    const refreshed = await get('/observability/resources?range=3h&pageSize=1&lb_response_time=1&refresh=true')
+    expect(refreshed.body.data.lb_response_time).toMatchObject({ collection: 'partial', checked_at: null, selection_complete: false, state: 'ok' })
+    // A failed count ranks last: the chart moves to the next ALB with response-time data.
+    expect(refreshed.body.data.lb_response_time.charted.name).toBe('quiet-alb')
+
+    // The next read within 45 s is that newest answer, not the older complete one.
+    const cached = await get('/observability/resources?range=3h&pageSize=1&lb_response_time=1')
+    expect(cached.body.data.lb_response_time).toEqual(refreshed.body.data.lb_response_time)
+  })
+
+  it('(L5b) the second GetMetricData chunk fails → only its load balancer is unread; partial, no checked_at; never charted or counted as 0', async () => {
+    // 126 ALBs x 4 current-window queries = 504: the first request carries 500, the second 4 (the last ALB's).
+    const COUNT = 126
+    const name = (i: number) => `alb-${String(i).padStart(3, '0')}`
+    const { orgId, accountId } = await lbOrg('second-chunk')
+    await pool.query(`DELETE FROM aws_resources WHERE organization_id = $1`, [orgId])
+    for (let i = 0; i < COUNT; i++) {
+      await pool.query(
+        `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, metadata)
+         VALUES ($1, $2, $3, $3, 'load-balancer', $4, 'active', $5)`,
+        [orgId, `arn:aws:elasticloadbalancing:${REGION}:${accountId}:loadbalancer/app/${name(i)}/0123456789abcdef`, name(i), REGION, JSON.stringify({ type: 'application' })]
+      )
+    }
+    await signInAs(orgId)
+    const series: Series = {}
+    // Request counts rise with the index, so the last ALB (in the failing chunk) would be the busiest.
+    for (let i = 0; i < COUNT; i++) {
+      series[`app/${name(i)}/0123456789abcdef`] = { TargetResponseTime: { points: [[P1, 0.1]] }, RequestCount: { points: [[P1, 1000 + i]] } }
+    }
+    const recording = recordingCloudWatch(series, [])
+    const requestSizes: number[] = []
+    const cloudWatch = {
+      send: async (command: any) => {
+        const size = command.input.MetricDataQueries.length
+        requestSizes.push(size)
+        // The previous-window request carries one query per ALB (126); only the 4-query chunk fails.
+        if (size < COUNT) throw Object.assign(new Error('service unavailable'), { name: 'ServiceUnavailable' })
+        return recording.send(command)
+      },
+    }
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({ ...fakeClients({ metrics: {}, accountId }), cloudWatch, getCloudWatchClientForRegion: () => cloudWatch } as any)
+
+    const { body } = await get(`/observability/resources?range=1h&pageSize=1&table=1&q=${name(COUNT - 1)}&lb_response_time=1`)
+    expect(requestSizes.sort((a, b) => a - b)).toEqual([4, COUNT, 500])
+    expect(body.data.lb_response_time).toMatchObject({
+      state: 'ok',
+      eligible_count: COUNT,
+      collection: 'partial',
+      checked_at: null,
+      selection_complete: false,
+    })
+    expect(body.data.lb_response_time.charted.name).toBe(name(COUNT - 2))
+    const unread = body.data.table.rows.find((r: any) => r.name === name(COUNT - 1))
+    expect([unread.check_status, unread.unknown_reason]).toEqual(['unknown', 'query_failed'])
+    expect(metricLabels(unread)).not.toContain('Requests')
+    expect(body.data.collection).toBe('partial')
   })
 })

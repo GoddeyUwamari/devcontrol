@@ -4,10 +4,11 @@
  * - a missing period is a null the line breaks at: never 0, never joined, never made up;
  * - the chart only for an ok block with points, for the answer's own range;
  * - caption exactly Board D's, with the load balancer's name and the range;
+ * - the text alternative reads a run of missing periods as one range (review M1);
  * - "of N requests" only from the row's own Requests; counts when 5xx > N or N = 0.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { chartData, responseTimeView } from '../operational-health/responseTimeModel'
+import { chartData, periodRangeLabel, responseTimeView } from '../operational-health/responseTimeModel'
 import { keyMetricText, lbFiveXxText } from '../operational-health/resourceTableModel'
 import type { LbResponseTime, ObservabilityMetric, ObservabilityRow, ResourcesData, Source } from '../operational-health/observabilityTypes'
 
@@ -76,6 +77,58 @@ const block = (over: Partial<LbResponseTime> = {}): LbResponseTime => ({
 const okSource = (lb: LbResponseTime | undefined, range = '1h'): Source<ResourcesData> =>
   ({ state: 'ok', data: { status: 'ok', region: 'us-east-1', range, lb_response_time: lb } as unknown as ResourcesData })
 
+const summaryOf = (points: Array<[number, number]>, over: Partial<LbResponseTime> = {}) =>
+  responseTimeView(okSource(block({ charted: { resource_id: 'a', name: 'a', value_ms: 100, points: pts(...points) }, ...over })))!.summary.map((s) => s.text)
+
+describe('the text alternative: missing periods (review M1)', () => {
+  it('a run of four missing periods is one range line, first to last missing period', () => {
+    expect(summaryOf([[0, 100], [5, 120], [30, 150], [55, 160]])).toEqual([
+      'Oct 30, 1:00 PM UTC: 100 ms',
+      'Oct 30, 1:05 PM UTC: 120 ms',
+      'Oct 30, 1:10–1:25 PM UTC: no data',
+      'Oct 30, 1:30 PM UTC: 150 ms',
+      'Oct 30, 1:35–1:50 PM UTC: no data',
+      'Oct 30, 1:55 PM UTC: 160 ms',
+    ])
+  })
+
+  it('a single missing period stays one time', () => {
+    expect(summaryOf([[0, 100], [10, 110], [55, 120]])).toContain('Oct 30, 1:05 PM UTC: no data')
+  })
+
+  it('leading and trailing runs are ranges too, bounded by the window', () => {
+    expect(summaryOf([[20, 100], [30, 110]])).toEqual([
+      'Oct 30, 1:00–1:15 PM UTC: no data',
+      'Oct 30, 1:20 PM UTC: 100 ms',
+      'Oct 30, 1:25 PM UTC: no data',
+      'Oct 30, 1:30 PM UTC: 110 ms',
+      'Oct 30, 1:35–1:55 PM UTC: no data',
+    ])
+  })
+
+  it('every missing period is accounted for: the ranges cover exactly the periods with no point', () => {
+    const present = [0, 5, 30, 55]
+    const missing = Array.from({ length: 12 }, (_, i) => i * 5).filter((m) => !present.includes(m))
+    const d = chartData(pts(...present.map((m) => [m, 100] as [number, number])), START, END, 5 * MIN)
+    const covered = d.filter((x) => x.ms === null).flatMap((x) => {
+      const out: number[] = []
+      for (let t = x.t; t <= (x.until ?? x.t); t += 5 * MIN) out.push((t - START) / MIN)
+      return out
+    })
+    expect(covered).toEqual(missing)
+  })
+
+  it('a range across AM/PM or midnight names both ends in full', () => {
+    expect(periodRangeLabel(Date.parse('2026-10-30T11:50:00Z'), Date.parse('2026-10-30T12:10:00Z'))).toBe('Oct 30, 11:50 AM–12:10 PM UTC')
+    expect(periodRangeLabel(Date.parse('2026-10-30T20:00:00Z'), Date.parse('2026-10-31T04:00:00Z'))).toBe('Oct 30, 8:00 PM UTC – Oct 31, 4:00 AM UTC')
+  })
+
+  it('the chart line still gets one null per run (the drawing is unchanged)', () => {
+    const d = chartData(pts([0, 100], [5, 120], [30, 150], [55, 160]), START, END, 5 * MIN)
+    expect(d.map((x) => x.ms)).toEqual([100, 120, null, 150, null, 160])
+  })
+})
+
 describe('responseTimeView', () => {
   it('ok: name, value as the row shows it, caption exactly per Board D, data with the gap, the queried window', () => {
     const v = responseTimeView(okSource(block()))!
@@ -94,7 +147,7 @@ describe('responseTimeView', () => {
       'Oct 30, 1:05 PM UTC: 120 ms',
       'Oct 30, 1:10 PM UTC: no data',
       'Oct 30, 1:15 PM UTC: 150 ms',
-      'Oct 30, 1:20 PM UTC: no data',
+      'Oct 30, 1:20–1:55 PM UTC: no data',
     ])
     expect(v.summary.some((s) => s.text.endsWith(' 0 ms'))).toBe(false)
   })

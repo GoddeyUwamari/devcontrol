@@ -170,7 +170,7 @@ describe('the chart', () => {
     expect(data.some((d) => d.ms === 0)).toBe(false)
   })
 
-  it('a text alternative: one line per period, the gap reads "no data"', async () => {
+  it('a text alternative: one line per period, a run of missing periods reads as one "no data" range', async () => {
     await mountWith(res())
     const items = within(screen.getByTestId('lb-response-time-summary')).getAllByRole('listitem').map((li) => li.textContent)
     expect(items).toEqual([
@@ -178,7 +178,7 @@ describe('the chart', () => {
       'Oct 30, 1:05 PM UTC: 120 ms',
       'Oct 30, 1:10 PM UTC: no data',
       'Oct 30, 1:15 PM UTC: 150 ms',
-      'Oct 30, 1:20 PM UTC: no data',
+      'Oct 30, 1:20–1:55 PM UTC: no data',
     ])
   })
 
