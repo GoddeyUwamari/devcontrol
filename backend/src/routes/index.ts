@@ -76,11 +76,14 @@ router.use('/security/account-findings', accountSecurityFindingsRoutes);
 router.use('/scheduled-reports', scheduledReportsRoutes);
 router.use('/compliance-frameworks', complianceFrameworksRoutes);
 router.use('/security-hub', securityHubRoutes);
-router.use('/soc2', soc2Routes);
-// Separate namespace, mounted as a sibling to Phase 2's /soc2 router above -- keeps
+// Separate namespace, mounted as a sibling to Phase 2's /soc2 router below -- keeps
 // GET /api/soc2/evidence (technical observations, Phase 2) completely untouched by
 // this Phase 3 customer-evidence surface. See soc2-customer-evidence.routes.ts.
+// Mounted first so its requests are answered by its own router, which
+// authenticates them itself; mounted after /soc2, they would also pass through
+// that router's authenticate and be authenticated twice.
 router.use('/soc2/customer-evidence', soc2CustomerEvidenceRoutes);
+router.use('/soc2', soc2Routes);
 router.use('/ai-insights', aiInsightsRoutes);
 router.use('/ai-chat', aiChatRoutes);
 router.use('/nl-query', nlQueryRoutes);
