@@ -262,6 +262,15 @@ describe('states', () => {
     expect(tile()).toHaveTextContent('at least 2in ALARM')
   })
 
+  it('incomplete list with nothing returned: says the list is incomplete, never the empty text', async () => {
+    await mountSettled(alarmsWith([], { in_alarm_complete: false, truncated: true }))
+    expect(screen.getByTestId('alarms-incomplete')).toHaveTextContent(
+      "CloudWatch didn't return the full list of alarms in ALARM, so DevControl can't say none are firing.",
+    )
+    expect(section()).not.toHaveTextContent('No CloudWatch alarms are in ALARM.')
+    expect(within(section()).queryByRole('table')).toBeNull()
+  })
+
   it('truncated by the configured count only: no partial line', async () => {
     await mountSettled(alarmsWith([alarm('a')], { truncated: true, configured_count_complete: false }))
     expect(within(section()).queryByTestId('alarms-partial')).toBeNull()
