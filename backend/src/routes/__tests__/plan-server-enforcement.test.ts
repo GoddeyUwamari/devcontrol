@@ -212,6 +212,8 @@ describe.each(Object.entries(STATES))('plan: %s', (_label, state) => {
         error: 'Subscription tier insufficient',
         code: 'TIER_REQUIRED',
         details: { currentTier: state.effective, requiredTier: rc.minimum },
+        // The upgrade link names the plan the route requires.
+        upgrade: { url: `/settings/billing?upgrade=${rc.minimum}` },
       });
       expect(result.acted).toBe(false);
     }

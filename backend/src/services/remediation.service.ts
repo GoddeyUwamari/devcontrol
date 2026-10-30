@@ -159,6 +159,21 @@ export function isRegionBlocked(message: unknown): boolean {
   );
 }
 
+// Self-protection refusals (see the guards in RemediationService). Their text
+// names the check that matched, which is for the server log only: the routes
+// answer them with SELF_PROTECTION_PUBLIC_MESSAGE.
+export const SELF_PROTECTION_BLOCKED_PREFIX =
+  'REMEDIATION_BLOCKED: Cannot execute automated actions against DevControl operational infrastructure';
+export const SELF_PROTECTION_UNVERIFIED_PREFIX = 'REMEDIATION_BLOCKED: Unable to verify';
+export const SELF_PROTECTION_PUBLIC_MESSAGE = "This action isn't allowed on this resource.";
+
+export function isSelfProtectionRefusal(message: unknown): boolean {
+  return (
+    typeof message === 'string' &&
+    (message.startsWith(SELF_PROTECTION_BLOCKED_PREFIX) || message.startsWith(SELF_PROTECTION_UNVERIFIED_PREFIX))
+  );
+}
+
 /** An AWS region name, such as us-east-1 or us-gov-west-1. */
 const AWS_REGION_PATTERN = /^[a-z]{2}(-[a-z]+)+-\d+$/;
 
@@ -202,7 +217,7 @@ export class RemediationService {
 
     if (reasons.length > 0) {
       throw new Error(
-        `REMEDIATION_BLOCKED: Cannot execute automated actions against DevControl operational infrastructure (${reasons.join('; ')})`
+        `${SELF_PROTECTION_BLOCKED_PREFIX} (${reasons.join('; ')})`
       );
     }
   }
@@ -224,14 +239,14 @@ export class RemediationService {
       tags = desc.Reservations?.[0]?.Instances?.[0]?.Tags || [];
     } catch (err: any) {
       throw new Error(
-        `REMEDIATION_BLOCKED: Unable to verify ${resourceId} is not DevControl operational infrastructure (tag lookup failed: ${err.message})`
+        `${SELF_PROTECTION_UNVERIFIED_PREFIX} ${resourceId} is not DevControl operational infrastructure (tag lookup failed: ${err.message})`
       );
     }
 
     const isProtected = tags.some((t) => t.Key === 'App' && t.Value === 'DevControl');
     if (isProtected) {
       throw new Error(
-        `REMEDIATION_BLOCKED: Cannot execute automated actions against DevControl operational infrastructure (resource tag App=DevControl present)`
+        `${SELF_PROTECTION_BLOCKED_PREFIX} (resource tag App=DevControl present)`
       );
     }
   }
@@ -432,7 +447,7 @@ export class RemediationService {
 
     const inventory = await this.inventoryRegions(organizationId, resourceId);
     if (inventory.length > 1) {
-      throw new Error(`${REGION_MISMATCH_PREFIX} ${resourceId} is in more than one region; its region cannot be chosen`);
+      throw new Error(`${REGION_MISMATCH_PREFIX} the resource is in more than one region; its region cannot be chosen`);
     }
 
     let known: string | undefined = inventory[0];

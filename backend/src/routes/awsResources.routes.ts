@@ -5,7 +5,6 @@ import { authenticate } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
 import { checkDiscoveryLimit, requireTier } from '../middleware/subscription.middleware';
-import { TaggingComplianceService } from '../services/taggingCompliance.service';
 
 const router = Router();
 const controller = new AWSResourcesController(pool);
@@ -64,33 +63,5 @@ router.delete('/:id', authenticate, requireAdmin, (req, res, next) => controller
  * Export AWS resources to CSV or PDF (Starter+ feature)
  */
 router.post('/export', authenticate, requireTier('starter'), (req, res, next) => controller.exportResources(req, res, next));
-
-/**
- * GET /api/aws-resources/tagging-compliance
- * Get tagging compliance report (Pro+ feature)
- */
-router.get('/tagging-compliance', authenticate, requireTier('pro'), async (req, res) => {
-  try {
-    const organizationId = (req as any).user?.organization_id;
-
-    if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Organization ID not found'
-      });
-    }
-
-    const complianceService = new TaggingComplianceService(pool);
-    const report = await complianceService.auditAllResources(organizationId);
-
-    res.json({ success: true, data: report });
-  } catch (error: any) {
-    console.error('[Tagging Compliance] Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to generate tagging compliance report'
-    });
-  }
-});
 
 export default router;

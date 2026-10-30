@@ -60,6 +60,15 @@ const ROLE_REFUSAL = {
   error: 'Only admins and owners can approve, reject, execute, or roll back remediation workflows.',
 };
 const LIFECYCLE_ACTIONS = ['approve', 'reject', 'execute', 'rollback'] as const;
+// A self-protection refusal: fixed text for the caller, the reason in the server log only.
+const SELF_PROTECTION_BODY = JSON.stringify({ success: false, error: "This action isn't allowed on this resource." });
+
+function expectReasonLoggedOnly(operation: string, reason: string): void {
+  const logged = (console.error as jest.Mock).mock.calls.filter(([label]) => label === `[Remediation] ${operation} error:`);
+  expect(logged).toHaveLength(1);
+  expect(logged[0][1].message).toContain(reason);
+  expect(Object.keys(logged[0][1]).sort()).toEqual(['code', 'message', 'name', 'workflowId']);
+}
 
 const pool = new Pool(dbConfig());
 const createdOrgIds: string[] = [];
@@ -506,7 +515,8 @@ describe('execute acts on the workflow’s one target', () => {
     const response = await act(home, 'admin', id, 'execute');
 
     expect(response.status).toBe(500);
-    expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED:.*DEVCONTROL_PROD_INSTANCE_ID/);
+    expect(await response.text()).toBe(SELF_PROTECTION_BODY);
+    expectReasonLoggedOnly('execute', 'DEVCONTROL_PROD_INSTANCE_ID');
     expectNoAwsCall();
   });
 });
@@ -720,7 +730,8 @@ describe('rollback obeys the same safety boundary as execute', () => {
     const response = await act(home, 'admin', id, 'rollback');
 
     expect(response.status).toBe(400);
-    expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED:.*DEVCONTROL_PROD_INSTANCE_ID/);
+    expect(await response.text()).toBe(SELF_PROTECTION_BODY);
+    expectReasonLoggedOnly('rollback', 'DEVCONTROL_PROD_INSTANCE_ID');
     expectNoAwsCall();
     expect((await workflowRow(id)).status).toBe('completed');
   });
@@ -733,7 +744,8 @@ describe('rollback obeys the same safety boundary as execute', () => {
     const response = await act(home, 'admin', id, 'rollback');
 
     expect(response.status).toBe(400);
-    expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED:.*DEVCONTROL_OPERATIONAL_ORG_ID/);
+    expect(await response.text()).toBe(SELF_PROTECTION_BODY);
+    expectReasonLoggedOnly('rollback', 'DEVCONTROL_OPERATIONAL_ORG_ID');
     expectNoAwsCall();
   });
 
@@ -745,7 +757,8 @@ describe('rollback obeys the same safety boundary as execute', () => {
     const response = await act(home, 'admin', id, 'rollback');
 
     expect(response.status).toBe(400);
-    expect((await response.json()).error).toMatch(/^REMEDIATION_BLOCKED:.*App=DevControl/);
+    expect(await response.text()).toBe(SELF_PROTECTION_BODY);
+    expectReasonLoggedOnly('rollback', 'App=DevControl');
     expect(awsCommands(DescribeInstancesCommand)[0].input.InstanceIds).toEqual([resourceId]);
     expectNoAwsMutation();
     expect((await workflowRow(id)).status).toBe('completed');
