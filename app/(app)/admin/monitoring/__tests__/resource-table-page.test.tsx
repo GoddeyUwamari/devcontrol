@@ -121,6 +121,8 @@ async function advance(ms: number) {
 }
 
 const table = () => screen.getByTestId('resource-table')
+/** Role queries scoped to the table section: whole-page role queries are slow (header controls use label/text queries). */
+const tableButton = (name: string) => within(table()).getByRole('button', { name })
 const rowNames = () => within(table()).queryAllByRole('rowheader').map((h) => within(h).getAllByText(/./)[0].textContent)
 
 async function mountSettled(resources: unknown = res()) {
@@ -152,29 +154,29 @@ describe('requests', () => {
 
   it('Next and Previous ask the server for the page; disabled at the ends', async () => {
     await mountSettled()
-    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(tableButton('Previous')).toBeDisabled()
+    fireEvent.click(tableButton('Next'))
     await flush()
     expect(params(lastResourcePath())).toMatchObject({ table: '1', filter: 'all', page: '2' })
     await settle(res({ page: 2 }))
     expect(screen.getByTestId('table-footer')).toHaveTextContent('Showing 26–30 of 30 resources · most urgent first')
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+    expect(tableButton('Next')).toBeDisabled()
+    fireEvent.click(tableButton('Previous'))
     await flush()
     expect(params(lastResourcePath()).page).toBe('1')
   })
 
   it('a filter asks for page 1 of that filter; its counts are the server’s', async () => {
     await mountSettled()
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(tableButton('Next'))
     await flush()
     await settle(res({ page: 2 }))
-    expect(screen.getByRole('button', { name: 'Needs attention, 1' })).toHaveAttribute('aria-pressed', 'false')
-    fireEvent.click(screen.getByRole('button', { name: 'Lambda, 10' }))
+    expect(tableButton('Needs attention, 1')).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(tableButton('Lambda, 10'))
     await flush()
     expect(params(lastResourcePath())).toMatchObject({ filter: 'lambda', page: '1' })
     // While it loads, the buttons stay, with Lambda pressed.
-    expect(screen.getByRole('button', { name: 'Lambda, 10' })).toHaveAttribute('aria-pressed', 'true')
+    expect(tableButton('Lambda, 10')).toHaveAttribute('aria-pressed', 'true')
     await settle(res({ filter: 'lambda', total: 10 }))
     expect(screen.getByTestId('table-footer')).toHaveTextContent('Showing 1–10 of 10 resources')
   })
@@ -182,7 +184,7 @@ describe('requests', () => {
   it('search is debounced: one request after typing settles, at page 1, trimmed', async () => {
     await mountSettled()
     const before = resourceCalls().length
-    const input = screen.getByRole('searchbox', { name: 'Search resources' })
+    const input = within(table()).getByRole('searchbox', { name: 'Search resources' })
     fireEvent.change(input, { target: { value: 'w' } })
     await advance(100)
     fireEvent.change(input, { target: { value: 'we' } })
@@ -197,16 +199,16 @@ describe('requests', () => {
 
   it('the poll, Refresh and becoming visible keep the search, filter and page', async () => {
     await mountSettled()
-    fireEvent.click(screen.getByRole('button', { name: 'EC2, 20' }))
+    fireEvent.click(tableButton('EC2, 20'))
     await flush()
     await settle(res({ filter: 'ec2', total: 40, facets: { all: 50, attention: 1, types: { ec2: 40, lambda: 10 } } }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(tableButton('Next'))
     await flush()
     await settle(res({ filter: 'ec2', total: 40, page: 2, facets: { all: 50, attention: 1, types: { ec2: 40, lambda: 10 } } }))
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'p2' } })
+    fireEvent.change(within(table()).getByRole('searchbox'), { target: { value: 'p2' } })
     await advance(SEARCH_DEBOUNCE_MS)
     await settle(res({ q: 'p2', filter: 'ec2', total: 30, page: 1 }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(tableButton('Next'))
     await flush()
     await settle(res({ q: 'p2', filter: 'ec2', total: 30, page: 2 }))
     const expected = { q: 'p2', filter: 'ec2', page: '2', table: '1' }
@@ -217,7 +219,7 @@ describe('requests', () => {
     await settle(res({ q: 'p2', filter: 'ec2', total: 30, page: 2 }))
     expect(rowNames()[0]).toBe('p2-r00')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    fireEvent.click(screen.getByLabelText('Refresh'))
     await flush()
     expect(params(lastResourcePath())).toMatchObject({ ...expected, refresh: 'true' })
     await settle(res({ q: 'p2', filter: 'ec2', total: 30, page: 2 }))
@@ -232,13 +234,13 @@ describe('requests', () => {
 
   it('a range change keeps the search and filter and starts at page 1', async () => {
     await mountSettled()
-    fireEvent.click(screen.getByRole('button', { name: 'EC2, 20' }))
+    fireEvent.click(tableButton('EC2, 20'))
     await flush()
     await settle(res({ filter: 'ec2', total: 40 }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(tableButton('Next'))
     await flush()
     await settle(res({ filter: 'ec2', total: 40, page: 2 }))
-    fireEvent.click(screen.getByRole('button', { name: 'Last 7d' }))
+    fireEvent.click(screen.getByText('Last 7d'))
     await flush()
     expect(params(lastResourcePath())).toMatchObject({ range: '7d', filter: 'ec2', page: '1' })
     // Exactly one request for the change (not one for the range and one for the page).
@@ -247,10 +249,10 @@ describe('requests', () => {
 
   it('a page the server clamped is adopted without another request', async () => {
     await mountSettled(res({ total: 60 }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(tableButton('Next'))
     await flush()
     await settle(res({ total: 60, page: 2 }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(tableButton('Next'))
     await flush()
     expect(params(lastResourcePath()).page).toBe('3')
     const before = resourceCalls().length
@@ -258,13 +260,13 @@ describe('requests', () => {
     await settle(res({ total: 40, page: 2 }))
     expect(resourceCalls()).toHaveLength(before)
     expect(screen.getByTestId('table-footer')).toHaveTextContent('Showing 26–40 of 40 resources')
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+    expect(tableButton('Next')).toBeDisabled()
     // The adopted page is the page from now on: the poll asks for it.
     await advance(60_000)
     expect(params(lastResourcePath()).page).toBe('2')
     await settle(res({ total: 40, page: 2 }))
     // And going back to a page asked for before still asks for it.
-    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+    fireEvent.click(tableButton('Previous'))
     await flush()
     expect(params(lastResourcePath()).page).toBe('1')
   })
@@ -274,7 +276,7 @@ describe('stale answers', () => {
   it('a late answer for an older search never overwrites the newer one', async () => {
     await mountSettled()
     m.ignoreAbort = true
-    const input = screen.getByRole('searchbox')
+    const input = within(table()).getByRole('searchbox')
     fireEvent.change(input, { target: { value: 'old' } })
     await advance(SEARCH_DEBOUNCE_MS)
     const older = resourceCalls()[resourceCalls().length - 1] as Call
@@ -332,30 +334,30 @@ describe('rendering', () => {
 
   it('the search input keeps its value and focus across a poll', async () => {
     await mountSettled()
-    const input = screen.getByRole('searchbox') as HTMLInputElement
+    const input = within(table()).getByRole('searchbox') as HTMLInputElement
     input.focus()
     fireEvent.change(input, { target: { value: 'p1' } })
     await advance(SEARCH_DEBOUNCE_MS)
     // Still mounted while the search loads.
-    expect(screen.getByRole('searchbox')).toBe(input)
+    expect(within(table()).getByRole('searchbox')).toBe(input)
     await settle(res({ q: 'p1' }))
     await advance(60_000)
     await settle(res({ q: 'p1' }))
-    expect(screen.getByRole('searchbox')).toBe(input)
+    expect(within(table()).getByRole('searchbox')).toBe(input)
     expect(input.value).toBe('p1')
     expect(document.activeElement).toBe(input)
   })
 
   it('no match: the message and Clear search, which asks again at once', async () => {
     await mountSettled()
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } })
+    fireEvent.change(within(table()).getByRole('searchbox'), { target: { value: 'zzz' } })
     await advance(SEARCH_DEBOUNCE_MS)
     await settle(res({ q: 'zzz', total: 0, rows: [], facets: { all: 0, attention: 0, types: {} } }))
     expect(screen.getByTestId('table-no-match')).toHaveTextContent('No resources match “zzz”.')
-    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    fireEvent.click(tableButton('Clear search'))
     await flush()
     expect(params(lastResourcePath()).q).toBeUndefined()
-    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((within(table()).getByRole('searchbox') as HTMLInputElement).value).toBe('')
   })
 
   it('incomplete discovery: the caption line, and never "No resources found in" for an empty list', async () => {
@@ -389,7 +391,7 @@ describe('error and notices', () => {
     await flush()
     await settle({ status: 'failed', reason: 'query_failed', region: null, account_count: 1 })
     expect(screen.getByTestId('table-error')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    fireEvent.click(screen.getByLabelText('Refresh'))
     await flush()
     const noTable = res()
     delete (noTable as { table?: unknown }).table
