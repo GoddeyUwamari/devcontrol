@@ -212,7 +212,7 @@ describe('POST /api/compliance-frameworks/:id/rules -- rule-type and regex-safet
     }
   );
 
-  it('rejects a catastrophic-backtracking tag_pattern with UNSAFE_REGEX_PATTERN', async () => {
+  it('rejects a tag_pattern the matcher does not support with UNSUPPORTED_REGEX_PATTERN', async () => {
     currentOrgId = await insertOrg();
     const fwId = await insertFramework(currentOrgId, 'Framework Under Test');
     const res = await fetch(`${baseUrl}/${fwId}/rules`, {
@@ -220,17 +220,17 @@ describe('POST /api/compliance-frameworks/:id/rules -- rule-type and regex-safet
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         rule_code: 'RULE-2',
-        title: 'Unsafe pattern rule',
+        title: 'Unsupported pattern rule',
         severity: 'medium',
         category: 'tagging',
         rule_type: 'tag_pattern',
-        conditions: { tag_key: 'Environment', pattern: '(a+)+$' },
+        conditions: { tag_key: 'Environment', pattern: '(a)\\1' },
         recommendation: 'Fix it',
       }),
     });
     expect(res.status).toBe(400);
     const body = await jsonBody(res);
-    expect(body.code).toBe('UNSAFE_REGEX_PATTERN');
+    expect(body.code).toBe('UNSUPPORTED_REGEX_PATTERN');
   });
 
   it('accepts a safe tag_pattern rule and persists it with the correct organization_id', async () => {
@@ -256,7 +256,7 @@ describe('POST /api/compliance-frameworks/:id/rules -- rule-type and regex-safet
     expect(body.data.rule_type).toBe('tag_pattern');
   });
 
-  it('rejects an update that changes an existing rule\'s pattern to an unsafe one', async () => {
+  it('rejects an update that changes an existing rule\'s pattern to an unsupported one', async () => {
     currentOrgId = await insertOrg();
     const fwId = await insertFramework(currentOrgId, 'Framework Under Test');
     const createRes = await fetch(`${baseUrl}/${fwId}/rules`, {
@@ -277,10 +277,63 @@ describe('POST /api/compliance-frameworks/:id/rules -- rule-type and regex-safet
     const updateRes = await fetch(`${baseUrl}/rules/${created.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conditions: { tag_key: 'Environment', pattern: '([a-zA-Z]+)*$' } }),
+      body: JSON.stringify({ conditions: { tag_key: 'Environment', pattern: '^(?=prod)' } }),
     });
     expect(updateRes.status).toBe(400);
     const body = await jsonBody(updateRes);
-    expect(body.code).toBe('UNSAFE_REGEX_PATTERN');
+    expect(body.code).toBe('UNSUPPORTED_REGEX_PATTERN');
+  });
+});
+
+describe('tag_pattern save-time check -- the same check a scan applies', () => {
+  const ruleBody = (pattern: unknown) => ({
+    rule_code: `RULE-${Math.random().toString(36).slice(2, 8)}`,
+    title: 'Owner tag pattern',
+    severity: 'low',
+    category: 'tagging',
+    rule_type: 'tag_pattern',
+    conditions: { tag_key: 'Owner', pattern },
+    recommendation: 'Fix it',
+  });
+  const post = (fwId: string, body: unknown) =>
+    fetch(`${baseUrl}/${fwId}/rules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  it.each([
+    ['(unclosed', 'INVALID_REGEX_PATTERN', 'Pattern is not a valid regular expression.'],
+    [42, 'INVALID_REGEX_PATTERN', 'Pattern must be a non-empty string.'],
+    ['(?<!x)team', 'UNSUPPORTED_REGEX_PATTERN', "Pattern uses lookahead or lookbehind, which aren't supported in rule patterns. Rewrite the pattern without it."],
+    ['(x{40}){40}', 'REGEX_PATTERN_TOO_COMPLEX', 'Pattern is too complex. Reduce nested or counted repetition.'],
+    ['t'.repeat(201), 'REGEX_PATTERN_TOO_LONG', 'Pattern exceeds the maximum allowed length of 200 characters.'],
+  ])('create and update both refuse %j with %s, without echoing the pattern', async (pattern, code, error) => {
+    currentOrgId = await insertOrg();
+    const fwId = await insertFramework(currentOrgId, 'Framework Under Test');
+
+    const createRes = await post(fwId, ruleBody(pattern));
+    expect(createRes.status).toBe(400);
+    const createText = await createRes.text();
+    expect(JSON.parse(createText)).toMatchObject({ success: false, code, error });
+    if (typeof pattern === 'string') expect(createText.includes(pattern)).toBe(false);
+
+    const created = (await jsonBody(await post(fwId, ruleBody('^team-')))).data;
+    const updateRes = await fetch(`${baseUrl}/rules/${created.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conditions: { tag_key: 'Owner', pattern } }),
+    });
+    expect(updateRes.status).toBe(400);
+    expect(await jsonBody(updateRes)).toMatchObject({ success: false, code, error });
+
+    const { rows } = await testPool.query(
+      `SELECT conditions->>'pattern' AS pattern FROM compliance_framework_rules WHERE framework_id = $1`,
+      [fwId]
+    );
+    expect(rows.map((r: any) => r.pattern)).toEqual(['^team-']);
+  });
+
+  it('accepts a pattern a backtracking engine handles badly, since the matcher runs in linear time', async () => {
+    currentOrgId = await insertOrg();
+    const fwId = await insertFramework(currentOrgId, 'Framework Under Test');
+    const res = await post(fwId, ruleBody('(a+)+$'));
+    expect(res.status).toBe(201);
   });
 });

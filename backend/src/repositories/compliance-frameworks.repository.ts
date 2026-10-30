@@ -436,7 +436,7 @@ export class ComplianceFrameworksRepository {
       high_issues: number;
       medium_issues: number;
       low_issues: number;
-      compliance_score: number;
+      compliance_score: number | null;
       started_at: Date;
       completed_at: Date;
       duration_seconds: number;

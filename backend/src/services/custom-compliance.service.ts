@@ -6,11 +6,18 @@ import {
 } from '../repositories/compliance-frameworks.repository';
 import { AWSResource } from '../types/aws-resources.types';
 import { tagsObserved } from './complianceScanner';
+import { checkTagPattern, matchTagValue, TagPatternCheck } from '../utils/tagPatternMatcher';
 
 interface RuleEvaluationResult {
   pass: boolean;
   issue?: string;
   recommendation?: string;
+  /**
+   * Set when the rule could not be evaluated: the finding is recorded as 'error', and
+   * the resource is counted as couldn't-evaluate, never compliant or non-compliant.
+   * For a couldn't-evaluate result this is the internal reason (logged, never shown),
+   * and `issue` carries the customer-facing text.
+   */
   error?: string;
   /**
    * Set when the rule could not be evaluated because what it tests is unknown for
@@ -22,6 +29,12 @@ interface RuleEvaluationResult {
 }
 
 const notEvaluated = (reason: string): RuleEvaluationResult => ({ pass: false, notEvaluated: `Not evaluated: ${reason}` });
+
+const couldntEvaluate = (reason: string, message: string): RuleEvaluationResult => ({
+  pass: false,
+  error: reason,
+  issue: `Couldn't evaluate: ${message}`,
+});
 
 /**
  * Distinct from cost-recommendations.repository.ts's RECONCILIATION_LOCK_SALT
@@ -118,6 +131,12 @@ export interface CustomComplianceServiceOptions {
 export class CustomComplianceService {
   private repository: ComplianceFrameworksRepository;
   private scanTimeoutMs: number;
+  /**
+   * A tag_pattern rule's checked pattern, keyed by the rule object a scan loaded, so it
+   * is checked once per scan rather than once per resource; `logged` holds the reasons
+   * already logged for it.
+   */
+  private tagPatterns = new WeakMap<ComplianceFrameworkRule, { source: unknown; check: TagPatternCheck; logged: Set<string> }>();
 
   constructor(private pool: Pool, options: CustomComplianceServiceOptions = {}) {
     this.repository = new ComplianceFrameworksRepository(pool);
@@ -574,6 +593,8 @@ export class CustomComplianceService {
       let totalResources = resources.length;
       let compliantResources = 0;
       let nonCompliantResources = 0;
+      // A resource with any rule that couldn't be evaluated: neither compliant nor non-compliant.
+      let couldntEvaluateResources = 0;
       let resourcesScanned = 0;
 
       const issueCounts = {
@@ -586,6 +607,7 @@ export class CustomComplianceService {
       // Scan each resource against all applicable rules
       for (const resource of resources) {
         const resourceResults: { ruleId: string; passed: boolean }[] = [];
+        let resourceCouldntEvaluate = false;
 
         for (const rule of enabledRules) {
           // Check if rule applies to this resource type
@@ -627,6 +649,8 @@ export class CustomComplianceService {
             recommendation: result.notEvaluated ? null : result.recommendation || null,
           }, client);
 
+          if (result.error) resourceCouldntEvaluate = true;
+
           if (!result.error && !result.notEvaluated) {
             resourceResults.push({ ruleId: rule.id, passed: result.pass });
 
@@ -641,20 +665,27 @@ export class CustomComplianceService {
 
         resourcesScanned++;
 
-        // Resource is compliant if it passed all applicable rules
+        // Resource is compliant if it passed all applicable rules. One rule that
+        // couldn't be evaluated leaves the resource unjudged, even beside a failure.
         const applicableRules = resourceResults.length;
         const passedRules = resourceResults.filter((r) => r.passed).length;
 
-        if (applicableRules > 0 && passedRules === applicableRules) {
+        if (resourceCouldntEvaluate) {
+          couldntEvaluateResources++;
+        } else if (applicableRules > 0 && passedRules === applicableRules) {
           compliantResources++;
         } else if (applicableRules > 0) {
           nonCompliantResources++;
         }
       }
 
-      // Calculate compliance score
+      // Calculate compliance score. Couldn't-evaluate resources are left out of both
+      // sides; when they are all there is, there is no score, never 100.
+      const scoredResources = resourcesScanned - couldntEvaluateResources;
       const complianceScore =
-        resourcesScanned > 0 ? (compliantResources / resourcesScanned) * 100 : 100;
+        scoredResources > 0
+          ? (compliantResources / scoredResources) * 100
+          : couldntEvaluateResources > 0 ? null : 100;
 
       const durationSeconds = Math.floor((Date.now() - startTime) / 1000);
 
@@ -666,6 +697,7 @@ export class CustomComplianceService {
         compliant_resources: compliantResources,
         non_compliant_resources: nonCompliantResources,
         resources_scanned: resourcesScanned,
+        results: { couldnt_evaluate_resources: couldntEvaluateResources },
         critical_issues: issueCounts.critical,
         high_issues: issueCounts.high,
         medium_issues: issueCounts.medium,
@@ -682,7 +714,7 @@ export class CustomComplianceService {
       inTransaction = false;
 
       console.log(
-        `[CustomCompliance] Scan ${scan.id} completed: ${compliantResources}/${resourcesScanned} compliant (${complianceScore.toFixed(1)}%)`
+        `[CustomCompliance] Scan ${scan.id} completed: ${compliantResources}/${resourcesScanned} compliant (${complianceScore === null ? 'no score' : `${complianceScore.toFixed(1)}%`}), ${couldntEvaluateResources} couldn't be evaluated`
       );
 
       // The committed row itself (RETURNING *): no further query, so a
@@ -862,6 +894,10 @@ export class CustomComplianceService {
   /**
    * Evaluate tag_pattern rule
    * Conditions: { tag_key: string, pattern: string (regex) }
+   *
+   * The pattern goes through the same check as at save time (utils/tagPatternMatcher),
+   * so a rule saved before that check existed is held to it too. A pattern or value
+   * that can't be evaluated is a couldn't-evaluate result, never a pass or a fail.
    */
   private evaluateTagPattern(
     rule: ComplianceFrameworkRule,
@@ -885,8 +921,29 @@ export class CustomComplianceService {
       };
     }
 
-    const regex = new RegExp(pattern);
-    const pass = regex.test(String(tagValue));
+    let checked = this.tagPatterns.get(rule);
+    if (!checked || checked.source !== pattern) {
+      checked = { source: pattern, check: checkTagPattern(pattern), logged: new Set() };
+      this.tagPatterns.set(rule, checked);
+    }
+    const logOnce = (reason: string) => {
+      if (checked!.logged.has(reason)) return;
+      checked!.logged.add(reason);
+      console.warn(`[CustomCompliance] Rule ${rule.id} (framework ${rule.framework_id}) couldn't be evaluated: ${reason}`);
+    };
+
+    if (!checked.check.ok) {
+      const { reason, message } = checked.check.problem;
+      logOnce(reason);
+      return couldntEvaluate(reason, message);
+    }
+
+    const match = matchTagValue(checked.check.pattern, String(tagValue));
+    if (!match.ok) {
+      logOnce(match.reason);
+      return couldntEvaluate(match.reason, match.message);
+    }
+    const pass = match.matched;
 
     return {
       pass,
