@@ -63,6 +63,15 @@ export function formatCheckTime(iso: string, now: Date = new Date()): string | n
   return `${day}, ${time}`
 }
 
+/** "just now", "12 min ago", "3 h ago", "2 d ago". */
+export function relativeTime(at: Date, now: Date = new Date()): string {
+  const seconds = Math.floor((now.getTime() - at.getTime()) / 1000)
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`
+  return `${Math.floor(seconds / 86400)} d ago`
+}
+
 export function regionOf(resources: Source<ResourcesData>, alarms: Source<AlarmsData>): string | null {
   const r = resourcesOk(resources)
   if (r) return r.region
