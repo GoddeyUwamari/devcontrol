@@ -82,14 +82,16 @@ export function createSAMLRoutes(): Router {
 
   // ─── Public: initiate SAML SSO (redirects browser to IdP) ────────────────
   // Started by email domain (?domain=, what check-domain hands the login
-  // page). ?orgId= is still accepted, only when no domain is given. Either
-  // way getInitiateUrl applies the same checks: an active configuration and
-  // an Enterprise organization.
+  // page). ?orgId= is still accepted, only when no domain is given. A domain
+  // that is sent but unusable (repeated, empty, blank) fails like an unknown
+  // one -- never falls back to orgId. Either way getInitiateUrl applies the
+  // same checks: an active configuration and an Enterprise organization.
   router.get('/initiate', samlInitiateRateLimiter, async (req: Request, res: Response) => {
     try {
-      const domain = queryDomain(req.query.domain);
       let orgId: string | undefined;
-      if (domain) {
+      if (req.query.domain !== undefined) {
+        const domain = queryDomain(req.query.domain);
+        if (!domain) throw new Error('Unusable domain query param');
         const config = await samlService.getConfigByDomain(domain);
         if (!config) throw new Error('No active SSO configuration for this domain');
         orgId = config.organizationId;

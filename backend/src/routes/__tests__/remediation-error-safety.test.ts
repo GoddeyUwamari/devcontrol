@@ -247,4 +247,31 @@ describe('refusals written by the service keep their text and status', () => {
 
     expect(JSON.parse(result.text)).toEqual({ success: false, error: 'Failed to approve workflow' });
   });
+
+  it('an execute status message with anything appended is not passed through', async () => {
+    throwFrom('execute', new Error('Workflow must be approved before executing. Current status: failed (arn:aws:iam::123456789012:role/x)'));
+
+    const result = await act('execute');
+
+    expect(JSON.parse(result.text)).toEqual({ success: false, error: 'Failed to execute workflow' });
+  });
+
+  it.each([
+    `${REGION_MISMATCH_PREFIX} actionParams.region must be an AWS region`,
+    `${REGION_MISMATCH_PREFIX} the resource is in more than one region; its region cannot be chosen`,
+    `${REGION_MISMATCH_PREFIX} actionParams.region must be the resource's region (us-east-1)`,
+  ])('create: %s with anything appended is not passed through', async (message) => {
+    throwFrom('createWorkflow', new Error(`${message} (arn:aws:iam::123456789012:role/x)`));
+
+    const response = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resourceId: 'i-1234567890abcdef0', resourceType: 'ec2', actionType: 'stop_instance', riskLevel: 'low' }),
+    });
+    const text = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(JSON.parse(text)).toEqual({ success: false, error: 'Failed to create workflow' });
+    expect(text).not.toMatch(LEAKS);
+  });
 });

@@ -744,6 +744,16 @@ describe('SAML -- initiate by domain', () => {
     });
   });
 
+  it.each([
+    ['a repeated', (domain: string) => `domain=${encodeURIComponent(domain)}&domain=${encodeURIComponent(domain)}`],
+    ['an empty', () => 'domain='],
+    ['a whitespace-only', () => 'domain=%20%20'],
+  ])('%s domain goes to the login page, and orgId is not tried', async (_label, domainQuery) => {
+    const { orgId, domain } = await ssoDomainOrg();
+
+    expect(await initiateWith(`${domainQuery(domain)}&orgId=${orgId}`)).toEqual({ status: 302, started: 'login' });
+  });
+
   it('orgId alone still starts SSO (login pages served before this change)', async () => {
     const { orgId } = await ssoDomainOrg();
 
