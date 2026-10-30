@@ -132,6 +132,7 @@ describe('matchTagValue: values it refuses rather than guess at', () => {
   const pattern = accepted('^.*$');
 
   it('a value at the length limit is matched; one past it is refused, never truncated', () => {
+    expect(MAX_TAG_VALUE_LENGTH).toBe(256);
     expect(matchTagValue(pattern, 'a'.repeat(MAX_TAG_VALUE_LENGTH))).toEqual({ ok: true, matched: true });
     expect(matchTagValue(accepted('^a{3}'), `aaa${'b'.repeat(MAX_TAG_VALUE_LENGTH - 2)}`)).toMatchObject({ ok: false, reason: 'value_too_long' });
   });

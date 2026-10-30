@@ -78,7 +78,7 @@ describe('a saved pattern the check refuses is "couldn\'t evaluate", never a pas
 
 describe('a tag value the matcher refuses is "couldn\'t evaluate"', () => {
   it.each([
-    ['a'.repeat(1025), 'value_too_long', "Couldn't evaluate: the tag value is longer than 1024 characters"],
+    ['a'.repeat(257), 'value_too_long', "Couldn't evaluate: the tag value is longer than 256 characters"],
     ['team-\u{1F600}', 'value_unsupported_chars', "Couldn't evaluate: the tag value contains characters outside the Basic Multilingual Plane"],
   ])('%#', async (value, reason, issue) => {
     const { summary, finding, warnings } = await scan([tagPattern('owner', '^')], [resource('r1', { tags: { Owner: value } })]);
@@ -109,7 +109,7 @@ describe('resource counts and the score', () => {
       [
         resource('good'),
         resource('bad', { is_encrypted: false }),
-        resource('unreadable', { tags: { Owner: 'a'.repeat(1025) } }),
+        resource('unreadable', { tags: { Owner: 'a'.repeat(257) } }),
       ]
     );
     expect(summary).toMatchObject({ resources_scanned: 3, compliant_resources: 1, non_compliant_resources: 1, results: { couldnt_evaluate_resources: 1 } });

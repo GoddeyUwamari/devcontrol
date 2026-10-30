@@ -30,7 +30,8 @@ import { RE2JS } from 're2js';
 export const MAX_TAG_PATTERN_LENGTH = 200;
 /** The pattern's size with counted repetitions expanded (`(ab){10}` is 21). */
 export const MAX_TAG_PATTERN_COMPLEXITY = 2000;
-export const MAX_TAG_VALUE_LENGTH = 1024;
+/** AWS's limit on a tag value, so no real tag is refused for length. */
+export const MAX_TAG_VALUE_LENGTH = 256;
 /** RE2's limit on a counted repetition, and on nested counts multiplied together. */
 const MAX_REPEAT_COUNT = 1000;
 

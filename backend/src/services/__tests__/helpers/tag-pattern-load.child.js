@@ -21,6 +21,8 @@ require.extensions['.ts'] = (module, filename) => {
 
 const { CustomComplianceService } = require(path.join(__dirname, '../../custom-compliance.service.ts'));
 
+const HEARTBEAT_MS = 10;
+
 const yieldToLoop = () => new Promise((resolve) => setImmediate(resolve));
 
 function tagRule(id, pattern) {
@@ -81,7 +83,7 @@ function watchLoop() {
     maxGapMs = Math.max(maxGapMs, now - last);
     last = now;
     beats++;
-  }, 10);
+  }, HEARTBEAT_MS);
   return () => {
     clearInterval(timer);
     histogram.disable();
@@ -93,11 +95,15 @@ async function runEvaluations({ patterns, values }) {
   const stop = watchLoop();
   const start = performance.now();
   const perPattern = {};
+  let evaluations = 0;
+  let slowEvaluations = 0;
   for (const pattern of patterns) {
     const { evalMs, findings } = await scan([tagRule('rule', pattern)], resources('r', values));
     perPattern[pattern] = { worstMs: Math.max(...evalMs), statuses: [...new Set(findings.map((f) => f.status))] };
+    evaluations += evalMs.length;
+    slowEvaluations += evalMs.filter((ms) => ms > HEARTBEAT_MS).length;
   }
-  return { perPattern, totalMs: performance.now() - start, loop: stop() };
+  return { perPattern, evaluations, slowEvaluations, totalMs: performance.now() - start, loop: stop() };
 }
 
 async function runConcurrent({ heavyPatterns, heavyValue, heavyCount, lightCount }) {
