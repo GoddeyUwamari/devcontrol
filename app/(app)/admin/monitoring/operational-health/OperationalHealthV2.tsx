@@ -16,13 +16,16 @@ import { WhatWeMonitor } from './WhatWeMonitor'
 import { RelatedLinks } from './RelatedLinks'
 import { ResourceTable } from './ResourceTable'
 import { tableView } from './resourceTableModel'
+import { ActiveAlarms } from './ActiveAlarms'
+import { alarmsListView } from './alarmsListModel'
 
 /**
  * The Operational Health page (NEXT_PUBLIC_OBSERVABILITY_V2), on every plan. Reads
  * GET /api/observability/resources and /alarms (useOperationalHealthData) and,
  * on Enterprise, GET /api/slos/evaluate once (useSloSummary). Never the legacy
  * /api/cloudwatch/* or /api/prometheus/* routes. O1: the top of the page; O2:
- * the Resource checks table; the alarms list and response-time chart come in O3.
+ * the Resource checks table; O3a: the Active alarms list (the same alarms answer
+ * and retry as the tile); the response-time chart comes in O3b.
  */
 export default function OperationalHealthV2() {
   const [range, setRange] = useState<MonitoringRange>(DEFAULT_RANGE)
@@ -42,6 +45,7 @@ export default function OperationalHealthV2() {
       <HealthHeader view={headerView(resources, alarms)} range={range} onRange={onRange} onRefresh={refresh} busy={busy} />
       <HealthBanner banner={bannerView(resources, alarms)} onRetry={refresh} />
       <HealthTiles tiles={tilesView(resources, alarms)} onRetry={refresh} onRetryAlarms={retryAlarms} />
+      <ActiveAlarms view={alarmsListView(alarms, resources)} onRetry={retryAlarms} />
       <TypeCards cards={typeCards(resources)} />
       <ResourceTable view={tableView(tableSource.source, tableSource.query, undefined, resources)} query={table} onQuery={setTable} onRetry={refresh} />
       <WhatWeMonitor groups={monitor.groups} planNote={monitor.planNote} seePlans={SEE_PLANS} onRetryAlarms={retryAlarms} onRetrySlo={retrySlo} />

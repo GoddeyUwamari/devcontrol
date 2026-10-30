@@ -15,7 +15,7 @@
  *   D7  no Core service badge. D8 no row link.
  */
 import type { ObservabilityMetric, ObservabilityRow, ResourcesData, ResourcesOk, Source, TableBlock, TableQuery } from './observabilityTypes'
-import { formatCheckTime, type Tone } from './operationalHealthModel'
+import { formatCheckTime, relativeTime, type Tone } from './operationalHealthModel'
 import { KEY_METRICS, ROW_REASON, ROW_STATUS, TABLE_COPY, TYPE_LABEL, TYPE_NAME, TYPE_ORDER } from './operationalHealthCopy'
 
 export const FIRST_PAGE: TableQuery = { q: '', filter: 'all', page: 1 }
@@ -121,15 +121,7 @@ export function lastSeenView(iso: string | null, source: ObservabilityRow['last_
   if (!iso) return null
   const local = formatCheckTime(iso, now)
   if (!local) return null
-  const seconds = Math.floor((now.getTime() - new Date(iso).getTime()) / 1000)
-  const relative =
-    seconds < 60
-      ? 'just now'
-      : seconds < 3600
-        ? `${Math.floor(seconds / 60)} min ago`
-        : seconds < 86400
-          ? `${Math.floor(seconds / 3600)} h ago`
-          : `${Math.floor(seconds / 86400)} d ago`
+  const relative = relativeTime(new Date(iso), now)
   return { iso, relative, local, title: source === 'observation' ? TABLE_COPY.lastStatusCheck : TABLE_COPY.lastDatapoint }
 }
 

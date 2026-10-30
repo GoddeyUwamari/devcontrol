@@ -246,3 +246,41 @@ export const KEY_METRICS: Record<string, KeyMetricDef[]> = {
   cloudfront: [{ label: '5xx rate', name: '5xx' }, { label: '4xx rate', name: '4xx' }],
   aurora: [{ label: 'CPU', name: 'CPU' }, { label: 'Replica lag', name: 'Replica lag' }],
 }
+
+// ---------------------------------------------------------------- active alarms list (O3a)
+
+export const ALARMS_COPY = {
+  title: 'Active alarms',
+  caption: 'CloudWatch alarms in ALARM, newest first',
+  tableCaption: 'Active alarms: CloudWatch alarms in ALARM, newest first',
+  columns: { alarm: 'Alarm', metric: 'Metric', resource: 'Resource', since: 'In ALARM since' },
+  viewAll: 'View all in CloudWatch ↗',
+  openAlarm: (name: string) => `Open ${name} in CloudWatch`,
+  loading: 'Loading CloudWatch alarms…',
+  error: "Couldn't read CloudWatch alarms.",
+  accessDenied: "DevControl's role isn't allowed to read alarms.",
+  throttled: 'AWS limited the request rate. Try again shortly.',
+  notConnected: 'Connect AWS to see CloudWatch alarms.',
+  multipleAccounts: 'More than one AWS account is connected, so no alarms are shown yet.',
+  none: 'No CloudWatch alarms are in ALARM.',
+  incompleteEmpty: "CloudWatch didn't return the full list of alarms in ALARM, so DevControl can't say none are firing.",
+  partial: (count: number) => `Showing ${count.toLocaleString()} ${count === 1 ? 'alarm' : 'alarms'} in ALARM. There may be more; this list isn't complete.`,
+  composite: 'Composite alarm',
+  nameMissing: 'Name not sent',
+  showAll: (count: number) => `Show all ${count.toLocaleString()}`,
+} as const
+
+/** Rows shown before "Show all N" (decision D8). */
+export const ALARMS_SHOWN = 25
+
+/** CloudWatch ComparisonOperator → text. The band operators belong to anomaly-detection alarms, which have no numeric threshold. */
+export const COMPARISON_TEXT: Record<string, string> = {
+  GreaterThanOrEqualToThreshold: '≥',
+  GreaterThanThreshold: '>',
+  LessThanThreshold: '<',
+  LessThanOrEqualToThreshold: '≤',
+  LessThanLowerOrGreaterThanUpperThreshold: 'outside the band',
+  LessThanLowerThreshold: 'below the band',
+  GreaterThanUpperThreshold: 'above the band',
+}
+export const BAND_COMPARISONS = new Set(['LessThanLowerOrGreaterThanUpperThreshold', 'LessThanLowerThreshold', 'GreaterThanUpperThreshold'])

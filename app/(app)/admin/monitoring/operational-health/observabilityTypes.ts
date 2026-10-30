@@ -112,13 +112,37 @@ export type ResourcesData = ResourcesOk | ResourcesNotOk
 
 export type AlarmsErrorReason = 'access_denied' | 'throttled' | 'failed' | 'not_connected' | 'multiple_accounts'
 
+/** The resource an alarm watches (cloudwatch-alarms.service.ts AlarmResource). */
+export interface AlarmResource {
+  type: string
+  id: string
+}
+
+/** One alarm in ALARM (cloudwatch-alarms.service.ts InAlarmItem). No severity: CloudWatch has none (B4). */
+export interface InAlarmItem {
+  name: string
+  type: 'metric' | 'composite'
+  /** Null for composite and metric-math alarms. */
+  namespace: string | null
+  metric: string | null
+  /** Null for composite alarms. */
+  comparison: string | null
+  /** Null for composite alarms and for alarms with no numeric threshold (anomaly bands). */
+  threshold: number | null
+  /** When the alarm last changed state (StateTransitionedTimestamp); null when AWS gives none. */
+  state_since: string | null
+  /** Only when one well-known dimension names it. */
+  resource: AlarmResource | null
+}
+
 export type AlarmsData =
   | {
       status: 'ok'
       reason: null
       checked_at: string
       region: string
-      in_alarm: unknown[]
+      /** In no particular order (API page order); the page sorts it. */
+      in_alarm: InAlarmItem[]
       in_alarm_complete: boolean
       configured_count: number
       configured_count_complete: boolean
