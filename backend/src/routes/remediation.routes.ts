@@ -19,9 +19,16 @@ import {
   ACTION_UNAVAILABLE_PREFIX,
   TARGET_MISMATCH_PREFIX,
   REGION_MISMATCH_PREFIX,
+  REGION_UNKNOWN_MESSAGE,
+  REGION_AMBIGUOUS_MESSAGE,
+  REGION_INVENTORY_MISMATCH_MESSAGE,
+  REGION_BINDING_CONFLICT_MESSAGE,
+  SELF_PROTECTION_PUBLIC_MESSAGE,
   isRegionBlocked,
+  isSelfProtectionRefusal,
 } from '../services/remediation.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { safeErrorFields } from '../utils/safe-error-log';
 
 const recommendationIdSchema = z.string().uuid();
 
@@ -35,6 +42,49 @@ function userId(req: Request): string {
 
 function userRole(req: Request): string {
   return (req as any).user?.role || 'member';
+}
+
+// Refusals written in remediation.service.ts whose text is safe to show the
+// caller: fixed sentences, or ones that add only a workflow status. Any other
+// error (AWS SDK and database errors included) is answered with the route's
+// fixed message, and its detail goes to the server log only.
+const PUBLIC_REFUSALS = new Set<string>([
+  'Workflow not found',
+  'DRY_RUN_MODE: Automated remediation is disabled. No AWS action was taken.',
+  'REMEDIATION_BLOCKED: Workflow action target does not match its resource_id. No AWS action was taken.',
+  REGION_UNKNOWN_MESSAGE,
+  REGION_AMBIGUOUS_MESSAGE,
+  REGION_INVENTORY_MISMATCH_MESSAGE,
+  REGION_BINDING_CONFLICT_MESSAGE,
+  'Rollback is not available for this workflow',
+  'Can only rollback completed workflows',
+  'No active AWS account configured. Connect an AWS account first.',
+  'Failed to obtain temporary AWS credentials',
+]);
+
+const PUBLIC_REFUSAL_PATTERNS: RegExp[] = [
+  /^Cannot (approve|reject) workflow in status: [a-z_]+$/,
+  /^Workflow must be approved before executing\. Current status: [a-z_]+$/,
+  new RegExp(`^${REGION_MISMATCH_PREFIX} actionParams\\.region must be an AWS region$`),
+  new RegExp(`^${REGION_MISMATCH_PREFIX} the resource is in more than one region; its region cannot be chosen$`),
+  new RegExp(`^${REGION_MISMATCH_PREFIX} actionParams\\.region must be the resource's region \\([a-z]{2}(-[a-z]+)+-\\d+\\)$`),
+];
+
+/** The error text the caller may see, or `fallback` for anything else. */
+function publicMessage(err: any, fallback: string): string {
+  const message = err?.message;
+  if (typeof message !== 'string') return fallback;
+  if (isSelfProtectionRefusal(message)) return SELF_PROTECTION_PUBLIC_MESSAGE;
+  if (PUBLIC_REFUSALS.has(message)) return message;
+  // Every producer of these two prefixes writes a fixed sentence.
+  if (message.startsWith(ACTION_UNAVAILABLE_PREFIX) || message.startsWith(TARGET_MISMATCH_PREFIX)) return message;
+  if (PUBLIC_REFUSAL_PATTERNS.some((pattern) => pattern.test(message))) return message;
+  return fallback;
+}
+
+/** Logs a failed remediation request without the error object (see safeErrorFields). */
+function logRemediationError(operation: string, workflowId: string | undefined, err: unknown): void {
+  console.error(`[Remediation] ${operation} error:`, { workflowId, ...safeErrorFields(err) });
 }
 
 function requireAdminOrOwner(req: Request, res: Response): boolean {
@@ -66,7 +116,7 @@ export function createRemediationRoutes(pool: Pool): Router {
       const workflows = await service.listWorkflows(orgId(req), status);
       res.json({ success: true, data: workflows });
     } catch (err: any) {
-      console.error('[Remediation] list error:', err);
+      logRemediationError('list', undefined, err);
       res.status(500).json({ success: false, error: 'Failed to list workflows' });
     }
   });
@@ -142,13 +192,13 @@ export function createRemediationRoutes(pool: Pool): Router {
 
       res.status(201).json({ success: true, data: workflow });
     } catch (err: any) {
-      console.error('[Remediation] create error:', err);
+      logRemediationError('create', undefined, err);
       if (
-        err.message?.startsWith(ACTION_UNAVAILABLE_PREFIX) ||
-        err.message?.startsWith(TARGET_MISMATCH_PREFIX) ||
-        err.message?.startsWith(REGION_MISMATCH_PREFIX)
+        err?.message?.startsWith(ACTION_UNAVAILABLE_PREFIX) ||
+        err?.message?.startsWith(TARGET_MISMATCH_PREFIX) ||
+        err?.message?.startsWith(REGION_MISMATCH_PREFIX)
       ) {
-        res.status(400).json({ success: false, error: err.message });
+        res.status(400).json({ success: false, error: publicMessage(err, 'Failed to create workflow') });
         return;
       }
       res.status(500).json({ success: false, error: 'Failed to create workflow' });
@@ -165,7 +215,7 @@ export function createRemediationRoutes(pool: Pool): Router {
       }
       res.json({ success: true, data: workflow });
     } catch (err: any) {
-      console.error('[Remediation] get error:', err);
+      logRemediationError('get', req.params.id, err);
       res.status(500).json({ success: false, error: 'Failed to fetch workflow' });
     }
   });
@@ -183,9 +233,9 @@ export function createRemediationRoutes(pool: Pool): Router {
       );
       res.json({ success: true, data: workflow });
     } catch (err: any) {
-      console.error('[Remediation] approve error:', err);
-      const status = err.message.includes('not found') ? 404 : 400;
-      res.status(status).json({ success: false, error: err.message });
+      logRemediationError('approve', req.params.id, err);
+      const status = err?.message?.includes('not found') ? 404 : 400;
+      res.status(status).json({ success: false, error: publicMessage(err, 'Failed to approve workflow') });
     }
   });
 
@@ -204,9 +254,9 @@ export function createRemediationRoutes(pool: Pool): Router {
       );
       res.json({ success: true, data: workflow });
     } catch (err: any) {
-      console.error('[Remediation] reject error:', err);
-      const status = err.message.includes('not found') ? 404 : 400;
-      res.status(status).json({ success: false, error: err.message });
+      logRemediationError('reject', req.params.id, err);
+      const status = err?.message?.includes('not found') ? 404 : 400;
+      res.status(status).json({ success: false, error: publicMessage(err, 'Failed to reject workflow') });
     }
   });
 
@@ -226,18 +276,19 @@ export function createRemediationRoutes(pool: Pool): Router {
         );
         res.json({ success: true, data: workflow });
       } catch (err: any) {
-        console.error('[Remediation] execute error:', err);
+        logRemediationError('execute', req.params.id, err);
         if (isAwsAccountAmbiguous(err)) {
           res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
           return;
         }
+        const message: string = typeof err?.message === 'string' ? err.message : '';
         const status =
-          err.message.includes('not found') ? 404 :
-          err.message.includes('must be approved') ? 400 :
-          err.message.startsWith('DRY_RUN_MODE') ? 400 :
-          err.message.startsWith(ACTION_UNAVAILABLE_PREFIX) ? 400 :
-          isRegionBlocked(err.message) ? 409 : 500;
-        res.status(status).json({ success: false, error: err.message });
+          message.includes('not found') ? 404 :
+          message.includes('must be approved') ? 400 :
+          message.startsWith('DRY_RUN_MODE') ? 400 :
+          message.startsWith(ACTION_UNAVAILABLE_PREFIX) ? 400 :
+          isRegionBlocked(message) ? 409 : 500;
+        res.status(status).json({ success: false, error: publicMessage(err, 'Failed to execute workflow') });
       }
     }
   );
@@ -255,15 +306,16 @@ export function createRemediationRoutes(pool: Pool): Router {
       );
       res.json({ success: true, data: workflow });
     } catch (err: any) {
-      console.error('[Remediation] rollback error:', err);
+      logRemediationError('rollback', req.params.id, err);
       if (isAwsAccountAmbiguous(err)) {
         res.status(409).json({ success: false, error: AWS_ACCOUNT_AMBIGUOUS_MESSAGE });
         return;
       }
+      const message: string = typeof err?.message === 'string' ? err.message : '';
       const status =
-        err.message.includes('not found') ? 404 :
-        isRegionBlocked(err.message) ? 409 : 400;
-      res.status(status).json({ success: false, error: err.message });
+        message.includes('not found') ? 404 :
+        isRegionBlocked(message) ? 409 : 400;
+      res.status(status).json({ success: false, error: publicMessage(err, 'Failed to roll back workflow') });
     }
   });
 
