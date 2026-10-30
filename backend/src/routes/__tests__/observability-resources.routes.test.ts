@@ -462,13 +462,23 @@ describe('GET /api/observability/resources?table=1 (O2)', () => {
     expect(failed.body.data).not.toHaveProperty('table')
   })
 
-  it('(R16) search never reaches another organization', async () => {
-    const other = await insertFleetOrg(pool, 'table-other', (a) => [{ ...mixedFleet(a)[0], name: 'only-in-other-org' }])
-    createdOrgIds.push(other.orgId)
+  it('(R16) search never reaches another organization, even with that organization\'s table cached', async () => {
+    // Org A is loaded first, so its snapshot is in the 45 s cache when org B asks.
+    const a = await insertFleetOrg(pool, 'table-other', (acct) => [{ ...mixedFleet(acct)[0], name: 'only-in-other-org' }])
+    createdOrgIds.push(a.orgId)
+    await signInAs(a.orgId)
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId: a.accountId }))
+    const seenByA = await get('/observability/resources?range=1h&table=1&q=only-in-other-org')
+    expect(seenByA.body.data.table.rows.map((r: any) => r.name)).toEqual(['only-in-other-org'])
+    jest.restoreAllMocks()
+    jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 42 } as any)
+
     const { accountId } = await mixedOrg('table-own')
     jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(fakeClients({ metrics: mixedMetrics(), accountId }))
-    const { body } = await get(`/observability/resources?table=1&q=only-in-other-org&org=${other.orgId}&organizationId=${other.orgId}`)
+    const { body } = await get(`/observability/resources?range=1h&table=1&q=only-in-other-org&org=${a.orgId}&organizationId=${a.orgId}`)
     expect(body.data.table).toMatchObject({ total: 0, rows: [], facets: { all: 0 } })
-    expect(body.data.pagination.total).toBe(17)
+    const all = await get('/observability/resources?range=1h&table=1')
+    expect(all.body.data.table.rows.map((r: any) => r.name)).not.toContain('only-in-other-org')
+    expect(all.body.data.table.total).toBe(17)
   })
 })

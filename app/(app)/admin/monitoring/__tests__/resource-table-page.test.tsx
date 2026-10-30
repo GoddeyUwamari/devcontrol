@@ -152,15 +152,21 @@ describe('requests', () => {
     expect(m.calls.some((c) => c.path.startsWith('/api/cloudwatch') || c.path.startsWith('/api/prometheus'))).toBe(false)
   })
 
-  it('Next and Previous ask the server for the page; disabled at the ends', async () => {
+  it('Next and Previous ask the server for the page; unavailable (aria-disabled, still focusable) at the ends', async () => {
     await mountSettled()
-    expect(tableButton('Previous')).toBeDisabled()
+    expect(tableButton('Previous')).toHaveAttribute('aria-disabled', 'true')
+    expect(tableButton('Previous')).not.toBeDisabled()
     fireEvent.click(tableButton('Next'))
     await flush()
     expect(params(lastResourcePath())).toMatchObject({ table: '1', filter: 'all', page: '2' })
     await settle(res({ page: 2 }))
     expect(screen.getByTestId('table-footer')).toHaveTextContent('Showing 26–30 of 30 resources · most urgent first')
-    expect(tableButton('Next')).toBeDisabled()
+    expect(tableButton('Next')).toHaveAttribute('aria-disabled', 'true')
+    // An unavailable button asks for nothing.
+    const before = resourceCalls().length
+    fireEvent.click(tableButton('Next'))
+    await flush()
+    expect(resourceCalls()).toHaveLength(before)
     fireEvent.click(tableButton('Previous'))
     await flush()
     expect(params(lastResourcePath()).page).toBe('1')
@@ -260,7 +266,7 @@ describe('requests', () => {
     await settle(res({ total: 40, page: 2 }))
     expect(resourceCalls()).toHaveLength(before)
     expect(screen.getByTestId('table-footer')).toHaveTextContent('Showing 26–40 of 40 resources')
-    expect(tableButton('Next')).toBeDisabled()
+    expect(tableButton('Next')).toHaveAttribute('aria-disabled', 'true')
     // The adopted page is the page from now on: the poll asks for it.
     await advance(60_000)
     expect(params(lastResourcePath()).page).toBe('2')
@@ -332,6 +338,52 @@ describe('rendering', () => {
     expect(table()).toHaveClass('min-w-0')
   })
 
+  it('a page change keeps focus on Next, and the footer node stays mounted and is updated in place', async () => {
+    await mountSettled(res({ total: 60 }))
+    const next = tableButton('Next')
+    const footer = screen.getByTestId('table-footer')
+    next.focus()
+    fireEvent.click(next)
+    await flush()
+    // Loading: the same footer node (old text, still a polite live region) and the same Next button, focused.
+    expect(screen.getByTestId('table-footer')).toBe(footer)
+    expect(footer).toHaveAttribute('aria-live', 'polite')
+    expect(footer).toHaveTextContent('Showing 1–25 of 60 resources')
+    expect(tableButton('Next')).toBe(next)
+    expect(document.activeElement).toBe(next)
+    // While loading the pager asks for nothing more.
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    const before = resourceCalls().length
+    fireEvent.click(next)
+    await flush()
+    expect(resourceCalls()).toHaveLength(before)
+    await settle(res({ total: 60, page: 2 }))
+    expect(screen.getByTestId('table-footer')).toBe(footer)
+    expect(footer).toHaveTextContent('Showing 26–50 of 60 resources')
+    expect(document.activeElement).toBe(next)
+    // To the last page: Next becomes unavailable but keeps focus.
+    fireEvent.click(next)
+    await flush()
+    await settle(res({ total: 60, page: 3 }))
+    expect(footer).toHaveTextContent('Showing 51–60 of 60 resources')
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(next)
+  })
+
+  it('a filter or search change never removes the footer while it loads', async () => {
+    await mountSettled()
+    const footer = screen.getByTestId('table-footer')
+    fireEvent.click(tableButton('Lambda, 10'))
+    await flush()
+    expect(screen.getByTestId('table-footer')).toBe(footer)
+    await settle(res({ filter: 'lambda', total: 10 }))
+    expect(screen.getByTestId('table-footer')).toBe(footer)
+    expect(footer).toHaveTextContent('Showing 1–10 of 10 resources')
+    fireEvent.change(within(table()).getByRole('searchbox'), { target: { value: 'p1' } })
+    await advance(SEARCH_DEBOUNCE_MS)
+    expect(screen.getByTestId('table-footer')).toBe(footer)
+  })
+
   it('the search input keeps its value and focus across a poll', async () => {
     await mountSettled()
     const input = within(table()).getByRole('searchbox') as HTMLInputElement
@@ -360,10 +412,17 @@ describe('rendering', () => {
     expect((within(table()).getByRole('searchbox') as HTMLInputElement).value).toBe('')
   })
 
-  it('incomplete discovery: the caption line, and never "No resources found in" for an empty list', async () => {
+  it('incomplete discovery, empty: one "discovery didn\'t finish" line, never "No resources found in"', async () => {
     await mountSettled(res({ total: 0, rows: [], facets: { all: 0, attention: 0, types: {} } }, '1h', { inventory_capped: null }))
-    expect(screen.getByTestId('table-caption')).toHaveTextContent("This list may be incomplete: discovery didn't finish.")
+    expect(screen.queryByTestId('table-caption')).toBeNull()
     expect(screen.getByTestId('table-empty')).toHaveTextContent("No resources found yet. Discovery didn't finish, so some may be missing.")
+    expect(table().textContent!.match(/[Dd]iscovery didn.t finish/g)).toHaveLength(1)
+  })
+
+  it('a capped inventory (inventory_capped true) with rows shows the "may be incomplete" line above the rows', async () => {
+    await mountSettled(res({}, '1h', { inventory_capped: true }))
+    expect(screen.getByTestId('table-caption')).toHaveTextContent("This list may be incomplete: discovery didn't finish.")
+    expect(within(table()).getAllByTestId('resource-row').length).toBeGreaterThan(0)
   })
 })
 
@@ -379,7 +438,9 @@ describe('error and notices', () => {
     const box = screen.getByTestId('table-error')
     expect(box).toHaveTextContent("Couldn't load resource checks.")
     expect(within(table()).queryByRole('table')).toBeNull()
-    expect(within(table()).queryByRole('searchbox')).toBeNull()
+    // The search box stays (no counts, no filters); nothing else but the error and Retry.
+    expect(within(table()).getByRole('searchbox')).toBeInTheDocument()
+    expect(within(table()).queryByRole('group', { name: 'Filter by type' })).toBeNull()
     expect(table().textContent).not.toMatch(/\d/)
     fireEvent.click(within(box).getByRole('button', { name: 'Retry' }))
     await flush()

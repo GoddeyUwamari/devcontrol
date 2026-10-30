@@ -226,14 +226,16 @@ export const ROW_REASON = {
  * sends; each shown only when the row carries it (decision D5). The
  * status-driving value comes first, then one context value (Oct 30 decision).
  * `also` adds a second value of the same query after a comma; `positive` hides
- * a zero. The load balancer's 5xx rate is sent only when the verdict judged it
+ * a zero; `over` labels the window without the statistic, "(over 1h)", for a
+ * rate whose API statistic ("Sum", a ratio of two sums) would read oddly. The
+ * load balancer's 5xx rate is sent only when the verdict judged it
  * (observability-states.ts ob3Metrics); there is no fallback to the 5xx count.
  */
-export type KeyMetricDef = { label: string; unit?: string; name: string; positive?: boolean; also?: { label: string; unit?: string } }
+export type KeyMetricDef = { label: string; unit?: string; name: string; positive?: boolean; over?: boolean; also?: { label: string; unit?: string } }
 
 export const KEY_METRICS: Record<string, KeyMetricDef[]> = {
   ec2: [{ label: 'CPU', name: 'CPU' }],
-  'load-balancer': [{ label: '5xx rate', name: '5xx' }, { label: 'Avg latency', name: 'Response' }],
+  'load-balancer': [{ label: '5xx rate', name: '5xx', over: true }, { label: 'Avg latency', name: 'Response' }],
   rds: [{ label: 'CPU', name: 'CPU' }, { label: 'Free storage', unit: 'GiB', name: 'Free storage', also: { label: 'Free storage', unit: '% of allocated' } }],
   // Throttles drive needs_attention (T1), so they're shown whenever there are any.
   lambda: [{ label: 'Errors', name: 'Errors' }, { label: 'Invocations', name: 'Invocations' }, { label: 'Throttles', name: 'Throttles', positive: true }],

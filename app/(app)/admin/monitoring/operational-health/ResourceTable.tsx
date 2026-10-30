@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import type { TableQuery } from './observabilityTypes'
-import type { RowView, TableView } from './resourceTableModel'
+import type { PagerView, RowView, TableView } from './resourceTableModel'
 import { PAGE_COPY, TABLE_COPY, TABLE_HREF } from './operationalHealthCopy'
 import { BUTTON, DOT, LINK } from './tones'
 
@@ -51,12 +51,23 @@ function Row({ row }: { row: RowView }) {
   )
 }
 
-function Pager({ page, pages, onPage }: { page: number; pages: number; onPage: (page: number) => void }) {
+/**
+ * "Showing a–b of N" (a polite live region, updated in place) and Previous/Next. It stays
+ * mounted while the next page loads, so the clicked button keeps focus; unavailable buttons
+ * are aria-disabled rather than disabled, because disabling a focused button drops focus.
+ */
+function FooterPager({ pager, loading, onPage }: { pager: PagerView; loading: boolean; onPage: (page: number) => void }) {
+  const canPrev = !loading && pager.page > 1
+  const canNext = !loading && pager.page < pager.pages
+  const pagerButton = cn(BUTTON, 'aria-disabled:cursor-not-allowed aria-disabled:opacity-50')
   return (
-    <nav aria-label={TABLE_COPY.pages} className="flex gap-2">
-      <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} className={BUTTON}>{TABLE_COPY.previous}</button>
-      <button type="button" disabled={page >= pages} onClick={() => onPage(page + 1)} className={BUTTON}>{TABLE_COPY.next}</button>
-    </nav>
+    <div className="flex flex-col gap-2 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <p data-testid="table-footer" aria-live="polite" className="m-0 text-meta text-ink-body">{pager.footer}</p>
+      <nav aria-label={TABLE_COPY.pages} className="flex gap-2">
+        <button type="button" aria-disabled={!canPrev} onClick={() => canPrev && onPage(pager.page - 1)} className={pagerButton}>{TABLE_COPY.previous}</button>
+        <button type="button" aria-disabled={!canNext} onClick={() => canNext && onPage(pager.page + 1)} className={pagerButton}>{TABLE_COPY.next}</button>
+      </nav>
+    </div>
   )
 }
 
@@ -99,9 +110,12 @@ export function ResourceTable({
   onRetry: () => void
 }) {
   const [text, setText] = useState(query.q)
-  // While a new search, filter or page loads, the controls stay (the model passes the last
-  // answer's counts), so typing never unmounts the input.
+  // While a new search, filter or page loads, the controls, footer and pager stay (the model
+  // passes the last answer's), so typing or paging never unmounts what has focus. On an error
+  // the search box stays too (its text is kept); only the counts go.
   const filters = view.state === 'ok' || view.state === 'loading' ? view.filters : null
+  const showSearch = filters !== null || view.state === 'error'
+  const pager = view.state === 'loading' ? view.pager : view.state === 'ok' && view.body.kind === 'rows' ? view.body : null
 
   useEffect(() => {
     if (text.trim() === query.q) return
@@ -121,7 +135,7 @@ export function ResourceTable({
           <h2 id="resource-checks" className="m-0 text-card-title text-ink">{TABLE_COPY.title}</h2>
           <span className="text-meta text-ink-muted">{TABLE_COPY.caption}</span>
         </div>
-        {filters && (
+        {showSearch && (
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 focus-within:ring-2 focus-within:ring-violet-600">
               <span className="sr-only">{TABLE_COPY.search}</span>
@@ -134,6 +148,7 @@ export function ResourceTable({
                 className="w-44 border-0 bg-transparent text-ui text-ink outline-none"
               />
             </label>
+            {filters && (
             <div role="group" aria-label={TABLE_COPY.filterGroup} className="flex flex-wrap gap-1.5">
               {filters.map((f) => (
                 <button
@@ -148,6 +163,7 @@ export function ResourceTable({
                 </button>
               ))}
             </div>
+            )}
           </div>
         )}
         {view.state === 'ok' && view.captions.map((c) => (
@@ -155,17 +171,20 @@ export function ResourceTable({
         ))}
       </div>
 
+      {/* Fixed slots: the table and the footer/pager keep their nodes from loading to rows. */}
       <div className="mt-3">
-        {view.state === 'loading' && (
-          <Table busy>
-            {Array.from({ length: SKELETON_ROWS }, (_, i) => (
-              <tr key={i} data-testid="skeleton-row" className="border-t border-slate-200">
-                <td colSpan={5} className="px-4 py-4 sm:px-6">
-                  {i === 0 && <span className="sr-only">{TABLE_COPY.loading}</span>}
-                  <span aria-hidden="true" className="block h-3 w-2/3 animate-pulse rounded bg-slate-200" />
-                </td>
-              </tr>
-            ))}
+        {(view.state === 'loading' || (view.state === 'ok' && view.body.kind === 'rows')) && (
+          <Table busy={view.state === 'loading'}>
+            {view.state === 'ok' && view.body.kind === 'rows'
+              ? view.body.rows.map((row) => <Row key={row.key} row={row} />)
+              : Array.from({ length: SKELETON_ROWS }, (_, i) => (
+                  <tr key={i} data-testid="skeleton-row" className="border-t border-slate-200">
+                    <td colSpan={5} className="px-4 py-4 sm:px-6">
+                      {i === 0 && <span className="sr-only">{TABLE_COPY.loading}</span>}
+                      <span aria-hidden="true" className="block h-3 w-2/3 animate-pulse rounded bg-slate-200" />
+                    </td>
+                  </tr>
+                ))}
           </Table>
         )}
 
@@ -194,19 +213,7 @@ export function ResourceTable({
           </div>
         )}
 
-        {view.state === 'ok' && view.body.kind === 'rows' && (
-          <>
-            <Table>
-              {view.body.rows.map((row) => (
-                <Row key={row.key} row={row} />
-              ))}
-            </Table>
-            <div className="flex flex-col gap-2 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <p data-testid="table-footer" aria-live="polite" className="m-0 text-meta text-ink-body">{view.body.footer}</p>
-              <Pager page={view.body.page} pages={view.body.pages} onPage={(page) => onQuery({ page })} />
-            </div>
-          </>
-        )}
+        {pager && <FooterPager pager={pager} loading={view.state === 'loading'} onPage={(page) => onQuery({ page })} />}
       </div>
 
       <div className="border-t border-slate-200 px-4 py-3 sm:px-6">

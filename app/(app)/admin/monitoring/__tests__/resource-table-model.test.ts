@@ -106,8 +106,8 @@ describe('keyMetricText: only what the row carries (D5)', () => {
     const errors = metric('5xx errors', 2, { statistic: 'Sum' })
     const rate = metric('5xx rate', 0.4, { unit: '%', statistic: 'Sum' })
     // Judged (passing / needs attention / failing): the rate is sent.
-    expect(lb({ check_status: 'passing' }, [errors, rate, latency, requests])).toBe('5xx 0.4% (1h sum) · Response 120 ms (1h average)')
-    expect(lb({ check_status: 'failing' }, [errors, metric('5xx rate', 7.5, { unit: '%', statistic: 'Sum' })])).toBe('5xx 7.5% (1h sum)')
+    expect(lb({ check_status: 'passing' }, [errors, rate, latency, requests])).toBe('5xx 0.4% (over 1h) · Response 120 ms (1h average)')
+    expect(lb({ check_status: 'failing' }, [errors, metric('5xx rate', 7.5, { unit: '%', statistic: 'Sum' })])).toBe('5xx 7.5% (over 1h)')
     // Not judged (not enough traffic, or latency unknown): no rate is sent, and no 5xx value is shown.
     expect(lb({ check_status: 'unknown', unknown_reason: 'not_enough_traffic' }, [errors, latency, requests])).toBe('Response 120 ms (1h average)')
     expect(lb({ check_status: 'unknown', unknown_reason: 'query_failed' }, [errors, requests])).toBeNull()
@@ -194,7 +194,7 @@ describe('tableView', () => {
   })
 
   it('loading, request error and a failed sweep: never an empty table', () => {
-    expect(tableView({ state: 'loading' }, FIRST_PAGE)).toEqual({ state: 'loading', filters: null })
+    expect(tableView({ state: 'loading' }, FIRST_PAGE)).toEqual({ state: 'loading', filters: null, pager: null })
     expect(tableView({ state: 'error', kind: 'failed' }, FIRST_PAGE)).toEqual({ state: 'error' })
     expect(tableView({ state: 'error', kind: 'unavailable' }, FIRST_PAGE)).toEqual({ state: 'error' })
     expect(tableView({ state: 'ok', data: { status: 'failed', reason: 'query_failed', region: null, account_count: 1 } }, FIRST_PAGE)).toEqual({ state: 'error' })
@@ -214,11 +214,16 @@ describe('tableView', () => {
     })
   })
 
-  it('no resources: "No resources found" only when discovery finished (inventory_capped false)', () => {
+  it('no resources: "No resources found" only when discovery finished; an incomplete one says so once (no caption)', () => {
     const empty = block({ rows: [], total: 0, pages: 0, facets: { all: 0, attention: 0, types: {} } })
+    const view = (capped: boolean | null) => tableView(ok(empty, { inventory_capped: capped }), FIRST_PAGE)
     const body = (capped: boolean | null) => {
-      const v = tableView(ok(empty, { inventory_capped: capped }), FIRST_PAGE)
+      const v = view(capped)
       return v.state === 'ok' ? v.body : null
+    }
+    for (const capped of [true, null, false]) {
+      const v = view(capped)
+      expect(v.state === 'ok' ? v.captions : null).toEqual([])
     }
     expect(body(false)).toEqual({ kind: 'empty_inventory', text: 'No resources found in us-east-1.' })
     expect(body(true)).toEqual({ kind: 'empty_inventory', text: "No resources found yet. Discovery didn't finish, so some may be missing." })
@@ -250,7 +255,14 @@ describe('tableView', () => {
     expect(one.captions).toEqual([])
   })
 
-  it('while another query loads, the previous answer’s filter buttons stay, with the new filter pressed', () => {
+  it('a capped inventory (inventory_capped true) with rows shows the "may be incomplete" line', () => {
+    const v = tableView(ok(block(), { inventory_capped: true }), FIRST_PAGE)
+    expect(v.state === 'ok' ? v.captions : null).toEqual(["This list may be incomplete: discovery didn't finish."])
+    const noMatch = tableView(ok(block({ rows: [], total: 0, pages: 0 }, { q: 'zzz' }), { inventory_capped: true }), { q: 'zzz', filter: 'all', page: 1 })
+    expect(noMatch.state === 'ok' ? noMatch.captions : null).toEqual(["This list may be incomplete: discovery didn't finish."])
+  })
+
+  it('while another query loads, the previous answer’s filter buttons, footer and pager stay, with the new filter pressed', () => {
     const v = tableView({ state: 'loading' }, { q: '', filter: 'ec2', page: 1 }, NOW, ok(block()))
     expect(v).toEqual({
       state: 'loading',
@@ -259,8 +271,12 @@ describe('tableView', () => {
         { filter: 'attention', label: 'Needs attention', count: 0, pressed: false },
         { filter: 'ec2', label: 'EC2', count: 1, pressed: true },
       ],
+      pager: { footer: 'Showing 1 of 1 resource · most urgent first', page: 1, pages: 1 },
     })
-    expect(tableView({ state: 'loading' }, FIRST_PAGE, NOW, { state: 'error', kind: 'failed' })).toEqual({ state: 'loading', filters: null })
+    expect(tableView({ state: 'loading' }, FIRST_PAGE, NOW, { state: 'error', kind: 'failed' })).toEqual({ state: 'loading', filters: null, pager: null })
+    // A previous answer with no rows has no pager to keep.
+    const empty = block({ rows: [], total: 0, pages: 0, facets: { all: 0, attention: 0, types: {} } })
+    expect(tableView({ state: 'loading' }, FIRST_PAGE, NOW, ok(empty))).toMatchObject({ state: 'loading', pager: null })
   })
 
   it('a clamped page is shown as the server applied it', () => {

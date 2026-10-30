@@ -103,7 +103,7 @@ export function keyMetricText(row: ObservabilityRow): string | null {
     if (!metric || (def.positive && metric.value <= 0)) continue
     const also = def.also ? find(row, def.also.label, def.also.unit) : undefined
     const value = also ? `${formatValue(metric)}, ${formatValue(also)}` : formatValue(metric)
-    parts.push(`${def.name} ${value} ${metricWindow(metric)}`)
+    parts.push(`${def.name} ${value} ${def.over && metric.window !== 'current' ? `(over ${metric.window})` : metricWindow(metric)}`)
   }
   return parts.length > 0 ? parts.join(' · ') : null
 }
@@ -165,14 +165,24 @@ export interface FilterButton {
   pressed: boolean
 }
 
+/** The "Showing a–b of N" line and the pager's position. */
+export interface PagerView {
+  footer: string
+  page: number
+  pages: number
+}
+
 export type TableBody =
-  | { kind: 'rows'; rows: RowView[]; footer: string; page: number; pages: number }
+  | ({ kind: 'rows'; rows: RowView[] } & PagerView)
   | { kind: 'empty_inventory'; text: string }
   | { kind: 'no_match'; text: string; clearSearch: boolean; showAll: boolean }
 
 export type TableView =
-  /** filters: the previous answer's buttons (same range) while another query loads; null on a first load. */
-  | { state: 'loading'; filters: FilterButton[] | null }
+  /**
+   * filters, pager: the previous answer's (same range) while another query loads, so the
+   * controls, the live footer and the focused pager button stay mounted; null on a first load.
+   */
+  | { state: 'loading'; filters: FilterButton[] | null; pager: PagerView | null }
   | { state: 'error' }
   | { state: 'notice'; text: string }
   | { state: 'ok'; filters: FilterButton[]; captions: string[]; body: TableBody }
@@ -193,16 +203,26 @@ export function filterButtons(facets: TableBlock['facets'], pressed: string): Fi
 
 const resources = (n: number) => `${n.toLocaleString()} ${n === 1 ? 'resource' : 'resources'}`
 
+/** The footer and pager for a table answer; null when it has no rows to page. */
+export function pagerOf(table: TableBlock): PagerView | null {
+  if (table.total === 0 || table.rows.length === 0) return null
+  const first = (table.query.page - 1) * table.query.page_size + 1
+  const last = first + table.rows.length - 1
+  const shown = first === last ? `${first.toLocaleString()}` : `${first.toLocaleString()}–${last.toLocaleString()}`
+  return { footer: `Showing ${shown} of ${resources(table.total)} · most urgent first`, page: table.query.page, pages: table.pages }
+}
+
 /**
  * The table's state for the resources answer and the table query it answered.
  * Anything but an ok answer carrying a table block for that query is an error,
  * never an empty table. `previous` is the latest answer for the same range
- * (another table query): while the new one loads, its filter buttons stay.
+ * (another table query): while the new one loads, its filter buttons, footer
+ * and pager stay.
  */
 export function tableView(source: Source<ResourcesData>, requested: TableQuery, now?: Date, previous?: Source<ResourcesData>): TableView {
   if (source.state === 'loading') {
     const prev = previous?.state === 'ok' && previous.data.status === 'ok' ? previous.data.table : undefined
-    return { state: 'loading', filters: prev ? filterButtons(prev.facets, requested.filter) : null }
+    return { state: 'loading', filters: prev ? filterButtons(prev.facets, requested.filter) : null, pager: prev ? pagerOf(prev) : null }
   }
   if (source.state === 'error') return { state: 'error' }
   const data = source.data
@@ -214,14 +234,15 @@ export function tableView(source: Source<ResourcesData>, requested: TableQuery, 
   if (!table || table.query.q !== requested.q || table.query.filter !== requested.filter) return { state: 'error' }
 
   const captions: string[] = []
-  if (ok.inventory_capped !== false) captions.push(TABLE_COPY.incomplete)
   if (ok.collection === 'partial') captions.push(TABLE_COPY.partial)
   const filters = filterButtons(table.facets, table.query.filter)
 
   if (table.facets.all === 0 && !table.query.q) {
+    // An empty, incomplete inventory says "discovery didn't finish" once, in the body.
     const text = ok.inventory_capped === false ? TABLE_COPY.emptyIn(ok.region) : TABLE_COPY.emptyIncomplete
     return { state: 'ok', filters, captions, body: { kind: 'empty_inventory', text } }
   }
+  if (ok.inventory_capped !== false) captions.unshift(TABLE_COPY.incomplete)
   if (table.total === 0) {
     const q = table.query.q
     const filtered = table.query.filter !== 'all'
@@ -229,19 +250,12 @@ export function tableView(source: Source<ResourcesData>, requested: TableQuery, 
     return { state: 'ok', filters, captions, body: { kind: 'no_match', text: `No resources match ${parts}.`, clearSearch: !!q, showAll: filtered } }
   }
 
-  const first = (table.query.page - 1) * table.query.page_size + 1
-  const last = first + table.rows.length - 1
-  const shown = first === last ? `${first.toLocaleString()}` : `${first.toLocaleString()}–${last.toLocaleString()}`
+  const pager = pagerOf(table)
+  if (!pager) return { state: 'error' }
   return {
     state: 'ok',
     filters,
     captions,
-    body: {
-      kind: 'rows',
-      rows: table.rows.map((r, i) => rowView(r, i, ok.range, ok.region, now)),
-      footer: `Showing ${shown} of ${resources(table.total)} · most urgent first`,
-      page: table.query.page,
-      pages: table.pages,
-    },
+    body: { kind: 'rows', rows: table.rows.map((r, i) => rowView(r, i, ok.range, ok.region, now)), ...pager },
   }
 }
