@@ -85,6 +85,28 @@ export interface TableBlock {
   facets: { all: number; attention: number; types: Record<string, number> }
 }
 
+/** One period's Average response time, as CloudWatch returned it (observability-lb-response-time.ts). */
+export interface LbResponseTimePoint {
+  t: string
+  ms: number
+}
+
+/** The response-time chart's block, sent only with lb_response_time=1 (O3b). */
+export interface LbResponseTime {
+  range: string
+  window_start: string
+  window_end: string
+  period_seconds: number
+  statistic: 'Average'
+  unit: 'ms'
+  eligible_count: number | null
+  selection_complete: boolean
+  collection: 'complete' | 'partial'
+  checked_at: string | null
+  state: 'none' | 'ok' | 'no_data' | 'failed'
+  charted: { resource_id: string; name: string; value_ms: number; points: LbResponseTimePoint[] } | null
+}
+
 export interface ResourcesOk {
   status: 'ok'
   region: string
@@ -99,6 +121,7 @@ export interface ResourcesOk {
   type_breakdown: Record<string, Breakdown>
   fleet_summary: Breakdown
   table?: TableBlock
+  lb_response_time?: LbResponseTime
 }
 
 export interface ResourcesNotOk {

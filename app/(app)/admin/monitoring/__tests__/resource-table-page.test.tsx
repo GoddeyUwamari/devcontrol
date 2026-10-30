@@ -147,7 +147,7 @@ describe('requests', () => {
   it('the first request asks for page 1 of the table, unfiltered', async () => {
     render(<OperationalHealthV2 />)
     await flush()
-    expect(lastResourcePath()).toBe('/api/observability/resources?range=1h&pageSize=1&table=1&filter=all&page=1')
+    expect(lastResourcePath()).toBe('/api/observability/resources?range=1h&pageSize=1&table=1&filter=all&page=1&lb_response_time=1')
     await settle()
     expect(m.calls.some((c) => c.path.startsWith('/api/cloudwatch') || c.path.startsWith('/api/prometheus'))).toBe(false)
   })

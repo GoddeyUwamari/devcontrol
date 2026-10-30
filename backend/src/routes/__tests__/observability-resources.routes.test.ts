@@ -376,9 +376,13 @@ describe('GET /api/observability/resources?table=1 (O2)', () => {
     expect(t.rows.map((r: any) => r.name)).toEqual(TABLE_ORDER)
     expect(t.query).toEqual({ q: '', filter: 'all', page: 1, page_size: 25, order: 'status' })
     expect([t.total, t.pages]).toEqual([17, 1])
-    // Rows are the same objects resources[] carries, unchanged.
+    // Rows are the same objects resources[] carries, unchanged, except that a load
+    // balancer's table row also carries its request total (O3b, decision 5b).
     const r = byName(body.data.resources)
-    for (const row of t.rows) expect(row).toEqual(r[row.name])
+    const withoutRequests = (row: any) => ({ ...row, metrics: row.metrics.filter((m: any) => m.label !== 'Requests') })
+    for (const row of t.rows) expect(withoutRequests(row)).toEqual(r[row.name])
+    expect(t.rows.filter((row: any) => row.metrics.some((m: any) => m.label === 'Requests')).map((row: any) => row.name)).toEqual(['app-alb'])
+    expect(t.rows.find((row: any) => row.name === 'app-alb').metrics.at(-1)).toEqual({ label: 'Requests', value: 120, statistic: 'Sum', window: '1h' })
     // Everything else in the body is what it is without table=1.
     expect(Object.keys(body.data)).toEqual([
       'status',

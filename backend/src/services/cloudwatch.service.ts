@@ -14,6 +14,7 @@ import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy'
 import { parseAwsAccountId } from '../utils/awsAccountId'
 import {
   EvidenceSink,
+  ObservabilityMetric,
   ObservabilityRow,
   ResourceEvidence,
   TypeSummary,
@@ -27,6 +28,7 @@ import {
   typeSummaryOf,
 } from './observability-states'
 import { recordObservations, readInventoryCapped, ObservationWrite } from '../repositories/observability-observations.repository'
+import { buildLbResponseTime, failedLbResponseTime, LbResponseTimeBlock, requestsTableMetric } from './observability-lb-response-time'
 
 export type MonitoringRange = '5m' | '15m' | '1h' | '3h' | '24h' | '7d'
 
@@ -157,6 +159,9 @@ export interface ObservabilitySnapshotRow {
   row: ObservabilityRow
   sortName: string | null
   dbId: string
+  // O3b: metrics shown only in the table block (a load balancer's request total), so
+  // every other response stays as it was.
+  tableMetrics?: ObservabilityMetric[]
 }
 
 export interface ObservabilitySnapshot {
@@ -174,6 +179,8 @@ export interface ObservabilitySnapshot {
   fleetSummary: ObservabilityBreakdown
   // Complete fleet, in the order the route pages it.
   rows: ObservabilitySnapshotRow[]
+  // O3b: the load balancer response-time chart, sent only with lb_response_time=1.
+  lbResponseTime: LbResponseTimeBlock
 }
 
 export interface ResourceCoverageCount {
@@ -2094,6 +2101,10 @@ export class CloudWatchService {
       responseTimeHistory: ResponseTimePoint[]
     }
 
+    // O3b: each evaluated ALB's current-window TargetResponseTime series, by DB id, as the
+    // batch returned it (read only to build the response-time chart; no extra query).
+    const albLatencySeries = new Map<string, BatchSeriesResult | null>()
+
     const albTask = (async (): Promise<AlbBlockResult> => {
       const empty: AlbBlockResult = {
         services: [],
@@ -2117,6 +2128,7 @@ export class CloudWatchService {
           evidence
         )
 
+        albEvaluations.forEach((r, i) => albLatencySeries.set(r.service.resourceDbId, currentSeriesByResource[i]?.['latencySec'] ?? null))
         const albServices = albEvaluations.map((r) => r.service)
         const albResults = albEvaluations.map((r, i) => ({
           service: r.service,
@@ -2249,6 +2261,7 @@ export class CloudWatchService {
       services: allServices,
       evidence,
       failedBlocks,
+      latencySeries: albLatencySeries,
     })
 
     return {
@@ -2299,6 +2312,8 @@ export class CloudWatchService {
     services: CloudWatchServiceHealth[]
     evidence: EvidenceSink
     failedBlocks: Set<string>
+    // O3b: each ALB's latency series (absent: none was evaluated).
+    latencySeries?: Map<string, BatchSeriesResult | null>
   }): Promise<ObservabilitySnapshot> {
     const { organizationId, accountId, region, range, sweepAt, resources, services, evidence, failedBlocks } = input
     const rowsById = new Map(services.map((s) => [s.resourceDbId, s]))
@@ -2349,16 +2364,36 @@ export class CloudWatchService {
       readInventoryCapped(pool, organizationId),
     ])
 
-    const rows: ObservabilitySnapshotRow[] = firstPass.map(({ resource, ctx }) => ({
-      row: observabilityRowFor(resource, rowsById.get(resource.id), evidence.get(resource.id), {
+    const rows: ObservabilitySnapshotRow[] = firstPass.map(({ resource, ctx }) => {
+      const row = observabilityRowFor(resource, rowsById.get(resource.id), evidence.get(resource.id), {
         ...ctx,
         stored: recorded.stored.get(resource.id),
-      }),
-      sortName: resource.resource_name,
-      dbId: resource.id,
-    }))
+      })
+      // A failed type block's evidence may say "complete" (it failed after its queries
+      // returned), but its rows weren't evaluated: no request total from it.
+      const tableMetrics = ctx.blockFailed ? [] : requestsTableMetric(row, evidence.get(resource.id), range)
+      return { row, sortName: resource.resource_name, dbId: resource.id, ...(tableMetrics.length > 0 ? { tableMetrics } : {}) }
+    })
     rows.sort((a, b) => compareObservabilityKeys(a, b))
     const breakdown = breakdownOf(rows.map((r) => r.row))
+
+    // O3b: the window every current-window query used (computeMetrics' currentStart..now);
+    // never lets a chart problem fail the rest of the snapshot.
+    const { lookbackSeconds, periodSeconds } = RANGE_CONFIG[range]
+    const window = { range, windowStart: new Date(sweepAt.getTime() - lookbackSeconds * 1000), windowEnd: sweepAt, periodSeconds }
+    let lbResponseTime: LbResponseTimeBlock
+    if (failedBlocks.has('load-balancer')) {
+      // The load balancer block failed, possibly after its batch returned complete
+      // outcomes: its rows weren't evaluated, so the block is failed, never complete.
+      lbResponseTime = failedLbResponseTime(window)
+    } else {
+      try {
+        lbResponseTime = buildLbResponseTime({ ...window, rows, evidence, latencySeries: input.latencySeries ?? new Map(), sweepAt })
+      } catch (err) {
+        console.error('[Observability] load balancer response time could not be built:', err instanceof Error ? err.name : typeof err)
+        lbResponseTime = failedLbResponseTime(window)
+      }
+    }
 
     return {
       region,
@@ -2371,6 +2406,7 @@ export class CloudWatchService {
       typeBreakdown: breakdown.byType,
       fleetSummary: breakdown.fleet,
       rows,
+      lbResponseTime,
     }
   }
 

@@ -247,6 +247,27 @@ export const KEY_METRICS: Record<string, KeyMetricDef[]> = {
   aurora: [{ label: 'CPU', name: 'CPU' }, { label: 'Replica lag', name: 'Replica lag' }],
 }
 
+/**
+ * The load balancer key metric's "5xx X% of N requests" (O3b, decisions 4-6), from
+ * the table row's own 5xx rate, 5xx errors and Requests. Without Requests the row
+ * reads as KEY_METRICS says (O2), never "of — requests".
+ */
+export const LB_FIVE_XX = {
+  requests: (n: string, one: boolean) => `${n} ${one ? 'request' : 'requests'}`,
+  rateOf: (rate: string, requests: string, range: string) => `5xx ${rate} of ${requests} (over ${range})`,
+  counts: (errors: string, requests: string, range: string) => `${errors} 5xx, ${requests} routed to targets (over ${range})`,
+} as const
+
+// ---------------------------------------------------------------- load balancer response time (O3b)
+
+/** Board D of the states mock: heading, statistic, caption. Nothing is shown without data. */
+export const RESPONSE_TIME_COPY = {
+  title: 'Load balancer response time',
+  statistic: '(average)',
+  caption: (name: string, range: string) => `From ${name} · ${range} · Average, as CloudWatch reports it`,
+  noData: 'no data',
+} as const
+
 // ---------------------------------------------------------------- active alarms list (O3a)
 
 export const ALARMS_COPY = {
