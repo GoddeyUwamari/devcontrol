@@ -9,8 +9,8 @@
  * Only that exact shape is recognised. Any other 402 (e.g. a resource
  * limit) or failure is not, and keeps its caller's normal error handling.
  * The client decides nothing from it: it only names the plan the server
- * asked for. upgrade.url is not used (it points at the tier after the
- * current one, not the required one); the link is SEE_PLANS.
+ * asked for. upgrade.url (the billing page for the required plan) is not
+ * used; the link is SEE_PLANS.
  */
 import { SEE_PLANS } from '@/lib/compliance/evaluation'
 import { PLAN_DISPLAY_NAME, type PaidTier } from './plan-names'

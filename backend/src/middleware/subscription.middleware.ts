@@ -155,6 +155,8 @@ export const requireTier = (minimumTier: SubscriptionTier) => {
       const currentTier = await getOrganizationTier(req.organizationId);
 
       if (!tierMeetsRequirement(currentTier, minimumTier)) {
+        // Looked up for every refusal: an unrecognised stored tier has no
+        // entry, so this throws and the request fails closed with the 500 below.
         const cta = UPGRADE_CTA[currentTier];
 
         res.status(402).json({
@@ -168,7 +170,8 @@ export const requireTier = (minimumTier: SubscriptionTier) => {
           },
           upgrade: {
             cta: cta.message,
-            url: cta.upgradeUrl,
+            // The plan this route requires, not the one after the current plan.
+            url: `/settings/billing?upgrade=${minimumTier}`,
             nextTier: cta.nextTier,
           },
         });
