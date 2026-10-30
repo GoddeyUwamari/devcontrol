@@ -625,7 +625,9 @@ Be specific, technical, and focus on AWS-specific optimizations. Keep each secti
   }
 
   /**
-   * Start periodic cache cleanup
+   * Start periodic cache cleanup. The timer is unref'd: it runs while the
+   * process is up, but does not by itself keep the process (or a test
+   * worker) alive -- the service is created when its modules are imported.
    */
   private startCacheCleanup(): void {
     setInterval(() => {
@@ -643,7 +645,7 @@ Be specific, technical, and focus on AWS-specific optimizations. Keep each secti
       if (cleaned > 0) {
         console.log(`[AI Insights] Cache cleanup: removed ${cleaned} expired entries`);
       }
-    }, this.CACHE_CLEANUP_INTERVAL);
+    }, this.CACHE_CLEANUP_INTERVAL).unref();
   }
 
   /**
