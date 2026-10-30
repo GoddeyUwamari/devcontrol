@@ -1,7 +1,5 @@
 /**
- * The live /api/anomalies router, mounted by server.ts.
- *
- * Not to be confused with anomaly.routes.ts, which is not mounted anywhere.
+ * The /api/anomalies router, mounted by server.ts.
  */
 import { Router } from 'express';
 import { Pool } from 'pg';
