@@ -198,6 +198,30 @@ describe('opt-in: without lb_response_time=1 nothing changes', () => {
   })
 })
 
+describe('excluded_count: load balancers no CloudWatch dimension could be built for', () => {
+  it('a real ARN with no dimension → excluded, not eligible, not partial; absent without the parameter', async () => {
+    const { orgId, accountId } = await lbOrg('excluded')
+    await pool.query(
+      `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, metadata)
+       VALUES ($1, $2, 'odd-alb', 'odd-alb', 'load-balancer', $3, 'active', $4)`,
+      [orgId, `arn:aws:elasticloadbalancing:${REGION}:${accountId}:targetgroup/odd-alb/0123456789abcdef`, REGION, JSON.stringify({ type: 'application' })]
+    )
+    await signInAs(orgId)
+    const complete: Series = { ...SERIES, [DOWN_DIM]: { TargetResponseTime: { points: [[P1, 0.3]] }, RequestCount: { points: [[P1, 5]] } } }
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clientsFor(accountId, complete, []) as any)
+
+    const { body } = await get('/observability/resources?range=1h&pageSize=100&lb_response_time=1')
+    expect(body.data.lb_response_time).toMatchObject({ eligible_count: 3, excluded_count: 1, collection: 'complete', selection_complete: true, state: 'ok' })
+    expect(typeof body.data.lb_response_time.checked_at).toBe('string')
+    expect(body.data.collection).toBe('complete')
+    const odd = body.data.resources.find((r: any) => r.name === 'odd-alb')
+    expect([odd.check_status, odd.unknown_reason]).toEqual(['unknown', 'not_supported'])
+
+    const plain = await get('/observability/resources?range=1h&pageSize=100')
+    expect(JSON.stringify(plain.body)).not.toContain('excluded_count')
+  })
+})
+
 describe('the block, from the sweep that already ran', () => {
   it('charts the busiest ALB with response-time data; NLB never counted; gaps not filled; Requests only in table rows', async () => {
     const { orgId, accountId } = await lbOrg('block')
@@ -419,6 +443,7 @@ describe('after review: failures that must never read as complete', () => {
     for (const dim of [BUSY_DIM, QUIET_DIM, DOWN_DIM]) expect(sent.some((q) => q.dimension === dim && q.metricName === 'TargetResponseTime')).toBe(true)
     const block = body.data.lb_response_time
     expect(block).toMatchObject(FAILED_BLOCK)
+    expect(block.excluded_count).toBeNull()
     // The window is still reported: the block failed, not the request.
     expect(block).toMatchObject({ range: '1h', period_seconds: 300, statistic: 'Average', unit: 'ms' })
     expect(typeof block.window_start).toBe('string')

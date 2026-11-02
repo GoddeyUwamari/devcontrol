@@ -8,7 +8,12 @@
  * lb_response_time (sent only with lb_response_time=1, status ok):
  *   eligible           Application Load Balancer rows in the queried scope that a query
  *                      could be built for: not not_measured (NLB/GWLB), not outside the
- *                      account or region, not not_supported
+ *                      account or region, not not_supported. Not "the account's load
+ *                      balancers": any count of those must add excluded_count
+ *   excluded_count     in-scope load balancers no CloudWatch dimension could be built for
+ *                      (not_supported), counted before the one-chart cap. Nothing failed,
+ *                      so they never make the collection partial. Null when the block
+ *                      failed: its rows read query_failed, so they can't be told apart
  *   charted            one eligible load balancer, first by: a complete latency series
  *                      -> RequestCount Sum descending (a failed count after every known
  *                      count, never 0) -> name A-Z (case-insensitive, nulls last) -> id
@@ -40,6 +45,7 @@ export interface LbResponseTimeBlock {
   statistic: 'Average'
   unit: 'ms'
   eligible_count: number | null
+  excluded_count: number | null
   selection_complete: boolean
   collection: 'complete' | 'partial'
   checked_at: string | null
@@ -76,6 +82,11 @@ export function isChartEligible(row: ObservabilityRow): boolean {
     row.unknown_reason !== 'outside_region' &&
     row.unknown_reason !== 'not_supported'
   )
+}
+
+/** A load balancer in the queried scope that no query could be built for (see the module header). */
+function isExcluded(row: ObservabilityRow): boolean {
+  return row.resource_type === 'load-balancer' && row.unknown_reason === 'not_supported'
 }
 
 /** RequestCount over the range: completed with datapoints -> their sum; completed empty -> 0; otherwise null. */
@@ -164,6 +175,7 @@ export function buildLbResponseTime(input: LbResponseTimeInput): LbResponseTimeB
   return {
     ...blockFrame(input),
     eligible_count: candidates.length,
+    excluded_count: input.rows.filter((r) => isExcluded(r.row)).length,
     selection_complete: candidates.every((c) => c.requests !== null),
     collection: allCompleted ? 'complete' : 'partial',
     checked_at: allCompleted ? input.sweepAt.toISOString() : null,
@@ -188,5 +200,5 @@ function blockFrame(input: Pick<LbResponseTimeInput, 'range' | 'windowStart' | '
 
 /** What the block says when building it threw: failed, with no counts and no chart. */
 export function failedLbResponseTime(input: Pick<LbResponseTimeInput, 'range' | 'windowStart' | 'windowEnd' | 'periodSeconds'>): LbResponseTimeBlock {
-  return { ...blockFrame(input), eligible_count: null, selection_complete: false, collection: 'partial', checked_at: null, state: 'failed', charted: null }
+  return { ...blockFrame(input), eligible_count: null, excluded_count: null, selection_complete: false, collection: 'partial', checked_at: null, state: 'failed', charted: null }
 }
