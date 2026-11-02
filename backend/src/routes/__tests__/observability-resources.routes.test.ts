@@ -30,6 +30,8 @@ import {
   insertFleetOrg,
   mixedFleet,
   mixedMetrics,
+  randomAccountId,
+  REGION,
 } from './observability-fleet-fixture'
 
 function dbConfig() {
@@ -343,6 +345,103 @@ describe('GET /api/observability/resources', () => {
     expect(unavailable.body).toEqual({ success: false, error: PLATFORM_AWS_UNAVAILABLE_MESSAGE })
     const bad = await get('/observability/resources?cursor=not-base64-json')
     expect(bad.status).toBe(400)
+  })
+})
+
+describe('GET /api/observability/resources: the cached sweep belongs to one connection', () => {
+  const ALL_OK = (accountId: string) => fakeClients({ metrics: mixedMetrics(), accountId })
+
+  /** The org's account row replaced by another account's, with that account's resources: what a reconnect leaves. */
+  async function replaceAccount(orgId: string) {
+    const accountId = randomAccountId()
+    await pool.query('DELETE FROM aws_accounts WHERE org_id = $1', [orgId])
+    await pool.query('DELETE FROM aws_resources WHERE organization_id = $1', [orgId])
+    await pool.query(
+      `INSERT INTO aws_accounts (account_id, role_arn, status, external_id, region, org_id) VALUES ($1, $2, 'active', 'ext-id-test', $3, $4)`,
+      [accountId, `arn:aws:iam::${accountId}:role/DevControlTest`, REGION, orgId]
+    )
+    await pool.query(
+      `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, metadata)
+       VALUES ($1, $2, 'next-alb', 'next-alb', 'load-balancer', $3, 'active', $4)`,
+      [orgId, `arn:aws:elasticloadbalancing:${REGION}:${accountId}:loadbalancer/app/next-alb/0123456789abcdef`, REGION, JSON.stringify({ type: 'application' })]
+    )
+    return accountId
+  }
+
+  it('(C-R1) the account replaced within 45 s: every view answers for the new account, none from the earlier sweep', async () => {
+    const { orgId, accountId } = await mixedOrg('switch')
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(ALL_OK(accountId) as any)
+    const view = '/observability/resources?range=1h&pageSize=100&table=1&lb_response_time=1'
+    const before = await get(view)
+    expect(byName(before.body.data.resources)['web-running']).toBeDefined()
+    expect(createClients).toHaveBeenCalledTimes(1)
+
+    const nextAccount = await replaceAccount(orgId)
+    createClients.mockResolvedValue(ALL_OK(nextAccount) as any)
+    const after = await get(view)
+
+    expect(createClients).toHaveBeenCalledTimes(2)
+    expect(after.body.data.status).toBe('ok')
+    expect(after.body.data.resources.map((r: any) => r.name)).toEqual(['next-alb'])
+    expect(after.body.data.table.rows.map((r: any) => r.name)).toEqual(['next-alb'])
+    expect(after.body.data.lb_response_time.eligible_count).toBe(1)
+  })
+
+  it('(C-R2) first connect within 45 s of a no-account answer: status ok, never connection_failed', async () => {
+    const { orgId, accountId } = await mixedOrg('first-connect')
+    const { rows } = await pool.query('DELETE FROM aws_accounts WHERE org_id = $1 RETURNING role_arn', [orgId])
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(ALL_OK(accountId) as any)
+
+    // The Dashboard's route has no pre-check of its own, so it reaches the cache.
+    const legacy = await get('/cloudwatch/metrics')
+    expect(legacy.body).toEqual({ success: true, data: null, connected: false })
+
+    await pool.query(
+      `INSERT INTO aws_accounts (account_id, role_arn, status, external_id, region, org_id) VALUES ($1, $2, 'active', 'ext-id-test', $3, $4)`,
+      [accountId, rows[0].role_arn, REGION, orgId]
+    )
+    const { body } = await get('/observability/resources?range=1h')
+    expect(body.data.status).toBe('ok')
+  })
+
+  it('(C-R3) table, chart and page parameters read one sweep and never split the cache', async () => {
+    const { accountId } = await mixedOrg('one-sweep')
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(ALL_OK(accountId) as any)
+    for (const query of ['', '&table=1', '&lb_response_time=1', '&table=1&lb_response_time=1&page=2', '&pageSize=1']) {
+      const { body } = await get(`/observability/resources?range=1h${query}`)
+      expect(body.data.status).toBe('ok')
+    }
+    expect(createClients).toHaveBeenCalledTimes(1)
+  })
+
+  it('(C-R4) the account read fails after a good answer: /resources is failed with nothing to show, the legacy route is a 500; nothing cached is served', async () => {
+    const { accountId } = await mixedOrg('account-read-fails')
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(ALL_OK(accountId) as any)
+    const good = await get('/observability/resources?range=1h&table=1&lb_response_time=1')
+    expect(good.body.data.status).toBe('ok')
+
+    const read = jest.spyOn(accountsRepository, 'findEligibleAwsAccount').mockRejectedValue(new Error('connection lost'))
+    const { status, body } = await get('/observability/resources?range=1h&table=1&lb_response_time=1')
+    expect(status).toBe(200)
+    expect(body.data).toEqual({
+      status: 'failed',
+      reason: 'query_failed',
+      account_count: 1,
+      multiple_accounts: false,
+      region: null,
+      checked_at: null,
+      type_summary: null,
+      resources: null,
+      pagination: null,
+    })
+
+    const legacy = await get('/cloudwatch/metrics?range=1h')
+    expect(legacy.status).toBe(500)
+    expect(legacy.body.success).toBe(false)
+
+    read.mockRestore()
+    const recovered = await get('/observability/resources?range=1h')
+    expect(recovered.body.data.status).toBe('ok')
   })
 })
 

@@ -83,6 +83,17 @@ export function homeRegionOf(account: Pick<AwsAccountRow, 'region'>): string {
   return account.region ?? DEFAULT_HOME_REGION;
 }
 
+/**
+ * What a cached answer about an account depends on: the connection row (a
+ * reconnect is a new row, even for the same AWS account), the role assumed (its
+ * permissions decide what can be read), the AWS account and the home region.
+ * external_id only gates AssumeRole, so it changes no answer and stays out. JSON,
+ * because an ARN contains the separators a joined string would use.
+ */
+export function awsConnectionIdentity(account: Pick<AwsAccountRow, 'id' | 'account_id' | 'role_arn' | 'region'>): string {
+  return JSON.stringify([account.id, account.account_id, account.role_arn, homeRegionOf(account)]);
+}
+
 /** The eligibility predicate, in SQL. A NULL status is not eligible. */
 const ELIGIBLE = `status = '${ELIGIBLE_AWS_ACCOUNT_STATUS}'`;
 

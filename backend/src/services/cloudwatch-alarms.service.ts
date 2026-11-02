@@ -33,6 +33,7 @@ import {
 } from './aws-response-projections'
 import {
   findEligibleAwsAccount,
+  awsConnectionIdentity,
   homeRegionOf,
   isAwsAccountAmbiguous,
   AwsAccountNotConnectedError,
@@ -252,9 +253,9 @@ export class CloudWatchAlarmsService {
     this.inFlight.clear()
   }
 
-  /** Organization, account (its row and its AWS account ID, which may be unrecorded) and region. */
-  private static cacheKey(organizationId: string, account: AwsAccountRow, region: string): string {
-    return `${organizationId}:${account.id}:${account.account_id ?? ''}:${region}`
+  /** Organization and the account's connection identity (row, role, AWS account ID, home region). */
+  private static cacheKey(organizationId: string, account: AwsAccountRow): string {
+    return `${organizationId}:${awsConnectionIdentity(account)}`
   }
 
   /**
@@ -275,7 +276,7 @@ export class CloudWatchAlarmsService {
     if (!account) return errorResult('not_connected', startedAt, null)
 
     const region = homeRegionOf(account)
-    const key = CloudWatchAlarmsService.cacheKey(organizationId, account, region)
+    const key = CloudWatchAlarmsService.cacheKey(organizationId, account)
     const cached = this.cache.get(key)
     if (cached && cached.organizationId === organizationId && this.now() - cached.cachedAt < ALARMS_CACHE_TTL_MS) {
       return cached.result

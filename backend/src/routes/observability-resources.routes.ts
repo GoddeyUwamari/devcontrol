@@ -17,8 +17,8 @@
  * unchanged.
  *
  * Reads the same CloudWatchService.getMetrics() result as GET
- * /api/cloudwatch/metrics (same 45s cache and in-flight sweep, keyed by
- * organization and range), so it never starts a second AWS sweep. The
+ * /api/cloudwatch/metrics (same 45s cache and in-flight sweep, per organization,
+ * range and connection), so it never starts a second AWS sweep. The
  * organization is the authenticated caller's; nothing in the query string
  * selects an organization, account or region.
  *

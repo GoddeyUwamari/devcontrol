@@ -585,8 +585,8 @@ export class ServicesIntelligenceService {
   async get(organizationId: string): Promise<ServicesIntelligence> {
     const rows = await this.repository.read(organizationId);
     // A cache read only: no evaluation is started and no AWS call is made. The
-    // key is the caller's own organization. A cached "no connected account"
-    // answer (data: null) carries no evaluation, so it reads as a miss.
+    // key is the caller's own organization. A cached answer with no evaluation
+    // (data: null, the connection could not be used) reads as a miss.
     const evaluation = this.evaluations.peekCachedMetrics(organizationId, RESOURCE_HEALTH_MAX_AGE_MS)?.data ?? null;
     return composeServicesIntelligence(organizationId, rows, new Date(), evaluation);
   }

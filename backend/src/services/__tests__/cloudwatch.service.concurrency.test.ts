@@ -34,6 +34,7 @@ import { EKSClient } from '@aws-sdk/client-eks';
 import { CloudWatchService } from '../cloudwatch.service';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import awsCostService from '../aws-cost.service';
+import * as accountsRepository from '../../repositories/aws-accounts.repository';
 import { pool as appPool } from '../../config/database';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
@@ -501,6 +502,17 @@ describe('CloudWatchService.getMetrics — Phase 2A cache wrapper is unaffected 
   it('a cached response is served without invoking computeMetrics() again', async () => {
     const service = new CloudWatchService();
     const spy = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics').mockResolvedValue({ accountId: 'acct', services: [] });
+    const account = jest.spyOn(accountsRepository, 'findEligibleAwsAccount').mockResolvedValue({
+      id: 'row-1',
+      org_id: 'org-cache-check',
+      account_id: '123456789012',
+      role_arn: 'arn:aws:iam::123456789012:role/DevControlRole',
+      external_id: 'placeholder',
+      region: 'us-east-1',
+      nickname: null,
+      status: 'active',
+      connected_at: null,
+    });
 
     const first = await service.getMetrics('org-cache-check', '1h');
     const second = await service.getMetrics('org-cache-check', '1h');
@@ -508,5 +520,6 @@ describe('CloudWatchService.getMetrics — Phase 2A cache wrapper is unaffected 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(second).toBe(first);
     spy.mockRestore();
+    account.mockRestore();
   });
 });
