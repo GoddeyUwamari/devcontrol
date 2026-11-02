@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
-import { CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
+import { CostAnalysisRun, CostAnalysisRunDetail, CostAnalysisRunSource, CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import costOptimizationService from '../services/cost-optimization.service';
 import { RemediationService, REGION_MISMATCH_PREFIX } from '../services/remediation.service';
@@ -17,12 +17,27 @@ import {
 } from '../config/optimization-rules';
 import { OptimizationRuleConfigService, OptimizationRuleConfigValidationError } from '../services/optimization-rule-config.service';
 import { isLeaseLost } from '../services/scan-lease';
-import { LeaseSession, LeaseTiming, SCAN_BUSY_MESSAGE, isScanBusy, leaseAccountFor, waitForScanSession } from '../services/scan-session';
+import {
+  CostChecksFailedError,
+  CostResultsNotSavedError,
+  LeaseSession,
+  LeaseTiming,
+  SCAN_BUSY_MESSAGE,
+  isScanBusy,
+  leaseAccountFor,
+  waitForScanSession,
+} from '../services/scan-session';
+import { EMPTY_RECONCILE_COUNTS, ReconcileCounts, addReconcileCounts, summarizeDetectors } from '../services/cost-analysis-outcome';
 
 const repository = new CostRecommendationsRepository();
 const analysisRunsRepository = new CostAnalysisRunsRepository();
 const remediationService = new RemediationService(pool);
 const optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
+
+const COST_RESULTS_NOT_SAVED_MESSAGE = 'The analysis ran, but its results could not be saved. Try again.';
+const COST_CHECKS_FAILED_MESSAGE = 'None of the cost checks could complete. Try again.';
+const PARTIAL_RUN_MESSAGE = 'Some cost checks did not complete.';
+const INTERRUPTED_RUN_MESSAGE = 'The analysis was interrupted before it finished.';
 
 /**
  * Maps a raw analyzeAllResources() failure into a safe, non-leaking message
@@ -36,6 +51,8 @@ const optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
  */
 function classifyRunFailureMessage(rawMessage: string | null): string | null {
   if (!rawMessage) return null;
+  if (rawMessage.includes('COST_RESULTS_NOT_SAVED')) return COST_RESULTS_NOT_SAVED_MESSAGE;
+  if (rawMessage.includes('COST_CHECKS_FAILED')) return COST_CHECKS_FAILED_MESSAGE;
   if (rawMessage.includes(PLATFORM_AWS_CREDENTIALS_UNAVAILABLE)) {
     return PLATFORM_AWS_UNAVAILABLE_MESSAGE;
   }
@@ -46,6 +63,21 @@ function classifyRunFailureMessage(rawMessage: string | null): string | null {
     return 'AWS Cost Explorer or CloudWatch is not enabled for this account.';
   }
   return 'The analysis did not complete due to an unexpected error.';
+}
+
+/**
+ * status keeps its three original values, so every existing reader of this
+ * endpoint shows a partial or interrupted run as one that did not complete,
+ * never as a success. run_state carries the exact state.
+ */
+function legacyRunStatus(run: CostAnalysisRun): 'running' | 'completed' | 'failed' {
+  return run.run_state === 'running' || run.run_state === 'completed' ? run.run_state : 'failed';
+}
+
+function runMessage(run: CostAnalysisRun): string | null {
+  if (run.run_state === 'partial') return PARTIAL_RUN_MESSAGE;
+  if (run.run_state === 'interrupted') return INTERRUPTED_RUN_MESSAGE;
+  return run.run_state === 'failed' ? classifyRunFailureMessage(run.error_message) : null;
 }
 
 export class CostRecommendationsController {
@@ -384,6 +416,7 @@ export class CostRecommendationsController {
     let organizationIdForRun: string | undefined;
     let runId: string | undefined;
     let session: LeaseSession | undefined;
+    let failureDetail: CostAnalysisRunDetail | undefined;
 
     try {
       const organizationId = (req as any).user?.organizationId;
@@ -408,13 +441,17 @@ export class CostRecommendationsController {
       // eligible account there is no lease to take: the analysis below then fails
       // exactly as it does without one, before it writes anything.
       const leaseAccountId = await leaseAccountFor(pool, organizationId);
-      if (leaseAccountId) session = await waitForScanSession(pool, organizationId, leaseAccountId, this.leaseTiming);
+      if (leaseAccountId) {
+        session = await waitForScanSession(pool, organizationId, leaseAccountId, this.leaseTiming);
+        await this.recordLeaseAcquired(session.lease.acquiredAt, organizationId, runId);
+      }
 
       // Run the analysis against this org's connected AWS account
       const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(organizationId);
+      // Without the lease nothing below is written, so this run has no result to report.
+      if (!session) throw new CostResultsNotSavedError();
       // The home-listed detectors' rows are reconciled in the region they listed
       // (no region when AWS is not connected: there is then nothing to reconcile).
-      // Without the lease nothing is written.
       const costScope = homeRegion && session ? { homeRegion } : undefined;
       const lease = session;
 
@@ -426,11 +463,14 @@ export class CostRecommendationsController {
       // observes the condition is genuinely gone.
       // F12: fenced with the lease, after the detectors' AWS calls.
       let nonRIInsertedCount = 0;
+      let counts: ReconcileCounts | undefined = { ...EMPTY_RECONCILE_COUNTS };
       if (lease) {
         lease.checkpoint();
-        ({ insertedCount: nonRIInsertedCount } = await lease.watch(() =>
+        const reconciled = await lease.watch(() =>
           repository.reconcileActiveRecommendations(organizationId, observations, costScope, lease.lease)
-        ));
+        );
+        nonRIInsertedCount = reconciled.insertedCount;
+        counts = reconciled.counts;
       }
 
       // Reserved Instance Opportunities are excluded from the occurrence
@@ -441,12 +481,24 @@ export class CostRecommendationsController {
       let riInsertedCount = 0;
       if (riSucceeded && costScope && lease) {
         // F13: fenced with the lease.
-        ({ insertedCount: riInsertedCount } = await lease.watch(() =>
+        const replaced = await lease.watch(() =>
           repository.replaceReservedInstanceRecommendations(organizationId, costScope, riRecommendations, lease.lease)
-        ));
+        );
+        riInsertedCount = replaced.insertedCount;
+        counts = counts && replaced.counts ? addReconcileCounts(counts, replaced.counts) : undefined;
       }
 
       const insertedCount = nonRIInsertedCount + riInsertedCount;
+      const detail: CostAnalysisRunDetail = {
+        summary: summarizeDetectors(observations, riSucceeded, riRecommendations),
+        counts: counts ?? null,
+      };
+
+      // No detector completed: this is a failure, never "found nothing".
+      if (detail.summary.state === 'failed') {
+        failureDetail = detail;
+        throw new CostChecksFailedError();
+      }
 
       // Get updated stats
       const stats = await repository.getStats(organizationId);
@@ -467,16 +519,17 @@ export class CostRecommendationsController {
         });
       }
 
-      // Only ever marked completed here, after analyzeAllResources() and
-      // reconciliation have both actually succeeded -- never speculatively.
+      // Only ever finished here, after analyzeAllResources() and reconciliation
+      // have both actually succeeded -- never speculatively.
       if (runId) {
         try {
-          await analysisRunsRepository.markCompleted(runId, organizationId, {
+          await analysisRunsRepository.markFinished(runId, organizationId, {
             recommendationsFound: insertedCount,
             totalPotentialSavings: stats.total_potential_savings,
+            ...detail,
           });
         } catch (trackingErr) {
-          console.error('Failed to mark cost_analysis_runs completed (non-fatal):', trackingErr);
+          console.error('Failed to record the finished cost_analysis_runs row (non-fatal):', trackingErr);
         }
       }
 
@@ -488,6 +541,10 @@ export class CostRecommendationsController {
           totalPotentialSavingsCeiling: stats.potential_savings_ceiling,
           bySeverity: stats.by_severity,
           timestamp: new Date().toISOString(),
+          runState: detail.summary.state,
+          failedDetectorCount: detail.summary.failedDetectorCount,
+          unknownResourceCount: detail.summary.unknownResourceCount,
+          counts: detail.counts,
         },
         message:
           `Analysis complete. Found ${insertedCount} optimization opportunities with estimated potential savings of $${stats.total_potential_savings.toFixed(2)}/month.` +
@@ -501,10 +558,14 @@ export class CostRecommendationsController {
       console.error('Error analyzing AWS resources:', error);
 
       // Real error preserved server-side for diagnostics; never marked
-      // completed -- a thrown analysis always ends this run as 'failed'.
+      // completed. A lost lease is an interruption, anything else a failure.
       if (runId && organizationIdForRun) {
         try {
-          await analysisRunsRepository.markFailed(runId, organizationIdForRun, error?.message || 'Unknown error');
+          if (isLeaseLost(error)) {
+            await analysisRunsRepository.markInterrupted(runId, organizationIdForRun);
+          } else {
+            await analysisRunsRepository.markFailed(runId, organizationIdForRun, error?.message || 'Unknown error', failureDetail);
+          }
         } catch (trackingErr) {
           console.error('Failed to mark cost_analysis_runs failed (non-fatal):', trackingErr);
         }
@@ -516,6 +577,16 @@ export class CostRecommendationsController {
       if (isScanBusy(error) || isLeaseLost(error)) {
         const response: ApiResponse = { success: false, error: SCAN_BUSY_MESSAGE };
         res.status(409).json(response);
+        return;
+      }
+
+      if (error instanceof CostResultsNotSavedError) {
+        res.status(503).json({ success: false, error: COST_RESULTS_NOT_SAVED_MESSAGE } as ApiResponse);
+        return;
+      }
+
+      if (error instanceof CostChecksFailedError) {
+        res.status(503).json({ success: false, error: COST_CHECKS_FAILED_MESSAGE } as ApiResponse);
         return;
       }
 
@@ -562,12 +633,23 @@ export class CostRecommendationsController {
   }
 
   /**
+   * This Analyze now holds the scan lease: closes any run whose worker is gone,
+   * then records that this run took the lease. Bookkeeping: it never stops the analysis.
+   */
+  private async recordLeaseAcquired(acquiredAt: Date, organizationId: string, runId: string | undefined): Promise<void> {
+    try {
+      await analysisRunsRepository.recoverInterrupted(organizationId, acquiredAt);
+      if (runId) await analysisRunsRepository.markLeaseAcquired(runId, organizationId, acquiredAt);
+    } catch (trackingErr) {
+      console.error('Failed to record the scan lease on cost_analysis_runs (non-fatal):', trackingErr);
+    }
+  }
+
+  /**
    * GET /api/cost-recommendations/analysis-runs
-   * History of manual "Run cost analysis" invocations for this org, latest
-   * first -- the manual-run counterpart to
-   * GET /api/aws-resources/discovery/jobs (which only covers the scheduled
-   * discovery cron). See cost-analysis-runs.repository.ts and
-   * 202609060900_create_cost_analysis_runs.sql.
+   * Cost analysis history for this org, latest first. Manual runs by default,
+   * which is what every existing reader expects; ?source=all adds the cost step
+   * of discovery scans. See cost-analysis-runs.repository.ts.
    *
    * Deliberately does not return the raw error_message column -- see
    * classifyRunFailureMessage() above.
@@ -581,17 +663,30 @@ export class CostRecommendationsController {
       }
 
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
-      const runs = await analysisRunsRepository.getLatest(organizationId, limit);
+      const source: CostAnalysisRunSource | null = req.query.source === 'all' ? null : 'manual';
+      const runs = await analysisRunsRepository.getLatest(organizationId, limit, source);
 
       const data = runs.map((run) => ({
         id: run.id,
-        status: run.status,
+        status: legacyRunStatus(run),
         recommendations_found: run.recommendations_found,
         total_potential_savings: run.total_potential_savings,
         started_at: run.started_at,
         completed_at: run.completed_at,
         created_at: run.created_at,
-        error_message: run.status === 'failed' ? classifyRunFailureMessage(run.error_message) : null,
+        error_message: runMessage(run),
+        run_state: run.run_state,
+        source: run.source,
+        detected_count: run.detected_count,
+        new_count: run.new_count,
+        refreshed_count: run.refreshed_count,
+        suppressed_resolved_count: run.suppressed_resolved_count,
+        suppressed_dismissed_count: run.suppressed_dismissed_count,
+        duplicate_count: run.duplicate_count,
+        persisted_count: run.persisted_count,
+        failed_detector_count: run.failed_detector_count,
+        unknown_resource_count: run.unknown_resource_count,
+        checks: run.checks,
       }));
 
       const response: ApiResponse = { success: true, data };

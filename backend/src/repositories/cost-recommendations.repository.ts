@@ -10,6 +10,7 @@ import {
 import { DetectorObservation } from '../services/cost-optimization.service';
 import { HeldLease, beginFenced } from '../services/scan-lease';
 import { aggregateEstimatedSavings } from '../services/estimated-savings';
+import { EMPTY_RECONCILE_COUNTS, ReconcileCounts } from '../services/cost-analysis-outcome';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
@@ -108,6 +109,36 @@ async function insertActiveRecommendation(
 /** The region a statement for `issue` is limited to, or null for no region limit. */
 function regionLimitFor(issue: string, scope: CostReconcileScope | undefined): string | null {
   return scope && HOME_REGION_SCOPED_ISSUES.has(issue) ? scope.homeRegion : null;
+}
+
+/** The ACTIVE resources of `issue` before this scan changes them. */
+async function activeResourceIds(client: PoolClient, organizationId: string, issue: string): Promise<Set<string>> {
+  const { rows } = await client.query<{ resource_id: string }>(
+    `SELECT resource_id FROM cost_recommendations
+     WHERE organization_id = $1 AND issue = $2 AND status = 'ACTIVE'`,
+    [organizationId, issue]
+  );
+  return new Set(rows.map((row) => row.resource_id));
+}
+
+/**
+ * For each resource of `issue` with an open occurrence, its newest decision. One
+ * finding can have many open rows; the latest decision is the one in force.
+ */
+async function latestOpenDecisions(
+  client: PoolClient,
+  organizationId: string,
+  issue: string
+): Promise<Map<string, RecommendationStatus>> {
+  const { rows } = await client.query<{ resource_id: string; status: RecommendationStatus }>(
+    `SELECT DISTINCT ON (resource_id) resource_id, status
+     FROM cost_recommendations
+     WHERE organization_id = $1 AND issue = $2
+       AND status IN ('RESOLVED', 'DISMISSED') AND occurrence_ended_at IS NULL
+     ORDER BY resource_id, updated_at DESC, id DESC`,
+    [organizationId, issue]
+  );
+  return new Map(rows.map((row) => [row.resource_id, row.status]));
 }
 
 export class CostRecommendationsRepository {
@@ -310,16 +341,20 @@ export class CostRecommendationsRepository {
    * racing. Without this, a delete-then-insert split across two separately
    * committed operations can both duplicate rows and silently drop a
    * just-inserted row from a still-running concurrent scan.
+   *
+   * `counts` says how every finding of a successful category ended. A finding
+   * blocked by open RESOLVED/DISMISSED rows counts once, however many rows block
+   * it, under the newest of those decisions.
    */
   async reconcileActiveRecommendations(
     organizationId: string,
     observations: DetectorObservation[],
     scope: CostReconcileScope | undefined,
     lease: HeldLease
-  ): Promise<{ insertedCount: number }> {
+  ): Promise<{ insertedCount: number; counts?: ReconcileCounts }> {
     const successful = observations.filter((o) => o.success);
     if (successful.length === 0) {
-      return { insertedCount: 0 };
+      return { insertedCount: 0, counts: { ...EMPTY_RECONCILE_COUNTS } };
     }
 
     return this.withOrgClient(organizationId, async (client) => {
@@ -333,11 +368,13 @@ export class CostRecommendationsRepository {
         await beginFenced(client, lease);
 
         let insertedCount = 0;
+        const counts: ReconcileCounts = { ...EMPTY_RECONCILE_COUNTS };
 
         for (const observation of successful) {
           const presentResourceIds = observation.recommendations.map((r) => r.resource_id);
           const unknownResourceIds = observation.unknownResourceIds ?? [];
           const regionLimit = regionLimitFor(observation.issue, scope);
+          const previouslyActive = await activeResourceIds(client, organizationId, observation.issue);
 
           // `<> ALL($3)` over an empty array is vacuously true for every row --
           // correctly ends every open occurrence in this category when the
@@ -355,6 +392,8 @@ export class CostRecommendationsRepository {
                AND ($5::varchar IS NULL OR aws_region = $5 OR aws_region IS NULL)`,
             [organizationId, observation.issue, presentResourceIds, unknownResourceIds, regionLimit]
           );
+
+          const openDecisions = await latestOpenDecisions(client, organizationId, observation.issue);
 
           await client.query(
             `DELETE FROM cost_recommendations
@@ -397,12 +436,26 @@ export class CostRecommendationsRepository {
                 JSON.stringify(rec.metadata || {}),
               ]
             );
-            insertedCount += result.rowCount || 0;
+            const inserted = result.rowCount || 0;
+            insertedCount += inserted;
+            counts.detected += 1;
+            const decision = openDecisions.get(rec.resource_id);
+            if (inserted > 0) {
+              counts.persisted += 1;
+              if (previouslyActive.has(rec.resource_id)) counts.refreshed += 1;
+              else counts.new += 1;
+            } else if (decision === 'RESOLVED') {
+              counts.suppressedResolved += 1;
+            } else if (decision === 'DISMISSED') {
+              counts.suppressedDismissed += 1;
+            } else {
+              counts.duplicate += 1;
+            }
           }
         }
 
         await client.query('COMMIT');
-        return { insertedCount };
+        return { insertedCount, counts };
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
@@ -470,7 +523,7 @@ export class CostRecommendationsRepository {
     scope: CostReconcileScope,
     recommendations: CreateRecommendationRequest[],
     lease: HeldLease
-  ): Promise<{ deletedCount: number; insertedCount: number }> {
+  ): Promise<{ deletedCount: number; insertedCount: number; counts?: ReconcileCounts }> {
     return this.withOrgClient(organizationId, async (client) => {
       await client.query(
         `SELECT pg_advisory_lock(hashtextextended($1, ${RECONCILIATION_LOCK_SALT}))`,
@@ -481,6 +534,8 @@ export class CostRecommendationsRepository {
         await client.query('BEGIN');
         await beginFenced(client, lease);
 
+        const previouslyActive = await activeResourceIds(client, organizationId, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY);
+
         const deleted = await client.query(
           `DELETE FROM cost_recommendations
            WHERE organization_id = $1 AND status = 'ACTIVE' AND issue = $2
@@ -489,12 +544,22 @@ export class CostRecommendationsRepository {
         );
 
         let insertedCount = 0;
+        const counts: ReconcileCounts = { ...EMPTY_RECONCILE_COUNTS };
         for (const rec of recommendations) {
-          insertedCount += await insertActiveRecommendation(client, organizationId, rec);
+          const inserted = await insertActiveRecommendation(client, organizationId, rec);
+          insertedCount += inserted;
+          counts.detected += 1;
+          if (inserted > 0) {
+            counts.persisted += 1;
+            if (previouslyActive.has(rec.resource_id)) counts.refreshed += 1;
+            else counts.new += 1;
+          } else {
+            counts.duplicate += 1;
+          }
         }
 
         await client.query('COMMIT');
-        return { deletedCount: deleted.rowCount || 0, insertedCount };
+        return { deletedCount: deleted.rowCount || 0, insertedCount, counts };
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;

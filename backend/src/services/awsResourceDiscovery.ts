@@ -127,6 +127,8 @@ interface FrameworkEvaluationScan {
 import { OrphanedResourceDetectorService } from './orphanedResourceDetector';
 import costOptimizationService from './cost-optimization.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
+import { addReconcileCounts, summarizeDetectors } from './cost-analysis-outcome';
 import { AccountSecurityFindingsRepository, AccountFindingCategory } from '../repositories/account-security-findings.repository';
 import { securityAuditService } from './securityAudit.service';
 import { PoolClient } from 'pg';
@@ -220,6 +222,9 @@ const UNFENCED: Fenced = (fn) => fn();
 
 /** Resource upserts per fenced transaction (plan §5.1 F5): bounded, so no transaction holds its fence long. */
 export const UPSERT_BATCH_SIZE = 200;
+
+/** The job's error text when no cost detector completed. */
+const COST_NO_CHECK_COMPLETED = 'no check completed';
 
 /**
  * A lost lease, or a second eligible AWS account seen by a fence, stops the scan:
@@ -608,6 +613,20 @@ export class AWSResourceDiscoveryService {
     return recovered;
   }
 
+  /**
+   * The same recovery for cost_analysis_runs. Bookkeeping, so it never stops the scan,
+   * and needs no fence: it only closes rows whose lease is strictly older than this
+   * scan's, which a worker that lost its lease cannot get wrong.
+   */
+  private async recoverInterruptedCostRuns(session: LeaseSession, organizationId: string): Promise<void> {
+    try {
+      const recovered = await new CostAnalysisRunsRepository().recoverInterrupted(organizationId, session.lease.acquiredAt);
+      if (recovered > 0) console.warn(`[Discovery] Closed ${recovered} interrupted cost analysis run(s) for org ${organizationId}`);
+    } catch (error: any) {
+      console.error(`[Discovery] Could not recover interrupted cost analysis runs (non-fatal):`, error.message);
+    }
+  }
+
   private async runDiscovery(organizationId: string, client: PoolClient): Promise<DiscoveryResult> {
     let jobId: string;
     let session: LeaseSession | undefined;
@@ -655,6 +674,7 @@ export class AWSResourceDiscoveryService {
       const scan = session;
       const fenced: Fenced = (fn) => scan.fenced(client, fn);
       await this.recoverInterruptedJobs(client, scan, organizationId);
+      await this.recoverInterruptedCostRuns(scan, organizationId);
 
       // Create discovery job with allowed resource types
       const jobResult = await client.query(
@@ -1309,6 +1329,13 @@ export class AWSResourceDiscoveryService {
       // "Analyze Costs" button triggers, persisting real cost_recommendations instead
       // of leaving the table permanently empty (it previously had no automatic trigger).
       let costAnalysisCompleted = false;
+      const costRuns = new CostAnalysisRunsRepository();
+      let costRunId: string | undefined;
+      try {
+        costRunId = (await costRuns.create(organizationId, { source: 'discovery', discoveryJobId: jobId, leaseAcquiredAt: scan.lease.acquiredAt })).id;
+      } catch (trackingError: any) {
+        console.error(`[Discovery] Could not create the cost analysis run record (non-fatal):`, trackingError.message);
+      }
       try {
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
         scan.checkpoint();
@@ -1324,9 +1351,11 @@ export class AWSResourceDiscoveryService {
         // Resolve/Dismiss'd finding instead of resurrecting it every scan.
         // F12: fenced inside, after the detectors' AWS calls above.
         scan.checkpoint();
-        const { insertedCount: nonRIInsertedCount } = await scan.watch(() =>
+        const reconciled = await scan.watch(() =>
           recommendationsRepo.reconcileActiveRecommendations(organizationId, observations, costScope, scan.lease)
         );
+        const nonRIInsertedCount = reconciled.insertedCount;
+        let costCounts = reconciled.counts;
 
         // Reserved Instance Opportunities stay on delete+recreate -- excluded from
         // the occurrence lifecycle, see cost-optimization.service.ts -- but only
@@ -1335,9 +1364,11 @@ export class AWSResourceDiscoveryService {
         let riInsertedCount = 0;
         if (riSucceeded) {
           // F13: fenced inside.
-          ({ insertedCount: riInsertedCount } = await scan.watch(() =>
+          const replaced = await scan.watch(() =>
             recommendationsRepo.replaceReservedInstanceRecommendations(organizationId, costScope, riRecommendations, scan.lease)
-          ));
+          );
+          riInsertedCount = replaced.insertedCount;
+          costCounts = costCounts && replaced.counts ? addReconcileCounts(costCounts, replaced.counts) : undefined;
         }
 
         const insertedCount = nonRIInsertedCount + riInsertedCount;
@@ -1360,13 +1391,57 @@ export class AWSResourceDiscoveryService {
           });
         }
 
-        console.log(`✅ [Discovery] Cost optimization analysis complete (${totalFound} opportunities found)`);
-        costAnalysisCompleted = true;
+        const costSummary = summarizeDetectors(observations, riSucceeded, riRecommendations);
+        const costDetail = { summary: costSummary, counts: costCounts ?? null };
+
+        if (costSummary.state === 'failed') {
+          // No detector completed: a failure, never "found nothing".
+          console.error(`❌ [Discovery] Cost optimization analysis failed: no check completed`);
+          errors.push(`Cost analysis: ${COST_NO_CHECK_COMPLETED}`);
+          if (costRunId) {
+            await costRuns.markFailed(costRunId, organizationId, 'COST_CHECKS_FAILED: no cost check completed', costDetail).catch((trackingError: any) => {
+              console.error(`[Discovery] Could not record the failed cost analysis run (non-fatal):`, trackingError.message);
+            });
+          }
+        } else {
+          console.log(`✅ [Discovery] Cost optimization analysis complete (${totalFound} opportunities found)`);
+          console.log(
+            `[Discovery] Cost analysis ${costSummary.state}: detected ${costCounts?.detected ?? 'unrecorded'}, persisted ${costCounts?.persisted ?? 'unrecorded'}, ` +
+            `suppressed ${costCounts ? costCounts.suppressedResolved + costCounts.suppressedDismissed : 'unrecorded'}, ` +
+            `failed checks ${costSummary.failedDetectorCount}, unknown resources ${costSummary.unknownResourceCount}`
+          );
+          costAnalysisCompleted = true;
+          if (costRunId) {
+            try {
+              const stats = await recommendationsRepo.getStats(organizationId);
+              await costRuns.markFinished(costRunId, organizationId, {
+                recommendationsFound: insertedCount,
+                totalPotentialSavings: stats.total_potential_savings,
+                ...costDetail,
+              });
+            } catch (trackingError: any) {
+              console.error(`[Discovery] Could not record the finished cost analysis run (non-fatal):`, trackingError.message);
+            }
+          }
+        }
       } catch (error: any) {
+        if (costRunId) {
+          const closed = isLeaseLost(error)
+            ? costRuns.markInterrupted(costRunId, organizationId)
+            : costRuns.markFailed(costRunId, organizationId, error.message);
+          await closed.catch((trackingError: any) => {
+            console.error(`[Discovery] Could not record the failed cost analysis run (non-fatal):`, trackingError.message);
+          });
+        }
         abortIfLeaseLost(error);
         console.error(`❌ [Discovery] Cost optimization analysis failed:`, error.message);
         errors.push(`Cost analysis: ${error.message}`);
       }
+
+      // A cost failure says the cost step failed, never that discovery did: it stays in
+      // the job's error text, but does not set the job's status, which other pages read
+      // as discovery's own. cost_analysis_completed and the run record carry it.
+      const discoveryFailed = errors.some((message) => !message.startsWith('Cost analysis: '));
 
       // Update job status
       console.log(`\n📊 [Discovery] Discovery Summary:`);
@@ -1399,7 +1474,7 @@ export class AWSResourceDiscoveryService {
          SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, resources_deleted = $4, error_message = $5, compliance_scan_completed = $6, cost_analysis_completed = $7
          WHERE id = $8`,
         [
-          errors.length > 0 ? 'failed' : 'completed',
+          discoveryFailed ? 'failed' : 'completed',
           totals.created,
           totals.updated,
           resourcesTerminated,
@@ -1447,7 +1522,7 @@ export class AWSResourceDiscoveryService {
         resources_discovered: totals.created,
         resources_updated: totals.updated,
         resources_deleted: resourcesTerminated,
-        errors,
+        errors: errors,
         warnings
       };
     } catch (error: any) {

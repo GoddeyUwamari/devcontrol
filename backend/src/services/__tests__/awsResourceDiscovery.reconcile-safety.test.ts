@@ -421,7 +421,8 @@ describe('Reserved Instance recommendations are replaced only when the RI check 
   ])('manual analyze: riSucceeded=%p leaves %p ACTIVE RI recommendation(s)', async (riSucceeded, expected) => {
     const orgId = await insertOrg();
     await insertActiveRiRecommendation(orgId);
-    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded, homeRegion: 'us-east-1' });
+    // One detector completes, so the run has a result either way; only the RI check varies.
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [{ issue: 'Idle Instance', success: true, recommendations: [] }], riRecommendations: [], riSucceeded, homeRegion: 'us-east-1' });
     const json = jest.fn();
     const req = { user: { organizationId: orgId, userId: 'test-user' }, query: {}, params: {}, body: {} } as unknown as Request;
     const res = { json, status: jest.fn().mockReturnValue({ json }) } as unknown as Response;

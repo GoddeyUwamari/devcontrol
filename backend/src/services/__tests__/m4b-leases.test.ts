@@ -136,7 +136,7 @@ function mockAwsClients(overrides: Clients = {}) {
 }
 
 function mockCostStep() {
-  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: false, homeRegion: HOME });
+  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true, homeRegion: HOME });
 }
 
 async function jobs(orgId: string) {
