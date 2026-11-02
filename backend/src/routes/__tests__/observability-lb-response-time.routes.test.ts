@@ -12,7 +12,9 @@
  * - no plan gate: a free organization gets the block (no 402);
  * - after review: a block that failed after its batch returned is failed (no checked_at,
  *   no request total); a refresh's partial answer replaces a complete one; a failing
- *   second GetMetricData chunk leaves only its load balancers unread.
+ *   second GetMetricData chunk leaves only its load balancers unread;
+ * - L6: the block fails after every result was recorded: no checked_at from this sweep,
+ *   at either level; a real datapoint may still move Last seen.
  * Placeholders only.
  */
 import express from 'express'
@@ -376,6 +378,102 @@ describe('after review: failures that must never read as complete', () => {
       expect(metricLabels(row)).not.toContain('Requests')
     }
     expect(body.data.collection).toBe('partial')
+  })
+
+  /**
+   * Every ALB is evaluated (all queries answered, evidence and series recorded); the block
+   * then throws reading the first result, before it can return. Returns how many ALBs
+   * were evaluated, so a test can't quietly fall back to a failure mid-batch.
+   */
+  function failAfterEveryResult(): () => number {
+    const capability = resourceTypeRegistry['load-balancer'] as any
+    const real = capability.healthRule
+    let evaluated = 0
+    jest.spyOn(capability, 'healthRule').mockImplementation((...args: unknown[]) => {
+      const result = real(...args)
+      evaluated += 1
+      const extra = { ...result.extra }
+      Object.defineProperty(extra, 'avgResponseTimeMs', {
+        get() {
+          throw new Error('block failed after every result')
+        },
+      })
+      return { service: result.service, extra }
+    })
+    return () => evaluated
+  }
+
+  const ALL_COMPLETE: Series = { ...SERIES, [DOWN_DIM]: { TargetResponseTime: { points: [[P1, 0.3]] }, RequestCount: { points: [[P1, 5]] } } }
+  const FAILED_BLOCK = { state: 'failed', charted: null, eligible_count: null, collection: 'partial', checked_at: null, selection_complete: false }
+
+  it('(L6a) every result recorded, then the block fails, first sweep → failed block, no checked_at at either level', async () => {
+    const { orgId, accountId } = await lbOrg('fails-after-results')
+    await signInAs(orgId)
+    const sent: Sent[] = []
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clientsFor(accountId, ALL_COMPLETE, sent) as any)
+    const evaluated = failAfterEveryResult()
+
+    const { body } = await get('/observability/resources?range=1h&pageSize=100&table=1&lb_response_time=1')
+
+    expect(evaluated()).toBe(3)
+    for (const dim of [BUSY_DIM, QUIET_DIM, DOWN_DIM]) expect(sent.some((q) => q.dimension === dim && q.metricName === 'TargetResponseTime')).toBe(true)
+    const block = body.data.lb_response_time
+    expect(block).toMatchObject(FAILED_BLOCK)
+    // The window is still reported: the block failed, not the request.
+    expect(block).toMatchObject({ range: '1h', period_seconds: 300, statistic: 'Average', unit: 'ms' })
+    expect(typeof block.window_start).toBe('string')
+    expect(typeof block.window_end).toBe('string')
+    expect(body.data.collection).toBe('partial')
+    expect(body.data.checked_at).toBeNull()
+    for (const name of ['busy-alb', 'quiet-alb', 'down-alb']) {
+      const row = body.data.table.rows.find((r: any) => r.name === name)
+      expect([row.check_status, row.unknown_reason]).toEqual(['unknown', 'query_failed'])
+      expect(row.metrics).toEqual([])
+    }
+  })
+
+  it('(L6b) after a complete sweep, a refresh that fails after every result → checked_at stays on the full success; a real datapoint still moves Last seen', async () => {
+    const { orgId, accountId } = await lbOrg('fails-after-results-refresh')
+    await signInAs(orgId)
+    const earlier: Series = { ...ALL_COMPLETE, [BUSY_DIM]: { TargetResponseTime: { points: [[P1, 0.1]] }, RequestCount: { points: [[P1, 9000]] } } }
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clientsFor(accountId, earlier, []) as any)
+
+    const first = await get('/observability/resources?range=1h&pageSize=100&table=1&lb_response_time=1')
+    expect(first.body.data.collection).toBe('complete')
+    const fullSuccess = first.body.data.checked_at
+    expect(typeof fullSuccess).toBe('string')
+    expect(first.body.data.lb_response_time.checked_at).toBe(fullSuccess)
+
+    const stored = async () => {
+      const { rows } = await pool.query(
+        `SELECT o.last_datapoint_at, o.last_successful_check_at
+           FROM resource_telemetry_observations o JOIN aws_resources r ON r.id = o.resource_id
+          WHERE o.organization_id = $1 AND r.resource_id = 'busy-alb'`,
+        [orgId]
+      )
+      return rows[0]
+    }
+    const before = await stored()
+    expect(before.last_datapoint_at.getTime()).toBe(P1.getTime())
+
+    createClients.mockResolvedValue(clientsFor(accountId, ALL_COMPLETE, []) as any)
+    const evaluated = failAfterEveryResult()
+    const second = await get('/observability/resources?range=1h&pageSize=100&table=1&lb_response_time=1&refresh=true')
+
+    expect(evaluated()).toBe(3)
+    expect(second.body.data.lb_response_time).toMatchObject(FAILED_BLOCK)
+    expect(second.body.data.collection).toBe('partial')
+    expect(second.body.data.checked_at).toBe(fullSuccess)
+
+    const after = await stored()
+    expect(after.last_successful_check_at).toEqual(before.last_successful_check_at)
+    // Not a success, but CloudWatch really returned that datapoint: Last seen may move.
+    expect(after.last_datapoint_at.getTime()).toBe(P4.getTime())
+    const busy = second.body.data.table.rows.find((r: any) => r.name === 'busy-alb')
+    expect(busy.last_seen).toBe(P4.toISOString())
+
+    const { rows: scope } = await pool.query(`SELECT last_attempt_outcome FROM observability_collection_scopes WHERE organization_id = $1`, [orgId])
+    expect(scope[0].last_attempt_outcome).toBe('partial')
   })
 
   it('(L5a) a refresh replaces a complete answer with a partial one: newest wins, no checked_at, no fallback', async () => {
