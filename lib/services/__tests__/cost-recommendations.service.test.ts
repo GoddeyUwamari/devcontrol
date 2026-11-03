@@ -182,3 +182,25 @@ describe('costRecommendationsService.analyze', () => {
     });
   });
 });
+
+describe('costRecommendationsService: run record fields (PR 2)', () => {
+  it('analyze passes run state and counts through; counts are never coerced to 0', async () => {
+    const counts = { detected: 2, new: 0, refreshed: 0, suppressedResolved: 1, suppressedDismissed: 1, duplicate: 0, persisted: 0 };
+    mockedPost.mockResolvedValue(fakeResponse({ recommendationsFound: 0, totalPotentialSavings: 0, bySeverity: {}, timestamp: 't', runState: 'completed', unknownResourceCount: 0, counts }));
+    expect(await costRecommendationsService.analyze()).toMatchObject({ runState: 'completed', unknownResourceCount: 0, counts });
+
+    mockedPost.mockResolvedValue(fakeResponse({ recommendationsFound: 0, totalPotentialSavings: 0, bySeverity: {}, timestamp: 't', runState: 'partial', unknownResourceCount: null, counts: null }));
+    expect(await costRecommendationsService.analyze()).toMatchObject({ runState: 'partial', unknownResourceCount: null, counts: null });
+
+    mockedPost.mockResolvedValue(fakeResponse({ recommendationsFound: 0, totalPotentialSavings: 0, bySeverity: {}, timestamp: 't', counts: { detected: 2 } }));
+    expect((await costRecommendationsService.analyze()).counts).toBeNull();
+  });
+
+  it('getAnalysisRuns asks for every source only when told to', async () => {
+    mockedGet.mockResolvedValue(fakeResponse([]));
+    await costRecommendationsService.getAnalysisRuns(5, 'all');
+    expect(mockedGet).toHaveBeenLastCalledWith('/api/cost-recommendations/analysis-runs?limit=5&source=all');
+    await costRecommendationsService.getAnalysisRuns(5);
+    expect(mockedGet).toHaveBeenLastCalledWith('/api/cost-recommendations/analysis-runs?limit=5');
+  });
+});

@@ -676,6 +676,21 @@ export interface AnalysisResult {
     low: number;
   };
   timestamp: string;
+  // From the run record (PR 1). Absent from an older backend; counts null when not known, never 0.
+  runState?: 'completed' | 'partial';
+  unknownResourceCount?: number | null;
+  counts?: AnalysisCounts | null;
+}
+
+/** How one analysis's findings ended (POST /analyze `counts`). */
+export interface AnalysisCounts {
+  detected: number;
+  new: number;
+  refreshed: number;
+  suppressedResolved: number;
+  suppressedDismissed: number;
+  duplicate: number;
+  persisted: number;
 }
 
 // DORA Metrics Types
