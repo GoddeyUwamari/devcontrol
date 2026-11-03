@@ -123,8 +123,34 @@ describe('eligibility', () => {
       { name: 'example-alb', id: 'a', evidence: ev({}, 5) },
     ])
     expect(block.eligible_count).toBe(1)
+    expect(block.excluded_count).toBe(1)
     expect(block.charted!.name).toBe('example-alb')
     expect(block.collection).toBe('complete')
+    expect(block.selection_complete).toBe(true)
+    expect(block.checked_at).toBe(SWEEP_AT.toISOString())
+  })
+
+  it('excluded_count: NLB/GWLB and out-of-scope rows are not excluded load balancers', () => {
+    const block = build([
+      { name: 'nlb', id: 'n', row: { check_status: 'not_measured', unknown_reason: null }, avgMs: null, evidence: undefined, series: null },
+      { name: 'eu-alb', id: 'r', row: { check_status: 'unknown', unknown_reason: 'outside_region' }, evidence: ev({}, 9000) },
+      { name: 'other-alb', id: 'o', row: { check_status: 'unknown', unknown_reason: 'outside_account' }, evidence: ev({}, 9000) },
+      { name: 'example-alb', id: 'a', evidence: ev({}, 5) },
+    ])
+    expect(block.excluded_count).toBe(0)
+  })
+
+  it('excluded_count: another type that is not_supported is not a load balancer', () => {
+    const block = build([
+      { name: 'rds-odd', id: 'x', row: { resource_type: 'rds', check_status: 'unknown', unknown_reason: 'not_supported' } },
+      { name: 'example-alb', id: 'a', evidence: ev({}, 5) },
+    ])
+    expect(block.excluded_count).toBe(0)
+  })
+
+  it('only excluded load balancers → eligible 0, excluded counted, no chart, collection not partial', () => {
+    const block = build([{ name: 'odd-arn', id: 's', row: { check_status: 'unknown', unknown_reason: 'not_supported' }, evidence: undefined, series: null }])
+    expect(block).toMatchObject({ state: 'none', eligible_count: 0, excluded_count: 1, charted: null, collection: 'complete' })
   })
 
   it('only NLBs → none (never a chart, never healthy)', () => {
@@ -198,6 +224,14 @@ describe('cap, collection and checked_at', () => {
     expect(block.charted!.name).toBe('alb-19')
   })
 
+  it('20 eligible and 2 excluded → counted before the one-chart cap', () => {
+    const lbs: Lb[] = Array.from({ length: 20 }, (_, i) => ({ name: `alb-${String(i).padStart(2, '0')}`, id: String(i), evidence: ev({}, i * 10) }))
+    const odd = (id: string): Lb => ({ name: `odd-${id}`, id, row: { check_status: 'unknown', unknown_reason: 'not_supported' }, evidence: undefined, series: null })
+    const block = build([odd('x'), ...lbs, odd('y')])
+    expect(block).toMatchObject({ eligible_count: 20, excluded_count: 2 })
+    expect(block.charted!.name).toBe('alb-19')
+  })
+
   it('every eligible query completed → checked_at is the sweep time', () => {
     const block = build([{ name: 'a', id: '1', evidence: ev({}, 3) }, { name: 'b', id: '2', evidence: ev({ latencySec: 'empty' }, 0), avgMs: null, series: null }])
     expect(block.collection).toBe('complete')
@@ -231,6 +265,7 @@ describe('cap, collection and checked_at', () => {
       statistic: 'Average',
       unit: 'ms',
       eligible_count: null,
+      excluded_count: null,
       selection_complete: false,
       collection: 'partial',
       checked_at: null,

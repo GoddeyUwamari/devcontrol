@@ -14,8 +14,7 @@ import {
   checkCompleted,
   checkObserved,
   observabilityRowFor,
-  typeSummaryOf,
-} from '../observability-states'
+  typeSummaryOf, queryFailed } from '../observability-states'
 
 const ACCOUNT = '123456789012'
 const OTHER = '111122223333'
@@ -361,5 +360,15 @@ describe('typeSummaryOf', () => {
       rds: { count: 1, passing: 0, needs_attention: 0, failing: 0, other: 1 },
     })
     for (const s of Object.values(summary)) expect(s.passing + s.needs_attention + s.failing + s.other).toBe(s.count)
+  })
+})
+
+describe('queryFailed: a failed type block', () => {
+  // Reached by rows whose state stands without the block (an RDS status from discovery):
+  // those rows aren't unknown, so this alone makes the collection partial.
+  it('is a failed query even when the evidence says every query completed', () => {
+    const complete: ResourceEvidence = { kind: 'cloudwatch', queries: { cpu: 'complete' }, values: { cpu: 1 }, newestDatapointAt: null }
+    expect(queryFailed(complete, { blockFailed: true })).toBe(true)
+    expect(queryFailed(complete, { blockFailed: false })).toBe(false)
   })
 })

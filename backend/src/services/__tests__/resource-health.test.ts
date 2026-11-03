@@ -10,6 +10,7 @@
  */
 import { CloudWatchMetrics, CloudWatchService, CloudWatchServiceHealth } from '../cloudwatch.service';
 import { ServicesIntelligenceRows } from '../../repositories/services-intelligence.repository';
+import * as accountsRepository from '../../repositories/aws-accounts.repository';
 import { countByState, resourceHealthFrom, RESOURCE_HEALTH_MAX_AGE_MS, supportedChecksForType } from '../resource-health';
 import { composeServicesIntelligence, ServicesIntelligenceService } from '../services-intelligence.service';
 import { servicesIntelligenceSchema } from './services-intelligence-contract';
@@ -229,10 +230,26 @@ describe('supported checks', () => {
   });
 });
 
+const CONNECTED_ACCOUNT = {
+  id: '20000000-0000-4000-8000-000000000001',
+  org_id: '10000000-0000-4000-8000-000000000001',
+  account_id: '123456789012',
+  role_arn: 'arn:aws:iam::123456789012:role/DevControlRole',
+  external_id: 'placeholder',
+  region: 'us-east-1',
+  nickname: null,
+  status: 'active',
+  connected_at: null,
+};
+
 describe('CloudWatchService.peekCachedMetrics', () => {
   const ORG = '10000000-0000-4000-8000-000000000001';
   const OTHER_ORG = '10000000-0000-4000-8000-000000000002';
   const fixture = { capturedAt: CAPTURED_AT, services: [] } as unknown as CloudWatchMetrics;
+
+  beforeEach(() => {
+    jest.spyOn(accountsRepository, 'findEligibleAwsAccount').mockResolvedValue(CONNECTED_ACCOUNT);
+  });
 
   afterEach(() => {
     jest.restoreAllMocks();

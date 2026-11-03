@@ -25,6 +25,7 @@ import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-
 import {
   AwsAccountAmbiguousError,
   AwsAccountNotConnectedError,
+  awsConnectionIdentity,
   countEligibleAwsAccounts,
   findEligibleAwsAccount,
   hasEligibleAwsAccount,
@@ -180,5 +181,38 @@ describe('AWSClientFactory.createClients goes through the lookup', () => {
       RoleArn: 'arn:aws:iam::123456789012:role/devcontrol-readonly',
       ExternalId: 'external-id-1',
     });
+  });
+});
+
+describe('awsConnectionIdentity', () => {
+  const account = {
+    id: 'row-a',
+    account_id: '123456789012',
+    role_arn: 'arn:aws:iam::123456789012:role/DevControlRole',
+    region: 'us-east-1',
+  };
+
+  it.each([
+    ['row', { id: 'row-b' }],
+    ['AWS account', { account_id: '111122223333' }],
+    ['role', { role_arn: 'arn:aws:iam::123456789012:role/DevControlRole-Prod' }],
+    ['region', { region: 'eu-west-1' }],
+  ])('a different %s is a different identity', (_name, change) => {
+    expect(awsConnectionIdentity({ ...account, ...change })).not.toBe(awsConnectionIdentity(account));
+  });
+
+  it('neither external_id nor nickname is part of it', () => {
+    const withExtras = { ...account, external_id: 'placeholder', nickname: 'prod' };
+    expect(awsConnectionIdentity(withExtras)).toBe(awsConnectionIdentity(account));
+    expect(awsConnectionIdentity(withExtras)).not.toContain('placeholder');
+  });
+
+  it('a null region is the default home region; a null account id is its own value', () => {
+    expect(awsConnectionIdentity({ ...account, region: null })).toBe(awsConnectionIdentity(account));
+    expect(awsConnectionIdentity({ ...account, account_id: null })).not.toBe(awsConnectionIdentity(account));
+  });
+
+  it('values can not run together across fields', () => {
+    expect(awsConnectionIdentity({ ...account, id: 'a","b' })).not.toBe(awsConnectionIdentity({ ...account, id: 'a', account_id: `b","${account.account_id}` }));
   });
 });

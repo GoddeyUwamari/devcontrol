@@ -364,6 +364,26 @@ describe('rendering', () => {
     expect(screen.queryByRole('link', { name: 'Open in CloudWatch ↗' })).toBeNull()
   })
 
+  it('after a good answer, a failed read (account lookup or sweep): the error state, never the earlier data, empty or 0', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'green')
+
+    fireEvent.click(screen.getByLabelText('Refresh'))
+    await flush()
+    await settle({ status: 'failed', reason: 'query_failed', account_count: 1, multiple_accounts: false, region: null, checked_at: null, type_summary: null, resources: null, pagination: null })
+
+    expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'source_failed')
+    expect(screen.getByTestId('table-error')).toBeInTheDocument()
+    for (const id of ['tile-checks', 'tile-telemetry']) {
+      const tile = screen.getByTestId(id)
+      expect(within(tile).getByTestId('tile-dash')).toBeInTheDocument()
+      expect(tile).toHaveTextContent("Couldn't load checks.")
+      expect(tile.textContent).not.toMatch(/\b0\b/)
+    }
+  })
+
   it('not connected: Connect AWS, no console link', async () => {
     render(<OperationalHealthV2 />)
     await flush()

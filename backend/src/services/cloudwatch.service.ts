@@ -7,7 +7,7 @@ import { AWSClientFactory } from './aws-client-factory.service'
 import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
-import { findEligibleAwsAccount, hasEligibleAwsAccount } from '../repositories/aws-accounts.repository'
+import { awsConnectionIdentity, findEligibleAwsAccount, hasEligibleAwsAccount } from '../repositories/aws-accounts.repository'
 import { fetchMetricDataBatchWithStatus, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult, BatchQueryStatuses, QueryOutcome } from './cloudwatch-metric-batch.util'
 import { describeAuroraClusters, AuroraClusterInfo } from './aurora-cluster.util'
 import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy'
@@ -747,6 +747,9 @@ const METRICS_CACHE_TTL_MS = 45 * 1000
 interface CachedMetricsEntry {
   data: CloudWatchMetrics | null
   cachedAt: number
+  // The connection this answer was computed for (awsConnectionIdentity); compared on every
+  // read. Outside CloudWatchMetrics, so it can't reach a response body.
+  identity: string
 }
 
 // OB2: the order GET /api/observability/resources pages rows in -- the legacy services[]
@@ -826,16 +829,21 @@ function describeFailureOutcome(err: unknown): QueryOutcome {
 }
 
 export class CloudWatchService {
-  // Keyed by `${organizationId}:${resolvedRange}` -- see metricsCacheKey(). This cache is
-  // an efficiency layer only; it never widens who can see what. Every cached entry was
-  // itself produced by computeMetrics()'s own organization-scoped queries and AWS calls,
-  // so a cache hit returns exactly what a fresh call for that same org+range would have
-  // returned moments earlier -- tenant isolation is inherited from computeMetrics(), not
-  // reimplemented here.
+  // One slot per `${organizationId}:${resolvedRange}` -- see metricsCacheKey() -- holding
+  // the answer for one connection: getMetrics() serves it only while its identity is the
+  // organization's current one, and the next sweep replaces it. The identity is not part
+  // of the slot's key, so peekCachedMetrics() can read a slot with no account lookup and
+  // an old connection's entry never lingers beside the new one. This cache is an
+  // efficiency layer only; it never widens who can see what. Every cached entry was itself
+  // produced by computeMetrics()'s own organization-scoped queries and AWS calls, so a
+  // cache hit returns exactly what a fresh call for that same org and connection would
+  // have returned moments earlier -- tenant isolation is inherited from computeMetrics(),
+  // not reimplemented here.
   private metricsCache = new Map<string, CachedMetricsEntry>()
-  // In-flight promise per cache key, so concurrent identical requests (e.g. two browser
-  // tabs polling the same org+range at once) share one upstream computation instead of
-  // each independently re-running the full AWS/CloudWatch sweep.
+  // In-flight promise per cache key and connection, so concurrent identical requests (e.g.
+  // two browser tabs polling the same org+range at once) share one upstream computation
+  // instead of each independently re-running the full AWS/CloudWatch sweep, and a sweep
+  // for one connection is never joined for another.
   private metricsInFlight = new Map<string, Promise<CloudWatchMetrics | null>>()
 
   private metricsCacheKey(organizationId: string, resolvedRange: MonitoringRange): string {
@@ -2412,10 +2420,15 @@ export class CloudWatchService {
 
   /**
    * CloudWatch Scalability Phase 2A: cached public entry point for the /metrics route.
-   * Wraps computeMetrics() with a 45s per-(organization, resolved range) response cache
-   * plus in-flight promise deduplication -- no AWS API selection, batching, resource cap,
-   * or health-evaluation semantics are touched; this method only decides *when* to call
-   * computeMetrics() versus reuse a recent result.
+   * Wraps computeMetrics() with a 45s per-(organization, resolved range, connection)
+   * response cache plus in-flight promise deduplication -- no AWS API selection, batching,
+   * resource cap, or health-evaluation semantics are touched; this method only decides
+   * *when* to call computeMetrics() versus reuse a recent result.
+   *
+   * The account is read before the cache, so a changed connection is never answered from
+   * it, and an organization with no eligible account gets null with nothing stored: its
+   * first connect is seen at once. A failed read rejects: with no identity, no cached
+   * answer can be shown to belong to the current connection.
    *
    * `forceRefresh` bypasses the completed-result cache (a stored, possibly-up-to-45s-old
    * answer) so a manual refresh always gets a genuinely fresh computeMetrics() call --
@@ -2429,32 +2442,36 @@ export class CloudWatchService {
    */
   async getMetrics(organizationId: string, range?: string, forceRefresh = false): Promise<CloudWatchMetrics | null> {
     const resolvedRange = resolveRange(range)
+    const account = await findEligibleAwsAccount(pool, organizationId)
+    if (!account) return null
+    const identity = awsConnectionIdentity(account)
     const cacheKey = this.metricsCacheKey(organizationId, resolvedRange)
+    const inFlightKey = `${cacheKey}:${identity}`
 
     if (!forceRefresh) {
       const cached = this.metricsCache.get(cacheKey)
-      if (cached && Date.now() - cached.cachedAt < METRICS_CACHE_TTL_MS) {
+      if (cached && cached.identity === identity && Date.now() - cached.cachedAt < METRICS_CACHE_TTL_MS) {
         return cached.data
       }
     }
 
-    const existingInFlight = this.metricsInFlight.get(cacheKey)
+    const existingInFlight = this.metricsInFlight.get(inFlightKey)
     if (existingInFlight) {
       return existingInFlight
     }
 
     const fetchPromise = this.computeMetrics(organizationId, range)
       .then((result) => {
-        this.metricsCache.set(cacheKey, { data: result, cachedAt: Date.now() })
-        this.metricsInFlight.delete(cacheKey)
+        this.metricsCache.set(cacheKey, { data: result, cachedAt: Date.now(), identity })
+        this.metricsInFlight.delete(inFlightKey)
         return result
       })
       .catch((err) => {
-        this.metricsInFlight.delete(cacheKey)
+        this.metricsInFlight.delete(inFlightKey)
         throw err
       })
 
-    this.metricsInFlight.set(cacheKey, fetchPromise)
+    this.metricsInFlight.set(inFlightKey, fetchPromise)
     return fetchPromise
   }
 
@@ -2465,7 +2482,8 @@ export class CloudWatchService {
    * makes no AWS or database call: a caller that must not trigger an AWS sweep (the
    * Services Intelligence read) uses this instead of getMetrics(). Returns null when
    * nothing is cached or the entry is older than `maxAgeMs`; `data` is null when the
-   * cached answer was "no connected account".
+   * connection could not be used. It doesn't check the entry's connection: an evaluation
+   * matches a resource by its row id, so it can be old, never about another account's row.
    *
    * `maxAgeMs` is the caller's own tolerance and may exceed METRICS_CACHE_TTL_MS --
    * getMetrics() only overwrites an entry, it never evicts one -- so the caller must

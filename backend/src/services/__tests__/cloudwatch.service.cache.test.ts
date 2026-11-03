@@ -14,6 +14,8 @@
  * when it calls computeMetrics() versus reuses a stored/in-flight result.
  */
 import { CloudWatchService, CloudWatchMetrics } from '../cloudwatch.service';
+import * as accountsRepository from '../../repositories/aws-accounts.repository';
+import type { AwsAccountRow } from '../../repositories/aws-accounts.repository';
 
 function metricsFixture(overrides: Partial<CloudWatchMetrics> = {}): CloudWatchMetrics {
   return {
@@ -52,7 +54,25 @@ function metricsFixture(overrides: Partial<CloudWatchMetrics> = {}): CloudWatchM
   };
 }
 
+const ACCOUNT_A: AwsAccountRow = {
+  id: '20000000-0000-4000-8000-00000000000a',
+  org_id: 'org-1',
+  account_id: '123456789012',
+  role_arn: 'arn:aws:iam::123456789012:role/DevControlRole',
+  external_id: 'placeholder-a',
+  region: 'us-east-1',
+  nickname: null,
+  status: 'active',
+  connected_at: null,
+};
+
+const accountStub = () => jest.spyOn(accountsRepository, 'findEligibleAwsAccount');
+
 describe('CloudWatchService.getMetrics — response cache (Phase 2A)', () => {
+  beforeEach(() => {
+    accountStub().mockResolvedValue(ACCOUNT_A);
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
     jest.useRealTimers();
@@ -216,5 +236,168 @@ describe('CloudWatchService.getMetrics — response cache (Phase 2A)', () => {
     const result = await service.getMetrics('org-1', '1h');
 
     expect(result).toBeNull();
+  });
+});
+
+describe('CloudWatchService.getMetrics — the cached answer belongs to one connection', () => {
+  const REPLACED_ROW = { id: '20000000-0000-4000-8000-00000000000b' };
+  const OTHER_ACCOUNT = { account_id: '111122223333', role_arn: 'arn:aws:iam::111122223333:role/DevControlRole' };
+  let account: jest.SpyInstance;
+  let compute: jest.SpyInstance;
+
+  const connect = (over: Partial<AwsAccountRow> = {}) => account.mockResolvedValue({ ...ACCOUNT_A, ...over });
+
+  beforeEach(() => {
+    account = accountStub();
+    connect();
+    compute = jest.spyOn(CloudWatchService.prototype as any, 'computeMetrics');
+    compute.mockImplementation(async () => metricsFixture());
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('the same connection within 45 s is one sweep', async () => {
+    const service = new CloudWatchService();
+    const first = await service.getMetrics('org-1', '1h');
+    expect(await service.getMetrics('org-1', '1h')).toBe(first);
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<[string, Partial<AwsAccountRow>]>([
+    ['the same AWS account reconnected (a new row)', REPLACED_ROW],
+    ['a different AWS account on the same row', { account_id: '111122223333' }],
+    ['a different role on the same row', { role_arn: 'arn:aws:iam::123456789012:role/DevControlRole-Prod' }],
+    ['a different home region on the same row', { region: 'eu-west-1' }],
+  ])('%s is a miss: the earlier answer is never returned', async (_name, change) => {
+    const service = new CloudWatchService();
+    const first = await service.getMetrics('org-1', '1h');
+    connect(change);
+    const second = await service.getMetrics('org-1', '1h');
+    expect(second).not.toBe(first);
+    expect(compute).toHaveBeenCalledTimes(2);
+  });
+
+  it('no recorded region is the same connection as its default home region', async () => {
+    const service = new CloudWatchService();
+    await service.getMetrics('org-1', '1h');
+    connect({ region: null });
+    await service.getMetrics('org-1', '1h');
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it('an external_id or nickname change alone stays a hit: neither changes the answer', async () => {
+    const service = new CloudWatchService();
+    await service.getMetrics('org-1', '1h');
+    connect({ external_id: 'placeholder-rotated', nickname: 'renamed' });
+    await service.getMetrics('org-1', '1h');
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  describe('a sweep in flight when the connection changes', () => {
+    let finish: Array<(value: CloudWatchMetrics) => void>;
+
+    beforeEach(() => {
+      finish = [];
+      compute.mockImplementation(() => new Promise((resolve) => finish.push(resolve)));
+    });
+
+    const settled = () => new Promise((resolve) => setImmediate(resolve));
+
+    it("is not joined for the new connection; the new one gets its own answer", async () => {
+      const service = new CloudWatchService();
+      const forA = service.getMetrics('org-1', '1h');
+      await settled();
+      connect(REPLACED_ROW);
+      const forB = service.getMetrics('org-1', '1h');
+      await settled();
+      expect(compute).toHaveBeenCalledTimes(2);
+      const [a, b] = [metricsFixture({ accountId: 'a' }), metricsFixture({ accountId: 'b' })];
+      finish[1](b);
+      finish[0](a);
+      expect(await forB).toBe(b);
+      expect(await forA).toBe(a);
+    });
+
+    it('a forced refresh never joins it either', async () => {
+      const service = new CloudWatchService();
+      const forA = service.getMetrics('org-1', '1h');
+      await settled();
+      connect(REPLACED_ROW);
+      const refreshed = service.getMetrics('org-1', '1h', true);
+      await settled();
+      expect(compute).toHaveBeenCalledTimes(2);
+      finish.forEach((resolve) => resolve(metricsFixture()));
+      await Promise.all([forA, refreshed]);
+    });
+
+    it('finishing late, it can never serve the new connection', async () => {
+      const service = new CloudWatchService();
+      const forA = service.getMetrics('org-1', '1h');
+      await settled();
+      connect(REPLACED_ROW);
+      const forB = service.getMetrics('org-1', '1h');
+      await settled();
+      const a = metricsFixture({ accountId: 'a' });
+      finish[1](metricsFixture({ accountId: 'b' }));
+      await forB;
+      finish[0](a);
+      await forA;
+
+      const next = service.getMetrics('org-1', '1h');
+      await settled();
+      expect(compute).toHaveBeenCalledTimes(3);
+      const c = metricsFixture({ accountId: 'b' });
+      finish[2](c);
+      expect(await next).toBe(c);
+    });
+  });
+
+  it('going back to the earlier connection after the new one was stored is a miss, not the new one\'s answer', async () => {
+    const service = new CloudWatchService();
+    await service.getMetrics('org-1', '1h');
+    connect(OTHER_ACCOUNT);
+    const forB = await service.getMetrics('org-1', '1h');
+    connect();
+    expect(await service.getMetrics('org-1', '1h')).not.toBe(forB);
+    expect(compute).toHaveBeenCalledTimes(3);
+  });
+
+  it('no eligible account: null, no sweep, nothing stored, and a later connect is swept at once', async () => {
+    const service = new CloudWatchService();
+    account.mockResolvedValue(null);
+    expect(await service.getMetrics('org-1', '1h')).toBeNull();
+    expect(compute).not.toHaveBeenCalled();
+    expect((service as any).metricsCache.size).toBe(0);
+
+    connect();
+    expect(await service.getMetrics('org-1', '1h')).not.toBeNull();
+    expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed account read rejects, serves nothing cached, and stores nothing', async () => {
+    const service = new CloudWatchService();
+    await service.getMetrics('org-1', '1h');
+    account.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    await expect(service.getMetrics('org-1', '1h')).rejects.toThrow('ECONNREFUSED');
+    expect(compute).toHaveBeenCalledTimes(1);
+    expect((service as any).metricsCache.size).toBe(1);
+  });
+
+  it('a switch replaces the entry: one slot per organization and range, with no old entry left beside it', async () => {
+    const service = new CloudWatchService();
+    await service.getMetrics('org-1', '1h');
+    connect(OTHER_ACCOUNT);
+    await service.getMetrics('org-1', '1h');
+    expect([...(service as any).metricsCache.keys()]).toEqual(['org-1:1h']);
+  });
+
+  it('peekCachedMetrics still reads the entry, with no account lookup', async () => {
+    const service = new CloudWatchService();
+    const stored = await service.getMetrics('org-1');
+    account.mockClear();
+    expect(service.peekCachedMetrics('org-1', 60_000)!.data).toBe(stored);
+    expect(account).not.toHaveBeenCalled();
   });
 });

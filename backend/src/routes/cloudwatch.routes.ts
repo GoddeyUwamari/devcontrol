@@ -24,7 +24,7 @@ router.get('/status', authenticateToken, async (req, res) => {
 
 // GET /api/cloudwatch/metrics
 // Returns live CloudWatch metrics for the org's connected AWS account. Cached for 45s
-// per (organization, range) -- see CloudWatchService.getMetrics() -- unless the caller
+// per (organization, range, connection) -- see CloudWatchService.getMetrics() -- unless the caller
 // passes ?refresh=true, which is how a manual refresh is represented through this same
 // existing endpoint: no separate route, just an explicit opt-out of the cache read.
 //
@@ -32,7 +32,7 @@ router.get('/status', authenticateToken, async (req, res) => {
 // is now the COMPLETE evaluated fleet (the per-type evaluation cap was removed in
 // computeMetrics()). Pagination is applied HERE, after the cache read, via
 // `?pageSize=`/`?cursor=` -- deliberately not inside getMetrics()/computeMetrics(), so
-// the cache key stays organization+range only and paginating through a large fleet never
+// the cache stays independent of them and paginating through a large fleet never
 // triggers a redundant AWS evaluation. `healthSummary`/`systemStatus` on `metrics` are
 // already complete-fleet-derived and pass through unchanged regardless of which page is
 // requested.

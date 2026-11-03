@@ -30,6 +30,7 @@ import { authService } from '../../services/auth.service';
 import { CloudWatchService, CloudWatchServiceHealth, CloudWatchMetrics } from '../../services/cloudwatch.service';
 import { PlatformAwsCredentialsUnavailableError, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../../services/platform-sts';
 import { AWSClientFactory } from '../../services/aws-client-factory.service';
+import * as accountsRepository from '../../repositories/aws-accounts.repository';
 
 function dbConfig() {
   return {
@@ -158,6 +159,21 @@ afterAll(async () => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+// These organizations have no aws_accounts row; getMetrics() reads the account before its cache.
+beforeEach(() => {
+  jest.spyOn(accountsRepository, 'findEligibleAwsAccount').mockResolvedValue({
+    id: '20000000-0000-4000-8000-000000000001',
+    org_id: '10000000-0000-4000-8000-000000000001',
+    account_id: '123456789012',
+    role_arn: 'arn:aws:iam::123456789012:role/DevControlRole',
+    external_id: 'placeholder',
+    region: 'us-east-1',
+    nickname: null,
+    status: 'active',
+    connected_at: null,
+  });
 });
 
 function getMetrics(query = ''): Promise<Response> {
