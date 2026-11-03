@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { activeComplianceFindings } from '../utils/frameworkApplicability';
 import { jobWarnings, splitDiscoveryMessage } from '../services/discovery-warnings';
+import { publicDiscoveryErrorMessage } from '../services/discovery-job-messages';
 import {
   AWSResource,
   ResourceFilters,
@@ -398,7 +399,9 @@ export class AWSResourcesRepository {
   /**
    * Get all discovery jobs. Each job's stored warnings (services/discovery-warnings.ts)
    * are returned as `warnings`: the warnings column when it is set, otherwise the codes
-   * in error_message. error_message holds only its errors.
+   * in error_message. error_message holds only its errors, and only approved fixed text:
+   * any other stored text (a step's raw provider error) reads as one fixed line
+   * (services/discovery-job-messages.ts). The stored column is unchanged.
    */
   async getDiscoveryJobs(organizationId: string, limit: number = 10) {
     const result = await this.pool.query(
@@ -411,7 +414,7 @@ export class AWSResourcesRepository {
 
     return result.rows.map((row) => {
       const { errorMessage } = splitDiscoveryMessage(row.error_message);
-      return { ...row, error_message: errorMessage, warnings: jobWarnings(row.warnings, row.error_message) };
+      return { ...row, error_message: publicDiscoveryErrorMessage(errorMessage), warnings: jobWarnings(row.warnings, row.error_message) };
     });
   }
 }

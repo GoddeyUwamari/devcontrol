@@ -554,6 +554,14 @@ export class CostRecommendationsController {
             .join(''),
       };
 
+      // The success path's one outcome line: run ID and counts only, no organization, account or resource ID.
+      const outcomeCounts = detail.counts;
+      console.log(
+        `[CostAnalysis] Manual run ${runId ?? 'untracked'} ${detail.summary.state}: ` +
+        `detected ${outcomeCounts?.detected ?? 'unrecorded'}, persisted ${outcomeCounts?.persisted ?? 'unrecorded'}, ` +
+        `suppressed ${outcomeCounts ? outcomeCounts.suppressedResolved + outcomeCounts.suppressedDismissed : 'unrecorded'}, ` +
+        `failed checks ${detail.summary.failedDetectorCount}, unknown resources ${detail.summary.unknownResourceCount}`
+      );
       res.json(response);
     } catch (error: any) {
       console.error('Error analyzing AWS resources:', error);
@@ -572,10 +580,17 @@ export class CostRecommendationsController {
         }
       }
 
-      // A scan was still running after the wait cap, or another scan took the lease
-      // over while Analyze held it: the approved fixed text, never error.message
+      // Another scan took the lease over while Analyze held it: the run is recorded
+      // interrupted, so the answer says so (approved text), never error.message
       // (a lease error names the organization and the AWS account).
-      if (isScanBusy(error) || isLeaseLost(error)) {
+      if (isLeaseLost(error)) {
+        const response: ApiResponse = { success: false, error: INTERRUPTED_RUN_MESSAGE };
+        res.status(409).json(response);
+        return;
+      }
+
+      // A scan was still running after the wait cap: the approved fixed text.
+      if (isScanBusy(error)) {
         const response: ApiResponse = { success: false, error: SCAN_BUSY_MESSAGE };
         res.status(409).json(response);
         return;

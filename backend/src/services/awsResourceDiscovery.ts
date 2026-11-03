@@ -47,6 +47,7 @@ import {
 import { AWSClients } from './aws-client-factory.service';
 import { ScanContext } from './scan-context';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from './platform-sts';
+import { COST_NO_CHECK_COMPLETED, DISCOVERY_FAILED_MESSAGE } from './discovery-job-messages';
 import { createAwsBackupEvidenceCache, checkEBSBackupCoverage, BackupEvidenceResult } from './aws-backup-evidence.util';
 import {
   AWSResource,
@@ -192,8 +193,9 @@ const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
   ], // All 16 types
 };
 
-/** What a fatally failed discovery job stores in error_message, for the organization to read. */
-export const DISCOVERY_FAILED_MESSAGE = 'Discovery could not complete. Check the AWS connection in Settings, then try again.';
+// What a fatally failed discovery job stores in error_message (defined with the
+// other approved job messages, which GET /discovery/jobs passes through).
+export { DISCOVERY_FAILED_MESSAGE };
 
 /**
  * The user-safe error_message for a discovery run that failed before
@@ -222,9 +224,6 @@ const UNFENCED: Fenced = (fn) => fn();
 
 /** Resource upserts per fenced transaction (plan §5.1 F5): bounded, so no transaction holds its fence long. */
 export const UPSERT_BATCH_SIZE = 200;
-
-/** The job's error text when no cost detector completed. */
-const COST_NO_CHECK_COMPLETED = 'none of the checks completed.';
 
 /**
  * A lost lease, or a second eligible AWS account seen by a fence, stops the scan:

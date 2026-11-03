@@ -734,7 +734,8 @@ describe('§6.4 warnings column', () => {
 
     expect(jobs.map((j: any) => ({ error_message: j.error_message, warnings: j.warnings }))).toEqual([
       { error_message: null, warnings: [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED] },
-      { error_message: 'EC2: x', warnings: [DISCOVERY_WARNING_TRUNCATED_INDEX] },
+      // A step's own error text never reaches the API (discovery-job-messages.ts, PR 2).
+      { error_message: "Some discovery steps didn't complete.", warnings: [DISCOVERY_WARNING_TRUNCATED_INDEX] },
     ]);
   });
 });
