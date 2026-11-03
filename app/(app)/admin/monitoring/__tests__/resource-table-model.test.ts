@@ -54,7 +54,10 @@ describe('statusView: every state (States board B)', () => {
     ['outside region', { check_status: 'unknown', unknown_reason: 'outside_region', region: 'eu-west-1' }, 'Unknown', 'In eu-west-1, outside us-east-1; not checked yet', 'neutral'],
     ['outside region, no region stored', { check_status: 'unknown', unknown_reason: 'outside_region', region: null }, 'Unknown', 'In another region, outside us-east-1; not checked yet', 'neutral'],
     ['outside account', { check_status: 'unknown', unknown_reason: 'outside_account' }, 'Unknown', 'In another AWS account; not checked here', 'neutral'],
-    ['not measured', { resource_type: 's3', check_status: 'not_measured' }, 'Not measured yet', 'Listed so you can see it exists; not counted in coverage', 'neutral'],
+    // O4 decision 7: S3 has no AWS health metric; the other not-measured types stay "Not measured yet".
+    ['not measured, S3', { resource_type: 's3', check_status: 'not_measured' }, 'No health metric', 'Listed so you can see it exists; not counted in coverage', 'neutral'],
+    ['not measured, API Gateway', { resource_type: 'api-gateway', check_status: 'not_measured' }, 'Not measured yet', 'Listed so you can see it exists; not counted in coverage', 'neutral'],
+    ['not measured, Network/Gateway Load Balancer', { resource_type: 'load-balancer', check_status: 'not_measured' }, 'Not measured yet', 'Listed so you can see it exists; not counted in coverage', 'neutral'],
   ]
   it.each(cases)('%s', (_name, over, label, reason, tone) => {
     expect(statusView(row(over), '1h', 'us-east-1')).toEqual({ label, reason, tone })

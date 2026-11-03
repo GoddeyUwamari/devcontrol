@@ -325,7 +325,9 @@ describe('rendering', () => {
   it('never seen and no key metric are "—", with a screen-reader word', async () => {
     await mountSettled(res({ total: 1, rows: [rowOf('bucket', { resource_type: 's3', check_status: 'not_measured', last_seen: null, last_seen_source: null, metrics: [] })] }))
     const r = within(table()).getAllByTestId('resource-row')[0]
-    expect(r).toHaveTextContent('Not measured yet')
+    // O4 decision 7: an S3 row says "No health metric", as its card and What we monitor row do.
+    expect(r).toHaveTextContent('No health metric')
+    expect(r).not.toHaveTextContent('Not measured yet')
     expect(r).toHaveTextContent('Listed so you can see it exists; not counted in coverage')
     expect(within(r).getAllByText('Not available')).toHaveLength(2)
   })

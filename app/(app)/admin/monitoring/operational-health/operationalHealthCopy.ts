@@ -205,6 +205,8 @@ export const ROW_STATUS = {
   no_activity: 'No activity',
   stopped: 'Stopped',
   not_measured: 'Not measured yet',
+  /** A not-measured row of a type AWS gives no health metric for (S3, O4 decision 7). */
+  no_health_metric: 'No health metric',
 } as const
 
 /** Reason lines; every one restates a field the backend sent (o2-step1.md §2.2, decision D4). */
