@@ -104,11 +104,15 @@ export const MEASURED_BY: Record<string, string> = {
 /** Types with no check today (backend isNotMeasured): listed, never counted in coverage. */
 export const NOT_MEASURED_TYPES = new Set(['api-gateway', 's3'])
 
+/** Of those, the types AWS publishes no health metric for: worded "No health metric" (O4 decision 7). */
+export const NO_HEALTH_METRIC_TYPES = new Set(['s3'])
+
 /** What the Free plan's discovery covers (awsResourceDiscovery.ts TIER_RESOURCE_TYPES.free). */
 export const FREE_DISCOVERED_TYPES = new Set(['ec2', 'ebs', 'rds', 's3'])
 
 export type MonitorRowDef =
-  | { kind: 'type'; type: string }
+  /** `label` and `key` name one signal of a type; the row keeps that type's state. */
+  | { kind: 'type'; type: string; label?: string; key?: string }
   | { kind: 'static_not_measured'; label: string }
   | { kind: 'alarms' }
   | { kind: 'slos' }
@@ -130,7 +134,9 @@ export const MONITOR_GROUPS: Array<{ title: string; rows: MonitorRowDef[] }> = [
   {
     title: 'Traffic',
     rows: [
-      { kind: 'type', type: 'load-balancer' },
+      // Both signals come from the same load balancer check, so both rows show its state (O4 decision 1).
+      { kind: 'type', type: 'load-balancer', label: 'Load balancer response time (average)' },
+      { kind: 'type', type: 'load-balancer', label: 'Load balancer 5xx rate', key: 'type:load-balancer:5xx' },
       { kind: 'static_not_measured', label: 'Network and Gateway Load Balancers' },
       { kind: 'type', type: 'cloudfront' },
       { kind: 'type', type: 'api-gateway' },
@@ -146,6 +152,7 @@ export const STATE_LABEL = {
   monitored: 'Monitored',
   none_found: (plural: string) => `No ${plural} found`,
   not_measured: 'Not measured yet',
+  no_health_metric: 'No health metric',
   no_activity: 'No activity',
   couldnt_check: "Couldn't check",
   none_set: 'None set',
@@ -198,6 +205,8 @@ export const ROW_STATUS = {
   no_activity: 'No activity',
   stopped: 'Stopped',
   not_measured: 'Not measured yet',
+  /** A not-measured row of a type AWS gives no health metric for (S3, O4 decision 7). */
+  no_health_metric: 'No health metric',
 } as const
 
 /** Reason lines; every one restates a field the backend sent (o2-step1.md §2.2, decision D4). */

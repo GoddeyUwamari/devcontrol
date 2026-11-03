@@ -98,6 +98,19 @@ describe('banner (D3 order)', () => {
     expect(b.lines[0]).toBe('2 failing · 1 needs attention · 1 CloudWatch alarm in ALARM')
   })
 
+  it('O4: issues with resources needing attention add "They\'re listed first below." after the counts', () => {
+    const b = bannerView(okResources({ ec2: bd({ passing: 1, failing: 2, needs_attention: 1 }) }), okAlarms(1))!
+    expect(b.lines).toEqual(['2 failing · 1 needs attention · 1 CloudWatch alarm in ALARM', "They're listed first below."])
+    const withFailedSource = bannerView(okResources({ ec2: bd({ failing: 1 }) }), alarmsError('failed'))!
+    expect(withFailedSource.lines).toEqual(['1 failing', "They're listed first below.", "Some checks couldn't load, so there may be more."])
+  })
+
+  it('O4: alarm-only issues don\'t claim resources are listed first', () => {
+    const b = bannerView(healthy(), okAlarms(2))!
+    expect(b.kind).toBe('issues')
+    expect(b.lines).not.toContain("They're listed first below.")
+  })
+
   it('issues: needs attention alone is warning', () => {
     expect(bannerView(okResources({ ec2: bd({ passing: 1, needs_attention: 1 }) }), okAlarms())!).toMatchObject({ kind: 'issues', tone: 'warning' })
   })
@@ -287,7 +300,8 @@ describe('by resource type', () => {
   it('not-measured types say so, and empty types are hidden', () => {
     const cards = typeCards(okResources({ s3: bd({ not_measured: 2 }), rds: ZERO }))!
     expect(cards).toHaveLength(1)
-    expect(cards[0]).toMatchObject({ title: 'S3 · 2', pill: { tone: 'neutral', text: 'Not measured yet' }, measuredBy: null })
+    // O4 decision 7: S3 has no AWS health metric, so it says so rather than "Not measured yet".
+    expect(cards[0]).toMatchObject({ title: 'S3 · 2', pill: { tone: 'neutral', text: 'No health metric' }, measuredBy: null })
   })
   it('no cards when resources did not load', () => {
     expect(typeCards({ state: 'error', kind: 'failed' })).toBeNull()
@@ -313,6 +327,51 @@ describe('what we monitor', () => {
     expect(rowOf(v, 'type:api-gateway').state).toBe('not_measured')
     for (const label of ['ElastiCache', 'SQS', 'SNS']) expect(rowOf(v, `static:${label}`)).toMatchObject({ state: 'not_measured', stateText: 'Not measured yet', reason: null })
   })
+  it('O4: Traffic splits the load balancer into response time and 5xx rate rows, in order, with one state', () => {
+    const v = monitorView(healthy(), okAlarms(), slo, known('pro'), SEE)
+    const traffic = v.groups.find((g) => g.title === 'Traffic')!
+    expect(traffic.rows.map((r) => r.label)).toEqual([
+      'Load balancer response time (average)',
+      'Load balancer 5xx rate',
+      'Network and Gateway Load Balancers',
+      'CloudFront: error rates (total, 4xx, 5xx)',
+      'API Gateway',
+      'SQS',
+      'SNS',
+    ])
+    const keys = v.groups.flatMap((g) => g.rows.map((r) => r.key))
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('O4 decision 7: S3 says "No health metric" (card and row); API Gateway stays "Not measured yet"', () => {
+    const resources = okResources({ s3: bd({ not_measured: 2 }), 'api-gateway': bd({ not_measured: 1 }) })
+    const v = monitorView(resources, okAlarms(), slo, known('pro'), SEE)
+    expect(rowOf(v, 'type:s3')).toMatchObject({ state: 'not_measured', stateText: 'No health metric', label: 'S3' })
+    expect(rowOf(v, 'type:api-gateway')).toMatchObject({ state: 'not_measured', stateText: 'Not measured yet' })
+    const cards = typeCards(resources)!
+    expect(cards.find((c) => c.type === 's3')!.pill).toEqual({ tone: 'neutral', text: 'No health metric' })
+    expect(cards.find((c) => c.type === 'api-gateway')!.pill).toEqual({ tone: 'neutral', text: 'Not measured yet' })
+  })
+
+  it.each<[string, Source<ResourcesData>, PlanInfo, string]>([
+    ['monitored', okResources({ 'load-balancer': bd({ passing: 1 }) }), known('pro'), 'monitored'],
+    ['none found', healthy(), known('pro'), 'none_found'],
+    ['discovery capped', okResources({ ec2: bd({ passing: 1 }) }, { inventory_capped: null }), known('pro'), 'couldnt_check'],
+    ['no activity', okResources({ 'load-balancer': bd({ no_activity: 1 }) }), known('pro'), 'no_activity'],
+    ['all checks failed', okResources({ 'load-balancer': bd({ check_unknown: 1, check_failed: 1 }) }), known('pro'), 'couldnt_check'],
+    ['resources failed', { state: 'error', kind: 'failed' }, known('pro'), 'couldnt_check'],
+    ['Free plan', healthy(), known('free'), 'not_in_plan'],
+    ['plan loading', healthy(), { status: 'loading', tier: 'free' }, 'checking'],
+  ])('O4: both load balancer rows share the type state (%s)', (_name, resources, plan, state) => {
+    const v = monitorView(resources, okAlarms(), slo, plan, SEE)
+    const rt = rowOf(v, 'type:load-balancer')
+    const fiveXx = rowOf(v, 'type:load-balancer:5xx')
+    expect(rt.state).toBe(state)
+    expect({ ...fiveXx, key: rt.key, label: rt.label }).toEqual(rt)
+    expect(rt.label).toBe('Load balancer response time (average)')
+    expect(fiveXx.label).toBe('Load balancer 5xx rate')
+  })
+
   it('D12: discovery not confirmed complete never says "No <type> found"', () => {
     for (const capped of [true, null]) {
       const row = rowOf(monitorView(okResources({ ec2: bd({ passing: 1 }) }, { inventory_capped: capped }), okAlarms(), slo, known('pro'), SEE), 'type:lambda')

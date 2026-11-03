@@ -16,7 +16,7 @@
  */
 import type { ObservabilityMetric, ObservabilityRow, ResourcesData, ResourcesOk, Source, TableBlock, TableQuery } from './observabilityTypes'
 import { formatCheckTime, relativeTime, type Tone } from './operationalHealthModel'
-import { KEY_METRICS, LB_FIVE_XX, ROW_REASON, ROW_STATUS, TABLE_COPY, TYPE_LABEL, TYPE_NAME, TYPE_ORDER } from './operationalHealthCopy'
+import { KEY_METRICS, LB_FIVE_XX, NO_HEALTH_METRIC_TYPES, ROW_REASON, ROW_STATUS, TABLE_COPY, TYPE_LABEL, TYPE_NAME, TYPE_ORDER } from './operationalHealthCopy'
 
 export const FIRST_PAGE: TableQuery = { q: '', filter: 'all', page: 1 }
 
@@ -41,7 +41,11 @@ export function statusView(row: ObservabilityRow, range: string, region: string)
     case 'stopped':
       return { label: ROW_STATUS.stopped, reason: detail ? `${ROW_REASON.stopped} · ${ROW_REASON.status(detail)}` : ROW_REASON.stopped, tone: 'neutral' }
     case 'not_measured':
-      return { label: ROW_STATUS.not_measured, reason: ROW_REASON.notMeasured, tone: 'neutral' }
+      return {
+        label: NO_HEALTH_METRIC_TYPES.has(row.resource_type) ? ROW_STATUS.no_health_metric : ROW_STATUS.not_measured,
+        reason: ROW_REASON.notMeasured,
+        tone: 'neutral',
+      }
     case 'unknown':
       switch (row.unknown_reason) {
         case 'no_telemetry':

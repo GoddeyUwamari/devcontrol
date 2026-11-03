@@ -386,6 +386,9 @@ describe('header and wording', () => {
     const panel = screen.getByRole('dialog')
     expect(panel).toHaveTextContent('What resource checks are')
     expect(panel).toHaveTextContent('How results are counted')
+    // O4: the monitoring page counts differently once its new version is on, so no "same count" claim.
+    expect(panel).toHaveTextContent('“N of M”: N resources have no issues detected; M is every resource reporting telemetry. A resource whose check produced no result is included in M, shown as undetermined, and never counted as passing.')
+    expect(panel).not.toHaveTextContent('the same count as the monitoring page')
     expect(panel).toHaveTextContent('not included in the Infrastructure Posture score')
     expect(panel).toHaveTextContent('Latency, error rates, application health, and resources not reporting telemetry.')
   })
