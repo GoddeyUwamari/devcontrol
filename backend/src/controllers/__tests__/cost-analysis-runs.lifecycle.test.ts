@@ -6,6 +6,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { CostRecommendationsController } from '../cost-recommendations.controller';
+import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { CostAnalysisRunsRepository, QUEUED_RUN_TIMEOUT_SECONDS } from '../../repositories/cost-analysis-runs.repository';
 import costOptimizationService from '../../services/cost-optimization.service';
 import * as scanSession from '../../services/scan-session';
@@ -164,6 +165,14 @@ describe('run states', () => {
     const [run] = await fetchRuns(orgId);
     expect(run.status).toBe('interrupted');
     expect(status).toHaveBeenCalledWith(409);
+  });
+
+  it('counts that are not known stay NULL, never 0', async () => {
+    const orgId = await insertOrg();
+    mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [] }, retiredRds]);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockResolvedValue({ insertedCount: 0 });
+    await analyze(orgId);
+    expect((await fetchRuns(orgId))[0]).toMatchObject({ status: 'completed', detected_count: null, persisted_count: null, suppressed_resolved_count: null, failed_detector_count: 0 });
   });
 
   it('a run write failure never fails the analysis', async () => {

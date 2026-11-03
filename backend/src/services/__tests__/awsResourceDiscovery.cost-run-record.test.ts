@@ -1,18 +1,12 @@
 /**
- * The discovery path's run record, and the rule that a failed cost step never
- * makes discovery itself look failed: other pages read the job's status as
- * discovery's own (activity feed, AI chat freshness, Services, coverage), so a
- * cost failure is carried by cost_analysis_completed and the run record only.
- * Same harness as awsResourceDiscovery.first-insight-funnel.test.ts, but with
- * every non-cost phase left to report nothing wrong: job status is asserted
- * against a baseline scan with the cost step healthy.
+ * The discovery path's run record, and how a failed cost step is recorded.
+ * Same harness as awsResourceDiscovery.first-insight-funnel.test.ts.
  */
 import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
-import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { CostAnalysisRunsRepository } from '../../repositories/cost-analysis-runs.repository';
 import { LeaseLostError } from '../scan-lease';
 import type { DetectorObservation } from '../cost-optimization.service';
@@ -145,20 +139,10 @@ describe('discovery run record', () => {
   });
 });
 
-describe('a failed cost step does not make discovery look failed', () => {
-  /** The job's status when the only thing that differs is the cost step. */
-  async function baselineStatus(): Promise<string> {
-    const orgId = await insertOrg();
-    mockClients();
-    mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [] }, retiredRds]);
-    await scan(orgId);
-    const { status } = await fetchJob(orgId);
-    jest.restoreAllMocks();
-    return status;
-  }
-
-  it('every detector failed: job status unchanged, cost_analysis_completed false, run failed', async () => {
-    const expected = await baselineStatus();
+// That the job's own status is untouched is proved in m4b-leases.test.ts, whose fake
+// clients let a scan complete; here the other phases fail, so only the cost signals are read.
+describe('a failed cost step is recorded', () => {
+  it('every detector failed: cost_analysis_completed false, run failed, job text names it', async () => {
     const orgId = await insertOrg();
     mockClients();
     mockAnalysis([{ issue: 'Idle Instance', success: false, recommendations: [] }, retiredRds], false);
@@ -166,26 +150,22 @@ describe('a failed cost step does not make discovery look failed', () => {
     const result = await scan(orgId);
 
     const job = await fetchJob(orgId);
-    expect(job.status).toBe(expected);
     expect(job.cost_analysis_completed).toBe(false);
     expect(job.error_message).toContain('Cost analysis: no check completed');
-    expect(result.errors.some((message) => message === 'Cost analysis: no check completed')).toBe(true);
+    expect(result.errors).toContain('Cost analysis: no check completed');
     expect(await fetchRun(orgId)).toMatchObject({ status: 'failed', failed_detector_count: 2 });
   });
 
-  it('the cost step threw: job status unchanged, cost_analysis_completed false, run failed', async () => {
-    const expected = await baselineStatus();
+  it('the cost step threw: cost_analysis_completed false, run failed', async () => {
     const orgId = await insertOrg();
     mockClients();
-    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockRejectedValue(new Error('detector boom'));
-    jest.spyOn(CostRecommendationsRepository.prototype, 'getStats');
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockRejectedValue(new Error('detector failed'));
 
     await scan(orgId);
 
     const job = await fetchJob(orgId);
-    expect(job.status).toBe(expected);
     expect(job.cost_analysis_completed).toBe(false);
-    expect(job.error_message).toContain('Cost analysis: detector boom');
+    expect(job.error_message).toContain('Cost analysis: detector failed');
     expect(await fetchRun(orgId)).toMatchObject({ status: 'failed', detected_count: null });
   });
 });
