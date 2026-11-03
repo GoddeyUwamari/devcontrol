@@ -136,7 +136,7 @@ function mockAwsClients(overrides: Clients = {}) {
 }
 
 function mockCostStep() {
-  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: false, homeRegion: HOME });
+  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true, homeRegion: HOME });
 }
 
 async function jobs(orgId: string) {
@@ -233,6 +233,35 @@ describe('one account, one region: a scan behaves as before, holding its lease',
     const lease = await leaseRow(orgId);
     expect(lease).toMatchObject({ aws_account_id: ACCOUNT, scan_kind: 'discovery', job_id: result.job_id });
     expect(lease.released_at).toBeInstanceOf(Date);
+  });
+
+  // Other pages read the job's status as discovery's own: a failed cost step says the
+  // cost step failed, never that discovery did.
+  it.each([
+    ['the cost step threw', () => jest.spyOn(costOptimizationService, 'analyzeAllResources').mockRejectedValue(new Error('detector failed')), 'Cost analysis: detector failed'],
+    ['no detector completed', () => jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [{ issue: 'Idle Instance', success: false, recommendations: [] }], riRecommendations: [], riSucceeded: false, homeRegion: HOME }), 'Cost analysis: none of the checks completed.'],
+  ])('%s: the job stays completed; cost_analysis_completed and the job text carry the failure', async (_label, mockFailure, text) => {
+    const orgId = await insertOrg();
+    mockAwsClients();
+    mockFailure();
+
+    const result = await service().discoverAllResources(orgId);
+
+    const [job] = await jobs(orgId);
+    expect(job).toMatchObject({ status: 'completed', error_message: text });
+    expect(result.errors).toEqual([text]);
+    const { rows } = await pool.query(`SELECT cost_analysis_completed FROM resource_discovery_jobs WHERE id = $1`, [job.id]);
+    expect(rows[0].cost_analysis_completed).toBe(false);
+  });
+
+  it('a discovery failure beside a cost failure still fails the job', async () => {
+    const orgId = await insertOrg();
+    mockAwsClients({ ec2: fake({ DescribeVolumesCommand: () => ({ Volumes: [] }), DescribeSecurityGroupsCommand: () => ({ SecurityGroups: [] }) }) });
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockRejectedValue(new Error('detector failed'));
+
+    await service().discoverAllResources(orgId);
+
+    expect((await jobs(orgId))[0].status).toBe('failed');
   });
 
   it('the approved texts are exactly as approved', () => {

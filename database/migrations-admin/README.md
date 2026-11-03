@@ -87,8 +87,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202610102024_drop_auto_detect_resource_ownership.sql`**,
 **`202610112300_create_framework_evaluation_persistence.sql`**,
 **`202610161210_create_resource_health_evaluations.sql`**,
-**`202610191200_create_multi_region_scan_foundation.sql`**, and
-**`202610281200_create_resource_telemetry_observations.sql`**.
+**`202610191200_create_multi_region_scan_foundation.sql`**,
+**`202610281200_create_resource_telemetry_observations.sql`**, and
+**`202611021200_extend_cost_analysis_runs.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -894,3 +895,32 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 It drops the two tables and this migration's `schema_migrations` row, and
 refuses if anything else references them. No release needs rolling back
 first; stored Last seen history is discarded.
+
+## Classification -- `202611021200_extend_cost_analysis_runs.sql`
+
+Extends `cost_analysis_runs` into the one record of every cost analysis: manual
+runs and the cost step of discovery scans, with detector outcomes and
+reconciling counts. `cost_analysis_runs` itself was created on the ordinary
+path, and `devcontrol` owns it in production. This file is applied through the
+administrative track anyway so that it can be applied by hand **before** the
+code that uses it is merged.
+
+It is additive and safe under the release already running: every new column is
+nullable or defaulted, and the `status` CHECK only widens. Owner, grants and
+row-level security are unchanged. Because the owner bypasses row-level security
+here, every statement on this table carries an explicit `organization_id`
+predicate, which `cost-analysis-runs.tenant-scope.test.ts` enforces.
+
+### Rollback
+
+`202611021200_extend_cost_analysis_runs_rollback.sql`, manual only, as
+`postgres`, in one transaction, **after** reverting the application:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611021200_extend_cost_analysis_runs_rollback.sql
+```
+
+It deletes discovery rows (they would otherwise read as manual runs), turns
+`partial` and `interrupted` rows into `failed`, and drops the added columns, so
+the counts are discarded.

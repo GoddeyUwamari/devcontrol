@@ -73,6 +73,29 @@ export function isScanAlreadyRunning(err: unknown): err is ScanAlreadyRunningErr
   return err instanceof ScanAlreadyRunningError;
 }
 
+/**
+ * Analyze ran without the scan lease, so nothing it found was saved (its account
+ * lookup failed, or the account's role ARN names no account).
+ */
+export class CostResultsNotSavedError extends Error {
+  readonly code = 'COST_RESULTS_NOT_SAVED';
+
+  constructor() {
+    super('COST_RESULTS_NOT_SAVED: analysis ran without a scan lease; nothing was saved');
+    this.name = 'CostResultsNotSavedError';
+  }
+}
+
+/** No detector of an Analyze completed: there is no result to report. */
+export class CostChecksFailedError extends Error {
+  readonly code = 'COST_CHECKS_FAILED';
+
+  constructor() {
+    super('COST_CHECKS_FAILED: no cost check completed');
+    this.name = 'CostChecksFailedError';
+  }
+}
+
 /** A manual Sync or Analyze waited SCAN_WAIT_CAP_MS for a running scan: answered 409 with SCAN_BUSY_MESSAGE. */
 export class ScanBusyError extends Error {
   readonly code = 'SCAN_BUSY';
