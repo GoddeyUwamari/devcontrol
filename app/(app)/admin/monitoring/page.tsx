@@ -216,6 +216,9 @@ function MonitoringContent() {
   const fetchCloudWatchMetrics = useCallback(async (range?: string, forceRefresh?: boolean) => {
     const result = await requestCloudWatchMetrics({ range, forceRefresh })
     if (result.kind === 'ok') { setCloudWatchMetrics(result.data); return result.data }
+    // The held answer must go too: it gates the connected pill, "Last checked" and the
+    // error card below, so keeping it after a failure shows a blank or stale page.
+    setCloudWatchMetrics(null)
     return null
   }, [])
 
@@ -302,10 +305,11 @@ function MonitoringContent() {
     try { const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken'); const res = await fetch(`${API_URL}/api/prometheus/diagnose`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const data = await res.json(); if (data.success) setDiagnosticResult(data.data) } catch {} finally { setIsDiagnosing(false) }
   }, [])
 
+  // `cwData` is this refresh's own result. A null means it failed, so there is no fallback
+  // to `cloudWatchMetrics`: that would be an earlier answer, possibly for another range.
   const fetchMetrics = useCallback(async (cwData?: any, connectedOverride?: boolean) => {
-    const cw = cwData ?? cloudWatchMetrics
-    if (cw && !demoMode) {
-      const data = cw
+    if (cwData && !demoMode) {
+      const data = cwData
       const hasUptime = data.uptime !== null && data.uptime !== undefined
       const hasResponseTime = data.avgResponseTimeMs !== null && data.avgResponseTimeMs !== undefined
       const hasRequests = data.requestsPerMinute !== null && data.requestsPerMinute !== undefined
@@ -350,6 +354,7 @@ function MonitoringContent() {
       // data is sourced, and querying it here would show a misleading "can't reach
       // Prometheus" error for what's actually a CloudWatch/IAM-side hiccup.
       setLoading(false); setMetricsAvailable(false)
+      setCoverage(null); setServices([]); setHealthSummary(null); setPagination(null)
       setError({
         type: 'connection',
         message: "Can't fetch CloudWatch metrics right now",

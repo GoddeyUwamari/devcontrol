@@ -5,7 +5,7 @@
  *   module-load counter stays at 0, and the same counter reaches 1 with the flag on, so the probe is live.
  *   Each test re-registers the mock with vi.doMock after vi.resetModules(), so the counter is per test;
  * - the legacy page is the page at a93daef: the file differs from it only by two imports, the rename of
- *   MonitoringPage to MonitoringContent, and the wrapper.
+ *   MonitoringPage to MonitoringContent, the wrapper, and the failed-request fix.
  * The legacy render and its requests are pinned for every off value by monitoring-flag-off.test.tsx.
  */
 const m = vi.hoisted(() => ({ v2Loads: 0, demo: false, salesDemo: false, log: [] as string[] }))
@@ -115,11 +115,29 @@ describe('MonitoringContent is the page at a93daef', () => {
   const ADDED_IMPORTS = "import dynamic from 'next/dynamic'\nimport { isObservabilityV2Enabled } from './observabilityV2Flag'\n"
   const WRAPPER = /\n\nconst OperationalHealthV2 = dynamic\(\(\) => import\('\.\/operational-health\/OperationalHealthV2'\)\)\n\n\/\*\*[\s\S]*?\*\/\nexport default function MonitoringPage\(\) \{\n  const demoMode = useDemoMode\(\)\n  const salesDemoMode = useSalesDemo\(\(state\) => state\.enabled\)\n  if \(!isObservabilityV2Enabled\(\) \|\| demoMode \|\| salesDemoMode\) return <MonitoringContent \/>\n  return <OperationalHealthV2 \/>\n\}\n$/
 
-  it('the file is a93daef plus exactly the two imports, the rename and the wrapper', () => {
+  // The one approved change since a93daef: a failed metrics request shows the error card
+  // (monitoring-legacy-failure.test.tsx). Each pair is [the file now, the file at a93daef].
+  const FAILED_REQUEST_FIX: Array<[string, string]> = [
+    [
+      "    // The held answer must go too: it gates the connected pill, \"Last checked\" and the\n    // error card below, so keeping it after a failure shows a blank or stale page.\n    setCloudWatchMetrics(null)\n    return null\n",
+      '    return null\n',
+    ],
+    [
+      "  // `cwData` is this refresh's own result. A null means it failed, so there is no fallback\n  // to `cloudWatchMetrics`: that would be an earlier answer, possibly for another range.\n  const fetchMetrics = useCallback(async (cwData?: any, connectedOverride?: boolean) => {\n    if (cwData && !demoMode) {\n      const data = cwData\n",
+      '  const fetchMetrics = useCallback(async (cwData?: any, connectedOverride?: boolean) => {\n    const cw = cwData ?? cloudWatchMetrics\n    if (cw && !demoMode) {\n      const data = cw\n',
+    ],
+    [
+      '      setCoverage(null); setServices([]); setHealthSummary(null); setPagination(null)\n',
+      '',
+    ],
+  ]
+
+  it('the file is a93daef plus exactly the two imports, the rename, the wrapper and the failed-request fix', () => {
     expect(source.split(ADDED_IMPORTS)).toHaveLength(2)
     expect(source.split('function MonitoringContent() {\n')).toHaveLength(2)
     expect(WRAPPER.test(source)).toBe(true)
-    const restored = source
+    for (const [now] of FAILED_REQUEST_FIX) expect(source.split(now)).toHaveLength(2)
+    const restored = FAILED_REQUEST_FIX.reduce((text, [now, then]) => text.replace(now, then), source)
       .replace(ADDED_IMPORTS, '')
       .replace('function MonitoringContent() {\n', 'export default function MonitoringPage() {\n')
       .replace(WRAPPER, '')
