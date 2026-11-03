@@ -85,6 +85,21 @@ export function pickLatestAnalysis(params: {
   return manual ?? scheduled
 }
 
+const SCAN_FAILED_FALLBACK = 'Scan failed — try again'
+
+/**
+ * What a failed Analyze tells the user: the backend's own message from the
+ * response body. A request error's message is transport text ("Request failed
+ * with status code 503"), so without a body message it gets the fallback.
+ */
+export function analyzeFailureMessage(err: unknown): string {
+  const failure = err as { response?: { data?: { error?: unknown } }; isAxiosError?: boolean; message?: unknown } | null | undefined
+  const bodyMessage = failure?.response?.data?.error
+  if (typeof bodyMessage === 'string' && bodyMessage.trim()) return bodyMessage
+  if (failure?.response || failure?.isAxiosError) return SCAN_FAILED_FALLBACK
+  return typeof failure?.message === 'string' && failure.message.trim() ? failure.message : SCAN_FAILED_FALLBACK
+}
+
 export interface AnalysisStatusInput {
   /** undefined while the AWS-accounts check is still loading */
   awsConnected: boolean | undefined

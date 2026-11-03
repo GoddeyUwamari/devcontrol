@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice';
-import { deriveAnalysisStatus, pickLatestAnalysis, type AnalysisStatusKey, type AnalysisSource, type NormalizedAnalysis } from './costOptimizationStatus';
+import { analyzeFailureMessage, deriveAnalysisStatus, pickLatestAnalysis, type AnalysisStatusKey, type AnalysisSource, type NormalizedAnalysis } from './costOptimizationStatus';
 
 // Fetching more than this in one page is an edge case; the KPI tile (sourced
 // from /stats, not this list) always shows the true total regardless, and
@@ -271,8 +271,10 @@ export default function CostOptimizationPage() {
         queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
       ]);
       toast.success(`Scan complete — ${result.recommendationsFound} opportunit${result.recommendationsFound !== 1 ? 'ies' : 'y'} found`);
-    } catch (err: any) {
-      toast.error(err?.message || 'Scan failed — try again');
+    } catch (err: unknown) {
+      toast.error(analyzeFailureMessage(err));
+      // The backend recorded this attempt too: the status must not keep showing the previous one.
+      await queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] });
     } finally {
       setIsAnalyzing(false);
     }
