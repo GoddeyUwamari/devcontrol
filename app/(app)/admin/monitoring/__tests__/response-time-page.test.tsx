@@ -191,7 +191,13 @@ describe('the chart', () => {
     await mountWith(res(over))
     expect(chart()).toBeNull()
     expect(screen.queryByTestId('rc-line-chart')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/Load balancer response time/)
+    // O4: "What we monitor" names the signal as a row ("Load balancer response time (average)");
+    // no chart text may appear anywhere else.
+    const outsideMonitor = document.body.cloneNode(true) as HTMLElement
+    const monitor = outsideMonitor.querySelector('[aria-labelledby="health-monitor"]')
+    expect(monitor).not.toBeNull()
+    monitor!.remove()
+    expect(outsideMonitor.textContent).not.toMatch(/Load balancer response time/)
   })
 
   it('a range change: no chart for the old range while the new answer loads, then the new one', async () => {

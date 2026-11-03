@@ -464,4 +464,29 @@ describe('rendering', () => {
     expect(banner).toHaveAttribute('data-kind', 'nothing_measured')
     expect(banner).toHaveAttribute('data-tone', 'neutral')
   })
+
+  it('O4: Traffic lists the load balancer response time and 5xx rate as two rows with one state', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    const rt = screen.getByTestId('monitor-type:load-balancer')
+    const fiveXx = screen.getByTestId('monitor-type:load-balancer:5xx')
+    expect(rt).toHaveTextContent('Load balancer response time (average)')
+    expect(fiveXx).toHaveTextContent('Load balancer 5xx rate')
+    expect(rt).toHaveAttribute('data-state', 'none_found')
+    expect(fiveXx).toHaveAttribute('data-state', 'none_found')
+    expect(rt).toHaveTextContent('No load balancers found')
+    expect(fiveXx).toHaveTextContent('No load balancers found')
+    expect(screen.queryByText(/Application Load Balancers only/)).toBeNull()
+  })
+
+  it('O4: the issues banner says the resources are listed first below', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    const failing = { ...ZERO, count: 2, measured: 2, passing: 1, failing: 1, reporting: 2 }
+    await settle(resourcesOk('1h', { type_breakdown: { ec2: failing }, fleet_summary: failing }))
+    const banner = screen.getByTestId('health-banner')
+    expect(banner).toHaveAttribute('data-kind', 'issues')
+    expect(within(banner).getByText("They're listed first below.")).toBeInTheDocument()
+  })
 })

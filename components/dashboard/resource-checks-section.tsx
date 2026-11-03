@@ -157,7 +157,7 @@ function SectionInfo() {
         <p className="m-0">The latest check result for each discovered AWS resource that reports telemetry: {lowerFirst(RESOURCE_CHECKS_SCOPE)}</p>
       </EvidenceSection>
       <EvidenceSection heading="How results are counted">
-        <p className="m-0">“N of M”: N resources have no issues detected; M is every resource reporting telemetry, the same count as the monitoring page. A resource whose check produced no result is included in M, shown as undetermined, and never counted as passing.</p>
+        <p className="m-0">“N of M”: N resources have no issues detected; M is every resource reporting telemetry. A resource whose check produced no result is included in M, shown as undetermined, and never counted as passing.</p>
       </EvidenceSection>
       <EvidenceSection heading="Separate from the posture score">
         <p className="m-0">Resource check results are not included in the Infrastructure Posture score.</p>

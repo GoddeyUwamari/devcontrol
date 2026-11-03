@@ -20,6 +20,7 @@ import {
   FREE_DISCOVERED_TYPES,
   MEASURED_BY,
   MONITOR_GROUPS,
+  NO_HEALTH_METRIC_TYPES,
   NOT_MEASURED_TYPES,
   PAGE_COPY,
   PAGE_HREF,
@@ -162,6 +163,8 @@ export function bannerView(resources: Source<ResourcesData>, alarms: Source<Alar
     if (f && f.needs_attention > 0) parts.push(`${n(f.needs_attention)} ${f.needs_attention === 1 ? 'needs' : 'need'} attention`)
     if (a && firing > 0) parts.push(`${atLeast(firing, a.in_alarm_complete)} CloudWatch ${firing === 1 && a.in_alarm_complete ? 'alarm' : 'alarms'} in ALARM`)
     const lines = [parts.join(' · ')]
+    // The table orders failing and needs-attention rows first (O4 decision 4).
+    if (attention > 0) lines.push("They're listed first below.")
     if (sourceFailed) lines.push("Some checks couldn't load, so there may be more.")
     return {
       kind: 'issues',
@@ -361,6 +364,9 @@ export interface TypeCard {
   measuredBy: string | null
 }
 
+/** "No health metric" for a type AWS gives no health signal for (S3), else "Not measured yet". */
+const notMeasuredLabel = (type: string) => (NO_HEALTH_METRIC_TYPES.has(type) ? STATE_LABEL.no_health_metric : STATE_LABEL.not_measured)
+
 /** Worst state first: failing, needs attention, can't be checked, passing. Text carries the meaning. */
 function typeCard(type: string, b: Breakdown): TypeCard {
   const title = `${TYPE_LABEL[type] ?? type} · ${n(b.count)}`
@@ -375,7 +381,7 @@ function typeCard(type: string, b: Breakdown): TypeCard {
   const measuredBy = MEASURED_BY[type] ?? null
 
   if (NOT_MEASURED_TYPES.has(type) || b.not_measured === b.count) {
-    return { type, title, pill: { tone: 'neutral', text: STATE_LABEL.not_measured }, detail: null, measuredBy: null }
+    return { type, title, pill: { tone: 'neutral', text: notMeasuredLabel(type) }, detail: null, measuredBy: null }
   }
   if (b.measured === 0) {
     return { type, title, pill: { tone: 'neutral', text: 'None measured' }, detail: details.join(' · ') || null, measuredBy }
@@ -420,13 +426,13 @@ export interface MonitorGroup {
   rows: MonitorRow[]
 }
 
-function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo): MonitorRow {
-  const key = `type:${type}`
+function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo, signal?: { label?: string; key?: string }): MonitorRow {
+  const key = signal?.key ?? `type:${type}`
   const signals = MEASURED_BY[type]
-  const label = signals ? `${TYPE_LABEL[type]}: ${signals}` : TYPE_LABEL[type]
+  const label = signal?.label ?? (signals ? `${TYPE_LABEL[type]}: ${signals}` : TYPE_LABEL[type])
   const row = (state: MonitorState, stateText: string, reason: string | null = null): MonitorRow => ({ key, label, state, stateText, reason, link: null, retry: null })
 
-  if (NOT_MEASURED_TYPES.has(type)) return row('not_measured', STATE_LABEL.not_measured)
+  if (NOT_MEASURED_TYPES.has(type)) return row('not_measured', notMeasuredLabel(type))
   // F2: a type the Free plan doesn't discover depends on the plan; until it's known, never "No … found".
   if (!FREE_DISCOVERED_TYPES.has(type)) {
     if (plan.status === 'loading') return row('checking', STATE_LABEL.checking)
@@ -521,7 +527,7 @@ export function monitorView(
   const rowFor = (def: MonitorRowDef): MonitorRow => {
     switch (def.kind) {
       case 'type':
-        return typeRow(def.type, resources, plan)
+        return typeRow(def.type, resources, plan, def)
       case 'static_not_measured':
         return staticNotMeasured(def.label)
       case 'alarms':
