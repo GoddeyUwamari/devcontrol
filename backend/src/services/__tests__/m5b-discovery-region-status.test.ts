@@ -134,7 +134,7 @@ function mockAwsClients(answers: Answers = {}, home = HOME) {
     getDynamoDBClientForRegion: () => ({}), getApplicationAutoScalingClientForRegion: () => ({}), getCloudWatchClientForRegion: () => ({}),
     getS3ClientForRegion: () => s3,
   } as any);
-  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: false, homeRegion: home });
+  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true, homeRegion: home });
   return { ec2, rds, s3, lambda, elb, cloudFront, iam };
 }
 

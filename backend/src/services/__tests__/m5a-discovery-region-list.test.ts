@@ -110,7 +110,7 @@ function mockAwsClients(describeRegions?: (input: any) => any) {
     resourceExplorer: explorer(),
     getDynamoDBClientForRegion: () => ({}), getApplicationAutoScalingClientForRegion: () => ({}), getCloudWatchClientForRegion: () => ({}),
   } as any);
-  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: false, homeRegion: HOME });
+  jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true, homeRegion: HOME });
   return { ec2, rds, s3, iam };
 }
 
