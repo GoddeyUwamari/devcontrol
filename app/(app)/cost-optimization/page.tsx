@@ -371,8 +371,8 @@ export default function CostOptimizationPage() {
             </div>
           ) : error ? (
             <div className="bg-white border border-red-100 rounded-2xl p-12 text-center">
-              <p className="text-ui font-semibold text-slate-900 mb-2">Couldn&apos;t load recommendations</p>
-              <p className="text-ui text-ink-muted mb-4">{(error as Error).message || 'Something went wrong.'}</p>
+              {/* Fixed text: never the request error's own message (transport text such as "Request failed with status code 500"). */}
+              <p className="text-ui font-semibold text-slate-900 mb-4">Couldn&apos;t load recommendations. Try again.</p>
               <button onClick={() => refetch()} className="bg-violet-700 hover:bg-violet-800 text-white text-label font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors">
                 Try again
               </button>

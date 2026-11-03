@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AxiosError, type AxiosResponse } from 'axios'
 import CostOptimizationPage from '../page'
 import { PRODUCTION_HIDDEN, RAW_JOB_TEXT, job, run } from './fixtures'
 
@@ -225,6 +226,29 @@ describe('fetch failures are never 0, $0, Never or an endless skeleton', () => {
     expect(screen.queryByText('Connect AWS to check for savings')).not.toBeInTheDocument()
     expect(within(kpiCard('Last Analysis')).getByText('Unavailable')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /run cost analysis/i })).toBeEnabled()
+  })
+})
+
+describe('the recommendations list fails to load', () => {
+  it('shows the fixed text with the retry, never axios transport text or the response body', async () => {
+    const transport = new AxiosError('Request failed with status code 500', 'ERR_BAD_RESPONSE', undefined, undefined, {
+      status: 500,
+      data: { success: false, error: 'AccessDenied: arn:aws:iam::123456789012:role/placeholder-role' },
+    } as AxiosResponse)
+    expect(transport.message).toBe('Request failed with status code 500')
+    svc.getAll.mockRejectedValue(transport)
+    const { container } = renderPage()
+
+    expect(await screen.findByText("Couldn't load recommendations. Try again.")).toBeInTheDocument()
+    expect(container.textContent).not.toContain('Request failed with status code')
+    expect(container.textContent).not.toContain('arn:aws')
+    expect(container.textContent).not.toContain('Something went wrong.')
+
+    svc.getAll.mockResolvedValue([])
+    // Status and totals loaded, so the list's retry is the only one on the page.
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(screen.queryByText("Couldn't load recommendations. Try again.")).not.toBeInTheDocument())
+    expect(svc.getAll).toHaveBeenCalledTimes(2)
   })
 })
 
