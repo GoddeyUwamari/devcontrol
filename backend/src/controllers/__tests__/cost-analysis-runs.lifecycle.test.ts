@@ -135,7 +135,11 @@ describe('run states', () => {
     const { status, json } = await analyze(orgId);
     const [run] = await fetchRuns(orgId);
 
-    expect(run).toMatchObject({ status: 'failed', failed_detector_count: 2, detected_count: 0 });
+    // A run that evaluated nothing has no counts: 0 would read as "nothing detected".
+    expect(run).toMatchObject({
+      status: 'failed', failed_detector_count: 2, detected_count: null, new_count: null, refreshed_count: null,
+      suppressed_resolved_count: null, suppressed_dismissed_count: null, duplicate_count: null, persisted_count: null,
+    });
     expect(run.checks).toHaveLength(2);
     expect(status).toHaveBeenCalledWith(503);
     expect(json).toHaveBeenCalledTimes(1);
@@ -152,10 +156,10 @@ describe('run states', () => {
     expect(run).toMatchObject({ status: 'failed', detected_count: null, persisted_count: null });
     expect(run.error_message).toContain('COST_RESULTS_NOT_SAVED');
     expect(status).toHaveBeenCalledWith(503);
-    expect(json).toHaveBeenCalledWith({ success: false, error: 'The analysis ran, but its results could not be saved. Try again.' });
+    expect(json).toHaveBeenCalledWith({ success: false, error: "The analysis ran, but its results couldn't be saved. Try again." });
     const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM cost_recommendations WHERE organization_id = $1`, [orgId]);
     expect(rows[0].count).toBe(0);
-    expect((await list(orgId))[0].error_message).toBe('The analysis ran, but its results could not be saved. Try again.');
+    expect((await list(orgId))[0].error_message).toBe("The analysis ran, but its results couldn't be saved. Try again.");
   });
 
   it('interrupted: a lease lost mid-run is not a failure of the analysis', async () => {
@@ -224,6 +228,15 @@ describe('recoverInterrupted', () => {
     expect((await fetchRuns(orgId))[0].completed_at).not.toBeNull();
   });
 
+  it('never closes a run holding a newer lease: a worker that lost its lease cannot touch its successor', async () => {
+    const orgId = await insertOrg();
+    const run = await runs.create(orgId);
+    const lost = new Date(Date.now() - 60_000);
+    await runs.markLeaseAcquired(run.id, orgId, new Date(lost.getTime() + 10_000));
+    expect(await recover(orgId, lost)).toBe(0);
+    expect((await fetchRuns(orgId))[0].status).toBe('running');
+  });
+
   it('leaves a queued manual run alone', async () => {
     const orgId = await insertOrg();
     await runs.create(orgId);
@@ -279,12 +292,12 @@ describe('GET /analysis-runs', () => {
     mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [] }, { issue: 'Unused Elastic IP', success: false, recommendations: [] }, retiredRds]);
     await analyze(orgId);
     const [partial] = await list(orgId);
-    expect(partial).toMatchObject({ status: 'failed', run_state: 'partial', error_message: 'Some cost checks did not complete.' });
+    expect(partial).toMatchObject({ status: 'failed', run_state: 'partial', error_message: "Some cost checks didn't complete, so these results may be incomplete." });
 
     const run = await runs.create(orgId);
     await runs.markInterrupted(run.id, orgId);
     const [interrupted] = await list(orgId);
-    expect(interrupted).toMatchObject({ status: 'failed', run_state: 'interrupted', error_message: 'The analysis was interrupted before it finished.' });
+    expect(interrupted).toMatchObject({ status: 'failed', run_state: 'interrupted', error_message: 'The analysis was interrupted before it finished. Run it again.' });
   });
 
   it('a row from before this change keeps NULL counts, never 0', async () => {
@@ -313,6 +326,14 @@ describe('GET /analysis-runs', () => {
     expect((await list(orgId))[0].run_state).toBe('running');
     await pool.query(`UPDATE cost_analysis_runs SET created_at = NOW() - make_interval(secs => $1) WHERE id = $2`, [QUEUED_RUN_TIMEOUT_SECONDS + 60, run.id]);
     expect((await list(orgId))[0].run_state).toBe('interrupted');
+  });
+
+  it('an unexpected failure answers fixed text: the page shows this body, so never raw AWS text', async () => {
+    const orgId = await insertOrg();
+    jest.spyOn(costOptimizationService, 'analyzeAllResources').mockRejectedValue(new Error('AccessDenied: arn:aws:iam::123456789012:role/placeholder'));
+    const { status, json } = await analyze(orgId);
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({ success: false, error: 'The analysis did not complete due to an unexpected error.' });
   });
 
   it('never returns raw error text or the lease fields', async () => {

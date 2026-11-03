@@ -224,7 +224,7 @@ const UNFENCED: Fenced = (fn) => fn();
 export const UPSERT_BATCH_SIZE = 200;
 
 /** The job's error text when no cost detector completed. */
-const COST_NO_CHECK_COMPLETED = 'no check completed';
+const COST_NO_CHECK_COMPLETED = 'none of the checks completed.';
 
 /**
  * A lost lease, or a second eligible AWS account seen by a fence, stops the scan:

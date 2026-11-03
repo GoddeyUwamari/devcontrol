@@ -28,9 +28,26 @@ function statementsOnTable(text: string): string[] {
   return strings.filter((s) => /\b(FROM|INTO|UPDATE|JOIN)\s+cost_analysis_runs\b/i.test(s));
 }
 
-export function hasOrganizationPredicate(statement: string): boolean {
+/** `statement` without any parenthesised subquery, however deeply nested. */
+function withoutSubqueries(statement: string): string {
+  let result = '';
+  let depth = 0;
+  for (let i = 0; i < statement.length; i += 1) {
+    if (depth === 0 && /^\(\s*SELECT\b/i.test(statement.slice(i))) depth = 1;
+    else if (depth > 0 && statement[i] === '(') depth += 1;
+    else if (depth > 0 && statement[i] === ')') depth -= 1;
+    else if (depth === 0) result += statement[i];
+  }
+  return result;
+}
+
+/**
+ * The statement's own WHERE must name the table's organization_id: a predicate
+ * inside a subquery, or on another alias, scopes something else.
+ */
+function hasOrganizationPredicate(statement: string): boolean {
   if (/INSERT\s+INTO\s+cost_analysis_runs\s*\(\s*organization_id\b/i.test(statement)) return true;
-  return /WHERE[\s\S]*\b(r\.)?organization_id\s*=\s*\$\d/i.test(statement);
+  return /WHERE[\s\S]*(?<![\w.])(r\.)?organization_id\s*=\s*\$\d/i.test(withoutSubqueries(statement));
 }
 
 describe('static: every statement on cost_analysis_runs names the organization', () => {
@@ -50,6 +67,30 @@ describe('static: every statement on cost_analysis_runs names the organization',
     expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs WHERE id = $1')).toBe(false);
     expect(hasOrganizationPredicate('UPDATE cost_analysis_runs SET status = $1')).toBe(false);
     expect(hasOrganizationPredicate('INSERT INTO cost_analysis_runs (status) VALUES ($1)')).toBe(false);
+  });
+
+  it('a predicate inside a subquery does not scope the statement', () => {
+    expect(hasOrganizationPredicate(
+      `SELECT r.*, CASE WHEN EXISTS (SELECT 1 FROM aws_scan_leases l WHERE l.organization_id = $1) THEN 1 END
+         FROM cost_analysis_runs r WHERE r.source = $2`
+    )).toBe(false);
+    expect(hasOrganizationPredicate(
+      `SELECT * FROM cost_analysis_runs WHERE id IN (SELECT id FROM other WHERE organization_id = $1)`
+    )).toBe(false);
+    expect(hasOrganizationPredicate(
+      `SELECT * FROM cost_analysis_runs r WHERE r.id = $2 AND EXISTS (SELECT 1 FROM other o WHERE (o.a = 1) AND o.organization_id = $1)`
+    )).toBe(false);
+  });
+
+  it('a predicate on another alias does not scope the statement', () => {
+    expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs r JOIN other o ON o.id = r.id WHERE o.organization_id = $1')).toBe(false);
+  });
+
+  it('accepts a statement scoped beside a subquery', () => {
+    expect(hasOrganizationPredicate(
+      `SELECT r.*, CASE WHEN EXISTS (SELECT 1 FROM aws_scan_leases l WHERE l.organization_id = $1) THEN 1 END
+         FROM cost_analysis_runs r WHERE r.organization_id = $1`
+    )).toBe(true);
   });
 });
 

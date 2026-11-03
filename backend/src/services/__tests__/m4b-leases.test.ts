@@ -239,7 +239,7 @@ describe('one account, one region: a scan behaves as before, holding its lease',
   // cost step failed, never that discovery did.
   it.each([
     ['the cost step threw', () => jest.spyOn(costOptimizationService, 'analyzeAllResources').mockRejectedValue(new Error('detector failed')), 'Cost analysis: detector failed'],
-    ['no detector completed', () => jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [{ issue: 'Idle Instance', success: false, recommendations: [] }], riRecommendations: [], riSucceeded: false, homeRegion: HOME }), 'Cost analysis: no check completed'],
+    ['no detector completed', () => jest.spyOn(costOptimizationService, 'analyzeAllResources').mockResolvedValue({ observations: [{ issue: 'Idle Instance', success: false, recommendations: [] }], riRecommendations: [], riSucceeded: false, homeRegion: HOME }), 'Cost analysis: none of the checks completed.'],
   ])('%s: the job stays completed; cost_analysis_completed and the job text carry the failure', async (_label, mockFailure, text) => {
     const orgId = await insertOrg();
     mockAwsClients();

@@ -133,13 +133,14 @@ export class CostAnalysisRunsRepository {
    * Marks a run failed, storing the full real error for server-side
    * diagnostics. GET /api/cost-recommendations/analysis-runs deliberately
    * does not return this column verbatim to the frontend. `detail` is given
-   * when detectors ran, and none completed.
+   * when detectors ran and none completed: its counts stay NULL, because a run
+   * that evaluated nothing has no counts, and 0 would read as "nothing detected".
    */
   async markFailed(
     id: string,
     organizationId: string,
     errorMessage: string,
-    detail?: CostAnalysisRunDetail
+    detail?: Pick<CostAnalysisRunDetail, 'summary'>
   ): Promise<void> {
     await this.withOrgClient(organizationId, async (client) => {
       if (detail) {
@@ -147,7 +148,7 @@ export class CostAnalysisRunsRepository {
           `UPDATE cost_analysis_runs
            SET status = 'failed', completed_at = NOW(), error_message = $1, ${detailAssignments(4)}
            WHERE id = $2 AND organization_id = $3 AND status = 'running'`,
-          [errorMessage, id, organizationId, ...detailValues(detail)]
+          [errorMessage, id, organizationId, ...detailValues({ summary: detail.summary, counts: null })]
         );
         return;
       }

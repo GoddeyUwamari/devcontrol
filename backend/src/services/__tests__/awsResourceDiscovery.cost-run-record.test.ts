@@ -151,9 +151,9 @@ describe('a failed cost step is recorded', () => {
 
     const job = await fetchJob(orgId);
     expect(job.cost_analysis_completed).toBe(false);
-    expect(job.error_message).toContain('Cost analysis: no check completed');
-    expect(result.errors).toContain('Cost analysis: no check completed');
-    expect(await fetchRun(orgId)).toMatchObject({ status: 'failed', failed_detector_count: 2 });
+    expect(job.error_message).toContain('Cost analysis: none of the checks completed.');
+    expect(result.errors).toContain('Cost analysis: none of the checks completed.');
+    expect(await fetchRun(orgId)).toMatchObject({ status: 'failed', failed_detector_count: 2, detected_count: null, persisted_count: null });
   });
 
   it('the cost step threw: cost_analysis_completed false, run failed', async () => {

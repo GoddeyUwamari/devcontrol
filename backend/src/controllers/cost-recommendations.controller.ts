@@ -34,10 +34,11 @@ const analysisRunsRepository = new CostAnalysisRunsRepository();
 const remediationService = new RemediationService(pool);
 const optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
 
-const COST_RESULTS_NOT_SAVED_MESSAGE = 'The analysis ran, but its results could not be saved. Try again.';
+const UNEXPECTED_FAILURE_MESSAGE = 'The analysis did not complete due to an unexpected error.';
+const COST_RESULTS_NOT_SAVED_MESSAGE = "The analysis ran, but its results couldn't be saved. Try again.";
 const COST_CHECKS_FAILED_MESSAGE = 'None of the cost checks could complete. Try again.';
-const PARTIAL_RUN_MESSAGE = 'Some cost checks did not complete.';
-const INTERRUPTED_RUN_MESSAGE = 'The analysis was interrupted before it finished.';
+const PARTIAL_RUN_MESSAGE = "Some cost checks didn't complete, so these results may be incomplete.";
+const INTERRUPTED_RUN_MESSAGE = 'The analysis was interrupted before it finished. Run it again.';
 
 /**
  * Maps a raw analyzeAllResources() failure into a safe, non-leaking message
@@ -62,7 +63,7 @@ function classifyRunFailureMessage(rawMessage: string | null): string | null {
   if (rawMessage.includes('not enabled')) {
     return 'AWS Cost Explorer or CloudWatch is not enabled for this account.';
   }
-  return 'The analysis did not complete due to an unexpected error.';
+  return UNEXPECTED_FAILURE_MESSAGE;
 }
 
 /**
@@ -623,7 +624,8 @@ export class CostRecommendationsController {
 
       const response: ApiResponse = {
         success: false,
-        error: `Failed to analyze AWS resources: ${error.message || 'Unknown error'}`,
+        // The page shows this text: never error.message, which can hold ARNs or raw AWS text.
+        error: UNEXPECTED_FAILURE_MESSAGE,
       };
       res.status(500).json(response);
     } finally {
