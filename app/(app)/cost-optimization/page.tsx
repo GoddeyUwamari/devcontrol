@@ -128,7 +128,7 @@ export default function CostOptimizationPage() {
   // status never reads a job's status or error text: only an organization with
   // no cost analysis run at all falls back to its cost_analysis_completed flag
   // (costScanState.ts).
-  const { data: discoveryJobs, isError: jobsError } = useQuery({
+  const { data: discoveryJobs, isError: jobsError, refetch: refetchJobs } = useQuery({
     queryKey: ['discovery-jobs', 5],
     queryFn: () => awsResourcesService.getDiscoveryJobs(5),
     staleTime: 60_000,
@@ -225,6 +225,7 @@ export default function CostOptimizationPage() {
   const retryStatus = () => {
     if (accountsError) refetchAccounts();
     if (runsError) refetchRuns();
+    if (jobsError) refetchJobs();
   };
 
   // A failed stats fetch is never shown as 0 or $0 (pr2-step1.md state 12).

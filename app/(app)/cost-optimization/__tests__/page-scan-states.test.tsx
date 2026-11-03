@@ -205,6 +205,17 @@ describe('fetch failures are never 0, $0, Never or an endless skeleton', () => {
     await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'success'))
   })
 
+  it('no run rows and discovery jobs failed: Unavailable, and Try again fetches the jobs again', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([])
+    svc.getDiscoveryJobs.mockRejectedValue(new Error('boom'))
+    renderPage()
+    await waitFor(() => expect(within(banner()).getByText("Couldn't load analysis status")).toBeInTheDocument())
+    expect(screen.queryByText('Never analyzed')).not.toBeInTheDocument()
+    svc.getDiscoveryJobs.mockResolvedValue([])
+    fireEvent.click(within(banner()).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(within(banner()).getByText('Never analyzed')).toBeInTheDocument())
+  })
+
   it('accounts failed: no endless skeleton, no Connect AWS, the Run button stays enabled', async () => {
     svc.getAccounts.mockRejectedValue(new Error('boom'))
     renderPage()
