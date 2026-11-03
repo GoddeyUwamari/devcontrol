@@ -18,6 +18,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const source = readFileSync(join(__dirname, '../page.tsx'), 'utf-8')
+const bannerCopy = readFileSync(join(__dirname, '../costScanBanner.ts'), 'utf-8')
+const scanState = readFileSync(join(__dirname, '../costScanState.ts'), 'utf-8')
 
 describe('Cost Optimization page: forbidden terminology', () => {
   const forbidden = [
@@ -146,12 +148,17 @@ describe('Cost Optimization page: real data sources, not client-side re-aggregat
     expect(source).toMatch(/awsAccountsService\.getAccounts/)
   })
 
-  it('derives analysis freshness from the real discovery-jobs endpoint', () => {
+  it('reads discovery jobs only for their warnings and the no-run-rows fallback, never their status or error text (decision 10)', () => {
     expect(source).toMatch(/awsResourcesService\.getDiscoveryJobs/)
+    expect(source).toMatch(/DiscoveryWarningNotice warnings=\{discoveryJobs\?\.\[0\]\?\.warnings\}/)
+    expect(source).not.toMatch(/error_message/)
+    expect(scanState).not.toMatch(/\bj(ob)?\.error_message/)
+    expect(scanState).not.toMatch(/j(ob)?\.status === 'failed'\s*\?/)
   })
 
-  it('also sources the manual "Run cost analysis" run history, not just the scheduled discovery cron', () => {
-    expect(source).toMatch(/costRecommendationsService\.getAnalysisRuns/)
+  it('sources scan status from every cost analysis run, manual and scheduled, under its own key', () => {
+    expect(source).toMatch(/costRecommendationsService\.getAnalysisRuns\(5, 'all'\)/)
+    expect(source).toMatch(/queryKey: \['cost-analysis-runs', 'all', 5\]/)
   })
 })
 
@@ -182,15 +189,16 @@ describe('Cost Optimization page: optimization checks come from the backend rule
 })
 
 describe('Cost Optimization page: manual analysis is never mislabeled as scheduled discovery', () => {
-  it('merges both sources through pickLatestAnalysis rather than assuming the discovery job is authoritative', () => {
-    expect(source).toMatch(/pickLatestAnalysis\(/)
+  it('derives the scan state from cost analysis runs (deriveCostScanState), not by merging in the discovery job', () => {
+    expect(source).toMatch(/deriveCostScanState\(/)
+    expect(source).not.toMatch(/pickLatestAnalysis\(/)
   })
 
   it('labels "Last Analysis" and the status banner by real source, not a hardcoded "via scheduled scan" caption', () => {
     expect(source).not.toMatch(/via scheduled scan/)
     expect(source).toMatch(/SOURCE_LABEL/)
-    expect(source).toMatch(/scheduled:\s*'Scheduled analysis'/)
-    expect(source).toMatch(/manual:\s*'Manual cost analysis'/)
+    expect(bannerCopy).toMatch(/scheduled:\s*'Scheduled analysis'/)
+    expect(bannerCopy).toMatch(/manual:\s*'Manual cost analysis'/)
   })
 
   it('refreshes the manual run history after a manual scan completes', () => {

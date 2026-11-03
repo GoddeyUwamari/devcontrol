@@ -46,9 +46,12 @@ describe('DiscoveryWarningNotice', () => {
 })
 
 describe('the pages that show discovery status show the notice', () => {
-  it("cost optimization: under the analysis status, from the latest discovery job's warnings", () => {
+  // The scan result banner moved to the top of the page (founder decision, Nov 2); the notice
+  // stayed where it was (decision 11): after the disclaimer, right before the opportunities.
+  it("cost optimization: in its own place after the disclaimer, from the latest discovery job's warnings", () => {
     const source = read('app/(app)/cost-optimization/page.tsx')
-    expect(source).toMatch(/<AnalysisStatusBanner[\s\S]{0,200}\/>\s*\{[^}]*\}\s*<DiscoveryWarningNotice warnings=\{discoveryJobs\?\.\[0\]\?\.warnings\}/)
+    expect(source).toMatch(/TRUST \/ DISCLAIMER[\s\S]{0,700}<DiscoveryWarningNotice warnings=\{discoveryJobs\?\.\[0\]\?\.warnings\} className="mb-6" \/>\s*\{\/\* ── OPPORTUNITIES \/ EMPTY STATE ── \*\/\}/)
+    expect(source.match(/<DiscoveryWarningNotice /g)).toHaveLength(1)
   })
 
   it('infrastructure: beside the sync result, from the run it just started', () => {

@@ -3,6 +3,7 @@ import type {
   CostRecommendation,
   RecommendationStats,
   AnalysisResult,
+  AnalysisCounts,
   ApiResponse,
 } from '../types';
 
@@ -18,6 +19,31 @@ export interface CostAnalysisRun {
   completed_at: string | null;
   created_at: string;
   error_message: string | null;
+  // Added by the run record (PR 1). Optional: an older backend omits them.
+  // Every count is null when not recorded, never 0.
+  run_state?: CostAnalysisRunState;
+  source?: 'manual' | 'discovery';
+  detected_count?: number | null;
+  new_count?: number | null;
+  refreshed_count?: number | null;
+  suppressed_resolved_count?: number | null;
+  suppressed_dismissed_count?: number | null;
+  duplicate_count?: number | null;
+  persisted_count?: number | null;
+  failed_detector_count?: number | null;
+  unknown_resource_count?: number | null;
+  checks?: CostAnalysisCheck[] | null;
+}
+
+export type CostAnalysisRunState = 'running' | 'completed' | 'partial' | 'failed' | 'interrupted';
+
+/** One detector's result in a run. Never error text, ARNs or resource IDs. */
+export interface CostAnalysisCheck {
+  rule_id: string | null;
+  issue: string;
+  outcome: 'complete' | 'failed';
+  detected: number;
+  unknown: number;
 }
 
 // Mirrors backend/src/config/optimization-rules.ts -- the Optimization Rule
@@ -87,6 +113,23 @@ export interface OptimizationRuleSummary {
 export interface OptimizationRuleCatalog {
   rules: OptimizationRule[];
   summary: OptimizationRuleSummary;
+}
+
+/** POST /analyze `counts`: null unless every count is a number (never coerced to 0). */
+function parseAnalysisCounts(raw: unknown): AnalysisCounts | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as Record<string, unknown>;
+  const keys = ['detected', 'new', 'refreshed', 'suppressedResolved', 'suppressedDismissed', 'duplicate', 'persisted'] as const;
+  if (!keys.every((key) => typeof c[key] === 'number')) return null;
+  return {
+    detected: c.detected as number,
+    new: c.new as number,
+    refreshed: c.refreshed as number,
+    suppressedResolved: c.suppressedResolved as number,
+    suppressedDismissed: c.suppressedDismissed as number,
+    duplicate: c.duplicate as number,
+    persisted: c.persisted as number,
+  };
 }
 
 export const costRecommendationsService = {
@@ -189,15 +232,20 @@ export const costRecommendationsService = {
         low: result.bySeverity?.low || 0,
       },
       timestamp: result.timestamp,
+      // An older backend sends none of these: they stay absent. Sent but not a valid count: null, never 0.
+      ...('runState' in result ? { runState: result.runState === 'completed' || result.runState === 'partial' ? result.runState : undefined } : {}),
+      ...('unknownResourceCount' in result ? { unknownResourceCount: typeof result.unknownResourceCount === 'number' ? result.unknownResourceCount : null } : {}),
+      ...('counts' in result ? { counts: parseAnalysisCounts(result.counts) } : {}),
     };
   },
 
   // History of manual "Run cost analysis" invocations, latest first -- the
   // manual-run counterpart to awsResourcesService.getDiscoveryJobs(), which
   // only covers the separate scheduled discovery cron.
-  getAnalysisRuns: async (limit: number = 5): Promise<CostAnalysisRun[]> => {
+  // source 'all' adds the cost step of scheduled discovery scans.
+  getAnalysisRuns: async (limit: number = 5, source?: 'all'): Promise<CostAnalysisRun[]> => {
     const response = await api.get<ApiResponse<CostAnalysisRun[]>>(
-      `/api/cost-recommendations/analysis-runs?limit=${limit}`
+      `/api/cost-recommendations/analysis-runs?limit=${limit}${source === 'all' ? '&source=all' : ''}`
     );
     return handleApiResponse(response);
   },

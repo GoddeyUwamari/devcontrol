@@ -6,7 +6,6 @@ import {
   Loader2,
   RefreshCw,
   CheckCircle,
-  CheckCircle2,
   XCircle,
   CloudOff,
   Clock,
@@ -30,7 +29,18 @@ import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice';
-import { analyzeFailureMessage, deriveAnalysisStatus, pickLatestAnalysis, type AnalysisStatusKey, type AnalysisSource, type NormalizedAnalysis } from './costOptimizationStatus';
+import { ScanStatusBanner } from '@/components/ui/scan-status-banner';
+import { analyzeFailureMessage } from './costOptimizationStatus';
+import { deriveCostScanState, runsRefetchInterval } from './costScanState';
+import {
+  SOURCE_LABEL,
+  STATS_UNAVAILABLE_NOTE,
+  TRY_AGAIN,
+  UNAVAILABLE,
+  analyzeToast,
+  bannerContent,
+  emptyStateDescription,
+} from './costScanBanner';
 
 // Fetching more than this in one page is an edge case; the KPI tile (sourced
 // from /stats, not this list) always shows the true total regardless, and
@@ -71,92 +81,8 @@ const EMPTY_RULE_CATALOG: OptimizationRuleCatalog = {
   summary: { totalRules: 0, implementedCount: 0, plannedCount: 0, services: [] },
 };
 
-const SOURCE_LABEL: Record<AnalysisSource, string> = {
-  scheduled: 'Scheduled analysis',
-  manual: 'Manual cost analysis',
-};
-
-function AnalysisStatusBanner({
-  status,
-  activeCount,
-  latestAnalysis,
-}: {
-  status: AnalysisStatusKey | 'loading';
-  activeCount: number;
-  latestAnalysis: NormalizedAnalysis | undefined;
-}) {
-  if (status === 'loading') {
-    return <Skeleton className="h-16 w-full rounded-xl" />;
-  }
-
-  const relative = latestAnalysis?.completedAt ? formatDistanceToNow(new Date(latestAnalysis.completedAt), { addSuffix: true }) : null;
-  const sourceLabel = latestAnalysis ? SOURCE_LABEL[latestAnalysis.source] : null;
-
-  const meta: Record<Exclude<AnalysisStatusKey, never>, { icon: typeof CloudOff; tone: string; label: string; description: string }> = {
-    not_connected: {
-      icon: CloudOff,
-      tone: 'bg-slate-50 border-slate-200 text-slate-600',
-      label: 'AWS not connected',
-      description: 'Connect an AWS account to run cost analysis.',
-    },
-    never_analyzed: {
-      icon: Clock,
-      tone: 'bg-slate-50 border-slate-200 text-slate-600',
-      label: 'Never analyzed',
-      description: 'AWS is connected, but no cost analysis has completed yet.',
-    },
-    in_progress: {
-      icon: Loader2,
-      tone: 'bg-violet-50 border-violet-200 text-violet-700',
-      label: 'Analysis in progress',
-      description: 'DevControl is currently checking your account.',
-    },
-    failed: {
-      icon: AlertTriangle,
-      tone: 'bg-red-50 border-red-200 text-red-700',
-      label: `Last ${sourceLabel?.toLowerCase() || 'analysis'} failed`,
-      description: latestAnalysis?.errorMessage || 'The most recent analysis did not complete.',
-    },
-    completed_with_opportunities: {
-      icon: CheckCircle2,
-      tone: 'bg-amber-50 border-amber-200 text-amber-800',
-      label: 'Analysis complete',
-      description: `${activeCount} active opportunit${activeCount !== 1 ? 'ies' : 'y'} identified.`,
-    },
-    // A completed run does not record whether each check succeeded or had
-    // enough data, so an empty list is shown without a "none found" conclusion.
-    completed_clean: {
-      icon: CheckCircle2,
-      tone: 'bg-slate-50 border-slate-200 text-slate-600',
-      label: 'Analysis complete',
-      description: 'Per-check results are not yet recorded.',
-    },
-    completed_all_resolved: {
-      icon: CheckCircle2,
-      tone: 'bg-slate-50 border-slate-200 text-slate-600',
-      label: 'Analysis complete',
-      description: 'Previously identified items have been resolved or dismissed. Per-check results are not yet recorded.',
-    },
-  };
-
-  const m = meta[status];
-  const Icon = m.icon;
-
-  return (
-    <div className={cn('flex items-center gap-3.5 rounded-xl border px-4 py-3.5', m.tone)}>
-      <div className="w-9 h-9 rounded-lg bg-white/70 flex items-center justify-center shrink-0">
-        <Icon size={18} className={status === 'in_progress' ? 'animate-spin' : undefined} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-ui font-semibold">{m.label}</p>
-        <p className="text-meta">{m.description}</p>
-      </div>
-      {relative && sourceLabel && (status === 'failed' || status.startsWith('completed')) && (
-        <span className="text-label font-medium whitespace-nowrap shrink-0">{sourceLabel}, {relative}</span>
-      )}
-    </div>
-  );
-}
+// Zero on this page reads as muted, never green (founder decision 5: slate-500 for contrast).
+const ZERO_CLASS = 'text-slate-500';
 
 export default function CostOptimizationPage() {
   const queryClient = useQueryClient();
@@ -180,7 +106,7 @@ export default function CostOptimizationPage() {
   // Server-derived totals -- same endpoint the Dashboard uses
   // (queryKey ['cost-recommendations-stats']) -- instead of re-deriving
   // totals by reducing the (now potentially-truncated) list above.
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useQuery({
     queryKey: ['cost-recommendations-stats'],
     queryFn: costRecommendationsService.getStats,
     staleTime: 60_000,
@@ -190,7 +116,7 @@ export default function CostOptimizationPage() {
 
   // Real AWS-connection signal, same endpoint/service the Dashboard uses to
   // compute isAwsConnected.
-  const { data: awsAccounts } = useQuery({
+  const { data: awsAccounts, isError: accountsError, refetch: refetchAccounts } = useQuery({
     queryKey: ['aws-accounts'],
     queryFn: awsAccountsService.getAccounts,
     staleTime: 30_000,
@@ -198,9 +124,11 @@ export default function CostOptimizationPage() {
     enabled: !isDemoActive,
   });
 
-  // Real, persisted scan history -- reflects the 6-hourly automatic
-  // discovery+cost-analysis cron (backend/src/jobs/resourceDiscovery.job.ts).
-  const { data: discoveryJobs } = useQuery({
+  // The latest scheduled discovery's warnings (DiscoveryWarningNotice). The scan
+  // status never reads a job's status or error text: only an organization with
+  // no cost analysis run at all falls back to its cost_analysis_completed flag
+  // (costScanState.ts).
+  const { data: discoveryJobs, isError: jobsError } = useQuery({
     queryKey: ['discovery-jobs', 5],
     queryFn: () => awsResourcesService.getDiscoveryJobs(5),
     staleTime: 60_000,
@@ -208,16 +136,15 @@ export default function CostOptimizationPage() {
     enabled: !isDemoActive,
   });
 
-  // Real, persisted manual "Run cost analysis" run history -- the
-  // counterpart to discoveryJobs above for the button below, which
-  // previously left no server-side trace of its own runs. See
-  // database/migrations/202609060900_create_cost_analysis_runs.sql and
-  // costOptimizationStatus.ts's pickLatestAnalysis().
-  const { data: analysisRuns } = useQuery({
-    queryKey: ['cost-analysis-runs', 5],
-    queryFn: () => costRecommendationsService.getAnalysisRuns(5),
+  // Every cost analysis, manual and scheduled: the page's only scan status
+  // source (founder decision 10). Its own key: the Costs page caches the
+  // manual-only list under ['cost-analysis-runs', 5]. Polls while a run is running.
+  const { data: analysisRuns, isError: runsError, refetch: refetchRuns } = useQuery({
+    queryKey: ['cost-analysis-runs', 'all', 5],
+    queryFn: () => costRecommendationsService.getAnalysisRuns(5, 'all'),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
+    refetchInterval: (query) => runsRefetchInterval(query.state.data),
     enabled: !isDemoActive,
   });
 
@@ -270,7 +197,8 @@ export default function CostOptimizationPage() {
         // next 60s staleTime refetch.
         queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
       ]);
-      toast.success(`Scan complete — ${result.recommendationsFound} opportunit${result.recommendationsFound !== 1 ? 'ies' : 'y'} found`);
+      const message = analyzeToast(result);
+      toast[message.kind](message.text);
     } catch (err: unknown) {
       toast.error(analyzeFailureMessage(err));
       // The backend recorded this attempt too: the status must not keep showing the previous one.
@@ -284,18 +212,36 @@ export default function CostOptimizationPage() {
     || dismissMutation.isPending && dismissMutation.variables === id;
 
   const awsConnected = awsAccounts === undefined ? undefined : awsAccounts.length > 0;
-  const latestAnalysis = pickLatestAnalysis({ latestDiscoveryJob: discoveryJobs?.[0], latestAnalysisRun: analysisRuns?.[0] });
-  const activeCount = stats?.activeRecommendations ?? recommendations.length;
-  const totalEverCount = stats?.totalRecommendations ?? 0;
-  const monthlySavings = stats?.totalPotentialSavings ?? 0;
-  // Upper bounds (S3 lifecycle, DynamoDB capacity), one line per type, never added to the total.
-  const ceilingLines = describeCeilings(stats?.potentialSavingsCeilingByResourceType ?? {}, formatWholeDollars);
-  const annualSavings = annualizeMonthly(monthlySavings);
-  const bySeverity = stats?.bySeverity ?? { high: 0, medium: 0, low: 0 };
+  const scan = deriveCostScanState({
+    accounts: { data: awsAccounts, isError: accountsError },
+    runs: { data: analysisRuns, isError: runsError },
+    jobs: { data: discoveryJobs, isError: jobsError },
+    isAnalyzing,
+  });
+  const banner = bannerContent(scan);
+  const bannerMeta = scan.completedAt && scan.source && (scan.key === 'failed' || scan.key === 'partial' || scan.key === 'interrupted' || scan.key.startsWith('completed'))
+    ? `${SOURCE_LABEL[scan.source]}, ${formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })}`
+    : undefined;
+  const retryStatus = () => {
+    if (accountsError) refetchAccounts();
+    if (runsError) refetchRuns();
+  };
 
-  const analysisStatus = deriveAnalysisStatus({ awsConnected, latestAnalysis, activeCount, totalEverCount });
+  // A failed stats fetch is never shown as 0 or $0 (pr2-step1.md state 12).
+  const statsAvailable = stats !== undefined && !statsError;
+  const activeCount = statsAvailable ? stats.activeRecommendations : null;
+  const totalEverCount = statsAvailable ? stats.totalRecommendations : 0;
+  const monthlySavings = statsAvailable ? stats.totalPotentialSavings : null;
+  // Upper bounds (S3 lifecycle, DynamoDB capacity), one line per type, never added to the total.
+  // Rendered only when the monthly figure is available (below), so a failed stats fetch shows none.
+  const ceilingLines = describeCeilings(stats?.potentialSavingsCeilingByResourceType ?? {}, formatWholeDollars);
+  const annualSavings = monthlySavings === null ? null : annualizeMonthly(monthlySavings);
+  const bySeverity = statsAvailable ? stats.bySeverity : null;
+
   const canRunScan = !isAnalyzing && !isDemoActive && awsConnected !== false;
-  const hiddenCount = Math.max(0, activeCount - recommendations.length);
+  const listedActiveCount = activeCount ?? recommendations.length;
+  const hiddenCount = activeCount === null ? 0 : Math.max(0, activeCount - recommendations.length);
+  const runDerivedEmptyText = emptyStateDescription(scan);
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto">
@@ -328,20 +274,39 @@ export default function CostOptimizationPage() {
         </div>
       ) : (
         <>
+          {/* ── LATEST ANALYSIS: the scan result, above the KPIs (founder decision, Nov 2) ── */}
+          <ScanStatusBanner
+            className="mb-6"
+            tone={banner.tone}
+            title={banner.title}
+            description={banner.description}
+            icon={banner.icon}
+            busy={banner.busy}
+            loading={banner.loading}
+            meta={bannerMeta}
+            action={banner.retry ? { label: TRY_AGAIN, onClick: retryStatus } : undefined}
+          />
+
           {/* ── KPI AREA ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <Card>
               <CardContent className="px-5">
                 <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Active Opportunities</p>
-                {statsLoading ? <Skeleton className="h-8 w-14" /> : <p className="text-kpi tabular-nums text-slate-900">{activeCount}</p>}
+                {statsLoading ? <Skeleton className="h-8 w-14" /> : activeCount === null ? (
+                  <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
+                ) : (
+                  <p className={cn('text-kpi tabular-nums', activeCount === 0 ? ZERO_CLASS : 'text-slate-900')}>{activeCount}</p>
+                )}
               </CardContent>
             </Card>
             <Card>
               <CardContent className="px-5">
                 <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Estimated Monthly Savings</p>
-                {statsLoading ? <Skeleton className="h-8 w-24" /> : (
+                {statsLoading ? <Skeleton className="h-8 w-24" /> : monthlySavings === null ? (
+                  <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
+                ) : (
                   <>
-                    <p className="text-kpi tabular-nums text-ink-success">{formatWholeDollars(monthlySavings)}<span className="text-ui font-semibold text-ink-muted">/mo</span></p>
+                    <p className={cn('text-kpi tabular-nums', monthlySavings === 0 ? ZERO_CLASS : 'text-ink-success')}>{formatWholeDollars(monthlySavings)}<span className="text-ui font-semibold text-ink-muted">/mo</span></p>
                     {ceilingLines.map((line) => (
                       <p key={line} className="text-meta text-ink-muted mt-1">{line}</p>
                     ))}
@@ -352,24 +317,28 @@ export default function CostOptimizationPage() {
             <Card>
               <CardContent className="px-5">
                 <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Estimated Annual Savings</p>
-                {statsLoading ? <Skeleton className="h-8 w-24" /> : (
-                  <p className="text-kpi tabular-nums text-ink-success">{formatWholeDollars(annualSavings)}<span className="text-ui font-semibold text-ink-muted">/yr</span></p>
+                {statsLoading ? <Skeleton className="h-8 w-24" /> : annualSavings === null ? (
+                  <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
+                ) : (
+                  <p className={cn('text-kpi tabular-nums', annualSavings === 0 ? ZERO_CLASS : 'text-ink-success')}>{formatWholeDollars(annualSavings)}<span className="text-ui font-semibold text-ink-muted">/yr</span></p>
                 )}
               </CardContent>
             </Card>
             <Card>
               <CardContent className="px-5">
                 <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Last Analysis</p>
-                {analysisStatus === 'loading' ? <Skeleton className="h-6 w-20" /> : analysisStatus === 'not_connected' ? (
+                {scan.key === 'loading' ? <Skeleton className="h-6 w-20" /> : scan.key === 'status_unavailable' ? (
+                  <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
+                ) : scan.key === 'not_connected' ? (
                   <p className="text-section text-ink-muted">—</p>
-                ) : analysisStatus === 'never_analyzed' ? (
+                ) : scan.key === 'never_analyzed' ? (
                   <p className="text-section text-ink-muted">Never</p>
-                ) : analysisStatus === 'in_progress' ? (
+                ) : scan.key === 'running' ? (
                   <p className="text-section text-violet-600">Running…</p>
-                ) : latestAnalysis?.completedAt ? (
+                ) : scan.completedAt && scan.source ? (
                   <>
-                    <p className="text-section text-slate-900 leading-tight">{formatDistanceToNow(new Date(latestAnalysis.completedAt), { addSuffix: true })}</p>
-                    <p className="text-label font-normal text-ink-muted mt-0.5">{SOURCE_LABEL[latestAnalysis.source]}</p>
+                    <p className="text-section text-slate-900 leading-tight">{formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })}</p>
+                    <p className="text-label font-normal text-ink-muted mt-0.5">{SOURCE_LABEL[scan.source]}</p>
                   </>
                 ) : (
                   <p className="text-section text-ink-muted">—</p>
@@ -378,24 +347,21 @@ export default function CostOptimizationPage() {
             </Card>
           </div>
 
+          {statsError && (
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <p className="text-label font-normal text-ink-muted">{STATS_UNAVAILABLE_NOTE}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => refetchStats()}>{TRY_AGAIN}</Button>
+            </div>
+          )}
+
           {/* ── TRUST / DISCLAIMER ── */}
           <p className="text-label font-normal text-ink-muted leading-relaxed mb-6 max-w-3xl">
             Savings figures are estimated potential savings based on DevControl&apos;s recommendation methodology, not confirmed AWS billing savings.
             Resolving or dismissing a recommendation records your decision — it does not itself confirm the underlying AWS change was made.
           </p>
 
-          {/* ── ANALYSIS STATUS ── */}
-          <Card className="mb-6">
-            <CardContent className="px-5">
-              <AnalysisStatusBanner
-                status={analysisStatus}
-                activeCount={activeCount}
-                latestAnalysis={latestAnalysis}
-              />
-              {/* The latest scheduled discovery's warnings. */}
-              <DiscoveryWarningNotice warnings={discoveryJobs?.[0]?.warnings} className="mt-3" />
-            </CardContent>
-          </Card>
+          {/* The latest scheduled discovery's warnings: unchanged, and not scan status. */}
+          <DiscoveryWarningNotice warnings={discoveryJobs?.[0]?.warnings} className="mb-6" />
 
           {/* ── OPPORTUNITIES / EMPTY STATE ── */}
           {isLoading ? (
@@ -410,45 +376,55 @@ export default function CostOptimizationPage() {
                 Try again
               </button>
             </div>
+          ) : recommendations.length === 0 && scan.key === 'loading' ? (
+            // The status isn't known yet: no empty-state conclusion until it is.
+            <div className="flex items-center justify-center h-64" data-testid="scan-status-loading">
+              <Loader2 size={24} className="animate-spin text-violet-600" />
+            </div>
           ) : recommendations.length === 0 ? (
             <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
-              {analysisStatus === 'not_connected' ? (
+              {scan.key === 'not_connected' ? (
                 <>
                   <CloudOff size={32} className="text-slate-400 mx-auto mb-3" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">Connect AWS to check for savings</p>
                   <p className="text-ui text-ink-muted mb-6">DevControl needs a connected AWS account before it can look for cost-saving opportunities.</p>
                 </>
-              ) : analysisStatus === 'never_analyzed' ? (
+              ) : scan.key === 'never_analyzed' ? (
                 <>
                   <Clock size={32} className="text-slate-400 mx-auto mb-3" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">No analysis has run yet</p>
                   <p className="text-ui text-ink-muted mb-6">Run your first cost analysis to check for savings opportunities.</p>
                 </>
-              ) : analysisStatus === 'in_progress' ? (
+              ) : scan.key === 'running' ? (
                 <>
                   <Loader2 size={32} className="text-violet-500 mx-auto mb-3 animate-spin" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">Analysis in progress</p>
                   <p className="text-ui text-ink-muted mb-6">DevControl is currently checking your account. This can take a few minutes.</p>
                 </>
-              ) : analysisStatus === 'failed' ? (
+              ) : scan.key === 'failed' ? (
                 <>
                   <AlertTriangle size={32} className="text-red-500 mx-auto mb-3" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">
-                    The last {latestAnalysis ? SOURCE_LABEL[latestAnalysis.source].toLowerCase() : 'analysis'} didn&apos;t complete
+                    The last {scan.source ? SOURCE_LABEL[scan.source].toLowerCase() : 'analysis'} didn&apos;t complete
                   </p>
-                  <p className="text-ui text-ink-muted mb-6">{latestAnalysis?.errorMessage || 'Something interrupted the scan before it finished.'}</p>
+                  <p className="text-ui text-ink-muted mb-6">{scan.errorMessage || 'Something interrupted the scan before it finished.'}</p>
                 </>
               ) : (
-                // Completed with nothing active: no "none found" conclusion --
-                // a check may have failed or lacked data, and per-check
-                // outcomes are not recorded yet.
+                // Nothing active. The sub-text depends on what is known:
+                // - status unavailable, or a completed run with no approved sub-text: the headline only
+                // - a run with recorded per-check results: the banner's own sub-text
+                // - a run from before per-check results were recorded: no "none found" conclusion
                 <>
                   <Clock size={32} className="text-slate-400 mx-auto mb-3" />
-                  <p className="text-ui font-semibold text-slate-900 mb-2">No active recommendations to review</p>
-                  <p className="text-ui text-ink-muted mb-6">
-                    {analysisStatus === 'completed_all_resolved' ? 'Previously identified items have been resolved or dismissed. ' : ''}
-                    This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.
-                  </p>
+                  <p className={cn('text-ui font-semibold text-slate-900', scan.key === 'status_unavailable' || scan.key === 'completed_other' ? 'mb-6' : 'mb-2')}>No active recommendations to review</p>
+                  {scan.key === 'status_unavailable' || scan.key === 'completed_other' ? null : runDerivedEmptyText ? (
+                    <p className="text-ui text-ink-muted mb-6">{runDerivedEmptyText}</p>
+                  ) : (
+                    <p className="text-ui text-ink-muted mb-6">
+                      {totalEverCount > 0 ? 'Previously identified items have been resolved or dismissed. ' : ''}
+                      This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.
+                    </p>
+                  )}
                 </>
               )}
               <div className="flex flex-col items-center gap-1.5 mb-2">
@@ -464,7 +440,7 @@ export default function CostOptimizationPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-baseline justify-between gap-3 flex-wrap">
                   <p className="text-ui font-semibold text-slate-900">
-                    {hiddenCount > 0 ? `Showing ${recommendations.length} of ${activeCount} active opportunities` : `${activeCount} active opportunit${activeCount !== 1 ? 'ies' : 'y'}`}
+                    {hiddenCount > 0 ? `Showing ${recommendations.length} of ${activeCount} active opportunities` : `${listedActiveCount} active opportunit${listedActiveCount !== 1 ? 'ies' : 'y'}`}
                   </p>
                   {hiddenCount > 0 && (
                     <p className="text-label font-normal text-ink-muted">Sorted by highest potential savings first</p>
@@ -526,17 +502,18 @@ export default function CostOptimizationPage() {
                   <CardContent className="px-5">
                     <div className="flex flex-col gap-2.5">
                       {([
-                        { key: 'high', label: 'High', count: bySeverity.high, color: 'bg-red-500' },
-                        { key: 'medium', label: 'Medium', count: bySeverity.medium, color: 'bg-amber-500' },
-                        { key: 'low', label: 'Low', count: bySeverity.low, color: 'bg-slate-400' },
+                        { key: 'high', label: 'High', count: bySeverity ? bySeverity.high : null, color: 'bg-red-500' },
+                        { key: 'medium', label: 'Medium', count: bySeverity ? bySeverity.medium : null, color: 'bg-amber-500' },
+                        { key: 'low', label: 'Low', count: bySeverity ? bySeverity.low : null, color: 'bg-slate-400' },
                       ] as const).map((row) => {
-                        const total = bySeverity.high + bySeverity.medium + bySeverity.low;
-                        const pct = total > 0 ? (row.count / total) * 100 : 0;
+                        // Stats unavailable: "—", never 0.
+                        const total = bySeverity ? bySeverity.high + bySeverity.medium + bySeverity.low : 0;
+                        const pct = row.count !== null && total > 0 ? (row.count / total) * 100 : 0;
                         return (
                           <div key={row.key}>
                             <div className="flex items-center justify-between text-meta mb-1">
                               <span className="font-medium text-slate-600">{row.label}</span>
-                              <span className="font-semibold text-slate-900 tabular-nums">{row.count}</span>
+                              <span className="font-semibold text-slate-900 tabular-nums">{row.count ?? '—'}</span>
                             </div>
                             <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                               <div className={cn('h-full rounded-full', row.color)} style={{ width: `${pct}%` }} />
