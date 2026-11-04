@@ -414,4 +414,30 @@ export class AccountSecurityFindingsRepository {
 
     return client ? run(client) : this.withOrgClient(organizationId, run);
   }
+
+  /**
+   * Whether the organization's security evaluation is complete and current: its
+   * most recently finished discovery run ended 'completed' with
+   * compliance_scan_completed (resource compliance checks, security groups and
+   * IAM all complete -- awsResourceDiscovery.ts), and finished within
+   * `maxAgeSeconds` by the database clock. A run still in progress is not
+   * finished and does not count either way. False -- never "complete" -- when no
+   * run has finished, the latest finished run failed or was partial, or it is too
+   * old. Read-only.
+   */
+  async isLatestSecurityEvaluationCurrent(organizationId: string, maxAgeSeconds: number): Promise<boolean> {
+    return this.withOrgClient(organizationId, async (client) => {
+      const { rows } = await client.query<{ status: string; compliance_scan_completed: boolean | null; current: boolean }>(
+        `SELECT status, compliance_scan_completed,
+                completed_at > NOW() - make_interval(secs => $2) AS current
+         FROM resource_discovery_jobs
+         WHERE organization_id = $1 AND completed_at IS NOT NULL
+         ORDER BY completed_at DESC, created_at DESC
+         LIMIT 1`,
+        [organizationId, maxAgeSeconds]
+      );
+      const latest = rows[0];
+      return !!latest && latest.status === 'completed' && latest.compliance_scan_completed === true && latest.current === true;
+    });
+  }
 }

@@ -42,6 +42,8 @@ import {
 } from './ai-context-contract';
 import { lastIncludedDay } from './ai-chat.service';
 import { monthOverMonthSection, spendSection, type MonthOverMonthEvidence, type SpendEvidence } from './cost-context-sections';
+import { MAX_LEASE_AGE_SECONDS } from './scan-lease';
+import { noUrgentFindingsLine, selectTopRiskFinding, TOP_RISK_SEVERITIES } from './top-risk-selection';
 
 const EMPTY_FIELDS: StructuredDashboardSummary = {
   overallHealth: { score: null, context: null },
@@ -53,15 +55,25 @@ const EMPTY_FIELDS: StructuredDashboardSummary = {
 /** Bump when the prompt or the facts it is built from change, so cached prose is not reused. */
 const PROMPT_VERSION = 'dashboard-summary-v3';
 
+/**
+ * A security evaluation older than this is not current: two scheduled scans in a
+ * row (every 6 hours, jobs/resourceDiscovery.job.ts) did not refresh it, allowing
+ * the second its longest possible run. The same 13 hours as the coverage page's
+ * STALE_AFTER_SECONDS (routes/services-coverage.routes.ts; a test pins the two).
+ */
+export const SECURITY_EVALUATION_MAX_AGE_SECONDS = 2 * 6 * 60 * 60 + MAX_LEASE_AGE_SECONDS;
+
 /** Shown instead of any model-written status while DevControl evaluates no outage/anomaly source. */
 export const SYSTEM_STATUS_UNAVAILABLE = 'Outage status unavailable: DevControl does not currently evaluate outages or incidents.';
 
 /**
- * identified      = topRisk states a finding present in the evidence
- * none_identified = security evidence was evaluated and records no active findings
- * unavailable     = risk could not be evaluated (missing, failed, or preliminary evidence)
+ * identified         = topRisk states a finding present in the evidence
+ * no_urgent_findings = topRisk is W11: the latest security evaluation completed and is
+ *                      current, and every open finding is low (founder decision D-B3)
+ * none_identified    = security evidence was evaluated and records no active findings
+ * unavailable        = risk could not be evaluated (missing, failed, or preliminary evidence)
  */
-export type TopRiskStatus = 'identified' | 'none_identified' | 'unavailable';
+export type TopRiskStatus = 'identified' | 'no_urgent_findings' | 'none_identified' | 'unavailable';
 
 export interface AISummaryResult extends StructuredDashboardSummary {
   topRiskStatus: TopRiskStatus;
@@ -78,8 +90,12 @@ interface CacheEntry {
 
 export interface DashboardSections {
   systemScore: ContextSection<{ score: number; cost: number | null; security: number | null; observability: number | null; observabilityState: ContextDataState }>;
-  securityPosture: ContextSection<{ score: number; combinedFindings: number }>;
+  /** urgentFindings: critical + high + medium across both sources, whatever their disposition; null when not reported. */
+  securityPosture: ContextSection<{ score: number; combinedFindings: number; urgentFindings: number | null }>;
+  /** top: the Top Risk finding (top-risk-selection.ts), never an accepted or dismissed one. */
   accountFindings: ContextSection<{ count: number; top: { title: string; severity: string } | null }>;
+  /** Available only when the latest finished security evaluation completed and is current. */
+  securityEvaluation: ContextSection<{ current: true }>;
   recommendations: ContextSection<{ active: number; totalEstimatedMonthlySavings: number }>;
   spend: ContextSection<SpendEvidence>;
   monthOverMonth: ContextSection<MonthOverMonthEvidence>;
@@ -146,6 +162,14 @@ export class AISummaryService {
         ]);
       });
 
+    // Read alongside the others; awaited after them.
+    const securityEvaluationSection = collectSection<{ current: true }>(
+      { source: 'DevControl security evaluation runs (resource checks, security groups, IAM)' },
+      async () => (await this.accountFindingsRepository.isLatestSecurityEvaluationCurrent(organizationId, SECURITY_EVALUATION_MAX_AGE_SECONDS))
+        ? { state: 'available', data: { current: true } }
+        : { state: 'unavailable', reason: 'the latest security evaluation did not complete, or is not current' }
+    );
+
     const [systemScore, securityPosture, accountFindings, recommendations, [spend, monthOverMonth]] = await Promise.all([
       collectSection<DashboardSections['systemScore'] extends ContextSection<infer T> ? T : never>(
         { source: 'DevControl System Intelligence score', provenance: 'derived', coverage: "composite of DevControl's cost, security, and observability component scores" },
@@ -172,16 +196,23 @@ export class AISummaryService {
           const risk = await this.riskTrackingService.getCurrentRiskScore(organizationId);
           if (risk.isPreliminary) return { state: 'unavailable', reason: 'the security posture score is still preliminary' };
           const c = risk.complianceIssueCounts;
-          return { state: 'available', data: { score: risk.score, combinedFindings: c.critical + c.high + c.medium + c.low } };
+          const a = risk.accountFindingsCounts;
+          const r = risk.resourceComplianceCounts;
+          // Counted from both sources' own counts, so an accepted or dismissed finding
+          // still counts: it is still open.
+          const urgentFindings = a && r
+            ? TOP_RISK_SEVERITIES.reduce((sum, severity) => sum + a[severity] + r[severity], 0)
+            : null;
+          return { state: 'available', data: { score: risk.score, combinedFindings: c.critical + c.high + c.medium + c.low, urgentFindings } };
         }
       ),
       collectSection<DashboardSections['accountFindings'] extends ContextSection<infer T> ? T : never>(
         { source: 'DevControl account-level security findings (security groups, IAM)', provenance: 'actual' },
         async () => {
-          // getActive() sorts by severity, so [0] is the most severe active finding.
+          // getActive() returns newest first within each severity; the shared rule
+          // skips accepted and dismissed findings and anything below medium.
           const active = await this.accountFindingsRepository.getActive(organizationId);
-          const top = active[0] ? { title: active[0].title, severity: active[0].severity } : null;
-          return { state: 'available', data: { count: active.length, top } };
+          return { state: 'available', data: { count: active.length, top: selectTopRiskFinding(active) } };
         }
       ),
       collectSection<DashboardSections['recommendations'] extends ContextSection<infer T> ? T : never>(
@@ -194,12 +225,14 @@ export class AISummaryService {
       costSections,
     ]);
 
+    const securityEvaluation = await securityEvaluationSection;
+
     const monitoring = notSupported<never>(
       { source: 'DevControl outage and anomaly detection' },
       'DevControl does not currently evaluate outages, incidents, or anomalies'
     );
 
-    return { systemScore, securityPosture, accountFindings, recommendations, spend, monthOverMonth, monitoring };
+    return { systemScore, securityPosture, accountFindings, securityEvaluation, recommendations, spend, monthOverMonth, monitoring };
   }
 
   /** The fact lines the prompt is built from -- every missing source stated as missing. */
@@ -297,7 +330,11 @@ export class AISummaryService {
   }
 
   /**
-   * Top Risk is only ever a finding present in the evidence. "none_identified"
+   * Top Risk is only ever a finding present in the evidence, chosen by the shared
+   * rule (top-risk-selection.ts): never one the customer accepted or dismissed.
+   * W11 ("no_urgent_findings") requires the latest security evaluation to have
+   * completed and be current, and no critical, high or medium finding open in
+   * either source; otherwise the count line stays as before. "none_identified"
    * requires both security sources to be evaluated and empty -- anything
    * missing, failed, or preliminary is "unavailable", never "no risks".
    * Always deterministic: model-written text never reaches this field.
@@ -308,6 +345,15 @@ export class AISummaryService {
 
     const top = hasEvidence(s.accountFindings) ? s.accountFindings.data.top : null;
     if (top) return { topRisk: `${top.title} (${top.severity} severity)`, topRiskStatus: 'identified' };
+
+    const urgent = hasEvidence(s.securityPosture) ? s.securityPosture.data.urgentFindings : null;
+    if (
+      combined !== null && combined > 0 && urgent === 0 &&
+      s.accountFindings.state === 'available' && s.securityPosture.state === 'available' &&
+      s.securityEvaluation.state === 'available'
+    ) {
+      return { topRisk: noUrgentFindingsLine(combined), topRiskStatus: 'no_urgent_findings' };
+    }
 
     if (combined !== null && combined > 0) {
       // combinedFindings is account findings + resource compliance issues
