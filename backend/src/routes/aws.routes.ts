@@ -13,6 +13,8 @@ import { PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 import { checkConnectRole, type RoleCheckFailure, type RoleCheckPolicy } from '../services/connect-role-check'
 import { runPermissionCheck, type ProbeClients } from '../services/connect-permission-check'
 import { resolveOrganizationExternalId } from '../repositories/aws-external-id.repository'
+import { ConnectCheckSlots, type ConnectSlotRefusal } from '../services/connect-check-slots'
+import { releaseRequestConnection } from '../middleware/request-lifecycle'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -105,6 +107,26 @@ export const ROLE_CHECK_RESPONSES: Record<RoleCheckFailure, { status: number; co
   },
 }
 
+/**
+ * Admission for connect checks: one per organization, and a cap per PROCESS
+ * (connect-check-slots.ts; not a platform-wide limit).
+ */
+const connectCheckSlots = new ConnectCheckSlots()
+
+/** What the owner is told when a connect check is not admitted. */
+export const CONNECT_SLOT_RESPONSES: Record<ConnectSlotRefusal, { status: number; code: string; message: string }> = {
+  org_busy: {
+    status: 409,
+    code: 'CONNECT_CHECK_IN_PROGRESS',
+    message: 'A connection check is already running for this workspace. Try again in a minute.',
+  },
+  at_capacity: {
+    status: 503,
+    code: 'CONNECT_CHECK_BUSY',
+    message: 'DevControl is busy checking other connections. Nothing was saved. Try again in a minute.',
+  },
+}
+
 /** A database failure before anything was saved: fixed text, the cause stays in the server log. */
 export const CONNECT_STATE_UNAVAILABLE_MESSAGE = "We couldn't start the connection check. Nothing was saved. Please try again."
 
@@ -112,10 +134,11 @@ export const CONNECT_STATE_UNAVAILABLE_MESSAGE = "We couldn't start the connecti
  * Test seams for the connect flow's AWS calls. Production uses the defaults;
  * a suite sets them and restores them with resetConnectTestHooks().
  */
-export const connectTestHooks: { roleCheckPolicy?: RoleCheckPolicy; probeClients?: ProbeClients } = {}
+export const connectTestHooks: { roleCheckPolicy?: RoleCheckPolicy; probeClients?: ProbeClients; slots?: ConnectCheckSlots } = {}
 export function resetConnectTestHooks(): void {
   delete connectTestHooks.roleCheckPolicy
   delete connectTestHooks.probeClients
+  delete connectTestHooks.slots
 }
 
 // GET /api/aws/costs/monthly
@@ -221,6 +244,28 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
   }
   const accountId = arnCheck.accountId
 
+  // Admission before any AWS call: one check per organization -- the
+  // authenticated one, from the verified token -- and a process-wide cap.
+  // Released in finally on every outcome: success, error, timeout, disconnect.
+  const admission = (connectTestHooks.slots ?? connectCheckSlots).tryAcquire(orgId)
+  if (!admission.ok) {
+    const response = CONNECT_SLOT_RESPONSES[admission.reason]
+    return res.status(response.status).json({ success: false, code: response.code, message: response.message })
+  }
+  try {
+    return await connectAdmitted(req, res, orgId, decodedRoleArn, accountId, nickname)
+  } finally {
+    admission.slot.release()
+  }
+})
+
+/**
+ * The connect flow once admitted. The request's pooled connection is given back
+ * before the first AWS call and never held while waiting on AWS; each database
+ * statement after that borrows a fresh connection tagged for this organization
+ * and returns it at once (releaseRequestConnection, request-lifecycle.ts).
+ */
+async function connectAdmitted(req: Request, res: Response, orgId: string, decodedRoleArn: string, accountId: string, nickname: unknown) {
   // The organization's one External ID: what connect-init showed and what the
   // role's trust policy must name. A database failure here is answered, never
   // left as an unhandled rejection.
@@ -231,6 +276,10 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
     console.error(`[Connect AWS] Could not read the External ID for org ${orgId}:`, dbError instanceof Error ? dbError.message : String(dbError))
     return res.status(500).json({ success: false, code: 'CONNECT_STATE_UNAVAILABLE', message: CONNECT_STATE_UNAVAILABLE_MESSAGE })
   }
+
+  // No pooled connection is held while AWS is called (up to ~25 s for the role
+  // check, then the permission probes).
+  releaseRequestConnection(res)
 
   // Stop retrying once the owner's browser has gone away.
   const cancel = new AbortController()
@@ -346,7 +395,7 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
       message: 'Account validated but could not be saved. Please try again.',
     })
   }
-})
+}
 
 /**
  * Whether the caller is the organization's owner, by the same current-membership
