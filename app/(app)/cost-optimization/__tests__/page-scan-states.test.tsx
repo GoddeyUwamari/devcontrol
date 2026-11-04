@@ -24,6 +24,7 @@ const svc = vi.hoisted(() => ({
   analyze: vi.fn(),
   getAccounts: vi.fn(),
   getDiscoveryJobs: vi.fn(),
+  getHidden: vi.fn(),
 }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
@@ -31,6 +32,7 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     getStats: () => svc.getStats(),
     getOptimizationRules: async () => ({ rules: [], summary: { totalRules: 0, implementedCount: 0, plannedCount: 0, services: [] } }),
     getAnalysisRuns: (...args: unknown[]) => svc.getAnalysisRuns(...args),
+    getHidden: () => svc.getHidden(),
     analyze: () => svc.analyze(),
   },
 }))
@@ -72,6 +74,7 @@ beforeEach(() => {
   svc.getAnalysisRuns.mockResolvedValue([run()])
   svc.getAccounts.mockResolvedValue([{ id: 'account-placeholder' }])
   svc.getDiscoveryJobs.mockResolvedValue([])
+  svc.getHidden.mockResolvedValue({ latestRun: null, summary: { resolved: 0, dismissed: 0, stillDetected: { count: 0, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} }, notConfirmed: 0 }, items: [] })
 })
 
 describe('placement and source', () => {
@@ -136,7 +139,7 @@ describe('banner states', () => {
     await settled()
     expect(banner()).toHaveAttribute('data-tone', 'info')
     expect(banner().className).not.toMatch(/green/)
-    expect(within(banner()).getByText('Nothing new to review. 2 findings you resolved or dismissed earlier were found again and are still hidden.')).toBeInTheDocument()
+    expect(within(banner()).getByText('Nothing new to review. 1 finding you resolved was found again. 1 finding you dismissed was found again and is still hidden.')).toBeInTheDocument()
     expect(within(banner()).getByText(/^Manual cost analysis, /)).toBeInTheDocument()
   })
 
@@ -145,7 +148,7 @@ describe('banner states', () => {
     const { container } = renderPage()
     await settled()
     expect(banner()).toHaveAttribute('data-tone', 'danger')
-    expect(container.textContent).not.toMatch(/still hidden/)
+    expect(container.textContent).not.toMatch(/found again|still hidden/)
   })
 
   it('interrupted shows the approved text', async () => {
@@ -286,9 +289,9 @@ describe('the toast after Run cost analysis', () => {
 
   it('detected 2, persisted 0: never "0 found", and not green', async () => {
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 2, suppressedResolved: 1, suppressedDismissed: 1 }) })
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new, 2 still hidden.'))
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new. 1 resolved found again, 1 dismissed found again.'))
     expect(toast.success).not.toHaveBeenCalled()
-    expect(JSON.stringify([toast.info.mock.calls, toast.success.mock.calls])).not.toMatch(/0 opportunit|found/)
+    expect(JSON.stringify([toast.info.mock.calls, toast.success.mock.calls])).not.toMatch(/0 opportunit|\b0 found|\b0\b/)
   })
 
   it('partial: a warning with the approved text', async () => {

@@ -1,12 +1,14 @@
 /**
  * Exact banner, empty-state and toast copy for every scan state, as approved
- * by the founder on 2026-11-02 (pr2-step1.md §1c and §1g). The five PR 1
- * strings must stay byte-identical.
+ * by the founder on 2026-11-02 (pr2-step1.md §1c and §1g), with PR 3's C1-C5
+ * (pr3-step1.md §5.3, founder decisions 2026-11-03: parts with a 0 count are
+ * omitted) replacing the hidden-finding wording. The five PR 1 strings must
+ * stay byte-identical.
  */
 import { describe, it, expect } from 'vitest'
-import { analyzeToast, bannerContent, emptyStateDescription, INTERRUPTED_MESSAGE, PARTIAL_MESSAGE } from '../costScanBanner'
+import { analyzeToast, bannerContent, INTERRUPTED_MESSAGE, PARTIAL_MESSAGE } from '../costScanBanner'
 import { deriveCostScanState, type CostScanState } from '../costScanState'
-import { LEGACY_RUN, PRODUCTION_HIDDEN, checks, run } from './fixtures'
+import { LEGACY_RUN, PRODUCTION_HIDDEN, PRODUCTION_RESOLVED_ONLY, checks, run } from './fixtures'
 import type { CostAnalysisRun } from '@/lib/services/cost-recommendations.service'
 
 const stateOf = (r: CostAnalysisRun): CostScanState =>
@@ -33,11 +35,11 @@ describe('banner content per state', () => {
   it('4 running (LIVE)', () => expect(bannerContent(bare('running'))).toMatchObject({ tone: 'neutral', busy: true, title: 'Analysis in progress', description: 'DevControl is currently checking your account.' }))
   it('1 loading', () => expect(bannerContent(bare('loading'))).toMatchObject({ tone: 'neutral', loading: true }))
 
-  it('5 new findings, with R and H', () => {
+  it('5 new findings, with R and C4 (resolved part only)', () => {
     expect(banner(run({ detected_count: 6, new_count: 2, refreshed_count: 3, persisted_count: 5, suppressed_resolved_count: 1 }))).toEqual({
       tone: 'findings',
       title: 'Analysis complete',
-      description: '2 new opportunities found. 3 found earlier are still open. 1 finding you resolved or dismissed earlier is still hidden.',
+      description: '2 new opportunities found. 3 found earlier are still open. 1 finding you resolved was found again.',
     })
   })
   it('5 singular, no R or H', () => {
@@ -48,20 +50,32 @@ describe('banner content per state', () => {
       tone: 'findings', title: 'Analysis complete', description: 'No new opportunities. 1 found earlier is still open.',
     })
     expect(banner(run({ detected_count: 4, refreshed_count: 2, persisted_count: 2, suppressed_dismissed_count: 2 })).description).toBe(
-      'No new opportunities. 2 found earlier are still open. 2 findings you resolved or dismissed earlier are still hidden.'
+      'No new opportunities. 2 found earlier are still open. 2 findings you dismissed were found again and are still hidden.'
     )
   })
-  it('6 blue: production today', () => {
+  it('6 blue: C1 with both parts', () => {
     expect(banner(PRODUCTION_HIDDEN)).toEqual({
       tone: 'info',
       title: 'Analysis complete',
-      description: 'Nothing new to review. 2 findings you resolved or dismissed earlier were found again and are still hidden.',
+      description: 'Nothing new to review. 1 finding you resolved was found again. 1 finding you dismissed was found again and is still hidden.',
     })
+  })
+  it('6 production today (2 resolved, 0 dismissed): the 0 part is omitted', () => {
+    expect(banner(PRODUCTION_RESOLVED_ONLY).description).toBe('Nothing new to review. 2 findings you resolved were found again.')
+    expect(banner(PRODUCTION_RESOLVED_ONLY).description).not.toMatch(/\b0\b|dismissed/)
+  })
+  it('6 dismissed only, plural', () => {
+    expect(banner(run({ detected_count: 2, suppressed_dismissed_count: 2 })).description).toBe(
+      'Nothing new to review. 2 findings you dismissed were found again and are still hidden.'
+    )
   })
   it('6 singular', () => {
     expect(banner(run({ detected_count: 1, suppressed_resolved_count: 1 })).description).toBe(
-      'Nothing new to review. 1 finding you resolved or dismissed earlier was found again and is still hidden.'
+      'Nothing new to review. 1 finding you resolved was found again.'
     )
+  })
+  it('C1 no longer says resolved findings "are still hidden" (a reopen would contradict it)', () => {
+    expect(banner(PRODUCTION_RESOLVED_ONLY).description).not.toMatch(/still hidden/)
   })
   it('6b blue: not fully checked', () => {
     expect(banner(run({ unknown_resource_count: 3 }))).toEqual({ tone: 'info', title: 'Analysis complete', description: "Nothing was flagged, but 3 resources couldn't be fully checked." })
@@ -76,11 +90,11 @@ describe('banner content per state', () => {
   })
   it('7b legacy (LIVE)', () => expect(banner(LEGACY_RUN)).toEqual({ tone: 'neutral', title: 'Analysis complete', description: 'Per-check results are not yet recorded.' }))
   it('completed_other: neutral, headline only, no new wording', () => expect(banner(run({ detected_count: 1, duplicate_count: 1 }))).toEqual({ tone: 'neutral', title: 'Analysis complete' }))
-  it('8 amber partial, with N and H', () => {
+  it('8 amber partial, with N and C4', () => {
     expect(banner(run({ run_state: 'partial', status: 'failed', checks: checks(1), detected_count: 3, new_count: 2, persisted_count: 2, suppressed_resolved_count: 1 }))).toEqual({
       tone: 'warning',
       title: 'Analysis partly complete',
-      description: "Some cost checks didn't complete, so these results may be incomplete. 2 new opportunities found. 1 finding you resolved or dismissed earlier is still hidden.",
+      description: "Some cost checks didn't complete, so these results may be incomplete. 2 new opportunities found. 1 finding you resolved was found again.",
     })
     expect(banner(run({ run_state: 'partial', status: 'failed', checks: checks(1) })).description).toBe(PARTIAL_MESSAGE)
   })
@@ -107,18 +121,6 @@ describe('banner content per state', () => {
   })
 })
 
-describe('empty-state sub-text reuses the banner text', () => {
-  it('for run-derived states', () => {
-    expect(emptyStateDescription(stateOf(PRODUCTION_HIDDEN))).toBe(banner(PRODUCTION_HIDDEN).description)
-    expect(emptyStateDescription(stateOf(run()))).toBe(banner(run()).description)
-    expect(emptyStateDescription(stateOf(run({ run_state: 'interrupted', status: 'failed' })))).toBe(INTERRUPTED_MESSAGE)
-  })
-  it('none for states with older copy', () => {
-    expect(emptyStateDescription(stateOf(LEGACY_RUN))).toBeNull()
-    expect(emptyStateDescription(bare('failed'))).toBeNull()
-  })
-})
-
 describe('analyzeToast: from run state and counts, never recommendationsFound', () => {
   const counts = (c: Partial<Record<'detected' | 'new' | 'refreshed' | 'suppressedResolved' | 'suppressedDismissed' | 'duplicate' | 'persisted', number>>) => ({
     detected: 0, new: 0, refreshed: 0, suppressedResolved: 0, suppressedDismissed: 0, duplicate: 0, persisted: 0, ...c,
@@ -127,7 +129,9 @@ describe('analyzeToast: from run state and counts, never recommendationsFound', 
     ['new', { runState: 'completed' as const, counts: counts({ detected: 2, new: 2, persisted: 2 }), unknownResourceCount: 0 }, 'info', 'Analysis complete: 2 new opportunities.'],
     ['new singular', { runState: 'completed' as const, counts: counts({ detected: 1, new: 1, persisted: 1 }), unknownResourceCount: 0 }, 'info', 'Analysis complete: 1 new opportunity.'],
     ['none new', { runState: 'completed' as const, counts: counts({ detected: 1, refreshed: 1, persisted: 1 }), unknownResourceCount: 0 }, 'info', 'Analysis complete: no new opportunities.'],
-    ['hidden (production)', { runState: 'completed' as const, counts: counts({ detected: 2, suppressedResolved: 1, suppressedDismissed: 1 }), unknownResourceCount: 0 }, 'info', 'Analysis complete: nothing new, 2 still hidden.'],
+    ['hidden, both parts (C5)', { runState: 'completed' as const, counts: counts({ detected: 2, suppressedResolved: 1, suppressedDismissed: 1 }), unknownResourceCount: 0 }, 'info', 'Analysis complete: nothing new. 1 resolved found again, 1 dismissed found again.'],
+    ['hidden, production today (C5, 0 dismissed omitted)', { runState: 'completed' as const, counts: counts({ detected: 2, suppressedResolved: 2 }), unknownResourceCount: 0 }, 'info', 'Analysis complete: nothing new. 2 resolved found again.'],
+    ['hidden, dismissed only (C5, 0 resolved omitted)', { runState: 'completed' as const, counts: counts({ detected: 3, suppressedDismissed: 3 }), unknownResourceCount: 0 }, 'info', 'Analysis complete: nothing new. 3 dismissed found again.'],
     ['unknown', { runState: 'completed' as const, counts: counts({}), unknownResourceCount: 2 }, 'info', 'Analysis complete: nothing flagged, 2 resources not fully checked.'],
     ['unknown singular', { runState: 'completed' as const, counts: counts({}), unknownResourceCount: 1 }, 'info', 'Analysis complete: nothing flagged, 1 resource not fully checked.'],
     ['clean', { runState: 'completed' as const, counts: counts({}), unknownResourceCount: 0 }, 'success', 'Analysis complete: nothing flagged.'],

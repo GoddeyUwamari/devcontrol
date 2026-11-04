@@ -12,6 +12,7 @@ import { NON_APP_CLOSURE, SOURCE_FILES, importsOf } from './surface-scope'
 // files in those route folders, so a new Costs page cannot land outside the guard.
 const COSTS_ROUTE_DIRS = ['app/(app)/costs/', 'app/(app)/forecast/', 'app/(app)/cost-optimization/']
 const COSTS = [
+  'app/(app)/cost-optimization/HiddenFindings.tsx',
   'app/(app)/cost-optimization/controls/page.tsx',
   'app/(app)/cost-optimization/page.tsx',
   'app/(app)/costs/by-team/page.tsx',
@@ -387,6 +388,8 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'app/(app)/cost-optimization/page.tsx', match: 'text-slate-500', rule: 'text colour below AA on light surfaces', count: 1, reason: "Zero KPI values ($0/mo, $0/yr, 0 active): slate-500 #64748b, about 4.8:1 on the white KPI card, on large KPI text; founder decision 5 (Nov 2, Cost Optimization PR 2). The shared zero colour is on the backlog." },
   { file: 'app/(app)/cost-optimization/page.tsx', match: 'text-red-500', rule: 'text colour below AA on light surfaces', count: 1, reason: "The failed-analysis empty state's decorative alert icon (svg, not text); kept, no visible change." },
   { file: 'app/(app)/cost-optimization/page.tsx', match: 'opacity-60', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Disabled-state dimming on the Resolve and Dismiss buttons, kept until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
+  { file: 'app/(app)/cost-optimization/HiddenFindings.tsx', match: 'text-slate-500', rule: 'text colour below AA on light surfaces', count: 1, reason: 'The Still detected group\'s muted "$0/mo" (C8): slate-500 #64748b, about 4.8:1 on white; PR 2 founder decision 5 and PR 3b decision 5 (Nov 4).' },
+  { file: 'app/(app)/cost-optimization/HiddenFindings.tsx', match: 'opacity-60', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Disabled-state dimming on Reopen and the reused Dismiss button (C28), matching the page\'s Resolve and Dismiss until the solid disabled style lands in its own PR (founder decision, Oct 24).' },
   { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'text-gray-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The Enterprise gate's decorative Lock icon (svg, not text); kept, no visible change." },
   { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The info line's decorative sliders icon (svg, not text); kept, no visible change." },
   { file: 'app/(app)/cost-optimization/controls/page.tsx', match: 'text-red-400', rule: 'text colour below AA on light surfaces', count: 1, reason: "The load-error state's decorative alert icon (svg, not text); kept, no visible change." },
