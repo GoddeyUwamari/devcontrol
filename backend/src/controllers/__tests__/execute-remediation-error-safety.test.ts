@@ -208,6 +208,7 @@ describe('execute-remediation failure responses are fixed text', () => {
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ success: false, error: EXECUTE_REMEDIATION_FAILED, data: { workflowId: WORKFLOW_ID } });
     expectSafe(res.body);
+    expectSafeLogs();
   });
 
   it('a failure before the workflow exists -> the outer fixed message with no data', async () => {
@@ -216,6 +217,7 @@ describe('execute-remediation failure responses are fixed text', () => {
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ success: false, error: EXECUTE_REMEDIATION_FAILED, data: undefined });
     expectSafe(res.body);
+    expectSafeLogs();
   });
 
   it('a region mismatch keeps its fixed sentence, and an unrecognised one is not echoed', async () => {
@@ -229,5 +231,6 @@ describe('execute-remediation failure responses are fixed text', () => {
     res = await run();
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({ success: false, error: EXECUTE_REMEDIATION_FAILED });
+    expectSafeLogs();
   });
 });
