@@ -39,7 +39,7 @@ vi.mock('@/lib/services/aws-services.service', () => ({
   },
 }))
 const mockGetAccounts = vi.fn()
-vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts: () => mockGetAccounts() } }))
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await (mockGetAccounts()); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 const mockGetCostSummary = vi.fn()
 vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getCostSummary: () => mockGetCostSummary() } }))
 

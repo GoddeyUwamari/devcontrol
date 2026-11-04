@@ -12,7 +12,7 @@ import { LEGACY_RUN, PRODUCTION_HIDDEN, PRODUCTION_RESOLVED_ONLY, checks, run } 
 import type { CostAnalysisRun } from '@/lib/services/cost-recommendations.service'
 
 const stateOf = (r: CostAnalysisRun): CostScanState =>
-  deriveCostScanState({ accounts: { data: [{}], isError: false }, runs: { data: [r], isError: false }, jobs: { data: [], isError: false }, isAnalyzing: false })
+  deriveCostScanState({ connection: { data: 'connected', isError: false }, runs: { data: [r], isError: false }, jobs: { data: [], isError: false }, isAnalyzing: false })
 
 const banner = (r: CostAnalysisRun) => bannerContent(stateOf(r))
 const bare = (key: CostScanState['key']): CostScanState => ({ key, source: null, completedAt: null, errorMessage: null, counts: null })

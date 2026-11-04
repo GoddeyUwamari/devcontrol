@@ -13,7 +13,7 @@ const pending = { data: undefined, isError: false }
 
 function input(overrides: Partial<CostScanInput> = {}): CostScanInput {
   return {
-    accounts: ok([{ id: 'account-placeholder' }]),
+    connection: ok('connected' as const),
     runs: ok([run()]),
     jobs: ok([]),
     isAnalyzing: false,
@@ -24,9 +24,13 @@ function input(overrides: Partial<CostScanInput> = {}): CostScanInput {
 const key = (overrides: Partial<CostScanInput> = {}) => deriveCostScanState(input(overrides)).key
 
 describe('deriveCostScanState: one case per state', () => {
-  it('1 loading: accounts pending', () => expect(key({ accounts: pending })).toBe('loading'))
+  it('1 loading: the connection check pending', () => expect(key({ connection: pending })).toBe('loading'))
   it('1 loading: runs pending', () => expect(key({ runs: pending })).toBe('loading'))
-  it('2 not connected', () => expect(key({ accounts: ok([]) })).toBe('not_connected'))
+  it('2 not connected: the server reports no active connection', () => expect(key({ connection: ok('not_connected' as const) })).toBe('not_connected'))
+  it('2b more than one active connection: status unavailable, never connected or not connected', () =>
+    expect(key({ connection: ok('ambiguous' as const) })).toBe('status_unavailable'))
+  it('2c a finished run left from an earlier connection never makes it connected', () =>
+    expect(key({ connection: ok('not_connected' as const), runs: ok([run({ detected_count: 3, new_count: 3, persisted_count: 3 })]) })).toBe('not_connected'))
   it('3 never scanned: runs and jobs both loaded and empty', () => expect(key({ runs: ok([]), jobs: ok([]) })).toBe('never_analyzed'))
   it('4 running: a running run', () => expect(key({ runs: ok([run({ run_state: 'running', status: 'running', completed_at: null })]) })).toBe('running'))
   it('4 running: the button was just clicked, whatever the history says', () => expect(key({ isAnalyzing: true, runs: ok([PRODUCTION_HIDDEN]) })).toBe('running'))
@@ -44,7 +48,7 @@ describe('deriveCostScanState: one case per state', () => {
     expect(s).toMatchObject({ key: 'failed', source: 'scheduled', errorMessage: 'The analysis did not complete due to an unexpected error.' })
   })
   it('13 run-history fetch failed', () => expect(key({ runs: failed })).toBe('status_unavailable'))
-  it('14 accounts fetch failed', () => expect(key({ accounts: failed })).toBe('status_unavailable'))
+  it('14 connection check failed', () => expect(key({ connection: failed })).toBe('status_unavailable'))
 })
 
 describe('never green unless every check ran and nothing was detected or hidden', () => {
@@ -66,7 +70,7 @@ describe('a failure never reads as never, empty or loading', () => {
   it('runs empty but jobs error is not "never analyzed"', () => expect(key({ runs: ok([]), jobs: failed })).toBe('status_unavailable'))
   it('runs empty and jobs pending is still loading', () => expect(key({ runs: ok([]), jobs: pending })).toBe('loading'))
   it('accounts error is not loading forever and not "not connected"', () => {
-    expect(key({ accounts: failed, runs: ok([run()]) })).toBe('status_unavailable')
+    expect(key({ connection: failed, runs: ok([run()]) })).toBe('status_unavailable')
   })
 })
 

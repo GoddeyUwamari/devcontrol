@@ -145,7 +145,7 @@ describe('Cost Optimization page: real data sources, not client-side re-aggregat
   })
 
   it('derives AWS-connection state from the real accounts endpoint', () => {
-    expect(source).toMatch(/awsAccountsService\.getAccounts/)
+    expect(source).toMatch(/awsAccountsService\.getAccountsAndConnection/)
   })
 
   it('reads discovery jobs only for their warnings and the no-run-rows fallback, never their status or error text (decision 10)', () => {

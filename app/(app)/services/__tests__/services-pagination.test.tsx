@@ -42,7 +42,7 @@ vi.mock('@/lib/services/aws-services.service', () => ({
 }))
 const mockGetAccounts = vi.fn()
 vi.mock('@/lib/services/aws-accounts.service', () => ({
-  default: { getAccounts: () => mockGetAccounts() },
+  default: { getAccountsAndConnection: async () => { const accounts = await (mockGetAccounts()); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } },
 }))
 
 function row(id: string, needsAttention: boolean, name = `svc-${id}`) {

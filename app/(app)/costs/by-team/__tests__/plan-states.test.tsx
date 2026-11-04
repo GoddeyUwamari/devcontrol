@@ -9,7 +9,7 @@ import { describePlanStates } from '@/lib/contexts/__tests__/org-load-harness'
 const getDashboardStats = vi.hoisted(() => vi.fn(async () => ({ monthlyAwsCost: 10, costSource: 'actual' })))
 const getAccounts = vi.hoisted(() => vi.fn(async () => [{ id: 'acct-1' }]))
 vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getDashboardStats } }))
-vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts } }))
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await (getAccounts()); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/',

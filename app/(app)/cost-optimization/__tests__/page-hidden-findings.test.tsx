@@ -44,7 +44,7 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     analyze: () => svc.analyze(),
   },
 }))
-vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts: () => svc.getAccounts() } }))
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await (svc.getAccounts()); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 vi.mock('@/lib/services/aws-resources.service', () => ({ awsResourcesService: { getDiscoveryJobs: () => svc.getDiscoveryJobs() } }))
 
 const C7_TWO = "You marked these resolved, but the latest analysis still found them. They aren't in the totals above until you reopen them."

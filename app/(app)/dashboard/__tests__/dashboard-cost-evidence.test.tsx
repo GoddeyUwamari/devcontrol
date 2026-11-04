@@ -70,11 +70,11 @@ const LEGACY_STATS: Record<'billing' | 'servicesOnly' | 'zero', PlatformDashboar
 }
 const SYNCING_BANNER = /Historical billing data is still syncing/
 const BILLING_SYNC_BANNER = /Billing sync in progress/
-const CONNECTED_ACCOUNTS = [{ id: 'acct' }]
+const CONNECTED_ACCOUNTS = [{ id: 'acct', status: 'active' }]
 
 let client: QueryClient
 let trendResponse: { ok: boolean; data: unknown[] }
-/** What /api/aws/accounts returns (the other connection signal besides the legacy stats). */
+/** The rows /api/aws/accounts returns; its `connection` state follows their status (the only connection signal). */
 let awsAccounts: unknown[]
 /** HTTP status of /api/aws/accounts, or 'pending' for a request that never settles. */
 let awsAccountsStatus: number | 'pending'
@@ -120,7 +120,9 @@ beforeEach(() => {
     if (awsAccountsStatus === 'pending') return new Promise(() => {})
     const ok = awsAccountsStatus === 200
     // A failed response carries an error body, as the backend's do -- not a list.
-    return Promise.resolve({ ok, status: awsAccountsStatus, json: async () => (ok ? { success: true, data: awsAccounts } : { success: false, error: 'fixture' }) })
+    // The server's connection state (AWS connect PR B) follows the rows' own status, as the backend decides it.
+    const connection = { state: awsAccounts.filter((a) => (a as { status?: string }).status === 'active').length === 1 ? 'connected' : 'not_connected' }
+    return Promise.resolve({ ok, status: awsAccountsStatus, json: async () => (ok ? { success: true, data: awsAccounts, connection } : { success: false, error: 'fixture' }) })
   }))
 })
 afterEach(() => {
@@ -194,16 +196,29 @@ describe('connection gates and the connection state ignore the cost evidence', (
     expect(screen.queryByText(SYNCING_BANNER)).not.toBeInTheDocument()
   })
 
-  it.each(EVIDENCE)('no accounts, legacy billing stats present, evidence %s: never redirects', async (_name, summary, value) => {
+  // AWS connect PR B: historical AWS-derived data (the legacy stats) never makes the
+  // dashboard connected; only the server's connection state does.
+  it.each(EVIDENCE)('no accounts, legacy billing stats present, evidence %s: unconnected, never redirects, no connected content', async (_name, summary) => {
     awsAccounts = []
     setup(LEGACY_STATS.billing, summary)
     renderDashboard()
 
-    await spendCardText(value)
+    expect(await screen.findByTestId('dashboard-preview')).toBeInTheDocument()
     await gateInputsSettled()
     expect(router.replace).not.toHaveBeenCalled()
-    expect(screen.queryByText(BILLING_SYNC_BANNER)).not.toBeInTheDocument()
-    expect(screen.getByText('Security Posture')).toBeInTheDocument()
+    expectNoConnectedContent()
+  })
+
+  it.each(['billing', 'servicesOnly'] as const)('an account row that is no longer active, legacy stats "%s" present: unconnected (disconnected and stale data)', async (legacy) => {
+    awsAccounts = [{ id: 'acct', status: 'disconnected' }]
+    setup(LEGACY_STATS[legacy], { spend: actual(3), monthOverMonth: noMom('unavailable') })
+    renderDashboard()
+
+    expect(await screen.findByTestId('dashboard-preview')).toBeInTheDocument()
+    await gateInputsSettled()
+    expect(screen.queryByTestId('provider-pill-aws')?.getAttribute('data-state')).not.toBe('connected')
+    expectNoConnectedContent()
+    expectNoNavigation()
   })
 
   it.each(EVIDENCE)('no accounts and all legacy stats zero, evidence %s: stays on the dashboard, unconnected, with no connected content', async (_name, summary) => {
@@ -605,16 +620,17 @@ describe('a failed accounts request is unknown, never "not connected"', () => {
     expectNoNavigation()
   })
 
-  it('with legacy stats that already show AWS data, the dashboard still renders as connected', async () => {
+  // AWS connect PR B: legacy stats that show AWS data no longer turn a failed check into "connected".
+  it('with legacy stats that already show AWS data, a failed accounts request is still unknown, never connected', async () => {
     awsAccountsStatus = 500
     setup(LEGACY_STATS.billing, { spend: actual(3), monthOverMonth: noMom('unavailable') })
     renderDashboard()
 
-    await spendCardText('$3.00')
-    await waitFor(() => expect(client.getQueryState(['aws-accounts', 'org-test'])?.status).toBe('error'), AFTER_RETRY)
+    const line = await screen.findByTestId('aws-connection-line', undefined, AFTER_RETRY)
+    expect(line).toHaveAttribute('data-state', 'unknown')
     await gateInputsSettled()
-    expect(screen.queryByTestId('aws-connection-line')).not.toBeInTheDocument()
-    expect(screen.getByTestId('provider-pill-aws')).toHaveAttribute('data-state', 'connected')
+    expect(screen.queryByTestId('provider-pill-aws')).not.toBeInTheDocument()
+    expectNoConnectedContent()
     expectNoNavigation()
   })
 })

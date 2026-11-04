@@ -182,13 +182,24 @@ export default function ServicesPage() {
   // Whether an AWS account is connected at all — independent of the current
   // type/env/search filter, since a filtered-to-zero result set must never be
   // mistaken for "nothing connected."
+  //
+  // The server's connection state (GET /api/aws/accounts `connection`), never the
+  // row count and never the resource counts: resources left from an earlier
+  // connection don't make the account connected.
+  //   connected | not_connected | unknown (the check failed, or more than one
+  //   active connection) | loading
   const accountsQuery = useQuery({
     queryKey: ['services-aws-accounts', orgId],
-    queryFn: () => awsAccountsService.getAccounts(),
+    queryFn: () => awsAccountsService.getAccountsAndConnection(),
     enabled: realMode, retry: false, refetchOnWindowFocus: false,
   })
-  const noAwsAccount   = accountsQuery.data ? accountsQuery.data.length === 0 : true
-  const knownNoAccount = accountsQuery.data?.length === 0
+  const awsConnection: 'connected' | 'not_connected' | 'unknown' | 'loading' =
+    accountsQuery.isError ? 'unknown'
+      : !accountsQuery.data ? 'loading'
+      : accountsQuery.data.connection === 'connected' ? 'connected'
+      : accountsQuery.data.connection === 'not_connected' ? 'not_connected'
+      : 'unknown'
+  const knownNoAccount = awsConnection === 'not_connected'
 
   // Organization-wide numbers. Filters can't change them, so a filter or search
   // change never refetches them; discovery does (handleAutoDiscover).
@@ -348,9 +359,9 @@ export default function ServicesPage() {
 
   // Connection status — deliberately independent of the current type/env/search
   // filter, so filtering to zero matches can never be mistaken for "AWS not
-  // connected." True when there's a connected account OR any resources have
-  // ever synced (totalServices comes from the unfiltered /services/stats call).
-  const isAwsConnected    = isDemoActive || !noAwsAccount || totalServices > 0
+  // connected." Only the server's connection state says so: resources that ever
+  // synced (totalServices) don't, since they may be left from an earlier connection.
+  const isAwsConnected    = isDemoActive || awsConnection === 'connected'
   // What the counts below can support. "Healthy" in /services/stats means "not
   // stopped/failed and no high-severity finding" -- no monitoring source exists
   // -- so real mode says "no flagged issues", and zero resources or a failed
@@ -680,7 +691,18 @@ export default function ServicesPage() {
             </button>
           </div>
         ) : visibleTotal === 0 ? (
-          !isAwsConnected ? (
+          !isAwsConnected && awsConnection === 'loading' ? (
+            // ── The connection check has not answered yet: neither state is claimed ──
+            <div className="px-7 py-12 text-center">
+              <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
+              <p className="text-sm text-slate-500 m-0">Loading resources…</p>
+            </div>
+          ) : !isAwsConnected && awsConnection === 'unknown' ? (
+            // ── The connection check failed: never read as "not connected" (dashboard's approved text) ──
+            <div className="px-5 py-10 text-center" role="alert" data-testid="services-connection-unknown">
+              <p className="text-sm text-slate-500 m-0">Couldn&apos;t check your AWS connection. Refresh to try again.</p>
+            </div>
+          ) : !isAwsConnected ? (
             // ── STATE A — no AWS account connected at all ──
             <div className="px-5 sm:px-12 py-12 text-center">
               <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4">

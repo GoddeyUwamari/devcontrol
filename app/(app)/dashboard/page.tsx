@@ -29,6 +29,7 @@ import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
 import { computeAwsConnectionState } from './dashboardAwsConnection'
+import { parseAwsConnection, type AwsAccountsAndConnection } from '@/lib/services/aws-accounts.service'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
 import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLine, resourceIssueCount, SECURITY_STATUS_BADGE, securityKpiCaption, securityScopeCaption } from './securityHealthKpi'
 import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
@@ -261,7 +262,7 @@ export default function DashboardPage() {
   const monthlySavings = isDemoActive ? 1922 : roundCents(costRecStats?.totalPotentialSavings ?? 0)
   const annualSavings = roundCents(annualizeMonthly(monthlySavings))
 
-  const { data: awsAccounts, isError: awsAccountsError } = useQuery<unknown[]>({
+  const { data: awsAccounts, isError: awsAccountsError } = useQuery<AwsAccountsAndConnection>({
     queryKey: ['aws-accounts', organization?.id],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -273,7 +274,8 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error('The AWS accounts could not be retrieved')
       const json = await res.json()
       if (!Array.isArray(json?.data)) throw new Error('The AWS accounts response was not a list')
-      return json.data
+      // The server's own connection state (parseAwsConnection), never the row count.
+      return { accounts: json.data, connection: parseAwsConnection(json.connection, json.data) }
     },
     // One retry, so a single transient failure is not reported as "couldn't check".
     staleTime: 30000, retry: 1,
@@ -285,10 +287,8 @@ export default function DashboardPage() {
   // refetch keeps the last successful list.)
   const awsConnection = computeAwsConnectionState({
     isDemoActive,
-    awsAccounts,
-    awsAccountsFailed: awsAccountsError && awsAccounts === undefined,
-    statsLoading,
-    stats,
+    connection: awsAccounts?.connection,
+    connectionFailed: awsAccountsError && awsAccounts === undefined,
   })
   const isAwsConnected = awsConnection === 'connected'
   // Only an owner can connect AWS. The role is the access token's claim (display

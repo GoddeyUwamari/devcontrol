@@ -43,7 +43,7 @@ vi.mock('@/lib/services/aws-services.service', () => ({
 
 const mockGetAccounts = vi.fn()
 vi.mock('@/lib/services/aws-accounts.service', () => ({
-  default: { getAccounts: () => mockGetAccounts() },
+  default: { getAccountsAndConnection: async () => { const accounts = await (mockGetAccounts()); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } },
 }))
 
 const HEALTH_CLAIMS = /all healthy|all systems healthy|system is healthy|services healthy|no impact detected|operating within thresholds|real[- ]?time/i
