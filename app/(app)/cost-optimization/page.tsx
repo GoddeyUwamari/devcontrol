@@ -188,6 +188,9 @@ export default function CostOptimizationPage() {
       ? { status: 'loading' }
       : { status: 'ready', data: hiddenQuery.data };
   const stillDetectedCount = hiddenView.status === 'ready' ? hiddenView.data.summary.stillDetected.count : null;
+  // States with their own empty-state card (LIVE copy). The still-detected group
+  // replaces only the plain "No active recommendations to review" card, never these.
+  const STATUS_CARD_KEYS: readonly string[] = ['not_connected', 'never_analyzed', 'running', 'failed', 'completed_unrecorded'];
 
   const role = useCurrentRole();
 
@@ -316,6 +319,8 @@ export default function CostOptimizationPage() {
   const listedActiveCount = activeCount ?? recommendations.length;
   const hiddenCount = activeCount === null ? 0 : Math.max(0, activeCount - recommendations.length);
   // E1: the checks as one small left-aligned line (replaces the centred list).
+  // The check list is hidden while /hidden has failed (no conclusion), or when the catalog has no checks.
+  const checksVisible = hiddenView.status !== 'error' && implementedRules.length > 0;
   const checksNote = implementedRules.length > 0 ? (
     <p className="text-label font-normal text-ink-muted mt-4" data-testid="checks-line">{checksLine(implementedRules.map((rule) => rule.name))}</p>
   ) : null;
@@ -461,10 +466,10 @@ export default function CostOptimizationPage() {
             <div className="flex items-center justify-center h-64" data-testid="scan-status-loading">
               <Loader2 size={24} className="animate-spin text-violet-600" />
             </div>
-          ) : recommendations.length === 0 && stillDetectedCount !== null && stillDetectedCount > 0 ? (
+          ) : recommendations.length === 0 && stillDetectedCount !== null && stillDetectedCount > 0 && !STATUS_CARD_KEYS.includes(scan.key) ? (
             // Still-detected findings take the empty card's place: the group above shows them.
             null
-          ) : recommendations.length === 0 && hiddenView.status === 'loading' && !['not_connected', 'never_analyzed', 'running', 'failed'].includes(scan.key) ? (
+          ) : recommendations.length === 0 && hiddenView.status === 'loading' && !STATUS_CARD_KEYS.includes(scan.key) ? (
             // Whether anything is still detected isn't known yet: no empty-state conclusion until it is.
             <div className="flex items-center justify-center h-64" data-testid="hidden-status-loading">
               <Loader2 size={24} className="animate-spin text-violet-600" />
@@ -504,16 +509,17 @@ export default function CostOptimizationPage() {
                 <>
                   <Clock size={28} className="text-slate-400 mb-3" aria-hidden="true" />
                   <p className="text-ui font-semibold text-slate-900">No active recommendations to review</p>
-                  {scan.key === 'completed_unrecorded' && (
-                    <p className="text-ui text-ink-muted mt-2">
-                      {totalEverCount > 0 ? 'Previously identified items have been resolved or dismissed. ' : ''}
-                      This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.
+                  {scan.key === 'completed_unrecorded' && (totalEverCount > 0 || checksVisible) && (
+                    <p className="text-ui text-ink-muted mt-2" data-testid="legacy-caveat">
+                      {totalEverCount > 0 ? `Previously identified items have been resolved or dismissed.${checksVisible ? ' ' : ''}` : ''}
+                      {/* "each check below" only when the check list is actually shown below. */}
+                      {checksVisible && 'This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.'}
                     </p>
                   )}
                 </>
               )}
               {/* A failed /hidden request: the LIVE headline only, no conclusion and no check list. */}
-              {hiddenView.status === 'error' ? null : checksNote}
+              {checksVisible ? checksNote : null}
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6 items-start">

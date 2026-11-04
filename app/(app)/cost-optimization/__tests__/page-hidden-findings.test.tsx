@@ -9,7 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostOptimizationPage from '../page'
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service'
-import { PRODUCTION_RESOLVED_ONLY, run } from './fixtures'
+import { LEGACY_RUN, PRODUCTION_RESOLVED_ONLY, run } from './fixtures'
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -249,8 +249,9 @@ describe('Still detected group', () => {
     svc.getHidden.mockResolvedValue(hidden([dismissed], { stillDetected: { count: 0, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} } }))
     renderPage()
     await loaded()
-    expect(within(slot()).queryByTestId('hidden-item')).not.toBeInTheDocument()
-    expect(within(slot()).queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument()
+    // Nothing to show: no Still detected section at all (L3).
+    expect(screen.queryByTestId('still-detected-slot')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument()
   })
 
   it('C12 when nothing is fresh but some resolved findings could not be re-checked', async () => {
@@ -268,6 +269,112 @@ describe('Still detected group', () => {
     const live = screen.getByTestId('still-detected-live')
     expect(live).toHaveAttribute('aria-live', 'polite')
     expect(within(live).getByText(C7_TWO)).toBeInTheDocument()
+  })
+})
+
+describe('review fix L2: status cards still show when items are still detected', () => {
+  const card = () => screen.findByTestId('empty-state')
+
+  it('not connected: the Connect AWS card stays', async () => {
+    svc.getAccounts.mockResolvedValue([])
+    renderPage()
+    expect(within(await card()).getByText('Connect AWS to check for savings')).toBeInTheDocument()
+  })
+
+  it('never analyzed: its card stays', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([])
+    renderPage()
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+    expect(within(await card()).getByText('No analysis has run yet')).toBeInTheDocument()
+  })
+
+  it('running: the Analysis in progress card stays', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'running', status: 'running', completed_at: null })])
+    renderPage()
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+    expect(within(await card()).getByText('Analysis in progress')).toBeInTheDocument()
+  })
+
+  it('failed: the failed card stays', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'failed', status: 'failed', error_message: 'None of the cost checks could complete. Try again.' })])
+    renderPage()
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+    expect(within(await card()).getByText("The last manual cost analysis didn't complete")).toBeInTheDocument()
+  })
+
+  it('7b legacy: the card and its caveat stay', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([LEGACY_RUN])
+    renderPage()
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+    const c = await card()
+    expect(within(c).getByText(EMPTY_HEADLINE)).toBeInTheDocument()
+    expect(within(c).getByTestId('legacy-caveat')).toHaveTextContent(/This list does not confirm that nothing can be saved/)
+  })
+
+  it('a completed run: only the plain empty card is replaced by the group', async () => {
+    renderPage()
+    await loaded()
+    expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument()
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument()
+  })
+})
+
+describe('review fix L3: no empty Still detected region', () => {
+  it('nothing hidden: no section, no region, no landmark named Still detected', async () => {
+    svc.getHidden.mockResolvedValue(NOTHING_HIDDEN)
+    renderPage()
+    await loaded()
+    await screen.findByTestId('empty-state')
+    expect(screen.queryByTestId('still-detected-slot')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Still detected' })).not.toBeInTheDocument()
+  })
+
+  it('loading: the section is shown as busy', async () => {
+    svc.getHidden.mockReturnValue(new Promise(() => undefined))
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('hidden-loading')).toBeInTheDocument())
+    expect(screen.getByRole('region', { name: 'Still detected' })).toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('C27 shows the section (C12 is covered above)', async () => {
+    svc.getHidden.mockRejectedValue(new Error('x'))
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Still detected' })).toHaveTextContent(C27))
+  })
+})
+
+describe('review fix L1: "each check below" only when the check list is shown', () => {
+  beforeEach(() => { svc.getAnalysisRuns.mockResolvedValue([LEGACY_RUN]) })
+
+  it('/hidden failed (check list hidden): no "each check below" sentence; the LIVE first sentence stays', async () => {
+    svc.getHidden.mockRejectedValue(new Error('x'))
+    renderPage()
+    const c = await screen.findByTestId('empty-state')
+    expect(within(c).queryByTestId('checks-line')).not.toBeInTheDocument()
+    expect(within(c).getByTestId('legacy-caveat')).toHaveTextContent(/^Previously identified items have been resolved or dismissed\.$/)
+    expect(c.textContent).not.toMatch(/each check below/)
+  })
+
+  it('no checks in the catalog: no "each check below" sentence', async () => {
+    svc.getHidden.mockResolvedValue(NOTHING_HIDDEN)
+    svc.getOptimizationRules.mockResolvedValue({ rules: [], summary: { totalRules: 0, implementedCount: 0, plannedCount: 0, services: [] } })
+    renderPage()
+    await loaded()
+    const c = await screen.findByTestId('empty-state')
+    expect(c.textContent).not.toMatch(/each check below/)
+  })
+
+  it('check list shown: the full LIVE caveat, followed by the list', async () => {
+    svc.getHidden.mockResolvedValue(NOTHING_HIDDEN)
+    renderPage()
+    await loaded()
+    const c = await screen.findByTestId('empty-state')
+    await waitFor(() => expect(within(c).getByTestId('checks-line')).toBeInTheDocument())
+    expect(within(c).getByTestId('legacy-caveat')).toHaveTextContent(
+      'Previously identified items have been resolved or dismissed. This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.'
+    )
+    const caveat = within(c).getByTestId('legacy-caveat')
+    expect(caveat.compareDocumentPosition(within(c).getByTestId('checks-line')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
@@ -641,7 +748,7 @@ describe('stale responses never overwrite newer data', () => {
     ])
     fireEvent.click(within(slot()).getAllByRole('button', { name: /reopen/i })[0])
     await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('2')).toBeInTheDocument())
-    await waitFor(() => expect(within(slot()).queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument())
     expect(screen.getByText('2 active opportunities')).toBeInTheDocument()
 
     // The older responses now arrive, carrying the pre-reopen state.
@@ -651,7 +758,7 @@ describe('stale responses never overwrite newer data', () => {
       oldList.resolve([])
     })
     await new Promise((r) => setTimeout(r, 50))
-    expect(within(slot()).queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument()
     expect(within(kpiCard('Active Opportunities')).getByText('2')).toBeInTheDocument()
     expect(screen.getByText('2 active opportunities')).toBeInTheDocument()
     expect(queryClient.getQueryData(['cost-recommendations-hidden'])).toEqual(NOTHING_HIDDEN)
@@ -666,7 +773,7 @@ describe('stale responses never overwrite newer data', () => {
     await waitFor(() => expect(svc.getHidden).toHaveBeenCalledTimes(2))
     svc.getHidden.mockResolvedValue(NOTHING_HIDDEN)
     fireEvent.click(within(slot()).getAllByRole('button', { name: /reopen/i })[0])
-    await waitFor(() => expect(within(slot()).queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Still detected' })).not.toBeInTheDocument())
     await act(async () => old.reject(new Error('late failure')))
     await new Promise((r) => setTimeout(r, 50))
     expect(screen.queryByText(C27)).not.toBeInTheDocument()

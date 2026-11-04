@@ -147,8 +147,10 @@ function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: 
 
 /**
  * The slot directly under the KPI cards: the Still detected group, C12, C27
- * or nothing. Its summary sits in an always-mounted polite live region so a
- * change (load, failure, reopen) is announced.
+ * or nothing. Rendered only when it has something to show (items, C12, C27)
+ * or is loading (aria-busy), so there is never an empty "Still detected"
+ * region. While shown, its summary sits in a polite live region, so a change
+ * from loading to a result, or a count change after a reopen, is announced.
  */
 export function StillDetectedSlot({ view, actions, onRetry }: { view: HiddenView; actions: ItemActions; onRetry: () => void }) {
   const headingId = useId();
@@ -160,8 +162,16 @@ export function StillDetectedSlot({ view, actions, onRetry }: { view: HiddenView
   const estimate = summary?.stillDetected.estimatedMonthlySavings ?? 0;
   const ceiling = summary?.stillDetected.ceilingMonthlySavings ?? 0;
 
+  if (view.status === 'ready' && !showGroup && !showNotRechecked) return null;
+
   return (
-    <section aria-labelledby={showGroup ? headingId : undefined} aria-label={showGroup ? undefined : STILL_DETECTED_TITLE} data-testid="still-detected-slot" className={cn(view.status !== 'ready' || showGroup || showNotRechecked ? 'mb-6' : undefined)}>
+    <section
+      aria-labelledby={showGroup ? headingId : undefined}
+      aria-label={showGroup ? undefined : STILL_DETECTED_TITLE}
+      aria-busy={view.status === 'loading' || undefined}
+      data-testid="still-detected-slot"
+      className="mb-6"
+    >
       <div aria-live="polite" aria-atomic="true" data-testid="still-detected-live">
         {view.status === 'error' ? (
           <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3.5" data-testid="hidden-load-failed">
