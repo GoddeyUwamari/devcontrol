@@ -6,11 +6,13 @@ export interface AISummaryResult {
   cloudSpend: string | null;
   systemStatus: string | null;
   /**
-   * identified      = topRisk states a finding present in the evidence
-   * none_identified = security evidence was evaluated and records no active findings
-   * unavailable     = risk could not be evaluated -- never shown as "no risks"
+   * identified         = topRisk states a finding present in the evidence
+   * no_urgent_findings = topRisk is the backend's W11 line: the latest security
+   *                      evaluation completed and is current, and every open finding is low
+   * none_identified    = security evidence was evaluated and records no active findings
+   * unavailable        = risk could not be evaluated -- never shown as "no risks"
    */
-  topRiskStatus: 'identified' | 'none_identified' | 'unavailable';
+  topRiskStatus: 'identified' | 'no_urgent_findings' | 'none_identified' | 'unavailable';
   generatedAt: string;
 }
 

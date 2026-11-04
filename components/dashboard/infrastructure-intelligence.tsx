@@ -3,11 +3,16 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EvidenceBadge, NEUTRAL_COLOR, toneText } from './evidence-badge'
 import { EvidenceInfo } from './evidence-info'
 import { CardArrowLink } from './card-arrow-link'
+import type { AISummaryResult } from '@/lib/services/ai-summary.service'
 
 interface InfrastructureIntelligenceProps {
   topRisk: string | null
-  /** From the AI summary: only 'none_identified' may render as "no risks". */
-  topRiskStatus: 'identified' | 'none_identified' | 'unavailable'
+  /**
+   * From the AI summary: only 'none_identified' may render as "no risks".
+   * 'no_urgent_findings' carries its own backend text (W11) in topRisk, shown as is,
+   * with no severity badge and no "Open top risk" link.
+   */
+  topRiskStatus: AISummaryResult['topRiskStatus']
   aiSummaryLoading: boolean
   /** DevControl's own service health (its /health check) -- never the customer's AWS. */
   systemStatus: { value: string; caption: string; operational: boolean; color: string; dotColor: string }

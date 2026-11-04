@@ -189,3 +189,23 @@ describe('DevControl System Health is DevControl\'s own health, not customer AWS
     expect(container.textContent).not.toMatch(/Infrastructure Intelligence/)
   })
 })
+
+describe('Top Risk W11: no critical, high or medium findings open (founder decision D-B3)', () => {
+  const W11 = 'No critical, high or medium findings open. 3 lower-priority findings on the Security page.'
+
+  it('shows the backend W11 line whole, with no severity badge, neutral tint and no "Open top risk" link', () => {
+    renderRow({ topRisk: W11, topRiskStatus: 'no_urgent_findings' })
+    expect(screen.getByText(W11)).toBeTruthy()
+    expect(within(topRiskCard()).queryByTestId('top-risk-severity')).toBeNull()
+    expect(topRiskCard().getAttribute('data-severity')).toBe('none')
+    expect(screen.queryByRole('link', { name: 'Open top risk' })).toBeNull()
+    expect(screen.queryByText('No urgent risks identified')).toBeNull()
+    expect(screen.queryByText('Risk status unavailable')).toBeNull()
+  })
+
+  it('while loading shows the skeleton, never W11', () => {
+    renderRow({ topRisk: W11, topRiskStatus: 'no_urgent_findings', aiSummaryLoading: true })
+    expect(screen.queryByText(W11)).toBeNull()
+  })
+})
+
