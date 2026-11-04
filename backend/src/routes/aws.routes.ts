@@ -1,5 +1,4 @@
 import { Router, Request, Response, NextFunction } from 'express'
-import { randomBytes } from 'crypto'
 import awsCostService from '../services/aws-cost.service'
 import { pool } from '../config/database'
 import { authenticate } from '../middleware/auth.middleware'
@@ -10,7 +9,10 @@ import { OrganizationAccessError, requireCurrentRole } from '../services/organiz
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 import { checkNewConnectionRoleArn, DEVCONTROL_ROLE_NAME_PREFIX } from '../utils/devcontrolRoleArn'
 import { parseAwsAccountId } from '../utils/awsAccountId'
-import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
+import { PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
+import { checkConnectRole, type RoleCheckFailure, type RoleCheckPolicy } from '../services/connect-role-check'
+import { runPermissionCheck, type ProbeClients } from '../services/connect-permission-check'
+import { resolveOrganizationExternalId } from '../repositories/aws-external-id.repository'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -69,15 +71,51 @@ function buildTrustPolicy(externalId: string, platformAccountId: string): object
   }
 }
 
-function mapStsError(err: any): string {
-  const code = err?.name ?? err?.Code ?? ''
-  if (code === 'AccessDenied') {
-    return 'Access denied — ensure the trust policy allows our account and the ExternalId matches exactly.'
-  }
-  if (code === 'NoSuchEntity') {
-    return 'Role ARN not found — verify the ARN is correct and the role exists in your account.'
-  }
-  return 'Could not assume this role. Check the trust policy and Role ARN, then try again.'
+/**
+ * What the owner is told when the role check fails (connect-role-check.ts): an
+ * HTTP status, a stable code and a fixed message. Never AWS's own text, which
+ * names the platform's principal, and never the ExternalId.
+ */
+export const ROLE_CHECK_RESPONSES: Record<RoleCheckFailure, { status: number; code: string; message: string }> = {
+  platform_unavailable: { status: 503, code: 'PLATFORM_AWS_UNAVAILABLE', message: PLATFORM_AWS_UNAVAILABLE_MESSAGE },
+  role_not_assumable: {
+    status: 422,
+    code: 'ROLE_NOT_ASSUMABLE',
+    message: "DevControl couldn't assume this role. If you just created it, AWS can take a minute to make it usable: wait a moment, then try again. If it still fails, check that the role's trust policy allows DevControl's AWS account with the External ID shown on this page, and that the Role ARN is from the AWS account you want to connect.",
+  },
+  aws_unavailable: {
+    status: 503,
+    code: 'AWS_UNAVAILABLE',
+    message: "AWS didn't respond while we checked your role. Nothing was saved. Please try again in a minute.",
+  },
+  role_not_found: {
+    status: 422,
+    code: 'ROLE_NOT_FOUND',
+    message: 'Role ARN not found — verify the ARN is correct and the role exists in your account.',
+  },
+  role_check_failed: {
+    status: 422,
+    code: 'ROLE_CHECK_FAILED',
+    message: 'Could not assume this role. Check the trust policy and Role ARN, then try again.',
+  },
+  cancelled: {
+    status: 503,
+    code: 'CONNECT_CANCELLED',
+    message: 'The connection check was cancelled. Nothing was saved.',
+  },
+}
+
+/** A database failure before anything was saved: fixed text, the cause stays in the server log. */
+export const CONNECT_STATE_UNAVAILABLE_MESSAGE = "We couldn't start the connection check. Nothing was saved. Please try again."
+
+/**
+ * Test seams for the connect flow's AWS calls. Production uses the defaults;
+ * a suite sets them and restores them with resetConnectTestHooks().
+ */
+export const connectTestHooks: { roleCheckPolicy?: RoleCheckPolicy; probeClients?: ProbeClients } = {}
+export function resetConnectTestHooks(): void {
+  delete connectTestHooks.roleCheckPolicy
+  delete connectTestHooks.probeClients
 }
 
 // GET /api/aws/costs/monthly
@@ -111,7 +149,8 @@ router.get('/costs/monthly', async (req: Request, res: Response) => {
 // POST /api/services/discover).
 
 // GET /api/aws/accounts/connect-init
-// Generates and stores a per-org external_id for the connect flow.
+// Returns the organization's one stable External ID (aws-external-id.repository.ts),
+// recorded on first use and never changed, and the trust policy built from it.
 // Must be registered before GET /accounts to avoid shadowing.
 router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, res: Response) => {
   res.set('Cache-Control', 'private, no-store')
@@ -126,38 +165,13 @@ router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, r
   }
 
   try {
-    // Reuse existing session if valid — don't generate a new ExternalId on every page load,
-    // which would force the user to update their AWS trust policy each time.
-    const existing = await pool.query(
-      `SELECT external_id FROM aws_connect_sessions
-       WHERE org_id = $1 AND expires_at > NOW()`,
-      [orgId]
-    )
-
-    const externalId = existing.rows.length > 0
-      ? existing.rows[0].external_id
-      : randomBytes(24).toString('base64url')
-
-    if (existing.rows.length === 0) {
-      await pool.query(
-        `INSERT INTO aws_connect_sessions (org_id, external_id, expires_at)
-         VALUES ($1, $2, NOW() + INTERVAL '1 hour')
-         ON CONFLICT (org_id) DO UPDATE
-           SET external_id = EXCLUDED.external_id,
-               created_at  = NOW(),
-               expires_at  = NOW() + INTERVAL '1 hour'`,
-        [orgId, externalId]
-      )
-    }
+    // The same value on every visit, so a role or stack built with it keeps
+    // matching: it never expires and is never regenerated.
+    const externalId = await resolveOrganizationExternalId(pool, orgId)
 
     // Funnel: the org has entered the AWS connection flow -- not that it
     // succeeded (that's aws_connection_completed, on POST /accounts).
-    // Deliberately unconditional on whether this call created a new session
-    // row or reused an existing valid one: "started" is about the org's
-    // first-ever entry into this flow, not about aws_connect_sessions'
-    // upsert/attempt semantics, which are left entirely unchanged.
-    // trackFunnelEventOnce's own per-org dedup is what makes every
-    // subsequent visit -- including a full retry after expiry -- a no-op.
+    // trackFunnelEventOnce's own per-org dedup makes every later visit a no-op.
     await trackFunnelEventOnce({
       organizationId: orgId,
       userId: req.user!.userId,
@@ -179,7 +193,8 @@ router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, r
 })
 
 // POST /api/aws/accounts
-// Validates the role via STS (with ExternalId) then writes a row scoped to this org.
+// Checks the role via STS with the organization's External ID, writes a row
+// scoped to this org, then runs the permission check (a warning, never a block).
 router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response) => {
   const orgId = req.user!.organizationId
   const { roleArn, nickname } = req.body
@@ -191,64 +206,55 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
     ?.replace(/&gt;/g, '>')
 
   if (!decodedRoleArn) {
-    return res.status(400).json({ success: false, message: 'roleArn is required' })
+    return res.status(400).json({ success: false, code: 'ROLE_ARN_REQUIRED', message: 'roleArn is required' })
   }
   const arnCheck = checkNewConnectionRoleArn(decodedRoleArn)
   if (!arnCheck.ok && arnCheck.reason === 'malformed') {
-    return res.status(400).json({ success: false, message: 'Invalid Role ARN format. Expected: arn:aws:iam::123456789012:role/DevControlRole' })
+    return res.status(400).json({ success: false, code: 'ROLE_ARN_MALFORMED', message: 'Invalid Role ARN format. Expected: arn:aws:iam::123456789012:role/DevControlRole' })
   }
   if (!arnCheck.ok) {
     return res.status(422).json({
       success: false,
-      message: `The IAM role name must start with "${DEVCONTROL_ROLE_NAME_PREFIX}" (for example ${DEVCONTROL_ROLE_NAME_PREFIX} or ${DEVCONTROL_ROLE_NAME_PREFIX}-Prod) and the role must not use an IAM path. Create or rename the role, then paste its ARN again.`,
+      code: 'ROLE_NAME_PREFIX',
+      message: `The IAM role name must start with "${DEVCONTROL_ROLE_NAME_PREFIX}" (for example ${DEVCONTROL_ROLE_NAME_PREFIX} or ${DEVCONTROL_ROLE_NAME_PREFIX}-Prod) and the role must not use an IAM path. IAM roles can't be renamed, so create a new role with a matching name, then paste its ARN.`,
     })
   }
   const accountId = arnCheck.accountId
 
-  // Retrieve the pending external_id for this org
-  const sessionResult = await pool.query(
-    `SELECT external_id FROM aws_connect_sessions
-     WHERE org_id = $1 AND expires_at > NOW()`,
-    [orgId]
-  )
-  if (sessionResult.rows.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Connect session not found or expired. Please go back and start again.',
-    })
-  }
-  const externalId = sessionResult.rows[0].external_id
-
-  // Validate via STS AssumeRole as the platform's own identity (the SDK's
-  // default credential chain)
+  // The organization's one External ID: what connect-init showed and what the
+  // role's trust policy must name. A database failure here is answered, never
+  // left as an unhandled rejection.
+  let externalId: string
   try {
-    await assumeRoleAsPlatform(process.env.AWS_REGION ?? 'us-east-1', {
-      RoleArn: decodedRoleArn,
-      RoleSessionName: 'devcontrol-validation',
-      ExternalId: externalId,
-      DurationSeconds: 900,
-    }, `Connect AWS org ${orgId}`)
-  } catch (stsError: any) {
-    // The platform's own identity is unavailable: the role was never tested,
-    // so the owner is not told to fix it. Nothing is saved and the connect
-    // session stays for a retry.
-    if (isPlatformAwsCredentialsUnavailable(stsError)) {
-      return res.status(503).json({ success: false, message: PLATFORM_AWS_UNAVAILABLE_MESSAGE })
-    }
-    console.error('[Connect AWS] STS validation failed:', {
-      name: stsError?.name,
-      code: stsError?.Code,
-      httpStatusCode: stsError?.$metadata?.httpStatusCode,
-      requestId: stsError?.$metadata?.requestId,
-      message: stsError?.message,
-    })
-    // No raw AWS message in the response: it names the platform's own
-    // principal. The full message is in the server log above.
-    return res.status(422).json({
-      success: false,
-      message: mapStsError(stsError),
-    })
+    externalId = await resolveOrganizationExternalId(pool, orgId)
+  } catch (dbError: unknown) {
+    console.error(`[Connect AWS] Could not read the External ID for org ${orgId}:`, dbError instanceof Error ? dbError.message : String(dbError))
+    return res.status(500).json({ success: false, code: 'CONNECT_STATE_UNAVAILABLE', message: CONNECT_STATE_UNAVAILABLE_MESSAGE })
   }
+
+  // Stop retrying once the owner's browser has gone away.
+  const cancel = new AbortController()
+  const onClose = () => { if (!res.writableEnded) cancel.abort() }
+  res.on('close', onClose)
+
+  let roleCheck: Awaited<ReturnType<typeof checkConnectRole>>
+  try {
+    roleCheck = await checkConnectRole({
+      region: process.env.AWS_REGION ?? 'us-east-1',
+      roleArn: decodedRoleArn,
+      externalId,
+      context: `Connect AWS org ${orgId}`,
+      signal: cancel.signal,
+      policy: connectTestHooks.roleCheckPolicy,
+    })
+  } finally {
+    res.off('close', onClose)
+  }
+  if (!roleCheck.ok) {
+    const response = ROLE_CHECK_RESPONSES[roleCheck.failure]
+    return res.status(response.status).json({ success: false, code: response.code, message: response.message })
+  }
+
   // Persist with org_id.
   // ON CONFLICT (org_id) DO NOTHING + check rowCount → 409 if already connected.
   try {
@@ -263,6 +269,7 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
     if (result.rows.length === 0) {
       return res.status(409).json({
         success: false,
+        code: 'ALREADY_CONNECTED',
         message: 'This organisation already has a connected AWS account. Disconnect it first.',
       })
     }
@@ -290,11 +297,10 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
       request: auditRequestContext(req),
     })
 
-    // Clean up the session this connect consumed. Matched on its external_id
-    // so a session created or rotated for this org after the read above is
-    // left alone, and awaited so the delete cannot land after the response.
-    // A failure only leaves a session that expires on its own -- log it
-    // (org id and message only, never the ExternalId) and keep the 201.
+    // Clean up a legacy connect session (aws_connect_sessions, written by the
+    // release before the stable External ID) holding this value. A failure only
+    // leaves a row nothing reads once the stable value exists -- log it (org id
+    // and message only, never the ExternalId) and keep the 201.
     try {
       await pool.query(
         `DELETE FROM aws_connect_sessions WHERE org_id = $1 AND external_id = $2`,
@@ -318,15 +324,25 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
       console.error(`[Connect AWS] Initial discovery failed for org ${orgId}:`, err)
     })
 
+    // A warning for the owner, never a block: the connection is already saved.
+    const permissionCheck = await runPermissionCheck({
+      credentials: roleCheck.credentials,
+      region: result.rows[0].region ?? 'us-east-1',
+      context: `Connect AWS org ${orgId}`,
+      clients: connectTestHooks.probeClients,
+    })
+
     return res.status(201).json({
       success: true,
       data: result.rows[0],
+      permissionCheck,
       message: 'AWS account connected successfully',
     })
   } catch (dbError: any) {
     console.error('[aws/accounts POST]', dbError)
     return res.status(500).json({
       success: false,
+      code: 'SAVE_FAILED',
       message: 'Account validated but could not be saved. Please try again.',
     })
   }

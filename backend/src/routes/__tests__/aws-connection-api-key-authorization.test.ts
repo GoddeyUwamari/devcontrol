@@ -20,7 +20,7 @@ import express from 'express';
 import http from 'http';
 import { Pool } from 'pg';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
-import awsRoutes from '../aws.routes';
+import awsRoutes, { connectTestHooks, resetConnectTestHooks, ROLE_CHECK_RESPONSES } from '../aws.routes';
 import apiKeysRoutes from '../api-keys.routes';
 import { authService } from '../../services/auth.service';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
@@ -557,6 +557,12 @@ describe('AWS account connection -- role name', () => {
   });
 });
 
+/** A role-check policy that never retries. */
+const SINGLE_ATTEMPT = {
+  maxElapsedMs: 0, attemptTimeoutMs: 5_000, baseDelayMs: 1_000, maxDelayMs: 8_000,
+  random: () => 0.5, now: () => 0, sleep: async () => {},
+};
+
 // Placeholder principal: the platform's instance-role session as AWS names it.
 const PLATFORM_CALLER = 'arn:aws:sts::111122223333:assumed-role/DevControlInstanceRole/i-0123456789abcdef0';
 
@@ -574,14 +580,23 @@ describe('AWS account connection -- the role refuses: 422 advice, never the raw 
       send: jest.fn().mockRejectedValue(Object.assign(new Error(raw), { name: 'AccessDenied' })),
     }) as unknown as STSClient);
     const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    // One attempt: this suite is about the message, not the retry window
+    // (connect-role-check.test.ts and aws-connect-hardening.test.ts cover that).
+    connectTestHooks.roleCheckPolicy = { ...SINGLE_ATTEMPT };
 
-    const res = await as(org.owner, org.orgId).connect({ roleArn });
+    let res: Response;
+    try {
+      res = await as(org.owner, org.orgId).connect({ roleArn });
+    } finally {
+      resetConnectTestHooks();
+    }
 
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body).toEqual({
       success: false,
-      message: 'Access denied — ensure the trust policy allows our account and the ExternalId matches exactly.',
+      code: 'ROLE_NOT_ASSUMABLE',
+      message: ROLE_CHECK_RESPONSES.role_not_assumable.message,
     });
     const text = JSON.stringify(body);
     expect(text).not.toMatch(/arn:aws:/);
@@ -663,7 +678,7 @@ describe('AWS account connection -- the platform identity unavailable', () => {
 
     expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body).toEqual({ success: false, message: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
+    expect(body).toEqual({ success: false, code: 'PLATFORM_AWS_UNAVAILABLE', message: PLATFORM_AWS_UNAVAILABLE_MESSAGE });
     expect(body.message).not.toMatch(/trust policy|ExternalId|Role ARN/);
     await expectNoBinding(org.orgId);
     expect(await connectSession(org.orgId)).toEqual(sessionBefore);

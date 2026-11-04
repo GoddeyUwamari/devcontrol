@@ -83,9 +83,15 @@ export function isPlatformIamDenial(err: unknown): boolean {
 
 /**
  * sts:AssumeRole as the platform, on a new region-only STS client. `context`
- * names the caller in the log line; it must carry no secret.
+ * names the caller in the log line; it must carry no secret. `abortSignal`,
+ * when given, cancels the request (the SDK then rejects with an AbortError).
  */
-export async function assumeRoleAsPlatform(region: string, input: AssumeRoleCommandInput, context: string): Promise<AssumeRoleCommandOutput> {
+export async function assumeRoleAsPlatform(
+  region: string,
+  input: AssumeRoleCommandInput,
+  context: string,
+  options: { abortSignal?: AbortSignal } = {}
+): Promise<AssumeRoleCommandOutput> {
   // The local stack (DEVCONTROL_LOCAL_STACK=1, config/local-stack-guard.ts)
   // has no platform AWS identity by design: refuse before any client is
   // built, as the same error a missing identity produces. Read inline so this
@@ -95,7 +101,11 @@ export async function assumeRoleAsPlatform(region: string, input: AssumeRoleComm
     throw new PlatformAwsCredentialsUnavailableError(new Error('AWS is disabled in the local stack'));
   }
   try {
-    return await new STSClient({ region }).send(new AssumeRoleCommand(input));
+    const client = new STSClient({ region });
+    const command = new AssumeRoleCommand(input);
+    return options.abortSignal
+      ? await client.send(command, { abortSignal: options.abortSignal })
+      : await client.send(command);
   } catch (err: unknown) {
     const { name, message } = (err ?? {}) as { name?: string; message?: string };
     if (isPlatformIamDenial(err)) {

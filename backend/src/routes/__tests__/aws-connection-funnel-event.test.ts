@@ -272,50 +272,42 @@ describe('GET /api/aws/accounts/connect-init -- aws_connection_started funnel ev
     expect(rows).toHaveLength(1);
   });
 
-  it('a retry after the session has already expired still does not emit a second event, and existing session upsert behavior is unchanged', async () => {
+  it('a retry after a legacy session has expired keeps the same External ID and still does not emit a second event', async () => {
     const orgId = await insertOrg();
     const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
+    // A session written by the release before the stable External ID, long expired.
+    await insertConnectSession(orgId);
+    await pool.query(
+      `UPDATE aws_connect_sessions SET expires_at = NOW() - INTERVAL '3 days' WHERE org_id = $1`,
+      [orgId]
+    );
+    const legacy = await fetchSessionRow(orgId);
 
     const first = await fetch(`${baseUrl}/accounts/connect-init`, {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(first.status).toBe(200);
     const firstBody = await first.json() as any;
-    const firstSessionRow = await fetchSessionRow(orgId);
-    expect(firstSessionRow).toBeDefined();
-
-    // Force the session into the expired state a real retry would find,
-    // without touching anything else about the row -- proves the *event*
-    // dedup is independent of session expiry/upsert semantics, which this
-    // task requires to stay untouched.
-    await pool.query(
-      `UPDATE aws_connect_sessions SET expires_at = NOW() - INTERVAL '1 minute' WHERE org_id = $1`,
-      [orgId]
-    );
+    // The legacy value is adopted, not replaced: a role built with it keeps matching.
+    expect(firstBody.data.externalId).toBe(legacy!.external_id);
 
     const second = await fetch(`${baseUrl}/accounts/connect-init`, {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(second.status).toBe(200);
     const secondBody = await second.json() as any;
-    const secondSessionRow = await fetchSessionRow(orgId);
+    expect(secondBody.data.externalId).toBe(firstBody.data.externalId);
+    // connect-init no longer writes connect sessions: the legacy row is untouched.
+    const after = await fetchSessionRow(orgId);
+    expect(after!.external_id).toBe(legacy!.external_id);
+    expect(new Date(after!.expires_at).getTime()).toBe(new Date(legacy!.expires_at).getTime());
 
-    // Existing upsert behavior unchanged: an expired session is replaced
-    // with a fresh externalId/expiry (same behavior as before this event
-    // was added), still exactly one row (org_id is PK).
-    expect(secondBody.data.externalId).not.toBe(firstBody.data.externalId);
-    expect(secondSessionRow).toBeDefined();
-    expect(secondSessionRow!.external_id).not.toBe(firstSessionRow!.external_id);
-    expect(new Date(secondSessionRow!.expires_at).getTime()).toBeGreaterThan(new Date(firstSessionRow!.expires_at).getTime());
-
-    // But the funnel event itself still fired only once, for the org's
-    // first-ever entry into the flow.
     const rows = await fetchStartedEvents(orgId);
     expect(rows).toHaveLength(1);
   });
 
-  it('reusing a still-valid session (no new row written) still only ever has one aws_connection_started event', async () => {
+  it('a second visit returns the same External ID and still only ever has one aws_connection_started event', async () => {
     const orgId = await insertOrg();
     const userId = await insertUser(orgId);
     stubAuth(userId, orgId);
@@ -326,9 +318,8 @@ describe('GET /api/aws/accounts/connect-init -- aws_connection_started funnel ev
     expect(first.status).toBe(200);
     const firstBody = await first.json() as any;
 
-    // Called again immediately -- the existing session is still valid, so
-    // the route's own logic reuses it (no INSERT/UPDATE at all) rather than
-    // rotating the externalId.
+    // Called again: the organization's External ID is recorded once and
+    // returned unchanged on every visit.
     const second = await fetch(`${baseUrl}/accounts/connect-init`, {
       headers: { Authorization: 'Bearer test-token' },
     });
