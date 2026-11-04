@@ -186,9 +186,12 @@ describe('AWS_ACCOUNT_AMBIGUOUS answers 409 with the fixed message', () => {
 
   it('GET /api/platform/costs/trend', async () => {
     const caller = await buildOrg();
-    jest.spyOn(AWSCostService, 'createForOrg').mockRejectedValue(new AwsAccountAmbiguousError(caller.orgId, 2));
+    // The trend reads the org's one eligible account first, for its cache key (AWS connect PR B).
+    jest.spyOn(accountsRepository, 'requireEligibleAwsAccount').mockRejectedValue(new AwsAccountAmbiguousError(caller.orgId, 2));
+    const createForOrg = jest.spyOn(AWSCostService, 'createForOrg');
 
     await expectAmbiguous(await send(caller, 'GET', '/platform/costs/trend?range=30d'), caller);
+    expect(createForOrg).not.toHaveBeenCalled();
   });
 
   it.each([

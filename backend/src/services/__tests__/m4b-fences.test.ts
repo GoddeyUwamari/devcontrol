@@ -16,6 +16,7 @@
  *
  * Real Postgres; no AWS call (clients are fakes). Placeholders only.
  */
+import { currentConnectionIdentity } from '../aws-connection-fence';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
@@ -105,10 +106,12 @@ interface Worker {
 async function worker(kind: Kind, state: 'stale' | 'fresh'): Promise<Worker> {
   const orgId = await insertOrg();
   const client = await scanConnection(orgId);
+  // The connection both workers' leases are taken for (AWS connect PR B).
+  const connection = await currentConnectionIdentity(pool, orgId);
   const acquire = (db: PoolClient, holder: string, ttlSeconds?: number) =>
     kind === 'scan'
-      ? acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY }, holder, { ttlSeconds })
-      : acquireJobLease(db, { organizationId: orgId, jobName: DISCOVERY_JOB_NAME }, holder, { ttlSeconds });
+      ? acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY, connection: connection! }, holder, { ttlSeconds })
+      : acquireJobLease(db, { organizationId: orgId, jobName: DISCOVERY_JOB_NAME, connection }, holder, { ttlSeconds });
   const lease = (await acquire(client, 'worker-a', state === 'stale' ? 1 : undefined))!;
   const session = new LeaseSession(pool, lease, NO_HEARTBEAT);
   let takeover: HeldLease | null = null;

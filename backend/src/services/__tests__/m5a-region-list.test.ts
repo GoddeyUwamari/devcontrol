@@ -17,6 +17,7 @@
  * opted-in and changing-list cases use variants DERIVED from it by flipping one
  * region's OptInStatus; each is labelled "derived". Placeholders only.
  */
+import { currentConnectionIdentity } from '../aws-connection-fence';
 import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -329,7 +330,9 @@ function withoutListTimes(rows: Record<string, any>): Record<string, any> {
 }
 
 async function lease(db: Client, org: string, account = ACCOUNT_A, ttlSeconds?: number): Promise<HeldLease> {
-  const held = await acquireScanLease(db, scanKey(org, account), 'm5a-test', { ttlSeconds });
+  // The connection the lease is taken for (AWS connect PR B): the org's eligible row now.
+  const connection = (await currentConnectionIdentity(db, org)) ?? JSON.stringify(['no-connection', org]);
+  const held = await acquireScanLease(db, { ...scanKey(org, account), connection }, 'm5a-test', { ttlSeconds });
   expect(held).not.toBeNull();
   return held!;
 }

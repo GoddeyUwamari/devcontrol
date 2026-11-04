@@ -8,6 +8,7 @@
  * scan in another process or on another host takes it. A lease expires only by the
  * database clock, never by editing its row. Placeholders only.
  */
+import { currentConnectionIdentity } from '../aws-connection-fence';
 import { Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
@@ -29,7 +30,7 @@ import {
   ScanAlreadyRunningError,
   ScanBusyError,
   UNPARSEABLE_ROLE_ARN_WARNING,
-  leaseAccountFor,
+  leaseTargetFor,
   onTaggedConnection,
 } from '../scan-session';
 import { DISCOVERY_WARNING_SCAN_LEASE_LOST } from '../discovery-warnings';
@@ -176,8 +177,9 @@ async function insertJob(orgId: string, status: string, ageMinutes: number): Pro
 
 /** Another worker's scan lease, taken on its own connection (another process or host). */
 async function otherWorker(orgId: string, ttlSeconds?: number): Promise<HeldLease> {
+  const connection = (await currentConnectionIdentity(pool2, orgId))!;
   const lease = await onTaggedConnection(pool2, orgId, (db) =>
-    acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY }, 'other-worker', { ttlSeconds })
+    acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY, connection }, 'other-worker', { ttlSeconds })
   );
   expect(lease).not.toBeNull();
   return lease!;
@@ -323,7 +325,7 @@ describe('F5 an eligible account whose role ARN names no account', () => {
     await pool.query(`UPDATE aws_accounts SET role_arn = $1 WHERE org_id = $2`, [unparseable, orgId]);
     const warn = console.warn as jest.Mock;
 
-    expect(await leaseAccountFor(pool, orgId)).toBeNull();
+    expect(await leaseTargetFor(pool, orgId)).toBeNull();
     const warnings = warn.mock.calls.map((args) => args.join(' '));
     expect(warnings).toEqual([expect.stringContaining(UNPARSEABLE_ROLE_ARN_WARNING)]);
     expect(warnings[0]).not.toContain(unparseable);

@@ -89,8 +89,12 @@ interface CacheEntry {
 
 const usageCache = new Map<string, CacheEntry>();
 
-function cacheKey(organizationId: string, tableName: string, windowDays: number, periodSeconds: number): string {
-  return `${organizationId}:${tableName}:${windowDays}:${periodSeconds}`;
+/**
+ * Keyed by organization AND connection identity (aws-connection-fence.ts), like
+ * lambda-usage.util.ts: one connection's entry is never read for another.
+ */
+function cacheKey(organizationId: string, connection: string, tableName: string, windowDays: number, periodSeconds: number): string {
+  return JSON.stringify([organizationId, connection, tableName, windowDays, periodSeconds]);
 }
 
 /** Builds the full expected period-start grid for [start, end), stepped by periodSeconds. */
@@ -132,6 +136,7 @@ function alignToGrid(
 export async function getDynamoDBCapacityUsage(
   cloudWatchClient: CloudWatchClient,
   organizationId: string,
+  connection: string | null,
   tableName: string,
   windowDays: number,
   periodSeconds: number
@@ -145,8 +150,9 @@ export async function getDynamoDBCapacityUsage(
     };
   }
 
-  const key = cacheKey(organizationId, tableName, windowDays, periodSeconds);
-  const cached = usageCache.get(key);
+  // With no known connection nothing is read from or written to the cache.
+  const key = connection === null ? null : cacheKey(organizationId, connection, tableName, windowDays, periodSeconds);
+  const cached = key === null ? undefined : usageCache.get(key);
   if (cached && Date.now() - cached.timestamp < DYNAMODB_USAGE_CACHE_TTL_MS) {
     return { status: 'fetched', usage: cached.data };
   }
@@ -192,7 +198,7 @@ export async function getDynamoDBCapacityUsage(
     }));
 
     const usage: DynamoDBCapacityUsage = { windowDays, periodSeconds, datapoints };
-    usageCache.set(key, { data: usage, timestamp: Date.now() });
+    if (key !== null) usageCache.set(key, { data: usage, timestamp: Date.now() });
     return { status: 'fetched', usage };
   } catch (error: any) {
     console.error(`Error fetching CloudWatch capacity usage for DynamoDB table ${tableName}:`, error?.message || error);

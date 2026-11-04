@@ -18,6 +18,7 @@
  * fakes (no AWS call is made). Fixture: a real DescribeRegions response, region
  * fields only. Placeholders only.
  */
+import { currentConnectionIdentity } from '../aws-connection-fence';
 import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -33,7 +34,7 @@ import { DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX 
 import * as foundation from '../../repositories/multi-region-foundation.repository';
 import { RE_RECONCILED_TYPES } from '../resourceExplorer.service';
 import { AwsAccountAmbiguousError, isAwsAccountAmbiguous } from '../../repositories/aws-accounts.repository';
-import { PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource, refreshPlaceholderAccount } from './helpers/scan-source';
 
 const dbConfig = () => ({
   host: process.env.DB_HOST || 'localhost',
@@ -301,6 +302,8 @@ describe('a scan records its home region\'s status from its listings', () => {
   it('a home region other than us-east-1 (eu-west-1): the status lands on that row; us-east-1 stays unscanned', async () => {
     const orgId = await insertOrg();
     await pool.query(`UPDATE aws_accounts SET region = $2 WHERE org_id = $1`, [orgId, BUCKET_REGION]);
+    // The account's home region is eu-west-1 before the scan starts: the scan's connection is that row.
+    await refreshPlaceholderAccount(pool, orgId);
     mockAwsClients({}, BUCKET_REGION);
     const writeSpy = jest.spyOn(foundation, 'recordHomeRegionScanStatus');
     const result = await service().discoverAllResources(orgId);
@@ -523,7 +526,8 @@ describe('the lease: never caught, never an ok', () => {
       if (Date.now() > deadline) throw new Error('the lease did not expire');
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    return onTaggedConnection(pool2, orgId, (db) => acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY }, 'other-worker'));
+    return onTaggedConnection(pool2, orgId, async (db) =>
+      acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY, connection: (await currentConnectionIdentity(db, orgId))! }, 'other-worker'));
   }
   const SHORT: LeaseTiming = { ...FAST, ttlSeconds: 2, heartbeat: { intervalMs: 60_000 } };
 

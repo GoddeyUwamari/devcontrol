@@ -24,7 +24,7 @@ describe('getDynamoDBCapacityUsage', () => {
     const send = jest.fn().mockImplementation(() => Promise.resolve({ Datapoints: [] }));
     const client = withMockedSend(send);
 
-    await getDynamoDBCapacityUsage(client, 'org-1', 'orders', 1, 3600);
+    await getDynamoDBCapacityUsage(client, 'org-1', 'connection-placeholder', 'orders', 1, 3600);
 
     expect(send).toHaveBeenCalledTimes(4);
     const metricNames = send.mock.calls.map((call) => call[0].input.MetricName).sort();
@@ -45,7 +45,7 @@ describe('getDynamoDBCapacityUsage', () => {
     const send = jest.fn().mockImplementation(() => Promise.resolve({ Datapoints: [] }));
     const client = withMockedSend(send);
 
-    const result = await getDynamoDBCapacityUsage(client, 'org-2', 'empty-table', 1, 86400);
+    const result = await getDynamoDBCapacityUsage(client, 'org-2', 'connection-placeholder', 'empty-table', 1, 86400);
 
     expect(result.status).toBe('fetched');
     if (result.status === 'fetched') {
@@ -80,7 +80,7 @@ describe('getDynamoDBCapacityUsage', () => {
         .mockResolvedValueOnce({ Datapoints: [{ Timestamp: period1Start, Sum: 3 }] }); // WriteThrottle
       const client = withMockedSend(send);
 
-      const result = await getDynamoDBCapacityUsage(client, 'org-3', 'busy-table', 2, 86400);
+      const result = await getDynamoDBCapacityUsage(client, 'org-3', 'connection-placeholder', 'busy-table', 2, 86400);
 
       expect(result.status).toBe('fetched');
       if (result.status === 'fetched') {
@@ -100,7 +100,7 @@ describe('getDynamoDBCapacityUsage', () => {
     const send = jest.fn().mockImplementation(() => Promise.resolve({ Datapoints: [] }));
     const client = withMockedSend(send);
 
-    const result = await getDynamoDBCapacityUsage(client, 'org-4', 'weekly-table', 7, 86400);
+    const result = await getDynamoDBCapacityUsage(client, 'org-4', 'connection-placeholder', 'weekly-table', 7, 86400);
 
     expect(result.status).toBe('fetched');
     if (result.status === 'fetched') {
@@ -113,7 +113,7 @@ describe('getDynamoDBCapacityUsage', () => {
     const client = withMockedSend(send);
 
     // 30 days at 1-second granularity = 2,592,000 datapoints, far past the limit.
-    const result = await getDynamoDBCapacityUsage(client, 'org-5', 'table', 30, 1);
+    const result = await getDynamoDBCapacityUsage(client, 'org-5', 'connection-placeholder', 'table', 30, 1);
 
     expect(result.status).toBe('unavailable');
     expect(send).not.toHaveBeenCalled(); // never even attempts the call
@@ -123,7 +123,7 @@ describe('getDynamoDBCapacityUsage', () => {
     const send = jest.fn().mockRejectedValueOnce(new Error('Throttling: rate exceeded'));
     const client = withMockedSend(send);
 
-    const result = await getDynamoDBCapacityUsage(client, 'org-6', 'unavailable-table', 1, 3600);
+    const result = await getDynamoDBCapacityUsage(client, 'org-6', 'connection-placeholder', 'unavailable-table', 1, 3600);
 
     expect(result).toEqual({ status: 'unavailable', reason: 'Throttling: rate exceeded' });
   });
@@ -132,8 +132,8 @@ describe('getDynamoDBCapacityUsage', () => {
     const send = jest.fn().mockImplementation(() => Promise.resolve({ Datapoints: [] }));
     const client = withMockedSend(send);
 
-    await getDynamoDBCapacityUsage(client, 'org-7', 'cached-table', 1, 3600);
-    await getDynamoDBCapacityUsage(client, 'org-7', 'cached-table', 1, 3600);
+    await getDynamoDBCapacityUsage(client, 'org-7', 'connection-placeholder', 'cached-table', 1, 3600);
+    await getDynamoDBCapacityUsage(client, 'org-7', 'connection-placeholder', 'cached-table', 1, 3600);
 
     expect(send).toHaveBeenCalledTimes(4); // only the first call's 4 metric fetches
   });
@@ -145,8 +145,8 @@ describe('getDynamoDBCapacityUsage', () => {
       .mockImplementation(() => Promise.resolve({ Datapoints: [] }));
     const client = withMockedSend(send);
 
-    const first = await getDynamoDBCapacityUsage(client, 'org-8', 'retry-table', 1, 3600);
-    const second = await getDynamoDBCapacityUsage(client, 'org-8', 'retry-table', 1, 3600);
+    const first = await getDynamoDBCapacityUsage(client, 'org-8', 'connection-placeholder', 'retry-table', 1, 3600);
+    const second = await getDynamoDBCapacityUsage(client, 'org-8', 'connection-placeholder', 'retry-table', 1, 3600);
 
     expect(first.status).toBe('unavailable');
     expect(second.status).toBe('fetched');
@@ -169,8 +169,8 @@ describe('getDynamoDBCapacityUsage', () => {
         .mockResolvedValueOnce({ Datapoints: [] });
       const client = withMockedSend(send);
 
-      const orgA = await getDynamoDBCapacityUsage(client, 'org-A-isolation', 'shared-table-name', 1, 86400);
-      const orgB = await getDynamoDBCapacityUsage(client, 'org-B-isolation', 'shared-table-name', 1, 86400);
+      const orgA = await getDynamoDBCapacityUsage(client, 'org-A-isolation', 'connection-placeholder', 'shared-table-name', 1, 86400);
+      const orgB = await getDynamoDBCapacityUsage(client, 'org-B-isolation', 'connection-placeholder', 'shared-table-name', 1, 86400);
 
       expect(orgA.status).toBe('fetched');
       expect(orgB.status).toBe('fetched');

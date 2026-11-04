@@ -52,6 +52,7 @@ import { pool as appPool } from '../../config/database';
 import { NetworkGuard, PUBLIC_V4, guardNetwork, stubDns } from '../../__tests__/helpers/fake-outbound';
 
 import * as scanSession from '../../services/scan-session';
+import { CostAnalysisRunsRepository } from '../../repositories/cost-analysis-runs.repository';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
 jest.mock('../../services/onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
@@ -205,7 +206,10 @@ beforeEach(() => {
 
   factorySpy = jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new Error('AWS must not be reached'));
   // Analyze saves nothing without a scan lease, and answers an error: give it an account to lease.
-  jest.spyOn(scanSession, 'leaseAccountFor').mockResolvedValue('123456789012');
+  jest.spyOn(scanSession, 'leaseTargetFor').mockResolvedValue({ awsAccountId: '123456789012', connection: 'placeholder-connection' });
+  // The run's finish is fenced with the lease's connection (AWS connect PR B); this
+  // organization has no account row to match it, and the gate is what is tested here.
+  jest.spyOn(CostAnalysisRunsRepository.prototype, 'markFinished').mockResolvedValue(undefined);
   analyzeSpy = jest
     .spyOn(costOptimizationService, 'analyzeAllResources')
     .mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true } as never);

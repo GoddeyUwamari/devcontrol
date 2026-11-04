@@ -377,7 +377,7 @@ export class AIChatContextRepository {
       let comparison: CostComparison;
       try {
         const costTrend = await awsCostService.fetchCostTrend(organizationId, '90d');
-        comparison = this.computeMonthOverMonthComparison(costTrend, awsCostService.getCostTrendFetchedAt(organizationId, '90d'));
+        comparison = this.computeMonthOverMonthComparison(costTrend, await awsCostService.getCostTrendFetchedAt(organizationId, '90d'));
       } catch (error: any) {
         console.error('[AI Chat Context] Error getting cost trend:', error.message);
         comparison = { ...emptyComparison('error', 'the Cost Explorer daily trend request failed'), finishedThrough: costFinishedThrough() };

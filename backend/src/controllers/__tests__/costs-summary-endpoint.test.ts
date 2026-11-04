@@ -101,7 +101,7 @@ beforeEach(() => {
   setClock('2026-10-15T12:00:00.000Z');
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   jest.spyOn(console, 'log').mockImplementation(() => undefined);
-  jest.spyOn(awsCostService, 'getCostTrendFetchedAt').mockReturnValue(FETCHED_AT);
+  jest.spyOn(awsCostService, 'getCostTrendFetchedAt').mockResolvedValue(FETCHED_AT);
 });
 afterEach(() => jest.restoreAllMocks());
 

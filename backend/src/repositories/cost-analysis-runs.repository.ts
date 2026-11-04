@@ -2,6 +2,7 @@ import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import type { CostAnalysisCheck, DetectorSummary, ReconcileCounts } from '../services/cost-analysis-outcome';
 import { SCAN_KIND_DISCOVERY, SCAN_WAIT_CAP_MS } from '../services/scan-session';
+import { HeldLease, withFencedTransaction } from '../services/scan-lease';
 
 export type CostAnalysisRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'interrupted';
 export type CostAnalysisRunSource = 'manual' | 'discovery';
@@ -109,23 +110,30 @@ export class CostAnalysisRunsRepository {
   /**
    * Records a run that reached its end: 'completed' or 'partial', never
    * speculatively, and never when no detector completed (see markFailed).
+   *
+   * Fenced with the run's scan lease (AWS connect PR B): a worker whose lease or
+   * AWS connection is no longer current gets LeaseLostError and records nothing
+   * here; its caller closes its own row with markInterrupted instead.
    */
   async markFinished(
     id: string,
     organizationId: string,
-    data: { recommendationsFound: number; totalPotentialSavings: number } & CostAnalysisRunDetail
+    data: { recommendationsFound: number; totalPotentialSavings: number } & CostAnalysisRunDetail,
+    lease: HeldLease
   ): Promise<void> {
     if (data.summary.state === 'failed') {
       throw new Error('A run in which no detector completed cannot be marked finished');
     }
     await this.withOrgClient(organizationId, async (client) => {
-      await client.query(
-        `UPDATE cost_analysis_runs
-         SET status = $1, completed_at = NOW(),
-             recommendations_found = $2, total_potential_savings = $3, ${detailAssignments(6)}
-         WHERE id = $4 AND organization_id = $5 AND status = 'running'`,
-        [data.summary.state, data.recommendationsFound, data.totalPotentialSavings, id, organizationId, ...detailValues(data)]
-      );
+      await withFencedTransaction(client, lease, async () => {
+        await client.query(
+          `UPDATE cost_analysis_runs
+           SET status = $1, completed_at = NOW(),
+               recommendations_found = $2, total_potential_savings = $3, ${detailAssignments(6)}
+           WHERE id = $4 AND organization_id = $5 AND status = 'running'`,
+          [data.summary.state, data.recommendationsFound, data.totalPotentialSavings, id, organizationId, ...detailValues(data)]
+        );
+      });
     });
   }
 

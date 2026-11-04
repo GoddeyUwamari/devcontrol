@@ -41,6 +41,7 @@ import { ComplianceIssue, FindingEvaluationState, FrameworkApplicabilityState, F
 import { PLACEHOLDER_ACCOUNT_ROW, TestLeases } from '../../services/__tests__/helpers/scan-source';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 import { acquireScanLease } from '../../services/scan-lease';
+import { currentConnectionIdentity } from '../../services/aws-connection-fence';
 import { SCAN_KIND_DISCOVERY } from '../../services/scan-session';
 
 const dbConfig = {
@@ -722,9 +723,10 @@ async function asApplicationRole(fn: (executor: Pick<PoolClient, 'query'>, admin
          VALUES ($1, $2, $3, 'placeholder-external-id', 'us-east-1', 'active')`,
         [id, PLACEHOLDER_ACCOUNT_ROW.role_arn, `ph-${id.replace(/-/g, '').slice(0, 29)}`]
       );
+      const connection = (await currentConnectionIdentity(client, id))!;
       const lease = await acquireScanLease(
         client,
-        { organizationId: id, awsAccountId: PLACEHOLDER_ACCOUNT_ROW.account_id!, scanKind: SCAN_KIND_DISCOVERY },
+        { organizationId: id, awsAccountId: PLACEHOLDER_ACCOUNT_ROW.account_id!, scanKind: SCAN_KIND_DISCOVERY, connection },
         'test-lease-holder',
         { ttlSeconds: 60 * 60 }
       );

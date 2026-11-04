@@ -1,5 +1,6 @@
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
+import { withConnectionFence } from '../services/aws-connection-fence';
 import { SecurityHubFindingEvidence } from '../types/security-hub-foundation.types';
 
 async function withOrgClient<T>(organizationId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -44,62 +45,58 @@ export class SecurityHubFindingsRepository {
    * persisted and fresh (last_seen_at updated), which is exactly the partial-failure
    * safety this repository needs to provide.
    */
-  async upsertFindings(organizationId: string, findings: SecurityHubFindingEvidence[]): Promise<number> {
+  async upsertFindings(organizationId: string, findings: SecurityHubFindingEvidence[], connection: string | null): Promise<number> {
     if (findings.length === 0) return 0;
 
-    return withOrgClient(organizationId, async (client) => {
-      await client.query('BEGIN');
-      try {
-        for (const f of findings) {
-          await client.query(
-            `INSERT INTO security_hub_findings
-              (organization_id, finding_id, product_arn, title, severity, compliance_status,
-               record_state, workflow_status, security_control_id, associated_standard_ids,
-               related_requirements, region, resource_type, resource_id, security_hub_created_at,
-               security_hub_updated_at, last_seen_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
-             ON CONFLICT (organization_id, finding_id) DO UPDATE SET
-               title = EXCLUDED.title,
-               severity = EXCLUDED.severity,
-               compliance_status = EXCLUDED.compliance_status,
-               record_state = EXCLUDED.record_state,
-               workflow_status = EXCLUDED.workflow_status,
-               security_control_id = EXCLUDED.security_control_id,
-               associated_standard_ids = EXCLUDED.associated_standard_ids,
-               related_requirements = EXCLUDED.related_requirements,
-               region = EXCLUDED.region,
-               resource_type = EXCLUDED.resource_type,
-               resource_id = EXCLUDED.resource_id,
-               security_hub_created_at = EXCLUDED.security_hub_created_at,
-               security_hub_updated_at = EXCLUDED.security_hub_updated_at,
-               last_seen_at = NOW(),
-               updated_at = NOW()`,
-            [
-              organizationId,
-              f.findingId,
-              f.productArn,
-              f.title,
-              f.severity,
-              f.complianceStatus,
-              f.recordState,
-              f.workflowStatus,
-              f.securityControlId,
-              JSON.stringify(f.associatedStandardIds),
-              JSON.stringify(f.relatedRequirements),
-              f.region,
-              f.resourceType,
-              f.resourceId,
-              f.securityHubCreatedAt,
-              f.securityHubUpdatedAt,
-            ]
-          );
-        }
-        await client.query('COMMIT');
-        return findings.length;
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
+    // One page, one transaction, opened by the connection fence (AWS connect PR B):
+    // the page commits only while `connection` is still the organization's active
+    // connection; otherwise ConnectionChangedError and nothing of it is written.
+    return withConnectionFence(pool, organizationId, connection, async (client) => {
+      for (const f of findings) {
+        await client.query(
+          `INSERT INTO security_hub_findings
+            (organization_id, finding_id, product_arn, title, severity, compliance_status,
+             record_state, workflow_status, security_control_id, associated_standard_ids,
+             related_requirements, region, resource_type, resource_id, security_hub_created_at,
+             security_hub_updated_at, last_seen_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+           ON CONFLICT (organization_id, finding_id) DO UPDATE SET
+             title = EXCLUDED.title,
+             severity = EXCLUDED.severity,
+             compliance_status = EXCLUDED.compliance_status,
+             record_state = EXCLUDED.record_state,
+             workflow_status = EXCLUDED.workflow_status,
+             security_control_id = EXCLUDED.security_control_id,
+             associated_standard_ids = EXCLUDED.associated_standard_ids,
+             related_requirements = EXCLUDED.related_requirements,
+             region = EXCLUDED.region,
+             resource_type = EXCLUDED.resource_type,
+             resource_id = EXCLUDED.resource_id,
+             security_hub_created_at = EXCLUDED.security_hub_created_at,
+             security_hub_updated_at = EXCLUDED.security_hub_updated_at,
+             last_seen_at = NOW(),
+             updated_at = NOW()`,
+          [
+            organizationId,
+            f.findingId,
+            f.productArn,
+            f.title,
+            f.severity,
+            f.complianceStatus,
+            f.recordState,
+            f.workflowStatus,
+            f.securityControlId,
+            JSON.stringify(f.associatedStandardIds),
+            JSON.stringify(f.relatedRequirements),
+            f.region,
+            f.resourceType,
+            f.resourceId,
+            f.securityHubCreatedAt,
+            f.securityHubUpdatedAt,
+          ]
+        );
       }
+      return findings.length;
     });
   }
 

@@ -133,7 +133,12 @@ describe('live: no write or read crosses organizations', () => {
     await runs.markInterrupted(run.id, b);
     await runs.markFailed(run.id, b, 'x');
     await runs.markFailed(run.id, b, 'x', detail);
-    await runs.markFinished(run.id, b, { recommendationsFound: 0, totalPotentialSavings: 0, ...detail });
+    // markFinished is fenced (AWS connect PR B): a lease for b that no fence can pass.
+    const leaseOfB = {
+      key: { table: 'aws_scan_leases' as const, organizationId: b, awsAccountId: '123456789012', scanKind: 'discovery' },
+      fencingToken: '0', holder: 'tenant-scope-test', acquiredAt: new Date(), connection: 'no-such-connection',
+    };
+    await runs.markFinished(run.id, b, { recommendationsFound: 0, totalPotentialSavings: 0, ...detail }, leaseOfB).catch(() => undefined);
     expect(await statusOf(run.id)).toEqual({ status: 'running', lease_acquired_at: null });
   });
 

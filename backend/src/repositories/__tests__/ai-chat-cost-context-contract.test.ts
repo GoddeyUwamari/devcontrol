@@ -609,7 +609,7 @@ describe('Comparison provenance: asOf and basis', () => {
     stubConnectedAccount();
     mockCostExplorer(500, [{ service: 'AWS Lambda', amount: 500 }]);
     jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(dailyTrend(10, 5).points);
-    const fetchedAt = jest.spyOn(awsCostService, 'getCostTrendFetchedAt').mockReturnValue('2026-09-25T15:17:36.123Z');
+    const fetchedAt = jest.spyOn(awsCostService, 'getCostTrendFetchedAt').mockResolvedValue('2026-09-25T15:17:36.123Z');
 
     const context = await contextRepo.gatherContext(orgId);
     const { comparison } = context.costs;

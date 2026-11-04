@@ -9,12 +9,15 @@
  *
  * Placeholders only: the documented example account ID and ARN.
  */
+import { currentConnectionIdentity } from '../../aws-connection-fence';
 import { Pool } from 'pg';
 import * as clientFactory from '../../aws-client-factory.service';
 import { HeldLease, acquireJobLease, acquireScanLease } from '../../scan-lease';
 import { DISCOVERY_JOB_NAME, SCAN_KIND_DISCOVERY, onTaggedConnection } from '../../scan-session';
 import { ensureSharedFixtureTable } from '../../../routes/__tests__/shared-fixture-tables';
 import type { AwsAccountRow } from '../../../repositories/aws-accounts.repository';
+import { AsyncLocalStorage } from 'async_hooks';
+import { ScanContext } from '../../scan-context';
 
 export const PLACEHOLDER_ACCOUNT_ROW: AwsAccountRow = {
   id: '00000000-0000-4000-8000-0000000000a1',
@@ -28,11 +31,36 @@ export const PLACEHOLDER_ACCOUNT_ROW: AwsAccountRow = {
   connected_at: null,
 };
 
-/** Every set of clients has the placeholder account's record. */
+/**
+ * The aws_accounts row connectPlaceholderAccount() wrote for each organization:
+ * the record a stubbed set of clients names (AWS connect PR B), so a scan's
+ * connection identity is the database's eligible row, exactly as in production,
+ * and every connection fence passes for it.
+ */
+const connectedRows = new Map<string, AwsAccountRow>();
+
+/** The organization whose ScanContext is being built (stubScanSource wraps ScanContext.forOrg). */
+const buildingFor = new AsyncLocalStorage<string>();
+
+/** The row a stubbed set of clients was "built from": the organization's own, else the only one connected, else the placeholder. */
+function sourceRow(): AwsAccountRow {
+  const org = buildingFor.getStore();
+  const own = org ? connectedRows.get(org) : undefined;
+  if (own) return own;
+  if (connectedRows.size === 1) return [...connectedRows.values()][0];
+  return PLACEHOLDER_ACCOUNT_ROW;
+}
+
+/** Every set of clients has the record of the account row it was built from (see sourceRow). */
 export function stubScanSource(): jest.SpyInstance {
+  // Wrapped once: a second stubScanSource() in the same test must not wrap the wrapper.
+  if (!jest.isMockFunction(ScanContext.forOrg)) {
+    const forOrg = ScanContext.forOrg.bind(ScanContext);
+    jest.spyOn(ScanContext, 'forOrg').mockImplementation((organizationId: string) => buildingFor.run(organizationId, () => forOrg(organizationId)));
+  }
   return jest.spyOn(clientFactory, 'assumedRoleSourceOf').mockImplementation(() => ({
-    organizationId: PLACEHOLDER_ACCOUNT_ROW.org_id,
-    account: { ...PLACEHOLDER_ACCOUNT_ROW },
+    organizationId: sourceRow().org_id,
+    account: { ...sourceRow() },
     region: 'us-east-1',
     credentials: { accessKeyId: 'ASIAPLACEHOLDER', secretAccessKey: 'placeholder-secret', sessionToken: 'placeholder-token' },
     expiration: new Date(Date.now() + 60 * 60 * 1000),
@@ -56,10 +84,30 @@ export async function connectPlaceholderAccount(pool: Pool, organizationId: stri
      ON CONFLICT (org_id) DO NOTHING`,
     [organizationId, PLACEHOLDER_ACCOUNT_ROW.role_arn, placeholderAccountColumn(organizationId)]
   );
+  const { rows } = await pool.query(
+    `SELECT id, org_id, account_id, role_arn, external_id, region, nickname, status, connected_at FROM aws_accounts WHERE org_id = $1`,
+    [organizationId]
+  );
+  if (rows[0]) connectedRows.set(organizationId, rows[0]);
+}
+
+/**
+ * Re-reads the organization's row after a test changed it in place (e.g. its home
+ * region), so the stubbed clients name the row as it now is: the scan then
+ * starts with that connection, as it would after a real connect.
+ */
+export async function refreshPlaceholderAccount(pool: Pool, organizationId: string): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT id, org_id, account_id, role_arn, external_id, region, nickname, status, connected_at FROM aws_accounts WHERE org_id = $1`,
+    [organizationId]
+  );
+  if (rows[0]) connectedRows.set(organizationId, rows[0]);
+  else connectedRows.delete(organizationId);
 }
 
 export async function removePlaceholderAccounts(pool: Pool, organizationIds: string[]): Promise<void> {
   if (organizationIds.length === 0) return;
+  for (const id of organizationIds) connectedRows.delete(id);
   await pool.query(`DELETE FROM aws_accounts WHERE org_id = ANY($1) AND account_id LIKE 'ph-%'`, [organizationIds]);
 }
 
@@ -88,15 +136,18 @@ export class TestLeases {
     const existing = this.held.get(organizationId);
     if (existing) return existing;
     if (this.kind === 'scan') await connectPlaceholderAccount(this.pool, organizationId);
+    // The connection the lease is taken for (AWS connect PR B): the organization's
+    // eligible row as it is now (null: none, for a job lease of an unconnected org).
+    const connection = await currentConnectionIdentity(this.pool, organizationId);
     const lease = await onTaggedConnection(this.pool, organizationId, (client) =>
       this.kind === 'scan'
         ? acquireScanLease(
             client,
-            { organizationId, awsAccountId: PLACEHOLDER_ACCOUNT_ROW.account_id!, scanKind: SCAN_KIND_DISCOVERY },
+            { organizationId, awsAccountId: PLACEHOLDER_ACCOUNT_ROW.account_id!, scanKind: SCAN_KIND_DISCOVERY, connection: connection! },
             'test-lease-holder',
             { ttlSeconds: TEST_LEASE_TTL_SECONDS }
           )
-        : acquireJobLease(client, { organizationId, jobName: DISCOVERY_JOB_NAME }, 'test-lease-holder', { ttlSeconds: TEST_LEASE_TTL_SECONDS })
+        : acquireJobLease(client, { organizationId, jobName: DISCOVERY_JOB_NAME, connection }, 'test-lease-holder', { ttlSeconds: TEST_LEASE_TTL_SECONDS })
     );
     if (!lease) throw new Error(`TestLeases: the ${this.kind} lease of a test organization is already held`);
     this.held.set(organizationId, lease);

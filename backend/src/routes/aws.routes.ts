@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import awsCostService from '../services/aws-cost.service'
 import { pool } from '../config/database'
+import { withConnectionChange } from '../services/aws-connection-fence'
+import { findEligibleAwsAccount, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
 import { isScanAlreadyRunning } from '../services/scan-session'
@@ -306,13 +308,20 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
 
   // Persist with org_id.
   // ON CONFLICT (org_id) DO NOTHING + check rowCount → 409 if already connected.
+  // A change of the active connection (AWS connect PR B): the INSERT runs under the
+  // organization's connection lock taken EXCLUSIVE (aws-connection-fence.ts), so it
+  // waits for every in-flight fenced write and every write fenced after it sees the
+  // new connection. A lock wait past its limit fails like any save error (500,
+  // SAVE_FAILED) and saves nothing.
   try {
-    const result = await pool.query(
-      `INSERT INTO aws_accounts (org_id, role_arn, account_id, nickname, external_id, region, connected_at, status)
-       VALUES ($1, $2, $3, $4, $5, 'us-east-1', NOW(), 'active')
-       ON CONFLICT (org_id) DO NOTHING
-       RETURNING id, org_id, account_id, role_arn, nickname, external_id, region, connected_at, status`,
-      [orgId, decodedRoleArn, accountId, nickname ?? null, externalId]
+    const result = await withConnectionChange(pool, orgId, (client) =>
+      client.query(
+        `INSERT INTO aws_accounts (org_id, role_arn, account_id, nickname, external_id, region, connected_at, status)
+         VALUES ($1, $2, $3, $4, $5, 'us-east-1', NOW(), 'active')
+         ON CONFLICT (org_id) DO NOTHING
+         RETURNING id, org_id, account_id, role_arn, nickname, external_id, region, connected_at, status`,
+        [orgId, decodedRoleArn, accountId, nickname ?? null, externalId]
+      )
     )
 
     if (result.rows.length === 0) {
@@ -412,9 +421,34 @@ async function isCurrentOwner(req: Request): Promise<boolean> {
   }
 }
 
+/**
+ * Whether the organization has an active AWS connection, as the server decides it
+ * for every scan, fence and cache (AWS connect PR B): its eligible aws_accounts
+ * rows (findEligibleAwsAccount, status 'active').
+ *
+ *   connected      exactly one eligible row
+ *   not_connected  none (no row, or only rows that are not eligible)
+ *   ambiguous      more than one eligible row: nothing scans it (AWS_ACCOUNT_AMBIGUOUS)
+ *
+ * The state only: never a credential, External ID, role ARN or row id. Derived from
+ * server state alone, never from the rows' count or from any AWS-derived data.
+ */
+export type AwsConnectionState = 'connected' | 'not_connected' | 'ambiguous'
+
+async function readConnectionState(organizationId: string): Promise<{ state: AwsConnectionState }> {
+  try {
+    return { state: (await findEligibleAwsAccount(pool, organizationId)) ? 'connected' : 'not_connected' }
+  } catch (err: unknown) {
+    if (isAwsAccountAmbiguous(err)) return { state: 'ambiguous' }
+    throw err
+  }
+}
+
 // GET /api/aws/accounts
 // Returns only the accounts belonging to the calling org. external_id is
 // included for the owner only; for every other role the field is absent.
+// `connection` (readConnectionState) is the server's own answer to "is AWS
+// connected": consumers use it, never `data.length`.
 // The response depends on the caller, so it is never stored.
 router.get('/accounts', async (req: Request, res: Response) => {
   res.set('Cache-Control', 'private, no-store')
@@ -430,7 +464,8 @@ router.get('/accounts', async (req: Request, res: Response) => {
     const data = owner
       ? result.rows
       : result.rows.map(({ external_id: _externalId, ...account }) => account)
-    return res.json({ success: true, data })
+    const connection = await readConnectionState(req.user!.organizationId)
+    return res.json({ success: true, data, connection })
   } catch (err: any) {
     console.error('[aws/accounts GET]', err)
     return res.status(500).json({ success: false, message: 'Failed to retrieve AWS accounts.' })

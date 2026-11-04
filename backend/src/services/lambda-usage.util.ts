@@ -61,24 +61,33 @@ interface CacheEntry {
 
 const usageCache = new Map<string, CacheEntry>();
 
-function cacheKey(organizationId: string, functionName: string, windowDays: number): string {
-  return `${organizationId}:${functionName}:${windowDays}`;
+/**
+ * Keyed by organization AND connection identity (awsConnectionIdentity of the
+ * aws_accounts row whose credentials fetched it; aws-connection-fence.ts): an
+ * entry from one connection is never read for another, even for a reconnect to
+ * the same account. JSON, because a function name may contain any separator.
+ */
+function cacheKey(organizationId: string, connection: string, functionName: string, windowDays: number): string {
+  return JSON.stringify([organizationId, connection, functionName, windowDays]);
 }
 
 /**
  * Real Invocations (Sum) and Duration (Average) for one Lambda function over
- * the trailing `windowDays`. Returns null only when the CloudWatch API call
+ * the trailing `windowDays`, cached per (organization, connection identity,
+ * function, window); `connection` null disables the cache. Returns null only when the CloudWatch API call
  * itself failed -- callers must treat that as "unavailable", never as zero
  * usage or zero cost.
  */
 export async function getLambdaUsageOverWindow(
   cloudWatchClient: CloudWatchClient,
   organizationId: string,
+  connection: string | null,
   functionName: string,
   windowDays: number = LAMBDA_USAGE_WINDOW_DAYS
 ): Promise<LambdaUsage | null> {
-  const key = cacheKey(organizationId, functionName, windowDays);
-  const cached = usageCache.get(key);
+  // With no known connection nothing is read from or written to the cache.
+  const key = connection === null ? null : cacheKey(organizationId, connection, functionName, windowDays);
+  const cached = key === null ? undefined : usageCache.get(key);
   if (cached && Date.now() - cached.timestamp < LAMBDA_USAGE_CACHE_TTL_MS) {
     return cached.data;
   }
@@ -118,7 +127,7 @@ export async function getLambdaUsageOverWindow(
     }
 
     const data: LambdaUsage = { invocations, avgDurationMs };
-    usageCache.set(key, { data, timestamp: Date.now() });
+    if (key !== null) usageCache.set(key, { data, timestamp: Date.now() });
     return data;
   } catch (error: any) {
     console.error(`Error fetching CloudWatch usage for Lambda function ${functionName}:`, error?.message || error);

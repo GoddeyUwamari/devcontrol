@@ -95,7 +95,8 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
 
     await costOptimizationService.analyzeAllResources('org-3');
 
-    expect(lambdaDetectorSpy).toHaveBeenCalledWith('org-3', expect.anything(), expect.anything(), resolvedConfig, 'us-east-1');
+    // The last argument is the clients' connection identity (AWS connect PR B): none for these fake clients.
+    expect(lambdaDetectorSpy).toHaveBeenCalledWith('org-3', expect.anything(), expect.anything(), resolvedConfig, 'us-east-1', null);
   });
 
   it('(4) a configuration-resolution failure for EC2 fails only that category (success:false), and the detector is never invoked with a guessed default', async () => {

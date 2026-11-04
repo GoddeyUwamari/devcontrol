@@ -8,6 +8,7 @@ import { isPlatformAwsCredentialsUnavailable } from './platform-sts'
 import { pool } from '../config/database'
 import awsCostService from './aws-cost.service'
 import { awsConnectionIdentity, findEligibleAwsAccount, hasEligibleAwsAccount } from '../repositories/aws-accounts.repository'
+import { connectionIdentityOfClients } from './aws-connection-fence'
 import { fetchMetricDataBatchWithStatus, reduceSeriesToScalar, BatchMetricQuery, BatchSeriesResult, BatchQueryStatuses, QueryOutcome } from './cloudwatch-metric-batch.util'
 import { describeAuroraClusters, AuroraClusterInfo } from './aurora-cluster.util'
 import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy'
@@ -2261,6 +2262,9 @@ export class CloudWatchService {
 
     const observability = await this.buildObservabilitySnapshot({
       organizationId,
+      // The connection the sweep's clients were built from (AWS connect PR B): stored
+      // observations are written only while it is still the active connection.
+      connection: connectionIdentityOfClients(clients),
       accountId: clients.accountId ?? parseAwsAccountId(account.account_id),
       region: clients.region,
       range: resolvedRange,
@@ -2312,6 +2316,7 @@ export class CloudWatchService {
    */
   private async buildObservabilitySnapshot(input: {
     organizationId: string
+    connection: string | null
     accountId: string | null
     region: string
     range: MonitoringRange
@@ -2323,7 +2328,7 @@ export class CloudWatchService {
     // O3b: each ALB's latency series (absent: none was evaluated).
     latencySeries?: Map<string, BatchSeriesResult | null>
   }): Promise<ObservabilitySnapshot> {
-    const { organizationId, accountId, region, range, sweepAt, resources, services, evidence, failedBlocks } = input
+    const { organizationId, connection, accountId, region, range, sweepAt, resources, services, evidence, failedBlocks } = input
     const rowsById = new Map(services.map((s) => [s.resourceDbId, s]))
     const contextFor = (resource: InventoryRow) => ({
       accountId,
@@ -2364,10 +2369,12 @@ export class CloudWatchService {
       })
     }
 
-    // Stored history is keyed by a 12-digit account; without one nothing is read or written.
+    // Stored history is keyed by a 12-digit account and written only for the sweep's
+    // known connection (fenced inside recordObservations); without either nothing is
+    // read or written.
     const [recorded, coverage] = await Promise.all([
-      accountId
-        ? recordObservations(pool, { organizationId, awsAccountId: accountId, region }, writes, collection, sweepAt)
+      accountId && connection
+        ? recordObservations(pool, { organizationId, awsAccountId: accountId, region, connection }, writes, collection, sweepAt)
         : Promise.resolve({ stored: new Map(), lastFullSuccessAt: collection === 'complete' ? sweepAt : null, persisted: false }),
       readInventoryCapped(pool, organizationId),
     ])

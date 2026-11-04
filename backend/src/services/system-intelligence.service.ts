@@ -1,5 +1,6 @@
 import { PoolClient } from 'pg'
 import { pool } from '../config/database'
+import { currentConnectionIdentity } from './aws-connection-fence'
 import {
   ObservabilityReadinessService,
 } from './observability-readiness.service'
@@ -609,12 +610,26 @@ export class SystemIntelligenceService {
   async getSystemIntelligence(
     organizationId: string
   ): Promise<SystemIntelligenceResult> {
-    const cached = this.intelligenceCache.get(organizationId)
+    // AWS connect PR B: the cache and in-flight entries are keyed by organization AND
+    // connection identity, read before the lookup (none: null), so an answer computed
+    // for one connection is never served for another, and an old computation that
+    // finishes after a change only fills the old connection's entry. When the
+    // connection can't be read (e.g. more than one eligible account) nothing is
+    // cached or joined: the answer is computed on its own.
+    let identity: string | null
+    try {
+      identity = await currentConnectionIdentity(pool, organizationId)
+    } catch {
+      return this.computeSystemIntelligenceUncached(organizationId)
+    }
+    const key = JSON.stringify([organizationId, identity])
+
+    const cached = this.intelligenceCache.get(key)
     if (cached && Date.now() - cached.timestamp < SystemIntelligenceService.INTELLIGENCE_CACHE_TTL) {
       return cached.result
     }
 
-    const inFlight = this.intelligenceInFlight.get(organizationId)
+    const inFlight = this.intelligenceInFlight.get(key)
     if (inFlight) {
       return inFlight
     }
@@ -622,15 +637,15 @@ export class SystemIntelligenceService {
     const computePromise = this.computeSystemIntelligenceUncached(organizationId)
       .then((result) => {
         if (result.system_score !== null) {
-          this.intelligenceCache.set(organizationId, { result, timestamp: Date.now() })
+          this.intelligenceCache.set(key, { result, timestamp: Date.now() })
         }
         return result
       })
       .finally(() => {
-        this.intelligenceInFlight.delete(organizationId)
+        this.intelligenceInFlight.delete(key)
       })
 
-    this.intelligenceInFlight.set(organizationId, computePromise)
+    this.intelligenceInFlight.set(key, computePromise)
     return computePromise
   }
 

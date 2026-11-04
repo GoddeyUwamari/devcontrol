@@ -16,6 +16,20 @@
  */
 import { SystemIntelligenceService, SystemIntelligenceResult, ComponentScore, ObservabilityComponentScore } from '../system-intelligence.service';
 
+// The connection the cache keys by (AWS connect PR B): one current identity unless a test changes it.
+const connection = { current: 'conn-A' as string | null, fail: false };
+jest.mock('../aws-connection-fence', () => ({
+  ...jest.requireActual('../aws-connection-fence'),
+  currentConnectionIdentity: jest.fn(async () => {
+    if (connection.fail) throw new Error('AWS_ACCOUNT_AMBIGUOUS');
+    return connection.current;
+  }),
+}));
+beforeEach(() => {
+  connection.current = 'conn-A';
+  connection.fail = false;
+});
+
 function componentFixture(overrides: Partial<ComponentScore> = {}): ComponentScore {
   return {
     score: 80,
@@ -250,5 +264,52 @@ describe('SystemIntelligenceService.getSystemIntelligence — response cache', (
     expect(result.components.cost.score).toBe(60);
     expect(result.components.security.score).toBe(80);
     expect(result.components.observability.score).toBe(70);
+  });
+
+  describe('AWS connect PR B: cache and in-flight entries are keyed by organization AND connection', () => {
+    it('a connection change misses the old entry, even within the TTL', async () => {
+      const service = new SystemIntelligenceService();
+      const spy = jest
+        .spyOn(SystemIntelligenceService.prototype as any, 'computeSystemIntelligenceUncached')
+        .mockResolvedValueOnce(intelligenceFixture({ system_score: 90 }))
+        .mockResolvedValueOnce(intelligenceFixture({ system_score: 40 }));
+      expect((await service.getSystemIntelligence('org-1')).system_score).toBe(90);
+      connection.current = 'conn-B';
+      expect((await service.getSystemIntelligence('org-1')).system_score).toBe(40);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it('an old in-flight computation that finishes after the change never fills what the new connection reads', async () => {
+      const service = new SystemIntelligenceService();
+      let finishOld!: (value: SystemIntelligenceResult) => void;
+      const spy = jest
+        .spyOn(SystemIntelligenceService.prototype as any, 'computeSystemIntelligenceUncached')
+        .mockImplementationOnce(() => new Promise((resolve) => (finishOld = resolve)))
+        .mockResolvedValueOnce(intelligenceFixture({ system_score: 40 }));
+      const old = service.getSystemIntelligence('org-1');
+      await new Promise((resolve) => setImmediate(resolve));
+      connection.current = 'conn-B';
+      const fresh = await service.getSystemIntelligence('org-1');
+      finishOld(intelligenceFixture({ system_score: 90 }));
+      expect((await old).system_score).toBe(90);
+      expect(fresh.system_score).toBe(40);
+      // The new connection still reads its own entry after the old one completed.
+      expect((await service.getSystemIntelligence('org-1')).system_score).toBe(40);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it('an unreadable connection is computed on its own: nothing cached or joined', async () => {
+      const service = new SystemIntelligenceService();
+      const spy = jest
+        .spyOn(SystemIntelligenceService.prototype as any, 'computeSystemIntelligenceUncached')
+        .mockResolvedValue(intelligenceFixture());
+      connection.fail = true;
+      await service.getSystemIntelligence('org-1');
+      await service.getSystemIntelligence('org-1');
+      expect(spy).toHaveBeenCalledTimes(2);
+      connection.fail = false;
+      await service.getSystemIntelligence('org-1');
+      expect(spy).toHaveBeenCalledTimes(3);
+    });
   });
 });

@@ -18,6 +18,7 @@ import {
 } from '../config/optimization-rules';
 import { OptimizationRuleConfigService, OptimizationRuleConfigValidationError } from '../services/optimization-rule-config.service';
 import { isLeaseLost } from '../services/scan-lease';
+import { isConnectionChanged } from '../services/aws-connection-fence';
 import {
   CostChecksFailedError,
   CostResultsNotSavedError,
@@ -25,7 +26,7 @@ import {
   LeaseTiming,
   SCAN_BUSY_MESSAGE,
   isScanBusy,
-  leaseAccountFor,
+  leaseTargetFor,
   waitForScanSession,
 } from '../services/scan-session';
 import { EMPTY_RECONCILE_COUNTS, ReconcileCounts, addReconcileCounts, summarizeDetectors } from '../services/cost-analysis-outcome';
@@ -452,14 +453,23 @@ export class CostRecommendationsController {
       // SCAN_WAIT_CAP_MS, then 409), then holds the lease while it runs. With no
       // eligible account there is no lease to take: the analysis below then fails
       // exactly as it does without one, before it writes anything.
-      const leaseAccountId = await leaseAccountFor(pool, organizationId);
-      if (leaseAccountId) {
-        session = await waitForScanSession(pool, organizationId, leaseAccountId, this.leaseTiming);
+      //
+      // AWS connect PR B: the lease target (AWS account + connection identity) is ONE
+      // read of the eligible row, and the analysis's clients must come from that same
+      // row (expectedConnection), or it stops before any AWS call: a lease taken for
+      // one connection never guards results fetched with another's credentials.
+      const leaseTarget = await leaseTargetFor(pool, organizationId);
+      if (leaseTarget) {
+        session = await waitForScanSession(pool, organizationId, leaseTarget, this.leaseTiming);
         await this.recordLeaseAcquired(session.lease.acquiredAt, organizationId, runId);
       }
 
       // Run the analysis against this org's connected AWS account
-      const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(organizationId);
+      const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(
+        organizationId,
+        undefined,
+        leaseTarget ? { expectedConnection: leaseTarget.connection } : {}
+      );
       // Without the lease nothing below is written, so this run has no result to report.
       if (!session) throw new CostResultsNotSavedError();
       // The home-listed detectors' rows are reconciled in the region they listed
@@ -533,14 +543,19 @@ export class CostRecommendationsController {
 
       // Only ever finished here, after analyzeAllResources() and reconciliation
       // have both actually succeeded -- never speculatively.
+      // Fenced with the lease (AWS connect PR B): a lost lease or a changed connection
+      // is rethrown, so the catch below closes this run's own row as interrupted.
       if (runId) {
         try {
-          await analysisRunsRepository.markFinished(runId, organizationId, {
-            recommendationsFound: insertedCount,
-            totalPotentialSavings: stats.total_potential_savings,
-            ...detail,
-          });
+          await lease.watch(() =>
+            analysisRunsRepository.markFinished(runId!, organizationId, {
+              recommendationsFound: insertedCount,
+              totalPotentialSavings: stats.total_potential_savings,
+              ...detail,
+            }, lease.lease)
+          );
         } catch (trackingErr) {
+          if (isLeaseLost(trackingErr)) throw trackingErr;
           console.error('Failed to record the finished cost_analysis_runs row (non-fatal):', trackingErr);
         }
       }
@@ -581,7 +596,7 @@ export class CostRecommendationsController {
       // completed. A lost lease is an interruption, anything else a failure.
       if (runId && organizationIdForRun) {
         try {
-          if (isLeaseLost(error)) {
+          if (isLeaseLost(error) || isConnectionChanged(error)) {
             await analysisRunsRepository.markInterrupted(runId, organizationIdForRun);
           } else {
             await analysisRunsRepository.markFailed(runId, organizationIdForRun, error?.message || 'Unknown error', failureDetail);
@@ -594,7 +609,7 @@ export class CostRecommendationsController {
       // Another scan took the lease over while Analyze held it: the run is recorded
       // interrupted, so the answer says so (approved text), never error.message
       // (a lease error names the organization and the AWS account).
-      if (isLeaseLost(error)) {
+      if (isLeaseLost(error) || isConnectionChanged(error)) {
         const response: ApiResponse = { success: false, error: INTERRUPTED_RUN_MESSAGE };
         res.status(409).json(response);
         return;

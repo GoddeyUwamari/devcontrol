@@ -14,6 +14,7 @@
  * committed by separate connections; the schema is dropped in finally.
  * Placeholders only.
  */
+import { currentConnectionIdentity } from '../aws-connection-fence';
 import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -232,7 +233,9 @@ async function withSchema(fn: (env: Env) => Promise<void>): Promise<void> {
 const scanKey = (organizationId: string, awsAccountId = ACCOUNT_A) => ({ organizationId, awsAccountId, scanKind: 'discovery' });
 
 async function lease(db: Client, org: string, account = ACCOUNT_A, ttlSeconds?: number): Promise<HeldLease> {
-  const held = await acquireScanLease(db, scanKey(org, account), 'm5b-test', { ttlSeconds });
+  // The connection the lease is taken for (AWS connect PR B): the org's eligible row now.
+  const connection = (await currentConnectionIdentity(db, org)) ?? JSON.stringify(['no-connection', org]);
+  const held = await acquireScanLease(db, { ...scanKey(org, account), connection }, 'm5b-test', { ttlSeconds });
   expect(held).not.toBeNull();
   return held!;
 }

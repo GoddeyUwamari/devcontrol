@@ -22,14 +22,17 @@
  * the identity default; a takeover sets it to DEFAULT), so a key's tokens only
  * increase. Tokens are opaque strings compared by equality.
  *
- * THE COMMIT FENCE is the first statement of every destructive transaction:
+ * THE COMMIT FENCE opens every destructive transaction (fence()): the
+ * organization's connection lock, shared (aws-connection-fence.ts); then
  * `SELECT … FOR SHARE` of the lease row with the caller's token, still held
- * by the database clock. The row lock makes a takeover wait until the
- * transaction ends, so a worker whose lease expired cannot commit after
- * another worker acquired it, and its next fence fails. A scan lease's fence
- * also checks the account (fenceScanLease) with the one account rule
- * (findEligibleAwsAccount): exactly one eligible account, and it is the
- * lease's, or nothing is written.
+ * by the database clock; then the connection check. The row lock makes a
+ * takeover wait until the transaction ends, so a worker whose lease expired
+ * cannot commit after another worker acquired it, and its next fence fails.
+ * The connection check (AWS connect PR B) compares the lease's connection
+ * identity (HeldLease.connection: the aws_accounts row the work started with)
+ * with the organization's one eligible row (findEligibleAwsAccount): the same
+ * row, unchanged, or nothing is written. The connection lock makes that check
+ * and the transaction's writes atomic with respect to a connection change.
  *
  * TENANT ISOLATION: both lease tables force row-level security on
  * app.current_organization_id, and every statement here also filters by the
@@ -40,8 +43,9 @@
 import { randomUUID } from 'crypto';
 import { hostname } from 'os';
 import { ClientBase, PoolClient } from 'pg';
-import { findEligibleAwsAccount } from '../repositories/aws-accounts.repository';
+import { awsConnectionIdentity, findEligibleAwsAccount, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import { parseAccountIdFromArn } from './aws-client-factory.service';
+import { lockConnectionShared } from './aws-connection-fence';
 
 /**
  * A dedicated connection (a Client or a checked-out PoolClient) the caller has
@@ -128,6 +132,15 @@ export interface HeldLease {
   holder: string;
   /** acquired_at, as the database recorded it. */
   acquiredAt: Date;
+  /**
+   * The AWS connection this worker's work belongs to (awsConnectionIdentity of
+   * the aws_accounts row it started with, aws-connection-fence.ts). Held in
+   * memory only: every fence compares it with the organization's current
+   * eligible row, under the connection lock. A scan lease always names one; a
+   * job lease taken while the organization had no eligible account carries
+   * null, and its fence then passes only while it still has none.
+   */
+  connection: string | null;
 }
 
 export type LeaseLossReason = 'lease_lost' | 'max_age' | 'account_changed';
@@ -171,8 +184,8 @@ function keyPredicate(key: LeaseKey): { sql: string; values: string[] } {
 /** What an acquisition statement returns. */
 type AcquiredRow = { fencing_token: string | number; acquired_at: Date };
 
-function held(key: LeaseKey, holder: string, row: AcquiredRow): HeldLease {
-  return { key, fencingToken: String(row.fencing_token), holder, acquiredAt: row.acquired_at };
+function held(key: LeaseKey, holder: string, row: AcquiredRow, connection: string | null): HeldLease {
+  return { key, fencingToken: String(row.fencing_token), holder, acquiredAt: row.acquired_at, connection };
 }
 
 export interface AcquireOptions {
@@ -215,7 +228,7 @@ async function acquire(db: Executor, sql: string, values: unknown[], lockTimeout
  */
 export async function acquireScanLease(
   db: Executor,
-  key: { organizationId: string; awsAccountId: string; scanKind: string },
+  { connection, ...key }: { organizationId: string; awsAccountId: string; scanKind: string; connection: string },
   holder: string,
   { ttlSeconds = LEASE_TTL_SECONDS, lockTimeoutMs }: AcquireOptions = {}
 ): Promise<HeldLease | null> {
@@ -231,7 +244,7 @@ export async function acquireScanLease(
     [key.organizationId, key.awsAccountId, key.scanKind, holder, ttlSeconds],
     lockTimeoutMs
   );
-  return rows.length === 0 ? null : held({ table: 'aws_scan_leases', ...key }, holder, rows[0]);
+  return rows.length === 0 ? null : held({ table: 'aws_scan_leases', ...key }, holder, rows[0], connection);
 }
 
 /**
@@ -242,7 +255,7 @@ export async function acquireScanLease(
  */
 export async function acquireJobLease(
   db: Executor,
-  key: { organizationId: string; jobName: string },
+  { connection, ...key }: { organizationId: string; jobName: string; connection: string | null },
   holder: string,
   { ttlSeconds = LEASE_TTL_SECONDS, lockTimeoutMs, minSecondsSinceCompletion }: AcquireOptions & { minSecondsSinceCompletion?: number } = {}
 ): Promise<HeldLease | null> {
@@ -260,7 +273,7 @@ export async function acquireJobLease(
     [key.organizationId, key.jobName, holder, ttlSeconds, minSecondsSinceCompletion ?? null],
     lockTimeoutMs
   );
-  return rows.length === 0 ? null : held({ table: 'job_leases', ...key }, holder, rows[0]);
+  return rows.length === 0 ? null : held({ table: 'job_leases', ...key }, holder, rows[0], connection);
 }
 
 /**
@@ -329,7 +342,8 @@ export async function completeJobLease(db: Executor, lease: HeldLease): Promise<
 }
 
 /**
- * The commit fence, without the account check. Must run inside the caller's
+ * The lease-token part of the commit fence, with neither the connection lock
+ * nor the connection check: writers use fence(), never this alone. Must run inside the caller's
  * open transaction, before its first write: the FOR SHARE row lock it takes
  * is what makes a takeover wait for that transaction to end. Throws
  * LeaseLostError when the lease is not held with this token by the database
@@ -347,32 +361,47 @@ export async function fenceLease(client: Executor, lease: HeldLease): Promise<vo
 }
 
 /**
- * The commit fence for a scan lease: fenceLease, then the account check, by
- * the one account rule every scan path uses (findEligibleAwsAccount,
- * aws-accounts.repository.ts): the organization's one eligible account must
- * be the lease's AWS account, read from its role ARN as ScanContext reads it
- * (scan-context.ts). More than one eligible account throws
- * AwsAccountAmbiguousError (AWS_ACCOUNT_AMBIGUOUS); none, or another account,
- * throws LeaseLostError('account_changed'). Either way the caller rolls back
- * and writes nothing.
- *
- * The account row is read without a row lock (aws_accounts has no RLS and
- * its grants are outside the repository's migrations, S3a audit §1.1), so a
- * change made while the transaction runs is caught by the next fence.
+ * Whether `lease`'s connection is still the organization's one eligible
+ * connection: the eligible row's awsConnectionIdentity equals the lease's
+ * (row id, AWS account, role ARN, home region), and for a scan lease the row's
+ * role ARN names the lease's AWS account. More than one eligible row throws
+ * AwsAccountAmbiguousError (AWS_ACCOUNT_AMBIGUOUS).
  */
-export async function fenceScanLease(client: Executor, lease: HeldLease): Promise<void> {
-  if (lease.key.table !== 'aws_scan_leases') throw new Error(`fenceScanLease: ${describeKey(lease.key)} is not a scan lease`);
-  await fenceLease(client, lease);
+async function connectionStillActive(client: Executor, lease: HeldLease): Promise<boolean> {
   const account = await findEligibleAwsAccount(client, lease.key.organizationId);
-  if (!account || parseAccountIdFromArn(account.role_arn ?? '') !== lease.key.awsAccountId) {
-    throw new LeaseLostError('account_changed', lease.key);
-  }
+  if (lease.connection === null) return account === null && lease.key.table === 'job_leases';
+  if (!account || awsConnectionIdentity(account) !== lease.connection) return false;
+  return lease.key.table !== 'aws_scan_leases' || parseAccountIdFromArn(account.role_arn ?? '') === lease.key.awsAccountId;
 }
 
-/** The fence for `lease`'s table: fenceScanLease for a scan lease, fenceLease for a job lease. */
+/**
+ * The commit fence for any lease, the first statements of every destructive
+ * transaction, in this order:
+ *
+ *   1. the organization's connection lock, SHARED (aws-connection-fence.ts),
+ *      held until the transaction ends, so a connection change (which takes
+ *      it exclusive) waits for this transaction and cannot commit in between;
+ *   2. fenceLease: the lease row FOR SHARE with this worker's token;
+ *   3. the connection check (connectionStillActive): the work's connection
+ *      is still the one eligible connection. None, another row (even for the
+ *      same account, role ARN and region), or a changed role ARN or region
+ *      throws LeaseLostError('account_changed'); more than one eligible row
+ *      throws AwsAccountAmbiguousError.
+ *
+ * The connection lock comes before the lease row, always: the lock order PR
+ * C's disconnect follows too. Either way the caller rolls back and nothing is
+ * written.
+ */
 export async function fence(client: Executor, lease: HeldLease): Promise<void> {
-  if (lease.key.table === 'aws_scan_leases') await fenceScanLease(client, lease);
-  else await fenceLease(client, lease);
+  await lockConnectionShared(client, lease.key.organizationId);
+  await fenceLease(client, lease);
+  if (!(await connectionStillActive(client, lease))) throw new LeaseLostError('account_changed', lease.key);
+}
+
+/** fence() for a scan lease (refuses any other). */
+export async function fenceScanLease(client: Executor, lease: HeldLease): Promise<void> {
+  if (lease.key.table !== 'aws_scan_leases') throw new Error(`fenceScanLease: ${describeKey(lease.key)} is not a scan lease`);
+  await fence(client, lease);
 }
 
 /**
@@ -481,7 +510,9 @@ export interface HeartbeatOptions {
  *
  * The lease counts as lost, and is no longer renewed, when a renewal is
  * refused (taken over, released, expired, or MAX_LEASE_AGE_SECONDS reached),
- * or after MAX_CONSECUTIVE_RENEW_ERRORS renewal errors in a row. Every step
+ * when the work's AWS connection is no longer the active one (checked after
+ * every renewal: 'account_changed'), or after MAX_CONSECUTIVE_RENEW_ERRORS
+ * renewal errors in a row. Every step
  * is bounded, so a renewal always settles and stop() / stopAndRelease()
  * always return: the connection checkout by connectTimeoutMs, a row-lock
  * wait by renewLockTimeoutMs, and any one statement by
@@ -560,12 +591,21 @@ export class LeaseHeartbeat {
   async beat(): Promise<void> {
     if (this.lossReason) return;
     try {
-      const ageSeconds = await this.onOwnConnection((client) =>
-        this.bounded(client, () => renewReportingAge(client, this.lease, this.ttlSeconds, this.maxAgeSeconds))
+      const { ageSeconds, connectionActive } = await this.onOwnConnection((client) =>
+        this.bounded(client, async () => {
+          const age = await renewReportingAge(client, this.lease, this.ttlSeconds, this.maxAgeSeconds);
+          return { ageSeconds: age, connectionActive: age === null ? true : await this.connectionActive(client) };
+        })
       );
       this.consecutiveErrors = 0;
       if (ageSeconds === null) {
         this.markLost((await this.refusedForAge().catch(() => false)) ? 'max_age' : 'lease_lost');
+      } else if (!connectionActive) {
+        // The work's connection is no longer the active one (prB-plan.md D5): the
+        // worker stops at its next checkpoint, before more AWS calls, not only at
+        // its next fence. A read only, without the connection lock: the fences
+        // decide what is written.
+        this.markLost('account_changed');
       } else {
         this.warnOnAge(ageSeconds);
       }
@@ -576,6 +616,16 @@ export class LeaseHeartbeat {
         errorMessage(error)
       );
       if (this.consecutiveErrors >= MAX_CONSECUTIVE_RENEW_ERRORS) this.markLost('lease_lost');
+    }
+  }
+
+  /** connectionStillActive, with more than one eligible row counted as changed. */
+  private async connectionActive(client: PoolClient): Promise<boolean> {
+    try {
+      return await connectionStillActive(client, this.lease);
+    } catch (error: unknown) {
+      if (isAwsAccountAmbiguous(error)) return false;
+      throw error;
     }
   }
 

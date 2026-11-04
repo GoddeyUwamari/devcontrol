@@ -19,7 +19,7 @@
 import { Client, Pool, PoolClient } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AwsAccountAmbiguousError } from '../../repositories/aws-accounts.repository';
+import { AwsAccountAmbiguousError, awsConnectionIdentity } from '../../repositories/aws-accounts.repository';
 import {
   HeldLease,
   LEASE_AGE_WARNING,
@@ -151,7 +151,14 @@ async function withSchema(fn: (env: Env) => Promise<void>): Promise<void> {
       organization: async (account = ACCOUNT_A) => {
         const org = (await admin.query(`INSERT INTO ${schema}.organizations (name) VALUES ('Lease Org') RETURNING id`)).rows[0].id;
         if (account) {
-          await admin.query(`INSERT INTO ${schema}.aws_accounts (org_id, role_arn, status) VALUES ($1, $2, 'active')`, [org, roleArn(account)]);
+          const row = (
+            await admin.query(
+              `INSERT INTO ${schema}.aws_accounts (org_id, role_arn, status) VALUES ($1, $2, 'active') RETURNING id, account_id, role_arn, region`,
+              [org, roleArn(account)]
+            )
+          ).rows[0];
+          // The connection the org's leases are taken for (AWS connect PR B).
+          connections.set(org, awsConnectionIdentity(row));
         }
         return org;
       },
@@ -247,8 +254,17 @@ async function markerCount(env: Env, org: string): Promise<number> {
   return (await env.admin.query(`SELECT count(*)::int AS n FROM ${env.schema}.aws_account_regions WHERE organization_id = $1`, [org])).rows[0].n;
 }
 
-const scanKey = (organizationId: string, awsAccountId = ACCOUNT_A) => ({ organizationId, awsAccountId, scanKind: 'discovery' });
-const jobKey = (organizationId: string) => ({ organizationId, jobName: 'resource_discovery' });
+/**
+ * Each test organization's connection identity, recorded when its aws_accounts row
+ * is written (AWS connect PR B: every lease carries the connection it was taken for).
+ * An organization with no row gets a placeholder no fence can match.
+ */
+const connections = new Map<string, string>();
+const connectionOf = (organizationId: string) => connections.get(organizationId) ?? JSON.stringify(['no-connection', organizationId]);
+
+const scanKey = (organizationId: string, awsAccountId = ACCOUNT_A) => ({ organizationId, awsAccountId, scanKind: 'discovery', connection: connectionOf(organizationId) });
+// A job lease carries the connection the org had when it was taken: null for an org with none.
+const jobKey = (organizationId: string) => ({ organizationId, jobName: 'resource_discovery', connection: connections.get(organizationId) ?? null });
 
 /** `promise`, or a rejection naming `what` once `ms` have passed: a per-test deadline that cannot hang. */
 async function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
@@ -498,14 +514,24 @@ describe('scan-lease: I2 the scan fence checks the account', () => {
     });
   });
 
-  it('a job lease fence does not read aws_accounts (organization-level work)', async () => {
+  it('AWS connect PR B: a job lease fence checks the connection the job lease was taken for', async () => {
     await withSchema(async (env) => {
+      // Taken while the organization had no eligible account: passes while it still has none.
       const org = await env.organization(null);
       const db = await env.connection(org);
       const lease = (await acquireJobLease(db, jobKey(org), 'h'))!;
+      expect(lease.connection).toBeNull();
       await withFencedTransaction(db, lease, async () => undefined);
       await db.query('BEGIN');
       await fence(db, lease);
+      await fenceLease(db, lease);
+      await db.query('ROLLBACK');
+
+      // A connection appears after the job lease was taken: the job's work is fenced out.
+      await env.admin.query(`INSERT INTO ${env.schema}.aws_accounts (org_id, role_arn, status) VALUES ($1, $2, 'active')`, [org, roleArn(ACCOUNT_A)]);
+      await expect(withFencedTransaction(db, lease, async () => undefined)).rejects.toMatchObject({ reason: 'account_changed' });
+      // The token-only part still passes: the refusal is the connection check's.
+      await db.query('BEGIN');
       await fenceLease(db, lease);
       await db.query('ROLLBACK');
     });

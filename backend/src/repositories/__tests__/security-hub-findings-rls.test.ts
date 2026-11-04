@@ -72,16 +72,19 @@ async function fetchRow(orgId: string, findingId: string) {
   return rows[0];
 }
 
+/** These test organizations have no AWS account: a sync's captured connection is null (AWS connect PR B). */
+const NO_CONNECTION = null;
+
 describe('SecurityHubFindingsRepository — upsert-only ingestion', () => {
   it('upserts by (organization_id, finding_id) — a re-ingested finding updates the same row, not a duplicate', async () => {
     const orgId = await insertOrg();
     const finding = fakeFinding();
 
-    await findingsRepo.upsertFindings(orgId, [finding]);
+    await findingsRepo.upsertFindings(orgId, [finding], NO_CONNECTION);
     const first = await fetchRow(orgId, finding.findingId);
     expect(first.compliance_status).toBe('FAILED');
 
-    await findingsRepo.upsertFindings(orgId, [{ ...finding, complianceStatus: 'PASSED' }]);
+    await findingsRepo.upsertFindings(orgId, [{ ...finding, complianceStatus: 'PASSED' }], NO_CONNECTION);
     const second = await fetchRow(orgId, finding.findingId);
     expect(second.id).toBe(first.id);
     expect(second.compliance_status).toBe('PASSED');
@@ -93,12 +96,12 @@ describe('SecurityHubFindingsRepository — upsert-only ingestion', () => {
       securityControlId: 'IAM.3',
       relatedRequirements: ['PCI DSS v4.0.1/8.3.9', 'PCI DSS v4.0.1/8.6.3', 'NIST.800-53.r5 AC-2(1)'],
     });
-    await findingsRepo.upsertFindings(orgId, [withRequirements]);
+    await findingsRepo.upsertFindings(orgId, [withRequirements], NO_CONNECTION);
     const row = await fetchRow(orgId, withRequirements.findingId);
     expect(row.related_requirements).toEqual(['PCI DSS v4.0.1/8.3.9', 'PCI DSS v4.0.1/8.6.3', 'NIST.800-53.r5 AC-2(1)']);
 
     const withoutRequirements = fakeFinding({ securityControlId: 'IAM.5' });
-    await findingsRepo.upsertFindings(orgId, [withoutRequirements]);
+    await findingsRepo.upsertFindings(orgId, [withoutRequirements], NO_CONNECTION);
     const defaultRow = await fetchRow(orgId, withoutRequirements.findingId);
     expect(defaultRow.related_requirements).toEqual([]);
   });
@@ -106,11 +109,11 @@ describe('SecurityHubFindingsRepository — upsert-only ingestion', () => {
   it('never deletes or archives a finding on its own — absence from a later upsert batch leaves the row untouched', async () => {
     const orgId = await insertOrg();
     const finding = fakeFinding();
-    await findingsRepo.upsertFindings(orgId, [finding]);
+    await findingsRepo.upsertFindings(orgId, [finding], NO_CONNECTION);
 
     // Simulate a later sync that doesn't mention this finding at all (e.g. it was on a
     // page that failed, or a different control's findings were ingested instead).
-    await findingsRepo.upsertFindings(orgId, [fakeFinding({ securityControlId: 'IAM.3' })]);
+    await findingsRepo.upsertFindings(orgId, [fakeFinding({ securityControlId: 'IAM.3' })], NO_CONNECTION);
 
     const stillThere = await fetchRow(orgId, finding.findingId);
     expect(stillThere).toBeDefined();
@@ -120,7 +123,7 @@ describe('SecurityHubFindingsRepository — upsert-only ingestion', () => {
   it('getFreshActiveFindingsForControl excludes findings older than the freshness cutoff', async () => {
     const orgId = await insertOrg();
     const finding = fakeFinding({ securityControlId: 'IAM.5' });
-    await findingsRepo.upsertFindings(orgId, [finding]);
+    await findingsRepo.upsertFindings(orgId, [finding], NO_CONNECTION);
 
     const future = new Date(Date.now() + 60_000);
     const fresh = await findingsRepo.getFreshActiveFindingsForControl(orgId, 'IAM.5', future);
@@ -136,7 +139,7 @@ describe('SecurityHubFindingsRepository — upsert-only ingestion', () => {
     await findingsRepo.upsertFindings(orgId, [
       fakeFinding({ securityControlId: 'IAM.5' }),
       fakeFinding({ securityControlId: 'IAM.3' }),
-    ]);
+    ], NO_CONNECTION);
 
     const past = new Date(Date.now() - 60_000);
     const grouped = await findingsRepo.getAllFreshActiveFindingsGroupedByControl(orgId, past);
@@ -154,7 +157,7 @@ describe('organization isolation — Security Hub findings and state', () => {
     const orgA = await insertOrg();
     const orgB = await insertOrg();
     const finding = fakeFinding({ securityControlId: 'IAM.5' });
-    await findingsRepo.upsertFindings(orgA, [finding]);
+    await findingsRepo.upsertFindings(orgA, [finding], NO_CONNECTION);
 
     const past = new Date(Date.now() - 60_000);
     const asOrgB = await findingsRepo.getFreshActiveFindingsForControl(orgB, 'IAM.5', past);
@@ -168,7 +171,7 @@ describe('organization isolation — Security Hub findings and state', () => {
     const orgA = await insertOrg();
     const orgB = await insertOrg();
 
-    await stateRepo.recordSyncResult(orgB, {
+    await stateRepo.recordSyncResult(orgB, NO_CONNECTION, {
       capability: { status: 'ENABLED', checkedAt: new Date().toISOString(), error: null },
       enabledStandards: [],
       syncStatus: 'COMPLETED',
