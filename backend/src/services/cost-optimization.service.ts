@@ -20,6 +20,12 @@ import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
 import type { ScanContext } from './scan-context';
 import { pool } from '../config/database';
 import {
+  EC2_PRICE_SOURCE_DEFAULT,
+  EC2_PRICE_SOURCE_LIST_TABLE,
+  SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE,
+  type EC2PriceSource,
+} from './estimated-savings';
+import {
   AwsCallPolicy,
   DEFAULT_AWS_CALL_POLICY,
   MAX_LIST_FUNCTIONS_PAGES,
@@ -133,6 +139,37 @@ const EC2_IDLE_WINDOW_DAYS = 7;
 const EC2_IDLE_PERIOD_SECONDS = 3600;
 const EC2_IDLE_EXPECTED_DATAPOINTS = (EC2_IDLE_WINDOW_DAYS * 24 * 60 * 60) / EC2_IDLE_PERIOD_SECONDS; // 168
 const EC2_IDLE_MIN_DATAPOINTS = Math.round(EC2_IDLE_EXPECTED_DATAPOINTS * 0.8); // 134
+
+/**
+ * DevControl's monthly list-price table for EC2 instance types (us-east-1,
+ * on-demand). Exported so tests can add a type; nothing else writes to it.
+ */
+export const EC2_MONTHLY_LIST_PRICES: Record<string, number> = {
+  't2.micro': 8.5,
+  't2.small': 17,
+  't2.medium': 34,
+  't2.large': 68,
+  't3.micro': 7.5,
+  't3.small': 15,
+  't3.medium': 30,
+  't3.large': 60,
+  't3.xlarge': 120,
+  't3.2xlarge': 240,
+  'm5.large': 70,
+  'm5.xlarge': 140,
+  'm5.2xlarge': 280,
+  'm5.4xlarge': 560,
+  'c5.large': 62,
+  'c5.xlarge': 124,
+  'c5.2xlarge': 248,
+  'r5.large': 91,
+  'r5.xlarge': 182,
+  'r5.2xlarge': 364,
+};
+
+/** The figure used when an instance type is not in the table: its real price is unknown. */
+export const EC2_UNLISTED_DEFAULT_MONTHLY_COST = 50;
+
 
 /** A CPU average together with how much of the requested window actually backs it. */
 interface CPUUtilizationEvidence {
@@ -437,7 +474,8 @@ class CostOptimizationService {
 
           if (cpu.average < config.value) {
             const nameTag = instance.Tags?.find((tag) => tag.Key === 'Name');
-            const monthlyCost = this.estimateEC2Cost(instance.InstanceType || '');
+            const { monthlyCost, priceSource } = this.estimateEC2Cost(instance.InstanceType || '');
+            const unknownPrice = priceSource === EC2_PRICE_SOURCE_DEFAULT;
 
             issues.push({
               resourceId: instance.InstanceId,
@@ -446,10 +484,14 @@ class CostOptimizationService {
               issue: ISSUE_EC2_IDLE_INSTANCE,
               description: `This EC2 instance averaged ${cpu.average.toFixed(2)}% CPU utilization over the past ${EC2_IDLE_WINDOW_DAYS} days (${cpu.datapoints} of ${EC2_IDLE_EXPECTED_DATAPOINTS} hourly CloudWatch datapoints). It is an idle candidate: review whether it is still needed. Average CPU alone does not show peak load or memory use, so this is not a rightsizing recommendation.`,
               potentialSavings: monthlyCost,
-              severity: this.calculateSeverity(monthlyCost),
+              // The default figure is not a price, so it never sets severity:
+              // fixed LOW (founder decision Q7, interim until "not assessed").
+              severity: unknownPrice ? 'LOW' : this.calculateSeverity(monthlyCost),
               awsRegion: region,
               metadata: {
                 instance_type: instance.InstanceType,
+                price_source: priceSource,
+                ...(unknownPrice ? { severity_basis: SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE } : {}),
                 average_cpu: cpu.average,
                 days_analyzed: EC2_IDLE_WINDOW_DAYS,
                 cpu_evidence: {
@@ -2117,33 +2159,14 @@ class CostOptimizationService {
   }
 
   /**
-   * Estimate EC2 monthly cost
+   * Estimate EC2 monthly cost from the list-price table. An unlisted (or
+   * missing) type gets the default figure, marked as such.
    */
-  private estimateEC2Cost(instanceType: string): number {
-    const costs: Record<string, number> = {
-      't2.micro': 8.5,
-      't2.small': 17,
-      't2.medium': 34,
-      't2.large': 68,
-      't3.micro': 7.5,
-      't3.small': 15,
-      't3.medium': 30,
-      't3.large': 60,
-      't3.xlarge': 120,
-      't3.2xlarge': 240,
-      'm5.large': 70,
-      'm5.xlarge': 140,
-      'm5.2xlarge': 280,
-      'm5.4xlarge': 560,
-      'c5.large': 62,
-      'c5.xlarge': 124,
-      'c5.2xlarge': 248,
-      'r5.large': 91,
-      'r5.xlarge': 182,
-      'r5.2xlarge': 364,
-    };
-
-    return costs[instanceType] || 50;
+  private estimateEC2Cost(instanceType: string): { monthlyCost: number; priceSource: EC2PriceSource } {
+    if (instanceType && Object.prototype.hasOwnProperty.call(EC2_MONTHLY_LIST_PRICES, instanceType)) {
+      return { monthlyCost: EC2_MONTHLY_LIST_PRICES[instanceType], priceSource: EC2_PRICE_SOURCE_LIST_TABLE };
+    }
+    return { monthlyCost: EC2_UNLISTED_DEFAULT_MONTHLY_COST, priceSource: EC2_PRICE_SOURCE_DEFAULT };
   }
 }
 

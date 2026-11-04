@@ -4,7 +4,8 @@ import { auditRequestContext } from '../services/auditEvents.service';
 import { CostAnalysisRun, CostAnalysisRunDetail, CostAnalysisRunSource, CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import costOptimizationService from '../services/cost-optimization.service';
-import { RemediationService, REGION_MISMATCH_PREFIX } from '../services/remediation.service';
+import { RemediationService, REGION_MISMATCH_PREFIX, SELF_PROTECTION_PUBLIC_MESSAGE } from '../services/remediation.service';
+import { logRemediationError, publicRemediationMessage } from '../services/remediation-public-message';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILABLE, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { pool } from '../config/database';
 import { RecommendationFilters, ApiResponse, RecommendationStatus } from '../types';
@@ -36,6 +37,16 @@ const remediationService = new RemediationService(pool);
 const optimizationRuleConfigService = new OptimizationRuleConfigService(pool);
 
 const UNEXPECTED_FAILURE_MESSAGE = 'The analysis did not complete due to an unexpected error.';
+// execute-remediation's fixed failure text. RESOLVE_FAILED: the instance was
+// stopped but marking the recommendation resolved failed (founder-approved, PR 4 M1).
+export const EXECUTE_REMEDIATION_FAILED = 'Failed to execute remediation';
+export const EXECUTE_REMEDIATION_RESOLVE_FAILED =
+  "The instance was stopped, but this recommendation couldn't be marked resolved. Refresh to check its status.";
+
+function errorMessage(err: unknown): string {
+  const message = (err as { message?: unknown } | null)?.message;
+  return typeof message === 'string' ? message : '';
+}
 const COST_RESULTS_NOT_SAVED_MESSAGE = "The analysis ran, but its results couldn't be saved. Try again.";
 const COST_CHECKS_FAILED_MESSAGE = 'None of the cost checks could complete. Try again.';
 const PARTIAL_RUN_MESSAGE = "Some cost checks didn't complete, so these results may be incomplete.";
@@ -916,56 +927,68 @@ export class CostRecommendationsController {
 
       await remediationService.approve(workflow.id, organizationId, userId, req.ip);
 
+      // Every failure below answers with fixed text (or a known fixed
+      // refusal). AWS SDK and database errors -- which can quote ARNs, SQL or
+      // row values -- are logged server-side through safeErrorFields only.
+      let executed: Awaited<ReturnType<RemediationService['execute']>>;
       try {
-        const executed = await remediationService.execute(workflow.id, organizationId, userId, req.ip);
-        const resolved = await repository.updateStatus(id, 'RESOLVED', organizationId, {
+        executed = await remediationService.execute(workflow.id, organizationId, userId, req.ip);
+      } catch (execErr: unknown) {
+        const message = errorMessage(execErr);
+        logRemediationError('execute-remediation execute', workflow.id, execErr);
+        if (message.startsWith('DRY_RUN_MODE')) {
+          // Kill-switch is off, so nothing ran. Leave the recommendation
+          // ACTIVE and close the workflow this request approved, so it is
+          // neither reported as done nor left behind as executable.
+          await remediationService.closeUnexecuted(workflow.id, organizationId, userId, message, req.ip);
+          res.status(400).json({ success: false, error: publicRemediationMessage(execErr, EXECUTE_REMEDIATION_FAILED), data: { workflowId: workflow.id } });
+          return;
+        }
+
+        if (message.startsWith('REMEDIATION_BLOCKED')) {
+          // Safety guard tripped — leave the recommendation ACTIVE so the
+          // block is visible, do not silently mark it resolved.
+          res.status(403).json({ success: false, error: publicRemediationMessage(execErr, SELF_PROTECTION_PUBLIC_MESSAGE), data: { workflowId: workflow.id } });
+          return;
+        }
+
+        // Execution failed (or its bookkeeping did) — leave the recommendation
+        // ACTIVE so it can be retried or investigated via the Remediation
+        // page's audit trail.
+        res.status(500).json({ success: false, error: EXECUTE_REMEDIATION_FAILED, data: { workflowId: workflow.id } });
+        return;
+      }
+
+      let resolved: Awaited<ReturnType<CostRecommendationsRepository['updateStatus']>>;
+      try {
+        resolved = await repository.updateStatus(id, 'RESOLVED', organizationId, {
           userId,
           request: auditRequestContext(req),
           source: 'execute_remediation',
         });
-
-        res.json({
-          success: true,
-          data: { recommendation: resolved, workflow: executed },
-          message: `Instance ${recommendation.resource_id} stopped successfully.`,
-        });
-      } catch (execErr: any) {
-        if (execErr.message?.startsWith('DRY_RUN_MODE')) {
-          // Kill-switch is off, so nothing ran. Leave the recommendation
-          // ACTIVE and close the workflow this request approved, so it is
-          // neither reported as done nor left behind as executable.
-          await remediationService.closeUnexecuted(workflow.id, organizationId, userId, execErr.message, req.ip);
-          res.status(400).json({ success: false, error: execErr.message, data: { workflowId: workflow.id } });
-          return;
-        }
-
-        if (execErr.message?.startsWith('REMEDIATION_BLOCKED')) {
-          // Safety guard tripped — leave the recommendation ACTIVE so the
-          // block is visible, do not silently mark it resolved.
-          console.error(`[Remediation] blocked for recommendation ${id}:`, execErr.message);
-          res.status(403).json({ success: false, error: execErr.message, data: { workflowId: workflow.id } });
-          return;
-        }
-
-        // Real execution failure — leave the recommendation ACTIVE so it can
-        // be retried or investigated via the Remediation page's audit trail.
-        console.error(`[Remediation] execution failed for recommendation ${id}:`, execErr);
-        res.status(500).json({
-          success: false,
-          error: `Execution failed: ${execErr.message}`,
-          data: { workflowId: workflow.id },
-        });
+      } catch (resolveErr: unknown) {
+        // The instance was stopped; only marking the recommendation resolved
+        // (its row update or audit write) failed.
+        logRemediationError('execute-remediation resolve', workflow.id, resolveErr);
+        res.status(500).json({ success: false, error: EXECUTE_REMEDIATION_RESOLVE_FAILED, data: { workflowId: workflow.id } });
+        return;
       }
-    } catch (error: any) {
-      console.error('Error executing remediation for recommendation:', error);
-      if (error.message?.startsWith(REGION_MISMATCH_PREFIX)) {
+
+      res.json({
+        success: true,
+        data: { recommendation: resolved, workflow: executed },
+        message: `Instance ${recommendation.resource_id} stopped successfully.`,
+      });
+    } catch (error: unknown) {
+      logRemediationError('execute-remediation', workflowId, error);
+      if (errorMessage(error).startsWith(REGION_MISMATCH_PREFIX)) {
         // The recommendation's region contradicts the inventory: nothing was created.
-        res.status(400).json({ success: false, error: error.message });
+        res.status(400).json({ success: false, error: publicRemediationMessage(error, EXECUTE_REMEDIATION_FAILED) });
         return;
       }
       res.status(500).json({
         success: false,
-        error: 'Failed to execute remediation',
+        error: EXECUTE_REMEDIATION_FAILED,
         data: workflowId ? { workflowId } : undefined,
       });
     }

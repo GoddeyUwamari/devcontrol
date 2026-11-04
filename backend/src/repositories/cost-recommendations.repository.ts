@@ -272,6 +272,8 @@ export interface HiddenFinding {
     lastDetectedAt: string | null;
     potentialSavings: number | null;
     savingsBasis: string | null;
+    /** metadata.price_source (EC2 idle figures); null when the detection has none. */
+    priceSource: string | null;
     severity: string | null;
     description: string | null;
   };
@@ -840,6 +842,7 @@ export class CostRecommendationsRepository {
             lastDetectedAt: detected ? toIso(detected.detected_at) : null,
             potentialSavings: detected ? toNumber(detected.potential_savings) : null,
             savingsBasis: detected?.metadata?.savings_basis ?? null,
+            priceSource: typeof detected?.metadata?.price_source === 'string' ? detected.metadata.price_source : null,
             severity: detected?.severity ?? null,
             description: detected?.description ?? null,
           },

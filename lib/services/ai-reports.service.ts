@@ -102,6 +102,8 @@ export interface ReportDetail {
     impact: 'high' | 'medium' | 'low';
     description: string;
     estimatedSavings?: number;
+    /** Set by the backend: estimatedSavings is a default figure for an instance type whose price is unknown. */
+    estimatedSavingsPriceUnknown?: boolean;
     effort: 'low' | 'medium' | 'high';
   }>;
   metadata: {

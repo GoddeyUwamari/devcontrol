@@ -325,6 +325,25 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     expect(titles[1].compareDocumentPosition(titles[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('PR 4 S2: a default-price figure reads "(price unknown)"; a genuine $50 list price and a legacy row do not', async () => {
+    const recommendation = (id: string, issue: string, metadata: Record<string, unknown>) => ({
+      id, resourceId: id, resourceType: 'EC2', issue, potentialSavings: 50, severity: 'LOW', status: 'ACTIVE', metadata, createdAt: '', updatedAt: '',
+    })
+    mockGetStats.mockResolvedValue(recStats(150, 3))
+    mockGetAll.mockResolvedValue([
+      recommendation('d-1', 'Idle Instance (default)', { savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' }),
+      recommendation('l-1', 'Idle Instance (listed)', { savings_basis: 'estimated: list price', price_source: 'list_table' }),
+      recommendation('g-1', 'Idle Instance (legacy)', { savings_basis: 'estimated: list price' }),
+    ])
+    renderPage()
+
+    const row = async (title: string) => (await screen.findByText(title)).parentElement as HTMLElement
+    expect(await row('Idle Instance (default)')).toHaveTextContent('$50/mo (price unknown)')
+    expect((await row('Idle Instance (listed)')).textContent).toMatch(/\$50\/mo$/)
+    expect((await row('Idle Instance (legacy)')).textContent).toMatch(/\$50\/mo$/)
+    expect(screen.getAllByText(/\(price unknown\)/)).toHaveLength(1)
+  })
+
   it('existing recommendations are shown even without analysis history', async () => {
     mockGetStats.mockResolvedValue(recStats(120, 3))
     mockGetAnalysisRuns.mockResolvedValue([])

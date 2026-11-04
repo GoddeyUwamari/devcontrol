@@ -6,6 +6,7 @@ import { aiReportsService, ReportDetail } from '@/lib/services/ai-reports.servic
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import { DEFAULT_PRICE_SUFFIX } from '@/lib/savings-basis'
 import {
   ArrowLeft, Download, AlertCircle,
   DollarSign, Shield, Server, BarChart3, CheckCircle2,
@@ -255,7 +256,7 @@ export default function ReportDetailPage() {
                       </div>
                     </div>
                     <p className="text-meta text-ink-muted leading-relaxed">{rec.description}</p>
-                    {rec.estimatedSavings && <p className="text-label text-ink-success mt-2">Est. savings: ${rec.estimatedSavings.toLocaleString()}/mo</p>}
+                    {rec.estimatedSavings && <p className="text-label text-ink-success mt-2">Est. savings: ${rec.estimatedSavings.toLocaleString()}/mo{rec.estimatedSavingsPriceUnknown === true ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}</p>}
                   </div>
                 )
               })}

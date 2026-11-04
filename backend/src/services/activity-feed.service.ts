@@ -12,7 +12,7 @@
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { formatSavingsCents } from '../utils/formatSavingsCurrency';
-import { classifySavingsBasis } from './estimated-savings';
+import { classifySavingsBasis, EC2_PRICE_SOURCE_DEFAULT } from './estimated-savings';
 import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service';
 
 export type ActivityEventType = 'sync' | 'optimization' | 'security' | 'score' | 'anomaly';
@@ -164,7 +164,8 @@ export class ActivityFeedService {
   // no resolution/dismissal event wording yet, so those rows are not shown.
   private async getOptimizationEvents(client: PoolClient, organizationId: string): Promise<ActivityEvent[]> {
     const result = await client.query(
-      `SELECT created_at, potential_savings, issue, severity, metadata->>'savings_basis' AS savings_basis
+      `SELECT created_at, potential_savings, issue, severity, metadata->>'savings_basis' AS savings_basis,
+              metadata->>'price_source' AS price_source
        FROM cost_recommendations
        WHERE organization_id = $1 AND status = 'ACTIVE'
        ORDER BY created_at DESC LIMIT $2`,
@@ -172,8 +173,13 @@ export class ActivityFeedService {
     );
     // The figure is shown only as what its savings_basis says it is: an
     // estimate, an upper bound, or (no supported basis) no figure at all.
-    const savingsPhrase = (row: { potential_savings: unknown; savings_basis: unknown }) => {
+    // A default figure for an unpriced EC2 instance type is labelled as such
+    // (keyed on price_source, never on the amount).
+    const savingsPhrase = (row: { potential_savings: unknown; savings_basis: unknown; price_source?: unknown }) => {
       const kind = classifySavingsBasis(row.savings_basis);
+      if (kind === 'estimate' && row.price_source === EC2_PRICE_SOURCE_DEFAULT) {
+        return `~${formatSavingsCents(row.potential_savings as string)}/month opportunity (default estimate, price unknown)`;
+      }
       if (kind === 'estimate') return `~${formatSavingsCents(row.potential_savings as string)}/month opportunity`;
       if (kind === 'ceiling') return `up to ${formatSavingsCents(row.potential_savings as string)}/month opportunity`;
       return 'no dollar estimate';

@@ -250,6 +250,125 @@ describe('AI Reports evidence -- security, resources, alerts', () => {
   });
 });
 
+describe('AI Reports evidence -- the EC2 default price (PR 4, S4)', () => {
+  it('a default figure is marked priceKnown false with the reason; a genuine $50 list price is priceKnown true', async () => {
+    const { sections } = await evidence({
+      recommendations: [
+        { resource_id: 'i-default', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' } },
+        { resource_id: 'i-listed', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } },
+        { resource_id: 'i-legacy', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price' } },
+      ],
+    });
+    const section = sections.idleResourceRecommendations!;
+    expect(section).toMatchObject({
+      state: 'available',
+      data: {
+        items: [
+          { resourceId: 'i-default', estimatedMonthlySavings: 50, priceKnown: false },
+          { resourceId: 'i-listed', estimatedMonthlySavings: 50, priceKnown: true },
+          { resourceId: 'i-legacy', estimatedMonthlySavings: 50, priceKnown: true },
+        ],
+        totalEstimatedMonthlySavings: 150,
+      },
+    });
+    expect(section.reason).toBe(
+      "lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings; some idle-instance figures use a default because the instance type's price is unknown"
+    );
+  });
+
+  it('the model input carries priceKnown false and the reason with the default figure', async () => {
+    const data = await evidence({
+      recommendations: [
+        { resource_id: 'i-default', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' } },
+      ],
+    });
+    const prompt = new AIReportGeneratorService(fakePool()).buildUserPrompt(data, 'weekly_summary');
+    expect(prompt).toContain('"resourceId":"i-default","resourceType":"EC2","issue":"Idle Instance","estimatedMonthlySavings":50,"priceKnown":false');
+    expect(prompt).toContain("some idle-instance figures use a default because the instance type's price is unknown");
+  });
+
+  const DEFAULT_50 = { resource_id: 'i-default', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' } };
+  const LISTED_30 = { resource_id: 'i-listed30', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 30, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } };
+  const LISTED_50 = { resource_id: 'i-listed50', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } };
+
+  function modelReply(topRecommendations: Array<Record<string, unknown>>) {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ summary: 's', keyHighlights: [], executiveSummary: 'e', topRecommendations }) }],
+    });
+  }
+  const rec = (title: string, extra: Record<string, unknown>) => ({ title, impact: 'medium', description: 'x', effort: 'low', ...extra });
+
+  it('the prompt explains priceKnown: false -- never a known price', async () => {
+    const data = await evidence({ recommendations: [DEFAULT_50] });
+    const prompt = new AIReportGeneratorService(fakePool()).buildUserPrompt(data, 'weekly_summary');
+    expect(prompt).toContain(
+      "An idle/unused-resource item with priceKnown: false carries a DevControl default figure, used because the instance type's price is unknown. Never present that amount as a known price or as the instance's cost; wherever you mention it, say the price is unknown."
+    );
+  });
+
+  it('a model citation of the $50 default is marked price-unknown by code; a listed figure and the total are not', async () => {
+    modelReply([
+      rec('Stop the default-price instance', { estimatedSavings: 50 }),
+      rec('Stop the listed instance', { estimatedSavings: 30 }),
+      rec('All idle resources', { estimatedSavings: 80 }),
+      rec('No figure', {}),
+    ]);
+    const data = await evidence({ recommendations: [DEFAULT_50, LISTED_30] });
+    const { report, wasFallback } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
+    expect(wasFallback).toBe(false);
+    expect(report.topRecommendations[0]).toMatchObject({ estimatedSavings: 50, estimatedSavingsPriceUnknown: true });
+    expect(report.topRecommendations[1]).toEqual(rec('Stop the listed instance', { estimatedSavings: 30 }));
+    // D4: the total includes the default and is shown unchanged.
+    expect(report.topRecommendations[2]).toEqual(rec('All idle resources', { estimatedSavings: 80 }));
+    expect(report.topRecommendations[3]).toEqual(rec('No figure', {}));
+  });
+
+  it('a genuine $50 list price cited by the model is not marked', async () => {
+    modelReply([rec('Stop the listed instance', { estimatedSavings: 50 })]);
+    const data = await evidence({ recommendations: [LISTED_50] });
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
+    expect(report.topRecommendations[0]).toEqual(rec('Stop the listed instance', { estimatedSavings: 50 }));
+  });
+
+  it('the flag is DevControl\'s, not the model\'s: a model-supplied value is discarded and recomputed', async () => {
+    modelReply([
+      rec('Listed, model says unknown', { estimatedSavings: 30, estimatedSavingsPriceUnknown: true }),
+      rec('Default, model says known', { estimatedSavings: 50, estimatedSavingsPriceUnknown: false }),
+      rec('Invented, model says unknown', { estimatedSavings: 999, estimatedSavingsPriceUnknown: true }),
+    ]);
+    const data = await evidence({ recommendations: [DEFAULT_50, LISTED_30] });
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
+    expect(report.topRecommendations[0]).toEqual(rec('Listed, model says unknown', { estimatedSavings: 30 }));
+    expect(report.topRecommendations[1]).toMatchObject({ estimatedSavings: 50, estimatedSavingsPriceUnknown: true });
+    expect(report.topRecommendations[2]).toEqual(rec('Invented, model says unknown', {}));
+  });
+
+  it('the deterministic fallback marks its figure only when it is a default amount', async () => {
+    let data = await evidence({ recommendations: [DEFAULT_50] });
+    let { report, wasFallback } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
+    expect(wasFallback).toBe(true);
+    expect(report.topRecommendations.find((r) => r.estimatedSavings === 50)).toMatchObject({ estimatedSavingsPriceUnknown: true });
+
+    data = await evidence({ recommendations: [LISTED_50] });
+    ({ report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data));
+    const listed = report.topRecommendations.find((r) => r.estimatedSavings === 50)!;
+    expect(listed).toBeDefined();
+    expect(listed).not.toHaveProperty('estimatedSavingsPriceUnknown');
+  });
+
+  it('with no default figure the reason is unchanged', async () => {
+    const { sections } = await evidence({
+      recommendations: [
+        { resource_id: 'i-listed', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } },
+      ],
+    });
+    expect(sections.idleResourceRecommendations!.reason).toBe(
+      'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings'
+    );
+  });
+});
+
 describe('AI Reports evidence -- deployments', () => {
   it('no lead-time default: with no repeat successful deployment, time between deployments is unavailable', async () => {
     const { sections } = await evidence({}, [

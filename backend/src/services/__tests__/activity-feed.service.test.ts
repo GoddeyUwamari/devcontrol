@@ -76,6 +76,31 @@ describe('optimization activity', () => {
   });
 });
 
+describe('optimization activity -- the EC2 default price (PR 4, S3)', () => {
+  const rows = [
+    { created_at: T(1), potential_savings: '50.00', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' },
+    // A genuine $50 list price is never labelled the default.
+    { created_at: T(2), potential_savings: '50.00', issue: 'Idle Instance', severity: 'MEDIUM', savings_basis: 'estimated: list price', price_source: 'list_table' },
+    // A row written before PR 4 has no price_source: not labelled either.
+    { created_at: T(3), potential_savings: '50.00', issue: 'Idle Instance', severity: 'MEDIUM', savings_basis: 'estimated: list price', price_source: null },
+  ];
+
+  it('reads price_source and labels only the default figure', async () => {
+    mockClientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM cost_recommendations')) return { rows };
+      return { rows: [] };
+    });
+    const events = await new ActivityFeedService().getActivityFeed(ORG);
+    const [sql] = sqlFor('cost_recommendations');
+    expect(sql).toMatch(/metadata->>'price_source' AS price_source/);
+    expect(events.filter((e) => e.type === 'optimization').map((e) => e.message)).toEqual([
+      'Cost optimization found · Idle Instance — ~$50.00/month opportunity (default estimate, price unknown)',
+      'Cost optimization found · Idle Instance — ~$50.00/month opportunity',
+      'Cost optimization found · Idle Instance — ~$50.00/month opportunity',
+    ]);
+  });
+});
+
 describe('anomaly activity', () => {
   it('while ANOMALY_DETECTION_ACTIVE is false, anomaly_detections is not read and no anomaly event appears', async () => {
     routeQueries();

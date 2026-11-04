@@ -24,7 +24,7 @@ import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { annualizeMonthly, cn, formatSavingsCurrency } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
-import { describeCeilings, formatRecommendationSavings, savingsBasisKind } from '@/lib/savings-basis';
+import { DEFAULT_PRICE_DISCLOSURE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -437,7 +437,7 @@ export default function CostOptimizationPage() {
           )}
 
           {/* ── STILL DETECTED: hidden findings the latest analysis found again (PR 3b) ── */}
-          <StillDetectedSlot view={hiddenView} actions={hiddenActions} onRetry={() => hiddenQuery.refetch()} />
+          <StillDetectedSlot view={hiddenView} actions={hiddenActions} onRetry={() => hiddenQuery.refetch()} retrying={hiddenQuery.isFetching} />
 
           {/* ── TRUST / DISCLAIMER ── */}
           <p className="text-label font-normal text-ink-muted leading-relaxed mb-6 max-w-3xl">
@@ -557,6 +557,9 @@ export default function CostOptimizationPage() {
                           </p>
                           {isSavingsCeiling(rec) && (
                             <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
+                          )}
+                          {isDefaultPriceEstimate(rec) && (
+                            <p className="text-label text-ink-muted font-medium max-w-[16rem]" data-testid="default-price-disclosure">{DEFAULT_PRICE_DISCLOSURE}</p>
                           )}
                         </div>
                         <div className="flex gap-2">

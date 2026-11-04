@@ -123,4 +123,19 @@ describe('/infrastructure Top Actions -- savings basis', () => {
     expect(ranked[0].compareDocumentPosition(ranked[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(ranked[1].compareDocumentPosition(ranked[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  it('PR 4 S2: a default-price action reads "(price unknown)" and still counts as an estimate; a genuine $50 list price does not', async () => {
+    mockServicesStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0 })
+    vi.mocked(costRecommendationsService.getAll).mockResolvedValue([
+      { ...rec('i-default', 'Idle Instance (default)', 50, { savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' }), resourceType: 'EC2' },
+      { ...rec('i-listed', 'Idle Instance (listed)', 50, { savings_basis: 'estimated: list price', price_source: 'list_table' }), resourceType: 'EC2' },
+    ] as never)
+    renderPage()
+
+    const action = async (title: string) => (await screen.findByText(title, { selector: 'p' })) as HTMLElement
+    expect(await action('Idle Instance (default)')).toHaveTextContent('Idle Instance (default) — save $50/mo (price unknown)')
+    expect(await action('Idle Instance (listed)')).toHaveTextContent(/^Idle Instance \(listed\) — save \$50\/mo$/)
+    // Totals unchanged (decision D4): the default still counts as an estimate.
+    await waitFor(() => expect(screen.getByText(/recoverable today/)).toHaveTextContent('$100/mo recoverable today'))
+  })
 })

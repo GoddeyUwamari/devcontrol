@@ -21,7 +21,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
-import { classifySavingsBasis } from './estimated-savings';
+import { classifySavingsBasis, EC2_PRICE_SOURCE_DEFAULT } from './estimated-savings';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import type { ChatContext } from './ai-chat.service';
 import {
@@ -75,7 +75,11 @@ export interface TimeBetweenDeployments {
 }
 
 export interface IdleResourceRecommendations {
-  items: Array<{ resourceId: string; resourceType: string; issue: string; estimatedMonthlySavings: number }>;
+  /**
+   * priceKnown false: the figure is DevControl's default for an EC2 instance
+   * type whose price is unknown (metadata.price_source), not a price.
+   */
+  items: Array<{ resourceId: string; resourceType: string; issue: string; estimatedMonthlySavings: number; priceKnown: boolean }>;
   totalEstimatedMonthlySavings: number;
 }
 
@@ -131,6 +135,13 @@ export interface GeneratedReport {
     impact: 'high' | 'medium' | 'low';
     description: string;
     estimatedSavings?: number;
+    /**
+     * Set by DevControl, never by the model: true when estimatedSavings is the
+     * amount of an idle-resource item whose price is unknown (priceKnown
+     * false, metadata.price_source = the EC2 default). The report page then
+     * shows the approved "(price unknown)" suffix after it.
+     */
+    estimatedSavingsPriceUnknown?: boolean;
     effort: 'low' | 'medium' | 'high';
   }>;
   executiveSummary: string;
@@ -180,6 +191,7 @@ const PROMPT_RULES = [
   'Configuration-check findings cover only DevControl\'s checks on discovered resources: no findings means none from those checks, not that no security issues exist.',
   'Recommend only actions grounded in the supplied evidence. Do not recommend rightsizing, Reserved Instances, or Savings Plans unless a supplied recommendation says so.',
   'Savings are DevControl estimates of potential savings, never realized savings. In topRecommendations, set estimatedSavings only to a value copied from the idle/unused-resource recommendation evidence; otherwise omit the field.',
+  'An idle/unused-resource item with priceKnown: false carries a DevControl default figure, used because the instance type\'s price is unknown. Never present that amount as a known price or as the instance\'s cost; wherever you mention it, say the price is unknown.',
   'When a section has no evidence, say that data is not available in the relevant analysis -- do not fill it in.',
 ].map(rule => `- ${rule}`).join('\n');
 
@@ -391,13 +403,39 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       recs.data.items.forEach(item => allowed.add(round(item.estimatedMonthlySavings, 2)));
       allowed.add(round(recs.data.totalEstimatedMonthlySavings, 2));
     }
-    return {
+    return this.markDefaultPriceSavings({
       ...report,
       topRecommendations: (report.topRecommendations ?? []).map(rec => {
         if (rec.estimatedSavings === undefined || rec.estimatedSavings === null) return rec;
         if (allowed.has(round(Number(rec.estimatedSavings), 2))) return rec;
         const { estimatedSavings: _dropped, ...rest } = rec;
         return rest;
+      }),
+    }, data);
+  }
+
+  /**
+   * A cited estimatedSavings equal to the amount of an item whose price is
+   * unknown (priceKnown false) is marked estimatedSavingsPriceUnknown, so the
+   * report page labels it rather than showing a default as a known price.
+   * Keyed on priceKnown (metadata.price_source), never on the amount: a
+   * genuine list price of the same amount is not marked unless a default
+   * item has that amount too -- then the citation can't be told apart, and
+   * it is labelled. Any value the model supplied for the flag is discarded.
+   * Totals are unchanged (decision D4).
+   */
+  private markDefaultPriceSavings(report: GeneratedReport, data: ReportData): GeneratedReport {
+    const recs = data.sections.idleResourceRecommendations;
+    const defaultAmounts = new Set<number>();
+    if (recs && hasEvidence(recs)) {
+      recs.data.items.filter(item => !item.priceKnown).forEach(item => defaultAmounts.add(round(item.estimatedMonthlySavings, 2)));
+    }
+    return {
+      ...report,
+      topRecommendations: (report.topRecommendations ?? []).map(rec => {
+        const { estimatedSavingsPriceUnknown: _modelValue, ...rest } = rec;
+        if (rest.estimatedSavings === undefined || rest.estimatedSavings === null) return rest;
+        return defaultAmounts.has(round(Number(rest.estimatedSavings), 2)) ? { ...rest, estimatedSavingsPriceUnknown: true } : rest;
       }),
     };
   }
@@ -557,7 +595,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
 
     report.summary = highlights.slice(0, 3).join(' ');
     report.executiveSummary = highlights.join(' ');
-    return report;
+    return this.markDefaultPriceSavings(report, data);
   }
 
   // -------------------------------------------------------------------------
@@ -845,12 +883,17 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
             resourceType: rec.resource_type,
             issue: rec.issue,
             estimatedMonthlySavings: round(Number(rec.potential_savings), 2),
+            priceKnown: rec.metadata?.price_source !== EC2_PRICE_SOURCE_DEFAULT,
           }));
+        const baseReason = 'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings';
         return {
           state: 'available',
           data: { items, totalEstimatedMonthlySavings: round(items.reduce((sum, i) => sum + i.estimatedMonthlySavings, 0), 2) },
           // An empty list is only "none recorded", never "nothing can be saved".
-          reason: 'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings',
+          // A default figure (priceKnown false) is never a known price (PR 4, S4).
+          reason: items.some((i) => !i.priceKnown)
+            ? `${baseReason}; some idle-instance figures use a default because the instance type's price is unknown`
+            : baseReason,
         };
       }
     );

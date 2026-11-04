@@ -21,7 +21,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/components/aws/discovery-warning-notice'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { formatSavingsCurrency } from '@/lib/utils'
-import { rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
+import { DEFAULT_PRICE_SUFFIX, isDefaultPriceEstimate, rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
 import { formatCalculatedAgo } from './calculatedAgo'
 import { describeAttentionCard } from './attentionCard'
 import { largestEstimatedCosts } from './costByResource'
@@ -162,6 +162,8 @@ async function fetchTopActions(): Promise<any[] | null> {
         // "Est. savings", a ceiling is shown apart as "up to", and a figure with
         // no basis is no dollar amount at all.
         savingsKind: savingsBasisKind(r) as SavingsBasisKind | null,
+        // The default figure for an unpriced instance type is labelled, never shown as a known price.
+        defaultPrice: isDefaultPriceEstimate(r),
         // No risk or urgency label: nothing computes one. A rank is list order only.
         subtitle: `${r.resourceName ?? 'Resource'} · ${r.awsRegion ?? 'us-east-1'} · cost leakage active`,
         type: 'cost' as const,
@@ -455,7 +457,7 @@ function InfrastructureContent() {
   const scoreOffset      = intelScore > 0 ? scoreCirc - (intelScore / 100) * scoreCirc : scoreCirc
   const scoreChip        = (score: number) => ({ color: score >= 80 ? '#065F46' : '#92400E', bg: score >= 80 ? '#D1FAE5' : '#FEF3C7' })
 
-  const DEMO_TOP_ACTIONS: { id: string; rank: string; type: 'cost' | 'reliability'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; sub: string }[] = [
+  const DEMO_TOP_ACTIONS: { id: string; rank: string; type: 'cost' | 'reliability'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; defaultPrice?: boolean; sub: string }[] = [
     { id: 'demo-1', rank: '01', type: 'cost'        as const, title: 'Downsize RDS cluster',                     savings: 740,  sub: 'production-postgres-primary · us-east-1 · cost leakage active'      },
     { id: 'demo-2', rank: '02', type: 'reliability' as const, title: 'Investigate CloudFront latency warnings',   savings: null, sub: 'production-cdn · potential downtime risk · degraded user experience' },
     { id: 'demo-3', rank: '03', type: 'cost'        as const, title: 'Remove unused EBS volumes',                 savings: 320,  sub: '6 unattached volumes · us-east-1 · no impact to workloads'          },
@@ -466,7 +468,7 @@ function InfrastructureContent() {
     ? DEMO_TOP_ACTIONS
     : (topActionsData ?? []).map((a, i) => ({
         id: a.id, rank: String(i + 1).padStart(2, '0'),
-        type: a.type, title: a.title, savings: a.savings, savingsKind: a.savingsKind, sub: a.subtitle,
+        type: a.type, title: a.title, savings: a.savings, savingsKind: a.savingsKind, defaultPrice: a.defaultPrice === true, sub: a.subtitle,
       }))
 
   // Demo figures are illustrative estimates; a real action counts only as what its
@@ -778,7 +780,7 @@ function InfrastructureContent() {
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">
                     {action.title}
                     {action.savings != null && (
-                      actionKind(action) === 'estimate' ? <span className="text-emerald-600 font-bold"> — save {formatSavingsCurrency(action.savings)}/mo</span>
+                      actionKind(action) === 'estimate' ? <span className="text-emerald-600 font-bold"> — save {formatSavingsCurrency(action.savings)}/mo{action.defaultPrice ? <span className="text-slate-500 font-semibold"> {DEFAULT_PRICE_SUFFIX}</span> : null}</span>
                       : actionKind(action) === 'ceiling' ? <span className="text-emerald-600 font-bold"> — up to {formatSavingsCurrency(action.savings)}/mo</span>
                       : <span className="text-slate-500 font-semibold"> — no dollar estimate</span>
                     )}

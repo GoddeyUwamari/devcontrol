@@ -82,7 +82,8 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   // savings_basis metadata). The card must say "Up to $X/mo", not present it
   // as a plain expected monthly saving.
   it('detects ceiling-basis recommendations from the metadata.savings_basis contract (lib/savings-basis), not resourceType/issue guessing', () => {
-    expect(source).toMatch(/import \{ describeCeilings, formatRecommendationSavings, savingsBasisKind \} from '@\/lib\/savings-basis'/)
+    // PR 4 added the default-price helpers to the same import; the three names are still imported from lib/savings-basis.
+    expect(source).toMatch(/import \{[^}]*\bdescribeCeilings\b[^}]*\bformatRecommendationSavings\b[^}]*\bsavingsBasisKind\b[^}]*\} from '@\/lib\/savings-basis'/)
     expect(source).toMatch(/savingsBasisKind\(rec\) === 'ceiling'/)
   })
 
