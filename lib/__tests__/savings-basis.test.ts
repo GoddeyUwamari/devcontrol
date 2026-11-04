@@ -11,6 +11,8 @@ import {
   savingsBasisKind,
 } from '../savings-basis'
 import { formatSavingsCents, formatSavingsCurrency } from '../utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 describe('isDefaultPriceEstimate (PR 4)', () => {
   it('true only for the explicit default price_source -- never inferred from the amount', () => {
@@ -33,6 +35,14 @@ describe('isDefaultPriceEstimate (PR 4)', () => {
   it('approved copy (S1, S2)', () => {
     expect(DEFAULT_PRICE_DISCLOSURE).toBe("Estimate. This instance type's price is unknown, so a default of $50/mo is used.")
     expect(DEFAULT_PRICE_SUFFIX).toBe('(price unknown)')
+  })
+
+  it("S1's amount is the backend default (EC2_UNLISTED_DEFAULT_MONTHLY_COST), formatted as the row formats it", () => {
+    const source = readFileSync(join(process.cwd(), 'backend/src/services/cost-optimization.service.ts'), 'utf8')
+    const matches = [...source.matchAll(/export const EC2_UNLISTED_DEFAULT_MONTHLY_COST = (\d+(?:\.\d+)?);/g)]
+    expect(matches).toHaveLength(1)
+    const defaultCost = Number(matches[0][1])
+    expect(DEFAULT_PRICE_DISCLOSURE).toContain(`a default of ${formatSavingsCurrency(defaultCost)}/mo is used`)
   })
 })
 

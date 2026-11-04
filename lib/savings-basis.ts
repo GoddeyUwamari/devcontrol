@@ -72,7 +72,7 @@ export function rankBySavings<T extends { potentialSavings: number; metadata?: R
 }
 
 // metadata.price_source written by the EC2 idle detector -- mirror of
-// EC2_PRICE_SOURCE_DEFAULT in backend/src/services/cost-optimization.service.ts.
+// EC2_PRICE_SOURCE_DEFAULT in backend/src/services/estimated-savings.ts.
 // The figure is a default because the instance type's price is unknown.
 export const DEFAULT_PRICE_SOURCE = 'default_unlisted_type'
 
