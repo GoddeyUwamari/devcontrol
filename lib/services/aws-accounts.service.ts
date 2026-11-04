@@ -24,6 +24,22 @@ export interface ConnectAwsPayload {
   nickname?: string
 }
 
+/** One operation the post-connect permission check tested (backend connect-permission-check.ts). */
+export type PermissionCheckStatus = 'verified' | 'denied' | 'not_verified'
+export interface PermissionCheckEntry {
+  action: string
+  status: PermissionCheckStatus
+}
+export interface PermissionCheckReport {
+  checks: PermissionCheckEntry[]
+}
+
+export interface ConnectAwsResult {
+  account: AwsAccount
+  /** Absent only from a server older than the permission check. */
+  permissionCheck: PermissionCheckReport | null
+}
+
 const awsAccountsService = {
   async connectInit(): Promise<ConnectInitData> {
     const response = await api.get<{ success: boolean; data: ConnectInitData }>(
@@ -32,12 +48,13 @@ const awsAccountsService = {
     return handleApiResponse(response)
   },
 
-  async connect(payload: ConnectAwsPayload): Promise<AwsAccount> {
-    const response = await api.post<{ success: boolean; data: AwsAccount; message: string }>(
+  async connect(payload: ConnectAwsPayload): Promise<ConnectAwsResult> {
+    const response = await api.post<{ success: boolean; data: AwsAccount; message: string; permissionCheck?: PermissionCheckReport }>(
       '/api/aws/accounts',
       payload
     )
-    return handleApiResponse(response)
+    const account = handleApiResponse(response)
+    return { account, permissionCheck: response.data.permissionCheck ?? null }
   },
 
   async getAccounts(): Promise<AwsAccount[]> {
