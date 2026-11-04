@@ -384,6 +384,7 @@ describe('AWS response classification', () => {
     const sites = (key: string) => scan.uses.filter((u) => u.key === key).map((u) => u.file).sort();
     expect(sites('client-lambda:ListFunctionsCommand')).toEqual([
       path.join('services', 'awsResourceDiscovery.ts'),
+      path.join('services', 'connect-permission-check.ts'),
       path.join('services', 'cost-optimization.service.ts'),
     ]);
     expect(sites('client-cloudfront:ListDistributionsCommand')).toEqual([path.join('services', 'awsResourceDiscovery.ts')]);

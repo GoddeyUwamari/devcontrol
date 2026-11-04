@@ -27,6 +27,9 @@ export interface RequestClientLease {
   release(err?: Error): void;
 }
 
+/** Each response's lease, so a handler can give its connection back early (releaseRequestConnection). */
+const requestLeases = new WeakMap<Response, RequestClientLease>();
+
 export function leaseRequestClient(client: PoolClient, res: Response): RequestClientLease {
   let released = false;
   let revokeHandle: (() => void) | null = null;
@@ -42,7 +45,7 @@ export function leaseRequestClient(client: PoolClient, res: Response): RequestCl
   res.on('finish', () => release());
   res.on('close', () => release());
 
-  return {
+  const lease: RequestClientLease = {
     get released() {
       return released;
     },
@@ -55,4 +58,25 @@ export function leaseRequestClient(client: PoolClient, res: Response): RequestCl
     },
     release,
   };
+  requestLeases.set(res, lease);
+  return lease;
+}
+
+/**
+ * Returns the request's connection to the pool now, before the response ends,
+ * for a handler about to wait on something slow that needs no database (an
+ * external API call). The handle is revoked first, exactly as at `finish`:
+ * every later `pool.query` of this request runs on its own fresh connection,
+ * tagged for the same verified organization, borrowed for that one statement
+ * and returned at once (createRequestClientHandle in config/database.ts).
+ * Work needing one session across statements must hold its own client.
+ *
+ * Returns true if this call released it; false if there was no lease for
+ * `res` or it was already released. Idempotent.
+ */
+export function releaseRequestConnection(res: Response): boolean {
+  const lease = requestLeases.get(res);
+  if (!lease || lease.released) return false;
+  lease.release();
+  return true;
 }

@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
-import awsAccountsService, { ConnectInitData } from '@/lib/services/aws-accounts.service'
+import awsAccountsService, { ConnectInitData, PermissionCheckEntry } from '@/lib/services/aws-accounts.service'
 import { toast } from 'sonner'
 import { trackLeadQualified } from '@/lib/gtag'
 import { PageHeader } from '@/components/ui/typography'
 import customerRoleInlinePolicy from '@/lib/aws/customer-role-inline-policy.json'
+import { PERMISSION_CHECK_LABELS, connectErrorMessage } from './connectAwsCopy'
 
 const inlinePolicyStr = JSON.stringify(customerRoleInlinePolicy, null, 2)
 
@@ -25,6 +26,8 @@ export default function ConnectAwsPage() {
   const [inlineCopied, setInlineCopied] = useState(false)
   const [roleArnFocused, setRoleArnFocused] = useState(false)
   const [nicknameFocused, setNicknameFocused] = useState(false)
+  // Operations the post-connect permission check could not confirm (denied or not verified).
+  const [permissionWarnings, setPermissionWarnings] = useState<PermissionCheckEntry[]>([])
 
   // Fetch external_id and trust policy on mount so the user sees them
   // before creating the IAM role in AWS Console.
@@ -82,7 +85,9 @@ export default function ConnectAwsPage() {
 
     setConnecting(true)
     try {
-      await awsAccountsService.connect({ roleArn: roleArn.trim(), nickname: nickname.trim() || undefined })
+      const { permissionCheck } = await awsAccountsService.connect({ roleArn: roleArn.trim(), nickname: nickname.trim() || undefined })
+      const warnings = (permissionCheck?.checks ?? []).filter((check) => check.status !== 'verified')
+      setPermissionWarnings(warnings)
       setSuccess(true)
       queryClient.invalidateQueries({ queryKey: ['aws-accounts'] })
       // The dashboard's platform-dashboard-stats query caches for 4 hours with
@@ -91,11 +96,10 @@ export default function ConnectAwsPage() {
       // the pre-connection (empty) stats for up to 4 hours.
       queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
       toast.success('AWS account connected successfully')
-      setTimeout(() => router.push('/dashboard'), 1500)
+      // With a permission warning the owner stays here to read it.
+      if (warnings.length === 0) setTimeout(() => router.push('/dashboard'), 1500)
     } catch (err: unknown) {
-      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-        ?? 'Failed to connect AWS account. Please check your Role ARN and try again.'
-      toast.error(message)
+      toast.error(connectErrorMessage(err))
     } finally {
       setConnecting(false)
     }
@@ -219,9 +223,35 @@ export default function ConnectAwsPage() {
                     >
                       {connecting ? 'Verifying connection...' : 'Connect Account →'}
                     </button>
-                    {success && (
+                    {success && permissionWarnings.length === 0 && (
                       <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-body text-ink-success font-medium">
                         ✅ Connection verified — redirecting to your dashboard...
+                      </div>
+                    )}
+                    {success && permissionWarnings.length > 0 && (
+                      <div role="status" data-testid="permission-warnings" className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                        <p className="text-body text-ink font-medium mb-1">Connected. Some permissions need attention.</p>
+                        <p className="text-meta text-ink-muted mb-3">
+                          DevControl checked a few of the permissions it uses. This is not a full review of your role: AWS policies outside the role can also allow or block access.
+                        </p>
+                        <ul className="space-y-1.5 mb-4">
+                          {permissionWarnings.map((check) => (
+                            <li key={check.action} className="text-ui text-ink-body">
+                              <span className="font-medium text-ink">{PERMISSION_CHECK_LABELS[check.action] ?? check.action}</span>{' '}
+                              <code className="font-mono text-meta text-ink-accent">{check.action}</code>
+                              {' — '}
+                              {check.status === 'denied'
+                                ? 'AWS refused this call. DevControl features that rely on it may not work until the role allows it.'
+                                : "Couldn't be checked. It may still work."}
+                            </li>
+                          ))}
+                        </ul>
+                        <button
+                          onClick={() => router.push('/dashboard')}
+                          className="border border-slate-200 rounded-lg px-3.5 py-1.5 text-ui font-medium text-ink hover:border-slate-300 cursor-pointer transition-colors bg-white"
+                        >
+                          Continue to dashboard →
+                        </button>
                       </div>
                     )}
                   </div>

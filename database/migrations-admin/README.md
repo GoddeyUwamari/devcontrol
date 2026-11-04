@@ -88,8 +88,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202610112300_create_framework_evaluation_persistence.sql`**,
 **`202610161210_create_resource_health_evaluations.sql`**,
 **`202610191200_create_multi_region_scan_foundation.sql`**,
-**`202610281200_create_resource_telemetry_observations.sql`**, and
-**`202611021200_extend_cost_analysis_runs.sql`**.
+**`202610281200_create_resource_telemetry_observations.sql`**,
+**`202611021200_extend_cost_analysis_runs.sql`**, and
+**`202611031200_create_aws_org_external_ids.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -924,3 +925,37 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 It deletes discovery rows (they would otherwise read as manual runs), turns
 `partial` and `interrupted` rows into `failed`, and drops the added columns, so
 the counts are discarded.
+
+## Classification -- `202611031200_create_aws_org_external_ids.sql`
+
+Creates `aws_org_external_ids`: one stable AWS External ID per organization,
+which the Connect AWS page shows and every new connection uses. It replaces the
+one-hour `aws_connect_sessions` value, which changed on the first page load
+after it expired. It is administrative because it creates a `postgres`-owned
+table with forced row-level security and exact grants, and because it is
+applied by hand **before** the code that reads it is merged.
+
+It is additive and safe under the release already running: nothing that exists
+is altered, and that release never reads the new table. The backfill copies only
+the value AWS already trusts for each existing connection (`aws_accounts`,
+`active` first, then newest). Session values are adopted at runtime, at an
+organization's first visit or connect after the deploy, because the release
+still running keeps replacing expired session values until then. Missing or
+malformed values are skipped and counted in a NOTICE. An organization with two
+distinct connection values makes the migration raise an exception before it
+writes anything. `devcontrol` gets `SELECT` and `INSERT` only, and a trigger
+refuses every `UPDATE`, so a value is never changed or rotated.
+
+### Rollback
+
+`202611031200_create_aws_org_external_ids_rollback.sql`, manual only, as
+`postgres`, in one transaction, **after** reverting the application:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611031200_create_aws_org_external_ids_rollback.sql
+```
+
+Existing connections keep working: each one's AssumeRole sends its own
+`aws_accounts.external_id`. The reverted release goes back to one-hour session
+values.

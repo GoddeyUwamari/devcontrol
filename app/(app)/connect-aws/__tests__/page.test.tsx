@@ -12,6 +12,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ConnectAwsPage from '../page'
+import { connectErrorMessage } from '../connectAwsCopy'
+import { toast } from 'sonner'
 
 const mockPush = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -40,6 +42,10 @@ const CONNECT_INIT_DATA = {
   platformAccountId: '999999999999',
   trustPolicy: { Version: '2012-10-17', Statement: [] },
 }
+
+const ACCOUNT = { id: 1, org_id: 'org-1', account_id: '123456789012', role_arn: 'arn:aws:iam::123456789012:role/DevControlRole', nickname: null, external_id: 'ext-123', region: 'us-east-1', connected_at: new Date().toISOString(), status: 'active' }
+const ACTIONS = ['ec2:DescribeRegions', 's3:ListAllMyBuckets', 'lambda:ListFunctions', 'cloudwatch:GetMetricData', 'ce:GetCostAndUsage', 'resource-explorer-2:Search']
+const ALL_VERIFIED = ACTIONS.map((action) => ({ action, status: 'verified' }))
 
 function renderPage(queryClient: QueryClient) {
   return render(
@@ -70,7 +76,7 @@ describe('Connect AWS page — dashboard cache invalidation on successful connec
   })
 
   it('invalidates both aws-accounts and platform-dashboard-stats on a successful connection', async () => {
-    mockConnect.mockResolvedValue({ id: 1, org_id: 'org-1', account_id: '123456789012', role_arn: 'arn:aws:iam::123456789012:role/DevControlRole', nickname: null, external_id: 'ext-123', region: 'us-east-1', connected_at: new Date().toISOString(), status: 'active' })
+    mockConnect.mockResolvedValue({ account: ACCOUNT, permissionCheck: { checks: ALL_VERIFIED } })
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
@@ -108,6 +114,74 @@ describe('Connect AWS page — dashboard cache invalidation on successful connec
     })
 
     expect(invalidateSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('Connect AWS page — post-connect permission check (warns, never blocks)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockConnectInit.mockResolvedValue(CONNECT_INIT_DATA)
+  })
+
+  it('lists denied and not-verified operations, says it is not a full review, and does not auto-redirect', async () => {
+    mockConnect.mockResolvedValue({
+      account: ACCOUNT,
+      permissionCheck: { checks: ALL_VERIFIED.map((c) =>
+        c.action === 's3:ListAllMyBuckets' ? { ...c, status: 'denied' }
+          : c.action === 'resource-explorer-2:Search' ? { ...c, status: 'not_verified' } : c) },
+    })
+    renderPage(new QueryClient())
+    fireEvent.click(await fillValidRoleArnAndGetButton())
+
+    const panel = await screen.findByTestId('permission-warnings')
+    expect(panel.textContent).toContain('Connected. Some permissions need attention.')
+    expect(panel.textContent).toContain('This is not a full review of your role')
+    const items = [...panel.querySelectorAll('li')].map((li) => li.textContent)
+    expect(items).toEqual([
+      'List S3 buckets s3:ListAllMyBuckets — AWS refused this call. DevControl features that rely on it may not work until the role allows it.',
+      "Search Resource Explorer resource-explorer-2:Search — Couldn't be checked. It may still work.",
+    ])
+    expect(screen.queryByText(/Connection verified/)).toBeNull()
+    await new Promise((r) => setTimeout(r, 1700))
+    expect(mockPush).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /continue to dashboard/i }))
+    expect(mockPush).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('every operation verified: the existing success line and redirect, no warning', async () => {
+    mockConnect.mockResolvedValue({ account: ACCOUNT, permissionCheck: { checks: ALL_VERIFIED } })
+    renderPage(new QueryClient())
+    fireEvent.click(await fillValidRoleArnAndGetButton())
+    await screen.findByText(/Connection verified — redirecting to your dashboard/)
+    expect(screen.queryByTestId('permission-warnings')).toBeNull()
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'), { timeout: 3000 })
+  })
+
+  it('a server without the permission check behaves as before', async () => {
+    mockConnect.mockResolvedValue({ account: ACCOUNT, permissionCheck: null })
+    renderPage(new QueryClient())
+    fireEvent.click(await fillValidRoleArnAndGetButton())
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'), { timeout: 3000 })
+    expect(screen.queryByTestId('permission-warnings')).toBeNull()
+  })
+
+  it("shows the server's fixed message on a failed connect", async () => {
+    mockConnect.mockRejectedValue({ response: { status: 422, data: { code: 'ROLE_NOT_ASSUMABLE', message: 'Fixed server text.' } } })
+    renderPage(new QueryClient())
+    fireEvent.click(await fillValidRoleArnAndGetButton())
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Fixed server text.'))
+  })
+})
+
+describe('connectErrorMessage', () => {
+  it("uses the server's message when there is one", () => {
+    expect(connectErrorMessage({ response: { data: { message: 'From the server.' } } })).toBe('From the server.')
+  })
+  it('a network failure (no response) is not blamed on the Role ARN', () => {
+    expect(connectErrorMessage(new Error('Network Error'))).toBe("We couldn't reach DevControl. Check your connection and try again.")
+  })
+  it('a response without a message gets a neutral retry message', () => {
+    expect(connectErrorMessage({ response: { status: 502, data: '<html>' } })).toBe('Something went wrong while connecting your account. Please try again.')
   })
 })
 
