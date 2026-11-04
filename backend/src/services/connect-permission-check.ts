@@ -82,22 +82,27 @@ interface Probe {
   run: (clients: ProbeClients, signal: AbortSignal, now: number) => Promise<unknown>;
 }
 
-/** Thrown by the ec2:DescribeRegions probe so that its outcome takes the same path as every other probe's. */
+/**
+ * Thrown by the ec2:DescribeRegions probe so that its outcome takes the same
+ * path, and the same narrow "denied" rule (permissionStatusOf), as every other
+ * probe's. region-list.ts reports the AWS error's name in `detail`; its own
+ * broader "denied" (any 403, AuthFailure) is not used here.
+ */
 class RegionListOutcomeError extends Error {
-  constructor(denied: boolean) {
+  constructor(errorName: string) {
     super('DescribeRegions did not succeed');
-    this.name = denied ? 'AccessDenied' : 'RegionListFailed';
+    this.name = errorName;
   }
 }
 
 export const PERMISSION_CHECKS: readonly Probe[] = [
   {
-    // Through region-list.ts, the one module allowed to call DescribeRegions. Its
-    // "denied" is that module's classification (source-outcome.ts isAccessDeniedError).
+    // Through region-list.ts, the one module allowed to call DescribeRegions.
+    // Only an AWS error name the narrow rule accepts counts as denied.
     action: 'ec2:DescribeRegions',
     run: async (c) => {
       const result = await describeAccountRegions(c.ec2, 'us-east-1');
-      if (!result.ok) throw new RegionListOutcomeError(result.reason === 'denied');
+      if (!result.ok) throw new RegionListOutcomeError(result.reason === 'denied' ? result.detail : 'RegionListFailed');
     },
   },
   { action: 's3:ListAllMyBuckets', run: (c, signal) => c.s3.send(new ListBucketsCommand({}), { abortSignal: signal }) },

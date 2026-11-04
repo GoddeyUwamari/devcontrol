@@ -94,6 +94,25 @@ describe('runPermissionCheck', () => {
     });
   });
 
+  it.each([
+    ['AccessDenied', 403, 'denied'],
+    ['UnauthorizedOperation', 403, 'denied'],
+    ['Forbidden', 403, 'not_verified'],
+    ['AuthFailure', 401, 'not_verified'],
+    ['UnrecognizedClientException', 400, 'not_verified'],
+    ['RequestLimitExceeded', 503, 'not_verified'],
+  ])('ec2:DescribeRegions follows the same narrow rule: %s (%s) is %s', async (name, status, expected) => {
+    const c = clients({ ec2: jest.fn().mockRejectedValue(awsError(name, status)) });
+    const report = await runPermissionCheck({ credentials: creds, region: 'us-east-1', context: 'test', clients: c });
+    expect(report.checks.find((e) => e.action === 'ec2:DescribeRegions')!.status).toBe(expected);
+  });
+
+  it('ec2:DescribeRegions answered without the home region is not_verified, never denied', async () => {
+    const c = clients({ ec2: jest.fn().mockResolvedValue({ Regions: [] }) });
+    const report = await runPermissionCheck({ credentials: creds, region: 'us-east-1', context: 'test', clients: c });
+    expect(report.checks.find((e) => e.action === 'ec2:DescribeRegions')!.status).toBe('not_verified');
+  });
+
   it('no credentials: no AWS call at all, and every action is not_verified', async () => {
     const report = await runPermissionCheck({ credentials: null, region: 'us-east-1', context: 'test' });
     expect(report.checks).toEqual(ACTIONS.map((action) => ({ action, status: 'not_verified' })));
