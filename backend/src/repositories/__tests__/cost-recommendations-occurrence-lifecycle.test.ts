@@ -20,7 +20,7 @@
  * replaceReservedInstanceRecommendations() instead.
  */
 import { Pool, Client } from 'pg';
-import { CostRecommendationsRepository } from '../cost-recommendations.repository';
+import { CostDecisionActor, CostRecommendationsRepository } from '../cost-recommendations.repository';
 import type { DetectorObservation } from '../../services/cost-optimization.service';
 import type { CreateRecommendationRequest } from '../../types';
 import { TestLeases } from '../../services/__tests__/helpers/scan-source';
@@ -39,6 +39,18 @@ const pool = new Pool(dbConfig());
 const repository = new CostRecommendationsRepository();
 const createdOrgIds: string[] = [];
 const leases = new TestLeases(pool);
+// Every decision now records who made it (audit_logs.user_id references users).
+let actor: CostDecisionActor;
+let actorUserId: string;
+
+beforeAll(async () => {
+  const { rows } = await pool.query(
+    `INSERT INTO users (email, password_hash, full_name) VALUES ($1, 'x', 'Lifecycle Actor') RETURNING id`,
+    [`occurrence-lifecycle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`]
+  );
+  actorUserId = rows[0].id;
+  actor = { userId: actorUserId, request: null, source: 'button' };
+});
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -104,6 +116,7 @@ afterAll(async () => {
   if (createdOrgIds.length > 0) {
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
+  await pool.query('DELETE FROM users WHERE id = $1', [actorUserId]);
   await pool.end();
 });
 
@@ -151,7 +164,7 @@ describe('Resolve -> rescan lifecycle (test items 7-9)', () => {
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'RESOLVED', orgId);
+    await repository.updateStatus(active.id, 'RESOLVED', orgId, actor);
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding()] }),
@@ -168,7 +181,7 @@ describe('Resolve -> rescan lifecycle (test items 7-9)', () => {
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'RESOLVED', orgId);
+    await repository.updateStatus(active.id, 'RESOLVED', orgId, actor);
 
     // Successful category, this resource no longer appears.
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })], undefined, leases.of(orgId));
@@ -184,7 +197,7 @@ describe('Resolve -> rescan lifecycle (test items 7-9)', () => {
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [firstActive] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(firstActive.id, 'RESOLVED', orgId);
+    await repository.updateStatus(firstActive.id, 'RESOLVED', orgId, actor);
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })], undefined, leases.of(orgId)); // ends occurrence
 
     // Identical finding recurs, same metadata.
@@ -206,7 +219,7 @@ describe('Dismiss lifecycle (test items 10-11)', () => {
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'DISMISSED', orgId);
+    await repository.updateStatus(active.id, 'DISMISSED', orgId, actor);
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ recommendations: [fakeFinding()] }),
@@ -222,7 +235,7 @@ describe('Dismiss lifecycle (test items 10-11)', () => {
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'DISMISSED', orgId);
+    await repository.updateStatus(active.id, 'DISMISSED', orgId, actor);
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [] })], undefined, leases.of(orgId)); // ends occurrence
 
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
@@ -239,7 +252,7 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'RESOLVED', orgId);
+    await repository.updateStatus(active.id, 'RESOLVED', orgId, actor);
 
     await repository.reconcileActiveRecommendations(orgId, [observation({ success: true, recommendations: [] })], undefined, leases.of(orgId));
 
@@ -251,7 +264,7 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'RESOLVED', orgId);
+    await repository.updateStatus(active.id, 'RESOLVED', orgId, actor);
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [
       observation({ success: false, recommendations: [] }),
@@ -277,7 +290,7 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'RESOLVED', orgId);
+    await repository.updateStatus(active.id, 'RESOLVED', orgId, actor);
 
     // Idle-EC2 category simply never appears in this scan's observations.
     await repository.reconcileActiveRecommendations(orgId, [
@@ -296,8 +309,8 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
     ], undefined, leases.of(orgId));
     const [idleRow] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
     const [rdsRow] = await fetchRows(orgId, 'i-abc', 'Oversized Instance');
-    await repository.updateStatus(idleRow.id, 'RESOLVED', orgId);
-    await repository.updateStatus(rdsRow.id, 'RESOLVED', orgId);
+    await repository.updateStatus(idleRow.id, 'RESOLVED', orgId, actor);
+    await repository.updateStatus(rdsRow.id, 'RESOLVED', orgId, actor);
 
     // Idle-EC2 succeeds and finds nothing (condition cleared); RDS detector fails this scan.
     await repository.reconcileActiveRecommendations(orgId, [
@@ -313,7 +326,7 @@ describe('Detector failure/partial-observation must NOT be interpreted as disapp
     const orgId = await insertOrg();
     await repository.reconcileActiveRecommendations(orgId, [observation({ recommendations: [fakeFinding()] })], undefined, leases.of(orgId));
     const [active] = await fetchRows(orgId, 'i-abc', 'Idle Instance');
-    await repository.updateStatus(active.id, 'RESOLVED', orgId);
+    await repository.updateStatus(active.id, 'RESOLVED', orgId, actor);
 
     const { insertedCount } = await repository.reconcileActiveRecommendations(orgId, [], undefined, leases.of(orgId));
 
@@ -499,7 +512,7 @@ describe('RI opportunities are unaffected by the occurrence lifecycle (test item
 
     await repository.replaceReservedInstanceRecommendations(orgId, { homeRegion: 'us-east-1' }, [riFinding], leases.of(orgId));
     const [firstRow] = await fetchRows(orgId, 'ri-opportunity-t3.large', 'Reserved Instance Opportunity');
-    await repository.updateStatus(firstRow.id, 'RESOLVED', orgId);
+    await repository.updateStatus(firstRow.id, 'RESOLVED', orgId, actor);
 
     // Unlike the non-RI lifecycle, RI's path has no suppression check --
     // the identical finding is unconditionally recreated as ACTIVE every

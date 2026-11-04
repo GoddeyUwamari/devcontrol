@@ -373,7 +373,7 @@ describe('tenant scope is unchanged', () => {
     await sendAs(org.orgId, org.admin, 'POST', `/security/account-findings/${ID}/accept-risk`, { note: 'ok' });
 
     expect(spies.overrideDelete).toHaveBeenCalledWith(org.orgId, PARAMETER.ruleId, PARAMETER.parameterId);
-    expect(spies.recommendationDelete).toHaveBeenCalledWith(ID, org.orgId);
+    expect(spies.recommendationDelete).toHaveBeenCalledWith(ID, org.orgId, expect.objectContaining({ userId: org.admin, source: 'button' }));
     expect(spies.alertDelete).toHaveBeenCalledWith(ID, org.orgId);
     expect(spies.ruleDelete).toHaveBeenCalledWith(ID, org.orgId);
     expect(spies.findingDisposition).toHaveBeenCalledWith(org.orgId, ID, 'accepted_risk', org.admin, 'ok');

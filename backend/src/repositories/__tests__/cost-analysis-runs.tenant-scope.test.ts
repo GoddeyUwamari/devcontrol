@@ -7,55 +7,22 @@
  * that. The live half proves the predicates work: the test connection, like the
  * production owner, is not limited by RLS here, so a missing predicate shows.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { CostAnalysisRunsRepository } from '../cost-analysis-runs.repository';
+import { hasOrganizationPredicate as scoped, sourceFiles, statementsInFiles } from './helpers/tenant-predicate';
 
 const SRC = join(__dirname, '..', '..');
+const TABLE = 'cost_analysis_runs';
 
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) return name === '__tests__' ? [] : sourceFiles(path);
-    return name.endsWith('.ts') ? [path] : [];
-  });
-}
-
-/** Every backtick or quoted string in `text` that is a statement on the table. */
-function statementsOnTable(text: string): string[] {
-  const strings = text.match(/`(?:[^`\\]|\\[\s\S])*`|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g) ?? [];
-  return strings.filter((s) => /\b(FROM|INTO|UPDATE|JOIN)\s+cost_analysis_runs\b/i.test(s));
-}
-
-/** `statement` without any parenthesised subquery, however deeply nested. */
-function withoutSubqueries(statement: string): string {
-  let result = '';
-  let depth = 0;
-  for (let i = 0; i < statement.length; i += 1) {
-    if (depth === 0 && /^\(\s*SELECT\b/i.test(statement.slice(i))) depth = 1;
-    else if (depth > 0 && statement[i] === '(') depth += 1;
-    else if (depth > 0 && statement[i] === ')') depth -= 1;
-    else if (depth === 0) result += statement[i];
-  }
-  return result;
-}
-
-/**
- * The statement's own WHERE must name the table's organization_id: a predicate
- * inside a subquery, or on another alias, scopes something else.
- */
-function hasOrganizationPredicate(statement: string): boolean {
-  if (/INSERT\s+INTO\s+cost_analysis_runs\s*\(\s*organization_id\b/i.test(statement)) return true;
-  return /WHERE[\s\S]*(?<![\w.])(r\.)?organization_id\s*=\s*\$\d/i.test(withoutSubqueries(statement));
-}
+/** The statement's own WHERE must name the table's organization_id (alias r allowed), with no top-level OR. */
+const hasOrganizationPredicate = (statement: string) => scoped(statement, TABLE, ['r']);
 
 describe('static: every statement on cost_analysis_runs names the organization', () => {
-  const files = sourceFiles(SRC);
-  const statements = files.flatMap((file) => statementsOnTable(readFileSync(file, 'utf-8')).map((statement) => ({ file, statement })));
+  const statements = statementsInFiles(sourceFiles(SRC), TABLE);
 
   it('finds the statements it is meant to check', () => {
-    expect(statements.length).toBeGreaterThanOrEqual(8);
+    expect(statements.length).toBeGreaterThanOrEqual(9);
   });
 
   it('allows no statement without a predicate', () => {
@@ -84,6 +51,19 @@ describe('static: every statement on cost_analysis_runs names the organization',
 
   it('a predicate on another alias does not scope the statement', () => {
     expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs r JOIN other o ON o.id = r.id WHERE o.organization_id = $1')).toBe(false);
+  });
+
+  it('a top-level OR makes the predicate optional, so it does not scope the statement', () => {
+    expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs WHERE organization_id = $1 OR true')).toBe(false);
+    expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs WHERE id = $2 OR organization_id = $1')).toBe(false);
+    expect(hasOrganizationPredicate('UPDATE cost_analysis_runs SET status = $3 WHERE organization_id = $1 AND id = $2 OR status = $3')).toBe(false);
+    expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs r WHERE r.organization_id = $1 OR r.id = $2 ORDER BY r.created_at')).toBe(false);
+  });
+
+  it('an OR inside parentheses is one conjunct and is allowed', () => {
+    expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs r WHERE r.organization_id = $1 AND ($3::varchar IS NULL OR r.source = $3) ORDER BY r.created_at DESC')).toBe(true);
+    // An OR after the WHERE clause (e.g. in ORDER BY) is not part of it.
+    expect(hasOrganizationPredicate('SELECT * FROM cost_analysis_runs WHERE organization_id = $1 ORDER BY (status = $2 OR status = $3)')).toBe(true);
   });
 
   it('accepts a statement scoped beside a subquery', () => {

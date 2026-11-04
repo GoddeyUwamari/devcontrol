@@ -1351,7 +1351,7 @@ export class AWSResourceDiscoveryService {
         // F12: fenced inside, after the detectors' AWS calls above.
         scan.checkpoint();
         const reconciled = await scan.watch(() =>
-          recommendationsRepo.reconcileActiveRecommendations(organizationId, observations, costScope, scan.lease)
+          recommendationsRepo.reconcileActiveRecommendations(organizationId, observations, costScope, scan.lease, costRunId ?? null)
         );
         const nonRIInsertedCount = reconciled.insertedCount;
         let costCounts = reconciled.counts;

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { CostDecisionActor, CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
+import { auditRequestContext } from '../services/auditEvents.service';
 import { CostAnalysisRun, CostAnalysisRunDetail, CostAnalysisRunSource, CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import costOptimizationService from '../services/cost-optimization.service';
@@ -39,6 +40,16 @@ const COST_RESULTS_NOT_SAVED_MESSAGE = "The analysis ran, but its results couldn
 const COST_CHECKS_FAILED_MESSAGE = 'None of the cost checks could complete. Try again.';
 const PARTIAL_RUN_MESSAGE = "Some cost checks didn't complete, so these results may be incomplete.";
 const INTERRUPTED_RUN_MESSAGE = 'The analysis was interrupted before it finished. Run it again.';
+// Reopen answers (approved copy C14-C16, pr3-step1.md).
+const REOPENED_ACTIVE_MESSAGE = "Reopened. It's back in your active recommendations.";
+const REOPENED_PENDING_MESSAGE = "Reopened. It will appear after the next analysis if it's still detected.";
+const ALREADY_REOPENED_MESSAGE = 'This finding was already reopened.';
+
+/** The caller of a decision, for its audit event; null when the request names no user. */
+function decisionActor(req: Request, source: CostDecisionActor['source']): CostDecisionActor | null {
+  const userId = (req as any).user?.userId || (req as any).user?.id;
+  return userId ? { userId, request: auditRequestContext(req), source } : null;
+}
 
 /**
  * Maps a raw analyzeAllResources() failure into a safe, non-leaking message
@@ -468,7 +479,7 @@ export class CostRecommendationsController {
       if (lease) {
         lease.checkpoint();
         const reconciled = await lease.watch(() =>
-          repository.reconcileActiveRecommendations(organizationId, observations, costScope, lease.lease)
+          repository.reconcileActiveRecommendations(organizationId, observations, costScope, lease.lease, runId ?? null)
         );
         nonRIInsertedCount = reconciled.insertedCount;
         counts = reconciled.counts;
@@ -719,6 +730,80 @@ export class CostRecommendationsController {
   }
 
   /**
+   * GET /api/cost-recommendations/hidden
+   * Every finding a Resolved or Dismissed decision hides, one item per finding,
+   * each judged still detected or not confirmed by its own latest observation,
+   * plus the resolved/dismissed split and the still-detected group's count and
+   * estimated savings (the same estimate and ceiling rules as /stats). None of
+   * it is in /stats or any other ACTIVE total. Any role: read-only, like /stats.
+   */
+  async getHidden(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      if (!organizationId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const hidden = await repository.getHiddenFindings(organizationId);
+      const response: ApiResponse = { success: true, data: hidden };
+      res.json(response);
+    } catch (error) {
+      console.error('Error fetching hidden cost recommendations:', error);
+      const response: ApiResponse = { success: false, error: 'Failed to fetch hidden recommendations' };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
+   * POST /api/cost-recommendations/:id/reopen
+   * Reopens the finding `id` belongs to (any of its rows). Member or above
+   * (route). Idempotent: a finding nothing hides any more answers
+   * reopened: false and changes nothing.
+   */
+  async reopen(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      const actor = decisionActor(req, 'button');
+      if (!organizationId || !actor) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const result = await repository.reopen(req.params.id, organizationId, actor);
+
+      if (result.outcome === 'not_found') {
+        res.status(404).json({ success: false, error: 'Recommendation not found' } as ApiResponse);
+        return;
+      }
+      if (result.outcome === 'not_applicable') {
+        res.status(400).json({ success: false, error: 'This type of recommendation is never hidden, so it cannot be reopened.' } as ApiResponse);
+        return;
+      }
+      if (result.outcome === 'already_open') {
+        res.json({ success: true, data: { reopened: false, reason: 'already_open' }, message: ALREADY_REOPENED_MESSAGE } as ApiResponse);
+        return;
+      }
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          reopened: true,
+          rowsEnded: result.rowsEnded,
+          activeNow: result.activeNow,
+          recommendation: result.recommendation,
+        },
+        message: result.activeNow ? REOPENED_ACTIVE_MESSAGE : REOPENED_PENDING_MESSAGE,
+      };
+      res.json(response);
+    } catch (error) {
+      console.error('Error reopening recommendation:', error);
+      const response: ApiResponse = { success: false, error: 'Failed to reopen recommendation' };
+      res.status(500).json(response);
+    }
+  }
+
+  /**
    * PATCH /api/cost-recommendations/:id/resolve
    * Mark a recommendation as resolved
    */
@@ -730,9 +815,15 @@ export class CostRecommendationsController {
         return;
       }
 
+      const actor = decisionActor(req, 'button');
+      if (!actor) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { id } = req.params;
 
-      const updated = await repository.updateStatus(id, 'RESOLVED', organizationId);
+      const updated = await repository.updateStatus(id, 'RESOLVED', organizationId, actor);
 
       if (!updated) {
         const response: ApiResponse = {
@@ -827,7 +918,11 @@ export class CostRecommendationsController {
 
       try {
         const executed = await remediationService.execute(workflow.id, organizationId, userId, req.ip);
-        const resolved = await repository.updateStatus(id, 'RESOLVED', organizationId);
+        const resolved = await repository.updateStatus(id, 'RESOLVED', organizationId, {
+          userId,
+          request: auditRequestContext(req),
+          source: 'execute_remediation',
+        });
 
         res.json({
           success: true,
@@ -888,9 +983,15 @@ export class CostRecommendationsController {
         return;
       }
 
+      const actor = decisionActor(req, 'button');
+      if (!actor) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { id } = req.params;
 
-      const updated = await repository.updateStatus(id, 'DISMISSED', organizationId);
+      const updated = await repository.updateStatus(id, 'DISMISSED', organizationId, actor);
 
       if (!updated) {
         const response: ApiResponse = {
@@ -930,8 +1031,14 @@ export class CostRecommendationsController {
         return;
       }
 
+      const actor = decisionActor(req, 'button');
+      if (!actor) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
       const { id } = req.params;
-      const deleted = await repository.delete(id, organizationId);
+      const deleted = await repository.delete(id, organizationId, actor);
 
       if (!deleted) {
         const response: ApiResponse = {

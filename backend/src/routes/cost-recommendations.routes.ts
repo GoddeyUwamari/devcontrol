@@ -30,6 +30,11 @@ router.get('/stats', authenticateToken, (req, res) => controller.getStats(req, r
 // below, or Express would treat "analysis-runs" as an :id param)
 router.get('/analysis-runs', authenticateToken, (req, res) => controller.getAnalysisRuns(req, res));
 
+// Findings hidden by a Resolved or Dismissed decision, each judged still
+// detected or not confirmed (before /:id, same reason as above). Read-only,
+// any role, like /stats.
+router.get('/hidden', authenticateToken, (req, res) => controller.getHidden(req, res));
+
 // Optimization Rule Registry catalog (implemented + planned rules, grouped
 // by service) -- also must be registered before /:id, same reason as above.
 // Not Enterprise-gated: this returns only static parameter DEFINITIONS
@@ -77,6 +82,10 @@ router.post(
     controller.executeRemediation(req, res);
   }
 );
+
+// Reopen the finding a hidden recommendation belongs to. Member or above, same
+// as resolve and dismiss.
+router.post('/:id/reopen', authenticateToken, requireMember, (req, res) => controller.reopen(req, res));
 
 // Dismiss recommendation. Member or above, same as resolve.
 router.patch('/:id/dismiss', authenticateToken, requireMember, (req, res) => controller.dismiss(req, res));
