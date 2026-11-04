@@ -70,6 +70,8 @@ export interface HiddenFinding {
     lastDetectedAt: string | null;
     potentialSavings: number | null;
     savingsBasis: string | null;
+    /** metadata.price_source; 'default_unlisted_type' means the figure is a default, not a price. */
+    priceSource?: string | null;
     severity: string | null;
     description: string | null;
   };

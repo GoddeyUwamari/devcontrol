@@ -21,7 +21,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
-import { classifySavingsBasis } from './estimated-savings';
+import { classifySavingsBasis, EC2_PRICE_SOURCE_DEFAULT } from './estimated-savings';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import type { ChatContext } from './ai-chat.service';
 import {
@@ -75,7 +75,11 @@ export interface TimeBetweenDeployments {
 }
 
 export interface IdleResourceRecommendations {
-  items: Array<{ resourceId: string; resourceType: string; issue: string; estimatedMonthlySavings: number }>;
+  /**
+   * priceKnown false: the figure is DevControl's default for an EC2 instance
+   * type whose price is unknown (metadata.price_source), not a price.
+   */
+  items: Array<{ resourceId: string; resourceType: string; issue: string; estimatedMonthlySavings: number; priceKnown: boolean }>;
   totalEstimatedMonthlySavings: number;
 }
 
@@ -845,12 +849,17 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
             resourceType: rec.resource_type,
             issue: rec.issue,
             estimatedMonthlySavings: round(Number(rec.potential_savings), 2),
+            priceKnown: rec.metadata?.price_source !== EC2_PRICE_SOURCE_DEFAULT,
           }));
+        const baseReason = 'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings';
         return {
           state: 'available',
           data: { items, totalEstimatedMonthlySavings: round(items.reduce((sum, i) => sum + i.estimatedMonthlySavings, 0), 2) },
           // An empty list is only "none recorded", never "nothing can be saved".
-          reason: 'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings',
+          // A default figure (priceKnown false) is never a known price (PR 4, S4).
+          reason: items.some((i) => !i.priceKnown)
+            ? `${baseReason}; some idle-instance figures use a default because the instance type's price is unknown`
+            : baseReason,
         };
       }
     );

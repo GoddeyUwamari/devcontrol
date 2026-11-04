@@ -250,6 +250,55 @@ describe('AI Reports evidence -- security, resources, alerts', () => {
   });
 });
 
+describe('AI Reports evidence -- the EC2 default price (PR 4, S4)', () => {
+  it('a default figure is marked priceKnown false with the reason; a genuine $50 list price is priceKnown true', async () => {
+    const { sections } = await evidence({
+      recommendations: [
+        { resource_id: 'i-default', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' } },
+        { resource_id: 'i-listed', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } },
+        { resource_id: 'i-legacy', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price' } },
+      ],
+    });
+    const section = sections.idleResourceRecommendations!;
+    expect(section).toMatchObject({
+      state: 'available',
+      data: {
+        items: [
+          { resourceId: 'i-default', estimatedMonthlySavings: 50, priceKnown: false },
+          { resourceId: 'i-listed', estimatedMonthlySavings: 50, priceKnown: true },
+          { resourceId: 'i-legacy', estimatedMonthlySavings: 50, priceKnown: true },
+        ],
+        totalEstimatedMonthlySavings: 150,
+      },
+    });
+    expect(section.reason).toBe(
+      "lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings; some idle-instance figures use a default because the instance type's price is unknown"
+    );
+  });
+
+  it('the model input carries priceKnown false and the reason with the default figure', async () => {
+    const data = await evidence({
+      recommendations: [
+        { resource_id: 'i-default', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'default_unlisted_type' } },
+      ],
+    });
+    const prompt = new AIReportGeneratorService(fakePool()).buildUserPrompt(data, 'weekly_summary');
+    expect(prompt).toContain('"resourceId":"i-default","resourceType":"EC2","issue":"Idle Instance","estimatedMonthlySavings":50,"priceKnown":false');
+    expect(prompt).toContain("some idle-instance figures use a default because the instance type's price is unknown");
+  });
+
+  it('with no default figure the reason is unchanged', async () => {
+    const { sections } = await evidence({
+      recommendations: [
+        { resource_id: 'i-listed', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 50, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } },
+      ],
+    });
+    expect(sections.idleResourceRecommendations!.reason).toBe(
+      'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings'
+    );
+  });
+});
+
 describe('AI Reports evidence -- deployments', () => {
   it('no lead-time default: with no repeat successful deployment, time between deployments is unavailable', async () => {
     const { sections } = await evidence({}, [

@@ -35,6 +35,19 @@
 
 export type SavingsBasisKind = 'estimate' | 'ceiling';
 
+/**
+ * metadata.price_source: where an EC2 figure's price came from (written by
+ * the idle EC2 detector). Consumers disclose the default only when
+ * price_source is EC2_PRICE_SOURCE_DEFAULT -- never from the amount, since a
+ * listed type can cost exactly the default. Mirror: lib/savings-basis.ts.
+ * Either way the figure is an estimate and counts in totals unchanged.
+ */
+export const EC2_PRICE_SOURCE_LIST_TABLE = 'list_table';
+export const EC2_PRICE_SOURCE_DEFAULT = 'default_unlisted_type';
+export type EC2PriceSource = typeof EC2_PRICE_SOURCE_LIST_TABLE | typeof EC2_PRICE_SOURCE_DEFAULT;
+/** metadata.severity_basis on a default-price row: severity is fixed LOW, never derived from the default. */
+export const SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE = 'fixed_low_unknown_price';
+
 // The savings_basis prefixes cost-optimization.service.ts writes. 'comparison:'
 // (DynamoDB capacity mode) is a modelled estimate from the table's own observed
 // workload; 'ceiling:' is an upper bound (S3 lifecycle, DynamoDB capacity).
