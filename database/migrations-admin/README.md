@@ -936,12 +936,15 @@ table with forced row-level security and exact grants, and because it is
 applied by hand **before** the code that reads it is merged.
 
 It is additive and safe under the release already running: nothing that exists
-is altered, and that release never reads the new table. The backfill copies the
-value AWS already trusts for each existing connection (`aws_accounts`, `active`
-first, then newest), otherwise the organization's `aws_connect_sessions` value,
-expired or not. Missing or malformed values are skipped and counted in a
-NOTICE. `devcontrol` gets `SELECT` and `INSERT` only, and a trigger refuses
-every `UPDATE`, so a value is never changed or rotated.
+is altered, and that release never reads the new table. The backfill copies only
+the value AWS already trusts for each existing connection (`aws_accounts`,
+`active` first, then newest). Session values are adopted at runtime, at an
+organization's first visit or connect after the deploy, because the release
+still running keeps replacing expired session values until then. Missing or
+malformed values are skipped and counted in a NOTICE. An organization with two
+distinct connection values makes the migration raise an exception before it
+writes anything. `devcontrol` gets `SELECT` and `INSERT` only, and a trigger
+refuses every `UPDATE`, so a value is never changed or rotated.
 
 ### Rollback
 

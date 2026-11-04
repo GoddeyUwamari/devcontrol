@@ -43,8 +43,10 @@ describe('202611031200_create_aws_org_external_ids: static shape', () => {
     for (const insert of sql.match(/INSERT INTO aws_org_external_ids[\s\S]*?ON CONFLICT \(organization_id\) DO NOTHING/g) ?? []) {
       expect(insert).toContain('ON CONFLICT (organization_id) DO NOTHING');
     }
-    expect((sql.match(/INSERT INTO aws_org_external_ids/g) ?? []).length).toBe(2);
-    expect((sql.match(/ON CONFLICT \(organization_id\) DO NOTHING/g) ?? []).length).toBe(2);
+    // One backfill step, from connections only (review M1): session values are adopted at runtime.
+    expect((sql.match(/INSERT INTO aws_org_external_ids/g) ?? []).length).toBe(1);
+    expect((sql.match(/ON CONFLICT \(organization_id\) DO NOTHING/g) ?? []).length).toBe(1);
+    expect(sql).not.toMatch(/FROM aws_connect_sessions/);
   });
 
   it('grants the application role SELECT and INSERT only', () => {
@@ -63,7 +65,7 @@ describe('202611031200_create_aws_org_external_ids: static shape', () => {
 });
 
 describe('202611031200_create_aws_org_external_ids: backfill, rollback, re-run', () => {
-  it('copies the trusted value by precedence, skips malformed values, and rolls back cleanly', async () => {
+  it('copies only the trusted connection value by precedence, leaves sessions to the runtime, skips malformed values, and rolls back cleanly', async () => {
     const client = new Client(dbConfig());
     await client.connect();
     const schema = `extid_mig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -98,17 +100,18 @@ describe('202611031200_create_aws_org_external_ids: backfill, rollback, re-run',
       const sess = (org: string, ext: string, expired: boolean) => client.query(
         `INSERT INTO aws_connect_sessions (org_id, external_id, expires_at) VALUES ($1, $2, NOW() + $3::interval)`, [org, ext, expired ? '-3 days' : '1 hour']);
 
-      // active first, even when an inactive row is newer; a session never beats a connection
-      await acct(orgs.activeWins, 'Old_Inactive-1', 'inactive', '2026-10-30');
+      // an active connection (plus an inactive row with the SAME value, which is no
+      // conflict); a session never beats a connection. Two DIFFERENT values for one
+      // organization raise instead (review L1, the conflict test below).
+      await acct(orgs.activeWins, 'Active_Trusted-1', 'inactive', '2026-10-30');
       await acct(orgs.activeWins, 'Active_Trusted-1', 'active', '2026-10-01');
       await sess(orgs.activeWins, 'Session_Loses-1', false);
-      // no active row: the newest connection
-      await acct(orgs.newestWins, 'Older_Value-2', 'inactive', '2026-09-01');
+      // an inactive connection is still the value AWS trusts
       await acct(orgs.newestWins, 'Newer_Value-2', 'inactive', '2026-10-01');
-      // malformed connection value: skipped, the session is used
+      // malformed connection value: skipped; its session is NOT copied (runtime adopts it)
       await acct(orgs.sessionFallback, 'has a space', 'active', '2026-10-01');
       await sess(orgs.sessionFallback, 'Session_Used-3', false);
-      // expired session only
+      // expired session only: NOT copied (runtime adopts it)
       await sess(orgs.expiredSession, 'Expired_Kept-4', true);
       // malformed everything: no row (generated at runtime)
       await acct(orgs.malformedOnly, null, 'active', '2026-10-01');
@@ -124,14 +127,15 @@ describe('202611031200_create_aws_org_external_ids: backfill, rollback, re-run',
       expect(byOrg).toEqual({
         [orgs.activeWins]: ['Active_Trusted-1', 'connection'],
         [orgs.newestWins]: ['Newer_Value-2', 'connection'],
-        [orgs.sessionFallback]: ['Session_Used-3', 'session'],
-        [orgs.expiredSession]: ['Expired_Kept-4', 'session'],
       });
+      // sessions are untouched
+      const sessions = await client.query(`SELECT count(*)::int AS n FROM aws_connect_sessions`);
+      expect(sessions.rows[0].n).toBe(4);
       // existing connections are untouched
       const accounts = await client.query(`SELECT external_id FROM aws_accounts`);
       expect(accounts.rows.map((r) => String(r.external_id)).sort()).toEqual(
-        ['null', 'Active_Trusted-1', 'Newer_Value-2', 'Old_Inactive-1', 'Older_Value-2', 'has a space'].sort());
-      expect(notices.join('\n')).toMatch(/2 from connections, 2 from sessions/);
+        ['null', 'Active_Trusted-1', 'Active_Trusted-1', 'Newer_Value-2', 'has a space'].sort());
+      expect(notices.join('\n')).toMatch(/2 from connections; .* session values are adopted at runtime/);
       expect(notices.join('\n')).toMatch(/2 aws_accounts row\(s\) with a missing or malformed external_id skipped/);
       // the notice never prints a value
       expect(notices.join('\n')).not.toMatch(/Trusted|Session_|Expired_/);
@@ -145,6 +149,35 @@ describe('202611031200_create_aws_org_external_ids: backfill, rollback, re-run',
       await client.end();
     }
   });
+  it('two distinct connection values for one organization raise an exception and write nothing (review L1)', async () => {
+    const client = new Client(dbConfig());
+    await client.connect();
+    const schema = `extid_mig_conflict_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      await client.query('BEGIN');
+      await client.query(ROLLBACK_SQL);
+      await client.query(`CREATE SCHEMA ${schema}`);
+      await client.query(`SET LOCAL search_path = ${schema}, public`);
+      // No UNIQUE (org_id) here, so a conflict can exist, as it could on a drifted database.
+      await client.query(`CREATE TABLE aws_accounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(), org_id UUID, external_id VARCHAR(64),
+        status VARCHAR(32), connected_at TIMESTAMPTZ)`);
+      const { rows } = await client.query(
+        `INSERT INTO organizations (name, slug, display_name, subscription_tier, subscription_status)
+         VALUES ($1, $1, $1, 'free', 'free') RETURNING id`, [`${schema}-org`]);
+      await client.query(`INSERT INTO aws_accounts (org_id, external_id, status, connected_at) VALUES
+        ($1, 'Conflict_One-1', 'active', NOW()), ($1, 'Conflict_Two-2', 'inactive', NOW())`, [rows[0].id]);
+      await client.query('SAVEPOINT apply');
+      await expect(client.query(MIGRATION_SQL)).rejects.toThrow(/1 organization\(s\) hold more than one distinct well-formed External ID/);
+      await client.query('ROLLBACK TO SAVEPOINT apply');
+      const left = await client.query(`SELECT to_regclass('${schema}.aws_org_external_ids') AS t`);
+      expect(left.rows[0].t).toBeNull();
+    } finally {
+      await client.query('ROLLBACK');
+      await client.end();
+    }
+  });
+
   // The other path, with neither legacy table present, is CI's own schema
   // bootstrap: it applies this migration to a database that has neither.
 });

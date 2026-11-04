@@ -9,27 +9,32 @@
 -- This adds aws_org_external_ids: one value per organization, never expiring,
 -- never updated. The Connect page and every later connect use it.
 --
--- CANONICAL SOURCE AND PRECEDENCE (backfill here, and the same order at runtime
--- in backend/src/repositories/aws-external-id.repository.ts for organizations
--- that have no row yet):
+-- CANONICAL SOURCE AND PRECEDENCE. At runtime, for an organization with no row
+-- yet, backend/src/repositories/aws-external-id.repository.ts chooses:
 --   1. connection  An aws_accounts row of the organization with a well-formed
 --                  external_id: the value AWS already trusts. Rows with status
 --                  'active' first, then the most recent connected_at, then id.
 --   2. session     Otherwise the organization's aws_connect_sessions value,
 --                  expired or not: the customer may already have put it in a
 --                  trust policy.
---   3. generated   Otherwise no row is written here. The application generates
---                  one (crypto.randomBytes(24), base64url) on the next visit.
--- A trusted value is never replaced: rows are only ever inserted, and an
+--   3. generated   Otherwise crypto.randomBytes(24), base64url.
+-- THIS MIGRATION BACKFILLS STEP 1 ONLY. Session values are left to the runtime:
+-- the release running until the new code deploys still replaces an expired
+-- session value on the next page visit, so a value copied here could be
+-- superseded by the one the owner is shown afterwards. Adopting it at the first
+-- visit or connect after the deploy takes the value the owner saw last.
+-- Connection values cannot change in that window (UNIQUE (org_id), no update
+-- path). A trusted value is never replaced: rows are only ever inserted, and an
 -- existing row always wins (ON CONFLICT DO NOTHING).
 --
 -- WELL-FORMED means 2 to 64 characters from AWS's ExternalId alphabet
 -- [A-Za-z0-9+=,.@:/_-]. 64 is the width of both source columns. A NULL, empty or
--- otherwise malformed historical value is skipped, never copied; the next
--- source in the order above is used. Skipped and conflicting rows are counted
--- in NOTICEs. Conflicting means an organization whose aws_accounts rows hold
--- more than one distinct well-formed value; UNIQUE (org_id) on aws_accounts
--- should make that impossible.
+-- otherwise malformed historical value is skipped, never copied (the runtime
+-- then uses the next source in the order above), and counted in a NOTICE.
+-- CONFLICTING VALUES FAIL THE MIGRATION: an organization whose aws_accounts rows
+-- hold more than one distinct well-formed value raises an exception before any
+-- row is written, so nothing chooses between them silently. UNIQUE (org_id) on
+-- aws_accounts should make that impossible.
 --
 -- EXISTING CONNECTIONS ARE UNTOUCHED. aws_accounts.external_id stays the value
 -- each connection's AssumeRole sends, whatever this table holds.
@@ -38,9 +43,9 @@
 -- exists is altered, and the currently deployed application never reads this
 -- table. Its connect flow (aws_connect_sessions) keeps working unchanged.
 --
--- aws_accounts and aws_connect_sessions are defined outside the canonical
--- migrations (backend/migrations/019, 020). When either is absent, as in CI's
--- bootstrap, its step of the backfill is skipped with a NOTICE.
+-- aws_accounts is defined outside the canonical migrations (backend/migrations/
+-- 019). When it is absent, as in CI's bootstrap, the backfill is skipped with
+-- a NOTICE.
 --
 -- ADMINISTRATIVE MIGRATION (see database/migrations-admin/README.md): applied by
 -- hand as postgres before the code is merged. The table is owned by postgres,
@@ -100,7 +105,6 @@ DO $$
 DECLARE
   well_formed CONSTANT TEXT := '^[A-Za-z0-9+=,.@:/_-]{2,64}$';
   n_conn      INTEGER := 0;
-  n_sess      INTEGER := 0;
   n_skipped   INTEGER := 0;
   n_conflict  INTEGER := 0;
 BEGIN
@@ -113,6 +117,11 @@ BEGIN
          WHERE org_id IS NOT NULL AND external_id ~ %L
          GROUP BY org_id HAVING count(DISTINCT external_id) > 1
       ) c $q$, well_formed) INTO n_conflict;
+    IF n_conflict > 0 THEN
+      RAISE EXCEPTION
+        '% organization(s) hold more than one distinct well-formed External ID in aws_accounts -- '
+        'refusing to choose between them. Investigate before re-running.', n_conflict;
+    END IF;
 
     EXECUTE format($q$
       SELECT count(*) FROM aws_accounts
@@ -133,21 +142,8 @@ BEGIN
     GET DIAGNOSTICS n_conn = ROW_COUNT;
   END IF;
 
-  IF to_regclass('aws_connect_sessions') IS NULL THEN
-    RAISE NOTICE 'aws_connect_sessions does not exist; session backfill skipped.';
-  ELSE
-    EXECUTE format($q$
-      INSERT INTO aws_org_external_ids (organization_id, external_id, source)
-      SELECT s.org_id, s.external_id, 'session'
-        FROM aws_connect_sessions s
-        JOIN organizations o ON o.id = s.org_id
-       WHERE s.external_id ~ %L
-      ON CONFLICT (organization_id) DO NOTHING $q$, well_formed);
-    GET DIAGNOSTICS n_sess = ROW_COUNT;
-  END IF;
-
-  RAISE NOTICE 'aws_org_external_ids backfill: % from connections, % from sessions; % aws_accounts row(s) with a missing or malformed external_id skipped; % organization(s) with conflicting connection values (active, then newest, kept).',
-    n_conn, n_sess, n_skipped, n_conflict;
+  RAISE NOTICE 'aws_org_external_ids backfill: % from connections; % aws_accounts row(s) with a missing or malformed external_id skipped; session values are adopted at runtime.',
+    n_conn, n_skipped;
 END $$;
 
 -- ---------------------------------------------------------------------------
