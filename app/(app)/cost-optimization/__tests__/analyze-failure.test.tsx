@@ -27,6 +27,7 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     }),
     getOptimizationRules: async () => ({ rules: [], summary: { totalRules: 0, implementedCount: 0, plannedCount: 0, services: [] } }),
     getAnalysisRuns: () => mockGetAnalysisRuns(),
+    getHidden: async () => ({ latestRun: null, summary: { resolved: 0, dismissed: 0, stillDetected: { count: 0, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} }, notConfirmed: 0 }, items: [] }),
     analyze: () => mockAnalyze(),
   },
 }))

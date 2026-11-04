@@ -7,7 +7,9 @@ import type { CostScanCounts, CostScanState } from './costScanState'
 
 /**
  * Every banner and toast string for the Cost Optimization scan state, exactly
- * as approved by the founder on 2026-11-02 (pr2-step1.md §1c and §1g).
+ * as approved by the founder on 2026-11-02 (pr2-step1.md §1c and §1g), with
+ * PR 3's C1-C5 (pr3-step1.md §5.3, founder decisions 2026-11-03) replacing
+ * the hidden-finding wording.
  */
 
 export const SOURCE_LABEL: Record<AnalysisSource, string> = {
@@ -37,25 +39,38 @@ export function stillOpen(count: number): string {
   return `${count} found earlier ${plural(count, 'is', 'are')} still open.`
 }
 
-/** Sentence H. */
-export function stillHidden(count: number): string {
-  return `${count} finding${plural(count, '', 's')} you resolved or dismissed earlier ${plural(count, 'is', 'are')} still hidden.`
+/** C2: resolved findings the run found again (omitted when 0). */
+export function resolvedFoundAgain(count: number): string | null {
+  if (count <= 0) return null
+  return `${count} finding${plural(count, '', 's')} you resolved ${plural(count, 'was', 'were')} found again.`
+}
+
+/** C3: dismissed findings the run found again (omitted when 0). */
+export function dismissedFoundAgain(count: number): string | null {
+  if (count <= 0) return null
+  return `${count} finding${plural(count, '', 's')} you dismissed ${plural(count, 'was', 'were')} found again and ${plural(count, 'is', 'are')} still hidden.`
+}
+
+/** C4 (replaces sentence H): C2 and/or C3, each only when its count isn't 0. */
+export function hiddenFoundAgain(c: Pick<CostScanCounts, 'hiddenResolved' | 'hiddenDismissed'>): string | null {
+  return join(resolvedFoundAgain(c.hiddenResolved), dismissedFoundAgain(c.hiddenDismissed)) || null
 }
 
 function join(...sentences: (string | false | null | undefined)[]): string {
   return sentences.filter(Boolean).join(' ')
 }
 
-/** The sub-text a completed or partial run's counts give; also used by the empty state. */
+/** The sub-text a completed run's counts give. Shown once, in the banner only (founder fix, PR 3b). */
 function completedDescription(key: CostScanState['key'], c: CostScanCounts | null): string | null {
   if (!c) return null
   switch (key) {
     case 'completed_new':
-      return join(newFound(c.new), c.refreshed > 0 && stillOpen(c.refreshed), c.hidden > 0 && stillHidden(c.hidden))
+      return join(newFound(c.new), c.refreshed > 0 && stillOpen(c.refreshed), hiddenFoundAgain(c))
     case 'completed_open':
-      return join(`No new opportunities. ${stillOpen(c.refreshed)}`, c.hidden > 0 && stillHidden(c.hidden))
+      return join(`No new opportunities. ${stillOpen(c.refreshed)}`, hiddenFoundAgain(c))
     case 'completed_hidden':
-      return `Nothing new to review. ${c.hidden} finding${plural(c.hidden, '', 's')} you resolved or dismissed earlier ${plural(c.hidden, 'was', 'were')} found again and ${plural(c.hidden, 'is', 'are')} still hidden.`
+      // C1 (replaces PR 2 state 6 wording): past-tense run facts, split resolved/dismissed.
+      return join('Nothing new to review.', hiddenFoundAgain(c))
     case 'completed_unchecked':
       return `Nothing was flagged, but ${c.unknown} resource${plural(c.unknown, '', 's')} couldn't be fully checked.`
     case 'completed_clean':
@@ -105,7 +120,7 @@ export function bannerContent(s: CostScanState): BannerContent {
       return {
         tone: 'warning',
         title: 'Analysis partly complete',
-        description: join(PARTIAL_MESSAGE, c && c.new > 0 && newFound(c.new), c && c.hidden > 0 && stillHidden(c.hidden)),
+        description: join(PARTIAL_MESSAGE, c && c.new > 0 && newFound(c.new), c && hiddenFoundAgain(c)),
       }
     }
     case 'failed':
@@ -113,12 +128,6 @@ export function bannerContent(s: CostScanState): BannerContent {
     case 'interrupted':
       return { tone: 'danger', title: `Last ${sourceLower} was interrupted`, description: INTERRUPTED_MESSAGE }
   }
-}
-
-/** The empty-state sub-text for the run-derived states that have no older empty-state copy. */
-export function emptyStateDescription(s: CostScanState): string | null {
-  if (s.key === 'partial' || s.key === 'interrupted') return bannerContent(s).description ?? null
-  return completedDescription(s.key, s.counts)
 }
 
 export type ToastKind = 'success' | 'info' | 'warning'
@@ -132,7 +141,14 @@ export function analyzeToast(result: Pick<AnalysisResult, 'runState' | 'counts' 
   const unknown = result.unknownResourceCount
   if (c.new > 0) return { kind: 'info', text: `Analysis complete: ${c.new} new opportunit${plural(c.new, 'y', 'ies')}.` }
   if (c.persisted > 0) return { kind: 'info', text: 'Analysis complete: no new opportunities.' }
-  if (hidden > 0) return { kind: 'info', text: `Analysis complete: nothing new, ${hidden} still hidden.` }
+  if (hidden > 0) {
+    // C5: only the non-zero parts.
+    const parts = [
+      c.suppressedResolved > 0 && `${c.suppressedResolved} resolved found again`,
+      c.suppressedDismissed > 0 && `${c.suppressedDismissed} dismissed found again`,
+    ].filter(Boolean)
+    return { kind: 'info', text: `Analysis complete: nothing new. ${parts.join(', ')}.` }
+  }
   if (c.detected === 0 && typeof unknown === 'number' && unknown > 0) {
     return { kind: 'info', text: `Analysis complete: nothing flagged, ${unknown} resource${plural(unknown, '', 's')} not fully checked.` }
   }

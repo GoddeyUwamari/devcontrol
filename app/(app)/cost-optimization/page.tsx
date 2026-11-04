@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Loader2,
@@ -20,6 +20,7 @@ import { awsResourcesService } from '@/lib/services/aws-resources.service';
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
 import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
+import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { annualizeMonthly, cn, formatSavingsCurrency } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
@@ -39,8 +40,17 @@ import {
   UNAVAILABLE,
   analyzeToast,
   bannerContent,
-  emptyStateDescription,
 } from './costScanBanner';
+import { ReviewList, StillDetectedSlot, type HiddenView } from './HiddenFindings';
+import {
+  ALREADY_REOPENED,
+  DISMISSED_TOAST,
+  DISMISS_FAILED_TOAST,
+  REOPENED_ACTIVE,
+  REOPENED_PENDING,
+  REOPEN_FAILED,
+  checksLine,
+} from './hiddenFindingsCopy';
 
 // Fetching more than this in one page is an edge case; the KPI tile (sourced
 // from /stats, not this list) always shows the true total regardless, and
@@ -162,9 +172,70 @@ export default function CostOptimizationPage() {
   const implementedRules = ruleCatalog.rules.filter((rule) => rule.status === 'implemented');
   const plannedRules = ruleCatalog.rules.filter((rule) => rule.status === 'planned');
 
-  const invalidateRecommendationData = () => {
-    queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] });
-    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] });
+  // Resolved and dismissed findings, one per finding, with the backend's
+  // still-detected judgement (PR 3a). Rendered as returned; a failed request
+  // is never shown as empty, even when an earlier response is cached.
+  const hiddenQuery = useQuery({
+    queryKey: ['cost-recommendations-hidden'],
+    queryFn: costRecommendationsService.getHidden,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive,
+  });
+  const hiddenView: HiddenView = hiddenQuery.isError
+    ? { status: 'error' }
+    : hiddenQuery.data === undefined
+      ? { status: 'loading' }
+      : { status: 'ready', data: hiddenQuery.data };
+  const stillDetectedCount = hiddenView.status === 'ready' ? hiddenView.data.summary.stillDetected.count : null;
+
+  const role = useCurrentRole();
+
+  // After any decision: the list, totals and hidden groups refetch together so
+  // they agree. ['cost-recommendations'] is a prefix of the list keys only;
+  // the other keys (this page's hidden and stats, Costs' active list,
+  // Infrastructure's count) are named one by one.
+  const invalidateRecommendationData = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-active'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-count'] }),
+  ]);
+
+  // Reopen and dismiss on hidden findings. One action per finding at a time:
+  // the ref blocks a second submission before React re-renders, and the
+  // buttons stay disabled until the refresh after it has finished.
+  const inFlight = useRef(new Set<string>());
+  const [pendingHiddenIds, setPendingHiddenIds] = useState<ReadonlySet<string>>(new Set());
+  const runHiddenAction = async (id: string, action: 'reopen' | 'dismiss') => {
+    if (inFlight.current.has(id)) return;
+    inFlight.current.add(id);
+    setPendingHiddenIds(new Set(inFlight.current));
+    try {
+      try {
+        if (action === 'reopen') {
+          const result = await costRecommendationsService.reopen(id);
+          if (!result.reopened) toast.info(ALREADY_REOPENED);
+          else toast.success(result.activeNow ? REOPENED_ACTIVE : REOPENED_PENDING);
+        } else {
+          await costRecommendationsService.dismiss(id);
+          toast.success(DISMISSED_TOAST);
+        }
+      } catch {
+        toast.error(action === 'reopen' ? REOPEN_FAILED : DISMISS_FAILED_TOAST);
+      }
+      await invalidateRecommendationData();
+    } finally {
+      inFlight.current.delete(id);
+      setPendingHiddenIds(new Set(inFlight.current));
+    }
+  };
+  const hiddenActions = {
+    role,
+    pendingIds: pendingHiddenIds,
+    onReopen: (id: string) => { void runHiddenAction(id, 'reopen'); },
+    onDismiss: (id: string) => { void runHiddenAction(id, 'dismiss'); },
   };
 
   const resolveMutation = useMutation({
@@ -196,6 +267,8 @@ export default function CostOptimizationPage() {
         // so "Last Analysis" reflects it immediately instead of only the
         // next 60s staleTime refetch.
         queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
+        // The run records which hidden findings it found again.
+        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
       ]);
       const message = analyzeToast(result);
       toast[message.kind](message.text);
@@ -242,7 +315,10 @@ export default function CostOptimizationPage() {
   const canRunScan = !isAnalyzing && !isDemoActive && awsConnected !== false;
   const listedActiveCount = activeCount ?? recommendations.length;
   const hiddenCount = activeCount === null ? 0 : Math.max(0, activeCount - recommendations.length);
-  const runDerivedEmptyText = emptyStateDescription(scan);
+  // E1: the checks as one small left-aligned line (replaces the centred list).
+  const checksNote = implementedRules.length > 0 ? (
+    <p className="text-label font-normal text-ink-muted mt-4" data-testid="checks-line">{checksLine(implementedRules.map((rule) => rule.name))}</p>
+  ) : null;
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto">
@@ -355,6 +431,9 @@ export default function CostOptimizationPage() {
             </div>
           )}
 
+          {/* ── STILL DETECTED: hidden findings the latest analysis found again (PR 3b) ── */}
+          <StillDetectedSlot view={hiddenView} actions={hiddenActions} onRetry={() => hiddenQuery.refetch()} />
+
           {/* ── TRUST / DISCLAIMER ── */}
           <p className="text-label font-normal text-ink-muted leading-relaxed mb-6 max-w-3xl">
             Savings figures are estimated potential savings based on DevControl&apos;s recommendation methodology, not confirmed AWS billing savings.
@@ -382,59 +461,59 @@ export default function CostOptimizationPage() {
             <div className="flex items-center justify-center h-64" data-testid="scan-status-loading">
               <Loader2 size={24} className="animate-spin text-violet-600" />
             </div>
+          ) : recommendations.length === 0 && stillDetectedCount !== null && stillDetectedCount > 0 ? (
+            // Still-detected findings take the empty card's place: the group above shows them.
+            null
+          ) : recommendations.length === 0 && hiddenView.status === 'loading' && !['not_connected', 'never_analyzed', 'running', 'failed'].includes(scan.key) ? (
+            // Whether anything is still detected isn't known yet: no empty-state conclusion until it is.
+            <div className="flex items-center justify-center h-64" data-testid="hidden-status-loading">
+              <Loader2 size={24} className="animate-spin text-violet-600" />
+            </div>
           ) : recommendations.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
+            <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 text-left" data-testid="empty-state">
               {scan.key === 'not_connected' ? (
                 <>
-                  <CloudOff size={32} className="text-slate-400 mx-auto mb-3" />
+                  <CloudOff size={28} className="text-slate-400 mb-3" aria-hidden="true" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">Connect AWS to check for savings</p>
-                  <p className="text-ui text-ink-muted mb-6">DevControl needs a connected AWS account before it can look for cost-saving opportunities.</p>
+                  <p className="text-ui text-ink-muted">DevControl needs a connected AWS account before it can look for cost-saving opportunities.</p>
                 </>
               ) : scan.key === 'never_analyzed' ? (
                 <>
-                  <Clock size={32} className="text-slate-400 mx-auto mb-3" />
+                  <Clock size={28} className="text-slate-400 mb-3" aria-hidden="true" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">No analysis has run yet</p>
-                  <p className="text-ui text-ink-muted mb-6">Run your first cost analysis to check for savings opportunities.</p>
+                  <p className="text-ui text-ink-muted">Run your first cost analysis to check for savings opportunities.</p>
                 </>
               ) : scan.key === 'running' ? (
                 <>
-                  <Loader2 size={32} className="text-violet-500 mx-auto mb-3 animate-spin" />
+                  <Loader2 size={28} className="text-violet-500 mb-3 animate-spin" aria-hidden="true" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">Analysis in progress</p>
-                  <p className="text-ui text-ink-muted mb-6">DevControl is currently checking your account. This can take a few minutes.</p>
+                  <p className="text-ui text-ink-muted">DevControl is currently checking your account. This can take a few minutes.</p>
                 </>
               ) : scan.key === 'failed' ? (
                 <>
-                  <AlertTriangle size={32} className="text-red-500 mx-auto mb-3" />
+                  <AlertTriangle size={28} className="text-red-500 mb-3" aria-hidden="true" />
                   <p className="text-ui font-semibold text-slate-900 mb-2">
                     The last {scan.source ? SOURCE_LABEL[scan.source].toLowerCase() : 'analysis'} didn&apos;t complete
                   </p>
-                  <p className="text-ui text-ink-muted mb-6">{scan.errorMessage || 'Something interrupted the scan before it finished.'}</p>
+                  <p className="text-ui text-ink-muted">{scan.errorMessage || 'Something interrupted the scan before it finished.'}</p>
                 </>
               ) : (
-                // Nothing active. The sub-text depends on what is known:
-                // - status unavailable, or a completed run with no approved sub-text: the headline only
-                // - a run with recorded per-check results: the banner's own sub-text
-                // - a run from before per-check results were recorded: no "none found" conclusion
+                // Nothing active and nothing still detected. The banner states the
+                // run's result once; this card doesn't repeat it (founder fix, PR 3b).
+                // A run from before per-check results were recorded keeps its LIVE caveat.
                 <>
-                  <Clock size={32} className="text-slate-400 mx-auto mb-3" />
-                  <p className={cn('text-ui font-semibold text-slate-900', scan.key === 'status_unavailable' || scan.key === 'completed_other' ? 'mb-6' : 'mb-2')}>No active recommendations to review</p>
-                  {scan.key === 'status_unavailable' || scan.key === 'completed_other' ? null : runDerivedEmptyText ? (
-                    <p className="text-ui text-ink-muted mb-6">{runDerivedEmptyText}</p>
-                  ) : (
-                    <p className="text-ui text-ink-muted mb-6">
+                  <Clock size={28} className="text-slate-400 mb-3" aria-hidden="true" />
+                  <p className="text-ui font-semibold text-slate-900">No active recommendations to review</p>
+                  {scan.key === 'completed_unrecorded' && (
+                    <p className="text-ui text-ink-muted mt-2">
                       {totalEverCount > 0 ? 'Previously identified items have been resolved or dismissed. ' : ''}
                       This list does not confirm that nothing can be saved: DevControl does not yet record whether each check below completed with enough data.
                     </p>
                   )}
                 </>
               )}
-              <div className="flex flex-col items-center gap-1.5 mb-2">
-                {implementedRules.map((rule) => (
-                  <span key={rule.id} className="inline-flex items-center gap-1.5 text-label text-ink-muted font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" /> {rule.name}
-                  </span>
-                ))}
-              </div>
+              {/* A failed /hidden request: the LIVE headline only, no conclusion and no check list. */}
+              {hiddenView.status === 'error' ? null : checksNote}
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6 items-start">
@@ -593,6 +672,9 @@ export default function CostOptimizationPage() {
               </div>
             </div>
           )}
+
+          {/* ── REVIEW: every resolved and dismissed finding, collapsed (PR 3b). Absent while /hidden is loading or failed (C27 above). ── */}
+          {hiddenView.status === 'ready' && <ReviewList data={hiddenView.data} actions={hiddenActions} />}
         </>
       )}
     </div>

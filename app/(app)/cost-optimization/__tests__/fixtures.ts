@@ -55,6 +55,9 @@ export function run(overrides: Partial<CostAnalysisRun> = {}): CostAnalysisRun {
 /** Production today: 2 findings detected, both hidden by earlier decisions, nothing persisted. */
 export const PRODUCTION_HIDDEN = run({ detected_count: 2, suppressed_resolved_count: 1, suppressed_dismissed_count: 1 })
 
+/** Production now (pr3-p1-p6-results.txt): 2 detected, both hidden by a RESOLVED latest decision, 0 dismissed. */
+export const PRODUCTION_RESOLVED_ONLY = run({ detected_count: 2, suppressed_resolved_count: 2, suppressed_dismissed_count: 0, unknown_resource_count: 1 })
+
 /** A run row from before PR 1: no counts recorded. */
 export const LEGACY_RUN = run({
   run_state: undefined,

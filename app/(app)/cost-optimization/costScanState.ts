@@ -33,6 +33,9 @@ export interface CostScanCounts {
   persisted: number
   detected: number
   hidden: number
+  /** Split of `hidden` by the finding's latest decision (C2/C3). */
+  hiddenResolved: number
+  hiddenDismissed: number
   unknown: number
   checksTotal: number
   allChecksComplete: boolean
@@ -105,6 +108,8 @@ export function runCounts(run: CostAnalysisRun): CostScanCounts | null {
     persisted: run.persisted_count as number,
     detected: run.detected_count as number,
     hidden: (run.suppressed_resolved_count as number) + (run.suppressed_dismissed_count as number),
+    hiddenResolved: run.suppressed_resolved_count as number,
+    hiddenDismissed: run.suppressed_dismissed_count as number,
     unknown: run.unknown_resource_count as number,
     checksTotal: run.checks.length,
     allChecksComplete: run.checks.every((check) => check.outcome === 'complete'),

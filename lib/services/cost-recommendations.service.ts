@@ -46,6 +46,56 @@ export interface CostAnalysisCheck {
   unknown: number;
 }
 
+// GET /api/cost-recommendations/hidden (PR 3a): resolved and dismissed
+// findings, one item per finding, each judged by the backend's still-detected
+// rule. The page renders these fields as given and never derives them.
+export type HiddenDetectionState = 'still_detected' | 'not_confirmed';
+export type NotConfirmedReason = 'not_checked_since' | 'check_failed' | 'not_fully_checked' | 'analysis_incomplete';
+
+export interface HiddenFinding {
+  /** The latest decision row's id; reopen and dismiss act on it. */
+  id: string;
+  decision: 'RESOLVED' | 'DISMISSED';
+  decidedAt: string;
+  decidedBy: string | null;
+  decisionCount: number;
+  issue: string;
+  resourceId: string;
+  resourceName: string | null;
+  resourceType: string;
+  awsRegion: string | null;
+  detection: {
+    state: HiddenDetectionState;
+    reason: NotConfirmedReason | null;
+    lastDetectedAt: string | null;
+    potentialSavings: number | null;
+    savingsBasis: string | null;
+    severity: string | null;
+    description: string | null;
+  };
+}
+
+export interface HiddenFindings {
+  latestRun: { id: string; runState: string; completedAt: string | null } | null;
+  summary: {
+    resolved: number;
+    dismissed: number;
+    stillDetected: {
+      count: number;
+      estimatedMonthlySavings: number;
+      ceilingMonthlySavings: number;
+      ceilingByResourceType: Record<string, number>;
+    };
+    notConfirmed: number;
+  };
+  items: HiddenFinding[];
+}
+
+/** POST /api/cost-recommendations/:id/reopen */
+export type ReopenOutcome =
+  | { reopened: true; rowsEnded: number; activeNow: boolean }
+  | { reopened: false; reason: 'already_open' };
+
 // Mirrors backend/src/config/optimization-rules.ts -- the Optimization Rule
 // Registry. 'implemented' means a real analyzer runs for it today
 // (cost-optimization.service.ts); 'planned' means it's registered for
@@ -357,6 +407,21 @@ export const costRecommendationsService = {
       workflow,
       message: response.data.message || 'Remediation executed.',
     };
+  },
+
+  // Resolved and dismissed findings (one per finding) and whether each is still detected.
+  getHidden: async (): Promise<HiddenFindings> => {
+    const response = await api.get<ApiResponse<HiddenFindings>>('/api/cost-recommendations/hidden');
+    return handleApiResponse(response);
+  },
+
+  // Reopen the finding a hidden decision row belongs to. Member or above.
+  reopen: async (id: string): Promise<ReopenOutcome> => {
+    const response = await api.post<ApiResponse<any>>(`/api/cost-recommendations/${id}/reopen`);
+    const r = handleApiResponse(response);
+    if (r?.reopened === true) return { reopened: true, rowsEnded: Number(r.rowsEnded) || 0, activeNow: r.activeNow === true };
+    if (r?.reopened === false && r.reason === 'already_open') return { reopened: false, reason: 'already_open' };
+    throw new Error('Unexpected reopen response');
   },
 
   // Mark recommendation as dismissed
