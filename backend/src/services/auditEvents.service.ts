@@ -29,14 +29,19 @@ export type AuditEventAction =
   | 'sso_configuration.deleted'
   | 'api_key.created'
   | 'api_key.revoked'
-  | 'aws_account.connected';
+  | 'aws_account.connected'
+  | 'cost_recommendation.resolved'
+  | 'cost_recommendation.dismissed'
+  | 'cost_recommendation.reopened'
+  | 'cost_recommendation.deleted';
 
 export type AuditEventResourceType =
   | 'organization_invitation'
   | 'organization_membership'
   | 'sso_configuration'
   | 'api_key'
-  | 'aws_account';
+  | 'aws_account'
+  | 'cost_recommendation';
 
 /** Where an event came from, when it came from an HTTP request. */
 export interface AuditRequestContext {
@@ -65,6 +70,34 @@ export function auditRequestContext(req: Request): AuditRequestContext {
     ipAddress: req.ip ?? null,
     userAgent: req.get('user-agent') ?? null,
   };
+}
+
+/**
+ * Inserts `event` on `client`, inside the caller's transaction: the event and
+ * the action it records commit or roll back together, and a failure here
+ * fails the action. For decisions that must never go unattributed (cost
+ * recommendation resolve, dismiss, reopen and delete; founder decision 3a).
+ * `client` must already carry app.current_organization_id for
+ * event.organizationId (audit_logs' RLS insert policy).
+ */
+export async function insertAuditEventInTransaction(client: Pick<PoolClient, 'query'>, event: AuditEvent): Promise<void> {
+  await client.query(
+    `INSERT INTO audit_logs
+       (organization_id, user_id, action, resource_type, resource_id,
+        ip_address, user_agent, changes, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      event.organizationId,
+      event.actorId,
+      event.action,
+      event.resourceType,
+      event.resourceId ?? null,
+      event.request?.ipAddress ?? null,
+      event.request?.userAgent ?? null,
+      event.changes ? JSON.stringify(event.changes) : null,
+      JSON.stringify(event.metadata ?? {}),
+    ]
+  );
 }
 
 export function createAuditEventWriter(source: Pick<Pool, 'connect'>) {

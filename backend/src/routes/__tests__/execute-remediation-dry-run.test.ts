@@ -242,6 +242,17 @@ describe('kill-switch on: execution still stops the instance and resolves the re
     expect(workflows).toHaveLength(1);
     expect(workflows[0].status).toBe('completed');
     expect(workflows[0].executed_at).not.toBeNull();
+
+    // The resolve is recorded with the caller and the path it came from (PR 3a).
+    const { rows: events } = await pool.query(
+      `SELECT user_id, action, metadata FROM audit_logs WHERE organization_id = $1 AND resource_id = $2`,
+      [org.orgId, recommendation.id]
+    );
+    expect(events).toEqual([{
+      user_id: org.owner,
+      action: 'cost_recommendation.resolved',
+      metadata: { issue: 'Idle Instance', resource_type: 'EC2', source: 'execute_remediation' },
+    }]);
   });
 });
 

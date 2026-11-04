@@ -11,6 +11,9 @@ import { DetectorObservation } from '../services/cost-optimization.service';
 import { HeldLease, beginFenced } from '../services/scan-lease';
 import { aggregateEstimatedSavings } from '../services/estimated-savings';
 import { EMPTY_RECONCILE_COUNTS, ReconcileCounts } from '../services/cost-analysis-outcome';
+import { AuditEventAction, AuditRequestContext, insertAuditEventInTransaction } from '../services/auditEvents.service';
+import { DetectionState, NotConfirmedReason, judgeFreshness } from '../services/cost-finding-freshness';
+import { LatestLeasedRun, latestLeasedRun } from './cost-analysis-runs.repository';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
@@ -140,6 +143,177 @@ async function latestOpenDecisions(
   );
   return new Map(rows.map((row) => [row.resource_id, row.status]));
 }
+
+/**
+ * Issues outside the occurrence lifecycle, so never hidden by a decision:
+ * Reserved Instance Opportunities are delete-and-recreate (a RESOLVED row
+ * suppresses nothing), and the retired oversized-RDS category ends every open
+ * occurrence on every scan.
+ */
+const NEVER_HIDDEN_ISSUES: readonly string[] = [ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, ISSUE_RDS_OVERSIZED_INSTANCE];
+
+/**
+ * Who made a decision on a recommendation, recorded with it (founder decision
+ * 3a: the audit row is written in the same transaction as the change).
+ */
+export interface CostDecisionActor {
+  userId: string;
+  request: AuditRequestContext | null;
+  source: 'button' | 'execute_remediation';
+}
+
+/**
+ * Serializes with reconciliation for this organization until the transaction
+ * ends: the same key as reconcileActiveRecommendations()'s session lock, and a
+ * transaction lock and a session lock on one key conflict. Call it first in the
+ * transaction, so the decision's NOW() and its place in the order agree.
+ */
+async function lockReconciliation(client: PoolClient, organizationId: string): Promise<void> {
+  await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, ${RECONCILIATION_LOCK_SALT}))`, [organizationId]);
+}
+
+/** One finding this reconciliation observed while a decision hides it. */
+type HiddenObservation =
+  | { outcome: 'detected'; rec: CreateRecommendationRequest }
+  | { outcome: 'unknown'; resourceId: string; issue: string };
+
+/**
+ * Records each hidden finding's observation in this reconciliation
+ * (cost_finding_detections, one row per finding). Behind a savepoint: if the
+ * write fails, the reconciliation goes on and those findings simply read "not
+ * confirmed". A detection write never fails a scan.
+ */
+async function recordHiddenObservations(
+  client: PoolClient,
+  organizationId: string,
+  runId: string | null,
+  observed: HiddenObservation[]
+): Promise<void> {
+  if (observed.length === 0) return;
+  await client.query('SAVEPOINT cost_finding_detections');
+  try {
+    for (const entry of observed) {
+      if (entry.outcome === 'detected') {
+        const rec = entry.rec;
+        await client.query(
+          `INSERT INTO cost_finding_detections (
+             organization_id, resource_id, issue, run_id, outcome, observed_at, detected_at,
+             resource_name, resource_type, aws_region, description, potential_savings, severity, metadata
+           )
+           VALUES ($1, $2, $3, $4, 'detected', NOW(), NOW(), $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (organization_id, resource_id, issue) DO UPDATE
+             SET run_id = EXCLUDED.run_id, outcome = 'detected', observed_at = EXCLUDED.observed_at,
+                 detected_at = EXCLUDED.detected_at, resource_name = EXCLUDED.resource_name,
+                 resource_type = EXCLUDED.resource_type, aws_region = EXCLUDED.aws_region,
+                 description = EXCLUDED.description, potential_savings = EXCLUDED.potential_savings,
+                 severity = EXCLUDED.severity, metadata = EXCLUDED.metadata
+             WHERE cost_finding_detections.organization_id = $1`,
+          [
+            organizationId, rec.resource_id, rec.issue, runId,
+            rec.resource_name, rec.resource_type, rec.aws_region, rec.description,
+            rec.potential_savings, rec.severity, JSON.stringify(rec.metadata || {}),
+          ]
+        );
+      } else {
+        // The last detection's evidence stays as it was.
+        await client.query(
+          `INSERT INTO cost_finding_detections (organization_id, resource_id, issue, run_id, outcome, observed_at)
+           VALUES ($1, $2, $3, $4, 'unknown', NOW())
+           ON CONFLICT (organization_id, resource_id, issue) DO UPDATE
+             SET run_id = EXCLUDED.run_id, outcome = 'unknown', observed_at = EXCLUDED.observed_at
+             WHERE cost_finding_detections.organization_id = $1`,
+          [organizationId, entry.resourceId, entry.issue, runId]
+        );
+      }
+    }
+    await client.query('RELEASE SAVEPOINT cost_finding_detections');
+  } catch (error) {
+    await client.query('ROLLBACK TO SAVEPOINT cost_finding_detections');
+    console.error('[CostRecommendations] Could not record hidden findings\' detections (non-fatal; they read not confirmed):', (error as Error).message);
+  }
+}
+
+interface DetectionRow {
+  resource_id: string;
+  issue: string;
+  run_id: string | null;
+  outcome: 'detected' | 'unknown';
+  observed_at: Date;
+  detected_at: Date | null;
+  resource_name: string | null;
+  resource_type: string | null;
+  aws_region: string | null;
+  description: string | null;
+  potential_savings: string | null;
+  severity: string | null;
+  metadata: Record<string, any> | null;
+}
+
+const DETECTION_COLUMNS = `resource_id, issue, run_id, outcome, observed_at, detected_at,
+       resource_name, resource_type, aws_region, description, potential_savings, severity, metadata`;
+
+/** One hidden finding, however many open decision rows it has. */
+export interface HiddenFinding {
+  /** The latest decision row's id; any row of the finding can be reopened. */
+  id: string;
+  decision: 'RESOLVED' | 'DISMISSED';
+  decidedAt: string;
+  /** Full name of who made the latest decision, from its audit event; null when not recorded. */
+  decidedBy: string | null;
+  decisionCount: number;
+  issue: string;
+  resourceId: string;
+  resourceName: string | null;
+  resourceType: string;
+  awsRegion: string | null;
+  detection: {
+    state: DetectionState;
+    reason: NotConfirmedReason | null;
+    lastDetectedAt: string | null;
+    potentialSavings: number | null;
+    savingsBasis: string | null;
+    severity: string | null;
+    description: string | null;
+  };
+}
+
+export interface HiddenFindingsSummary {
+  resolved: number;
+  dismissed: number;
+  /** Resolved findings that are still detected: not in ACTIVE totals until reopened. */
+  stillDetected: {
+    count: number;
+    estimatedMonthlySavings: number;
+    ceilingMonthlySavings: number;
+    ceilingByResourceType: Record<string, number>;
+  };
+  /** Resolved findings the latest analysis could not confirm. */
+  notConfirmed: number;
+}
+
+export interface HiddenFindings {
+  latestRun: { id: string; runState: string; completedAt: string | null } | null;
+  summary: HiddenFindingsSummary;
+  items: HiddenFinding[];
+}
+
+export type ReopenResult =
+  | { outcome: 'not_found' }
+  | { outcome: 'not_applicable' }
+  | { outcome: 'already_open' }
+  | { outcome: 'reopened'; rowsEnded: number; activeNow: boolean; recommendation: CostRecommendation | null };
+
+const toIso = (value: Date | string | null): string | null =>
+  value === null ? null : value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+
+const toNumber = (value: string | number | null): number | null => {
+  if (value === null) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+};
+
+const freshnessRun = (run: LatestLeasedRun | null) =>
+  run ? { id: run.id, run_state: run.run_state, checks: run.checks } : null;
 
 export class CostRecommendationsRepository {
   /**
@@ -345,12 +519,19 @@ export class CostRecommendationsRepository {
    * `counts` says how every finding of a successful category ended. A finding
    * blocked by open RESOLVED/DISMISSED rows counts once, however many rows block
    * it, under the newest of those decisions.
+   *
+   * `runId` (PR 3a): the cost_analysis_runs row of this analysis, null when it
+   * has none. Every finding a decision still hides that a successful detector
+   * detected, or listed but could not evaluate, has that observation recorded
+   * under `runId` in cost_finding_detections, in this transaction. "Still
+   * detected" is judged from it when read (cost-finding-freshness.ts).
    */
   async reconcileActiveRecommendations(
     organizationId: string,
     observations: DetectorObservation[],
     scope: CostReconcileScope | undefined,
-    lease: HeldLease
+    lease: HeldLease,
+    runId: string | null = null
   ): Promise<{ insertedCount: number; counts?: ReconcileCounts }> {
     const successful = observations.filter((o) => o.success);
     if (successful.length === 0) {
@@ -369,6 +550,7 @@ export class CostRecommendationsRepository {
 
         let insertedCount = 0;
         const counts: ReconcileCounts = { ...EMPTY_RECONCILE_COUNTS };
+        const hiddenObserved: HiddenObservation[] = [];
 
         for (const observation of successful) {
           const presentResourceIds = observation.recommendations.map((r) => r.resource_id);
@@ -394,6 +576,11 @@ export class CostRecommendationsRepository {
           );
 
           const openDecisions = await latestOpenDecisions(client, organizationId, observation.issue);
+          // Each hidden resource this detector listed but could not evaluate: its own
+          // outcome this run is unknown (another resource's result never decides it).
+          for (const resourceId of new Set(unknownResourceIds)) {
+            if (openDecisions.has(resourceId)) hiddenObserved.push({ outcome: 'unknown', resourceId, issue: observation.issue });
+          }
 
           await client.query(
             `DELETE FROM cost_recommendations
@@ -446,13 +633,17 @@ export class CostRecommendationsRepository {
               else counts.new += 1;
             } else if (decision === 'RESOLVED') {
               counts.suppressedResolved += 1;
+              hiddenObserved.push({ outcome: 'detected', rec });
             } else if (decision === 'DISMISSED') {
               counts.suppressedDismissed += 1;
+              hiddenObserved.push({ outcome: 'detected', rec });
             } else {
               counts.duplicate += 1;
             }
           }
         }
+
+        await recordHiddenObservations(client, organizationId, runId, hiddenObserved);
 
         await client.query('COMMIT');
         return { insertedCount, counts };
@@ -469,38 +660,347 @@ export class CostRecommendationsRepository {
   }
 
   /**
-   * Update recommendation status
+   * Records a Resolve or Dismiss decision, with its actor. One transaction,
+   * serialized with reconciliation (lockReconciliation): the status change and
+   * its audit event (cost_recommendation.resolved / .dismissed) commit
+   * together, and an audit failure fails the decision (founder decision 3a).
+   * Null, with nothing written, when the row isn't this organization's.
    */
   async updateStatus(
     id: string,
-    status: RecommendationStatus,
-    organizationId: string
+    status: 'RESOLVED' | 'DISMISSED',
+    organizationId: string,
+    actor: CostDecisionActor
   ): Promise<CostRecommendation | null> {
     return this.withOrgClient(organizationId, async (client) => {
-      const query = `
-        UPDATE cost_recommendations
-        SET status = $1::VARCHAR,
-            updated_at = NOW(),
-            resolved_at = CASE WHEN $1::VARCHAR = 'RESOLVED' THEN NOW() ELSE resolved_at END
-        WHERE id = $2::UUID AND organization_id = $3
-        RETURNING *
-      `;
+      try {
+        await client.query('BEGIN');
+        await lockReconciliation(client, organizationId);
+        const before = await client.query<{ status: RecommendationStatus; issue: string; resource_type: string }>(
+          `SELECT status, issue, resource_type FROM cost_recommendations
+           WHERE id = $1::UUID AND organization_id = $2 FOR UPDATE`,
+          [id, organizationId]
+        );
+        if (before.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return null;
+        }
 
-      const result = await client.query(query, [status, id, organizationId]);
-      return result.rows[0] || null;
+        const query = `
+          UPDATE cost_recommendations
+          SET status = $1::VARCHAR,
+              updated_at = NOW(),
+              resolved_at = CASE WHEN $1::VARCHAR = 'RESOLVED' THEN NOW() ELSE resolved_at END
+          WHERE id = $2::UUID AND organization_id = $3
+          RETURNING *
+        `;
+        const result = await client.query(query, [status, id, organizationId]);
+        const updated: CostRecommendation = result.rows[0];
+
+        await insertAuditEventInTransaction(client, {
+          organizationId,
+          actorId: actor.userId,
+          action: status === 'RESOLVED' ? 'cost_recommendation.resolved' : 'cost_recommendation.dismissed',
+          resourceType: 'cost_recommendation',
+          resourceId: id,
+          changes: { from: before.rows[0].status, to: status },
+          metadata: { issue: before.rows[0].issue, resource_type: before.rows[0].resource_type, source: actor.source },
+          request: actor.request,
+        });
+
+        await client.query('COMMIT');
+        return updated;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
     });
   }
 
   /**
-   * Delete recommendation
+   * Deletes a recommendation, with its actor: the delete and its audit event
+   * (cost_recommendation.deleted) commit together, serialized with
+   * reconciliation. Deleting a decision row can stop it hiding a finding, so the
+   * event records the row's status and whether its occurrence was open.
    */
-  async delete(id: string, organizationId: string): Promise<boolean> {
+  async delete(id: string, organizationId: string, actor: CostDecisionActor): Promise<boolean> {
     return this.withOrgClient(organizationId, async (client) => {
-      const result = await client.query(
-        'DELETE FROM cost_recommendations WHERE id = $1 AND organization_id = $2',
-        [id, organizationId]
+      try {
+        await client.query('BEGIN');
+        await lockReconciliation(client, organizationId);
+        const before = await client.query<{
+          status: RecommendationStatus; issue: string; resource_type: string; occurrence_ended_at: Date | null;
+        }>(
+          `SELECT status, issue, resource_type, occurrence_ended_at FROM cost_recommendations
+           WHERE id = $1 AND organization_id = $2 FOR UPDATE`,
+          [id, organizationId]
+        );
+        if (before.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return false;
+        }
+
+        await client.query('DELETE FROM cost_recommendations WHERE id = $1 AND organization_id = $2', [id, organizationId]);
+
+        const row = before.rows[0];
+        await insertAuditEventInTransaction(client, {
+          organizationId,
+          actorId: actor.userId,
+          action: 'cost_recommendation.deleted',
+          resourceType: 'cost_recommendation',
+          resourceId: id,
+          changes: { from: row.status, to: 'deleted' },
+          metadata: {
+            issue: row.issue,
+            resource_type: row.resource_type,
+            source: actor.source,
+            occurrence_open: row.status !== 'ACTIVE' && row.occurrence_ended_at === null,
+          },
+          request: actor.request,
+        });
+
+        await client.query('COMMIT');
+        return true;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Every finding a Resolved or Dismissed decision hides (an open occurrence),
+   * one item per (resource, issue) however many rows it has, under its latest
+   * decision (newest updated_at, then id: the same order reconciliation counts
+   * by). Each carries whether it is still detected, judged from its own latest
+   * observation against the latest leased run (cost-finding-freshness.ts).
+   * Read-only.
+   */
+  async getHiddenFindings(organizationId: string): Promise<HiddenFindings> {
+    return this.withOrgClient(organizationId, async (client) => {
+      const decisions = await client.query<{
+        id: string; resource_id: string; issue: string; status: 'RESOLVED' | 'DISMISSED'; updated_at: Date;
+        resource_type: string; resource_name: string | null; aws_region: string | null; decision_count: string;
+      }>(
+        `SELECT DISTINCT ON (cr.resource_id, cr.issue)
+                cr.id, cr.resource_id, cr.issue, cr.status, cr.updated_at,
+                cr.resource_type, cr.resource_name, cr.aws_region,
+                COUNT(*) OVER (PARTITION BY cr.resource_id, cr.issue) AS decision_count
+         FROM cost_recommendations cr
+         WHERE cr.organization_id = $1
+           AND cr.status IN ('RESOLVED', 'DISMISSED') AND cr.occurrence_ended_at IS NULL
+           AND cr.issue <> ALL($2::varchar[])
+         ORDER BY cr.resource_id, cr.issue, cr.updated_at DESC, cr.id DESC`,
+        [organizationId, NEVER_HIDDEN_ISSUES]
       );
-      return result.rowCount ? result.rowCount > 0 : false;
+
+      const detections = await client.query<DetectionRow>(
+        `SELECT ${DETECTION_COLUMNS} FROM cost_finding_detections WHERE organization_id = $1`,
+        [organizationId]
+      );
+      const detectionOf = new Map(detections.rows.map((row) => [`${row.resource_id}\u0000${row.issue}`, row]));
+
+      const latestRun = await latestLeasedRun(client, organizationId);
+
+      const decisionIds = decisions.rows.map((row) => row.id);
+      const actors = decisionIds.length === 0 ? { rows: [] as { resource_id: string; full_name: string | null }[] } : await client.query<{ resource_id: string; full_name: string | null }>(
+        `SELECT DISTINCT ON (al.resource_id) al.resource_id, u.full_name
+         FROM audit_logs al
+         LEFT JOIN users u ON u.id = al.user_id
+         WHERE al.organization_id = $1 AND al.resource_type = 'cost_recommendation'
+           AND al.action = ANY($2::varchar[]) AND al.resource_id = ANY($3::uuid[])
+         ORDER BY al.resource_id, al.created_at DESC`,
+        [organizationId, ['cost_recommendation.resolved', 'cost_recommendation.dismissed'] satisfies AuditEventAction[], decisionIds]
+      );
+      const actorOf = new Map(actors.rows.map((row) => [row.resource_id, row.full_name]));
+
+      const items: HiddenFinding[] = decisions.rows.map((row) => {
+        const detection = detectionOf.get(`${row.resource_id}\u0000${row.issue}`) ?? null;
+        const freshness = judgeFreshness({
+          issue: row.issue,
+          decidedAt: row.updated_at,
+          observation: detection,
+          latestRun: freshnessRun(latestRun),
+        });
+        const detected = detection?.detected_at ? detection : null;
+        return {
+          id: row.id,
+          decision: row.status,
+          decidedAt: toIso(row.updated_at)!,
+          decidedBy: actorOf.get(row.id) ?? null,
+          decisionCount: parseInt(row.decision_count, 10),
+          issue: row.issue,
+          resourceId: row.resource_id,
+          resourceName: row.resource_name,
+          resourceType: row.resource_type,
+          awsRegion: row.aws_region,
+          detection: {
+            state: freshness.state,
+            reason: freshness.reason,
+            lastDetectedAt: detected ? toIso(detected.detected_at) : null,
+            potentialSavings: detected ? toNumber(detected.potential_savings) : null,
+            savingsBasis: detected?.metadata?.savings_basis ?? null,
+            severity: detected?.severity ?? null,
+            description: detected?.description ?? null,
+          },
+        };
+      });
+
+      const resolved = items.filter((item) => item.decision === 'RESOLVED');
+      const stillDetected = resolved.filter((item) => item.detection.state === 'still_detected');
+      // The same aggregation as getStats(), so estimates and ceilings follow one rule.
+      const savings = aggregateEstimatedSavings(
+        stillDetected.map((item) => {
+          const detection = detectionOf.get(`${item.resourceId}\u0000${item.issue}`)!;
+          return { resource_type: item.resourceType, potential_savings: detection.potential_savings, metadata: detection.metadata ?? {} };
+        })
+      );
+
+      return {
+        latestRun: latestRun ? { id: latestRun.id, runState: latestRun.run_state, completedAt: toIso(latestRun.completed_at) } : null,
+        summary: {
+          resolved: resolved.length,
+          dismissed: items.length - resolved.length,
+          stillDetected: {
+            count: stillDetected.length,
+            estimatedMonthlySavings: savings.total,
+            ceilingMonthlySavings: savings.ceilingTotal,
+            ceilingByResourceType: savings.ceilingByResourceType,
+          },
+          notConfirmed: resolved.length - stillDetected.length,
+        },
+        items,
+      };
+    });
+  }
+
+  /**
+   * Reopens the finding `id` belongs to: ends every open Resolved/Dismissed
+   * occurrence of its (resource, issue), and when the finding is still detected
+   * puts one ACTIVE row back from its latest detection. Otherwise no row now: the
+   * next analysis that detects it inserts it, because nothing hides it any more.
+   *
+   * One transaction, serialized with reconciliation (lockReconciliation), the
+   * audit event (cost_recommendation.reopened) inside it. Exactly once: the
+   * occurrence UPDATE only matches open rows, so a second reopen ends nothing,
+   * inserts nothing and records nothing; the partial unique index allows one
+   * ACTIVE row per finding.
+   */
+  async reopen(id: string, organizationId: string, actor: CostDecisionActor): Promise<ReopenResult> {
+    return this.withOrgClient(organizationId, async (client) => {
+      try {
+        await client.query('BEGIN');
+        await lockReconciliation(client, organizationId);
+
+        const target = await client.query<{ resource_id: string; issue: string; resource_type: string }>(
+          `SELECT resource_id, issue, resource_type FROM cost_recommendations
+           WHERE id = $1::UUID AND organization_id = $2`,
+          [id, organizationId]
+        );
+        if (target.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return { outcome: 'not_found' };
+        }
+        const { resource_id: resourceId, issue } = target.rows[0];
+        if (NEVER_HIDDEN_ISSUES.includes(issue)) {
+          await client.query('ROLLBACK');
+          return { outcome: 'not_applicable' };
+        }
+
+        const latestDecision = await client.query<{
+          id: string; status: 'RESOLVED' | 'DISMISSED'; updated_at: Date; resource_type: string;
+          resource_name: string | null; aws_region: string | null; decision_count: string;
+        }>(
+          `SELECT id, status, updated_at, resource_type, resource_name, aws_region, COUNT(*) OVER () AS decision_count
+           FROM cost_recommendations
+           WHERE organization_id = $1 AND resource_id = $2 AND issue = $3
+             AND status IN ('RESOLVED', 'DISMISSED') AND occurrence_ended_at IS NULL
+           ORDER BY updated_at DESC, id DESC
+           LIMIT 1`,
+          [organizationId, resourceId, issue]
+        );
+        if (latestDecision.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return { outcome: 'already_open' };
+        }
+        const decision = latestDecision.rows[0];
+
+        const detectionResult = await client.query<DetectionRow>(
+          `SELECT ${DETECTION_COLUMNS} FROM cost_finding_detections
+           WHERE organization_id = $1 AND resource_id = $2 AND issue = $3`,
+          [organizationId, resourceId, issue]
+        );
+        const detection = detectionResult.rows[0] ?? null;
+        const freshness = judgeFreshness({
+          issue,
+          decidedAt: decision.updated_at,
+          observation: detection,
+          latestRun: freshnessRun(await latestLeasedRun(client, organizationId)),
+        });
+
+        const ended = await client.query(
+          `UPDATE cost_recommendations
+           SET occurrence_ended_at = NOW()
+           WHERE organization_id = $1 AND resource_id = $2 AND issue = $3
+             AND status IN ('RESOLVED', 'DISMISSED') AND occurrence_ended_at IS NULL
+           RETURNING id`,
+          [organizationId, resourceId, issue]
+        );
+        const rowsEnded = ended.rowCount ?? 0;
+
+        let recommendation: CostRecommendation | null = null;
+        if (freshness.state === 'still_detected' && detection && detection.potential_savings !== null && detection.severity !== null) {
+          const inserted = await client.query<CostRecommendation>(
+            `INSERT INTO cost_recommendations (
+               organization_id, resource_id, resource_name, resource_type, issue, description,
+               potential_savings, severity, aws_region, metadata, status
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')
+             ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING
+             RETURNING *`,
+            [
+              organizationId, resourceId, detection.resource_name ?? decision.resource_name,
+              detection.resource_type ?? decision.resource_type, issue, detection.description,
+              detection.potential_savings, detection.severity, detection.aws_region ?? decision.aws_region,
+              JSON.stringify(detection.metadata ?? {}),
+            ]
+          );
+          recommendation = inserted.rows[0] ?? null;
+          if (!recommendation) {
+            // An ACTIVE row already exists for this finding (the unique index allows one): it is that row.
+            const existing = await client.query<CostRecommendation>(
+              `SELECT * FROM cost_recommendations
+               WHERE organization_id = $1 AND resource_id = $2 AND issue = $3 AND status = 'ACTIVE'`,
+              [organizationId, resourceId, issue]
+            );
+            recommendation = existing.rows[0] ?? null;
+          }
+        }
+
+        await insertAuditEventInTransaction(client, {
+          organizationId,
+          actorId: actor.userId,
+          action: 'cost_recommendation.reopened',
+          resourceType: 'cost_recommendation',
+          resourceId: id,
+          changes: { from: decision.status, to: recommendation ? 'ACTIVE' : 'reopened_pending' },
+          metadata: {
+            issue,
+            resource_type: decision.resource_type,
+            source: actor.source,
+            rows_ended: rowsEnded,
+            decision_count: parseInt(decision.decision_count, 10),
+            detection_state: freshness.state,
+          },
+          request: actor.request,
+        });
+
+        await client.query('COMMIT');
+        return { outcome: 'reopened', rowsEnded, activeNow: recommendation !== null, recommendation };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
     });
   }
 

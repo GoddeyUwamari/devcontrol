@@ -4,7 +4,7 @@
  *
  * Policy under test (viewer refused with 403, everyone else answered exactly
  * as before):
- *   - PATCH /api/cost-recommendations/:id/resolve, /:id/dismiss
+ *   - PATCH /api/cost-recommendations/:id/resolve, /:id/dismiss; POST /:id/reopen
  *   - PATCH /api/alerts/:id/acknowledge, /:id/resolve
  *   - PATCH /api/anomalies/:id/acknowledge, /:id/resolve, /:id/false-positive
  *   - POST  /api/security/account-findings/:id/acknowledge, /:id/dismiss
@@ -96,6 +96,9 @@ beforeEach(() => {
   const row = { id: ID };
   spies = {
     recommendationStatus: jest.spyOn(CostRecommendationsRepository.prototype, 'updateStatus').mockResolvedValue(row as never),
+    recommendationReopen: jest
+      .spyOn(CostRecommendationsRepository.prototype, 'reopen')
+      .mockResolvedValue({ outcome: 'reopened', rowsEnded: 1, activeNow: false, recommendation: null } as never),
     alertFind: jest.spyOn(AlertHistoryRepository.prototype, 'findById').mockResolvedValue({ id: ID, status: 'firing' } as never),
     alertAcknowledge: jest.spyOn(AlertHistoryRepository.prototype, 'acknowledge').mockResolvedValue(row as never),
     alertResolve: jest.spyOn(AlertHistoryRepository.prototype, 'resolve').mockResolvedValue(row as never),
@@ -174,6 +177,7 @@ interface Mutation {
 const mutations: Mutation[] = [
   { name: 'PATCH /api/cost-recommendations/:id/resolve', method: 'PATCH', route: (id) => `/cost-recommendations/${id}/resolve`, prepare: none, allowed: 200, happened: called('recommendationStatus') },
   { name: 'PATCH /api/cost-recommendations/:id/dismiss', method: 'PATCH', route: (id) => `/cost-recommendations/${id}/dismiss`, prepare: none, allowed: 200, happened: called('recommendationStatus') },
+  { name: 'POST /api/cost-recommendations/:id/reopen', method: 'POST', route: (id) => `/cost-recommendations/${id}/reopen`, prepare: none, allowed: 200, happened: called('recommendationReopen') },
 
   { name: 'PATCH /api/alerts/:id/acknowledge', method: 'PATCH', route: (id) => `/alerts/${id}/acknowledge`, body: {}, prepare: none, allowed: 200, happened: called('alertAcknowledge') },
   { name: 'PATCH /api/alerts/:id/resolve', method: 'PATCH', route: (id) => `/alerts/${id}/resolve`, prepare: none, allowed: 200, happened: called('alertResolve') },
@@ -258,7 +262,7 @@ describe('tenant scope is unchanged', () => {
     await sendAs(org.orgId, org.member, 'DELETE', `/compliance-frameworks/${ID}`);
     await sendAs(org.orgId, org.member, 'POST', '/dora/benchmarks', { metric_name: 'lead_time', target_value: 4 });
 
-    expect(spies.recommendationStatus).toHaveBeenCalledWith(ID, 'RESOLVED', org.orgId);
+    expect(spies.recommendationStatus).toHaveBeenCalledWith(ID, 'RESOLVED', org.orgId, expect.objectContaining({ userId: org.member, source: 'button' }));
     expect(spies.alertResolve).toHaveBeenCalledWith(ID, org.orgId);
     expect(spies.anomalyResolve).toHaveBeenCalledWith(ID, org.orgId, undefined);
     expect(spies.findingDisposition).toHaveBeenCalledWith(org.orgId, ID, 'acknowledged', org.member, null);

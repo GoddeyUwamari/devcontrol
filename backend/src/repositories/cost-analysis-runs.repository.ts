@@ -228,6 +228,46 @@ export class CostAnalysisRunsRepository {
   }
 }
 
+/** The fields of a run that judge whether a hidden finding is still detected. */
+export interface LatestLeasedRun {
+  id: string;
+  source: CostAnalysisRunSource;
+  completed_at: string | null;
+  checks: CostAnalysisCheck[] | null;
+  run_state: CostAnalysisRunStatus;
+}
+
+/**
+ * The organization's latest run that took the scan lease, any source: the anchor
+ * for "still detected" (cost-finding-freshness.ts). Ordered by when it took the
+ * lease, not when its row was created: only a lease holder reconciles, the lease
+ * serializes them, and a manual run's row is created before it waits for the lease.
+ * A run that never took the lease attempted nothing and is not an anchor.
+ * run_state reads as getLatest() does for a leased run: 'running' only while a
+ * lease is live. On the caller's org-tagged client, so a caller holding a
+ * transaction (reopen) judges within it. Nothing is written.
+ */
+export async function latestLeasedRun(client: PoolClient, organizationId: string): Promise<LatestLeasedRun | null> {
+  const result = await client.query<LatestLeasedRun>(
+    `SELECT r.id, r.source, r.completed_at, r.checks,
+            CASE
+              WHEN r.status <> 'running' THEN r.status
+              WHEN EXISTS (
+                SELECT 1 FROM aws_scan_leases l
+                WHERE l.organization_id = $1 AND l.scan_kind = $2
+                  AND l.released_at IS NULL AND l.expires_at > clock_timestamp()
+              ) THEN 'running'
+              ELSE 'interrupted'
+            END AS run_state
+     FROM cost_analysis_runs r
+     WHERE r.organization_id = $1 AND r.lease_acquired_at IS NOT NULL
+     ORDER BY r.lease_acquired_at DESC, r.created_at DESC
+     LIMIT 1`,
+    [organizationId, SCAN_KIND_DISCOVERY]
+  );
+  return result.rows[0] ?? null;
+}
+
 const DETAIL_COLUMNS = [
   'failed_detector_count',
   'unknown_resource_count',
