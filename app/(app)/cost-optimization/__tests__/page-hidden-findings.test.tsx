@@ -824,3 +824,124 @@ describe('mobile and accessibility', () => {
     expect(chip.className).toMatch(/break-all/)
   })
 })
+
+// ── PR 4 (founder decisions Nov 4): the EC2 default price, and C27's pending retry ──
+
+const S1 = "Estimate. This instance type's price is unknown, so a default of $50/mo is used."
+
+function activeRec(id: string, metadata: Record<string, unknown>) {
+  return {
+    id, resourceId: `i-placeholder${id}`, issue: 'Idle Instance', severity: 'LOW', status: 'ACTIVE', potentialSavings: 50,
+    metadata: { savings_basis: 'estimated: placeholder', ...metadata },
+  }
+}
+
+describe('PR 4: S1 on a default-price row and still-detected item only', () => {
+  it('a default-price ACTIVE row shows S1 under its estimate; a genuine $50 list price and a legacy row do not', async () => {
+    svc.getAll.mockResolvedValue([
+      activeRec('default', { price_source: 'default_unlisted_type' }),
+      activeRec('listed', { price_source: 'list_table' }),
+      activeRec('legacy', {}),
+    ])
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 3, totalPotentialSavings: 150, bySeverity: { high: 0, medium: 0, low: 3 } }))
+    svc.getHidden.mockResolvedValue(NOTHING_HIDDEN)
+    renderPage()
+    await waitFor(() => expect(screen.getByText(S1)).toBeInTheDocument())
+    expect(screen.getAllByText(S1)).toHaveLength(1)
+    // It sits on the default row, beside its "$50/mo" figure.
+    const row = screen.getByText('i-placeholderdefault').closest('.rounded-xl') as HTMLElement
+    expect(within(row).getByText(S1)).toBeInTheDocument()
+    expect(within(row).getByText('$50/mo')).toBeInTheDocument()
+    for (const id of ['listed', 'legacy']) {
+      const other = screen.getByText(`i-placeholder${id}`).closest('.rounded-xl') as HTMLElement
+      expect(within(other).getByText('$50/mo')).toBeInTheDocument()
+      expect(within(other).queryByText(S1)).not.toBeInTheDocument()
+    }
+  })
+
+  it('a still-detected item with the default price shows S1; one with a list price does not', async () => {
+    svc.getHidden.mockResolvedValue(hidden([
+      item({ detection: { potentialSavings: 50, priceSource: 'default_unlisted_type' } }),
+      item({ id: 'decision-listed', resourceId: 'i-placeholder0002', detection: { potentialSavings: 50, priceSource: 'list_table' } }),
+    ]))
+    renderPage()
+    await waitFor(() => expect(within(slot()).getByText(S1)).toBeInTheDocument())
+    const items = within(slot()).getAllByTestId('hidden-item')
+    expect(within(items[0]).getByText(S1)).toBeInTheDocument()
+    expect(within(items[1]).queryByText(S1)).not.toBeInTheDocument()
+  })
+
+  it('an item from before PR 4 (no priceSource) shows no S1', async () => {
+    svc.getHidden.mockResolvedValue(hidden([item({ detection: { potentialSavings: 50 } })]))
+    renderPage()
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+    expect(screen.queryByText(S1)).not.toBeInTheDocument()
+  })
+})
+
+describe('PR 4: C27 "Try again" shows a pending state while retrying (D8)', () => {
+  const retryButton = () => within(slot()).getByRole('button', { name: 'Try again' })
+
+  /** /hidden loaded once, then a refetch failed: C27 over cached data (React Query keeps status 'error' while it retries). */
+  async function c27OverCachedData() {
+    renderPage()
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+    svc.getHidden.mockRejectedValue(new Error('Request failed with status code 500'))
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['cost-recommendations-hidden'] }) })
+    await waitFor(() => expect(screen.getByText(C27)).toBeInTheDocument())
+    expect(retryButton()).not.toBeDisabled()
+    expect(retryButton()).not.toHaveAttribute('aria-busy')
+    expect(retryButton().querySelector('.animate-spin')).toBeNull()
+  }
+
+  it('pending: disabled, aria-busy, spinner, same label; repeat clicks send nothing; recovers on success', async () => {
+    await c27OverCachedData()
+    const pending = deferred<HiddenFindings>()
+    svc.getHidden.mockReturnValue(pending.promise)
+    const callsBefore = svc.getHidden.mock.calls.length
+    fireEvent.click(retryButton())
+
+    await waitFor(() => expect(retryButton()).toBeDisabled())
+    expect(retryButton()).toHaveAttribute('aria-busy', 'true')
+    expect(retryButton().querySelector('.animate-spin')).not.toBeNull()
+    expect(retryButton()).toHaveTextContent(/^Try again$/)
+    expect(screen.getAllByText(C27)).toHaveLength(1)
+    fireEvent.click(retryButton())
+    fireEvent.click(retryButton())
+    expect(svc.getHidden.mock.calls.length).toBe(callsBefore + 1)
+
+    await act(async () => { pending.resolve(PRODUCTION) })
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+    expect(screen.queryByText(C27)).not.toBeInTheDocument()
+  })
+
+  it('a failed retry returns the button to normal', async () => {
+    await c27OverCachedData()
+    const pending = deferred<HiddenFindings>()
+    svc.getHidden.mockReturnValue(pending.promise)
+    fireEvent.click(retryButton())
+    await waitFor(() => expect(retryButton()).toBeDisabled())
+
+    await act(async () => { pending.reject(new Error('Request failed with status code 500')) })
+    await waitFor(() => expect(retryButton()).not.toBeDisabled())
+    expect(retryButton()).not.toHaveAttribute('aria-busy')
+    expect(retryButton().querySelector('.animate-spin')).toBeNull()
+    expect(screen.getAllByText(C27)).toHaveLength(1)
+  })
+
+  it('with nothing cached, a retry already shows the busy section (no C27, no button) and sends one request', async () => {
+    svc.getHidden.mockRejectedValue(new Error('Request failed with status code 500'))
+    renderPage()
+    await waitFor(() => expect(screen.getByText(C27)).toBeInTheDocument())
+    const pending = deferred<HiddenFindings>()
+    svc.getHidden.mockReturnValue(pending.promise)
+    const callsBefore = svc.getHidden.mock.calls.length
+    fireEvent.click(retryButton())
+    await waitFor(() => expect(slot()).toHaveAttribute('aria-busy', 'true'))
+    expect(screen.getByTestId('hidden-loading')).toBeInTheDocument()
+    expect(screen.queryByText(C27)).not.toBeInTheDocument()
+    expect(svc.getHidden.mock.calls.length).toBe(callsBefore + 1)
+    await act(async () => { pending.resolve(PRODUCTION) })
+    await waitFor(() => expect(within(slot()).getByRole('heading', { name: 'Still detected' })).toBeInTheDocument())
+  })
+})

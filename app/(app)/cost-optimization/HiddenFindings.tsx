@@ -1,10 +1,10 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronUp, RotateCcw, XCircle } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, Loader2, RotateCcw, XCircle } from 'lucide-react';
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service';
 import { cn, formatSavingsCurrency } from '@/lib/utils';
-import { formatRecommendationSavings, savingsBasisKind } from '@/lib/savings-basis';
+import { DEFAULT_PRICE_DISCLOSURE, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TRY_AGAIN } from './costScanBanner';
@@ -68,12 +68,15 @@ function Chip({ children }: { children: string }) {
 
 function ItemSavings({ item }: { item: HiddenFinding }) {
   if (item.detection.potentialSavings === null) return null;
-  const rec = { potentialSavings: item.detection.potentialSavings, metadata: { savings_basis: item.detection.savingsBasis } };
+  const rec = { potentialSavings: item.detection.potentialSavings, metadata: { savings_basis: item.detection.savingsBasis, price_source: item.detection.priceSource ?? null } };
   return (
     <div className="sm:text-right">
       <p className="text-ui font-semibold tabular-nums text-slate-900 whitespace-nowrap">{formatRecommendationSavings(rec, formatSavingsCurrency)}</p>
       {savingsBasisKind(rec) === 'ceiling' && (
         <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
+      )}
+      {isDefaultPriceEstimate(rec) && (
+        <p className="text-label text-ink-muted font-medium sm:max-w-[16rem]" data-testid="default-price-disclosure">{DEFAULT_PRICE_DISCLOSURE}</p>
       )}
     </div>
   );
@@ -152,7 +155,13 @@ function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: 
  * region. While shown, its summary sits in a polite live region, so a change
  * from loading to a result, or a count change after a reopen, is announced.
  */
-export function StillDetectedSlot({ view, actions, onRetry }: { view: HiddenView; actions: ItemActions; onRetry: () => void }) {
+export function StillDetectedSlot({ view, actions, onRetry, retrying = false }: {
+  view: HiddenView;
+  actions: ItemActions;
+  onRetry: () => void;
+  /** A retry of /hidden is in flight: C27's button is disabled and busy, and further clicks do nothing. */
+  retrying?: boolean;
+}) {
   const headingId = useId();
   const items = view.status === 'ready' ? stillDetectedItems(view.data) : [];
   const summary = view.status === 'ready' ? view.data.summary : null;
@@ -177,7 +186,18 @@ export function StillDetectedSlot({ view, actions, onRetry }: { view: HiddenView
           <div className="flex flex-wrap items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3.5" data-testid="hidden-load-failed">
             <AlertTriangle size={16} className="text-amber-700 shrink-0" aria-hidden="true" />
             <p className="text-ui text-slate-900 flex-1 min-w-0">{HIDDEN_LOAD_FAILED}</p>
-            <Button type="button" variant="outline" size="sm" onClick={onRetry}>{TRY_AGAIN}</Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={retrying}
+              aria-busy={retrying || undefined}
+              onClick={() => { if (!retrying) onRetry(); }}
+              data-testid="hidden-retry"
+            >
+              {retrying && <Loader2 size={14} className="mr-1.5 animate-spin" aria-hidden="true" />}
+              {TRY_AGAIN}
+            </Button>
           </div>
         ) : showGroup ? (
           <div className="bg-white border border-slate-200 rounded-t-xl px-4 pt-4 pb-3 sm:px-5">

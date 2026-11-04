@@ -24,7 +24,7 @@ import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/
 import { formatSavingsCurrency } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
-import { formatRecommendationSavings, rankBySavings } from '@/lib/savings-basis'
+import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings } from '@/lib/savings-basis'
 import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
@@ -269,7 +269,7 @@ export default function CostsPage() {
     ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savingsLabel: `${formatSavingsCurrency(d.savings)}/mo`, severity: d.severity }))
     : rankBySavings(activeRecs)
         .slice(0, 3)
-        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savingsLabel: formatRecommendationSavings(r, formatSavingsCurrency), severity: r.severity }))
+        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savingsLabel: `${formatRecommendationSavings(r, formatSavingsCurrency)}${isDefaultPriceEstimate(r) ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}`, severity: r.severity }))
 
   // Real per-service savings for the Cost by Service list, from the same activeRecs
   // (source C) already fetched above — no fabricated per-category dollar figure.

@@ -1,6 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { describeCeilings, formatRecommendationSavings, NO_DOLLAR_ESTIMATE, rankBySavings, savingsBasisKind } from '../savings-basis'
+import {
+  DEFAULT_PRICE_DISCLOSURE,
+  DEFAULT_PRICE_SOURCE,
+  DEFAULT_PRICE_SUFFIX,
+  describeCeilings,
+  formatRecommendationSavings,
+  isDefaultPriceEstimate,
+  NO_DOLLAR_ESTIMATE,
+  rankBySavings,
+  savingsBasisKind,
+} from '../savings-basis'
 import { formatSavingsCents, formatSavingsCurrency } from '../utils'
+
+describe('isDefaultPriceEstimate (PR 4)', () => {
+  it('true only for the explicit default price_source -- never inferred from the amount', () => {
+    expect(DEFAULT_PRICE_SOURCE).toBe('default_unlisted_type')
+    expect(isDefaultPriceEstimate({ metadata: { price_source: DEFAULT_PRICE_SOURCE } })).toBe(true)
+    // A genuine $50 list price, a legacy row with no price_source, and other values are not the default.
+    expect(isDefaultPriceEstimate({ metadata: { price_source: 'list_table', savings_basis: 'estimated: x' } })).toBe(false)
+    expect(isDefaultPriceEstimate({ metadata: { savings_basis: 'estimated: x' } })).toBe(false)
+    expect(isDefaultPriceEstimate({ metadata: { price_source: 'DEFAULT_UNLISTED_TYPE' } })).toBe(false)
+    expect(isDefaultPriceEstimate({ metadata: null })).toBe(false)
+    expect(isDefaultPriceEstimate({})).toBe(false)
+  })
+
+  it('a default-price figure is still an estimate and formats as one', () => {
+    const fallback = { potentialSavings: 50, metadata: { savings_basis: 'estimated: x', price_source: DEFAULT_PRICE_SOURCE } }
+    expect(savingsBasisKind(fallback)).toBe('estimate')
+    expect(formatRecommendationSavings(fallback, formatSavingsCurrency)).toBe('$50/mo')
+  })
+
+  it('approved copy (S1, S2)', () => {
+    expect(DEFAULT_PRICE_DISCLOSURE).toBe("Estimate. This instance type's price is unknown, so a default of $50/mo is used.")
+    expect(DEFAULT_PRICE_SUFFIX).toBe('(price unknown)')
+  })
+})
 
 const rec = (potentialSavings: number, savings_basis?: unknown) => ({ potentialSavings, metadata: savings_basis === undefined ? {} : { savings_basis } })
 

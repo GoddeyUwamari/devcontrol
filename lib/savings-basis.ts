@@ -70,3 +70,21 @@ export function rankBySavings<T extends { potentialSavings: number; metadata?: R
   const rank = (rec: T) => RANK[savingsBasisKind(rec) ?? 'none']
   return [...recs].sort((a, b) => rank(a) - rank(b) || (b.potentialSavings || 0) - (a.potentialSavings || 0))
 }
+
+// metadata.price_source written by the EC2 idle detector -- mirror of
+// EC2_PRICE_SOURCE_DEFAULT in backend/src/services/cost-optimization.service.ts.
+// The figure is a default because the instance type's price is unknown.
+export const DEFAULT_PRICE_SOURCE = 'default_unlisted_type'
+
+// Founder-approved copy (PR 4, S1 and S2).
+export const DEFAULT_PRICE_DISCLOSURE = "Estimate. This instance type's price is unknown, so a default of $50/mo is used."
+export const DEFAULT_PRICE_SUFFIX = '(price unknown)'
+
+/**
+ * True only when the row says its figure is the default for an unpriced
+ * instance type. Never inferred from the amount: a listed type can cost
+ * exactly the default, and a row with no price_source is not a default.
+ */
+export function isDefaultPriceEstimate(rec: { metadata?: Record<string, unknown> | null }): boolean {
+  return rec.metadata?.price_source === DEFAULT_PRICE_SOURCE
+}
