@@ -209,3 +209,20 @@ describe('Top Risk W11: no critical, high or medium findings open (founder decis
   })
 })
 
+describe('Top Risk W11b: every open critical/high/medium finding was accepted or dismissed', () => {
+  const W11B = 'No critical, high or medium findings need attention. 2 you accepted or dismissed are on the Security page.'
+
+  it('shows the backend W11b line whole, with no severity badge, neutral tint and no "Open top risk" link', () => {
+    renderRow({ topRisk: W11B, topRiskStatus: 'all_urgent_reviewed' })
+    expect(screen.getByText(W11B)).toBeTruthy()
+    expect(within(topRiskCard()).queryByTestId('top-risk-severity')).toBeNull()
+    expect(topRiskCard().getAttribute('data-severity')).toBe('none')
+    expect(screen.queryByRole('link', { name: 'Open top risk' })).toBeNull()
+  })
+
+  it('while loading shows the skeleton, never W11b', () => {
+    renderRow({ topRisk: W11B, topRiskStatus: 'all_urgent_reviewed', aiSummaryLoading: true })
+    expect(screen.queryByText(W11B)).toBeNull()
+  })
+})
+

@@ -43,7 +43,7 @@ import {
 import { lastIncludedDay } from './ai-chat.service';
 import { monthOverMonthSection, spendSection, type MonthOverMonthEvidence, type SpendEvidence } from './cost-context-sections';
 import { MAX_LEASE_AGE_SECONDS } from './scan-lease';
-import { noUrgentFindingsLine, selectTopRiskFinding, TOP_RISK_SEVERITIES } from './top-risk-selection';
+import { isReviewedUrgent, noUrgentFindingsLine, reviewedFindingsLine, selectTopRiskFinding, TOP_RISK_SEVERITIES } from './top-risk-selection';
 
 const EMPTY_FIELDS: StructuredDashboardSummary = {
   overallHealth: { score: null, context: null },
@@ -70,10 +70,12 @@ export const SYSTEM_STATUS_UNAVAILABLE = 'Outage status unavailable: DevControl 
  * identified         = topRisk states a finding present in the evidence
  * no_urgent_findings = topRisk is W11: the latest security evaluation completed and is
  *                      current, and every open finding is low (founder decision D-B3)
+ * all_urgent_reviewed = topRisk is W11b: same evaluation gate, and every open critical,
+ *                      high or medium finding was accepted or dismissed by the customer
  * none_identified    = security evidence was evaluated and records no active findings
  * unavailable        = risk could not be evaluated (missing, failed, or preliminary evidence)
  */
-export type TopRiskStatus = 'identified' | 'no_urgent_findings' | 'none_identified' | 'unavailable';
+export type TopRiskStatus = 'identified' | 'no_urgent_findings' | 'all_urgent_reviewed' | 'none_identified' | 'unavailable';
 
 export interface AISummaryResult extends StructuredDashboardSummary {
   topRiskStatus: TopRiskStatus;
@@ -90,10 +92,17 @@ interface CacheEntry {
 
 export interface DashboardSections {
   systemScore: ContextSection<{ score: number; cost: number | null; security: number | null; observability: number | null; observabilityState: ContextDataState }>;
-  /** urgentFindings: critical + high + medium across both sources, whatever their disposition; null when not reported. */
-  securityPosture: ContextSection<{ score: number; combinedFindings: number; urgentFindings: number | null }>;
-  /** top: the Top Risk finding (top-risk-selection.ts), never an accepted or dismissed one. */
-  accountFindings: ContextSection<{ count: number; top: { title: string; severity: string } | null }>;
+  /**
+   * urgentFindings: critical + high + medium across both sources, whatever their
+   * disposition; accountUrgentFindings: the account-findings part of it. Null when
+   * not reported.
+   */
+  securityPosture: ContextSection<{ score: number; combinedFindings: number; urgentFindings: number | null; accountUrgentFindings: number | null }>;
+  /**
+   * top: the Top Risk finding (top-risk-selection.ts), never an accepted or dismissed one.
+   * reviewedUrgent: critical/high/medium findings marked accepted risk or dismissed.
+   */
+  accountFindings: ContextSection<{ count: number; top: { title: string; severity: string } | null; reviewedUrgent: number }>;
   /** Available only when the latest finished security evaluation completed and is current. */
   securityEvaluation: ContextSection<{ current: true }>;
   recommendations: ContextSection<{ active: number; totalEstimatedMonthlySavings: number }>;
@@ -203,7 +212,10 @@ export class AISummaryService {
           const urgentFindings = a && r
             ? TOP_RISK_SEVERITIES.reduce((sum, severity) => sum + a[severity] + r[severity], 0)
             : null;
-          return { state: 'available', data: { score: risk.score, combinedFindings: c.critical + c.high + c.medium + c.low, urgentFindings } };
+          const accountUrgentFindings = a && r
+            ? TOP_RISK_SEVERITIES.reduce((sum, severity) => sum + a[severity], 0)
+            : null;
+          return { state: 'available', data: { score: risk.score, combinedFindings: c.critical + c.high + c.medium + c.low, urgentFindings, accountUrgentFindings } };
         }
       ),
       collectSection<DashboardSections['accountFindings'] extends ContextSection<infer T> ? T : never>(
@@ -212,7 +224,10 @@ export class AISummaryService {
           // getActive() returns newest first within each severity; the shared rule
           // skips accepted and dismissed findings and anything below medium.
           const active = await this.accountFindingsRepository.getActive(organizationId);
-          return { state: 'available', data: { count: active.length, top: selectTopRiskFinding(active) } };
+          return {
+            state: 'available',
+            data: { count: active.length, top: selectTopRiskFinding(active), reviewedUrgent: active.filter(isReviewedUrgent).length },
+          };
         }
       ),
       collectSection<DashboardSections['recommendations'] extends ContextSection<infer T> ? T : never>(
@@ -334,7 +349,11 @@ export class AISummaryService {
    * rule (top-risk-selection.ts): never one the customer accepted or dismissed.
    * W11 ("no_urgent_findings") requires the latest security evaluation to have
    * completed and be current, and no critical, high or medium finding open in
-   * either source; otherwise the count line stays as before. "none_identified"
+   * either source. W11b ("all_urgent_reviewed") requires the same evaluation, no
+   * resource-compliance critical/high/medium, and every account critical/high/
+   * medium finding accepted or dismissed -- the score's counts and the findings
+   * list must agree on that number, or neither line is shown. Otherwise the count
+   * line stays as before. "none_identified"
    * requires both security sources to be evaluated and empty -- anything
    * missing, failed, or preliminary is "unavailable", never "no risks".
    * Always deterministic: model-written text never reaches this field.
@@ -347,12 +366,20 @@ export class AISummaryService {
     if (top) return { topRisk: `${top.title} (${top.severity} severity)`, topRiskStatus: 'identified' };
 
     const urgent = hasEvidence(s.securityPosture) ? s.securityPosture.data.urgentFindings : null;
-    if (
-      combined !== null && combined > 0 && urgent === 0 &&
+    const accountUrgent = hasEvidence(s.securityPosture) ? s.securityPosture.data.accountUrgentFindings : null;
+    const reviewed = hasEvidence(s.accountFindings) ? s.accountFindings.data.reviewedUrgent : null;
+    // Both lines need complete, current evidence from every source they speak for.
+    const evaluated =
+      combined !== null && combined > 0 &&
       s.accountFindings.state === 'available' && s.securityPosture.state === 'available' &&
-      s.securityEvaluation.state === 'available'
-    ) {
+      s.securityEvaluation.state === 'available';
+
+    if (evaluated && urgent === 0) {
       return { topRisk: noUrgentFindingsLine(combined), topRiskStatus: 'no_urgent_findings' };
+    }
+
+    if (evaluated && urgent !== null && urgent > 0 && accountUrgent === urgent && reviewed === urgent) {
+      return { topRisk: reviewedFindingsLine(reviewed), topRiskStatus: 'all_urgent_reviewed' };
     }
 
     if (combined !== null && combined > 0) {

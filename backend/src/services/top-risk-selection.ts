@@ -30,6 +30,12 @@ export interface TopRiskCandidate {
   disposition?: string | null;
 }
 
+/** A critical, high or medium finding the customer marked accepted risk or dismissed. */
+export function isReviewedUrgent(finding: TopRiskCandidate): boolean {
+  return (TOP_RISK_SEVERITIES as readonly string[]).includes(finding.severity)
+    && !!finding.disposition && TOP_RISK_EXCLUDED_DISPOSITIONS.includes(finding.disposition);
+}
+
 export function isTopRiskEligible(finding: TopRiskCandidate): boolean {
   if (!(TOP_RISK_SEVERITIES as readonly string[]).includes(finding.severity)) return false;
   return !(finding.disposition && TOP_RISK_EXCLUDED_DISPOSITIONS.includes(finding.disposition));
@@ -53,4 +59,14 @@ export function selectTopRiskFinding(findings: readonly TopRiskCandidate[]): { t
  */
 export function noUrgentFindingsLine(count: number): string {
   return `No critical, high or medium findings open. ${count} lower-priority finding${count === 1 ? '' : 's'} on the Security page.`;
+}
+
+/**
+ * W11b (founder-approved, Nov 4): shown only when the latest security evaluation
+ * completed and is current, no critical, high or medium finding is open that the
+ * customer has not reviewed, and `count` (at least one) critical, high or medium
+ * findings are open that the customer accepted or dismissed. Never names a finding.
+ */
+export function reviewedFindingsLine(count: number): string {
+  return `No critical, high or medium findings need attention. ${count} you accepted or dismissed ${count === 1 ? 'is' : 'are'} on the Security page.`;
 }

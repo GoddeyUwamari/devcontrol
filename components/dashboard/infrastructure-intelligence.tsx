@@ -9,8 +9,8 @@ interface InfrastructureIntelligenceProps {
   topRisk: string | null
   /**
    * From the AI summary: only 'none_identified' may render as "no risks".
-   * 'no_urgent_findings' carries its own backend text (W11) in topRisk, shown as is,
-   * with no severity badge and no "Open top risk" link.
+   * 'no_urgent_findings' (W11) and 'all_urgent_reviewed' (W11b) carry their own backend
+   * text in topRisk, shown as is, with no severity badge and no "Open top risk" link.
    */
   topRiskStatus: AISummaryResult['topRiskStatus']
   aiSummaryLoading: boolean

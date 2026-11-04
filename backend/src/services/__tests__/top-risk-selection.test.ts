@@ -4,8 +4,10 @@
  * founder-approved text.
  */
 import {
+  isReviewedUrgent,
   isTopRiskEligible,
   noUrgentFindingsLine,
+  reviewedFindingsLine,
   selectTopRiskFinding,
   TOP_RISK_EXCLUDED_DISPOSITIONS,
   TOP_RISK_SEVERITIES,
@@ -77,6 +79,24 @@ describe('W11', () => {
 
   it('is the approved wording, singular', () => {
     expect(noUrgentFindingsLine(1)).toBe('No critical, high or medium findings open. 1 lower-priority finding on the Security page.');
+  });
+});
+
+describe('W11b', () => {
+  it('is the approved wording, plural', () => {
+    expect(reviewedFindingsLine(2)).toBe('No critical, high or medium findings need attention. 2 you accepted or dismissed are on the Security page.');
+  });
+
+  it('is the approved wording, singular', () => {
+    expect(reviewedFindingsLine(1)).toBe('No critical, high or medium findings need attention. 1 you accepted or dismissed is on the Security page.');
+  });
+
+  it('counts only critical/high/medium findings marked accepted risk or dismissed', () => {
+    expect(isReviewedUrgent(finding('a', 'high', 'accepted_risk'))).toBe(true);
+    expect(isReviewedUrgent(finding('b', 'medium', 'dismissed'))).toBe(true);
+    expect(isReviewedUrgent(finding('c', 'low', 'dismissed'))).toBe(false);
+    expect(isReviewedUrgent(finding('d', 'high', 'acknowledged'))).toBe(false);
+    expect(isReviewedUrgent(finding('e', 'critical'))).toBe(false);
   });
 });
 
