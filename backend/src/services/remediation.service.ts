@@ -273,7 +273,7 @@ export class RemediationService {
     };
     try {
       await this.audit.record(event);
-    } catch (err) {
+    } catch {
       // record() already logs and swallows; this is only a second net.
       console.error('[Remediation] stop refusal audit failed:', { stage: input.stage });
     }

@@ -49,7 +49,7 @@ export type StopEligibility = { eligible: true } | { eligible: false; reason: St
 
 /** A query function: a pg Pool, PoolClient or test double. */
 export interface StopFindingReader {
-  query: (sql: string, values?: unknown[]) => Promise<{ rows: any[] }>;
+  query: (sql: string, values?: unknown[]) => Promise<{ rows: unknown[] }>;
 }
 
 export function isStopRefusal(message: unknown): boolean {
