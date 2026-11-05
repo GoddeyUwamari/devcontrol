@@ -27,7 +27,7 @@ vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => demo.o
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: () => ({ enabled: false }) }))
 vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getDashboardStats } }))
 vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService: { getCosts } }))
-vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts: vi.fn().mockResolvedValue([{ id: 'acct-1' }]) } }))
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await ([{ id: 'acct-1' }]); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 
 import CostsByTeamPage from '../page'
 

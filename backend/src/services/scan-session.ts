@@ -12,7 +12,7 @@
  * The approved user-visible texts for the lease (§4.2, §4.6) live here.
  */
 import { Pool, PoolClient } from 'pg';
-import { findEligibleAwsAccount } from '../repositories/aws-accounts.repository';
+import { awsConnectionIdentity, findEligibleAwsAccount } from '../repositories/aws-accounts.repository';
 import { parseAccountIdFromArn } from './aws-client-factory.service';
 import {
   HeartbeatOptions,
@@ -191,14 +191,30 @@ export class LeaseSession {
 }
 
 /**
- * The AWS account a scan of this organization would lease: its one eligible
- * account's id, read from the role ARN as ScanContext reads it. Null when there
- * is none, it is ambiguous or its ARN names no account: the scan then fails
- * before it writes anything, exactly as it does today (ScanContext.forOrg).
- * An eligible account whose ARN names no account is logged (server log only:
- * nothing of it reaches the user), so the organization can be found and fixed.
+ * What a scan lease is taken for: the AWS account (the lease row's key) and the
+ * connection the work belongs to (awsConnectionIdentity of the same aws_accounts
+ * row, aws-connection-fence.ts), both from ONE read of the row.
  */
-export async function leaseAccountFor(db: PoolClient | Pool, organizationId: string): Promise<string | null> {
+export interface LeaseTarget {
+  awsAccountId: string;
+  connection: string;
+}
+
+/** The lease target of a scan context (scan-context.ts): the row its clients were built from. */
+export function leaseTargetOf(context: { awsAccountId: string; connectionIdentity: string }): LeaseTarget {
+  return { awsAccountId: context.awsAccountId, connection: context.connectionIdentity };
+}
+
+/**
+ * The lease target of the organization's one eligible account, read once: its
+ * AWS account id from the role ARN as ScanContext reads it, and its connection
+ * identity. Null when there is none, it is ambiguous or its ARN names no
+ * account: the scan then fails before it writes anything, exactly as it does
+ * today (ScanContext.forOrg). An eligible account whose ARN names no account is
+ * logged (server log only: nothing of it reaches the user), so the organization
+ * can be found and fixed.
+ */
+export async function leaseTargetFor(db: PoolClient | Pool, organizationId: string): Promise<LeaseTarget | null> {
   let account: Awaited<ReturnType<typeof findEligibleAwsAccount>>;
   try {
     account = await findEligibleAwsAccount(db, organizationId);
@@ -211,8 +227,9 @@ export async function leaseAccountFor(db: PoolClient | Pool, organizationId: str
     console.warn(
       `[ScanLease] ${UNPARSEABLE_ROLE_ARN_WARNING}: org ${organizationId}'s eligible AWS account has a role ARN that names no account; nothing is leased or written`
     );
+    return null;
   }
-  return awsAccountId;
+  return { awsAccountId, connection: awsConnectionIdentity(account) };
 }
 
 /** `fn` on a connection of its own, tagged with the organization, untagged before it goes back. */
@@ -232,31 +249,37 @@ export async function onTaggedConnection<T>(pool: Pool, organizationId: string, 
   }
 }
 
-/** Acquires the scan lease on `client` (tagged with the organization) and starts its heartbeat. Null when held. */
+/** Acquires the scan lease on `client` (tagged with the organization) for `target` and starts its heartbeat. Null when held. */
 export async function openScanSession(
   pool: Pool,
   client: PoolClient,
   organizationId: string,
-  awsAccountId: string,
+  target: LeaseTarget,
   timing: LeaseTiming = {}
 ): Promise<LeaseSession | null> {
   const lease = await acquireScanLease(
     client,
-    { organizationId, awsAccountId, scanKind: SCAN_KIND_DISCOVERY },
+    { organizationId, awsAccountId: target.awsAccountId, scanKind: SCAN_KIND_DISCOVERY, connection: target.connection },
     leaseHolder(),
     { lockTimeoutMs: timing.acquireLockTimeoutMs ?? SCAN_ACQUIRE_LOCK_TIMEOUT_MS, ttlSeconds: timing.ttlSeconds }
   );
   return lease ? new LeaseSession(pool, lease, timing) : null;
 }
 
-/** Acquires the cron's job lease for the organization (unless held, or completed within the guard) and starts its heartbeat. */
+/**
+ * Acquires the cron's job lease for the organization (unless held, or completed
+ * within the guard) and starts its heartbeat. `connection` is the identity the
+ * cron read for the organization when it chose to scan it: every write fenced
+ * with this lease (the SOC 2 evidence step) commits only while it is current.
+ */
 export async function openDiscoveryJobSession(
   pool: Pool,
   client: PoolClient,
   organizationId: string,
+  connection: string | null,
   timing: LeaseTiming = {}
 ): Promise<LeaseSession | null> {
-  const lease = await acquireJobLease(client, { organizationId, jobName: DISCOVERY_JOB_NAME }, leaseHolder(), {
+  const lease = await acquireJobLease(client, { organizationId, jobName: DISCOVERY_JOB_NAME, connection }, leaseHolder(), {
     ttlSeconds: timing.ttlSeconds,
     lockTimeoutMs: timing.acquireLockTimeoutMs ?? SCAN_ACQUIRE_LOCK_TIMEOUT_MS,
     minSecondsSinceCompletion: DISCOVERY_JOB_MIN_SECONDS_SINCE_COMPLETION,
@@ -273,7 +296,7 @@ export async function openDiscoveryJobSession(
 export async function waitForScanSession(
   pool: Pool,
   organizationId: string,
-  awsAccountId: string,
+  target: LeaseTarget,
   timing: LeaseTiming = {}
 ): Promise<LeaseSession> {
   const pollMs = timing.pollMs ?? SCAN_WAIT_POLL_MS;
@@ -282,7 +305,7 @@ export async function waitForScanSession(
   const started = Date.now();
   for (;;) {
     const session = await onTaggedConnection(pool, organizationId, (client) =>
-      openScanSession(pool, client, organizationId, awsAccountId, timing)
+      openScanSession(pool, client, organizationId, target, timing)
     );
     if (session) return session;
     if (Date.now() - started + pollMs > capMs) throw new ScanBusyError(organizationId);

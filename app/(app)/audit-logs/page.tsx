@@ -33,8 +33,11 @@ export default function AuditLogsPage() {
   const { data: resourceTypesData } = useQuery({ queryKey: ['audit-log-resource-types'], queryFn: () => auditLogsService.getResourceTypes() });
 
   const demoMode = demoModeService.isEnabled();
-  const { data: awsAccounts } = useQuery({ queryKey: ['aws-accounts'], queryFn: awsAccountsService.getAccounts, enabled: !demoMode });
-  const isAwsConnected = demoMode || (awsAccounts?.length ?? 0) > 0;
+  // The server's connection state (GET /api/aws/accounts `connection`), never the
+  // row count: a row that is no longer active is not a connection. Loading or a
+  // failed check shows the not-connected wording, as before.
+  const { data: awsConnection } = useQuery({ queryKey: ['aws-accounts'], queryFn: awsAccountsService.getAccountsAndConnection, enabled: !demoMode });
+  const isAwsConnected = demoMode || awsConnection?.connection === 'connected';
 
   const logs = data?.data || [], total = data?.total || 0;
   const actions = actionsData || [], resourceTypesList = resourceTypesData || [];

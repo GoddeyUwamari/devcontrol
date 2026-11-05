@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { Soc2EvidenceService } from '../services/soc2-evidence.service';
 import { isPlatformAwsCredentialsUnavailable, isPlatformCredentialFailure } from '../services/platform-sts';
-import { readAwsAccountConnection } from '../repositories/aws-accounts.repository';
+import { awsConnectionIdentity, readAwsAccountConnection } from '../repositories/aws-accounts.repository';
 import { LeaseSession, LeaseTiming, isScanAlreadyRunning, onTaggedConnection, openDiscoveryJobSession } from '../services/scan-session';
 
 /** One scheduled run's outcome per organization. Every organization lands in exactly one count. */
@@ -43,7 +43,7 @@ export interface DiscoveryRunSummary {
  */
 const CREDENTIAL_FAILURE_STOP_STREAK = 2;
 
-type AwsConnection = { kind: 'none' } | { kind: 'inactive'; status: string | null } | { kind: 'active' };
+type AwsConnection = { kind: 'none' } | { kind: 'inactive'; status: string | null } | { kind: 'active'; identity: string };
 
 /**
  * Resource Discovery Background Job
@@ -162,7 +162,8 @@ export class ResourceDiscoveryJob {
       // false). Held, or completed within the last five hours: skipped.
       let jobSession: LeaseSession | null;
       try {
-        jobSession = await onTaggedConnection(this.pool, org.id, (client) => openDiscoveryJobSession(this.pool, client, org.id, this.leaseTiming));
+        const identity = connection.identity;
+        jobSession = await onTaggedConnection(this.pool, org.id, (client) => openDiscoveryJobSession(this.pool, client, org.id, identity, this.leaseTiming));
       } catch (error: unknown) {
         const { name, message } = error instanceof Error ? error : { name: 'Error', message: String(error) };
         console.error(`[Resource Discovery Job] Failed for org ${org.id}: could not take its job lease (${name}):`, message);
@@ -294,7 +295,9 @@ export class ResourceDiscoveryJob {
       await client.query("SELECT set_config('app.current_organization_id', $1, true)", [organizationId]);
       const { account, ineligibleStatuses: ineligible } = await readAwsAccountConnection(client, organizationId);
       await client.query('COMMIT');
-      if (account) return { kind: 'active' };
+      // The identity this cycle's job lease carries (AWS connect PR B): the SOC 2 step
+      // fenced with it commits only while this row is still the active connection.
+      if (account) return { kind: 'active', identity: awsConnectionIdentity(account) };
       if (ineligible.length === 0) return { kind: 'none' };
       return { kind: 'inactive', status: ineligible.length === 1 ? ineligible[0] : ineligible.map((status) => status ?? 'null').join(', ') };
     } catch (error) {

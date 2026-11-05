@@ -79,7 +79,7 @@ import {
   withCallPolicyOnClients,
 } from '../utils/awsCallPolicy';
 import { SourceOutcome, authorizesCleanup, failedSourceStatus } from './source-outcome';
-import { LeaseLostError, isLeaseLost, linkScanLeaseJob } from './scan-lease';
+import { LeaseLossReason, LeaseLostError, isLeaseLost, linkScanLeaseJob } from './scan-lease';
 import { describeAccountRegions } from './region-list';
 import { recordHomeRegionScanStatus, recordRegionList } from '../repositories/multi-region-foundation.repository';
 import { RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
@@ -93,7 +93,8 @@ import {
   SCAN_WAIT_CAP_MS,
   SCAN_WAIT_POLL_MS,
   isScanAlreadyRunning,
-  leaseAccountFor,
+  leaseTargetFor,
+  leaseTargetOf,
   openScanSession,
   scanLeaseState,
   sleep,
@@ -142,6 +143,7 @@ import { describeDynamoDBTable } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
 import { describeAuroraClusters } from './aurora-cluster.util';
 import {
+  DISCOVERY_WARNING_CONNECTION_CHANGED,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
   DISCOVERY_WARNING_SCAN_LEASE_LOST,
   DISCOVERY_WARNING_TRUNCATED_INDEX,
@@ -667,7 +669,9 @@ export class AWSResourceDiscoveryService {
       // The scan lease for (organization, AWS account), before anything is written
       // (plan §4.2), heartbeated from now on. Held by another worker: nothing is
       // written, not even a job row.
-      session = (await openScanSession(this.pool, client, organizationId, scanContext.awsAccountId, this.leaseTiming)) ?? undefined;
+      // Its lease carries the scan's connection identity (AWS connect PR B), from the
+      // row the context's clients were built from: every fence compares it.
+      session = (await openScanSession(this.pool, client, organizationId, leaseTargetOf(scanContext), this.leaseTiming)) ?? undefined;
       if (!session) throw new ScanAlreadyRunningError(organizationId, scanContext.awsAccountId);
       console.log(`🔒 [Discovery] Scan lease acquired (token ${session.lease.fencingToken})`);
       const scan = session;
@@ -862,7 +866,7 @@ export class AWSResourceDiscoveryService {
           scan.checkpoint();
           lambdaOutcome.status = 'complete';
           const lambdaResources = await this.discoverLambdaFunctions(
-            organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region, this.observeListing(lambdaOutcome)
+            organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region, this.observeListing(lambdaOutcome), scanContext.connectionIdentity
           );
           for (const resource of lambdaResources) ownListedArns.add(resource.resource_arn);
           await this.upsertFenced(fenced, lambdaResources, (resource) => this.upsertResource(client, resource), totals);
@@ -1413,12 +1417,18 @@ export class AWSResourceDiscoveryService {
           if (costRunId) {
             try {
               const stats = await recommendationsRepo.getStats(organizationId);
-              await costRuns.markFinished(costRunId, organizationId, {
-                recommendationsFound: insertedCount,
-                totalPotentialSavings: stats.total_potential_savings,
-                ...costDetail,
-              });
+              // Fenced with the scan lease (AWS connect PR B): a lost lease or a changed
+              // connection records nothing here and stops the scan (the catch below
+              // closes this run's own row as interrupted).
+              await scan.watch(() =>
+                costRuns.markFinished(costRunId!, organizationId, {
+                  recommendationsFound: insertedCount,
+                  totalPotentialSavings: stats.total_potential_savings,
+                  ...costDetail,
+                }, scan.lease)
+              );
             } catch (trackingError: any) {
+              abortIfLeaseLost(trackingError);
               console.error(`[Discovery] Could not record the finished cost analysis run (non-fatal):`, trackingError.message);
             }
           }
@@ -1468,30 +1478,38 @@ export class AWSResourceDiscoveryService {
       // Every home-region listing has finished: its scan status (M5b, F18).
       await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, [...ownOutcomes, resourceExplorerOutcome]);
 
-      await client.query(
-        `UPDATE resource_discovery_jobs
-         SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, resources_deleted = $4, error_message = $5, compliance_scan_completed = $6, cost_analysis_completed = $7
-         WHERE id = $8`,
-        [
-          discoveryFailed ? 'failed' : 'completed',
-          totals.created,
-          totals.updated,
-          resourcesTerminated,
-          joinDiscoveryMessage(errors, warnings),
-          complianceScanCompleted,
-          costAnalysisCompleted,
-          jobId
-        ]
-      );
-      // The warnings column (multi-region M3) holds every code; error_message above still
+      // The job's final status, in one fenced transaction (AWS connect PR B): a worker
+      // whose lease or AWS connection is no longer current never marks its job
+      // completed; the lease-lost path below closes it instead. Only a row still
+      // 'running' is finished, so a newer scan's recovery is never overwritten.
+      // The warnings column (multi-region M3) holds every code; error_message still
       // carries the legacy ones for one release (discovery-warnings.ts). A database
       // without the column keeps working from error_message alone.
-      if (await this.discoveryWarningsColumnExists(client)) {
-        await client.query(
-          `UPDATE resource_discovery_jobs SET warnings = $1::jsonb WHERE id = $2`,
-          [discoveryWarningsColumn(warnings), jobId]
+      const warningsColumn = await this.discoveryWarningsColumnExists(client);
+      scan.checkpoint();
+      await fenced(async () => {
+        const finished = await client.query(
+          `UPDATE resource_discovery_jobs
+           SET status = $1, completed_at = NOW(), resources_discovered = $2, resources_updated = $3, resources_deleted = $4, error_message = $5, compliance_scan_completed = $6, cost_analysis_completed = $7
+           WHERE id = $8 AND status = 'running'`,
+          [
+            discoveryFailed ? 'failed' : 'completed',
+            totals.created,
+            totals.updated,
+            resourcesTerminated,
+            joinDiscoveryMessage(errors, warnings),
+            complianceScanCompleted,
+            costAnalysisCompleted,
+            jobId
+          ]
         );
-      }
+        if (warningsColumn && (finished.rowCount ?? 0) > 0) {
+          await client.query(
+            `UPDATE resource_discovery_jobs SET warnings = $1::jsonb WHERE id = $2`,
+            [discoveryWarningsColumn(warnings), jobId]
+          );
+        }
+      });
 
       if (errors.length > 0) {
         console.log(`⚠️  [Discovery] Completed with errors`);
@@ -1535,7 +1553,7 @@ export class AWSResourceDiscoveryService {
         // changed): nothing more is written. The scan's own rows record why.
         console.error(`⚠️  [Discovery] Scan lease lost (${error.reason}); stopped, nothing more written`);
         if (openFrameworkScan) await this.failFrameworkEvaluation(client, organizationId, openFrameworkScan);
-        if (jobId!) await this.recordLeaseLost(client, jobId).catch((recordError: any) => {
+        if (jobId!) await this.recordLeaseLost(client, jobId, error.reason).catch((recordError: any) => {
           console.error(`[Discovery] Could not record the lost lease on job ${jobId}:`, recordError.message);
         });
         throw error;
@@ -1548,10 +1566,11 @@ export class AWSResourceDiscoveryService {
       // never error.message: that can hold internal tags, ARNs, account IDs or
       // raw AWS text. The full error is logged above.
       if (jobId!) {
+        // Its own row, only while still running: a newer scan's recovery stands.
         await client.query(
           `UPDATE resource_discovery_jobs
            SET status = $1, completed_at = NOW(), error_message = $2
-           WHERE id = $3`,
+           WHERE id = $3 AND status = 'running'`,
           ['failed', fatalDiscoveryErrorMessage(error), jobId]
         );
       }
@@ -1641,16 +1660,22 @@ export class AWSResourceDiscoveryService {
   /**
    * The job row of a scan that lost its lease (plan §4.2, Q3): failed, with the
    * approved lease-lost text and the unrendered scan_lease_lost warning (warnings
-   * column only). Unfenced: it is this worker's own row and says something true.
+   * column only). When the reason is that the AWS connection changed (AWS connect
+   * PR B, prB-plan.md D4), the approved interrupted text instead ("another scan
+   * took over" would be false) and the unrendered connection_changed warning.
+   * Unfenced: it is this worker's own row, created under its own connection, and
+   * says something true. Only a row still 'running' is closed, so a newer scan's
+   * recovery or status is never overwritten.
    */
-  private async recordLeaseLost(client: PoolClient, jobId: string): Promise<void> {
-    await client.query(
-      `UPDATE resource_discovery_jobs SET status = 'failed', completed_at = NOW(), error_message = $1 WHERE id = $2`,
-      [DISCOVERY_LEASE_LOST_MESSAGE, jobId]
+  private async recordLeaseLost(client: PoolClient, jobId: string, reason: LeaseLossReason): Promise<void> {
+    const connectionChanged = reason === 'account_changed';
+    const closed = await client.query(
+      `UPDATE resource_discovery_jobs SET status = 'failed', completed_at = NOW(), error_message = $1 WHERE id = $2 AND status = 'running'`,
+      [connectionChanged ? DISCOVERY_INTERRUPTED_MESSAGE : DISCOVERY_LEASE_LOST_MESSAGE, jobId]
     );
-    if (await this.discoveryWarningsColumnExists(client)) {
+    if ((closed.rowCount ?? 0) > 0 && (await this.discoveryWarningsColumnExists(client))) {
       await client.query(`UPDATE resource_discovery_jobs SET warnings = $1::jsonb WHERE id = $2`, [
-        discoveryWarningsColumn([DISCOVERY_WARNING_SCAN_LEASE_LOST]),
+        discoveryWarningsColumn([connectionChanged ? DISCOVERY_WARNING_CONNECTION_CHANGED : DISCOVERY_WARNING_SCAN_LEASE_LOST]),
         jobId,
       ]);
     }
@@ -2047,7 +2072,7 @@ export class AWSResourceDiscoveryService {
   /**
    * A scan whose account context could not be set up (AssumeRole failed, plan
    * M4b F4) records its failed job row under the scan lease of the account the
-   * database names (leaseAccountFor, the rule ScanContext uses), then releases
+   * database names (leaseTargetFor, the rule ScanContext uses), then releases
    * it. Another worker holding that lease is mid-scan: nothing is written, so
    * its job stays the latest. With no account to lease (none, ambiguous, or an
    * ARN that names none) no scan of this organization can hold a lease either,
@@ -2059,12 +2084,12 @@ export class AWSResourceDiscoveryService {
     allowedTypes: ResourceType[],
     message: string
   ): Promise<void> {
-    const awsAccountId = await leaseAccountFor(client, organizationId);
-    if (!awsAccountId) {
+    const target = await leaseTargetFor(client, organizationId);
+    if (!target) {
       await this.insertFailedJob(client, organizationId, allowedTypes, message);
       return;
     }
-    const session = await openScanSession(this.pool, client, organizationId, awsAccountId, this.leaseTiming);
+    const session = await openScanSession(this.pool, client, organizationId, target, this.leaseTiming);
     if (!session) {
       console.log(`⏭️  [Discovery] A scan for org ${organizationId} is already running; this attempt's failure is not recorded`);
       return;
@@ -2773,7 +2798,10 @@ export class AWSResourceDiscoveryService {
     lambdaClient: LambdaClient,
     cloudWatchClient: CloudWatchClient,
     region: string,
-    onListing?: ListingObserver
+    onListing?: ListingObserver,
+    // The scan's connection identity (ScanContext): the usage cache is keyed by it;
+    // null (a helper called on its own) reads and fills no cache.
+    connection: string | null = null
   ): Promise<CreateAWSResourceInput[]> {
     const resources: CreateAWSResourceInput[] = [];
 
@@ -2808,7 +2836,7 @@ export class AWSResourceDiscoveryService {
 
         const name = tags.Name || func.FunctionName;
         const memoryMB = func.MemorySize || 128;
-        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, func.FunctionName);
+        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, connection, func.FunctionName);
 
         resources.push({
           organization_id: organizationId,

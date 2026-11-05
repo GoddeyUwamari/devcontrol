@@ -50,7 +50,7 @@ vi.mock('@/lib/services/aws-services.service', async (importOriginal) => {
   }
 })
 vi.mock('@/lib/api', () => ({ default: { get: (...args: unknown[]) => m.apiGet(...args) } }))
-vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts: async () => [{ id: 'acct-1' }] } }))
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await ([{ id: 'acct-1' }]); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getCostSummary: async () => billed() } }))
 
 const UUID = '550e8400-e29b-41d4-a716-446655440000'

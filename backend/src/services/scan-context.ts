@@ -21,6 +21,7 @@
  * Only the home region is scanned until multi-region scanning (M7):
  * clientsFor() refuses any other region.
  */
+import { awsConnectionIdentity } from '../repositories/aws-accounts.repository';
 import { AWSClientFactory, AWSClients, AssumedRoleSource, assumedRoleSourceOf, parseAccountIdFromArn } from './aws-client-factory.service';
 
 /** Credentials are refreshed when less than this remains before they expire. */
@@ -46,6 +47,12 @@ export class ScanContext {
   readonly awsAccountRowId: string;
   /** The 12-digit AWS account ID, from the account's role ARN. */
   readonly awsAccountId: string;
+  /**
+   * The connection this scan belongs to: awsConnectionIdentity of the very row
+   * its clients were built from (aws-connection-fence.ts). Its lease carries it,
+   * and every cache entry the scan fills is keyed by it.
+   */
+  readonly connectionIdentity: string;
   private readonly home: AWSClients;
   private refreshing: Promise<void> | undefined;
   private refreshFailure: unknown;
@@ -58,6 +65,7 @@ export class ScanContext {
   ) {
     this.awsAccountRowId = source.account.id;
     this.awsAccountId = awsAccountId;
+    this.connectionIdentity = awsConnectionIdentity(source.account);
     this.home = this.withRefresh(clients);
   }
 

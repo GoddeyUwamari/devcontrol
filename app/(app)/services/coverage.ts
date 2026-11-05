@@ -31,9 +31,11 @@ const KNOWN_WARNINGS = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LIS
  * Codes the backend records for itself (backend/src/services/discovery-warnings.ts,
  * "Internal: no page renders it"): ignored everywhere on this page, so they never
  * make a scan Partial or add the generic warning line. scan_lease_lost: another
- * scan took over the lease (multi-region M4b).
+ * scan took over the lease (multi-region M4b). connection_changed: the AWS
+ * connection changed while the scan ran (AWS connect PR B); its job row carries
+ * the approved interrupted text.
  */
-export const INTERNAL_WARNINGS: readonly string[] = ['scan_lease_lost']
+export const INTERNAL_WARNINGS: readonly string[] = ['scan_lease_lost', 'connection_changed']
 
 /** The warnings this page describes: every code except the internal ones. */
 export function shownWarnings(codes: readonly string[]): string[] {

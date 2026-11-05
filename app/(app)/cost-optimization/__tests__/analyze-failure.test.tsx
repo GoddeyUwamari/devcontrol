@@ -31,7 +31,7 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     analyze: () => mockAnalyze(),
   },
 }))
-vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccounts: async () => [{ id: 'account-1' }] } }))
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await ([{ id: 'account-1' }]); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 vi.mock('@/lib/services/aws-resources.service', () => ({ awsResourcesService: { getDiscoveryJobs: async () => [] } }))
 
 const CHECKS_FAILED = 'None of the cost checks could complete. Try again.'

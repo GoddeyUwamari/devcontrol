@@ -7,7 +7,7 @@ import {
 import { Pool } from 'pg'
 import { pool } from '../config/database'
 import { assumeRoleAsPlatform } from './platform-sts'
-import { requireEligibleAwsAccount } from '../repositories/aws-accounts.repository'
+import { AwsAccountRow, awsConnectionIdentity, requireEligibleAwsAccount } from '../repositories/aws-accounts.repository'
 import type { SpendProvenance } from './ai-context-contract'
 
 
@@ -42,6 +42,20 @@ interface MonthlyCostCacheEntry {
 interface CostTrendCacheEntry {
   data: CostTrendPoint[]
   timestamp: number
+}
+
+/**
+ * The key of every cost cache and in-flight entry (AWS connect PR B): the
+ * organization AND its connection identity (awsConnectionIdentity of the
+ * aws_accounts row whose credentials fetched the data), plus the range for the
+ * trend. The identity is read BEFORE the lookup and the fetch then uses that same
+ * row, so an entry only ever holds data fetched with its own connection's
+ * credentials: a request after a connection change misses every entry of the old
+ * connection, including an old in-flight fetch that completes later, and empty
+ * results (a $0 month) are scoped the same way. Errors are never stored.
+ */
+function costCacheKey(organizationId: string, identity: string, range?: CostTrendRange): string {
+  return JSON.stringify(range === undefined ? [organizationId, identity] : [organizationId, identity, range])
 }
 
 export type CostTrendRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
@@ -358,7 +372,7 @@ class AWSCostService {
   // dispatches to a per-organization instance.
   private costExplorerClient: CostExplorerClient | null = null
 
-  // Per-org cache for fetchMonthlyCosts — Cost Explorer is billed per API call and rate
+  // Per-org, per-connection cache for fetchMonthlyCosts (costCacheKey) — Cost Explorer is billed per API call and rate
   // limited, and this same singleton is polled every ~2min by system-intelligence plus
   // invalidated on every cost/alert/deployment WebSocket event, so uncached it re-runs
   // STS AssumeRole + GetCostAndUsageCommand far more often than the data actually changes.
@@ -366,7 +380,7 @@ class AWSCostService {
   private monthlyCostCache: Map<string, MonthlyCostCacheEntry> = new Map()
   private static readonly MONTHLY_COST_CACHE_TTL = 4 * 60 * 60 * 1000
 
-  // In-flight promise per org, keyed the same as monthlyCostCache. Several independent
+  // In-flight promise per org and connection, keyed the same as monthlyCostCache (costCacheKey). Several independent
   // call sites (stats.controller, infrastructure.controller, aws.routes, system-intelligence)
   // share this singleton and can all miss the cache within the same window — e.g. on
   // dashboard mount or right after the 4h TTL expires. Without this, every concurrent miss
@@ -375,7 +389,7 @@ class AWSCostService {
   // already in flight await that same promise instead of starting a new one.
   private monthlyCostInFlight: Map<string, Promise<MonthlyCost>> = new Map()
 
-  // Per-org+range cache for fetchCostTrend — same rationale as monthlyCostCache above:
+  // Per-org+connection+range cache for fetchCostTrend (costCacheKey) — same rationale as monthlyCostCache above:
   // Cost Explorer is billed per API call, and this was being called uncached on every
   // dashboard load and time-range tab switch. TTL matches MONTHLY_COST_CACHE_TTL.
   private costTrendCache: Map<string, CostTrendCacheEntry> = new Map()
@@ -393,8 +407,10 @@ class AWSCostService {
    * the role and builds the Cost Explorer client with the temporary credentials.
    * The STS client is the platform's own identity and is used only for AssumeRole.
    */
-  static async createForOrg(organizationId: string, dbPool: Pool): Promise<AWSCostService> {
-    const { role_arn: roleArn, external_id: externalId } = await requireEligibleAwsAccount(dbPool, organizationId)
+  static async createForOrg(organizationId: string, dbPool: Pool, account?: AwsAccountRow): Promise<AWSCostService> {
+    // `account`, when given, is the row the caller already read (and keyed its cache
+    // by): the credentials then come from that same row, never a second read.
+    const { role_arn: roleArn, external_id: externalId } = account ?? (await requireEligibleAwsAccount(dbPool, organizationId))
 
     const assumed = await assumeRoleAsPlatform('us-east-1', {
       RoleArn: roleArn,
@@ -443,29 +459,33 @@ class AWSCostService {
   async fetchMonthlyCosts(organizationId: string): Promise<MonthlyCost> {
     this.requireOrganizationId(organizationId)
 
-    const cached = this.monthlyCostCache.get(organizationId)
+    // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
+    const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
+    const key = costCacheKey(organizationId, awsConnectionIdentity(account))
+
+    const cached = this.monthlyCostCache.get(key)
     if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
       return cached.data
     }
 
-    const inFlight = this.monthlyCostInFlight.get(organizationId)
+    const inFlight = this.monthlyCostInFlight.get(key)
     if (inFlight) {
       return inFlight
     }
 
     const fetchPromise = (async () => {
-      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
       const result = await orgService.queryMonthlyCosts()
       // Stamped once, right here, at the moment the real Cost Explorer call
       // actually succeeded -- not when a later cache hit happens to be read.
       const resultWithTimestamp: MonthlyCost = { ...result, fetchedAt: new Date().toISOString() }
-      this.monthlyCostCache.set(organizationId, { data: resultWithTimestamp, timestamp: Date.now() })
+      this.monthlyCostCache.set(key, { data: resultWithTimestamp, timestamp: Date.now() })
       return resultWithTimestamp
     })().finally(() => {
-      this.monthlyCostInFlight.delete(organizationId)
+      this.monthlyCostInFlight.delete(key)
     })
 
-    this.monthlyCostInFlight.set(organizationId, fetchPromise)
+    this.monthlyCostInFlight.set(key, fetchPromise)
     return fetchPromise
   }
 
@@ -559,11 +579,19 @@ class AWSCostService {
   }
 
   /**
-   * When the cached fetchCostTrend() result for this org and range was actually
-   * fetched from Cost Explorer (ISO timestamp), or null if nothing is cached.
+   * When the cached fetchCostTrend() result for this org's CURRENT connection and
+   * range was actually fetched from Cost Explorer (ISO timestamp), or null if
+   * nothing is cached for it (or the organization has no eligible connection, or
+   * its connection could not be read).
    */
-  getCostTrendFetchedAt(organizationId: string, range: CostTrendRange): string | null {
-    const cached = this.costTrendCache.get(`${organizationId}:${range}`)
+  async getCostTrendFetchedAt(organizationId: string, range: CostTrendRange): Promise<string | null> {
+    let account: AwsAccountRow
+    try {
+      account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
+    } catch {
+      return null
+    }
+    const cached = this.costTrendCache.get(costCacheKey(organizationId, awsConnectionIdentity(account), range))
     return cached ? new Date(cached.timestamp).toISOString() : null
   }
 
@@ -579,7 +607,9 @@ class AWSCostService {
   async fetchCostTrend(organizationId: string, range: CostTrendRange): Promise<CostTrendPoint[]> {
     this.requireOrganizationId(organizationId)
 
-    const cacheKey = `${organizationId}:${range}`
+    // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
+    const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
+    const cacheKey = costCacheKey(organizationId, awsConnectionIdentity(account), range)
     const cached = this.costTrendCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
       return cached.data
@@ -591,7 +621,7 @@ class AWSCostService {
     }
 
     const fetchPromise = (async () => {
-      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool)
+      const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
       const result = await orgService.queryCostTrend(range)
       this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
       return result

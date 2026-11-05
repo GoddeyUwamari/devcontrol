@@ -269,7 +269,7 @@ export class WeeklySummaryRepository {
       if (String(error?.message ?? '').startsWith('AWS_NOT_CONNECTED')) notConnected = true;
       else failure = error;
     }
-    const asOf = awsCostService.getCostTrendFetchedAt(organizationId, '30d');
+    const asOf = await awsCostService.getCostTrendFetchedAt(organizationId, '30d');
 
     const windowSpend = (window: DayWindow) =>
       collectSection<WeeklySpendEvidence>(

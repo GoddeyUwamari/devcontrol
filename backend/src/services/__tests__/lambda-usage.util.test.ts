@@ -29,7 +29,7 @@ describe('getLambdaUsageOverWindow', () => {
     const send = jest.fn().mockResolvedValueOnce({ Datapoints: [] });
     const client = withMockedSend(send);
 
-    const usage = await getLambdaUsageOverWindow(client, 'org-usage-1', 'fn-never-called');
+    const usage = await getLambdaUsageOverWindow(client, 'org-usage-1', 'connection-placeholder', 'fn-never-called');
 
     expect(usage).toEqual({ invocations: 0, avgDurationMs: 0 });
     // Duration must never be queried for a zero-invocation function.
@@ -43,7 +43,7 @@ describe('getLambdaUsageOverWindow', () => {
       .mockResolvedValueOnce({ Datapoints: [{ Average: 137 }] });
     const client = withMockedSend(send);
 
-    const usage = await getLambdaUsageOverWindow(client, 'org-usage-2', 'fn-real-usage');
+    const usage = await getLambdaUsageOverWindow(client, 'org-usage-2', 'connection-placeholder', 'fn-real-usage');
 
     expect(usage).toEqual({ invocations: 42, avgDurationMs: 137 });
     expect(send).toHaveBeenCalledTimes(2);
@@ -53,7 +53,7 @@ describe('getLambdaUsageOverWindow', () => {
     const send = jest.fn().mockRejectedValueOnce(new Error('Throttling: rate exceeded'));
     const client = withMockedSend(send);
 
-    const usage = await getLambdaUsageOverWindow(client, 'org-usage-3', 'fn-unavailable');
+    const usage = await getLambdaUsageOverWindow(client, 'org-usage-3', 'connection-placeholder', 'fn-unavailable');
 
     expect(usage).toBeNull();
   });
@@ -64,8 +64,8 @@ describe('getLambdaUsageOverWindow', () => {
     const send = jest.fn().mockResolvedValueOnce({ Datapoints: [{ Sum: 0 }] });
     const client = withMockedSend(send);
 
-    const first = await getLambdaUsageOverWindow(client, 'org-usage-4', 'fn-cached');
-    const second = await getLambdaUsageOverWindow(client, 'org-usage-4', 'fn-cached');
+    const first = await getLambdaUsageOverWindow(client, 'org-usage-4', 'connection-placeholder', 'fn-cached');
+    const second = await getLambdaUsageOverWindow(client, 'org-usage-4', 'connection-placeholder', 'fn-cached');
 
     expect(first).toEqual({ invocations: 0, avgDurationMs: 0 });
     expect(second).toEqual({ invocations: 0, avgDurationMs: 0 });
@@ -79,8 +79,8 @@ describe('getLambdaUsageOverWindow', () => {
       .mockResolvedValueOnce({ Datapoints: [{ Sum: 0 }] });
     const client = withMockedSend(send);
 
-    const first = await getLambdaUsageOverWindow(client, 'org-usage-5', 'fn-retry');
-    const second = await getLambdaUsageOverWindow(client, 'org-usage-5', 'fn-retry');
+    const first = await getLambdaUsageOverWindow(client, 'org-usage-5', 'connection-placeholder', 'fn-retry');
+    const second = await getLambdaUsageOverWindow(client, 'org-usage-5', 'connection-placeholder', 'fn-retry');
 
     expect(first).toBeNull();
     expect(second).toEqual({ invocations: 0, avgDurationMs: 0 });
@@ -96,8 +96,8 @@ describe('getLambdaUsageOverWindow', () => {
       .mockResolvedValueOnce({ Datapoints: [{ Average: 5 }] }); // org-B: Duration
     const client = withMockedSend(send);
 
-    const orgA = await getLambdaUsageOverWindow(client, 'org-A-isolation', 'shared-fn-name');
-    const orgB = await getLambdaUsageOverWindow(client, 'org-B-isolation', 'shared-fn-name');
+    const orgA = await getLambdaUsageOverWindow(client, 'org-A-isolation', 'connection-placeholder', 'shared-fn-name');
+    const orgB = await getLambdaUsageOverWindow(client, 'org-B-isolation', 'connection-placeholder', 'shared-fn-name');
 
     expect(orgA).toEqual({ invocations: 999, avgDurationMs: 10 });
     expect(orgB).toEqual({ invocations: 1, avgDurationMs: 5 });

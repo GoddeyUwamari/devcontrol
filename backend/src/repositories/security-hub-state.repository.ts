@@ -1,5 +1,6 @@
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
+import { withConnectionFence } from '../services/aws-connection-fence';
 import {
   SecurityHubCapabilityResult,
   SecurityHubStandardSummary,
@@ -58,8 +59,13 @@ export class SecurityHubStateRepository {
     });
   }
 
-  async markSyncStarted(organizationId: string): Promise<void> {
-    await withOrgClient(organizationId, (client) =>
+  /**
+   * Fenced on `connection` (AWS connect PR B, aws-connection-fence.ts): written only
+   * while the identity the sync started with (null: none) is still the
+   * organization's connection; otherwise ConnectionChangedError and nothing written.
+   */
+  async markSyncStarted(organizationId: string, connection: string | null): Promise<void> {
+    await withConnectionFence(pool, organizationId, connection, (client) =>
       client.query(
         `INSERT INTO organization_security_hub_state
            (organization_id, capability_status, last_sync_status, last_sync_started_at)
@@ -78,10 +84,13 @@ export class SecurityHubStateRepository {
    * Records the outcome of a sync attempt (capability result + standards discovery, if
    * any + final sync status). Called exactly once per sync, after ingestion completes
    * or fails -- never partially, so a reader never observes a state that mixes fields
-   * from two different sync attempts.
+   * from two different sync attempts. Fenced on `connection` like markSyncStarted:
+   * a sync whose connection is no longer the active one never overwrites the
+   * current connection's state.
    */
   async recordSyncResult(
     organizationId: string,
+    connection: string | null,
     params: {
       capability: SecurityHubCapabilityResult;
       enabledStandards: SecurityHubStandardSummary[];
@@ -91,7 +100,7 @@ export class SecurityHubStateRepository {
       findingsCount: number;
     }
   ): Promise<void> {
-    await withOrgClient(organizationId, (client) =>
+    await withConnectionFence(pool, organizationId, connection, (client) =>
       client.query(
         `INSERT INTO organization_security_hub_state
            (organization_id, capability_status, capability_checked_at, capability_error,

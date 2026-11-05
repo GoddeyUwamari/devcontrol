@@ -18,6 +18,7 @@ import { PoolClient } from 'pg';
 import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
 import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
 import type { ScanContext } from './scan-context';
+import { ConnectionChangedError, connectionIdentityOfClients } from './aws-connection-fence';
 import { pool } from '../config/database';
 import {
   EC2_PRICE_SOURCE_DEFAULT,
@@ -267,7 +268,17 @@ class CostOptimizationService {
    * CostRecommendationsRepository.reconcileActiveRecommendations() vs.
    * replaceReservedInstanceRecommendations() for how the two paths diverge.
    */
-  async analyzeAllResources(organizationId: string, scanContext?: ScanContext): Promise<{
+  async analyzeAllResources(
+    organizationId: string,
+    scanContext?: ScanContext,
+    /**
+     * The connection the caller's scan lease was taken for (AWS connect PR B). The
+     * clients built here must come from that same aws_accounts row; otherwise
+     * ConnectionChangedError is thrown before any detector's AWS call, so a lease
+     * and clients from two different connections never meet.
+     */
+    { expectedConnection }: { expectedConnection?: string } = {}
+  ): Promise<{
     observations: DetectorObservation[];
     riRecommendations: CreateRecommendationRequest[];
     /**
@@ -291,10 +302,14 @@ class CostOptimizationService {
     }
     // Every client, the regional ones included, under the call policy: no detector
     // call runs without a time limit.
-    const clients = withCallPolicyOnClients(
-      scanContext ? scanContext.clientsFor(scanContext.region) : await AWSClientFactory.createClients(organizationId),
-      this.callPolicy
-    );
+    const connectedClients = scanContext ? scanContext.clientsFor(scanContext.region) : await AWSClientFactory.createClients(organizationId);
+    // The connection these clients were built from (AWS connect PR B): the usage
+    // caches the detectors fill are keyed by it.
+    const connection = scanContext ? scanContext.connectionIdentity : connectionIdentityOfClients(connectedClients);
+    if (expectedConnection !== undefined && connection !== expectedConnection) {
+      throw new ConnectionChangedError(organizationId);
+    }
+    const clients = withCallPolicyOnClients(connectedClients, this.callPolicy);
 
     if (!clients.enabled) {
       console.log(`AWS not connected for org ${organizationId}, skipping cost analysis`);
@@ -339,7 +354,7 @@ class CostOptimizationService {
           cloudWatchClientForRegion: clients.getCloudWatchClientForRegion,
         }),
         lambdaLowUsageConfigResult.status === 'fulfilled'
-          ? this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, lambdaLowUsageConfigResult.value, clients.region)
+          ? this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, lambdaLowUsageConfigResult.value, clients.region, connection)
           : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
         this.detectDynamoDBCapacityOptimization(organizationId, clients),
         this.detectDynamoDBOnDemandVsProvisionedOptimization(organizationId, clients),
@@ -935,7 +950,10 @@ class CostOptimizationService {
     lambdaClient: LambdaClient,
     cloudWatchClient: CloudWatchClient,
     config: EffectiveOptimizationRuleConfig,
-    region: string
+    region: string,
+    // The connection the clients were built from (AWS connect PR B): the usage cache
+    // is keyed by it; null (a helper called on its own) reads and fills no cache.
+    connection: string | null = null
   ): Promise<DetectorResult> {
     try {
       const listing = await listAllPages(
@@ -954,7 +972,7 @@ class CostOptimizationService {
       for (const func of listing.items) {
         if (!func.FunctionName) continue;
 
-        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, func.FunctionName);
+        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, connection, func.FunctionName);
         if (usage === null) {
           // CloudWatch call itself failed -- never assumed zero, and the function is
           // unknown this scan: a stored recommendation for it is kept.

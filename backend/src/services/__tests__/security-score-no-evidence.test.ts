@@ -11,6 +11,7 @@
 import { Pool, PoolClient } from 'pg';
 import { RiskTrackingService } from '../risk-tracking.service';
 import { ActivityFeedService } from '../activity-feed.service';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from './helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -104,6 +105,7 @@ afterAll(async () => {
     await pool.query('DELETE FROM risk_score_history WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM account_security_findings WHERE organization_id = ANY($1)', [createdOrgIds]);
     await pool.query('DELETE FROM aws_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();
@@ -121,6 +123,7 @@ describe('daily security score snapshot', () => {
 
   it('stores a snapshot once resources have been discovered', async () => {
     const orgId = await insertOrg();
+    await connectPlaceholderAccount(pool, orgId);
     await insertResource(orgId);
 
     const stored = await withOrgClient(orgId, (client) => riskTracking.storeDailySnapshot(orgId, client));
@@ -133,6 +136,7 @@ describe('daily security score snapshot', () => {
 
   it('stores a snapshot when there are account findings but no resources', async () => {
     const orgId = await insertOrg();
+    await connectPlaceholderAccount(pool, orgId);
     await insertAccountFinding(orgId);
 
     const stored = await withOrgClient(orgId, (client) => riskTracking.storeDailySnapshot(orgId, client));
@@ -141,6 +145,18 @@ describe('daily security score snapshot', () => {
     const { rows } = await pool.query('SELECT overall_score FROM risk_score_history WHERE organization_id = $1', [orgId]);
     expect(rows).toHaveLength(1);
     expect(rows[0].overall_score).toBeLessThan(100);
+  });
+
+  it('AWS connect PR B: stores nothing when the organization has no active AWS connection, whatever data is left', async () => {
+    // Resources and findings from a connection that is no longer active: not scored.
+    const orgId = await insertOrg();
+    await insertResource(orgId);
+    await insertAccountFinding(orgId);
+
+    const stored = await withOrgClient(orgId, (client) => riskTracking.storeDailySnapshot(orgId, client));
+
+    expect(stored).toBe(false);
+    expect(await snapshotCount(orgId)).toBe(0);
   });
 });
 

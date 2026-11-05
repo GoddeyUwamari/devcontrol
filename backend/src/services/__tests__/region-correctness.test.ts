@@ -144,7 +144,10 @@ describe('detector region labels are the scanned region', () => {
     for (const name of ['detectIdleEC2Instances', 'detectUnusedElasticIPs', 'detectUnattachedEBSVolumes',
       'detectGp2ToGp3Migrations', 'detectLowUsageLambdaFunctions', 'detectReservedInstanceOpportunities']) {
       const args = spies[name].mock.calls[0];
-      expect([name, args[args.length - 1]]).toEqual([name, 'eu-west-1']);
+      // The low-usage Lambda detector takes the clients' connection identity after the
+      // region (AWS connect PR B, its usage cache key).
+      const region = name === 'detectLowUsageLambdaFunctions' ? args[4] : args[args.length - 1];
+      expect([name, region]).toEqual([name, 'eu-west-1']);
     }
   });
 });

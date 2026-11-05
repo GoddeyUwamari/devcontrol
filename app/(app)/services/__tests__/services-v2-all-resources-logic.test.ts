@@ -185,9 +185,13 @@ describe("What we didn't check: each line only in its condition", () => {
   })
 
   it('internal codes (scan_lease_lost) are ignored: no line, no Partial chip; other codes still count', () => {
-    expect(INTERNAL_WARNINGS).toEqual(['scan_lease_lost'])
+    expect(INTERNAL_WARNINGS).toEqual(['scan_lease_lost', 'connection_changed'])
+    // AWS connect PR B: the connection-changed code is internal too, never a line or a Partial chip.
+    expect(shownWarnings(['connection_changed', 'future_code'])).toEqual(['future_code'])
     expect(shownWarnings(['scan_lease_lost', 'future_code'])).toEqual(['future_code'])
     const done = (w: string[]) => cov({ last_scan: { status: 'completed', started_at: ago(32), completed_at: ago(30), warnings: w } })
+    expect(keys(done(['connection_changed']), stats())).toEqual(keys(cov(), stats()))
+    expect(describeCoverage(done(['connection_changed']), NOW, ['connection_changed']).chips[0]).toMatchObject({ state: 'complete' })
     // Persisted on the last scan, or reported by a run in this tab: neither adds a line.
     expect(keys(done(['scan_lease_lost']), stats())).toEqual(keys(cov(), stats()))
     expect(keys(cov(), stats(), ['scan_lease_lost'])).toEqual(keys(cov(), stats()))

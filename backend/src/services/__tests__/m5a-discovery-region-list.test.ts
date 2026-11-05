@@ -10,6 +10,7 @@
  * fakes (no AWS call is made). Fixture: a real DescribeRegions response, region
  * fields only; variants DERIVED from it are labelled. Placeholders only.
  */
+import { currentConnectionIdentity } from '../aws-connection-fence';
 import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -363,8 +364,8 @@ describe('the lease', () => {
         if (Date.now() > deadline) throw new Error('the lease did not expire');
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      other = await onTaggedConnection(pool2, orgId, (db) =>
-        acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY }, 'other-worker')
+      other = await onTaggedConnection(pool2, orgId, async (db) =>
+        acquireScanLease(db, { organizationId: orgId, awsAccountId: ACCOUNT, scanKind: SCAN_KIND_DISCOVERY, connection: (await currentConnectionIdentity(db, orgId))! }, 'other-worker')
       );
       return realResponse();
     });

@@ -3,6 +3,7 @@ import { RiskScoreHistoryRepository } from '../repositories/risk-score-history.r
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { calculateRiskScore, RiskScore } from '../utils/riskScoring';
+import { currentConnectionIdentity, lockConnectionShared } from './aws-connection-fence';
 
 type SeverityCounts = { critical: number; high: number; medium: number; low: number };
 
@@ -127,6 +128,33 @@ export class RiskTrackingService {
    * in the activity feed) as a real security score.
    */
   async storeDailySnapshot(organizationId: string, client?: PoolClient): Promise<boolean> {
+    if (client) return this.storeDailySnapshotFenced(organizationId, client);
+    return this.withOrgClient(organizationId, (own) => this.storeDailySnapshotFenced(organizationId, own));
+  }
+
+  /**
+   * The snapshot's reads and its insert in ONE transaction opened by the
+   * connection fence (AWS connect PR B, aws-connection-fence.ts): the shared
+   * connection lock is held from the first read to the commit, so no connection
+   * change can land between what was read and what is recorded. With no eligible
+   * AWS connection nothing is recorded: AWS-derived rows left from a connection
+   * that is no longer active are not scored.
+   */
+  private async storeDailySnapshotFenced(organizationId: string, client: PoolClient): Promise<boolean> {
+    await client.query('BEGIN');
+    try {
+      await lockConnectionShared(client, organizationId);
+      const connection = await currentConnectionIdentity(client, organizationId);
+      const stored = connection !== null && (await this.storeDailySnapshotIn(organizationId, client));
+      await client.query('COMMIT');
+      return stored;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async storeDailySnapshotIn(organizationId: string, client: PoolClient): Promise<boolean> {
     const stats = await this.resourcesRepository.getStats(organizationId, client);
     const accountFindings = await this.accountFindingsRepository.getStats(organizationId, client);
     if ((stats.total_resources || 0) === 0 && (accountFindings.total || 0) === 0) {

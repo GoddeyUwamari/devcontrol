@@ -10,7 +10,7 @@ export interface AwsAccount {
   external_id?: string | null
   region: string
   connected_at: string
-  status: 'active' | 'inactive'
+  status: string
 }
 
 export interface ConnectInitData {
@@ -40,6 +40,43 @@ export interface ConnectAwsResult {
   permissionCheck: PermissionCheckReport | null
 }
 
+/**
+ * Whether the organization has an active AWS connection, as the server decides
+ * it (GET /api/aws/accounts `connection.state`, backend routes/aws.routes.ts
+ * readConnectionState): exactly one eligible ('active') aws_accounts row.
+ *
+ *   connected      the one active connection exists
+ *   not_connected  none: no row, or only rows that are not active
+ *   ambiguous      more than one active row: the server scans none of them
+ *
+ * Never derived from how many rows the list has, nor from any AWS-derived data
+ * (stats, resources, spend): historical data left from an earlier connection
+ * says nothing about the current one.
+ */
+export type AwsConnectionState = 'connected' | 'not_connected' | 'ambiguous'
+
+export interface AwsAccountsAndConnection {
+  accounts: AwsAccount[]
+  connection: AwsConnectionState
+}
+
+const CONNECTION_STATES: readonly string[] = ['connected', 'not_connected', 'ambiguous']
+
+/**
+ * The connection state of a GET /api/aws/accounts body. A server from before the
+ * `connection` field (a deploy where this frontend ships first) is answered by
+ * the same rule from its rows' own status: exactly one 'active' row. Anything
+ * else is an error, never "not connected".
+ */
+export function parseAwsConnection(connection: unknown, accounts: unknown): AwsConnectionState {
+  const state = (connection as { state?: unknown } | null | undefined)?.state
+  if (typeof state === 'string' && CONNECTION_STATES.includes(state)) return state as AwsConnectionState
+  if (connection !== undefined) throw new Error('The AWS connection state was not recognized')
+  if (!Array.isArray(accounts)) throw new Error('The AWS accounts response was not a list')
+  const active = accounts.filter((account) => (account as { status?: unknown } | null)?.status === 'active').length
+  return active === 0 ? 'not_connected' : active === 1 ? 'connected' : 'ambiguous'
+}
+
 const awsAccountsService = {
   async connectInit(): Promise<ConnectInitData> {
     const response = await api.get<{ success: boolean; data: ConnectInitData }>(
@@ -57,11 +94,13 @@ const awsAccountsService = {
     return { account, permissionCheck: response.data.permissionCheck ?? null }
   },
 
-  async getAccounts(): Promise<AwsAccount[]> {
-    const response = await api.get<{ success: boolean; data: AwsAccount[] }>(
+  /** The organization's account rows and the server's connection state (parseAwsConnection). */
+  async getAccountsAndConnection(): Promise<AwsAccountsAndConnection> {
+    const response = await api.get<{ success: boolean; data: AwsAccount[]; connection?: unknown }>(
       '/api/aws/accounts'
     )
-    return handleApiResponse(response)
+    const accounts = handleApiResponse(response)
+    return { accounts, connection: parseAwsConnection(response.data.connection, accounts) }
   },
 }
 

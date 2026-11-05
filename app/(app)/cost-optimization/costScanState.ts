@@ -1,3 +1,4 @@
+import type { AwsConnectionState } from '@/lib/services/aws-accounts.service'
 import type { DiscoveryJob } from '@/lib/services/aws-resources.service'
 import type { CostAnalysisRun } from '@/lib/services/cost-recommendations.service'
 import type { AnalysisSource } from './costOptimizationStatus'
@@ -57,7 +58,8 @@ export interface QueryView<T> {
 }
 
 export interface CostScanInput {
-  accounts: QueryView<readonly unknown[]>
+  /** The server's AWS connection state (GET /api/aws/accounts `connection`), never the row count. */
+  connection: QueryView<AwsConnectionState>
   runs: QueryView<readonly CostAnalysisRun[]>
   jobs: QueryView<readonly Pick<DiscoveryJob, 'status' | 'cost_analysis_completed' | 'completed_at'>[]>
   isAnalyzing: boolean
@@ -157,11 +159,13 @@ function fromLegacyJobs(jobs: CostScanInput['jobs']['data']): CostScanState {
 }
 
 export function deriveCostScanState(input: CostScanInput): CostScanState {
-  const { accounts, runs, jobs, isAnalyzing } = input
+  const { connection, runs, jobs, isAnalyzing } = input
 
-  if (accounts.isError) return state('status_unavailable')
-  if (isLoading(accounts)) return state('loading')
-  if ((accounts.data ?? []).length === 0) return state('not_connected')
+  if (connection.isError) return state('status_unavailable')
+  if (isLoading(connection)) return state('loading')
+  if (connection.data === 'not_connected') return state('not_connected')
+  // More than one active connection: the server analyzes none of them.
+  if (connection.data !== 'connected') return state('status_unavailable')
 
   if (isAnalyzing) return state('running', { source: 'manual' })
 

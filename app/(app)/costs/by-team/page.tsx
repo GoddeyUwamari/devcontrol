@@ -100,15 +100,19 @@ export default function CostsByTeamPage() {
     enabled: !isDemoActive && entitled,
   })
 
-  const { data: awsAccounts } = useQuery({
+  // The server's connection state (GET /api/aws/accounts `connection`), never the
+  // row count or the spend figure: historical spend from an earlier connection does
+  // not make the account connected. Loading or a failed check shows the
+  // not-connected wording, as before.
+  const { data: awsConnection } = useQuery({
     queryKey: ['aws-accounts'],
-    queryFn: awsAccountsService.getAccounts,
+    queryFn: awsAccountsService.getAccountsAndConnection,
     enabled: !isDemoActive && entitled,
   })
 
   const data = isDemoActive ? DEMO_DATA : null
   const totalCost = data?.total_monthly_cost ?? 0
-  const isAwsConnected = isDemoActive || (awsAccounts?.length ?? 0) > 0
+  const isAwsConnected = isDemoActive || awsConnection?.connection === 'connected'
   const spend = describeStatsSpend(platformStats, { isLoading: statsLoading, isError: statsError })
 
   if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />

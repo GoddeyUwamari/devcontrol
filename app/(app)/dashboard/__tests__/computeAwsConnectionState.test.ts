@@ -1,44 +1,40 @@
+/**
+ * The dashboard's "is AWS connected" (AWS connect PR B): only the server's
+ * connection state decides it (GET /api/aws/accounts `connection`), never
+ * the legacy stats (cost, deployments, services) or how many rows exist.
+ */
 import { describe, it, expect } from 'vitest'
 import { computeAwsConnectionState } from '../dashboardAwsConnection'
 
-const ZERO = { monthlyAwsCost: 0, activeDeployments: 0, totalServices: 0 }
-const base = { isDemoActive: false, awsAccounts: undefined as unknown[] | undefined, awsAccountsFailed: false, statsLoading: false, stats: ZERO }
+const base = { isDemoActive: false, connection: undefined, connectionFailed: false } as const
 
 describe('computeAwsConnectionState', () => {
-  it('connected: the accounts request returned at least one account', () => {
-    expect(computeAwsConnectionState({ ...base, awsAccounts: [{ id: 'a' }] })).toBe('connected')
-    // Even while the stats are still loading, or failed.
-    expect(computeAwsConnectionState({ ...base, awsAccounts: [{ id: 'a' }], statsLoading: true, stats: undefined })).toBe('connected')
+  it('connected: the server reports one active connection', () => {
+    expect(computeAwsConnectionState({ ...base, connection: 'connected' })).toBe('connected')
+    // A failed background refetch keeps the last successful answer.
+    expect(computeAwsConnectionState({ ...base, connection: 'connected', connectionFailed: true })).toBe('connected')
   })
 
-  it('unconnected: the accounts request succeeded with none, and the stats show nothing', () => {
-    expect(computeAwsConnectionState({ ...base, awsAccounts: [] })).toBe('unconnected')
-    // The stats request failing does not change what the accounts request established.
-    expect(computeAwsConnectionState({ ...base, awsAccounts: [], stats: undefined })).toBe('unconnected')
+  it('unconnected: the server reports none (no row, or only rows that are not active)', () => {
+    expect(computeAwsConnectionState({ ...base, connection: 'not_connected' })).toBe('unconnected')
   })
 
-  it('unknown: the accounts request failed -- never read as unconnected', () => {
-    expect(computeAwsConnectionState({ ...base, awsAccountsFailed: true })).toBe('unknown')
-    expect(computeAwsConnectionState({ ...base, awsAccountsFailed: true, stats: undefined })).toBe('unknown')
+  it('unknown: the request failed, or more than one active connection -- never read as unconnected', () => {
+    expect(computeAwsConnectionState({ ...base, connectionFailed: true })).toBe('unknown')
+    expect(computeAwsConnectionState({ ...base, connection: 'ambiguous' })).toBe('unknown')
   })
 
-  it('loading: until both the accounts and the stats have settled', () => {
+  it('loading: until the accounts request has settled', () => {
     expect(computeAwsConnectionState({ ...base })).toBe('loading')
-    expect(computeAwsConnectionState({ ...base, awsAccounts: [], statsLoading: true, stats: undefined })).toBe('loading')
-    expect(computeAwsConnectionState({ ...base, awsAccountsFailed: true, statsLoading: true, stats: undefined })).toBe('loading')
-  })
-
-  it.each([
-    ['monthlyAwsCost', { ...ZERO, monthlyAwsCost: 1 }],
-    ['activeDeployments', { ...ZERO, activeDeployments: 1 }],
-    ['totalServices', { ...ZERO, totalServices: 1 }],
-  ])('the legacy stats fallback (%s > 0) still means connected, whatever the accounts request said', (_name, stats) => {
-    expect(computeAwsConnectionState({ ...base, awsAccounts: [], stats })).toBe('connected')
-    expect(computeAwsConnectionState({ ...base, awsAccountsFailed: true, stats })).toBe('connected')
-    expect(computeAwsConnectionState({ ...base, stats })).toBe('connected')
   })
 
   it('demo mode is always connected', () => {
-    expect(computeAwsConnectionState({ ...base, isDemoActive: true, awsAccountsFailed: true })).toBe('connected')
+    expect(computeAwsConnectionState({ ...base, isDemoActive: true, connectionFailed: true })).toBe('connected')
+  })
+
+  it('takes no stats and no row list: historical AWS-derived data cannot make it connected', () => {
+    // The function's whole input is the connection state; the old stats fallback is gone.
+    const source = computeAwsConnectionState.toString()
+    expect(source).not.toMatch(/monthlyAwsCost|activeDeployments|totalServices|length/)
   })
 })

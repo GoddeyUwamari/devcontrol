@@ -87,7 +87,7 @@ beforeEach(() => {
   vi.spyOn(complianceFrameworksService, 'getFrameworks').mockResolvedValue([] as never)
   vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
     ok: true,
-    json: async () => ({ data: String(url).includes('/api/aws/accounts') ? [{ id: 'acct' }] : [] }),
+    json: async () => (String(url).includes('/api/aws/accounts') ? { data: [{ id: 'acct', status: 'active' }], connection: { state: 'connected' } } : { data: [] }),
   })))
 })
 afterEach(() => {

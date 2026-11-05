@@ -12,8 +12,8 @@
  * separates them again: readers take the column when it is set and fall back to
  * error_message for older rows (jobWarnings()), and the readiness gate ignores them.
  * A code added after the column (DISCOVERY_WARNING_LISTING_TRUNCATED,
- * DISCOVERY_WARNING_SCAN_LEASE_LOST) is written to the column only, never to
- * error_message.
+ * DISCOVERY_WARNING_SCAN_LEASE_LOST, DISCOVERY_WARNING_CONNECTION_CHANGED) is
+ * written to the column only, never to error_message.
  */
 
 /**
@@ -36,10 +36,19 @@ export const DISCOVERY_WARNING_LISTING_TRUNCATED = 'discovery_listing_truncated'
  */
 export const DISCOVERY_WARNING_SCAN_LEASE_LOST = 'scan_lease_lost';
 
+/**
+ * The scan stopped because the organization's AWS connection changed while it ran
+ * (AWS connect PR B, prB-plan.md D4): nothing more from the old connection was
+ * written, and its job row carries the approved interrupted text. Internal: no page
+ * renders it.
+ */
+export const DISCOVERY_WARNING_CONNECTION_CHANGED = 'connection_changed';
+
 export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
   DISCOVERY_WARNING_SCAN_LEASE_LOST,
+  DISCOVERY_WARNING_CONNECTION_CHANGED,
 ] as const;
 
 export type DiscoveryWarning = (typeof DISCOVERY_WARNINGS)[number];

@@ -164,8 +164,9 @@ function installNetworkDoubles() {
     return respond(name, (t) => ({
       ok: true,
       json: async () => ({
+        ...(name === 'aws-accounts' ? { connection: { state: 'connected' } } : {}),
         data: name === 'aws-accounts'
-          ? [{ id: `acct-${t}`, owner: ORG[t].id }]
+          ? [{ id: `acct-${t}`, owner: ORG[t].id, status: 'active' }]
           : name === 'cost-trend'
             ? [{ date: '2026-09-01', owner: ORG[t].id, compute: 1, storage: 0, database: 0, network: 0, other: 0, total: SPEND[t] }]
             : [],

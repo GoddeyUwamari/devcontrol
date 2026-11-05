@@ -11,6 +11,7 @@
  */
 import { Pool, PoolClient } from 'pg'
 import { CloudWatchService } from '../cloudwatch.service'
+import { currentConnectionIdentity } from '../aws-connection-fence'
 import { AWSClientFactory } from '../aws-client-factory.service'
 import awsCostService from '../aws-cost.service'
 import { pool as appPool, requestContext } from '../../config/database'
@@ -43,6 +44,11 @@ async function sweep(orgId: string, accountId: string, metrics: Record<string, M
   jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({ total: 0 } as any)
   const snapshot = result!.observability!
   return { snapshot, row: snapshot.rows.find((r) => r.row.name === 'web-running')?.row as any }
+}
+
+/** The organization's connection identity (AWS connect PR B), as a sweep's clients would carry it. */
+async function connectionOf(orgId: string): Promise<string> {
+  return (await currentConnectionIdentity(pool, orgId))!
 }
 
 async function storedRow(orgId: string) {
@@ -177,9 +183,10 @@ describe('a check that recorded no query (review F8)', () => {
       resourceId: 'i-1234567890abcdef0', resourceDbId: id, resourceSortName: 'web-running', name: 'web-running', description: '',
       resourceType: 'ec2', status: 'healthy', uptime: 100, responseTimeMs: null, errorRate: null, critical: true, monitored: true,
     }
+    const connection = await connectionOf(orgId)
     const build = (queries: Record<string, string>, sweepAt: Date) =>
       (new CloudWatchService() as any).buildObservabilitySnapshot({
-        organizationId: orgId, accountId, region: REGION, range: '1h', sweepAt, resources, services: [healthyRow],
+        organizationId: orgId, connection, accountId, region: REGION, range: '1h', sweepAt, resources, services: [healthyRow],
         evidence: new Map([[id, { kind: 'cloudwatch', queries, newestDatapointAt: Object.keys(queries).length ? DATAPOINT_AT : null }]]),
         failedBlocks: new Set(),
       })
@@ -265,7 +272,7 @@ describe('storage isolation and failure', () => {
   it('(L7) RLS: devcontrol tagged as org A sees none of org B, and cannot write for org B', async () => {
     const a = await newOrg('rls-a')
     const b = await newOrg('rls-b')
-    await recordObservations(appPool, { organizationId: b.orgId, awsAccountId: b.accountId, region: REGION }, [
+    await recordObservations(appPool, { organizationId: b.orgId, awsAccountId: b.accountId, region: REGION, connection: await connectionOf(b.orgId) }, [
       { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
     ], 'complete', new Date())
 
@@ -305,12 +312,12 @@ describe('storage isolation and failure', () => {
   it('(L8/L9) a read names org, account and region: another account or region gets nothing', async () => {
     const { orgId, accountId, idsByName } = await newOrg('scope-keys')
     const write = [{ resourceDbId: idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null }]
-    const own = await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION }, write, 'complete', new Date())
+    const own = await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION, connection: await connectionOf(orgId) }, write, 'complete', new Date())
     expect(own.stored.get(idsByName['web-running'])?.lastDatapointAt).toEqual(DATAPOINT_AT)
 
-    const otherAccount = await recordObservations(appPool, { organizationId: orgId, awsAccountId: OTHER_ACCOUNT, region: REGION }, [], 'complete', new Date())
+    const otherAccount = await recordObservations(appPool, { organizationId: orgId, awsAccountId: OTHER_ACCOUNT, region: REGION, connection: await connectionOf(orgId) }, [], 'complete', new Date())
     expect(otherAccount.stored.size).toBe(0)
-    const otherRegion = await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: 'eu-west-1' }, [], 'complete', new Date())
+    const otherRegion = await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: 'eu-west-1', connection: await connectionOf(orgId) }, [], 'complete', new Date())
     expect(otherRegion.stored.size).toBe(0)
   })
 
@@ -319,7 +326,8 @@ describe('storage isolation and failure', () => {
     const b = await newOrg('shared-scope-b')
     // Both organizations' rows under one account and region, written and read as the superuser test role,
     // which row-level security never restricts: only the read's own organization predicate separates them.
-    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION })
+    const connections = new Map([[a.orgId, await connectionOf(a.orgId)], [b.orgId, await connectionOf(b.orgId)]])
+    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION, connection: connections.get(organizationId)! })
     await recordObservations(appPool, scope(b.orgId), [
       { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
     ], 'complete', new Date())
@@ -334,6 +342,11 @@ describe('storage isolation and failure', () => {
   it('(review F6) the real write and read path works as devcontrol under FORCE RLS, and sees only its own organization', async () => {
     const a = await newOrg('as-devcontrol-a')
     const b = await newOrg('as-devcontrol-b')
+    // The write is fenced on the AWS connection (AWS connect PR B), which reads aws_accounts:
+    // the application role can (every scan does); the local devcontrol test role is granted
+    // SELECT for this test only, if it doesn't already have it.
+    const granted = (await pool.query(`SELECT has_table_privilege('devcontrol', 'aws_accounts', 'SELECT') AS ok`)).rows[0].ok
+    if (!granted) await pool.query('GRANT SELECT ON aws_accounts TO devcontrol')
     const asDevcontrolDb = {
       connect: async () => {
         const c = await pool.connect()
@@ -342,7 +355,8 @@ describe('storage isolation and failure', () => {
         return Object.assign(c, { release: () => { c.query('RESET ROLE').finally(() => release()) } })
       },
     } as any
-    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION })
+    const connections = new Map([[a.orgId, await connectionOf(a.orgId)], [b.orgId, await connectionOf(b.orgId)]])
+    const scope = (organizationId: string) => ({ organizationId, awsAccountId: OTHER_ACCOUNT, region: REGION, connection: connections.get(organizationId)! })
     const wroteB = await recordObservations(asDevcontrolDb, scope(b.orgId), [
       { resourceDbId: b.idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
     ], 'complete', new Date())
@@ -352,6 +366,7 @@ describe('storage isolation and failure', () => {
     ], 'complete', new Date())
     expect(readA.persisted).toBe(true)
     expect([...readA.stored.keys()]).toEqual([a.idsByName['web-running']])
+    if (!granted) await pool.query('REVOKE SELECT ON aws_accounts FROM devcontrol')
   })
 
   it('(L6) a missing table is no stored history, never an error; checked_at falls back to this sweep only when complete', async () => {
@@ -366,7 +381,7 @@ describe('storage isolation and failure', () => {
       }),
     } as any
     const sweepAt = new Date('2026-10-28T10:00:00.000Z')
-    const scope = { organizationId: '00000000-0000-4000-8000-00000000000a', awsAccountId: OTHER_ACCOUNT, region: REGION }
+    const scope = { organizationId: '00000000-0000-4000-8000-00000000000a', awsAccountId: OTHER_ACCOUNT, region: REGION, connection: 'placeholder-connection' }
     expect(await recordObservations(fakeDb, scope, [], 'complete', sweepAt)).toEqual({ stored: new Map(), lastFullSuccessAt: sweepAt, persisted: false })
     expect(await recordObservations(fakeDb, scope, [], 'partial', sweepAt)).toEqual({ stored: new Map(), lastFullSuccessAt: null, persisted: false })
   })
@@ -374,8 +389,9 @@ describe('storage isolation and failure', () => {
   it('(L10) writes use their own connection, never the request one (which may already be released)', async () => {
     const { orgId, accountId, idsByName } = await newOrg('own-connection')
     const released = { query: () => Promise.reject(new Error('request connection already released')) } as any
+    const connection = await connectionOf(orgId)
     const result = await requestContext.run(released, () =>
-      recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION }, [
+      recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION, connection }, [
         { resourceDbId: idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
       ], 'complete', new Date())
     )
@@ -385,7 +401,7 @@ describe('storage isolation and failure', () => {
 
   it('deleting the resource deletes its observations (composite foreign key, cascade)', async () => {
     const { orgId, accountId, idsByName } = await newOrg('cascade')
-    await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION }, [
+    await recordObservations(appPool, { organizationId: orgId, awsAccountId: accountId, region: REGION, connection: await connectionOf(orgId) }, [
       { resourceDbId: idsByName['web-running'], lastDatapointAt: DATAPOINT_AT, lastSuccessfulCheckAt: null },
     ], 'complete', new Date())
     await pool.query('DELETE FROM aws_resources WHERE id = $1', [idsByName['web-running']])

@@ -128,7 +128,7 @@ export default function CostOptimizationPage() {
   // compute isAwsConnected.
   const { data: awsAccounts, isError: accountsError, refetch: refetchAccounts } = useQuery({
     queryKey: ['aws-accounts'],
-    queryFn: awsAccountsService.getAccounts,
+    queryFn: awsAccountsService.getAccountsAndConnection,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     enabled: !isDemoActive,
@@ -287,9 +287,12 @@ export default function CostOptimizationPage() {
   const pendingMutation = (id: string) => resolveMutation.isPending && resolveMutation.variables === id
     || dismissMutation.isPending && dismissMutation.variables === id;
 
-  const awsConnected = awsAccounts === undefined ? undefined : awsAccounts.length > 0;
+  // The server's connection state, never the row count: undefined (not known) while
+  // loading, on a failed check, or with more than one active connection.
+  const connectionState = awsAccounts?.connection;
+  const awsConnected = connectionState === 'connected' ? true : connectionState === 'not_connected' ? false : undefined;
   const scan = deriveCostScanState({
-    accounts: { data: awsAccounts, isError: accountsError },
+    connection: { data: connectionState, isError: accountsError },
     runs: { data: analysisRuns, isError: runsError },
     jobs: { data: discoveryJobs, isError: jobsError },
     isAnalyzing,

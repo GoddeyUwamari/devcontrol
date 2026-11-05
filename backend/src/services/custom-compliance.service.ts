@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { assertConnectionUnchanged, currentConnectionIdentity, isConnectionChanged } from './aws-connection-fence';
 import {
   ComplianceFrameworksRepository,
   ComplianceFrameworkRule,
@@ -72,6 +73,12 @@ const CLIENT_END_WAIT_MS = 2 * 1000;
 
 export const SCAN_TIMED_OUT_MESSAGE = 'Timed out after 10 minutes';
 export const SCAN_INTERRUPTED_MESSAGE = 'Interrupted: the server restarted during the scan';
+/**
+ * A scan stopped because the organization's AWS connection changed while it ran
+ * (AWS connect PR B): its findings were rolled back. NEEDS FOUNDER APPROVAL
+ * (prB-author-report.md); unreachable through the app until PR C adds disconnect.
+ */
+export const SCAN_CONNECTION_CHANGED_MESSAGE = 'Interrupted: the AWS connection changed during the scan';
 
 const LOCK_NOT_AVAILABLE = '55P03';
 
@@ -558,6 +565,11 @@ export class CustomComplianceService {
   ): Promise<ComplianceScan> {
     let inTransaction = false;
     try {
+      // The connection this scan's findings belong to (AWS connect PR B), read before
+      // it starts: the findings and the completion commit only while it is still the
+      // active connection (null: the organization had none, and still has none).
+      const connection = await currentConnectionIdentity(client, organizationId);
+
       // Update scan to running (committed on its own, so the run shows as running while it works)
       const running = await this.repository.updateScan(scan.id, {
         status: 'running',
@@ -573,6 +585,10 @@ export class CustomComplianceService {
       inTransaction = true;
       await client.query(`SET LOCAL statement_timeout = ${SCAN_STATEMENT_TIMEOUT_MS}`);
       await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${SCAN_IDLE_IN_TRANSACTION_TIMEOUT_MS}`);
+      // The connection fence: the shared connection lock is held from here to the
+      // commit, so the resources read and every finding written belong to one
+      // connection, and no connection change commits in between.
+      await assertConnectionUnchanged(client, organizationId, connection);
 
       // Get framework and rules
       const frameworkData = await this.repository.findFrameworkWithRules(frameworkId, organizationId, client);
@@ -737,9 +753,10 @@ export class CustomComplianceService {
 
       console.error(`[CustomCompliance] Scan ${scan.id} failed:`, error);
 
+      // Its own scan row, only while still pending or running (as before).
       await this.repository.updateScan(scan.id, {
         status: 'failed',
-        error_message: error.message,
+        error_message: isConnectionChanged(error) ? SCAN_CONNECTION_CHANGED_MESSAGE : error.message,
         completed_at: new Date(),
       }, client, ['pending', 'running']);
 

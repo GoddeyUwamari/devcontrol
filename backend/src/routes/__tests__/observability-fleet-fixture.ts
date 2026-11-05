@@ -11,6 +11,36 @@
 import type { Pool } from 'pg'
 import { EC2Client } from '@aws-sdk/client-ec2'
 import { ensureSharedFixtureTable } from './shared-fixture-tables'
+import * as clientFactory from '../../services/aws-client-factory.service'
+import type { AwsAccountRow } from '../../repositories/aws-accounts.repository'
+
+/**
+ * Each fixture organization's aws_accounts row, by its 12-digit account id
+ * (AWS connect PR B): fakeClients() records it as the row the clients were
+ * built from, as createClients() does for real clients, so a sweep's connection
+ * identity is the database's eligible row and its fenced writes pass.
+ */
+const fleetRows = new Map<string, AwsAccountRow>()
+const sourceRows = new WeakMap<object, AwsAccountRow>()
+
+function recordSource(clients: object, row: AwsAccountRow): void {
+  sourceRows.set(clients, row)
+  if (jest.isMockFunction(clientFactory.assumedRoleSourceOf)) return
+  const original = clientFactory.assumedRoleSourceOf
+  jest.spyOn(clientFactory, 'assumedRoleSourceOf').mockImplementation((c) => {
+    // A test that spreads fake clients into a new object keeps their account id.
+    const own = sourceRows.get(c) ?? (typeof (c as { accountId?: unknown })?.accountId === 'string' ? fleetRows.get((c as { accountId: string }).accountId) : undefined)
+    return own
+      ? {
+          organizationId: own.org_id,
+          account: { ...own },
+          region: own.region ?? REGION,
+          credentials: { accessKeyId: 'ASIAPLACEHOLDER', secretAccessKey: 'placeholder-secret', sessionToken: 'placeholder-token' },
+          expiration: new Date(Date.now() + 60 * 60 * 1000),
+        }
+      : original(c)
+  })
+}
 
 // aws_accounts.account_id is unique, so each organization gets its own random account.
 export function randomAccountId(): string {
@@ -132,11 +162,13 @@ export async function insertFleetOrg(
   const tag = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const { rows } = await pool.query(`INSERT INTO organizations (name, slug, display_name) VALUES ($1, $1, $1) RETURNING id`, [`obs-fixture-${tag}`])
   const orgId = rows[0].id as string
-  await pool.query(
+  const { rows: accountRows } = await pool.query(
     `INSERT INTO aws_accounts (account_id, role_arn, status, external_id, region, org_id)
-     VALUES ($1, $2, 'active', 'ext-id-test', $3, $4)`,
+     VALUES ($1, $2, 'active', 'ext-id-test', $3, $4)
+     RETURNING id, org_id, account_id, role_arn, external_id, region, nickname, status, connected_at`,
     [accountId, `arn:aws:iam::${accountId}:role/DevControlTest`, REGION, orgId]
   )
+  fleetRows.set(accountId, accountRows[0])
   const idsByName: Record<string, string> = {}
   for (const r of fleet) {
     const { rows: inserted } = await pool.query(
@@ -189,7 +221,7 @@ export function fakeClients(options: FakeAwsOptions): any {
       }
     },
   }
-  return {
+  const clients = {
     cloudWatch,
     getCloudWatchClientForRegion: () => cloudWatch,
     ecs: {
@@ -215,6 +247,9 @@ export function fakeClients(options: FakeAwsOptions): any {
     enabled: true,
     accountId: options.accountId,
   }
+  const row = fleetRows.get(options.accountId)
+  if (row) recordSource(clients, row)
+  return clients
 }
 
 /** The response with run-dependent fields replaced, so it compares equal across runs. */

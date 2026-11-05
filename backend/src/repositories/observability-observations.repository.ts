@@ -18,6 +18,7 @@
 import type { Pool, PoolClient } from 'pg'
 import { DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX, jobWarnings } from '../services/discovery-warnings'
 import type { StoredObservation } from '../services/observability-states'
+import { CONNECTION_CHANGED, isConnectionChanged, withConnectionFenceOn } from '../services/aws-connection-fence'
 
 export interface ObservationWrite {
   resourceDbId: string
@@ -31,6 +32,12 @@ export interface ObservationScope {
   organizationId: string
   awsAccountId: string
   region: string
+  /**
+   * The connection the sweep's clients were built from (awsConnectionIdentity,
+   * aws-connection-fence.ts): the write transaction commits only while it is still
+   * the organization's active connection (AWS connect PR B).
+   */
+  connection: string
 }
 
 export interface RecordedObservations {
@@ -78,7 +85,10 @@ export async function recordObservations(
   try {
     client = await db.connect()
     const c = client
-    return await inTenantTransaction(c, scope.organizationId, async () => {
+    // The connection fence opens the write transaction (AWS connect PR B): a sweep
+    // whose connection is no longer the active one writes nothing and reads back
+    // nothing (it falls back to what it saw itself).
+    return await withConnectionFenceOn(c, scope.organizationId, scope.connection, async () => {
       const rows = writes.filter((w) => w.lastDatapointAt || w.lastSuccessfulCheckAt)
       if (rows.length > 0) {
         await c.query(
@@ -130,7 +140,9 @@ export async function recordObservations(
       return { stored, lastFullSuccessAt: scopeRows[0]?.last_full_success_at ?? null, persisted: true }
     })
   } catch (err: any) {
-    if (err?.code === UNDEFINED_TABLE) {
+    if (isConnectionChanged(err)) {
+      console.warn(`[Observability] ${CONNECTION_CHANGED}: org ${scope.organizationId}'s observations were not recorded (the AWS connection changed during the sweep)`)
+    } else if (err?.code === UNDEFINED_TABLE) {
       if (!missingTablesLogged) {
         missingTablesLogged = true
         console.warn('[Observability] observation tables are not present; Last seen uses the current window only')

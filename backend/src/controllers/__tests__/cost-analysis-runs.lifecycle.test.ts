@@ -12,6 +12,9 @@ import costOptimizationService from '../../services/cost-optimization.service';
 import * as scanSession from '../../services/scan-session';
 import { acquireScanLease, releaseLease } from '../../services/scan-lease';
 import { LeaseLostError } from '../../services/scan-lease';
+import * as fenceModule from '../../services/aws-connection-fence';
+import { currentConnectionIdentity } from '../../services/aws-connection-fence';
+import { AWSClientFactory } from '../../services/aws-client-factory.service';
 import { connectPlaceholderAccount, PLACEHOLDER_ACCOUNT_ROW, removePlaceholderAccounts } from '../../services/__tests__/helpers/scan-source';
 import type { DetectorObservation } from '../../services/cost-optimization.service';
 import type { CreateRecommendationRequest } from '../../types';
@@ -85,8 +88,9 @@ async function list(orgId: string, query: Record<string, string> = {}) {
 }
 
 async function holdLease(orgId: string) {
+  const connection = (await currentConnectionIdentity(pool, orgId))!;
   return scanSession.onTaggedConnection(pool, orgId, (client) =>
-    acquireScanLease(client, { organizationId: orgId, awsAccountId: PLACEHOLDER_ACCOUNT_ROW.account_id!, scanKind: scanSession.SCAN_KIND_DISCOVERY }, 'other-worker')
+    acquireScanLease(client, { organizationId: orgId, awsAccountId: PLACEHOLDER_ACCOUNT_ROW.account_id!, scanKind: scanSession.SCAN_KIND_DISCOVERY, connection }, 'other-worker')
   );
 }
 
@@ -148,7 +152,7 @@ describe('run states', () => {
 
   it('failed: analysis without the scan lease saved nothing, so it does not report success', async () => {
     const orgId = await insertOrg();
-    jest.spyOn(scanSession, 'leaseAccountFor').mockResolvedValue(null);
+    jest.spyOn(scanSession, 'leaseTargetFor').mockResolvedValue(null);
     mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [finding('i-a')] }, retiredRds]);
     const { status, json } = await analyze(orgId);
     const [run] = await fetchRuns(orgId);
@@ -198,7 +202,7 @@ describe('markFinished', () => {
         totalPotentialSavings: 0,
         summary: { state: 'failed', checks: [], failedDetectorCount: 1, unknownResourceCount: 0 },
         counts: null,
-      })
+      }, (await holdLease(orgId))!)
     ).rejects.toThrow('cannot be marked finished');
   });
 
@@ -211,7 +215,7 @@ describe('markFinished', () => {
       totalPotentialSavings: 1,
       summary: { state: 'completed', checks: [], failedDetectorCount: 0, unknownResourceCount: 0 },
       counts: null,
-    });
+    }, (await holdLease(orgId))!);
     expect((await fetchRuns(orgId))[0].status).toBe('interrupted');
   });
 });
@@ -343,5 +347,46 @@ describe('GET /analysis-runs', () => {
     const [run] = await list(orgId);
     expect(JSON.stringify(run)).not.toContain('arn:aws');
     expect(run).not.toHaveProperty('lease_acquired_at');
+  });
+});
+
+describe('AWS connect PR B: the Cost Analyze race', () => {
+  it('the lease and the analysis clients come from the same connection read', async () => {
+    const orgId = await insertOrg();
+    const identity = await currentConnectionIdentity(pool, orgId);
+    const waitSpy = jest.spyOn(scanSession, 'waitForScanSession');
+    const analysisSpy = mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [] }, retiredRds]);
+    await analyze(orgId);
+    const session = await waitSpy.mock.results[0].value;
+    expect(session.lease.connection).toBe(identity);
+    expect(analysisSpy).toHaveBeenCalledWith(orgId, undefined, { expectedConnection: identity });
+  });
+
+  it('clients built from another connection: interrupted (409, approved text), nothing saved, no detector runs', async () => {
+    const orgId = await insertOrg();
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({ enabled: true, region: 'us-east-1', costExplorer: {}, ec2: {}, cloudWatch: {}, lambda: {}, s3: {} } as any);
+    // The row the clients were built from is no longer the one the lease was taken for.
+    jest.spyOn(fenceModule, 'connectionIdentityOfClients').mockReturnValue('["another-connection-row"]');
+    const detector = jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances');
+    const { status, json } = await analyze(orgId);
+    expect(status).toHaveBeenCalledWith(409);
+    expect(json).toHaveBeenCalledWith({ success: false, error: 'The analysis was interrupted before it finished. Run it again.' });
+    expect(detector).not.toHaveBeenCalled();
+    expect((await fetchRuns(orgId))[0].status).toBe('interrupted');
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM cost_recommendations WHERE organization_id = $1`, [orgId]);
+    expect(rows[0].count).toBe(0);
+  });
+
+  it('the connection changes after the reconcile and before the finish: the run is interrupted, never completed', async () => {
+    const orgId = await insertOrg();
+    // The RI check did not complete, so nothing else is written between the reconcile and the finish.
+    mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [] }, retiredRds], false);
+    jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations').mockImplementation(async () => {
+      await pool.query(`UPDATE aws_accounts SET role_arn = 'arn:aws:iam::111122223333:role/devcontrol-readonly' WHERE org_id = $1`, [orgId]);
+      return { insertedCount: 0 };
+    });
+    const { status } = await analyze(orgId);
+    expect(status).toHaveBeenCalledWith(409);
+    expect((await fetchRuns(orgId))[0].status).toBe('interrupted');
   });
 });
