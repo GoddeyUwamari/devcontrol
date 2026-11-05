@@ -7,7 +7,7 @@
  * (axios stubbed).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { api } from '@/lib/api'
 import { renderWithKnownPlan } from '@/lib/contexts/__tests__/org-load-harness'
 import { axiosError } from '@/lib/plan/__tests__/tier-required-fixture'
@@ -122,6 +122,27 @@ describe('/remediation: a failed action says why', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })) })
 
     expect(post).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('the message shows only on the panel of the workflow it was about, not on another', async () => {
+    const other = { ...WORKFLOW, id: 'wf-2', resource_id: 'i-0def' }
+    vi.spyOn(api, 'get').mockImplementation(async (url: string) => {
+      const detail = url.match(/^\/api\/remediation\/([^/?]+)$/)
+      if (detail) return ok(detail[1] === 'wf-2' ? other : WORKFLOW) as never
+      if (url.startsWith('/api/remediation')) return ok([WORKFLOW, other]) as never
+      throw new Error(`unexpected ${url}`)
+    })
+    vi.spyOn(api, 'post').mockRejectedValue(axiosError(403, { success: false, error: STOP_REFUSAL }))
+
+    await openAndPress('Approve')
+    expect((await screen.findByRole('alert')).textContent).toBe(STOP_REFUSAL)
+
+    // Switch to the other workflow: its panel shows no message.
+    await act(async () => { fireEvent.click(screen.getAllByText('i-0def')[0]) })
+    // The panel now shows wf-2 (its resource id appears in the list and in the panel).
+    await waitFor(() => expect(screen.getAllByText('i-0def').length).toBeGreaterThan(1))
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
   })
 })

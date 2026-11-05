@@ -16,7 +16,7 @@
  * Postgres. Stubbed: the STS and EC2 clients -- no test reaches AWS.
  *
  * POST /:id/execute is limited to 10 requests an hour per caller address:
- * this file sends 9.
+ * this file sends 10 (the limit).
  */
 import { STSClient } from '@aws-sdk/client-sts';
 import {
@@ -271,6 +271,70 @@ describe('approve and execute refuse stored workflows that are not eligible', ()
       expect(await workflowRow(id)).toEqual(before);
       expect((await refusalsSince(since)).map((row) => [row.user_id, row.metadata.stage, row.metadata.reason])).toEqual([
         [org.admin, 'execute', 'marker_missing'],
+      ]);
+      expectNoAwsCall();
+    }
+  );
+});
+
+describe("another organization's otherwise eligible finding (ACTIVE, EC2 Idle Instance, same instance, rule_version 2)", () => {
+  let otherOrg: RoleGateOrg;
+  let resourceId: string;
+  let foreignFindingId: string;
+  const foreignFinding = async () =>
+    (await pool.query('SELECT * FROM cost_recommendations WHERE id = $1', [foreignFindingId])).rows[0];
+
+  beforeAll(async () => {
+    otherOrg = await harness.buildOrg();
+    resourceId = instanceId();
+    foreignFindingId = await insertEligibleStopFinding(pool, otherOrg.orgId, resourceId, { awsRegion: 'us-east-1' });
+  });
+
+  async function refusalsInEither(since: Date) {
+    const { rows } = await pool.query(
+      `SELECT organization_id, user_id, resource_id, metadata FROM audit_logs
+        WHERE organization_id = ANY($1) AND action = 'remediation.stop_refused' AND created_at >= $2 ORDER BY created_at, id`,
+      [[org.orgId, otherOrg.orgId], since]
+    );
+    return rows;
+  }
+
+  it('create: refused by the existing ownership rule, exactly like a missing id; nothing written, no AWS', async () => {
+    const before = { home: await counts(), finding: await foreignFinding() };
+    const since = await dbNow();
+
+    const foreign = await create({ resourceId, recommendationId: foreignFindingId });
+    const missing = await create({ resourceId, recommendationId: '00000000-0000-4000-8000-0000000000aa' });
+
+    expect(foreign.status).toBe(404);
+    const body = await foreign.json();
+    expect(body).toEqual({ success: false, error: 'Recommendation not found' });
+    expect(await missing.json()).toEqual(body);
+    expect(await counts()).toEqual(before.home);
+    expect(await foreignFinding()).toEqual(before.finding);
+    // The stop rule is never reached at create: nothing to audit as a stop refusal.
+    expect(await refusalsInEither(since)).toEqual([]);
+    expectNoAwsCall();
+  });
+
+  it.each(['approve', 'execute'] as const)(
+    '%s: 403, the stored workflow unchanged, one refusal audited in the caller organization, no AWS',
+    async (action) => {
+      const { id } = await insertWorkflow(action === 'approve' ? 'pending_approval' : 'approved', foreignFindingId, resourceId);
+      const before = { workflow: await workflowRow(id), finding: await foreignFinding() };
+      const since = await dbNow();
+
+      await expectRefused(await act(id, action));
+
+      expect(await workflowRow(id)).toEqual(before.workflow);
+      expect(await foreignFinding()).toEqual(before.finding);
+      expect(await refusalsInEither(since)).toEqual([
+        {
+          organization_id: org.orgId,
+          user_id: org.admin,
+          resource_id: id,
+          metadata: expect.objectContaining({ stage: action, reason: 'finding_not_found', recommendation_id: foreignFindingId }),
+        },
       ]);
       expectNoAwsCall();
     }
