@@ -21,8 +21,9 @@
 --   aws_preserved_customer_decisions, remediation_executions,
 --   remediation_step_claims: new tables, read by nothing deployed.
 --   risk_score_history
---     + aws_connection_id (nullable text): the aws_accounts.id of the connection
---       that was live when the snapshot was written.
+--     + aws_connection_id (nullable uuid, the type of aws_accounts.id): the
+--       aws_accounts.id of the connection that was live when the snapshot was
+--       written.
 --     + a BEFORE INSERT trigger that fills it when the writer did not, from the
 --       organization's one active aws_accounts row (left NULL for none or more
 --       than one). It never raises.
@@ -79,6 +80,10 @@ BEGIN
     RAISE NOTICE 'aws_accounts does not exist; its lifecycle columns and indexes were skipped.';
     RETURN;
   END IF;
+  IF (SELECT format_type(atttypid, atttypmod) FROM pg_attribute
+       WHERE attrelid = 'aws_accounts'::regclass AND attname = 'id' AND NOT attisdropped) IS DISTINCT FROM 'uuid' THEN
+    RAISE EXCEPTION 'aws_accounts.id is not uuid -- refusing to proceed: the connection-id columns this migration adds are uuid.';
+  END IF;
   IF EXISTS (SELECT 1 FROM pg_attribute
               WHERE attrelid = 'aws_accounts'::regclass AND attname = 'disconnect_requested_at' AND NOT attisdropped) THEN
     RAISE EXCEPTION 'aws_accounts.disconnect_requested_at already exists -- refusing to proceed.';
@@ -116,7 +121,7 @@ CREATE TABLE aws_preserved_customer_decisions (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   aws_account_id        VARCHAR(12) NOT NULL CHECK (aws_account_id ~ '^[0-9]{12}$'),
-  source_connection_id  TEXT NOT NULL,
+  source_connection_id  UUID NOT NULL,
   kind                  VARCHAR(40) NOT NULL
                           CHECK (kind IN ('security_finding_disposition', 'cost_dismissal', 'resource_attribution')),
   stable_key            TEXT NOT NULL,
@@ -127,7 +132,7 @@ CREATE TABLE aws_preserved_customer_decisions (
                           CHECK (state IN ('pending', 'applied', 'expired', 'superseded')),
   preserved_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   applied_at            TIMESTAMPTZ,
-  applied_connection_id TEXT,
+  applied_connection_id UUID,
   UNIQUE (organization_id, aws_account_id, kind, stable_key)
 );
 COMMENT ON TABLE aws_preserved_customer_decisions IS
@@ -142,7 +147,7 @@ CREATE TABLE remediation_executions (
   organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   workflow_id       UUID NOT NULL,
   kind              VARCHAR(16) NOT NULL DEFAULT 'execute' CHECK (kind IN ('execute', 'rollback')),
-  aws_connection_id TEXT NOT NULL,
+  aws_connection_id UUID NOT NULL,
   state             VARCHAR(24) NOT NULL DEFAULT 'running'
                       CHECK (state IN ('running', 'completed', 'failed', 'stopped_by_disconnect', 'outcome_unknown')),
   started_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -178,7 +183,7 @@ COMMENT ON TABLE remediation_step_claims IS
 -- ---------------------------------------------------------------------------
 -- risk_score_history: the connection each snapshot belongs to
 -- ---------------------------------------------------------------------------
-ALTER TABLE risk_score_history ADD COLUMN aws_connection_id TEXT;
+ALTER TABLE risk_score_history ADD COLUMN aws_connection_id UUID;
 COMMENT ON COLUMN risk_score_history.aws_connection_id IS
   '[202611051200_aws_disconnect_expand] The aws_accounts.id of the connection that was live when this snapshot '
   'was written; NULL when there was none (or it could not be told). Never shown to users.';
@@ -188,12 +193,13 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
-  live TEXT;
+  live UUID;
 BEGIN
   IF NEW.aws_connection_id IS NULL AND NEW.organization_id IS NOT NULL
      AND to_regclass('public.aws_accounts') IS NOT NULL THEN
     BEGIN
-      EXECUTE 'SELECT CASE WHEN count(*) = 1 THEN min(id::text) END
+      -- uuid has no min(); with count(*) = 1 the text round-trip returns that one id.
+      EXECUTE 'SELECT CASE WHEN count(*) = 1 THEN min(id::text)::uuid END
                  FROM public.aws_accounts WHERE org_id = $1 AND status = ''active'''
         INTO live USING NEW.organization_id;
       NEW.aws_connection_id := live;
@@ -224,7 +230,7 @@ BEGIN
     EXECUTE $q$
       UPDATE risk_score_history h
          SET aws_connection_id = s.id
-        FROM (SELECT org_id, min(id::text) AS id
+        FROM (SELECT org_id, min(id::text)::uuid AS id
                 FROM aws_accounts
                WHERE org_id IS NOT NULL
                GROUP BY org_id

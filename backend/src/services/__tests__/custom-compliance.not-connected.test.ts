@@ -2,8 +2,9 @@
  * AWS connect PR C (C-a), C-D6: a compliance scan needs an AWS connection.
  *
  *   - No eligible connection: the HTTP start answers 409 NOT_CONNECTED with the
- *     approved text; no scan row is created and no lock is taken. The blocking
- *     executeScan() throws ScanNotConnectedError, also with no row.
+ *     approved text; no scan row is created and no lock is taken (not even
+ *     taken and released: every statement on the claim client is recorded).
+ *     The blocking executeScan() throws ScanNotConnectedError, also with no row.
  *   - Connected: the scan starts and completes as before.
  *   - The connection goes away after the start check (a race): the scan body's
  *     fence refuses it (no connection is never a pass). Its own row is failed
@@ -99,6 +100,34 @@ describe('custom compliance: a scan needs an AWS connection', () => {
     await controller.executeScan({ params: { id: frameworkId }, body: {}, organizationId: orgId, user: { organizationId: orgId } } as unknown as Request, res);
     expect(out).toEqual({ status: 409, body: { success: false, error: AWS_NOT_CONNECTED_CODE, message: COMPLIANCE_SCAN_NOT_CONNECTED_MESSAGE } });
     expect(COMPLIANCE_SCAN_NOT_CONNECTED_MESSAGE).toBe('Connect an AWS account to run a compliance scan.');
+    expect(await scanRows(orgId)).toEqual([]);
+  });
+
+  it('no connection: no advisory lock is taken, not even taken and released (every statement on the claim client is recorded)', async () => {
+    const orgId = await insertOrg();
+    const frameworkId = await insertFrameworkWithRule(orgId);
+    const statements: string[] = [];
+    const realConnect = pool.connect.bind(pool) as any;
+    // pool.query() calls connect(callback) internally: those pass straight through.
+    jest.spyOn(pool, 'connect').mockImplementation(((...args: any[]) => {
+      if (args.length > 0) return realConnect(...args);
+      return recordedClient();
+    }) as any);
+    const recordedClient = async () => {
+      const client = await realConnect();
+      const realQuery = client.query.bind(client);
+      jest.spyOn(client, 'query').mockImplementation(((text: any, ...rest: any[]) => {
+        statements.push(typeof text === 'string' ? text : String(text?.text ?? ''));
+        return (realQuery as any)(text, ...rest);
+      }) as any);
+      return client;
+    };
+    const tryLock = jest.spyOn(service as any, 'tryLock');
+
+    expect(await service.startScan(frameworkId, orgId)).toEqual({ status: 'not_connected' });
+    expect(statements.length).toBeGreaterThan(0);
+    expect(statements.filter((sql) => /advisory/i.test(sql))).toEqual([]);
+    expect(tryLock).not.toHaveBeenCalled();
     expect(await scanRows(orgId)).toEqual([]);
   });
 

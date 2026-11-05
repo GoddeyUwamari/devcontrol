@@ -375,6 +375,26 @@ describe('AWS connect PR B: the Cost Analyze race', () => {
     expect(rows[0].count).toBe(0);
   });
 
+  it('AWS connect PR C: the connection changes between the lease target read and the run row: 409 interrupted, no run row, no lease, no AWS call', async () => {
+    const orgId = await insertOrg();
+    const analysis = mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [finding('i-a')] }, retiredRds]);
+    const waitSpy = jest.spyOn(scanSession, 'waitForScanSession');
+    const realCreateFenced = CostAnalysisRunsRepository.prototype.createFenced;
+    jest.spyOn(CostAnalysisRunsRepository.prototype, 'createFenced').mockImplementation(async function (this: CostAnalysisRunsRepository, ...args) {
+      // The identity Analyze read (lease target) is no longer the org's connection.
+      await pool.query(`UPDATE aws_accounts SET role_arn = 'arn:aws:iam::111122223333:role/devcontrol-readonly' WHERE org_id = $1`, [orgId]);
+      return realCreateFenced.apply(this, args);
+    });
+    const { status, json } = await analyze(orgId);
+    expect(status).toHaveBeenCalledWith(409);
+    expect(json).toHaveBeenCalledWith({ success: false, error: 'The analysis was interrupted before it finished. Run it again.' });
+    expect(waitSpy).not.toHaveBeenCalled();
+    expect(analysis).not.toHaveBeenCalled();
+    expect(await fetchRuns(orgId)).toEqual([]);
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM cost_recommendations WHERE organization_id = $1`, [orgId]);
+    expect(rows[0].count).toBe(0);
+  });
+
   it('the connection changes after the reconcile and before the finish: the run is interrupted, never completed', async () => {
     const orgId = await insertOrg();
     // The RI check did not complete, so nothing else is written between the reconcile and the finish.

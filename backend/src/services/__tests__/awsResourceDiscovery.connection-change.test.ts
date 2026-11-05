@@ -16,6 +16,7 @@ import { LeaseLostError } from '../scan-lease';
 import { DISCOVERY_INTERRUPTED_MESSAGE } from '../scan-session';
 import { DISCOVERY_WARNING_CONNECTION_CHANGED } from '../discovery-warnings';
 import { withConnectionChange } from '../aws-connection-fence';
+import { CostAnalysisRunsRepository } from '../../repositories/cost-analysis-runs.repository';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -204,6 +205,32 @@ describe('discovery: a stale worker creates no job row (L3)', () => {
     expect(await scan).toMatchObject({ reason: 'account_changed' });
     expect(await jobCount(orgId)).toBe(0);
   }, 30_000);
+});
+
+/**
+ * AWS connect PR C (C-a), L3: the discovery cost run is created under the scan
+ * lease's fence. When that fence finds the lease lost, the scan stops there: no
+ * cost run row, no detector runs (no AWS call), and the job is closed as interrupted.
+ */
+describe('discovery: the cost-run fence finds the lease lost (L3)', () => {
+  it('the scan stops: no cost run, no detectors, the job is interrupted', async () => {
+    const orgId = await insertOrg();
+    mockClients();
+    const analyze = jest.spyOn(costOptimizationService, 'analyzeAllResources');
+    const realCreateFenced = CostAnalysisRunsRepository.prototype.createFenced;
+    const createFenced = jest.spyOn(CostAnalysisRunsRepository.prototype, 'createFenced').mockImplementation(async function (this: CostAnalysisRunsRepository, ...args) {
+      // The connection changes just before the cost run's fenced transaction.
+      await replaceConnection(orgId);
+      return realCreateFenced.apply(this, args);
+    });
+    await expect(new AWSResourceDiscoveryService(pool).discoverAllResources(orgId)).rejects.toMatchObject({ reason: 'account_changed' });
+    expect(createFenced).toHaveBeenCalledTimes(1);
+    expect(analyze).not.toHaveBeenCalled();
+    expect((await pool.query(`SELECT count(*)::int AS n FROM cost_analysis_runs WHERE organization_id = $1`, [orgId])).rows[0].n).toBe(0);
+    expect((await pool.query(`SELECT count(*)::int AS n FROM cost_recommendations WHERE organization_id = $1`, [orgId])).rows[0].n).toBe(0);
+    const jobs = (await pool.query(`SELECT status, error_message FROM resource_discovery_jobs WHERE organization_id = $1`, [orgId])).rows;
+    expect(jobs).toEqual([{ status: 'failed', error_message: DISCOVERY_INTERRUPTED_MESSAGE }]);
+  });
 });
 
 describe('static: the running job row is created only inside the fenced job-opening transaction (L3)', () => {

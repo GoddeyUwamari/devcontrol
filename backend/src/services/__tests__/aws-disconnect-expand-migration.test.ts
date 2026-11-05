@@ -83,7 +83,21 @@ describe('202611051200_aws_disconnect_expand: static shape (compatibility table)
       expect([table, action.split(/\s+/)[0].toUpperCase()]).toEqual([expect.stringMatching(/^(aws_accounts|risk_score_history)$/), 'ADD']);
     }
     expect(sql).toMatch(/ALTER TABLE aws_accounts\s+ADD COLUMN disconnect_requested_at/);
-    expect(sql).toMatch(/ALTER TABLE risk_score_history ADD COLUMN aws_connection_id TEXT;/);
+    expect(sql).toMatch(/ALTER TABLE risk_score_history ADD COLUMN aws_connection_id UUID;/);
+  });
+
+  it('every connection-id column is uuid, the type of aws_accounts.id, and the migration refuses an aws_accounts.id that is not', () => {
+    // Every declaration (ADD COLUMN or CREATE TABLE) of a connection-id column, whatever type it names.
+    const columns = (sql.match(/\b(aws_connection_id|source_connection_id|applied_connection_id)\s+(UUID|TEXT|VARCHAR|CHAR\w*|INT\w*|BIGINT)\b/gi) ?? []).map((m) => m.replace(/\s+/g, ' '));
+    expect(columns.sort()).toEqual([
+      'applied_connection_id UUID',
+      'aws_connection_id UUID',
+      'aws_connection_id UUID',
+      'source_connection_id UUID',
+    ]);
+    // The only TEXT column the migration adds is the decision's stable key.
+    expect((sql.match(/\w+\s+TEXT\b/g) ?? []).map((m) => m.split(/\s+/)[0])).toEqual(['stable_key']);
+    expect(sql).toMatch(/IS DISTINCT FROM 'uuid' THEN\s+RAISE EXCEPTION 'aws_accounts\.id is not uuid/);
   });
 
   it('adds no CHECK, NOT NULL or constraint to an existing column, drops nothing and deletes nothing', () => {
@@ -234,6 +248,15 @@ describe('202611051200_aws_disconnect_expand: against a production-shaped aws_ac
       expect(indexes.map((i: any) => i.indexname)).toEqual(['aws_accounts_live_account_uidx', 'aws_accounts_live_org_uidx']);
       for (const i of indexes) expect(i.indexdef).toMatch(/WHERE \(\(status\)::text = ANY \(\(ARRAY\['active'::character varying, 'disconnecting'::character varying\]\)::text\[\]\)\)/);
 
+      // The four connection-id columns are uuid and refuse a value that is not one.
+      expect((await q(`SELECT string_agg(c, ',' ORDER BY c) AS cols FROM (SELECT attrelid::regclass::text || '.' || attname || ':' || format_type(atttypid, atttypmod) AS c
+          FROM pg_attribute WHERE attname IN ('aws_connection_id', 'source_connection_id', 'applied_connection_id') AND NOT attisdropped
+           AND attrelid IN ('public.risk_score_history'::regclass, 'remediation_executions'::regclass, 'aws_preserved_customer_decisions'::regclass)) t`)).rows[0].cols)
+        .toEqual('aws_preserved_customer_decisions.applied_connection_id:uuid,aws_preserved_customer_decisions.source_connection_id:uuid,remediation_executions.aws_connection_id:uuid,risk_score_history.aws_connection_id:uuid');
+      await q('SAVEPOINT not_uuid');
+      await expect(q(`UPDATE risk_score_history SET aws_connection_id = 'not-a-uuid' WHERE organization_id = $1`, [orgB])).rejects.toMatchObject({ code: '22P02' });
+      await q('ROLLBACK TO SAVEPOINT not_uuid');
+
       // Backfill: only org A (one row, active) is stamped.
       const stamps = (await q(`SELECT organization_id::text AS org, aws_connection_id FROM risk_score_history WHERE organization_id = ANY($1) ORDER BY 1, snapshot_date`, [[orgA, orgB, orgC]])).rows;
       expect(stamps).toEqual(expect.arrayContaining([
@@ -275,7 +298,7 @@ describe('202611051200_aws_disconnect_expand: against a production-shaped aws_ac
       expect(Number(claim.fencing_token)).toBeGreaterThan(0);
       await q(`INSERT INTO aws_preserved_customer_decisions (organization_id, aws_account_id, source_connection_id, kind, stable_key, decision)
                VALUES ($1, $2, $3, 'cost_dismissal', 'i-1234567890abcdef0|Idle Instance', '{"status":"DISMISSED"}')`, [orgA, accountA, rowA]);
-      await expect(q(`SAVEPOINT rls; INSERT INTO remediation_executions (organization_id, workflow_id, aws_connection_id) VALUES ('${orgB}', gen_random_uuid(), 'x')`))
+      await expect(q(`SAVEPOINT rls; INSERT INTO remediation_executions (organization_id, workflow_id, aws_connection_id) VALUES ('${orgB}', gen_random_uuid(), gen_random_uuid())`))
         .rejects.toMatchObject({ code: '42501' });
       await q('ROLLBACK TO SAVEPOINT rls');
       for (const table of ['cost_finding_detections', 'observability_collection_scopes', 'resource_telemetry_observations']) {
