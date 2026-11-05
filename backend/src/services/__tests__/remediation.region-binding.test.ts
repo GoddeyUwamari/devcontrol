@@ -24,12 +24,14 @@ import {
 } from '../remediation.service';
 import { pool as appPool } from '../../config/database';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
+import { eligibleStopFindingRow, isStopFindingRead } from '../../routes/__tests__/eligible-stop-finding';
 
 const RESOURCE_ID = 'i-1234567890abcdef0';
 const WORKFLOW = {
   id: 'wf-binding',
   organization_id: 'org-binding',
-  recommendation_id: null,
+  // Backed by an eligible finding (shared fixture), so the stop rule never decides these tests.
+  recommendation_id: 'rec-binding',
   resource_id: RESOURCE_ID,
   resource_type: 'EC2',
   action_type: 'stop_instance',
@@ -49,8 +51,9 @@ const isRegionReread = (sql: string) => /SELECT action_params->>'region' AS regi
  * reports `rowCount`, and whose read-back returns `storedRegion`.
  */
 function fakePool(rowCount: number, storedRegion: string | null) {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, values: unknown[] = []) => {
     if (/FROM aws_resources/.test(sql)) return { rows: [{ region: 'eu-west-1' }] };
+    if (isStopFindingRead(sql)) return { rows: [eligibleStopFindingRow(values[0] as string, RESOURCE_ID)] };
     if (/FROM aws_accounts/.test(sql)) {
       return { rows: [{ role_arn: 'arn:aws:iam::111122223333:role/devcontrol-remediation', account_id: '111122223333', external_id: 'external-id-1', status: 'active' }] };
     }

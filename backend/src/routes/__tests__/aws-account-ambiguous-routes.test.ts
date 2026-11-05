@@ -30,6 +30,7 @@ import * as accountsRepository from '../../repositories/aws-accounts.repository'
 import { AwsAccountAmbiguousError, AWS_ACCOUNT_AMBIGUOUS_MESSAGE } from '../../repositories/aws-accounts.repository';
 import { pool as appPool } from '../../config/database';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
+import { insertEligibleStopFinding } from './eligible-stop-finding';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
 jest.mock('../../services/onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
@@ -98,12 +99,14 @@ async function expectAmbiguous(response: Response, caller: Caller) {
   expect(text).not.toMatch(/AWS_ACCOUNT_AMBIGUOUS|arn:aws:|\b\d{12}\b/);
 }
 
+/** A stop workflow backed by an eligible finding (shared fixture), so account resolution alone decides here. */
 async function workflow(orgId: string, status: string): Promise<string> {
+  const recommendationId = await insertEligibleStopFinding(pool, orgId, 'i-1234567890abcdef0');
   const { rows } = await pool.query(
     `INSERT INTO remediation_workflows
-       (organization_id, resource_id, resource_type, action_type, action_params, risk_level, status, rollback_available)
-     VALUES ($1, 'i-1234567890abcdef0', 'EC2', 'stop_instance', $2, 'low', $3, true) RETURNING id`,
-    [orgId, JSON.stringify({ resource_id: 'i-1234567890abcdef0', region: 'us-east-1' }), status]
+       (organization_id, recommendation_id, resource_id, resource_type, action_type, action_params, risk_level, status, rollback_available)
+     VALUES ($1, $4, 'i-1234567890abcdef0', 'EC2', 'stop_instance', $2, 'low', $3, true) RETURNING id`,
+    [orgId, JSON.stringify({ resource_id: 'i-1234567890abcdef0', region: 'us-east-1' }), status, recommendationId]
   );
   return rows[0].id as string;
 }
@@ -156,6 +159,7 @@ afterEach(() => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.query('DELETE FROM remediation_workflows WHERE organization_id = ANY($1)', [createdOrgIds]);
+  await pool.query('DELETE FROM cost_recommendations WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM resource_discovery_jobs WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM cost_analysis_runs WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM analytics_events WHERE organization_id = ANY($1)', [createdOrgIds]);

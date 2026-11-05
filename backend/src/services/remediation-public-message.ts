@@ -18,6 +18,7 @@ import {
   isSelfProtectionRefusal,
 } from './remediation.service';
 import { safeErrorFields } from '../utils/safe-error-log';
+import { STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE, isStopRefusal } from './stop-instance-eligibility';
 
 // Refusals written in remediation.service.ts whose text is safe to show the
 // caller: fixed sentences, or ones that add only a workflow status. Any other
@@ -50,6 +51,8 @@ export function publicRemediationMessage(err: any, fallback: string): string {
   const message = err?.message;
   if (typeof message !== 'string') return fallback;
   if (isSelfProtectionRefusal(message)) return SELF_PROTECTION_PUBLIC_MESSAGE;
+  // A refused stop: one fixed sentence; the reason goes to the log and the audit record only.
+  if (isStopRefusal(message)) return STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE;
   if (PUBLIC_REFUSALS.has(message)) return message;
   // Every producer of these two prefixes writes a fixed sentence.
   if (message.startsWith(ACTION_UNAVAILABLE_PREFIX) || message.startsWith(TARGET_MISMATCH_PREFIX)) return message;

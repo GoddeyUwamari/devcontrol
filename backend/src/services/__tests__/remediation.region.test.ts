@@ -13,7 +13,9 @@
  *   - every action client is built for the workflow's region, and the
  *     platform's AWS_DEFAULT_REGION is never used (STS is pinned to us-east-1).
  *
- * Mock-only: a fake Pool and spied SDK clients, no network.
+ * Mock-only: a fake Pool and spied SDK clients, no network. The stop workflows
+ * are backed by the shared eligible-finding fixture (FP PR 2a), so the stop
+ * rule never decides these tests.
  */
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { S3Client } from '@aws-sdk/client-s3';
@@ -25,11 +27,12 @@ import {
   REGION_UNKNOWN_MESSAGE,
   REGION_AMBIGUOUS_MESSAGE,
 } from '../remediation.service';
+import { eligibleStopFindingRow, isStopFindingRead } from '../../routes/__tests__/eligible-stop-finding';
 
 const WORKFLOW = {
   id: 'wf-region',
   organization_id: 'org-region',
-  recommendation_id: null,
+  recommendation_id: 'rec-1',
   resource_id: 'i-1234567890abcdef0',
   resource_type: 'EC2',
   action_type: 'stop_instance',
@@ -54,8 +57,9 @@ function fakePool(
   recommendedRegion?: string,
   recommendedResourceId: string = WORKFLOW.resource_id
 ) {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, values: unknown[] = []) => {
     if (/FROM aws_resources/.test(sql)) return { rows: inventory.map((region) => ({ region })) };
+    if (isStopFindingRead(sql)) return { rows: [eligibleStopFindingRow(values[0] as string, recommendedResourceId)] };
     if (/FROM cost_recommendations/.test(sql)) {
       return { rows: [{ resource_id: recommendedResourceId, aws_region: recommendedRegion ?? null }] };
     }
@@ -92,7 +96,8 @@ afterEach(() => {
 });
 
 describe('creation binds the resource region', () => {
-  const draft = (actionParams: Record<string, unknown> = {}, recommendationId?: string) => ({
+  // A stop draft references its (eligible) finding; the region still comes from the inventory or that finding.
+  const draft = (actionParams: Record<string, unknown> = {}, recommendationId = 'rec-1') => ({
     recommendationId,
     resourceId: WORKFLOW.resource_id,
     resourceType: 'EC2',

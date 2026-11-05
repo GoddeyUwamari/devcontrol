@@ -5,6 +5,7 @@ import { CostAnalysisRun, CostAnalysisRunDetail, CostAnalysisRunSource, CostAnal
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import costOptimizationService from '../services/cost-optimization.service';
 import { RemediationService, REGION_MISMATCH_PREFIX, SELF_PROTECTION_PUBLIC_MESSAGE } from '../services/remediation.service';
+import { STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE, isStopRefusal } from '../services/stop-instance-eligibility';
 import { logRemediationError, publicRemediationMessage } from '../services/remediation-public-message';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_CREDENTIALS_UNAVAILABLE, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
 import { pool } from '../config/database';
@@ -922,6 +923,10 @@ export class CostRecommendationsController {
         return;
       }
 
+      // For the audit record if the stop is refused at any stage.
+      const context = { path: 'execute_remediation' as const, request: auditRequestContext(req) };
+
+      // Refused here (nothing created) unless the finding is eligible for a stop.
       const workflow = await remediationService.createWorkflow(
         organizationId,
         {
@@ -936,18 +941,19 @@ export class CostRecommendationsController {
           estimatedSavings: Number(recommendation.potential_savings) || 0,
           riskLevel: 'low',
         },
-        userId
+        userId,
+        context
       );
       workflowId = workflow.id;
 
-      await remediationService.approve(workflow.id, organizationId, userId, req.ip);
+      await remediationService.approve(workflow.id, organizationId, userId, req.ip, context);
 
       // Every failure below answers with fixed text (or a known fixed
       // refusal). AWS SDK and database errors -- which can quote ARNs, SQL or
       // row values -- are logged server-side through safeErrorFields only.
       let executed: Awaited<ReturnType<RemediationService['execute']>>;
       try {
-        executed = await remediationService.execute(workflow.id, organizationId, userId, req.ip);
+        executed = await remediationService.execute(workflow.id, organizationId, userId, req.ip, context);
       } catch (execErr: unknown) {
         const message = errorMessage(execErr);
         logRemediationError('execute-remediation execute', workflow.id, execErr);
@@ -957,6 +963,13 @@ export class CostRecommendationsController {
           // neither reported as done nor left behind as executable.
           await remediationService.closeUnexecuted(workflow.id, organizationId, userId, message, req.ip);
           res.status(400).json({ success: false, error: publicRemediationMessage(execErr, EXECUTE_REMEDIATION_FAILED), data: { workflowId: workflow.id } });
+          return;
+        }
+
+        if (isStopRefusal(message)) {
+          // The finding stopped being eligible after this request created the
+          // workflow: nothing was changed in AWS, and the recommendation is left as it is.
+          res.status(403).json({ success: false, error: STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE, data: { workflowId: workflow.id } });
           return;
         }
 
@@ -996,6 +1009,15 @@ export class CostRecommendationsController {
       });
     } catch (error: unknown) {
       logRemediationError('execute-remediation', workflowId, error);
+      if (isStopRefusal(errorMessage(error))) {
+        // Not eligible for a stop: refused before any AWS call.
+        res.status(403).json({
+          success: false,
+          error: STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE,
+          ...(workflowId ? { data: { workflowId } } : {}),
+        });
+        return;
+      }
       if (errorMessage(error).startsWith(REGION_MISMATCH_PREFIX)) {
         // The recommendation's region contradicts the inventory: nothing was created.
         res.status(400).json({ success: false, error: publicRemediationMessage(error, EXECUTE_REMEDIATION_FAILED) });

@@ -29,6 +29,7 @@ import { RemediationService } from '../../services/remediation.service';
 import { pool as appPool } from '../../config/database';
 import { RoleGateOrg, createRoleGateHarness } from './role-gate-harness';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
+import { insertEligibleStopFinding } from './eligible-stop-finding';
 
 const harness = createRoleGateHarness('execute-remediation-dry-run');
 const { pool, sendAs } = harness;
@@ -42,14 +43,11 @@ function instanceId(): string {
   return `i-${Math.random().toString(16).slice(2, 12).padEnd(10, '0')}`;
 }
 
+/** An Idle Instance finding eligible for a stop (shared fixture), so the kill-switch alone decides here. */
 async function insertRecommendation(): Promise<{ id: string; resourceId: string }> {
   const resourceId = instanceId();
-  const { rows } = await pool.query(
-    `INSERT INTO cost_recommendations (organization_id, resource_id, resource_type, issue, severity, aws_region)
-     VALUES ($1, $2, 'EC2', 'Idle Instance', 'LOW', 'us-east-1') RETURNING id`,
-    [org.orgId, resourceId]
-  );
-  return { id: rows[0].id as string, resourceId };
+  const id = await insertEligibleStopFinding(pool, org.orgId, resourceId, { awsRegion: 'us-east-1' });
+  return { id, resourceId };
 }
 
 async function recommendationRow(id: string) {

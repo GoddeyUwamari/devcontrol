@@ -10,6 +10,15 @@ import { Pool } from 'pg';
 import { assumeRoleAsPlatform } from './platform-sts';
 import { findEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
 import { regionFromLocationConstraint } from './s3-bucket-tags.util';
+import { createAuditEventWriter, type AuditEvent, type AuditRequestContext } from './auditEvents.service';
+import {
+  STOP_NOT_ELIGIBLE_PREFIX,
+  STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE,
+  isStopRefusal,
+  judgeStopEligibility,
+  readStopFinding,
+  type StopFindingRow,
+} from './stop-instance-eligibility';
 import {
   EC2Client,
   StopInstancesCommand,
@@ -181,8 +190,96 @@ export function isAwsRegion(value: unknown): value is string {
   return typeof value === 'string' && AWS_REGION_PATTERN.test(value);
 }
 
+/** Where a request came from, for the audit record of a refused stop. */
+export interface RemediationRequestContext {
+  path?: 'execute_remediation' | 'remediation_workflow';
+  request?: AuditRequestContext | null;
+}
+
+type StopStage = 'create' | 'approve' | 'execute' | 'dispatch';
+
+/** What dispatchAction needs to judge a stop again immediately before the AWS call. */
+interface StopGuard {
+  organizationId: string;
+  workflow: Pick<WorkflowRow, 'id' | 'resource_id' | 'recommendation_id'>;
+  actorId: string | null;
+  ipAddress?: string;
+  context?: RemediationRequestContext;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The marker as seen, for the audit record: its type and value, never other metadata. */
+function describeMarker(finding: StopFindingRow | null): string {
+  if (!finding) return 'no_finding';
+  const metadata = finding.metadata;
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) return 'missing';
+  if (!Object.prototype.hasOwnProperty.call(metadata, 'rule_version')) return 'missing';
+  const version = (metadata as Record<string, unknown>).rule_version;
+  if (version === undefined || version === null) return 'missing';
+  if (typeof version === 'number') return `number:${version}`;
+  return typeof version;
+}
+
 export class RemediationService {
-  constructor(private pool: Pool) {}
+  private audit: Pick<ReturnType<typeof createAuditEventWriter>, 'record'>;
+
+  constructor(
+    private pool: Pool,
+    auditWriter?: Pick<ReturnType<typeof createAuditEventWriter>, 'record'>
+  ) {
+    this.audit = auditWriter ?? createAuditEventWriter(pool);
+  }
+
+  // ─── Stop eligibility ─────────────────────────────────────────────────────
+  // stop_instance runs only for a workflow backed by an eligible finding (see
+  // stop-instance-eligibility.ts). Checked at create, approve and execute --
+  // before the kill-switch, so the refusal holds whatever it says -- and again
+  // in dispatchAction immediately before the AWS call. Each check reads the
+  // finding from the database at that moment. A refusal is audited with the
+  // actor; the refusal never depends on the audit write succeeding.
+  private async assertStopEligible(input: {
+    organizationId: string;
+    resourceId: string;
+    recommendationId: string | null | undefined;
+    workflowId?: string;
+    stage: StopStage;
+    actorId: string | null;
+    ipAddress?: string;
+    context?: RemediationRequestContext;
+  }): Promise<void> {
+    const { organizationId, resourceId, recommendationId } = input;
+    const hasReference = recommendationId !== null && recommendationId !== undefined && recommendationId !== '';
+    const finding = hasReference ? await readStopFinding(this.pool, organizationId, recommendationId) : null;
+    const verdict = judgeStopEligibility({ resourceId, recommendationId, finding });
+    if (verdict.eligible) return;
+
+    const event: AuditEvent = {
+      organizationId,
+      actorId: input.actorId,
+      action: 'remediation.stop_refused',
+      resourceType: input.workflowId ? 'remediation_workflow' : hasReference ? 'cost_recommendation' : 'remediation_workflow',
+      resourceId: input.workflowId ?? (hasReference && UUID_PATTERN.test(recommendationId) ? recommendationId : null),
+      metadata: {
+        stage: input.stage,
+        path: input.context?.path ?? 'remediation_workflow',
+        reason: verdict.reason,
+        workflow_id: input.workflowId ?? null,
+        recommendation_id: hasReference ? recommendationId : null,
+        instance_id: resourceId,
+        rule_version_seen: describeMarker(finding),
+      },
+      request: input.context?.request ?? { ipAddress: input.ipAddress ?? null, userAgent: null },
+    };
+    try {
+      await this.audit.record(event);
+    } catch (err) {
+      // record() already logs and swallows; this is only a second net.
+      console.error('[Remediation] stop refusal audit failed:', { stage: input.stage });
+    }
+
+    throw new Error(`${STOP_NOT_ELIGIBLE_PREFIX} ${verdict.reason}`);
+  }
 
   // ─── Self-protection guard ──────────────────────────────────────────────
   // DevControl's own operational AWS infrastructure must never be a valid
@@ -591,7 +688,8 @@ export class RemediationService {
       estimatedSavings: number;
       riskLevel: 'low' | 'medium' | 'high';
     },
-    createdBy?: string
+    createdBy?: string,
+    context?: RemediationRequestContext
   ) {
     assertActionAvailable(data.actionType);
     const actionParams = await this.bindTargetRegion(
@@ -600,6 +698,18 @@ export class RemediationService {
       data.recommendationId,
       bindActionTarget(data.resourceId, data.actionParams)
     );
+
+    // Before anything is written: no draft for a stop that could never run.
+    if (data.actionType === 'stop_instance') {
+      await this.assertStopEligible({
+        organizationId,
+        resourceId: data.resourceId,
+        recommendationId: data.recommendationId,
+        stage: 'create',
+        actorId: createdBy ?? null,
+        context,
+      });
+    }
 
     const result = await this.pool.query(
       `INSERT INTO remediation_workflows
@@ -631,10 +741,28 @@ export class RemediationService {
     return workflow;
   }
 
-  async approve(workflowId: string, organizationId: string, approvedBy: string, ipAddress?: string) {
+  async approve(
+    workflowId: string,
+    organizationId: string,
+    approvedBy: string,
+    ipAddress?: string,
+    context?: RemediationRequestContext
+  ) {
     const workflow = await this.getWorkflow(workflowId, organizationId);
     assertActionAvailable(workflow.action_type);
     if (workflow.status !== 'pending_approval') throw new Error(`Cannot approve workflow in status: ${workflow.status}`);
+    if (workflow.action_type === 'stop_instance') {
+      await this.assertStopEligible({
+        organizationId,
+        resourceId: workflow.resource_id,
+        recommendationId: workflow.recommendation_id,
+        workflowId,
+        stage: 'approve',
+        actorId: approvedBy,
+        ipAddress,
+        context,
+      });
+    }
 
     await this.updateStatus(
       workflowId,
@@ -713,7 +841,13 @@ export class RemediationService {
 
   // ─── Execute ──────────────────────────────────────────────────────────────
 
-  async execute(workflowId: string, organizationId: string, executedBy: string, ipAddress?: string) {
+  async execute(
+    workflowId: string,
+    organizationId: string,
+    executedBy: string,
+    ipAddress?: string,
+    context?: RemediationRequestContext
+  ) {
     const workflow = await this.getWorkflow(workflowId, organizationId);
     // Before any status change, credential fetch, or AWS call. dispatchAction()
     // repeats the check immediately before the handler (defense in depth).
@@ -729,6 +863,21 @@ export class RemediationService {
     // The handlers act on action_params.resource_id; the guards inspect
     // resource_id. Refuse unless they are the same resource.
     assertTargetBound(workflow);
+
+    // A stop needs an eligible finding, read now -- before the kill-switch, so
+    // the refusal holds whatever it says.
+    if (workflow.action_type === 'stop_instance') {
+      await this.assertStopEligible({
+        organizationId,
+        resourceId: workflow.resource_id,
+        recommendationId: workflow.recommendation_id,
+        workflowId,
+        stage: 'execute',
+        actorId: executedBy,
+        ipAddress,
+        context,
+      });
+    }
 
     // Global kill-switch — must be checked before any AWS SDK call fires.
     this.assertAutomatedRemediationEnabled(workflow, 'execute');
@@ -767,7 +916,13 @@ export class RemediationService {
       // was enabled to get this far.
       await this.assertNotDevControlInfrastructureByTag(this.makeEC2Client(creds, region), workflow.resource_id);
 
-      const result = await this.dispatchAction(workflow.action_type, creds, params, log, workflowId);
+      const result = await this.dispatchAction(workflow.action_type, creds, params, log, workflowId, {
+        organizationId,
+        workflow,
+        actorId: executedBy,
+        ipAddress,
+        context,
+      });
       log = result.log;
       rollbackSnapshotId = result.rollbackSnapshotId;
       rollbackAvailable = result.rollbackAvailable ?? false;
@@ -789,13 +944,18 @@ export class RemediationService {
         ipAddress
       );
     } catch (err: any) {
-      log = this.appendLog(log, `ERROR: ${err.message}`);
+      // A stop refused immediately before the AWS call: nothing was changed in
+      // AWS. The record says so in the public wording, not the internal reason.
+      const line = isStopRefusal(err?.message)
+        ? `Not executed: ${STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE}`
+        : `ERROR: ${err.message}`;
+      log = this.appendLog(log, line);
       await this.updateStatus(
         workflowId,
         organizationId,
         'failed',
         { execution_log: log },
-        `Execution failed: ${err.message}`,
+        isStopRefusal(err?.message) ? line : `Execution failed: ${err.message}`,
         executedBy,
         ipAddress
       );
@@ -814,10 +974,24 @@ export class RemediationService {
     creds: Awaited<ReturnType<typeof this.getAWSCredentials>>,
     params: Record<string, any>,
     log: string,
-    workflowId: string
+    workflowId: string,
+    stopGuard?: StopGuard
   ): Promise<{ log: string; rollbackSnapshotId?: string; rollbackAvailable?: boolean }> {
     switch (actionType) {
       case 'stop_instance':
+        // Judged again immediately before the AWS call, from a fresh read of
+        // the finding: it can change between approval and execution.
+        if (!stopGuard) throw new Error(`${STOP_NOT_ELIGIBLE_PREFIX} no stop context`);
+        await this.assertStopEligible({
+          organizationId: stopGuard.organizationId,
+          resourceId: stopGuard.workflow.resource_id,
+          recommendationId: stopGuard.workflow.recommendation_id,
+          workflowId: stopGuard.workflow.id,
+          stage: 'dispatch',
+          actorId: stopGuard.actorId,
+          ipAddress: stopGuard.ipAddress,
+          context: stopGuard.context,
+        });
         return this.stopInstance(creds, params, log, workflowId);
       case 'rightsize_instance':
         assertActionAvailable(actionType); // never reaches rightsizeInstance while unavailable

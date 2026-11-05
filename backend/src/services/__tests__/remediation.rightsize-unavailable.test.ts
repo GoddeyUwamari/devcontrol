@@ -18,6 +18,7 @@ import {
   ModifyInstanceAttributeCommand,
 } from '@aws-sdk/client-ec2';
 import { RemediationService } from '../remediation.service';
+import { eligibleStopFindingRow, isStopFindingRead } from '../../routes/__tests__/eligible-stop-finding';
 
 jest.mock('../../middleware/auth.middleware', () => ({
   authenticateToken: (req: any, _res: any, next: any) => {
@@ -51,9 +52,11 @@ const RIGHTSIZE_WORKFLOW = {
   rollback_snapshot_id: null,
 };
 
+// Backed by an eligible finding (shared fixture, FP PR 2a), so the stop rule never decides these tests.
 const STOP_WORKFLOW = {
   ...RIGHTSIZE_WORKFLOW,
   id: 'wf-stop',
+  recommendation_id: 'rec-stop',
   resource_id: 'i-stoptarget1',
   action_type: 'stop_instance',
   action_params: { resource_id: 'i-stoptarget1', region: 'us-east-1' },
@@ -61,8 +64,10 @@ const STOP_WORKFLOW = {
 
 /** Fake Pool: answers the workflow SELECT with `row`; records every query. */
 function makeFakePool(row: Record<string, any>) {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, values: unknown[] = []) => {
     if (/SELECT \* FROM remediation_workflows/.test(sql)) return { rows: [row] };
+    if (isStopFindingRead(sql)) return { rows: [eligibleStopFindingRow(values[0] as string, row.resource_id)] };
+    if (/SELECT resource_id, aws_region FROM cost_recommendations/.test(sql)) return { rows: [eligibleStopFindingRow(values[0] as string, row.resource_id)] };
     if (/INSERT INTO remediation_workflows/.test(sql)) return { rows: [{ ...row, id: 'wf-new', status: 'pending_approval' }] };
     return { rows: [], rowCount: 1 };
   });
@@ -181,7 +186,7 @@ describe('other remediation actions are unaffected', () => {
   it('stop_instance is created (INSERT runs) and approved (UPDATE runs) as before', async () => {
     const createPool = makeFakePool(STOP_WORKFLOW);
     await new RemediationService(createPool).createWorkflow('org-normal', {
-      resourceId: 'i-stoptarget1', resourceType: 'EC2', actionType: 'stop_instance',
+      recommendationId: 'rec-stop', resourceId: 'i-stoptarget1', resourceType: 'EC2', actionType: 'stop_instance',
       actionParams: {}, estimatedSavings: 5, riskLevel: 'low',
     });
     expect(createPool.query.mock.calls.some(([sql]: [string]) => /INSERT INTO remediation_workflows/.test(sql))).toBe(true);

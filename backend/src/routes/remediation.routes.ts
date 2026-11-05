@@ -22,6 +22,8 @@ import {
   isRegionBlocked,
 } from '../services/remediation.service';
 import { logRemediationError, publicRemediationMessage as publicMessage } from '../services/remediation-public-message';
+import { isStopRefusal } from '../services/stop-instance-eligibility';
+import { auditRequestContext } from '../services/auditEvents.service';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 
 const recommendationIdSchema = z.string().uuid();
@@ -36,6 +38,11 @@ function userId(req: Request): string {
 
 function userRole(req: Request): string {
   return (req as any).user?.role || 'member';
+}
+
+/** For the audit record of a refused stop. */
+function requestContext(req: Request) {
+  return { path: 'remediation_workflow' as const, request: auditRequestContext(req) };
 }
 
 function requireAdminOrOwner(req: Request, res: Response): boolean {
@@ -138,12 +145,17 @@ export function createRemediationRoutes(pool: Pool): Router {
           estimatedSavings: Number(estimatedSavings) || 0,
           riskLevel,
         },
-        userId(req)
+        userId(req),
+        requestContext(req)
       );
 
       res.status(201).json({ success: true, data: workflow });
     } catch (err: any) {
       logRemediationError('create', undefined, err);
+      if (isStopRefusal(err?.message)) {
+        res.status(403).json({ success: false, error: publicMessage(err, 'Failed to create workflow') });
+        return;
+      }
       if (
         err?.message?.startsWith(ACTION_UNAVAILABLE_PREFIX) ||
         err?.message?.startsWith(TARGET_MISMATCH_PREFIX) ||
@@ -180,12 +192,13 @@ export function createRemediationRoutes(pool: Pool): Router {
         req.params.id,
         orgId(req),
         userId(req),
-        req.ip
+        req.ip,
+        requestContext(req)
       );
       res.json({ success: true, data: workflow });
     } catch (err: any) {
       logRemediationError('approve', req.params.id, err);
-      const status = err?.message?.includes('not found') ? 404 : 400;
+      const status = isStopRefusal(err?.message) ? 403 : err?.message?.includes('not found') ? 404 : 400;
       res.status(status).json({ success: false, error: publicMessage(err, 'Failed to approve workflow') });
     }
   });
@@ -223,7 +236,8 @@ export function createRemediationRoutes(pool: Pool): Router {
           req.params.id,
           orgId(req),
           userId(req),
-          req.ip
+          req.ip,
+          requestContext(req)
         );
         res.json({ success: true, data: workflow });
       } catch (err: any) {
@@ -238,6 +252,7 @@ export function createRemediationRoutes(pool: Pool): Router {
           message.includes('must be approved') ? 400 :
           message.startsWith('DRY_RUN_MODE') ? 400 :
           message.startsWith(ACTION_UNAVAILABLE_PREFIX) ? 400 :
+          isStopRefusal(message) ? 403 :
           isRegionBlocked(message) ? 409 : 500;
         res.status(status).json({ success: false, error: publicMessage(err, 'Failed to execute workflow') });
       }

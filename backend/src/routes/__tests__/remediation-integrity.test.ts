@@ -19,6 +19,10 @@
  *   - Another organization's workflow is answered exactly like one that does
  *     not exist.
  *
+ * A stop_instance workflow also needs an eligible finding (FP PR 2a; covered
+ * in stop-instance-eligibility.test.ts). The stop workflows here are backed by
+ * the shared eligible-finding fixture so each test keeps testing its own rule.
+ *
  * Real routes over an in-process HTTP server against live Postgres, in
  * Enterprise organizations so the plan gate (which runs before the role
  * check) passes. Stubbed: authService.verifyToken (to choose the caller) and
@@ -43,6 +47,7 @@ import { errorHandler } from '../../middleware/error-handler';
 import { authService } from '../../services/auth.service';
 import { pool as appPool } from '../../config/database';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
+import { insertEligibleStopFinding } from './eligible-stop-finding';
 
 function dbConfig() {
   return {
@@ -136,13 +141,9 @@ async function buildOrg() {
 type Org = Awaited<ReturnType<typeof buildOrg>>;
 type Role = 'owner' | 'admin' | 'member' | 'viewer';
 
+/** An eligible Idle Instance finding (no region), so a stop workflow may reference it. */
 async function insertRecommendation(orgId: string, resourceId: string = instanceId()): Promise<string> {
-  const { rows } = await pool.query(
-    `INSERT INTO cost_recommendations (organization_id, resource_id, resource_type, issue, severity)
-     VALUES ($1, $2, 'EC2', 'Idle Instance', 'LOW') RETURNING id`,
-    [orgId, resourceId]
-  );
-  return rows[0].id as string;
+  return insertEligibleStopFinding(pool, orgId, resourceId);
 }
 
 /** An inventory row for an EC2 instance in `region`. */
@@ -165,16 +166,19 @@ async function insertWorkflow(
   } = {}
 ): Promise<{ id: string; resourceId: string }> {
   const resourceId = overrides.resourceId ?? instanceId();
+  // Backed by an eligible finding, so the stop rule never decides these tests.
+  const recommendationId = await insertRecommendation(orgId, resourceId);
   const { rows } = await pool.query(
     `INSERT INTO remediation_workflows
-       (organization_id, resource_id, resource_type, action_type, action_params, risk_level, status, rollback_available)
-     VALUES ($1, $2, 'EC2', 'stop_instance', $3, 'low', $4, $5) RETURNING id`,
+       (organization_id, recommendation_id, resource_id, resource_type, action_type, action_params, risk_level, status, rollback_available)
+     VALUES ($1, $6, $2, 'EC2', 'stop_instance', $3, 'low', $4, $5) RETURNING id`,
     [
       orgId,
       resourceId,
       JSON.stringify(overrides.actionParams ?? { resource_id: resourceId, region: 'us-east-1' }),
       overrides.status ?? 'pending_approval',
       overrides.rollbackAvailable ?? false,
+      recommendationId,
     ]
   );
   return { id: rows[0].id as string, resourceId };
@@ -206,6 +210,12 @@ function draft(overrides: Record<string, unknown> = {}) {
     estimatedSavings: 12,
     ...overrides,
   };
+}
+
+/** A stop draft backed by an eligible finding in `orgId` for its resource. */
+async function eligibleDraft(orgId: string, overrides: Record<string, unknown> = {}) {
+  const resourceId = (overrides.resourceId as string | undefined) ?? instanceId();
+  return draft({ resourceId, recommendationId: await insertRecommendation(orgId, resourceId), ...overrides });
 }
 
 let server: http.Server;
@@ -370,8 +380,14 @@ describe('POST /api/remediation: recommendation ownership', () => {
     }
   );
 
-  it.each([undefined, null])('still creates a workflow with no recommendation (%p)', async (recommendationId) => {
-    const response = await create(home, 'member', draft({ recommendationId }));
+  // A stop needs a finding (FP PR 2a: refused, see stop-instance-eligibility.test.ts);
+  // any other action may still be drafted without one.
+  it.each([undefined, null])('still creates a non-stop workflow with no recommendation (%p)', async (recommendationId) => {
+    const response = await create(
+      home,
+      'member',
+      draft({ resourceId: 'remediation-integrity-bucket', resourceType: 'S3', actionType: 'enable_s3_lifecycle', recommendationId })
+    );
 
     expect(response.status).toBe(201);
     expect((await response.json()).data.recommendation_id).toBeNull();
@@ -386,7 +402,7 @@ describe('POST /api/remediation: one target', () => {
     const response = await create(
       home,
       'member',
-      draft({ resourceId, actionParams: { resource_id: resourceId, region: 'eu-west-1' } })
+      await eligibleDraft(home.orgId, { resourceId, actionParams: { resource_id: resourceId, region: 'eu-west-1' } })
     );
 
     expect(response.status).toBe(201);
@@ -395,14 +411,14 @@ describe('POST /api/remediation: one target', () => {
     expect(data.action_params).toEqual({ resource_id: resourceId, region: 'eu-west-1' });
   });
 
-  // The resource is in neither the inventory nor a recommendation, so a
-  // supplied region has nothing to confirm it and is not stored.
+  // The resource is not in the inventory and its recommendation has no region,
+  // so a supplied region has nothing to confirm it and is not stored.
   it.each([undefined, {}, { region: 'eu-west-1' }])(
     'sets the action target from resourceId when action params are %p',
     async (actionParams) => {
       const resourceId = instanceId();
 
-      const response = await create(home, 'member', draft({ resourceId, actionParams }));
+      const response = await create(home, 'member', await eligibleDraft(home.orgId, { resourceId, actionParams }));
 
       expect(response.status).toBe(201);
       expect((await response.json()).data.action_params).toEqual({ resource_id: resourceId });
@@ -455,7 +471,7 @@ describe('execute acts on the workflow’s one target', () => {
     const resourceId = instanceId();
     // The region is the inventory's (it is never taken from the environment or the caller).
     await insertInventoryInstance(home.orgId, resourceId, 'us-east-1');
-    const created = await create(home, 'member', draft({ resourceId }));
+    const created = await create(home, 'member', await eligibleDraft(home.orgId, { resourceId }));
     const { id, action_params } = (await created.json()).data;
     expect(action_params).toEqual({ resource_id: resourceId, region: 'us-east-1' });
     expect((await act(home, 'admin', id, 'approve')).status).toBe(200);
@@ -477,7 +493,7 @@ describe('execute acts on the workflow’s one target', () => {
   it('refuses a workflow whose region is unknown with 409, reaching no AWS', async () => {
     process.env.ENABLE_AUTOMATED_REMEDIATION = 'true';
     // A supplied region with nothing to confirm it is not stored.
-    const created = await create(home, 'member', draft({ actionParams: { region: 'us-east-1' } }));
+    const created = await create(home, 'member', await eligibleDraft(home.orgId, { actionParams: { region: 'us-east-1' } }));
     const { id } = (await created.json()).data;
     expect((await act(home, 'admin', id, 'approve')).status).toBe(200);
 
@@ -523,9 +539,10 @@ describe('execute acts on the workflow’s one target', () => {
 
 describe('POST /api/remediation: who may create a draft', () => {
   it('refuses a viewer with 403, writing nothing', async () => {
+    const body = await eligibleDraft(home.orgId);
     const before = await rowCounts(home.orgId);
 
-    const response = await create(home, 'viewer', draft());
+    const response = await create(home, 'viewer', body);
 
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ success: false, error: 'Insufficient permissions' });
@@ -534,9 +551,10 @@ describe('POST /api/remediation: who may create a draft', () => {
   });
 
   it.each(['member', 'admin', 'owner'] as const)('lets a %s create a draft, which reaches no AWS', async (role) => {
+    const body = await eligibleDraft(home.orgId);
     const before = await rowCounts(home.orgId);
 
-    const response = await create(home, role, draft());
+    const response = await create(home, role, body);
 
     expect(response.status).toBe(201);
     expect(await rowCounts(home.orgId)).toEqual({ workflows: before.workflows + 1, audits: before.audits + 1 });
@@ -548,9 +566,10 @@ describe('POST /api/remediation: who may create a draft', () => {
     ['still-pending', { invitationToken: `pending-${uniqueSuffix()}` }],
   ])('refuses an %s owner membership with 401 MEMBERSHIP_REVOKED, writing nothing', async (_label, state) => {
     const userId = await member(home.orgId, 'owner', state);
+    const body = await eligibleDraft(home.orgId);
     const before = await rowCounts(home.orgId);
 
-    const response = await sendAs(home.orgId, userId, 'POST', '', draft());
+    const response = await sendAs(home.orgId, userId, 'POST', '', body);
 
     expect(response.status).toBe(401);
     expect((await response.json()).code).toBe('MEMBERSHIP_REVOKED');

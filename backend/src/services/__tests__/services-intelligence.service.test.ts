@@ -9,6 +9,7 @@
 import { ISSUE_EC2_IDLE_INSTANCE, ISSUE_S3_LIFECYCLE_OPTIMIZATION } from '../../config/optimization-rules';
 import { ServicesIntelligenceRows } from '../../repositories/services-intelligence.repository';
 import { isAutomatedRemediationEnabled } from '../remediation.service';
+import { ELIGIBLE_STOP_METADATA } from '../../routes/__tests__/eligible-stop-finding';
 import { GENERIC_RESOURCE_TYPES } from '../resourceExplorer.service';
 import {
   buildCapabilities,
@@ -95,7 +96,8 @@ function rows(overrides: Partial<ServicesIntelligenceRows> = {}): ServicesIntell
       { id: EMPTY_SERVICE, name: 'synthetic-empty', description: 'no resources', owner: null, team_id: null, team_name: null },
     ],
     recommendations: [
-      { id: IDLE_REC, resource_id: 'i-synthetic', resource_type: 'EC2', issue: ISSUE_EC2_IDLE_INSTANCE, severity: 'HIGH' },
+      // Carries the stop marker (shared fixture), so the stop is advertised for it.
+      { id: IDLE_REC, resource_id: 'i-synthetic', resource_type: 'EC2', issue: ISSUE_EC2_IDLE_INSTANCE, severity: 'HIGH', status: 'ACTIVE', metadata: { ...ELIGIBLE_STOP_METADATA } },
       { id: LIFECYCLE_REC, resource_id: 'synthetic-bucket', resource_type: 'S3', issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION, severity: 'LOW' },
     ],
     primaryRegion: 'test-region-1',
@@ -490,7 +492,10 @@ describe('findings are passed through as recorded', () => {
 });
 
 describe('remediation eligibility', () => {
-  const idle = { id: IDLE_REC, resource_id: 'i-synthetic', resource_type: 'EC2', issue: ISSUE_EC2_IDLE_INSTANCE, severity: 'HIGH' };
+  const idle = {
+    id: IDLE_REC, resource_id: 'i-synthetic', resource_type: 'EC2', issue: ISSUE_EC2_IDLE_INSTANCE, severity: 'HIGH',
+    status: 'ACTIVE', metadata: { ...ELIGIBLE_STOP_METADATA } as Record<string, unknown>,
+  };
 
   function remediations(recommendations: ServicesIntelligenceRows['recommendations']) {
     return compose({ recommendations }).services[0].resources.items[0].findings.map((f) => f.remediation);
@@ -506,6 +511,23 @@ describe('remediation eligibility', () => {
         requires: { role: 'admin', plan: 'enterprise' },
       },
     ]);
+  });
+
+  // FP PR 2a: the stop is advertised only where RemediationService would run it.
+  it('is offered for an Idle Instance finding carrying the stop marker', () => {
+    expect(remediations([idle])).toEqual([expect.objectContaining({ available: true, action_type: 'stop_instance' })]);
+  });
+
+  it.each([
+    ['no metadata', { metadata: undefined }],
+    ['metadata without the marker (today\'s CPU-only rule)', { metadata: { average_cpu: 1.2, days_analyzed: 7 } }],
+    ['the marker as a string', { metadata: { rule_version: '2' } }],
+    ['an older marker', { metadata: { rule_version: 1 } }],
+    ['an unknown newer marker', { metadata: { rule_version: 3 } }],
+    ['a status other than ACTIVE', { status: 'RESOLVED' }],
+    ['no status', { status: undefined }],
+  ])('is null for an Idle Instance finding with %s', (_label, change) => {
+    expect(remediations([{ ...idle, ...change }])).toEqual([null]);
   });
 
   it('is null for a recommendation with another issue on the same resource', () => {

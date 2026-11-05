@@ -33,7 +33,8 @@ export type AuditEventAction =
   | 'cost_recommendation.resolved'
   | 'cost_recommendation.dismissed'
   | 'cost_recommendation.reopened'
-  | 'cost_recommendation.deleted';
+  | 'cost_recommendation.deleted'
+  | 'remediation.stop_refused';
 
 export type AuditEventResourceType =
   | 'organization_invitation'
@@ -41,7 +42,8 @@ export type AuditEventResourceType =
   | 'sso_configuration'
   | 'api_key'
   | 'aws_account'
-  | 'cost_recommendation';
+  | 'cost_recommendation'
+  | 'remediation_workflow';
 
 /** Where an event came from, when it came from an HTTP request. */
 export interface AuditRequestContext {
