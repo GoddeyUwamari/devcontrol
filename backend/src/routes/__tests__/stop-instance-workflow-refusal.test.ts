@@ -16,7 +16,7 @@
  * Postgres. Stubbed: the STS and EC2 clients -- no test reaches AWS.
  *
  * POST /:id/execute is limited to 10 requests an hour per caller address:
- * this file sends 8.
+ * this file sends 9.
  */
 import { STSClient } from '@aws-sdk/client-sts';
 import {
@@ -275,6 +275,21 @@ describe('approve and execute refuse stored workflows that are not eligible', ()
       expectNoAwsCall();
     }
   );
+});
+
+describe('a stored workflow whose finding is for another instance', () => {
+  it('(c) execute is refused: the finding must be for the instance the workflow would stop', async () => {
+    const findingFor = instanceId();
+    const { id } = await insertWorkflow('approved', await insertFinding(findingFor), instanceId());
+    const before = await workflowRow(id);
+    const since = await dbNow();
+
+    await expectRefused(await act(id, 'execute'));
+
+    expect(await workflowRow(id)).toEqual(before);
+    expect((await refusalsSince(since)).map((row) => [row.metadata.stage, row.metadata.reason])).toEqual([['execute', 'finding_mismatch']]);
+    expectNoAwsCall();
+  });
 });
 
 describe('the finding is re-read at execution: approved while eligible, changed, then executed', () => {
