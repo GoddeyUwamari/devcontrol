@@ -76,23 +76,44 @@ function intelligence(): SystemIntelligenceResult {
   };
 }
 
+type Counts = { critical: number; high: number; medium: number; low: number };
+const counts = (partial: Partial<Counts> = {}): Counts => ({ critical: 0, high: 0, medium: 0, low: 0, ...partial });
+const sumCounts = (a: Counts, b: Counts): Counts => ({
+  critical: a.critical + b.critical, high: a.high + b.high, medium: a.medium + b.medium, low: a.low + b.low,
+});
+
 const MODEL_FIELDS = { overallHealth: { score: 80, context: 'x' }, topRisk: 'No risks at all', cloudSpend: 'Spend is $0', systemStatus: 'No critical outages are currently active.' };
 
 function mockDependencies(opts: {
   costs?: ChatContext['costs'];
-  findings?: Array<{ title: string; severity: string }> | Error;
+  findings?: Array<{ title: string; severity: string; disposition?: string | null }> | Error;
   combined?: number;
+  /** Per-source severity counts; when given, the combined count is their sum. */
+  accountCounts?: Counts;
+  resourceCounts?: Counts;
+  /** Whether the latest security evaluation completed and is current (default true). */
+  evaluation?: boolean | Error;
   preliminary?: boolean;
   recommendations?: { active: number; savings: number } | Error;
   model?: typeof MODEL_FIELDS | null;
   intelligence?: SystemIntelligenceResult;
 } = {}) {
   jest.spyOn(SystemIntelligenceService.prototype, 'getSystemIntelligence').mockResolvedValue(opts.intelligence ?? intelligence());
+  const perSource = opts.accountCounts && opts.resourceCounts
+    ? {
+        accountFindingsCounts: opts.accountCounts,
+        resourceComplianceCounts: opts.resourceCounts,
+        complianceIssueCounts: sumCounts(opts.accountCounts, opts.resourceCounts),
+      }
+    : { complianceIssueCounts: { critical: 0, high: opts.combined ?? 0, medium: 0, low: 0 } };
   jest.spyOn(RiskTrackingService.prototype, 'getCurrentRiskScore').mockResolvedValue({
     score: 72,
     isPreliminary: opts.preliminary ?? false,
-    complianceIssueCounts: { critical: 0, high: opts.combined ?? 0, medium: 0, low: 0 },
+    ...perSource,
   } as any);
+  const evaluation = jest.spyOn(AccountSecurityFindingsRepository.prototype, 'isLatestSecurityEvaluationCurrent');
+  if (opts.evaluation instanceof Error) evaluation.mockRejectedValue(opts.evaluation);
+  else evaluation.mockResolvedValue(opts.evaluation ?? true);
   const getActive = jest.spyOn(AccountSecurityFindingsRepository.prototype, 'getActive');
   if (opts.findings instanceof Error) getActive.mockRejectedValue(opts.findings);
   else getActive.mockResolvedValue((opts.findings ?? []) as any);
@@ -369,3 +390,198 @@ describe('Dashboard AI summary -- observability and composite state', () => {
     expect(prompt).not.toMatch(/composite is partial/);
   });
 });
+
+describe('Dashboard Top Risk -- accepted risk, dismissed, and W11 (founder decision D-B3)', () => {
+  const W11_THREE = 'No critical, high or medium findings open. 3 lower-priority findings on the Security page.';
+
+  it('an accepted-risk finding is never the Top Risk, and never reaches the prompt as one', async () => {
+    const { result, prompt } = await run({
+      findings: [
+        { title: 'Security group allows port 80 from anywhere', severity: 'high', disposition: 'accepted_risk' },
+        { title: 'IAM user without MFA', severity: 'medium' },
+      ],
+      accountCounts: counts({ high: 1, medium: 1 }),
+      resourceCounts: counts(),
+    });
+    expect(result).toMatchObject({ topRisk: 'IAM user without MFA (medium severity)', topRiskStatus: 'identified' });
+    expect(prompt).not.toContain('port 80');
+  });
+
+  it('a dismissed finding is never the Top Risk', async () => {
+    const { result } = await run({
+      findings: [
+        { title: 'Security group allows port 443 from anywhere', severity: 'critical', disposition: 'dismissed' },
+        { title: 'Access key older than 90 days', severity: 'high' },
+      ],
+      accountCounts: counts({ critical: 1, high: 1 }),
+      resourceCounts: counts(),
+    });
+    expect(result).toMatchObject({ topRisk: 'Access key older than 90 days (high severity)', topRiskStatus: 'identified' });
+  });
+
+  it('an acknowledged finding stays eligible', async () => {
+    const { result } = await run({
+      findings: [{ title: 'SSH open to the internet', severity: 'critical', disposition: 'acknowledged' }],
+      accountCounts: counts({ critical: 1 }),
+      resourceCounts: counts(),
+    });
+    expect(result).toMatchObject({ topRisk: 'SSH open to the internet (critical severity)', topRiskStatus: 'identified' });
+  });
+
+  it('W11 when the evaluation is complete and current and every open finding is low', async () => {
+    const { result } = await run({
+      findings: [{ title: 'Minor', severity: 'low' }, { title: 'Minor 2', severity: 'low' }],
+      accountCounts: counts({ low: 2 }),
+      resourceCounts: counts({ low: 1 }),
+    });
+    expect(result).toMatchObject({ topRisk: W11_THREE, topRiskStatus: 'no_urgent_findings' });
+  });
+
+  it('a model-written topRisk never replaces W11', async () => {
+    const { result } = await run({
+      findings: [{ title: 'Minor', severity: 'low' }],
+      accountCounts: counts({ low: 1 }),
+      resourceCounts: counts(),
+      model: { ...MODEL_FIELDS, topRisk: 'SSH exposure detected' },
+    });
+    expect(result.topRisk).toBe('No critical, high or medium findings open. 1 lower-priority finding on the Security page.');
+  });
+
+  it('no W11 while a resource-compliance medium is open: the count line stays', async () => {
+    const { result } = await run({
+      findings: [{ title: 'Minor', severity: 'low' }],
+      accountCounts: counts({ low: 1 }),
+      resourceCounts: counts({ medium: 1, low: 1 }),
+    });
+    expect(result).toMatchObject({ topRisk: '3 security findings (account and resource compliance combined)', topRiskStatus: 'identified' });
+    expect(result.topRisk).not.toContain('No critical, high or medium');
+  });
+
+  it('no W11 while an accepted or dismissed medium/high is still open: W11b instead, naming no finding', async () => {
+    const { result, prompt } = await run({
+      findings: [
+        { title: 'Port 80 open', severity: 'high', disposition: 'accepted_risk' },
+        { title: 'Port 443 open', severity: 'medium', disposition: 'dismissed' },
+        { title: 'Minor', severity: 'low' },
+      ],
+      accountCounts: counts({ high: 1, medium: 1, low: 1 }),
+      resourceCounts: counts(),
+    });
+    expect(result).toMatchObject({
+      topRisk: 'No critical, high or medium findings need attention. 2 you accepted or dismissed are on the Security page.',
+      topRiskStatus: 'all_urgent_reviewed',
+    });
+    expect(result.topRisk).not.toContain('No critical, high or medium findings open');
+    expect(result.topRisk).not.toMatch(/Port 80|Port 443/);
+    expect(prompt).not.toMatch(/Port 80|Port 443/);
+  });
+
+  it.each([
+    ['the latest evaluation did not complete or is not current', { evaluation: false }],
+    ['the evaluation status cannot be read', { evaluation: new Error('connection refused') }],
+  ])('no W11 when %s: the existing count line stays, never "no critical, high or medium"', async (_label, extra) => {
+    const { result } = await run({
+      findings: [{ title: 'Minor', severity: 'low' }, { title: 'Minor 2', severity: 'low' }],
+      accountCounts: counts({ low: 2 }),
+      resourceCounts: counts({ low: 1 }),
+      ...extra,
+    });
+    expect(result).toMatchObject({ topRisk: '3 security findings (account and resource compliance combined)', topRiskStatus: 'identified' });
+  });
+
+  it('no W11 when the posture score is preliminary (never ran): unavailable, as before', async () => {
+    const { result } = await run({
+      findings: [{ title: 'Minor', severity: 'low' }],
+      accountCounts: counts({ low: 1 }),
+      resourceCounts: counts(),
+      preliminary: true,
+    });
+    expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'unavailable' });
+  });
+
+  it('no W11 when account findings failed to load: the combined count line stays', async () => {
+    const { result } = await run({
+      findings: new Error('db down'),
+      accountCounts: counts({ low: 1 }),
+      resourceCounts: counts({ low: 1 }),
+    });
+    expect(result).toMatchObject({ topRisk: '2 security findings (account and resource compliance combined)', topRiskStatus: 'identified' });
+  });
+
+  it('no W11 when per-source counts are not reported', async () => {
+    const { result } = await run({ findings: [{ title: 'Minor', severity: 'low' }], combined: 1 });
+    expect(result.topRiskStatus).toBe('identified');
+    expect(result.topRisk).not.toContain('No critical, high or medium');
+  });
+
+  it('nothing open at all stays "none_identified", not W11', async () => {
+    const { result } = await run({ findings: [], accountCounts: counts(), resourceCounts: counts() });
+    expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'none_identified' });
+  });
+
+  it('a change in the evaluation state regenerates the cached summary', async () => {
+    const service = new AISummaryService();
+    const opts = { findings: [{ title: 'Minor', severity: 'low' }], accountCounts: counts({ low: 1 }), resourceCounts: counts() };
+    mockDependencies({ ...opts, evaluation: true });
+    expect((await service.getSummary(ORG)).topRiskStatus).toBe('no_urgent_findings');
+    jest.restoreAllMocks();
+    mockDependencies({ ...opts, evaluation: false });
+    expect((await service.getSummary(ORG)).topRiskStatus).toBe('identified');
+  });
+});
+
+describe('Dashboard Top Risk -- W11b: every open critical/high/medium finding was accepted or dismissed', () => {
+  const reviewedHigh = { title: 'Security group allows port 80 from anywhere', severity: 'high', disposition: 'accepted_risk' };
+
+  it('W11b, singular, with only lows otherwise open', async () => {
+    const { result } = await run({
+      findings: [reviewedHigh, { title: 'Minor', severity: 'low' }],
+      accountCounts: counts({ high: 1, low: 1 }),
+      resourceCounts: counts({ low: 2 }),
+    });
+    expect(result).toMatchObject({
+      topRisk: 'No critical, high or medium findings need attention. 1 you accepted or dismissed is on the Security page.',
+      topRiskStatus: 'all_urgent_reviewed',
+    });
+    expect(result.topRisk).not.toContain('port 80');
+  });
+
+  it('an accepted high never produces W11 (W11 says nothing critical, high or medium is open)', async () => {
+    const { result } = await run({ findings: [reviewedHigh], accountCounts: counts({ high: 1 }), resourceCounts: counts() });
+    expect(result.topRiskStatus).not.toBe('no_urgent_findings');
+    expect(result.topRisk).not.toContain('findings open');
+  });
+
+  it.each([
+    ['the latest evaluation did not complete or is not current', { evaluation: false }],
+    ['the evaluation status cannot be read', { evaluation: new Error('connection refused') }],
+  ])('no W11b when %s: the existing count line stays', async (_label, extra) => {
+    const { result } = await run({ findings: [reviewedHigh], accountCounts: counts({ high: 1 }), resourceCounts: counts(), ...extra });
+    expect(result).toMatchObject({ topRisk: '1 security finding (account and resource compliance combined)', topRiskStatus: 'identified' });
+  });
+
+  it('no W11b while a resource-compliance medium is open', async () => {
+    const { result } = await run({ findings: [reviewedHigh], accountCounts: counts({ high: 1 }), resourceCounts: counts({ medium: 1 }) });
+    expect(result).toMatchObject({ topRisk: '2 security findings (account and resource compliance combined)', topRiskStatus: 'identified' });
+  });
+
+  it('no W11b when the score counts more account critical/high/medium findings than the list shows reviewed', async () => {
+    const { result } = await run({ findings: [reviewedHigh], accountCounts: counts({ high: 2 }), resourceCounts: counts() });
+    expect(result).toMatchObject({ topRisk: '2 security findings (account and resource compliance combined)', topRiskStatus: 'identified' });
+  });
+
+  it('no W11b when the posture score is preliminary', async () => {
+    const { result } = await run({ findings: [reviewedHigh], accountCounts: counts({ high: 1 }), resourceCounts: counts(), preliminary: true });
+    expect(result).toMatchObject({ topRisk: null, topRiskStatus: 'unavailable' });
+  });
+
+  it('an unreviewed high alongside an accepted one is still the Top Risk', async () => {
+    const { result } = await run({
+      findings: [reviewedHigh, { title: 'Access key older than 90 days', severity: 'high' }],
+      accountCounts: counts({ high: 2 }),
+      resourceCounts: counts(),
+    });
+    expect(result).toMatchObject({ topRisk: 'Access key older than 90 days (high severity)', topRiskStatus: 'identified' });
+  });
+});
+
