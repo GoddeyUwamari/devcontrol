@@ -4,6 +4,9 @@ import { InfrastructureRepository } from '../repositories/infrastructure.reposit
 import { CreateInfrastructureRequest, InfrastructureFilters, ApiResponse } from '../types';
 import awsCostService from '../services/aws-cost.service';
 import { pool } from '../config/database';
+import { withConnectionFence, isConnectionChanged } from '../services/aws-connection-fence';
+import { AwsAccountNotConnectedError } from '../repositories/aws-accounts.repository';
+import { AWS_NOT_CONNECTED_CODE, AWS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 import { infrastructureCostFor, infrastructureStatusFor } from '../utils/infrastructureRow';
 
 const repository = new InfrastructureRepository();
@@ -234,11 +237,19 @@ export class InfrastructureController {
 
       const organizationId = (req as any).user?.organizationId;
 
-      // Fetch monthly costs from AWS Cost Explorer
+      // Fetch monthly costs from AWS Cost Explorer, with the identity of the
+      // connection they belong to (the row whose credentials fetched them).
       let awsCosts;
+      let connection: string;
       try {
-        awsCosts = await awsCostService.fetchMonthlyCosts(organizationId);
+        ({ costs: awsCosts, connection } = await awsCostService.fetchMonthlyCostsWithConnection(organizationId));
       } catch (error: any) {
+        // No eligible AWS connection: nothing to sync, and nothing is written.
+        if (error instanceof AwsAccountNotConnectedError) {
+          res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, error: AWS_NOT_CONNECTED_MESSAGE });
+          return;
+        }
+
         // Check if it's a Cost Explorer not enabled error
         if (error.message && error.message.includes('not enabled')) {
           const response: ApiResponse = {
@@ -262,60 +273,51 @@ export class InfrastructureController {
       // Update or insert AWS cost total in database
       const awsId = 'cost-explorer-total';
       const resourceType = 'AWS_COST_TOTAL';
-
-      // Check if record exists (scoped to this org — otherwise one org's sync
-      // would overwrite another org's cost total row)
-      const existingRecord = await pool.query(
-        'SELECT id FROM infrastructure_resources WHERE aws_id = $1 AND resource_type = $2 AND organization_id = $3',
-        [awsId, resourceType, organizationId]
-      );
-
       const now = new Date();
-      let resourcesSynced = 0;
+      const metadata = JSON.stringify({
+        last_synced_at: now.toISOString(),
+        period: awsCosts.period,
+        by_service: awsCosts.byService,
+      });
 
-      if (existingRecord.rows.length > 0) {
-        // Update existing record
-        await pool.query(
-          `UPDATE infrastructure_resources
-           SET cost_per_month = $1, status = $2, updated_at = $3, metadata = $4
-           WHERE aws_id = $5 AND resource_type = $6 AND organization_id = $7`,
-          [
-            awsCosts.total,
-            'Active',
-            now,
-            JSON.stringify({
-              last_synced_at: now.toISOString(),
-              period: awsCosts.period,
-              by_service: awsCosts.byService,
-            }),
-            awsId,
-            resourceType,
-            organizationId,
-          ]
-        );
-        resourcesSynced = 1;
-      } else {
-        // Insert new record
-        await pool.query(
-          `INSERT INTO infrastructure_resources
-           (service_id, resource_type, aws_id, aws_region, status, cost_per_month, metadata, organization_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            null,
-            resourceType,
-            awsId,
-            process.env.AWS_REGION || 'us-east-1',
-            'Active',
-            awsCosts.total,
-            JSON.stringify({
-              last_synced_at: now.toISOString(),
-              period: awsCosts.period,
-              by_service: awsCosts.byService,
-            }),
-            organizationId,
-          ]
-        );
-        resourcesSynced = 1;
+      // The read and the write in ONE transaction fenced on that connection
+      // (aws-connection-fence.ts): the row is written only while the connection
+      // whose credentials fetched these costs is still the organization's
+      // active one. A change refuses the write and nothing is stored.
+      let resourcesSynced = 0;
+      try {
+        resourcesSynced = await withConnectionFence(pool, organizationId, connection, async (client) => {
+          // Scoped to this org: otherwise one org's sync would overwrite another org's cost total row.
+          const existingRecord = await client.query(
+            'SELECT id FROM infrastructure_resources WHERE aws_id = $1 AND resource_type = $2 AND organization_id = $3',
+            [awsId, resourceType, organizationId]
+          );
+
+          if (existingRecord.rows.length > 0) {
+            await client.query(
+              `UPDATE infrastructure_resources
+               SET cost_per_month = $1, status = $2, updated_at = $3, metadata = $4
+               WHERE aws_id = $5 AND resource_type = $6 AND organization_id = $7`,
+              [awsCosts.total, 'Active', now, metadata, awsId, resourceType, organizationId]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO infrastructure_resources
+               (service_id, resource_type, aws_id, aws_region, status, cost_per_month, metadata, organization_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [null, resourceType, awsId, process.env.AWS_REGION || 'us-east-1', 'Active', awsCosts.total, metadata, organizationId]
+            );
+          }
+          return 1;
+        });
+      } catch (error: unknown) {
+        // The connection changed (or went away) after the costs were fetched: they
+        // belong to no current connection, so nothing was stored.
+        if (isConnectionChanged(error)) {
+          res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, error: AWS_NOT_CONNECTED_MESSAGE });
+          return;
+        }
+        throw error;
       }
 
       const response: ApiResponse = {

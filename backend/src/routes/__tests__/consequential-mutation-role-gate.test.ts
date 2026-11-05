@@ -161,6 +161,7 @@ const webhookHandlerRan = (tag: string) => errorSpy.mock.calls.some((call) => ca
 let errorSpy: jest.SpyInstance;
 let factorySpy: jest.SpyInstance;
 let analyzeSpy: jest.SpyInstance;
+let createFencedSpy: jest.SpyInstance;
 let reconcileSpy: jest.SpyInstance;
 let replaceRiSpy: jest.SpyInstance;
 let createBulkSpy: jest.SpyInstance;
@@ -210,6 +211,8 @@ beforeEach(() => {
   // The run's finish is fenced with the lease's connection (AWS connect PR B); this
   // organization has no account row to match it, and the gate is what is tested here.
   jest.spyOn(CostAnalysisRunsRepository.prototype, 'markFinished').mockResolvedValue(undefined);
+  // The run row's creation is fenced with that same connection (AWS connect PR C): stubbed for the same reason.
+  createFencedSpy = jest.spyOn(CostAnalysisRunsRepository.prototype, 'createFenced').mockResolvedValue({ id: '00000000-0000-4000-8000-0000000000d1' } as never);
   analyzeSpy = jest
     .spyOn(costOptimizationService, 'analyzeAllResources')
     .mockResolvedValue({ observations: [], riRecommendations: [], riSucceeded: true } as never);
@@ -319,6 +322,7 @@ const mutations: Mutation[] = [
     allowed: () => 200,
     happened: async (orgId, runsBefore) =>
       analyzeSpy.mock.calls.length +
+        createFencedSpy.mock.calls.length +
         reconcileSpy.mock.calls.length +
         replaceRiSpy.mock.calls.length +
         createBulkSpy.mock.calls.length >

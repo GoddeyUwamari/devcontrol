@@ -150,20 +150,18 @@ describe('run states', () => {
     expect(json).toHaveBeenCalledWith({ success: false, error: 'None of the cost checks could complete. Try again.' });
   });
 
-  it('failed: analysis without the scan lease saved nothing, so it does not report success', async () => {
+  it('failed: analysis without the scan lease saved nothing, so it does not report success (and, with no connection, records no run)', async () => {
     const orgId = await insertOrg();
     jest.spyOn(scanSession, 'leaseTargetFor').mockResolvedValue(null);
     mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [finding('i-a')] }, retiredRds]);
     const { status, json } = await analyze(orgId);
-    const [run] = await fetchRuns(orgId);
 
-    expect(run).toMatchObject({ status: 'failed', detected_count: null, persisted_count: null });
-    expect(run.error_message).toContain('COST_RESULTS_NOT_SAVED');
+    // AWS connect PR C: a run row is created only fenced on a connection; with none there is no row.
+    expect(await fetchRuns(orgId)).toEqual([]);
     expect(status).toHaveBeenCalledWith(503);
     expect(json).toHaveBeenCalledWith({ success: false, error: "The analysis ran, but its results couldn't be saved. Try again." });
     const { rows } = await pool.query(`SELECT COUNT(*)::int AS count FROM cost_recommendations WHERE organization_id = $1`, [orgId]);
     expect(rows[0].count).toBe(0);
-    expect((await list(orgId))[0].error_message).toBe("The analysis ran, but its results couldn't be saved. Try again.");
   });
 
   it('interrupted: a lease lost mid-run is not a failure of the analysis', async () => {

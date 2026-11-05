@@ -8,6 +8,7 @@
 import { Pool } from 'pg';
 import { CustomComplianceService } from '../custom-compliance.service';
 import { ComplianceFrameworksRepository } from '../../repositories/compliance-frameworks.repository';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from './helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -34,6 +35,8 @@ async function insertOrg(): Promise<string> {
     [`Tag Pattern Org ${suffix}`, `tag-pattern-org-${suffix}`, `Tag Pattern Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan needs an AWS connection (AWS connect PR C): every test organization has one.
+  await connectPlaceholderAccount(pool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -77,6 +80,7 @@ afterEach(() => {
 
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

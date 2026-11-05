@@ -3,7 +3,7 @@ import { RiskScoreHistoryRepository } from '../repositories/risk-score-history.r
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { calculateRiskScore, RiskScore } from '../utils/riskScoring';
-import { currentConnectionIdentity, lockConnectionShared } from './aws-connection-fence';
+import { CONNECTION_FENCE_STATEMENT_TIMEOUT_MS, currentConnectionIdentity, lockConnectionShared } from './aws-connection-fence';
 
 type SeverityCounts = { critical: number; high: number; medium: number; low: number };
 
@@ -143,6 +143,8 @@ export class RiskTrackingService {
   private async storeDailySnapshotFenced(organizationId: string, client: PoolClient): Promise<boolean> {
     await client.query('BEGIN');
     try {
+      // The same per-statement limit as every other connection-fenced transaction.
+      await client.query(`SET LOCAL statement_timeout = ${CONNECTION_FENCE_STATEMENT_TIMEOUT_MS}`);
       await lockConnectionShared(client, organizationId);
       const connection = await currentConnectionIdentity(client, organizationId);
       const stored = connection !== null && (await this.storeDailySnapshotIn(organizationId, client));

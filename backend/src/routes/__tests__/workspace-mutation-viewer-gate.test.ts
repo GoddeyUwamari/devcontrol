@@ -32,6 +32,8 @@ import { authService } from '../../services/auth.service';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
 import awsCostService from '../../services/aws-cost.service';
 import { pool as appPool } from '../../config/database';
+import { currentConnectionIdentity } from '../../services/aws-connection-fence';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from '../../services/__tests__/helpers/scan-source';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
 jest.mock('../../services/onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
@@ -134,6 +136,8 @@ async function insertInfrastructure(orgId: string, serviceId: string): Promise<s
 
 async function buildOrg(id?: string) {
   const orgId = await insertOrg(id);
+  // A cost sync writes only for a connected organization (AWS connect PR C).
+  await connectPlaceholderAccount(pool, orgId);
   return {
     orgId,
     serviceId: await insertService(orgId),
@@ -213,11 +217,12 @@ beforeEach(() => {
   discoverSpy = jest
     .spyOn(AWSResourceDiscoveryService.prototype, 'discoverAllResources')
     .mockResolvedValue({ job_id: 'stubbed', resources_discovered: 0, resources_updated: 0, errors: [] } as never);
-  costSpy = jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue({
-    total: 12.5,
-    byService: [],
-    period: { start: '2026-10-01', end: '2026-10-05' },
-  } as never);
+  // The Cost Explorer fetch, stubbed; the costs belong to the organization's real
+  // (placeholder) connection, so the fenced write (AWS connect PR C) proceeds as before.
+  costSpy = jest.spyOn(awsCostService, 'fetchMonthlyCostsWithConnection').mockImplementation(async (organizationId: string) => ({
+    costs: { total: 12.5, byService: [], period: { start: '2026-10-01', end: '2026-10-05' } } as never,
+    connection: (await currentConnectionIdentity(pool, organizationId))!,
+  }));
 });
 
 afterEach(() => {
@@ -230,6 +235,7 @@ afterAll(async () => {
     if (savedEnv[key] === undefined) delete process.env[key];
     else process.env[key] = savedEnv[key];
   }
+  await removePlaceholderAccounts(pool, createdOrgIds);
   await pool.query('DELETE FROM infrastructure_resources WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM deployments WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM services WHERE organization_id = ANY($1)', [createdOrgIds]);

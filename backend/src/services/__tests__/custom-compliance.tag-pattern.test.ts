@@ -14,6 +14,8 @@
  *     or the tag value.
  */
 import { CustomComplianceService } from '../custom-compliance.service';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { connectedScanClient } = require('./helpers/connected-scan-client');
 
 const rule = (id: string, rule_type: string, conditions: Record<string, any>, severity = 'high') => ({
   id, framework_id: 'framework-1', rule_code: id, rule_type, conditions, severity, category: 'tagging', enabled: true, resource_types: [], recommendation: 'fix it',
@@ -41,7 +43,7 @@ async function scan(rules: any[], resources: any[]) {
   svc.fetchResources = jest.fn(async () => resources);
   jest.spyOn(console, 'log').mockImplementation(() => {});
   const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-  await svc.runScanBody({ query: jest.fn(async () => ({ rows: [] })) }, { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
+  await svc.runScanBody(connectedScanClient(jest.fn), { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
   const warnings = warn.mock.calls.map((args) => args.join(' '));
   jest.restoreAllMocks();
   return {

@@ -14,7 +14,13 @@
  *
  * THE LOCK. One transaction-level advisory lock per organization:
  *
- *   key = hashtextextended('aws_connection:' || <organization id>, 0)
+ *   key = hashtextextended('aws_connection:' || <organization id>::uuid::text, 0)
+ *
+ * The id is cast through uuid first, so the text hashed is always the
+ * canonical lower-case form: every caller, and any database-side user of the
+ * same key, locks the same key for the same organization however the id was
+ * written. A value that is not a uuid fails (22P02) instead of locking an
+ * unrelated key.
  *
  * The 'aws_connection:' namespace keeps the key apart from every other
  * advisory-lock user (organization-authorization.ts hashes
@@ -57,8 +63,8 @@ import { assumedRoleSourceOf, type AWSClients } from './aws-client-factory.servi
 /** The namespace of the connection lock's key (see the module comment). */
 export const AWS_CONNECTION_LOCK_NAMESPACE = 'aws_connection:';
 
-/** The lock key, in SQL, over the organization id passed as $1. */
-export const AWS_CONNECTION_LOCK_KEY_SQL = `hashtextextended('${AWS_CONNECTION_LOCK_NAMESPACE}' || $1::text, 0)`;
+/** The lock key, in SQL, over the organization id passed as $1 (canonical uuid text; see the module comment). */
+export const AWS_CONNECTION_LOCK_KEY_SQL = `hashtextextended('${AWS_CONNECTION_LOCK_NAMESPACE}' || $1::uuid::text, 0)`;
 
 /** The longest any one statement of a connection-fenced transaction may run. */
 export const CONNECTION_FENCE_STATEMENT_TIMEOUT_MS = 60 * 1000;
@@ -115,12 +121,16 @@ export function connectionIdentityOfClients(clients: AWSClients): string | null 
 
 /**
  * The fence itself, inside the caller's open transaction and before its first
- * write: the shared lock, then the comparison. `expected` null means the work
- * started with no eligible connection, and must still find none. Throws
+ * write: the shared lock, then the comparison, as two separate statements (the
+ * comparison's snapshot is taken only after the lock is held). `expected` is
+ * the identity of the connection the work started with. Work that started with
+ * no eligible connection has nothing AWS-derived to write: `expected` null (or
+ * empty) is never a pass, and is refused before anything else runs. Throws
  * ConnectionChangedError on any difference (AwsAccountAmbiguousError for more
  * than one eligible row); the caller rolls back.
  */
 export async function assertConnectionUnchanged(client: Executor, organizationId: string, expected: string | null): Promise<void> {
+  if (!expected) throw new ConnectionChangedError(organizationId);
   await lockConnectionShared(client, organizationId);
   const current = await currentConnectionIdentity(client, organizationId);
   if (current !== expected) throw new ConnectionChangedError(organizationId);

@@ -451,13 +451,6 @@ export class CostRecommendationsController {
       }
       organizationIdForRun = organizationId;
 
-      try {
-        const run = await analysisRunsRepository.create(organizationId);
-        runId = run.id;
-      } catch (trackingErr) {
-        console.error('Failed to create cost_analysis_runs row (non-fatal, analysis proceeds):', trackingErr);
-      }
-
       console.log(`Starting cost optimization analysis for org ${organizationId}...`);
 
       // The scan lease discovery uses (multi-region plan M4b, §4.6): Analyze changes the
@@ -471,6 +464,21 @@ export class CostRecommendationsController {
       // row (expectedConnection), or it stops before any AWS call: a lease taken for
       // one connection never guards results fetched with another's credentials.
       const leaseTarget = await leaseTargetFor(pool, organizationId);
+
+      // This run's row, only for an analysis that has a connection to run against, and
+      // created fenced on that connection (AWS connect PR C): with no eligible
+      // connection no row is written (the analysis below then fails as it always did),
+      // and a connection that changed since the read above creates none either.
+      if (leaseTarget) {
+        try {
+          const run = await analysisRunsRepository.createFenced(organizationId, {}, { connection: leaseTarget.connection });
+          runId = run.id;
+        } catch (trackingErr) {
+          if (isConnectionChanged(trackingErr)) throw trackingErr;
+          console.error('Failed to create cost_analysis_runs row (non-fatal, analysis proceeds):', trackingErr);
+        }
+      }
+
       if (leaseTarget) {
         session = await waitForScanSession(pool, organizationId, leaseTarget, this.leaseTiming);
         await this.recordLeaseAcquired(session.lease.acquiredAt, organizationId, runId);

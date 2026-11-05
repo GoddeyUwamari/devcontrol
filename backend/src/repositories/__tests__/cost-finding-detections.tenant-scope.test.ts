@@ -108,7 +108,8 @@ describe('live: cost_finding_detections RLS, as the application role', () => {
     await pool.end();
   });
 
-  it('the table is RLS-forced with exactly SELECT, INSERT, UPDATE for devcontrol', async () => {
+  // DELETE was added by the AWS disconnect expand migration (aws_disconnect_expand): the disconnect cleanup deletes an organization's rows.
+  it('the table is RLS-forced with exactly SELECT, INSERT, UPDATE, DELETE for devcontrol', async () => {
     const { rows } = await pool.query(
       `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'cost_finding_detections'::regclass`
     );
@@ -117,7 +118,7 @@ describe('live: cost_finding_detections RLS, as the application role', () => {
       `SELECT privilege_type FROM information_schema.role_table_grants
        WHERE table_name = 'cost_finding_detections' AND grantee = 'devcontrol' ORDER BY 1`
     );
-    expect(grants.rows.map((row) => row.privilege_type)).toEqual(['INSERT', 'SELECT', 'UPDATE']);
+    expect(grants.rows.map((row) => row.privilege_type)).toEqual(['DELETE', 'INSERT', 'SELECT', 'UPDATE']);
   });
 
   it('untagged sees nothing; tagged sees only its own organization; cross-org writes and deletes are refused', async () => {
@@ -137,6 +138,11 @@ describe('live: cost_finding_detections RLS, as the application role', () => {
     ))).rejects.toThrow(/row-level security/);
     const updated = await asApplication(orgA, (c) => c.query(`UPDATE cost_finding_detections SET outcome = 'unknown' WHERE organization_id = $1`, [orgB]));
     expect(updated.rowCount).toBe(0);
-    await expect(asApplication(orgA, (c) => c.query('DELETE FROM cost_finding_detections WHERE organization_id = $1', [orgA]))).rejects.toThrow(/permission denied/);
+    // Deletes are row-level-security scoped like every other statement: another organization's rows are never reached.
+    const crossDeleted = await asApplication(orgA, (c) => c.query('DELETE FROM cost_finding_detections WHERE organization_id = $1', [orgB]));
+    expect(crossDeleted.rowCount).toBe(0);
+    const ownDeleted = await asApplication(orgA, (c) => c.query('DELETE FROM cost_finding_detections WHERE organization_id = ANY($1)', [[orgA, orgB]]));
+    // Only orgA's own row is reached (asApplication rolls its transaction back afterwards).
+    expect(ownDeleted.rowCount).toBe(1);
   });
 });

@@ -10,6 +10,8 @@
  *     neither for nor against the resource.
  */
 import { CustomComplianceService } from '../custom-compliance.service';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { connectedScanClient } = require('./helpers/connected-scan-client');
 
 const service = new CustomComplianceService({} as any);
 const propertyCheck = (resource: Record<string, any>, conditions: Record<string, any>) =>
@@ -133,7 +135,7 @@ describe('a scan records a not-evaluated rule as "skip" and does not count it', 
     svc.fetchResources = jest.fn(async () => resources);
     jest.spyOn(console, 'log').mockImplementation(() => {});
     // The client only carries the results transaction's BEGIN / SET LOCAL / COMMIT here.
-    await svc.runScanBody({ query: jest.fn(async () => ({ rows: [] })) }, { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
+    await svc.runScanBody(connectedScanClient(jest.fn), { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
     jest.restoreAllMocks();
     return { summary, byRule: (resourceId: string) => Object.fromEntries(findings.filter((f) => f.resource_id === resourceId).map((f) => [f.rule_id, f])) };
   }

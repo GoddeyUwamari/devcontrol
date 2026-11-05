@@ -132,3 +132,86 @@ describe('discovery: the connection changes mid-scan', () => {
     expect(jobs).toEqual([{ error_message: 'closed by the newer scan' }]);
   });
 });
+
+/**
+ * AWS connect PR C (C-a), L3: a worker whose connection is no longer the active one
+ * creates no job row and no cost run. The job row and the lease's link to it are
+ * written in one fenced transaction after the scan lease is taken.
+ */
+describe('discovery: a stale worker creates no job row (L3)', () => {
+  const jobCount = async (orgId: string) =>
+    (await pool.query(`SELECT count(*)::int AS n FROM resource_discovery_jobs WHERE organization_id = $1`, [orgId])).rows[0].n;
+  const runCount = async (orgId: string) =>
+    (await pool.query(`SELECT count(*)::int AS n FROM cost_analysis_runs WHERE organization_id = $1`, [orgId])).rows[0].n;
+
+  it('the connection changes after the scan lease is taken and before the job row: no job row and no cost run', async () => {
+    const orgId = await insertOrg();
+    mockClients();
+    const analyze = jest.spyOn(costOptimizationService, 'analyzeAllResources');
+    const discovery = new AWSResourceDiscoveryService(pool);
+    const realRecover = (discovery as any).recoverInterruptedCostRuns.bind(discovery);
+    jest.spyOn(discovery as any, 'recoverInterruptedCostRuns').mockImplementation(async (...args: unknown[]) => {
+      await realRecover(...args);
+      await replaceConnection(orgId);
+    });
+    await expect(discovery.discoverAllResources(orgId)).rejects.toMatchObject({ reason: 'account_changed' });
+    expect(await jobCount(orgId)).toBe(0);
+    expect(await runCount(orgId)).toBe(0);
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('concurrent: a change holding the connection lock makes the job-row transaction wait; after it commits, no job row is created', async () => {
+    const orgId = await insertOrg();
+    mockClients();
+    const discovery = new AWSResourceDiscoveryService(pool);
+    const realRecover = (discovery as any).recoverInterruptedCostRuns.bind(discovery);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let change: Promise<void> | undefined;
+    jest.spyOn(discovery as any, 'recoverInterruptedCostRuns').mockImplementation(async (...args: unknown[]) => {
+      await realRecover(...args);
+      let entered!: () => void;
+      const inside = new Promise<void>((resolve) => (entered = resolve));
+      change = withConnectionChange(pool, orgId, async (c) => {
+        const { rows } = await c.query(`DELETE FROM aws_accounts WHERE org_id = $1 RETURNING account_id, region`, [orgId]);
+        await c.query(
+          `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, status) VALUES ($1, $2, $3, 'placeholder-external-id', $4, 'active')`,
+          [orgId, PLACEHOLDER_ACCOUNT_ROW.role_arn, rows[0].account_id, rows[0].region]
+        );
+        entered();
+        await held;
+      });
+      await inside;
+    });
+    let settled = false;
+    const scan = discovery.discoverAllResources(orgId).then(
+      () => { settled = true; return 'resolved'; },
+      (error: unknown) => { settled = true; return error; }
+    );
+    try {
+      const deadline = Date.now() + 10_000;
+      while ((await pool.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`)).rows[0].n === 0) {
+        if (settled || Date.now() > deadline) throw new Error('the job-row transaction never waited for the connection lock');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(settled).toBe(false);
+      expect(await jobCount(orgId)).toBe(0);
+    } finally {
+      // Always end the held change, so a failing run never leaves the lock (and the pool) held.
+      release();
+      await change;
+    }
+    expect(await scan).toMatchObject({ reason: 'account_changed' });
+    expect(await jobCount(orgId)).toBe(0);
+  }, 30_000);
+});
+
+describe('static: the running job row is created only inside the fenced job-opening transaction (L3)', () => {
+  it('its one INSERT sits in openDiscoveryJob, after session.fenced(client, ...)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const source: string = require('fs').readFileSync(require('path').join(__dirname, '../awsResourceDiscovery.ts'), 'utf8');
+    const inserts = source.match(/INSERT INTO resource_discovery_jobs \(organization_id, status, started_at, resource_types, regions\)/g) ?? [];
+    expect(inserts).toHaveLength(1);
+    expect(source).toMatch(/private async openDiscoveryJob\([\s\S]*?\{\s*return session\.fenced\(client, async \(\) => \{\s*const jobResult = await client\.query\(\s*`INSERT INTO resource_discovery_jobs \(organization_id, status, started_at, resource_types, regions\)/);
+  });
+});

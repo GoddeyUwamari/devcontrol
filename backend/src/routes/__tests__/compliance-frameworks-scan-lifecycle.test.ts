@@ -18,6 +18,7 @@ import express from 'express';
 import http from 'http';
 import { AddressInfo } from 'net';
 import { Pool } from 'pg';
+import { ensureSharedFixtureTable } from './shared-fixture-tables';
 
 async function jsonBody(res: Response): Promise<any> {
   return res.json();
@@ -63,6 +64,21 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** A scan needs an AWS connection (AWS connect PR C): a placeholder active row for the test organization. */
+async function connectPlaceholderAccount(db: Pool, organizationId: string): Promise<void> {
+  await ensureSharedFixtureTable(db, 'aws_accounts');
+  await db.query(
+    `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, status)
+     VALUES ($1, 'arn:aws:iam::123456789012:role/DevControlRole', $2, 'placeholder-external-id', 'us-east-1', 'active')
+     ON CONFLICT (org_id) DO NOTHING`,
+    [organizationId, `ph-${organizationId.replace(/-/g, '').slice(0, 29)}`]
+  );
+}
+
+async function removePlaceholderAccounts(db: Pool, organizationIds: string[]): Promise<void> {
+  if (organizationIds.length > 0) await db.query(`DELETE FROM aws_accounts WHERE org_id = ANY($1) AND account_id LIKE 'ph-%'`, [organizationIds]);
+}
+
 async function insertOrg(): Promise<string> {
   const suffix = uniqueSuffix();
   const { rows } = await testPool.query(
@@ -71,6 +87,8 @@ async function insertOrg(): Promise<string> {
     [`Scan Route Org ${suffix}`, `scan-route-org-${suffix}`, `Scan Route Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan needs an AWS connection (AWS connect PR C): every test organization has one.
+  await connectPlaceholderAccount(testPool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -128,6 +146,7 @@ beforeAll((done) => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   if (createdOrgIds.length > 0) {
+    await removePlaceholderAccounts(testPool, createdOrgIds);
     await testPool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await testPool.end();

@@ -676,9 +676,9 @@ describe('§4.2 heartbeat and checkpoints', () => {
     expect(rds.calls).toEqual([]);
     expect(s3.calls).toEqual([]);
     expect((search as any).send).not.toHaveBeenCalled();
-    const [job] = await jobs(orgId);
-    expect(job).toMatchObject({ status: 'failed', error_message: DISCOVERY_LEASE_LOST_MESSAGE, warnings: [DISCOVERY_WARNING_SCAN_LEASE_LOST] });
-    expect(job.error_message).not.toContain('SCAN_LEASE_LOST');
+    // AWS connect PR C (L3): the job row is created in a fenced transaction, so a worker that
+    // already knows its lease is lost creates none (there is no row to carry anything).
+    expect(await jobs(orgId)).toEqual([]);
   }, 30_000);
 });
 
