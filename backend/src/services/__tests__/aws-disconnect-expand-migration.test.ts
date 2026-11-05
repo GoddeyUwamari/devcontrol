@@ -25,6 +25,8 @@
  *     granted tables;
  *   - re-running is refused; the rollback refuses once lifecycle state exists,
  *     and otherwise removes everything the migration added.
+ * The dynamic part runs with production's extra risk_score_history.computed_at
+ * column present; the static part checks C-1 never names it.
  *
  * Placeholders only.
  */
@@ -119,6 +121,11 @@ describe('202611051200_aws_disconnect_expand: static shape (compatibility table)
     expect(fn).toMatch(/EXCEPTION WHEN OTHERS THEN/);
   });
 
+  it('does not depend on risk_score_history.computed_at (production has it, the repo schema does not)', () => {
+    expect(sql).not.toMatch(/computed_at/i);
+    expect(statements(ROLLBACK_SQL)).not.toMatch(/computed_at/i);
+  });
+
   it('the live-connection indexes are partial on (active, disconnecting)', () => {
     expect(sql).toMatch(/CREATE UNIQUE INDEX aws_accounts_live_org_uidx\s+ON aws_accounts \(org_id\) WHERE status IN \('active', 'disconnecting'\)/);
     expect(sql).toMatch(/CREATE UNIQUE INDEX aws_accounts_live_account_uidx\s+ON aws_accounts \(account_id\) WHERE status IN \('active', 'disconnecting'\)/);
@@ -187,6 +194,9 @@ describe('202611051200_aws_disconnect_expand: against a production-shaped aws_ac
       expect((await q(`SELECT conname FROM pg_constraint WHERE conrelid = '${schema}.aws_accounts'::regclass AND contype = 'u' ORDER BY 1`)).rows.map((r: any) => r.conname))
         .toEqual(['aws_accounts_account_id_unique', 'aws_accounts_org_id_key', 'aws_accounts_org_id_unique']);
       await q(`SET LOCAL search_path = ${schema}, public`);
+      // Production's risk_score_history also has computed_at (timestamp without time zone); the repo
+      // schema does not. Run with it present, as production (rolled back with the transaction).
+      await q(`ALTER TABLE public.risk_score_history ADD COLUMN IF NOT EXISTS computed_at TIMESTAMP`);
 
       // The bootstrapped C-1 objects are removed first (the rollback, as the founder would run it).
       await q(ROLLBACK_SQL);
