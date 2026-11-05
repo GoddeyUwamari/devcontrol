@@ -71,7 +71,7 @@ afterAll(async () => {
 });
 
 describe('T-A7: the connection lock key is the canonical uuid form', () => {
-  const ORG = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+  const ORG = '123e4567-e89b-12d3-a456-426614174000';
   const keyOf = async (value: string): Promise<string> =>
     (await pool.query(`SELECT (${AWS_CONNECTION_LOCK_KEY_SQL})::text AS key`, [value])).rows[0].key;
 
