@@ -9,11 +9,27 @@
  */
 
 import { RemediationService } from '../remediation.service';
+import { eligibleStopFindingRow, isStopFindingRead } from '../../routes/__tests__/eligible-stop-finding';
 
-/** Minimal fake Pool — only .query() is used by RemediationService. */
+/**
+ * Minimal fake Pool — only .query() is used by RemediationService. The stop
+ * workflow's finding read (FP PR 2a) answers with an eligible finding (shared
+ * fixture), so the guards under test, not the stop rule, decide.
+ */
 function makeFakePool(workflowRow: Record<string, any>) {
-  const query = jest.fn().mockResolvedValue({ rows: [workflowRow] });
+  const query = jest.fn(async (sql: string, values: unknown[] = []) =>
+    isStopFindingRead(sql)
+      ? { rows: [eligibleStopFindingRow(values[0] as string, workflowRow.resource_id)] }
+      : { rows: [workflowRow] }
+  );
   return { query } as any;
+}
+
+/** The kill-switch refused after reading only the workflow and its finding: no write, no AWS. */
+function expectOnlyWorkflowAndFindingRead(query: jest.Mock) {
+  expect(query).toHaveBeenCalledTimes(2);
+  expect(query.mock.calls[0][0]).toMatch(/SELECT \* FROM remediation_workflows/);
+  expect(isStopFindingRead(query.mock.calls[1][0])).toBe(true);
 }
 
 const IDLE_EC2_WORKFLOW = {
@@ -50,10 +66,9 @@ describe('RemediationService safety guard (Phase 2/4)', () => {
         service.execute('wf-1', 'org-normal', 'user-1')
       ).rejects.toThrow(/^DRY_RUN_MODE:/);
 
-      // Only the initial getWorkflow SELECT ran — no status update to
-      // 'executing', no STS/EC2 call, nothing else touched the DB or AWS.
-      expect(pool.query).toHaveBeenCalledTimes(1);
-      expect(pool.query.mock.calls[0][0]).toMatch(/SELECT \* FROM remediation_workflows/);
+      // Only the getWorkflow SELECT and the stop rule's finding read ran — no
+      // status update to 'executing', no STS/EC2 call, nothing else touched the DB or AWS.
+      expectOnlyWorkflowAndFindingRead(pool.query);
     });
 
     it('blocks execution when ENABLE_AUTOMATED_REMEDIATION=false explicitly', async () => {
@@ -67,7 +82,7 @@ describe('RemediationService safety guard (Phase 2/4)', () => {
       await expect(
         service.execute('wf-1', 'org-normal', 'user-1')
       ).rejects.toThrow(/^DRY_RUN_MODE:/);
-      expect(pool.query).toHaveBeenCalledTimes(1);
+      expectOnlyWorkflowAndFindingRead(pool.query);
     });
 
     it('logs the [REMEDIATION BLOCKED] dry-run message', async () => {

@@ -234,3 +234,36 @@ describe('execute-remediation failure responses are fixed text', () => {
     expectSafeLogs();
   });
 });
+
+describe('a refused stop (FP PR 2a) is 403 with the approved sentence', () => {
+  const COPY =
+    "DevControl can't stop this instance. Stopping is only offered for low-activity findings confirmed by DevControl's current checks, and this one isn't. No change was made in AWS.";
+
+  it('refused at create: no workflow, no data, recommendation untouched', async () => {
+    createWorkflow.mockRejectedValueOnce(new Error('STOP_NOT_ELIGIBLE: marker_missing'));
+    const res = await run();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ success: false, error: COPY });
+    expect(execute).not.toHaveBeenCalled();
+    expect(updateStatus).not.toHaveBeenCalled();
+    expectSafe(res.body);
+  });
+
+  it('refused immediately before the AWS call: the workflow id, recommendation untouched, not closed as dry-run', async () => {
+    execute.mockRejectedValueOnce(new Error('STOP_NOT_ELIGIBLE: finding_not_active'));
+    const res = await run();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ success: false, error: COPY, data: { workflowId: WORKFLOW_ID } });
+    expect(updateStatus).not.toHaveBeenCalled();
+    expect(closeUnexecuted).not.toHaveBeenCalled();
+    expectSafe(res.body);
+  });
+
+  it('passes the request context to every stage, for the audit record', async () => {
+    await run();
+    const context = { path: 'execute_remediation', request: { ipAddress: '127.0.0.1', userAgent: null } };
+    expect(createWorkflow.mock.calls[0][3]).toEqual(context);
+    expect((RemediationService.prototype.approve as jest.Mock).mock.calls[0][4]).toEqual(context);
+    expect(execute.mock.calls[0][4]).toEqual(context);
+  });
+});

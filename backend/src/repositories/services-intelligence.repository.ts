@@ -54,6 +54,9 @@ export interface IntelligenceRecommendationRow {
   resource_type: string;
   issue: string;
   severity: string;
+  /** Read only to judge whether a stop may be offered (stop-instance-eligibility.ts). */
+  status?: string;
+  metadata?: unknown;
 }
 
 export interface IntelligenceDiscoveryJobRow {
@@ -153,7 +156,7 @@ export class ServicesIntelligenceRepository {
     );
 
     const recommendations = await executor.query<IntelligenceRecommendationRow>(
-      `SELECT cr.id, cr.resource_id, cr.resource_type, cr.issue, cr.severity
+      `SELECT cr.id, cr.resource_id, cr.resource_type, cr.issue, cr.severity, cr.status, cr.metadata
          FROM cost_recommendations cr
         WHERE cr.organization_id = $1
           AND cr.status = 'ACTIVE'

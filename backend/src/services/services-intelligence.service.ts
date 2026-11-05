@@ -15,6 +15,7 @@
  */
 import { ISSUE_EC2_IDLE_INSTANCE } from '../config/optimization-rules';
 import { ActionType, assertActionAvailable, isAutomatedRemediationEnabled } from './remediation.service';
+import { judgeStopEligibility } from './stop-instance-eligibility';
 import { GENERIC_RESOURCE_TYPES } from './resourceExplorer.service';
 import { CloudWatchMetrics, CloudWatchServiceHealth, cloudWatchService } from './cloudwatch.service';
 import {
@@ -94,11 +95,28 @@ function isActionAvailable(actionType: ActionType): boolean {
   }
 }
 
+/** A stop is offered only where the remediation service would run it (the same rule). */
+function isStopOffered(recommendation: IntelligenceRecommendationRow): boolean {
+  return judgeStopEligibility({
+    resourceId: recommendation.resource_id,
+    recommendationId: recommendation.id,
+    finding: {
+      id: recommendation.id,
+      resource_id: recommendation.resource_id,
+      resource_type: recommendation.resource_type,
+      issue: recommendation.issue,
+      status: recommendation.status ?? '',
+      metadata: recommendation.metadata,
+    },
+  }).eligible;
+}
+
 function remediationFor(recommendation: IntelligenceRecommendationRow): Remediation | null {
   const rule = RECOMMENDATION_REMEDIATION_RULES.find(
     (r) => r.recommendationResourceType === recommendation.resource_type && r.issue === recommendation.issue
   );
   if (!rule || !isActionAvailable(rule.actionType)) return null;
+  if (rule.actionType === 'stop_instance' && !isStopOffered(recommendation)) return null;
   return {
     available: true,
     path: rule.path,

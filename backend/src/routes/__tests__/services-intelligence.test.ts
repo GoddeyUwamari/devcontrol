@@ -48,6 +48,7 @@ import { servicesIntelligenceResponseSchema, servicesIntelligenceSchema } from '
 import { ServicesIntelligence, Resource } from '../../types/services-intelligence.types';
 import { createRoleGateHarness, Role, RoleGateOrg } from './role-gate-harness';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
+import { ELIGIBLE_STOP_METADATA } from './eligible-stop-finding';
 
 const harness = createRoleGateHarness('services-intelligence');
 const { pool } = harness;
@@ -110,13 +111,13 @@ async function insertResource(
 
 async function insertRecommendation(
   orgId: string,
-  rec: { resourceId: string; resourceType: string; issue: string; status?: string }
+  rec: { resourceId: string; resourceType: string; issue: string; status?: string; metadata?: Record<string, unknown> }
 ): Promise<string> {
   const { rows } = await pool.query(
     `INSERT INTO cost_recommendations
-       (organization_id, resource_id, resource_type, issue, potential_savings, severity, status)
-     VALUES ($1, $2, $3, $4, 42.00, 'HIGH', $5) RETURNING id`,
-    [orgId, rec.resourceId, rec.resourceType, rec.issue, rec.status ?? 'ACTIVE']
+       (organization_id, resource_id, resource_type, issue, potential_savings, severity, status, metadata)
+     VALUES ($1, $2, $3, $4, 42.00, 'HIGH', $5, $6) RETURNING id`,
+    [orgId, rec.resourceId, rec.resourceType, rec.issue, rec.status ?? 'ACTIVE', JSON.stringify(rec.metadata ?? {})]
   );
   return rows[0].id as string;
 }
@@ -191,10 +192,12 @@ async function seed(label: string, region: string): Promise<Seeded> {
     serviceId,
   });
 
+  // Eligible for a stop (shared fixture marker), so the stop is advertised for it.
   const idleRecId = await insertRecommendation(orgId, {
     resourceId: SHARED_INSTANCE_ID,
     resourceType: 'EC2',
     issue: ISSUE_EC2_IDLE_INSTANCE,
+    metadata: { ...ELIGIBLE_STOP_METADATA },
   });
   const lifecycleRecId = await insertRecommendation(orgId, {
     resourceId: `si-bucket-${label}-${suffix}`,
@@ -1318,6 +1321,20 @@ describe('remediation eligibility', () => {
 
     // Scan findings never carry a remediation.
     expect(allResources(data).flatMap((r) => r.findings).filter((f) => f.source === 'resource_scan').every((f) => f.remediation === null)).toBe(true);
+  });
+
+  it('is not offered for an Idle Instance finding without the stop marker (FP PR 2a)', async () => {
+    const { rows } = await pool.query('SELECT metadata FROM cost_recommendations WHERE id = $1', [a.idleRecId]);
+    await pool.query(`UPDATE cost_recommendations SET metadata = '{"average_cpu": 1.2}' WHERE id = $1`, [a.idleRecId]);
+    try {
+      const data = await intelligence(a);
+      const instance = data.services.find((s) => s.id === a.serviceId)!.resources.items[0];
+      expect(instance.findings.filter((f) => f.source === 'cost_recommendation')).toMatchObject([
+        { source_id: a.idleRecId, remediation: null },
+      ]);
+    } finally {
+      await pool.query('UPDATE cost_recommendations SET metadata = $2 WHERE id = $1', [a.idleRecId, JSON.stringify(rows[0].metadata)]);
+    }
   });
 
   it('reading changes nothing', async () => {

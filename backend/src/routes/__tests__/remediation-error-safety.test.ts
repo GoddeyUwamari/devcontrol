@@ -275,3 +275,43 @@ describe('refusals written by the service keep their text and status', () => {
     expect(text).not.toMatch(LEAKS);
   });
 });
+
+describe('a refused stop (FP PR 2a) is 403 with the one approved sentence on every stage', () => {
+  const COPY =
+    "DevControl can't stop this instance. Stopping is only offered for low-activity findings confirmed by DevControl's current checks, and this one isn't. No change was made in AWS.";
+
+  it.each(['approve', 'execute'] as const)('%s', async (action) => {
+    throwFrom(SERVICE_METHOD[action], new Error('STOP_NOT_ELIGIBLE: marker_missing'));
+
+    const result = await act(action);
+
+    expect(result.status).toBe(403);
+    expect(JSON.parse(result.text)).toEqual({ success: false, error: COPY });
+    expect(result.text).not.toMatch(/STOP_NOT_ELIGIBLE|marker_missing/);
+    expect(loggedFor(action)[0][1].message).toContain('marker_missing');
+  });
+
+  it('create', async () => {
+    throwFrom('createWorkflow', new Error('STOP_NOT_ELIGIBLE: no_finding'));
+
+    const response = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resourceId: 'i-1234567890abcdef0', resourceType: 'ec2', actionType: 'stop_instance', riskLevel: 'low' }),
+    });
+    const text = await response.text();
+
+    expect(response.status).toBe(403);
+    expect(JSON.parse(text)).toEqual({ success: false, error: COPY });
+    expect(text).not.toMatch(/STOP_NOT_ELIGIBLE|no_finding/);
+  });
+
+  it('rollback is not a stop: an unexpected stop refusal there keeps the route\'s existing 400', async () => {
+    throwFrom('rollback', new Error('STOP_NOT_ELIGIBLE: no_finding'));
+
+    const result = await act('rollback');
+
+    expect(result.status).toBe(400);
+    expect(JSON.parse(result.text)).toEqual({ success: false, error: COPY });
+  });
+});

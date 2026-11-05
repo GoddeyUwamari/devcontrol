@@ -14,6 +14,19 @@ import { logError } from '@/lib/safe-log';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Shown when a failed action's response carries no message of its own. */
+const ACTION_FAILED_FALLBACK = "This action couldn't be completed. Refresh to check the workflow's status."
+
+/**
+ * What to tell the user when Approve, Reject, Execute or Rollback fails: the
+ * server's own message (the remediation routes answer only fixed sentences),
+ * or the fallback when there is none.
+ */
+function actionErrorText(err: unknown): string {
+  const message = (err as { response?: { data?: { error?: unknown } } } | null)?.response?.data?.error
+  return typeof message === 'string' && message.trim() !== '' ? message : ACTION_FAILED_FALLBACK
+}
+
 const ACTION_LABELS: Record<string, string> = {
   stop_instance:             'Stop EC2 Instance',
   rightsize_instance:        'Rightsize EC2 Instance',
@@ -66,6 +79,7 @@ function WorkflowDetailPanel({
   isActing,
   detailFailed,
   onRetryDetail,
+  actionError,
 }: {
   workflow: RemediationWorkflow;
   onClose: () => void;
@@ -77,6 +91,8 @@ function WorkflowDetailPanel({
   /** The full workflow (with its audit trail) couldn't be loaded. */
   detailFailed: boolean;
   onRetryDetail: () => void;
+  /** Why the last action on this workflow failed, if it did. */
+  actionError: string | null;
 }) {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -218,6 +234,11 @@ function WorkflowDetailPanel({
 
         {/* Actions */}
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {actionError && (
+            <div role="alert" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '12px 16px' }}>
+              <p style={{ fontSize: '0.875rem', color: '#7F1D1D', margin: 0 }}>{actionError}</p>
+            </div>
+          )}
           {/* Pending approval → approve / reject */}
           {workflow.status === 'pending_approval' && (
             <>
@@ -350,6 +371,8 @@ export default function RemediationPage() {
   const [actingId, setActingId] = useState<string | null>(null);
   // Set when an action was refused for the plan.
   const [actionTierRequired, setActionTierRequired] = useState<TierRequired | null>(null);
+  // The last failed action's message, for the workflow it was about.
+  const [actionError, setActionError] = useState<{ workflowId: string; message: string } | null>(null);
 
   const queryKey = ['remediation', tab];
   const listQuery = useQuery<RemediationWorkflow[]>({
@@ -379,7 +402,9 @@ export default function RemediationPage() {
 
   const mutate = (fn: () => Promise<RemediationWorkflow>) => async () => {
     if (!panelWorkflow || !isEnterprise) return;
-    setActingId(panelWorkflow.id);
+    const workflowId = panelWorkflow.id;
+    setActingId(workflowId);
+    setActionError(null);
     try {
       const updated = await fn();
       qc.invalidateQueries({ queryKey: ['remediation'] });
@@ -388,7 +413,10 @@ export default function RemediationPage() {
     } catch (err: any) {
       const required = tierRequiredOf(err);
       if (required) setActionTierRequired(required);
-      else logError('[Remediation] action error', err);
+      else {
+        setActionError({ workflowId, message: actionErrorText(err) });
+        logError('[Remediation] action error', err);
+      }
     } finally {
       setActingId(null);
     }
@@ -598,6 +626,7 @@ export default function RemediationPage() {
           isActing={actingId === panelWorkflow.id}
           detailFailed={detailQuery.isError && detail === undefined}
           onRetryDetail={() => detailQuery.refetch()}
+          actionError={actionError?.workflowId === panelWorkflow.id ? actionError.message : null}
         />
       )}
     </div>
