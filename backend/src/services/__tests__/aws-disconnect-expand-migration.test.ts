@@ -17,7 +17,9 @@
  *     second row for an org is DO NOTHING, a second org with the same AWS
  *     account is a unique violation (the route answers that SAVE_FAILED);
  *   - the backfill stamps only the snapshots of an org with exactly one
- *     aws_accounts row, and that row active;
+ *     aws_accounts row, and that row active, and only those written at or after
+ *     that connection's connected_at: a snapshot written before the connection
+ *     existed (even on the connect day) stays unstamped and is kept;
  *   - the DEPLOYED risk snapshot writer (RiskScoreHistoryRepository.createSnapshot),
  *     run as devcontrol, gets its row stamped by the trigger, and an org with no
  *     connection gets NULL; the trigger never refuses a snapshot;
@@ -121,6 +123,12 @@ describe('202611051200_aws_disconnect_expand: static shape (compatibility table)
     expect(fn).toMatch(/EXCEPTION WHEN OTHERS THEN/);
   });
 
+  it('the backfill stamps only snapshots written at or after the connection\'s connected_at', () => {
+    const backfill = (sql.match(/UPDATE risk_score_history h[\s\S]*?\$q\$;/) ?? [''])[0];
+    expect(backfill).toMatch(/min\(connected_at\) AS connected_at/);
+    expect(backfill).toMatch(/AND h\.created_at >= s\.connected_at \$q\$;$/);
+  });
+
   it('does not depend on risk_score_history.computed_at (production has it, the repo schema does not)', () => {
     expect(sql).not.toMatch(/computed_at/i);
     expect(statements(ROLLBACK_SQL)).not.toMatch(/computed_at/i);
@@ -221,6 +229,19 @@ describe('202611051200_aws_disconnect_expand: against a production-shaped aws_ac
         `INSERT INTO risk_score_history (organization_id, snapshot_date, overall_score, grade, encryption_score, public_access_score, backup_score, compliance_score, resource_management_score)
          VALUES ($1, $2, 80, 'B', 80, 80, 80, 80, 80)`, [orgId, day]);
       await snapshot(orgA, '2026-10-01'); await snapshot(orgA, '2026-10-02');
+      // Org G, as production's primary org: snapshots were written before the connection existed.
+      const orgG = await org('G');
+      const accountG = account(7);
+      const rowG = (await q(`INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, connected_at, status)
+        VALUES ($1, $2, $3, 'placeholder-external-id', TIMESTAMP '2026-05-31 02:38:36', 'active') RETURNING id::text AS id`,
+        [orgG, `arn:aws:iam::${accountG}:role/DevControlRole`, accountG])).rows[0].id;
+      const snapshotAt = (orgId: string, day: string, createdAt: string) => q(
+        `INSERT INTO risk_score_history (organization_id, snapshot_date, overall_score, grade, encryption_score, public_access_score, backup_score, compliance_score, resource_management_score, created_at)
+         VALUES ($1, $2, 80, 'B', 80, 80, 80, 80, 80, $3::timestamp)`, [orgId, day, createdAt]);
+      await snapshotAt(orgG, '2026-04-09', '2026-04-09 03:00:00');     // weeks before the connection
+      await snapshotAt(orgG, '2026-05-31', '2026-05-31 00:10:00');     // the connect day, but before connected_at
+      await snapshotAt(orgG, '2026-06-01', '2026-06-01 03:00:00');     // after
+      await snapshotAt(orgG, '2026-06-02', '2026-05-31 02:38:36');     // exactly at connected_at: stamped (>=)
       await snapshot(orgB, '2026-10-01'); await snapshot(orgC, '2026-10-01');
 
       // The deployed connect INSERT, before the migration.
@@ -275,6 +296,14 @@ describe('202611051200_aws_disconnect_expand: against a production-shaped aws_ac
         { org: orgC, aws_connection_id: null },
       ]));
       expect(stamps.filter((s: any) => s.org === orgA).every((s: any) => s.aws_connection_id === rowA)).toBe(true);
+      // Org G: only the snapshots written at or after connected_at are stamped; the earlier ones are kept, unstamped.
+      expect((await q(`SELECT snapshot_date::text AS day, aws_connection_id FROM risk_score_history WHERE organization_id = $1 ORDER BY snapshot_date`, [orgG])).rows)
+        .toEqual([
+          { day: '2026-04-09', aws_connection_id: null },
+          { day: '2026-05-31', aws_connection_id: null },
+          { day: '2026-06-01', aws_connection_id: rowG },
+          { day: '2026-06-02', aws_connection_id: rowG },
+        ]);
 
       // The deployed snapshot writer, as devcontrol: stamped from public.aws_accounts by the trigger.
       const orgE = await org('E');

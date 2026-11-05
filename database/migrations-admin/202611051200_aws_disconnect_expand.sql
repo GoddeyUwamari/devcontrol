@@ -28,7 +28,10 @@
 --       organization's one active aws_accounts row (left NULL for none or more
 --       than one). It never raises.
 --     + a backfill of the existing rows of every organization that has exactly
---       one aws_accounts row, and that row active.
+--       one aws_accounts row, and that row active, LIMITED to the rows written
+--       at or after that connection's connected_at. A snapshot written before
+--       the connection existed is never attributed to it: it stays NULL (kept,
+--       never deleted, never shown as that connection's history).
 --   GRANT DELETE to devcontrol on cost_finding_detections,
 --   observability_collection_scopes and resource_telemetry_observations.
 --
@@ -226,20 +229,24 @@ BEGIN
     RAISE NOTICE 'aws_accounts does not exist; risk_score_history backfill skipped.';
   ELSE
     -- Only an organization that has ever had exactly one aws_accounts row, and that
-    -- row active: every snapshot it has was written while that connection was live.
+    -- row active; and only its snapshots written at or after that connection's
+    -- connected_at (both columns are set by the database's NOW(), and the snapshot
+    -- upsert never rewrites created_at). Earlier snapshots predate the connection
+    -- and stay unstamped. A NULL created_at or connected_at stamps nothing.
     EXECUTE $q$
       UPDATE risk_score_history h
          SET aws_connection_id = s.id
-        FROM (SELECT org_id, min(id::text)::uuid AS id
+        FROM (SELECT org_id, min(id::text)::uuid AS id, min(connected_at) AS connected_at
                 FROM aws_accounts
                WHERE org_id IS NOT NULL
                GROUP BY org_id
               HAVING count(*) = 1 AND bool_and(status = 'active')) s
-       WHERE h.organization_id = s.org_id AND h.aws_connection_id IS NULL $q$;
+       WHERE h.organization_id = s.org_id AND h.aws_connection_id IS NULL
+         AND h.created_at >= s.connected_at $q$;
     GET DIAGNOSTICS n_stamped = ROW_COUNT;
   END IF;
   SELECT count(*) INTO n_unstamped FROM risk_score_history WHERE aws_connection_id IS NULL;
-  RAISE NOTICE 'risk_score_history backfill: % row(s) stamped; % row(s) left unstamped (no single active connection).',
+  RAISE NOTICE 'risk_score_history backfill: % row(s) stamped; % row(s) left unstamped (no single active connection, or written before it).',
     n_stamped, n_unstamped;
 END $$;
 
