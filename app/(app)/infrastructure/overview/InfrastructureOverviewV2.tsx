@@ -13,6 +13,9 @@ import { platformStatsService } from '@/lib/services/platform-stats.service'
 import type { CostSummary, RecommendationStats } from '@/lib/types'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { Download } from 'lucide-react'
+import { ExportReportsDialog } from '@/components/aws-resources/ExportReportsDialog'
+import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/components/aws/discovery-warning-notice'
@@ -52,9 +55,19 @@ function loadable<T>(q: { data?: T; isError: boolean }): Loadable<T> {
 
 const is402 = (error: unknown) => (error as { response?: { status?: number } } | null)?.response?.status === 402
 
+/** The plan the resource inventory export endpoint requires (awsResources.routes.ts, POST /export). */
+const RESOURCE_EXPORT_TIER = 'starter' as const
+
 function OverviewBody({ orgId }: { orgId: string | null }) {
   const queryClient = useQueryClient()
-  const { isFree, isStarter, isPro } = usePlan()
+  const plan = usePlan()
+  const { isFree, isStarter, isPro } = plan
+  // Resource inventory export, as on the legacy resource table: the existing dialog and
+  // POST /api/aws-resources/export (requireTier('starter')). Below it the button shows the
+  // upgrade state instead of opening the dialog.
+  const exportPlanRequired = plan.isKnown && !plan.canAccess(RESOURCE_EXPORT_TIER)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportPlanShown, setExportPlanShown] = useState(false)
   const realMode = !!orgId
   const now = useNowEachLocalDay(true)
   const [sync, setSync] = useState<SyncState>('idle')
@@ -155,6 +168,21 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
         scanRunning={view.header.scanRunning}
         sync={sync}
         onSync={handleSync}
+        actions={realMode && (
+          <>
+            <button
+              type="button"
+              onClick={() => (exportPlanRequired ? setExportPlanShown(true) : setExportOpen(true))}
+              data-testid="overview-export-button"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-ui font-semibold border bg-white text-violet-700 border-violet-200 hover:bg-violet-50"
+            >
+              <Download size={14} aria-hidden="true" /> Export inventory
+            </button>
+            {exportPlanRequired && exportPlanShown && (
+              <PlanRequiredNotice requiredTier={RESOURCE_EXPORT_TIER} testId="overview-export-plan-required" />
+            )}
+          </>
+        )}
       />
       <PlanBanners limitReached={limitReached} isFree={!!isFree} isStarter={!!isStarter} isPro={!!isPro} />
       {view.mode === 'no-account' ? (
@@ -172,6 +200,9 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
       {connectedish && view.costByService && <CostByService view={view.costByService} />}
       {connectedish && view.ownership && <OwnershipGaps ownership={view.ownership} />}
       {connectedish && view.footer && <OverviewFooter total={view.footer.total} />}
+      {realMode && !exportPlanRequired && (
+        <ExportReportsDialog open={exportOpen} onOpenChange={setExportOpen} totalResources={statsQuery.data?.total ?? 0} />
+      )}
     </main>
   )
 }
