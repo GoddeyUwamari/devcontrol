@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { securityHubService, SecurityHubCapability, CisReadinessResult, PciReadinessResult, NistReadinessResult } from '../services/security-hub.service';
 
-export function useSecurityHub() {
+/**
+ * Security Hub status and the CIS / PCI DSS / NIST readiness reads, and the
+ * sync. With `enabled` false (the plan does not include them, or is not known
+ * yet) nothing is requested and the sync does nothing.
+ */
+export function useSecurityHub({ enabled = true }: { enabled?: boolean } = {}) {
   const [capability, setCapability] = useState<SecurityHubCapability | null>(null);
   const [cis, setCis] = useState<CisReadinessResult | null>(null);
   const [pci, setPci] = useState<PciReadinessResult | null>(null);
@@ -11,6 +16,10 @@ export function useSecurityHub() {
   const [syncing, setSyncing] = useState(false);
 
   const fetchAll = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -29,13 +38,14 @@ export function useSecurityHub() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
 
   const triggerSync = useCallback(async () => {
+    if (!enabled) return;
     try {
       setSyncing(true);
       setError(null);
@@ -46,7 +56,7 @@ export function useSecurityHub() {
     } finally {
       setSyncing(false);
     }
-  }, [fetchAll]);
+  }, [enabled, fetchAll]);
 
   return { capability, cis, pci, nist, loading, error, syncing, triggerSync, refetch: fetchAll };
 }

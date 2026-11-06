@@ -13,6 +13,7 @@
  *   answers 409 while a run really is active (founder answer, Oct 27).
  */
 import type { ComplianceScan } from '@/lib/services/compliance-frameworks.service'
+import { PLAN_DISPLAY_NAME } from '@/lib/plan/plan-names'
 
 /** A framework result older than this is out of date (founder decision, Oct 23: one named constant, 7 days). */
 export const FRAMEWORK_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
@@ -28,7 +29,8 @@ export const EVALUATION_COPY = {
   noRulesApplied: 'No rules applied to your resources.',
   viewerCantStart: "Viewers can't start an evaluation",
   startFailed: "Couldn't start the evaluation. Try again.",
-  enterprisePlan: 'Compliance frameworks are on the Enterprise plan.',
+  // Custom frameworks (and starting their evaluations) are on Enterprise; named by the plan's customer-facing name.
+  enterprisePlan: `Custom compliance frameworks are on the ${PLAN_DISPLAY_NAME.enterprise} plan.`,
 } as const
 
 /** The upgrade page, after EVALUATION_COPY.enterprisePlan (both pages' plan state, and a start answered 402). */

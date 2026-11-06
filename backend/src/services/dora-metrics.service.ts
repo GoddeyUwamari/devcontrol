@@ -3,6 +3,7 @@ import {
   DORAMetricsRepository,
   DORAMetricsFilters,
 } from '../repositories/dora-metrics.repository';
+import { organizationHasEntitlement } from '../middleware/subscription.middleware';
 
 export type BenchmarkLevel = 'elite' | 'high' | 'medium' | 'low';
 
@@ -75,7 +76,10 @@ export class DORAMetricsService {
   /**
    * Load all custom benchmarks for the organization from the database.
    * Returns an empty object if no pool or no organizationId is provided,
-   * or if the table query fails (graceful fallback to industry standards).
+   * if the organization's plan does not include custom benchmarks
+   * (PLAN_ENTITLEMENTS.doraCustomBenchmarks -- saved rows are kept, only not
+   * applied), or if either query fails (graceful fallback to industry
+   * standards).
    */
   private async loadCustomBenchmarks(
     organizationId?: string
@@ -83,6 +87,10 @@ export class DORAMetricsService {
     if (!this.pool || !organizationId) return {};
 
     try {
+      if (!(await organizationHasEntitlement(organizationId, 'doraCustomBenchmarks', this.pool))) {
+        return {};
+      }
+
       const result = await this.pool.query<{
         metric_name: string;
         target_value: string;

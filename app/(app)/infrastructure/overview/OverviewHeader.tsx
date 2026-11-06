@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Check, RefreshCw } from 'lucide-react'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
@@ -14,14 +15,16 @@ export type SyncState = 'idle' | 'syncing' | 'complete'
 /**
  * h1, subtitle, "Last scan" and Sync. The Sync button keeps the legacy page's
  * 3-second green state (§18.1 X13): "Sync Complete" on desktop, "Done" on a phone.
+ * `actions` (the inventory export) sit under Sync in the same action column.
  */
-export function OverviewHeader({ lastScan, now, showSync, scanRunning, sync, onSync }: {
+export function OverviewHeader({ lastScan, now, showSync, scanRunning, sync, onSync, actions }: {
   lastScan: Rich | null
   now: number
   showSync: boolean
   scanRunning: boolean
   sync: SyncState
   onSync: () => void
+  actions?: ReactNode
 }) {
   const disabled = sync === 'syncing' || scanRunning
   const green = sync === 'complete'
@@ -51,6 +54,7 @@ export function OverviewHeader({ lastScan, now, showSync, scanRunning, sync, onS
           {button(true)}
           {button(false)}
           {scanRunning && <span id="infra-scan-running" role="status" className="sr-only">{SCAN_RUNNING_TEXT}</span>}
+          {actions}
         </div>
       )}
     </header>

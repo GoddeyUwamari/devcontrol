@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../config/database';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { requireEntitlement } from '../middleware/subscription.middleware';
 import { DORAMetricsRepository } from '../repositories/dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { DORAMetricsController } from '../controllers/dora-metrics.controller';
@@ -14,6 +15,8 @@ const service = new DORAMetricsService(repository, pool);
 const controller = new DORAMetricsController(service);
 
 router.use(authenticateToken);
+// Plan before anything is computed (PLAN_ENTITLEMENTS.doraMetrics).
+router.use(requireEntitlement('doraMetrics'));
 
 /**
  * GET /api/metrics/dora

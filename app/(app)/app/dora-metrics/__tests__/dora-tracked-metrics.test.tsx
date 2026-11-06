@@ -19,7 +19,7 @@ import DORAMetricsPage from '../page'
 const getDORAMetrics = vi.fn()
 
 vi.mock('@/lib/contexts/auth-context', () => ({
-  useAuth: () => ({ organization: { id: 'org-1', subscriptionTier: 'pro' } }),
+  useAuth: () => ({ organization: { id: 'org-1', subscriptionTier: 'pro' }, organizationStatus: 'ready' }),
 }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({
