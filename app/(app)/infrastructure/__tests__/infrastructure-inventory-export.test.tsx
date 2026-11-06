@@ -1,41 +1,46 @@
 /**
  * /infrastructure resource inventory export: the existing ExportReportsDialog
  * and POST /api/aws-resources/export, mounted on the resource table. The
- * endpoint is Starter and above (requireTier('starter'), awsResources.routes.ts).
+ * endpoint is Starter and above (PLAN_ENTITLEMENTS.resourceInventoryExport,
+ * awsResources.routes.ts), decided on the tier the server enforces.
  *
  *   - Starter and above: the button opens the dialog, and the dialog's export
  *     calls the existing endpoint.
- *   - Free: the button stays; pressing it shows the upgrade state and nothing
- *     is sent.
+ *   - Free, and a restricted or lapsed paid organization (the server enforces
+ *     free): the button stays; pressing it shows the upgrade state and
+ *     nothing is sent.
  *   - Plan not known yet: the button opens the dialog, as the server decides.
  *   - Demo mode: no export button (demo data is not the organization's).
  *   - A TIER_REQUIRED answer from the server shows the plan's own sentence.
  *
- * Same harness as infrastructure-savings-basis.test.tsx, with a plan (and the
- * sales demo switch) that each test sets.
+ * Same harness as infrastructure-savings-basis.test.tsx, with the sales demo
+ * switch and the organization each test sets. The real usePlan reads it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import InfrastructurePage from '../page'
 
-type Tier = 'free' | 'starter' | 'pro' | 'enterprise'
-const plan = vi.hoisted(() => ({ tier: 'starter' as string, known: true }))
-vi.mock('@/lib/hooks/use-plan', () => ({
-  usePlan: () => {
-    const rank = (t: string) => ({ free: 0, starter: 1, pro: 2, enterprise: 3 } as Record<string, number>)[t] ?? 0
-    return {
-      tier: plan.tier,
-      isFree: plan.tier === 'free',
-      isStarter: rank(plan.tier) >= 1,
-      isPro: rank(plan.tier) >= 2,
-      isEnterprise: plan.tier === 'enterprise',
-      canAccess: (min: string) => rank(plan.tier) >= rank(min),
-      isKnown: plan.known,
-      status: plan.known ? 'known' : 'loading',
-    }
-  },
+// The organization as /api/auth/me reports it: the stored tier and the tier the server enforces.
+const plan = vi.hoisted(() => ({ tier: 'starter' as string, effective: 'starter' as string, known: true }))
+vi.mock('@/lib/contexts/auth-context', () => ({
+  useAuth: () => ({
+    organization: { id: 'org-1', subscriptionTier: plan.tier, effectiveTier: plan.effective },
+    organizationStatus: plan.known ? 'ready' : 'loading',
+    retryOrganizationLoad: vi.fn(),
+  }),
 }))
+
+/** [state, stored tier, enforced tier, export included] */
+const STATES: Array<[string, string, string, boolean]> = [
+  ['free', 'free', 'free', false],
+  ['starter', 'starter', 'starter', true],
+  ['pro', 'pro', 'pro', true],
+  ['enterprise', 'enterprise', 'enterprise', true],
+  ['starter, restricted', 'starter', 'free', false],
+  ['pro, grace period ended', 'pro', 'free', false],
+]
+const setPlan = (stored: string, enforced: string) => { plan.tier = stored; plan.effective = enforced }
 
 vi.mock('next/navigation', () => ({ useSearchParams: () => ({ get: () => null }) }))
 vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService: { getAll: vi.fn().mockResolvedValue([]) } }))
@@ -94,8 +99,8 @@ afterEach(() => {
 })
 
 describe('/infrastructure resource inventory export', () => {
-  it.each(['starter', 'pro', 'enterprise'] as Tier[])('on %s: the button opens the existing dialog, which calls the existing endpoint', async (tier) => {
-    plan.tier = tier
+  it.each(STATES.filter((s) => s[3]))('on %s: the button opens the existing dialog, which calls the existing endpoint', async (_name, stored, enforced) => {
+    setPlan(stored, enforced)
     renderPage()
 
     const button = await screen.findByTestId('inventory-export-button')
@@ -112,8 +117,8 @@ describe('/infrastructure resource inventory export', () => {
     expect(post.mock.calls[0][1]).toMatchObject({ format: 'csv' })
   })
 
-  it('on free: the button stays; pressing it shows the upgrade state, opens no dialog and sends nothing', async () => {
-    plan.tier = 'free'
+  it.each(STATES.filter((s) => !s[3]))('on %s: the button stays; pressing it shows the upgrade state, opens no dialog and sends nothing', async (_name, stored, enforced) => {
+    setPlan(stored, enforced)
     renderPage()
 
     const button = await screen.findByTestId('inventory-export-button')
@@ -129,7 +134,7 @@ describe('/infrastructure resource inventory export', () => {
   })
 
   it('while the plan is not known: the button opens the dialog (the server decides)', async () => {
-    plan.tier = 'free'
+    setPlan('free', 'free')
     plan.known = false
     renderPage()
 
@@ -139,7 +144,7 @@ describe('/infrastructure resource inventory export', () => {
   })
 
   it("a TIER_REQUIRED answer is shown with the plan's own sentence", async () => {
-    plan.tier = 'starter'
+    setPlan('starter', 'starter')
     const body = {
       success: false, error: 'Subscription tier insufficient', code: 'TIER_REQUIRED',
       details: { currentTier: 'free', requiredTier: 'starter', message: '' },
@@ -157,7 +162,7 @@ describe('/infrastructure resource inventory export', () => {
 
   it('demo mode: no export button', async () => {
     demo.enabled = true
-    plan.tier = 'enterprise'
+    setPlan('enterprise', 'enterprise')
     renderPage()
 
     await screen.findByText('AWS System Intelligence')

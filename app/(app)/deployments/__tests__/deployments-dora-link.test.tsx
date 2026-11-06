@@ -24,7 +24,7 @@ vi.mock('@/lib/demo/sales-demo-data', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useSalesDemo: (selector: (state: { enabled: boolean }) => unknown) => selector({ enabled: false }),
 }))
-vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro' }) }))
+vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro', lacksEntitlement: () => false }) }))
 
 const originalAdapter = api.defaults.adapter
 const adapter: AxiosAdapter = async (config) => {

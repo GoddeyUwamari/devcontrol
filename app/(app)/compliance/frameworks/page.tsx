@@ -387,11 +387,9 @@ function ComplianceResultsPage() {
   // them; once it is known not to, each shows the upgrade state instead. While the
   // plan is still loading the page is as before, with nothing read.
   const plan = usePlan();
-  const shReadsOnPlan = plan.isKnown && [
-    PLAN_ENTITLEMENTS.securityHubStatus, PLAN_ENTITLEMENTS.securityHubCis, PLAN_ENTITLEMENTS.securityHubPci, PLAN_ENTITLEMENTS.securityHubNist,
-  ].every((tier) => plan.canAccess(tier));
-  const shPlanRequired = (tier: (typeof PLAN_ENTITLEMENTS)[keyof typeof PLAN_ENTITLEMENTS]) => plan.isKnown && !plan.canAccess(tier);
-  const syncPlanRequired = shPlanRequired(PLAN_ENTITLEMENTS.securityHubSync);
+  const shReadsOnPlan = (['securityHubStatus', 'securityHubCis', 'securityHubPci', 'securityHubNist'] as const)
+    .every((entitlement) => plan.hasEntitlement(entitlement));
+  const syncPlanRequired = plan.lacksEntitlement('securityHubSync');
   const [syncPlanShown, setSyncPlanShown] = useState(false);
   const { capability: shCapability, cis, pci, nist, error: shError, syncing: shSyncing, triggerSync: triggerSecurityHubSync } = useSecurityHub({ enabled: shReadsOnPlan });
   const { data: soc2Criteria, isLoading: soc2Loading, error: soc2QueryError } = useSoc2Readiness();
@@ -603,7 +601,7 @@ function ComplianceResultsPage() {
           const isPci = fw.key === 'pci';
           const isNist = fw.key === 'nist';
           const isSoc2 = fw.key === 'soc2';
-          const standardEntitlement = isCis ? PLAN_ENTITLEMENTS.securityHubCis : isPci ? PLAN_ENTITLEMENTS.securityHubPci : isNist ? PLAN_ENTITLEMENTS.securityHubNist : null;
+          const standardEntitlement = isCis ? 'securityHubCis' : isPci ? 'securityHubPci' : isNist ? 'securityHubNist' : null;
           const evaluated = isCis ? cisEvaluated : isPci ? pciEvaluated : isNist ? nistEvaluated : false;
           const readiness = isCis ? cis : isPci ? pci : isNist ? nist : null;
           const additionalEvidenceCount = readiness?.controls.filter((c) => c.mappingType === 'ADDITIONAL_EVIDENCE').length ?? 0;
@@ -622,8 +620,8 @@ function ComplianceResultsPage() {
               <p className="text-label text-slate-600 mb-0.5">
                 {fw.attribution === 'security_hub' ? 'Security Hub-backed' : fw.attribution === 'soc2_evidence' ? 'Technical + customer evidence' : 'Not yet implemented'}
               </p>
-              {standardEntitlement && shPlanRequired(standardEntitlement) ? (
-                <PlanRequiredNotice requiredTier={standardEntitlement} testId={`standard-${fw.key}-plan-required`} className="mb-3" />
+              {standardEntitlement && plan.lacksEntitlement(standardEntitlement) ? (
+                <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS[standardEntitlement]} testId={`standard-${fw.key}-plan-required`} className="mb-3" />
               ) : (
                 <p className="text-meta text-ink-muted mb-3">
                   {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : isSoc2 ? soc2Subtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}

@@ -25,6 +25,8 @@ export const PLAN_ENTITLEMENTS = {
   securityHubPci: 'pro',
   /** GET /api/security-hub/frameworks/nist. */
   securityHubNist: 'pro',
+  /** POST /api/aws-resources/export (resource inventory export). */
+  resourceInventoryExport: 'starter',
 } as const satisfies Record<string, SubscriptionTier>;
 
 export type PlanEntitlement = keyof typeof PLAN_ENTITLEMENTS;

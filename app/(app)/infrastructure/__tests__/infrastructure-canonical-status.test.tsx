@@ -20,7 +20,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('@/lib/hooks/use-plan', () => ({
-  usePlan: () => ({ isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true }),
+  usePlan: () => ({ isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true, lacksEntitlement: () => false }),
 }))
 
 vi.mock('@/lib/services/infrastructure.service', () => ({

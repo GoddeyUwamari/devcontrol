@@ -7,7 +7,7 @@ import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
 import { emailService } from './email.service';
-import { TIER_LIMITS, assertOrganizationHasSeat } from '../middleware/subscription.middleware';
+import { TIER_LIMITS, assertOrganizationHasSeat, effectiveTierOf } from '../middleware/subscription.middleware';
 import {
   OrganizationAccessError,
   canManageRole,
@@ -83,7 +83,8 @@ export class OrganizationService {
           max_users,
           max_deployments_per_month
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, name, slug, display_name, description, subscription_tier, created_at`,
+        RETURNING id, name, slug, display_name, description, subscription_tier,
+                  billing_lifecycle_state, grace_period_ends_at, created_at`,
         [
           name,
           slug,
@@ -118,6 +119,7 @@ export class OrganizationService {
         displayName: organization.display_name,
         description: organization.description,
         subscriptionTier: organization.subscription_tier,
+        effectiveTier: effectiveTierOf(organization),
         createdAt: organization.created_at,
         role: 'owner',
       };
@@ -924,6 +926,8 @@ export class OrganizationService {
          o.display_name,
          o.logo_url,
          o.subscription_tier,
+         o.billing_lifecycle_state,
+         o.grace_period_ends_at,
          om.role,
          o.created_at
        FROM organization_memberships om
@@ -943,6 +947,7 @@ export class OrganizationService {
       displayName: row.display_name,
       logoUrl: row.logo_url,
       subscriptionTier: row.subscription_tier,
+      effectiveTier: effectiveTierOf(row),
       role: row.role,
       createdAt: row.created_at,
     }));

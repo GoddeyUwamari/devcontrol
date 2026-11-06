@@ -20,7 +20,8 @@ import { EngineeringHealthCard } from '../engineering-health-card'
 
 // The organization carries its plan, which usePlan reads (DORA metrics are on Pro
 // and above). No organization yet is the auth context's loading state.
-const auth = vi.hoisted(() => ({ organization: { id: 'org-a', subscriptionTier: 'pro' } as { id: string; subscriptionTier: string } | null }))
+// effectiveTier: the tier the server enforces (free while restricted or lapsed).
+const auth = vi.hoisted(() => ({ organization: { id: 'org-a', subscriptionTier: 'pro', effectiveTier: 'pro' } as { id: string; subscriptionTier: string; effectiveTier?: string } | null }))
 vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({
     organization: auth.organization,
@@ -93,7 +94,7 @@ const cardText = () => screen.getByTestId('engineering-health-card').textContent
 describe('Engineering Health card', () => {
   beforeEach(() => {
     requests.length = 0
-    auth.organization = { id: 'org-a', subscriptionTier: 'pro' }
+    auth.organization = { id: 'org-a', subscriptionTier: 'pro', effectiveTier: 'pro' }
     dora = doraBody(45, 5, 1.5, 10)
     stats = statsBody()
     localStorage.setItem('accessToken', 'test-access-token')
@@ -244,8 +245,13 @@ describe('Engineering Health card', () => {
     expect(screen.queryByTestId('engineering-health-plan')).not.toBeInTheDocument()
   })
 
-  it.each(['free', 'starter'])('on %s: the DORA figures are replaced by the upgrade state, the last deploy stays, and DORA is never requested', async (tier) => {
-    auth.organization = { id: 'org-a', subscriptionTier: tier }
+  it.each([
+    ['free', 'free', 'free'],
+    ['starter', 'starter', 'starter'],
+    ['pro, restricted', 'pro', 'free'],
+    ['enterprise, grace period ended', 'enterprise', 'free'],
+  ])('on %s: the DORA figures are replaced by the upgrade state, the last deploy stays, and DORA is never requested', async (_name, stored, enforced) => {
+    auth.organization = { id: 'org-a', subscriptionTier: stored, effectiveTier: enforced }
     // What the server answers below Pro: the counts and last deployment, no change_failure_rate.
     const countsOnly: Record<string, unknown> = { ...statsBody().stats }
     delete countsOnly.change_failure_rate

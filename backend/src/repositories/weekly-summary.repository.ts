@@ -22,6 +22,7 @@ import { changeFailureRate } from '../services/deployment-status';
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { CostRecommendationsRepository } from './cost-recommendations.repository';
 import { AccountSecurityFindingsRepository } from './account-security-findings.repository';
+import { organizationHasEntitlement } from '../middleware/subscription.middleware';
 
 export interface WeeklyDataQuery {
   organizationId: string;
@@ -107,10 +108,14 @@ export interface WeeklyDORAMetrics {
   deploymentCount: number;
   successfulDeployments: number;
   failedDeployments: number;
-  /** Successful deployments per day over the window. */
-  deploymentFrequency: string;
+  /**
+   * Successful deployments per day over the window. This and
+   * changeFailureRate are DORA metrics: left out (not null) below
+   * PLAN_ENTITLEMENTS.doraMetrics, see getWeeklyDeliveryOnPlan.
+   */
+  deploymentFrequency?: string;
   /** Null when no deployment finished in the window. */
-  changeFailureRate: number | null;
+  changeFailureRate?: number | null;
 }
 
 export interface WeeklyEvidence {
@@ -224,7 +229,7 @@ export class WeeklySummaryRepository {
           scope: { kind: 'organization', window: 'the 7 days before this summary was generated' },
           period: { kind: 'range', start: period.delivery.start, endExclusive: period.delivery.end },
         },
-        async () => ({ state: 'available', data: await this.getWeeklyDORAMetrics(deliveryQuery, client) })
+        async () => ({ state: 'available', data: await this.getWeeklyDeliveryOnPlan(deliveryQuery, client) })
       ),
       this.getSecuritySection(organizationId),
       collectSection<WeeklyRecommendationEvidence>(
@@ -534,6 +539,31 @@ export class WeeklySummaryRepository {
       failedDeployments: failed,
       deploymentFrequency: `${deploymentsPerDay} per day`,
       changeFailureRate: failureRate,
+    };
+  }
+
+  /**
+   * The window's deployment metrics as the organization's plan allows: the
+   * counts on every plan; deployment frequency and the change failure rate
+   * (DORA metrics) only when the plan includes PLAN_ENTITLEMENTS.doraMetrics,
+   * resolved as for every request (a restricted or lapsed organization is
+   * free). Below it, and when the plan cannot be read, those two keys are
+   * left out -- as GET /api/deployments/stats does. The email and its preview
+   * both read this.
+   */
+  async getWeeklyDeliveryOnPlan(query: WeeklyDataQuery, client?: PoolClient): Promise<WeeklyDORAMetrics> {
+    const [metrics, doraOnPlan] = await Promise.all([
+      this.getWeeklyDORAMetrics(query, client),
+      organizationHasEntitlement(query.organizationId, 'doraMetrics', client ?? this.pool).catch((err) => {
+        console.error('[Weekly Summary] plan lookup failed', err?.message ?? err);
+        return false;
+      }),
+    ]);
+    if (doraOnPlan) return metrics;
+    return {
+      deploymentCount: metrics.deploymentCount,
+      successfulDeployments: metrics.successfulDeployments,
+      failedDeployments: metrics.failedDeployments,
     };
   }
 }

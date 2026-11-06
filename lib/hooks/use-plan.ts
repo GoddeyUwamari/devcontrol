@@ -1,4 +1,5 @@
 import { useAuth } from '@/lib/contexts/auth-context';
+import { PLAN_ENTITLEMENTS, type PlanEntitlement } from '@/lib/plan/entitlements';
 
 type Tier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -22,15 +23,32 @@ function isTier(value: unknown): value is Tier {
  * the plan isn't known, as they always have -- so a gated page must also
  * require `isKnown`, and render `status` 'loading' / 'error' itself, never
  * its upgrade gate.
+ *
+ * `tier`, `canAccess` and the booleans are the stored plan, the one the
+ * organization is shown as being on. `hasEntitlement` / `lacksEntitlement`
+ * decide the features of lib/plan/entitlements.ts by the tier the server
+ * enforces instead (organization.effectiveTier, computed by the server: free
+ * while the organization is restricted or its grace period has ended), so the
+ * page asks only for what the server will serve and shows the plan notice for
+ * what it will refuse. Both are false until the plan is known: loading or an
+ * unreadable plan neither grants a feature nor shows its upgrade state. A
+ * response without effectiveTier (one from before the field existed) falls
+ * back to the stored tier.
  */
 export function usePlan() {
   const { organization, organizationStatus, retryOrganizationLoad } = useAuth();
   const tier: Tier = organization?.subscriptionTier ?? 'free';
+  const enforcedTier: unknown = organization?.effectiveTier ?? organization?.subscriptionTier;
 
   const status: PlanStatus =
     organizationStatus === 'ready'
-      ? isTier(organization?.subscriptionTier) ? 'known' : 'error'
+      ? isTier(organization?.subscriptionTier) && isTier(enforcedTier) ? 'known' : 'error'
       : organizationStatus === 'error' || organizationStatus === 'none' ? 'error' : 'loading';
+
+  const isKnown = status === 'known';
+  /** Whether the enforced tier includes the feature; only asked once the plan is known. */
+  const enforcedIncludes = (entitlement: PlanEntitlement) =>
+    isTier(enforcedTier) && TIER_ORDER[enforcedTier] >= TIER_ORDER[PLAN_ENTITLEMENTS[entitlement]];
 
   return {
     tier,
@@ -39,8 +57,12 @@ export function usePlan() {
     isPro: TIER_ORDER[tier] >= TIER_ORDER.pro,
     isEnterprise: tier === 'enterprise',
     canAccess: (minTier: Tier) => TIER_ORDER[tier] >= TIER_ORDER[minTier],
+    /** The plan the server enforces is known and includes the feature: request it. */
+    hasEntitlement: (entitlement: PlanEntitlement) => isKnown && enforcedIncludes(entitlement),
+    /** The plan the server enforces is known and does not include the feature: show the plan notice. */
+    lacksEntitlement: (entitlement: PlanEntitlement) => isKnown && !enforcedIncludes(entitlement),
     status,
-    isKnown: status === 'known',
+    isKnown,
     retry: retryOrganizationLoad,
     /** A successful response confirmed the user has no workspace (status is 'error'). */
     noWorkspace: organizationStatus === 'none',

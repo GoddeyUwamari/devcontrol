@@ -25,7 +25,7 @@ vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false 
 vi.mock('@/lib/demo/sales-demo-data', () => ({
   useSalesDemo: (selector: (state: { enabled: boolean }) => unknown) => selector({ enabled: false }),
 }))
-vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro' }) }))
+vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro', lacksEntitlement: () => false }) }))
 
 const HOUR = 3_600_000
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()

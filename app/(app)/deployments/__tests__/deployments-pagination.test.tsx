@@ -31,7 +31,7 @@ vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false 
 vi.mock('@/lib/demo/sales-demo-data', () => ({
   useSalesDemo: (selector: (state: { enabled: boolean }) => unknown) => selector({ enabled: false }),
 }))
-vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro' }) }))
+vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro', lacksEntitlement: () => false }) }))
 
 const DAY = 24 * 3_600_000
 const WINDOW_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 }
