@@ -104,7 +104,7 @@ describe('request shape per route (sent by the real call site)', () => {
     expect(MODEL_MAX_RETRIES).toBe(0);
   });
 
-  it('report: streamed, adaptive thinking (omitted), effort medium, 16000 tokens, structured output', async () => {
+  it('report: streamed, adaptive thinking (omitted), no effort, 16000 tokens, structured output', async () => {
     const fake = install([{ message: msg([textBlock(JSON.stringify(VALID_REPORT))]) }]);
     await new AIReportGeneratorService(stubPool).generateWeeklyReport(reportData);
     expect(fake.requests).toHaveLength(1);
@@ -115,33 +115,33 @@ describe('request shape per route (sent by the real call site)', () => {
         max_tokens: 16000,
         system: expect.any(String),
         messages: [{ role: 'user', content: expect.any(String) }],
-        output_config: { effort: 'medium', format: { type: 'json_schema', schema: REPORT_OUTPUT_SCHEMA } },
+        output_config: { format: { type: 'json_schema', schema: REPORT_OUTPUT_SCHEMA } },
       },
       options: options('report'),
     });
   });
 
-  it('chat: streamed, adaptive thinking (omitted), effort medium, 8000 tokens, no tools', async () => {
+  it('chat: streamed, adaptive thinking (omitted), no effort, 8000 tokens, no tools', async () => {
     const fake = install([{ events: [textDelta('hi')], message: msg([textBlock('hi')]) }]);
     await chatOutput();
     expect(fake.requests[0]).toEqual({
       transport: 'stream',
-      body: { model: 'claude-sonnet-5', max_tokens: 8000, system: expect.any(String), messages: [{ role: 'user', content: expect.stringContaining('User question: What is my spend?') }], output_config: { effort: 'medium' } },
+      body: { model: 'claude-sonnet-5', max_tokens: 8000, system: expect.any(String), messages: [{ role: 'user', content: expect.stringContaining('User question: What is my spend?') }] },
       options: options('chat'),
     });
   });
 
-  it('nl_parse: thinking disabled, effort low, 512 tokens', async () => {
+  it('nl_parse: thinking disabled, no effort, 512 tokens', async () => {
     const fake = install([{ message: msg([textBlock('TARGET: costs\nCONFIDENCE: high\nPERIOD: none')]) }]);
     await new NLQueryService(stubPool).parseQuery('what is my aws spend', ORG);
     expect(fake.requests[0]).toEqual({
       transport: 'create',
-      body: { model: 'claude-sonnet-5', max_tokens: 512, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: expect.any(String) }], output_config: { effort: 'low' } },
+      body: { model: 'claude-sonnet-5', max_tokens: 512, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: expect.any(String) }] },
       options: options('nl_parse'),
     });
   });
 
-  it('dashboard_summary: thinking disabled, effort low, 1024 tokens, one strict tool with tool_choice auto (never forced)', async () => {
+  it('dashboard_summary: thinking disabled, no effort, 1024 tokens, one strict tool with tool_choice auto (never forced)', async () => {
     const fake = install([{ message: msg([toolBlock(DASHBOARD_SUMMARY_TOOL_NAME, { overallHealth: { score: 70, context: 'c' }, topRisk: null, cloudSpend: null, systemStatus: null })], 'tool_use') }]);
     await new AIInsightsService().generateStructuredDashboardSummary('Facts: none');
     expect(fake.requests[0]).toEqual({
@@ -149,7 +149,7 @@ describe('request shape per route (sent by the real call site)', () => {
       body: {
         model: 'claude-sonnet-5', max_tokens: 1024, thinking: { type: 'disabled' },
         messages: [{ role: 'user', content: expect.stringContaining(`Respond only by calling the ${DASHBOARD_SUMMARY_TOOL_NAME} tool once.`) }],
-        tools: [DASHBOARD_SUMMARY_TOOL], tool_choice: { type: 'auto' }, output_config: { effort: 'low' },
+        tools: [DASHBOARD_SUMMARY_TOOL], tool_choice: { type: 'auto' },
       },
       options: options('dashboard_summary'),
     });
@@ -158,24 +158,57 @@ describe('request shape per route (sent by the real call site)', () => {
     expect((DASHBOARD_SUMMARY_TOOL.input_schema as any).properties.overallHealth.additionalProperties).toBe(false);
   });
 
-  it('forecast: adaptive thinking (omitted), effort medium, 8000 tokens', async () => {
+  it('forecast: adaptive thinking (omitted), no effort, 8000 tokens', async () => {
     const fake = install([{ message: msg([textBlock('SUMMARY: s')]) }]);
     await new ForecastAIService().analyzeForecast(forecast);
     expect(fake.requests[0]).toEqual({
       transport: 'create',
-      body: { model: 'claude-sonnet-5', max_tokens: 8000, messages: [{ role: 'user', content: expect.any(String) }], output_config: { effort: 'medium' } },
+      body: { model: 'claude-sonnet-5', max_tokens: 8000, messages: [{ role: 'user', content: expect.any(String) }] },
       options: options('forecast'),
     });
   });
 
-  it('anomaly: thinking disabled, effort low, 1024 tokens', async () => {
+  it('anomaly: thinking disabled, no effort, 1024 tokens', async () => {
     const fake = install([{ message: msg([textBlock('CONFIRMED: yes\nCONFIDENCE: 90')]) }]);
     await new AnomalyAIService().explainAnomalies([anomaly]);
     expect(fake.requests[0]).toEqual({
       transport: 'create',
-      body: { model: 'claude-sonnet-5', max_tokens: 1024, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: expect.any(String) }], output_config: { effort: 'low' } },
+      body: { model: 'claude-sonnet-5', max_tokens: 1024, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: expect.any(String) }] },
       options: options('anomaly'),
     });
+  });
+
+  it('no route configures effort (deferred to the model-upgrade PR)', () => {
+    for (const [route, config] of Object.entries(ROUTE_CONFIG)) {
+      expect([route, config.effort]).toEqual([route, null]);
+    }
+  });
+
+  it('no request from any call site contains output_config.effort', async () => {
+    const fake = install([
+      { message: msg([textBlock(JSON.stringify(VALID_REPORT))]) },
+      { events: [textDelta('hi')], message: msg([textBlock('hi')]) },
+      { message: msg([textBlock('TARGET: costs\nCONFIDENCE: high\nPERIOD: none')]) },
+      { message: msg([toolBlock(DASHBOARD_SUMMARY_TOOL_NAME, { overallHealth: { score: 70, context: 'c' }, topRisk: null, cloudSpend: null, systemStatus: null })], 'tool_use') },
+      { message: msg([textBlock('SUMMARY: s')]) },
+      { message: msg([textBlock('CONFIRMED: yes\nCONFIDENCE: 90')]) },
+    ]);
+    await new AIReportGeneratorService(stubPool).generateWeeklyReport(reportData);
+    await chatOutput();
+    await new NLQueryService(stubPool).parseQuery('what is my aws spend', ORG);
+    await new AIInsightsService().generateStructuredDashboardSummary('Facts: none');
+    await new ForecastAIService().analyzeForecast(forecast);
+    await new AnomalyAIService().explainAnomalies([anomaly]);
+
+    expect(fake.requests).toHaveLength(6);
+    expect(fake.remaining()).toBe(0);
+    for (const request of fake.requests) {
+      expect(request.body.output_config?.effort).toBeUndefined();
+      // output_config, when present, carries only the structured-output format.
+      // (A string check would be wrong: the report schema has a recommendation field named "effort".)
+      expect(Object.keys(request.body.output_config ?? {}).filter((k) => k !== 'format')).toEqual([]);
+      expect(Object.keys(request.body)).not.toContain('effort');
+    }
   });
 
   it('every structured-output object closes with additionalProperties: false', () => {

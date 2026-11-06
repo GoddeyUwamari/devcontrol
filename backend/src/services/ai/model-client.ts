@@ -13,8 +13,10 @@
  *     claude-sonnet-5 rejects) and 'disabled'. claude-sonnet-5 runs adaptive
  *     thinking when `thinking` is omitted, so 'adaptive' here means "omit it";
  *   - its OutputConfig types only `format`. `effort` is a documented
- *     output_config field the SDK sends through unchanged; set a route's
- *     effort to null to stop sending it;
+ *     output_config field the SDK does not type, so no route sends it in
+ *     PR 1 (founder decision: an untyped field must not risk a 400 on every
+ *     AI call). Every route's effort is null; setting effort is deferred to
+ *     the model-upgrade PR;
  *   - forced tool_choice ('any' / 'tool') is not offered: tools are 'auto'
  *     with strict schemas, steered by the prompt.
  *
@@ -40,7 +42,7 @@ export type ModelEffort = 'low' | 'medium' | 'high';
 export interface RouteConfig {
   /** 'adaptive' omits `thinking` (the model's adaptive default); 'disabled' sends { type: 'disabled' }. */
   thinking: 'adaptive' | 'disabled';
-  /** output_config.effort; null sends none. */
+  /** output_config.effort; null sends none. Null on every route in PR 1 (deferred to the model-upgrade PR). */
   effort: ModelEffort | null;
   /** The cap on thinking plus answer tokens together. */
   maxTokens: number;
@@ -50,12 +52,12 @@ export interface RouteConfig {
 }
 
 const ROUTES: Record<AIRoute, RouteConfig> = {
-  chat: { thinking: 'adaptive', effort: 'medium', maxTokens: 8000, timeoutMs: 120_000, transport: 'stream' },
-  report: { thinking: 'adaptive', effort: 'medium', maxTokens: 16000, timeoutMs: 180_000, transport: 'stream' },
-  nl_parse: { thinking: 'disabled', effort: 'low', maxTokens: 512, timeoutMs: 30_000, transport: 'create' },
-  dashboard_summary: { thinking: 'disabled', effort: 'low', maxTokens: 1024, timeoutMs: 30_000, transport: 'create' },
-  forecast: { thinking: 'adaptive', effort: 'medium', maxTokens: 8000, timeoutMs: 120_000, transport: 'create' },
-  anomaly: { thinking: 'disabled', effort: 'low', maxTokens: 1024, timeoutMs: 30_000, transport: 'create' },
+  chat: { thinking: 'adaptive', effort: null, maxTokens: 8000, timeoutMs: 120_000, transport: 'stream' },
+  report: { thinking: 'adaptive', effort: null, maxTokens: 16000, timeoutMs: 180_000, transport: 'stream' },
+  nl_parse: { thinking: 'disabled', effort: null, maxTokens: 512, timeoutMs: 30_000, transport: 'create' },
+  dashboard_summary: { thinking: 'disabled', effort: null, maxTokens: 1024, timeoutMs: 30_000, transport: 'create' },
+  forecast: { thinking: 'adaptive', effort: null, maxTokens: 8000, timeoutMs: 120_000, transport: 'create' },
+  anomaly: { thinking: 'disabled', effort: null, maxTokens: 1024, timeoutMs: 30_000, transport: 'create' },
 };
 for (const config of Object.values(ROUTES)) Object.freeze(config);
 
