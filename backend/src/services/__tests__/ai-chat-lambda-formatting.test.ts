@@ -56,7 +56,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
     },
     inventoryScope: { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: null },
     resources: noData('unavailable', 'no resource discovery run has completed as the latest run, so an empty inventory is not a confirmed zero'),
-    alerts: noData('not_supported', "DevControl's alert history (from its Prometheus alert sync) is not associated with an organization, so it is not supported here. CloudWatch alarms are shown on the Operational Health page but are not yet part of the assistant's context."),
+    alerts: noData('not_supported', "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page."),
     anomalies: noData('not_supported', "No anomaly detection is connected to the assistant's context."),
     dora: noData('unavailable', 'no deployments were recorded for this organization in the last 30 days'),
     ...overrides,

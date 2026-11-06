@@ -287,8 +287,9 @@ const SECTION_TITLES: Record<keyof ReportData['sections'], string> = {
   alerts: 'Alerts',
 };
 
+// Model-facing, and repeated to customers: names no internal mechanism.
 const ALERTS_NOT_SUPPORTED_REASON =
-  "DevControl's alert history (from its Prometheus alert sync) is not associated with an organization, so it is not supported here. CloudWatch alarms are shown on the Operational Health page but are not yet part of this report's evidence.";
+  "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.";
 const RESOURCE_CHANGE_NOT_SUPPORTED_REASON =
   'DevControl keeps only the current resource inventory, not its state at the start of the period, so resources added or removed during the period cannot be determined.';
 const SECURITY_SCORE_NOT_SUPPORTED_REASON =
@@ -305,7 +306,7 @@ const PROMPT_RULES = [
   'There is no security score and no earlier security result: do not state, estimate, or compare either.',
   'Resource changes over the period are not tracked: do not describe resource growth or decline.',
   '"Average time between successful deployments" is not DORA lead time for changes: never call it lead time.',
-  'Alert history (Prometheus alert sync) is not supported, and CloudWatch alarms are not part of this evidence: never say there were no alerts, zero alerts, or that alerting is healthy.',
+  'Alert data is not part of this evidence: never say there were no alerts, zero alerts, or that alerting is healthy.',
   'Configuration-check findings cover only DevControl\'s checks on discovered resources: no findings means none from those checks, not that no security issues exist.',
   'Recommend only actions grounded in the supplied evidence. Do not recommend rightsizing, Reserved Instances, or Savings Plans unless a supplied recommendation says so.',
   'Savings are DevControl estimates of potential savings, never realized savings. In topRecommendations, set estimatedSavings only to a value copied from the idle/unused-resource recommendation evidence; otherwise omit the field.',
@@ -679,7 +680,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     }
 
     if (s.alerts) {
-      highlights.push("Alert counts are not available in this report: DevControl's alert history (Prometheus alert sync) is not associated with an organization, and CloudWatch alarms are not yet included.");
+      highlights.push('Alert counts are not included in this report yet. See Operational Health for your active CloudWatch alarms.');
     }
 
     report.summary = highlights.slice(0, 3).join(' ');
@@ -838,7 +839,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     }
 
     if (needsAlerts) {
-      sections.alerts = notSupported({ source: 'DevControl alert history (Prometheus alert sync)' }, ALERTS_NOT_SUPPORTED_REASON);
+      sections.alerts = notSupported({ source: 'DevControl alerts' }, ALERTS_NOT_SUPPORTED_REASON);
     }
 
     await Promise.all(tasks);

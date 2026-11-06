@@ -119,7 +119,7 @@ describe('validateIntent', () => {
   });
 
   it('alerts and teams are not supported, with a stated reason', () => {
-    expect(validateIntent(intent('alerts', { severity: 'critical' }))).toEqual({ ok: false, reason: expect.stringMatching(/alert history \(from its Prometheus alert sync\) is not associated with an organization, and Ask AI does not read CloudWatch alarms yet/) });
+    expect(validateIntent(intent('alerts', { severity: 'critical' }))).toEqual({ ok: false, reason: "Ask AI can't answer alert questions yet. See Operational Health for your active CloudWatch alarms." });
     expect(validateIntent(intent('teams'))).toEqual({ ok: false, reason: expect.stringMatching(/can't list teams/) });
   });
 

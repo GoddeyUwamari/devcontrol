@@ -84,7 +84,7 @@ function everyStateContext(): ChatContext {
       rds: { count: 2, estimatedMonthlyCost: 0, estimatedForCount: 2 },
       lambda: { count: 3, invocations: 150, invocationsKnownForCount: 2 },
     }, { asOf: '2026-09-25T06:00:03.693Z', scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only' }),
-    alerts: noData('not_supported', { source: 'DevControl alert history', reason: "DevControl's alert history (from its Prometheus alert sync) is not associated with an organization, so it is not supported here. CloudWatch alarms are shown on the Operational Health page but are not yet part of the assistant's context." }),
+    alerts: noData('not_supported', { source: 'DevControl alerts', reason: "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page." }),
     anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
     dora: section('available', { deploymentFrequency: '115 deployments in 30 days', leadTime: '6.2 hours (Average time between consecutive deployments)', mttr: '71.35 minutes (1 incidents recovered)' }, {
       source: 'DevControl deployment records', asOf: '2026-09-25T15:21:05.794Z',

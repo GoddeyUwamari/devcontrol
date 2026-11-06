@@ -13,7 +13,7 @@ export const CHAT_MAX_MESSAGES = 20;
 export const CHAT_MAX_MESSAGE_CHARS = 8000;
 
 const INVALID_MESSAGE_FORMAT = 'Invalid message format - each message must have role (user|assistant) and content';
-const MESSAGE_TOO_LONG = `Each message must be at most ${CHAT_MAX_MESSAGE_CHARS.toLocaleString('en-US')} characters`;
+const MESSAGE_TOO_LONG = `Each message must be at most ${CHAT_MAX_MESSAGE_CHARS.toLocaleString('en-US')} characters.`;
 
 /**
  * Validates a client-sent history and applies the cap: every message must be

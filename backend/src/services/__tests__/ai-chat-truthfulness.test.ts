@@ -83,7 +83,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
     },
     inventoryScope: INVENTORY_SCOPE,
     resources: section('available', RESOURCES, { source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-06T06:00:00.000Z', scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only' }),
-    alerts: noData('not_supported', { source: 'DevControl alert history', reason: "DevControl's alert history (from its Prometheus alert sync) is not associated with an organization, so it is not supported here. CloudWatch alarms are shown on the Operational Health page but are not yet part of the assistant's context." }),
+    alerts: noData('not_supported', { source: 'DevControl alerts', reason: "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page." }),
     anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
     dora: noData('unavailable', { source: 'DevControl deployment records', reason: 'no deployments were recorded for this organization in the last 30 days' }),
     ...overrides,
@@ -134,7 +134,7 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
     const service = new AIChatService(pool);
     const formatted: string = (service as any).formatContext(baseContext());
 
-    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alert history (Prometheus alert sync'));
+    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts:'));
     expect(inventory).toMatch(/Resource inventory \(synchronized periodically by DevControl AWS discovery/);
     expect(inventory).toMatch(/Source: DevControl resource inventory \(periodic AWS discovery\)/);
     expect(inventory).toMatch(/As of: 2026-09-06T06:00:00\.000Z/);
@@ -147,7 +147,7 @@ describe('AIChatService formatContext (private, provenance-aware)', () => {
       resources: noData('unavailable', { reason: 'no resource discovery run has completed as the latest run, so an empty inventory is not a confirmed zero' }),
     });
     const formatted: string = (service as any).formatContext(context);
-    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alert history (Prometheus alert sync'));
+    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts:'));
 
     expect(inventory).toMatch(/As of: unknown/);
     expect(inventory).toMatch(/Data: not available -- no resource discovery run has completed/);
@@ -221,10 +221,11 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
 
   it('"not_supported" states its reason and never prints a zero or "none"', () => {
     const formatted = format(baseContext());
-    const alerts = sectionOf(formatted, 'Alert history (Prometheus alert sync', 'Anomalies:');
+    const alerts = sectionOf(formatted, 'Alerts:', 'Anomalies:');
 
     expect(alerts).toMatch(/Status: Not supported/);
-    expect(alerts).toMatch(/alert history \(from its Prometheus alert sync\) is not associated with an organization/);
+    expect(alerts).toMatch(/Alert data is not part of this context yet\. CloudWatch alarms are shown on the Operational Health page\./);
+    expect(alerts).not.toMatch(/Prometheus|not associated with an organization/);
     expect(alerts).toMatch(/This is not a zero, "none", or "no findings"/);
     expect(formatted).not.toMatch(/active alerts: 0|Total active alerts|No recent incidents|recent: none/i);
   });
@@ -238,8 +239,8 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
   });
 
   it('an "available" genuine zero is printed as a zero', () => {
-    const formatted = format(baseContext({ alerts: section('available', { total: 0, critical: 0, recent: [] }, { source: 'DevControl alert history (Prometheus alert sync)' }) }));
-    const alerts = sectionOf(formatted, 'Alert history (Prometheus alert sync', 'Anomalies:');
+    const formatted = format(baseContext({ alerts: section('available', { total: 0, critical: 0, recent: [] }, { source: 'DevControl alerts' }) }));
+    const alerts = sectionOf(formatted, 'Alerts:', 'Anomalies:');
 
     expect(alerts).toMatch(/- active alerts: 0/);
     expect(alerts).toMatch(/- critical alerts: 0/);
@@ -294,7 +295,7 @@ describe('AIChatService getFallbackResponse -- section states', () => {
   it('never claims "0 active alerts" or "No recent incidents" when alerts are not_supported', async () => {
     const response = await fallbackFor('Give me an overview', baseContext());
 
-    expect(response).toMatch(/Active alerts: not available -- DevControl's alert history \(from its Prometheus alert sync\) is not associated with an organization/);
+    expect(response).toMatch(/Active alerts: not available -- Alert data is not part of this context yet\. CloudWatch alarms are shown on the Operational Health page/);
     expect(response).not.toMatch(/Active alerts: 0|No recent incidents/);
   });
 

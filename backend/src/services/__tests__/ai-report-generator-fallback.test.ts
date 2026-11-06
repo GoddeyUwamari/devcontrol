@@ -229,7 +229,7 @@ describe('AI Reports evidence -- security, resources, alerts', () => {
 
   it('alerts are not supported -- never "0 alerts"', async () => {
     const { sections } = await evidence();
-    expect(sections.alerts).toMatchObject({ state: 'not_supported', data: null });
+    expect(sections.alerts).toMatchObject({ state: 'not_supported', data: null, source: 'DevControl alerts', reason: 'Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.' });
   });
 
   it('a failed inventory read is an error section with a safe reason, and other sections are unaffected', async () => {
@@ -464,7 +464,8 @@ describe('AI Reports deterministic fallback', () => {
     const text = JSON.stringify(report);
 
     expect(text).toContain('Cloud spend is not available');
-    expect(text).toContain('Alert counts are not available');
+    expect(text).toContain('Alert counts are not included in this report yet. See Operational Health for your active CloudWatch alarms.');
+    expect(text).not.toMatch(/Prometheus|not associated with an organization/);
     expect(text).not.toMatch(/\$0(\.00)?\b/);
     expect(text).not.toMatch(/\b0 alerts|no alerts|0 critical alerts/i);
     expect(text).not.toMatch(/Security score is|\/100/);

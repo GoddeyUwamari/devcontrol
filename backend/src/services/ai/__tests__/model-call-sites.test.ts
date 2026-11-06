@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { setModelClientForTests, ROUTE_CONFIG, MODEL_MAX_RETRIES, AI_MODEL } from '../model-client';
 import { fakeModel, msg, textBlock, thinkingBlock, toolBlock, textDelta, thinkingDelta, type Scripted } from './fake-model';
 import { AIReportGeneratorService, REPORT_OUTPUT_SCHEMA, type ReportData } from '../../ai-report-generator.service';
-import { AIChatService, CHAT_ERROR_REPLY, CHAT_TRUNCATED_NOTICE, type ChatContext } from '../../ai-chat.service';
+import { AIChatService, CHAT_ERROR_REPLY, CHAT_REFUSAL_REPLY, CHAT_TRUNCATED_NOTICE, type ChatContext } from '../../ai-chat.service';
 import { NLQueryService, NLParserUnavailableError } from '../../nl-query.service';
 import { AIInsightsService, DASHBOARD_SUMMARY_TOOL, DASHBOARD_SUMMARY_TOOL_NAME } from '../../ai-insights.service';
 import { ForecastAIService } from '../../forecast-ai.service';
@@ -310,6 +310,12 @@ describe('AI Chat', () => {
     expect(out).not.toContain('SECRET-THINKING');
   });
 
+  it('the approved chat copy, verbatim', () => {
+    expect(CHAT_TRUNCATED_NOTICE).toBe('(Answer cut short: it reached the maximum response length. Ask a narrower question for a complete answer.)');
+    expect(CHAT_REFUSAL_REPLY).toBe("I can't help with that request.");
+    expect(CHAT_ERROR_REPLY).toBe('I apologize, but I encountered an error processing your request. Please try again.');
+  });
+
   it('max_tokens: the streamed text is followed by the "answer cut short" notice', async () => {
     install([{ events: [textDelta('Part of an answer')], message: msg([textBlock('Part of an answer')], 'max_tokens') }]);
     expect(await chatOutput()).toBe(`Part of an answer\n\n${CHAT_TRUNCATED_NOTICE}`);
@@ -322,20 +328,20 @@ describe('AI Chat', () => {
   });
 
   it.each<[string, Scripted, string]>([
-    ['a refusal with no text', { events: [], message: msg([], 'refusal', { stop_details: { type: 'refusal', category: null } }) }, CHAT_ERROR_REPLY],
+    ['a refusal with no text', { events: [], message: msg([], 'refusal', { stop_details: { type: 'refusal', category: null } }) }, CHAT_REFUSAL_REPLY],
     ['an empty answer', { events: [], message: msg([]) }, CHAT_ERROR_REPLY],
     ['a failed request', { error: new Anthropic.RateLimitError(429, { type: 'error' }, 'rate', new Headers()) }, CHAT_ERROR_REPLY],
-  ])('%s: the existing error reply', async (_name, scripted, expected) => {
+  ])('%s: the refusal reply for a refusal, the existing error reply otherwise', async (_name, scripted, expected) => {
     install([scripted]);
     expect(await chatOutput()).toBe(expected);
   });
 
-  it('a refusal or error after some text: the error reply follows it, never a silent stop', async () => {
+  it('a refusal or error after some text: the refusal or error reply follows it, never a silent stop', async () => {
     install([
       { events: [textDelta('Sure, here')], message: msg([textBlock('Sure, here')], 'refusal', { stop_details: { type: 'refusal', category: null } }) },
       { events: [textDelta('Partial'), { throw: new Anthropic.APIError(undefined, { type: 'error' }, 'overloaded_error', undefined) }] },
     ]);
-    expect(await chatOutput()).toBe(`Sure, here\n\n${CHAT_ERROR_REPLY}`);
+    expect(await chatOutput()).toBe(`Sure, here\n\n${CHAT_REFUSAL_REPLY}`);
     expect(await chatOutput()).toBe(`Partial\n\n${CHAT_ERROR_REPLY}`);
   });
 

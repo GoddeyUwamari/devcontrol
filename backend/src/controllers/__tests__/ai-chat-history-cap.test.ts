@@ -33,7 +33,7 @@ describe('prepareChatHistory', () => {
 
   it('a message of exactly 8,000 characters is accepted; one character more is refused', () => {
     expect(prepareChatHistory([{ role: 'user', content: 'x'.repeat(8000) }]).ok).toBe(true);
-    expect(prepareChatHistory([{ role: 'user', content: 'x'.repeat(8001) }])).toEqual({ ok: false, error: 'Each message must be at most 8,000 characters' });
+    expect(prepareChatHistory([{ role: 'user', content: 'x'.repeat(8001) }])).toEqual({ ok: false, error: 'Each message must be at most 8,000 characters.' });
   });
 
   it('an over-long message anywhere in the history is refused, even one the cap would drop', () => {
@@ -100,7 +100,7 @@ describe('both chat endpoints apply the cap before the model is reached', () => 
     const response = res();
     await controller[handler](req([{ role: 'user', content: 'x'.repeat(8001) }]), response);
     expect(response.statusCode).toBe(400);
-    expect(response.body).toEqual({ success: false, error: 'Each message must be at most 8,000 characters' });
+    expect(response.body).toEqual({ success: false, error: 'Each message must be at most 8,000 characters.' });
     expect(received).toHaveLength(0);
   });
 });

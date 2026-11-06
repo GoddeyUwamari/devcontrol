@@ -177,7 +177,10 @@ export interface ChatMessage {
 export const CHAT_ERROR_REPLY = 'I apologize, but I encountered an error processing your request. Please try again.';
 
 /** Appended when the model stopped at its length limit: what was streamed is not the whole answer. */
-export const CHAT_TRUNCATED_NOTICE = '(Answer cut short: it reached the maximum response length. Ask a narrower question to see the rest.)';
+export const CHAT_TRUNCATED_NOTICE = '(Answer cut short: it reached the maximum response length. Ask a narrower question for a complete answer.)';
+
+/** The reply when the model declined the request (stop_reason refusal). */
+export const CHAT_REFUSAL_REPLY = "I can't help with that request.";
 
 export class AIChatService {
   constructor(private pool: Pool) {
@@ -573,7 +576,7 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       resources.lines.push(...this.formatResourceLines(context.resources.data));
     }
 
-    const alerts = this.formatSectionHeader('Alert history (Prometheus alert sync; CloudWatch alarms are not included)', context.alerts);
+    const alerts = this.formatSectionHeader('Alerts', context.alerts);
     if (alerts.showData && context.alerts.data) {
       const { total, critical, recent } = context.alerts.data;
       alerts.lines.push(`- active alerts: ${total}`, `- critical alerts: ${critical}`);
@@ -624,7 +627,8 @@ ${dora.lines.join('\n')}
    *   - a finished answer: nothing;
    *   - stopped at the length limit: CHAT_TRUNCATED_NOTICE, so a cut-off
    *     answer never reads as complete;
-   *   - a refusal, an empty answer, an unexpected response or a failed call:
+   *   - a refusal: CHAT_REFUSAL_REPLY (after any text already streamed);
+   *   - an empty answer, an unexpected response or a failed call:
    *     CHAT_ERROR_REPLY (after any text already streamed).
    */
   async *chat(
@@ -662,7 +666,8 @@ ${dora.lines.join('\n')}
 
     if (outcome.kind === 'text') return;
     const separator = streamedText ? '\n\n' : '';
-    yield `${separator}${outcome.kind === 'truncated' ? CHAT_TRUNCATED_NOTICE : CHAT_ERROR_REPLY}`;
+    const reply = outcome.kind === 'truncated' ? CHAT_TRUNCATED_NOTICE : outcome.kind === 'refused' ? CHAT_REFUSAL_REPLY : CHAT_ERROR_REPLY;
+    yield `${separator}${reply}`;
   }
 
   /**
