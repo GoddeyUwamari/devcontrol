@@ -44,6 +44,8 @@ const ROLE = `tenant_reset_test_${suffix}`;
 const admin = new Pool(dbConfig());
 let rolePool: Pool;
 let appPool: Pool;
+/** One connection only, so every checkout is the same session (the leak check below). */
+let oneConnectionPool: Pool;
 const createdOrgIds: string[] = [];
 
 async function insertOrg(label: string): Promise<string> {
@@ -109,6 +111,7 @@ beforeAll(async () => {
     },
   });
   mockPools.app = appPool;
+  oneConnectionPool = installTenantTagReset(new Pool({ ...dbConfig(), max: 1, options: `-c role=${ROLE}` }));
 
   orgA = await insertOrg('a');
   orgB = await insertOrg('b');
@@ -122,6 +125,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rolePool?.end();
+  await oneConnectionPool?.end();
   if (createdOrgIds.length > 0) await admin.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   await admin.query(`DROP OWNED BY ${ROLE}`);
   await admin.query(`DROP ROLE IF EXISTS ${ROLE}`);
@@ -164,15 +168,42 @@ describe('getStats() without an executor, under RLS', () => {
     expect(b.total_resources).toBe(3);
   });
 
-  it('is scoped to the organization it is given, on its own tagged connection, and that tag never leaks to the next use', async () => {
+  it('is scoped to the organization it is given, on its own tagged connection', async () => {
     const repo = new AWSResourcesRepository(appPool);
     // getStats tags its own connection with the organization it is asked for;
     // the explicit organization_id predicate still applies to every query.
     const asked = await asRequest(orgA, () => repo.getStats(orgB));
     expect(asked.total_resources).toBe(3);
-    // A connection left tagged for B is cleared on release before A uses it.
-    const after = await repo.getStats(orgA);
-    expect(after.total_resources).toBe(2);
+  });
+
+  it('the tag it sets never leaks: the same connection, checked out next without a tag, carries none and sees no rows', async () => {
+    const sessionOf = async () => {
+      const client = await oneConnectionPool.connect();
+      try {
+        const { rows } = await client.query(
+          `SELECT pg_backend_pid() AS pid,
+                  COALESCE(current_setting('app.current_organization_id', true), '') AS tag,
+                  (SELECT COUNT(*)::int FROM aws_resources WHERE organization_id = $1) AS visible`,
+          [orgB]
+        );
+        return rows[0] as { pid: number; tag: string; visible: number };
+      } finally {
+        client.release();
+      }
+    };
+
+    const before = await sessionOf();
+    expect(before).toMatchObject({ tag: '', visible: 0 });
+
+    // getStats tags this pool's only connection for B and releases it.
+    const stats = await new AWSResourcesRepository(oneConnectionPool).getStats(orgB);
+    expect(stats.total_resources).toBe(3);
+
+    // The next, untagged checkout is that same session: the tag must be gone.
+    const next = await sessionOf();
+    expect(next.pid).toBe(before.pid);
+    expect(next.tag).toBe('');
+    expect(next.visible).toBe(0);
   });
 
   it('stats agree with the scoped inventory count', async () => {

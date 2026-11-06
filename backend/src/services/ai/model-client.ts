@@ -1,8 +1,8 @@
 /**
  * The one place a DevControl model request is configured and sent (AI truth PR 1).
  *
- * Every route's thinking, effort, max_tokens, timeout and transport is set in
- * ROUTE_CONFIG below, and every request goes through buildModelRequest(), so a
+ * Every route's thinking, effort, max_tokens, timeout, deadline and transport
+ * is set in ROUTE_CONFIG below, and every request goes through buildModelRequest(), so a
  * route can't silently inherit a model default. Calls go through runModel()
  * (complete responses) or streamModelText() (streamed text), which read the
  * response with model-response.ts and write exactly one structured log line
@@ -22,6 +22,13 @@
  *
  * SDK retries are off (maxRetries 0): a request retried after a timeout can be
  * generated -- and billed -- twice. A failed call falls back instead.
+ *
+ * Every call has an overall deadline (deadlineMs). The SDK's own `timeout`
+ * only covers the wait for response headers, which for a stream arrive with
+ * the first byte, so on its own nothing bounds a stream that stalls or runs
+ * long. When the deadline passes, the request is aborted (its HTTP stream is
+ * closed and the SDK stops reading) and the call ends as a 'timeout' error,
+ * which each call site already handles as a fallback.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -46,18 +53,24 @@ export interface RouteConfig {
   effort: ModelEffort | null;
   /** The cap on thinking plus answer tokens together. */
   maxTokens: number;
+  /** The SDK's timeout: only the wait for response headers (for a stream, the first byte). */
   timeoutMs: number;
-  /** 'stream' reads a complete response through the streaming API (no long-request timeout). */
+  /**
+   * The overall limit on the whole call: the request, every streamed event
+   * and the final message. timeoutMs is never longer than this.
+   */
+  deadlineMs: number;
+  /** 'stream' reads a complete response through the streaming API (the SDK's long-request guard does not apply; deadlineMs does). */
   transport: 'create' | 'stream';
 }
 
 const ROUTES: Record<AIRoute, RouteConfig> = {
-  chat: { thinking: 'adaptive', effort: null, maxTokens: 8000, timeoutMs: 120_000, transport: 'stream' },
-  report: { thinking: 'adaptive', effort: null, maxTokens: 16000, timeoutMs: 180_000, transport: 'stream' },
-  nl_parse: { thinking: 'disabled', effort: null, maxTokens: 512, timeoutMs: 30_000, transport: 'create' },
-  dashboard_summary: { thinking: 'disabled', effort: null, maxTokens: 1024, timeoutMs: 30_000, transport: 'create' },
-  forecast: { thinking: 'adaptive', effort: null, maxTokens: 8000, timeoutMs: 120_000, transport: 'create' },
-  anomaly: { thinking: 'disabled', effort: null, maxTokens: 1024, timeoutMs: 30_000, transport: 'create' },
+  chat: { thinking: 'adaptive', effort: null, maxTokens: 8000, timeoutMs: 120_000, deadlineMs: 120_000, transport: 'stream' },
+  report: { thinking: 'adaptive', effort: null, maxTokens: 16000, timeoutMs: 90_000, deadlineMs: 90_000, transport: 'stream' },
+  nl_parse: { thinking: 'disabled', effort: null, maxTokens: 512, timeoutMs: 30_000, deadlineMs: 30_000, transport: 'create' },
+  dashboard_summary: { thinking: 'disabled', effort: null, maxTokens: 1024, timeoutMs: 30_000, deadlineMs: 30_000, transport: 'create' },
+  forecast: { thinking: 'adaptive', effort: null, maxTokens: 8000, timeoutMs: 120_000, deadlineMs: 120_000, transport: 'create' },
+  anomaly: { thinking: 'disabled', effort: null, maxTokens: 1024, timeoutMs: 30_000, deadlineMs: 30_000, transport: 'create' },
 };
 for (const config of Object.values(ROUTES)) Object.freeze(config);
 
@@ -161,20 +174,68 @@ export function logModelCall(entry: ModelCallLogEntry): void {
 }
 
 const NOT_CONFIGURED: ModelOutcome = { kind: 'error', code: 'not_configured', httpStatus: null, meta: null };
+const DEADLINE_PASSED_OUTCOME: ModelOutcome = { kind: 'error', code: 'timeout', httpStatus: null, meta: null };
+
+type ModelStream = ReturnType<ModelClient['messages']['stream']>;
+
+interface CallDeadline {
+  /** Passed to the SDK as the request's signal: aborted when the deadline passes. */
+  signal: AbortSignal;
+  /** Never resolves; rejects when the deadline passes. Raced against every wait of the call. */
+  passed: Promise<never>;
+  hit(): boolean;
+  /** Called when the call ends, however it ends: no timer outlives its call. */
+  clear(): void;
+}
+
+/**
+ * Starts a call's overall deadline. Each wait is raced against `passed`, so
+ * the call ends at the deadline even if the transport ignored the abort.
+ */
+function startDeadline(ms: number): CallDeadline {
+  const controller = new AbortController();
+  let hit = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const passed = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      hit = true;
+      reject(new Error('model call deadline passed'));
+      controller.abort();
+    }, ms);
+  });
+  // Observed through Promise.race; this keeps a race nobody is waiting on from being "unhandled".
+  passed.catch(() => undefined);
+  return { signal: controller.signal, passed, hit: () => hit, clear: () => clearTimeout(timer) };
+}
+
+function requestOptions(config: Readonly<RouteConfig>, deadline: CallDeadline) {
+  return { timeout: config.timeoutMs, maxRetries: MODEL_MAX_RETRIES, signal: deadline.signal };
+}
 
 async function requestMessage(route: AIRoute, input: ModelRequestInput): Promise<ModelOutcome> {
   const api = getModelClient();
   if (!api) return NOT_CONFIGURED;
   const config = ROUTE_CONFIG[route];
-  const options = { timeout: config.timeoutMs, maxRetries: MODEL_MAX_RETRIES };
+  const deadline = startDeadline(config.deadlineMs);
+  let stream: ModelStream | null = null;
   try {
     const body = buildModelRequest(route, input);
-    const message = config.transport === 'stream'
-      ? await api.messages.stream(body, options).finalMessage()
-      : await api.messages.create(body, options);
-    return readModelResponse(message);
+    let pending: PromiseLike<Anthropic.Message>;
+    if (config.transport === 'stream') {
+      stream = api.messages.stream(body, requestOptions(config, deadline));
+      pending = stream.finalMessage();
+    } else {
+      pending = api.messages.create(body, requestOptions(config, deadline));
+    }
+    return readModelResponse(await Promise.race([pending, deadline.passed]));
   } catch (error: unknown) {
+    if (deadline.hit()) {
+      stream?.abort();
+      return DEADLINE_PASSED_OUTCOME;
+    }
     return classifyModelError(error);
+  } finally {
+    deadline.clear();
   }
 }
 
@@ -218,7 +279,9 @@ export async function runModel<T>(
  * Streams a route's text deltas (thinking deltas are never yielded), then
  * returns the outcome read from the final message. A stream that ends in
  * max_tokens returns 'truncated' even though its text was already yielded:
- * the caller must say the answer was cut short. Logs once. Never throws.
+ * the caller must say the answer was cut short. A stream still running at the
+ * route's deadline is aborted and returns a 'timeout' error, also after text
+ * was yielded. Logs once. Never throws.
  */
 export async function* streamModelText(
   route: AIRoute,
@@ -227,27 +290,41 @@ export async function* streamModelText(
 ): AsyncGenerator<string, ModelOutcome, undefined> {
   const started = Date.now();
   const api = getModelClient();
+  const config = ROUTE_CONFIG[route];
+  const deadline = api ? startDeadline(config.deadlineMs) : null;
   let outcome: ModelOutcome | null = null;
-  let stream: ReturnType<ModelClient['messages']['stream']> | null = null;
+  let stream: ModelStream | null = null;
   try {
-    if (!api) {
+    if (!api || !deadline) {
       outcome = NOT_CONFIGURED;
     } else {
-      const config = ROUTE_CONFIG[route];
       try {
-        stream = api.messages.stream(buildModelRequest(route, input), { timeout: config.timeoutMs, maxRetries: MODEL_MAX_RETRIES });
-        for await (const event of stream) {
+        stream = api.messages.stream(buildModelRequest(route, input), requestOptions(config, deadline));
+        // Asked for up front so an abort never surfaces as an unhandled rejection.
+        const final = stream.finalMessage();
+        final.catch(() => undefined);
+        const events = stream[Symbol.asyncIterator]();
+        for (;;) {
+          const step = await Promise.race([events.next(), deadline.passed]);
+          if (step.done) break;
+          const event = step.value;
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
             yield event.delta.text;
           }
         }
-        outcome = readModelResponse(await stream.finalMessage());
+        outcome = readModelResponse(await Promise.race([final, deadline.passed]));
       } catch (error: unknown) {
-        outcome = classifyModelError(error);
+        if (deadline.hit()) {
+          stream?.abort();
+          outcome = DEADLINE_PASSED_OUTCOME;
+        } else {
+          outcome = classifyModelError(error);
+        }
       }
     }
     return outcome;
   } finally {
+    deadline?.clear();
     // The consumer stopped early (e.g. the client went away): stop generating.
     if (outcome === null) {
       stream?.abort();

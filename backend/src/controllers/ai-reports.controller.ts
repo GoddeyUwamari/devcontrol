@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { AIReportGeneratorService } from '../services/ai-report-generator.service';
 import { pool } from '../config/database';
+import { releaseRequestConnection } from '../middleware/request-lifecycle';
 import { z } from 'zod';
 
 const service = new AIReportGeneratorService(pool);
@@ -58,6 +59,11 @@ export class AIReportsController {
       // organizationId is the authenticated user's -- the body schema has no
       // organization field, so a client-supplied one is stripped by zod.
       const data = await service.fetchReportData(organizationId, dateRange || defaultDateRange, reportType || 'weekly_summary');
+
+      // No pooled connection is held while the model writes the report (up to
+      // the report route's deadline). The save below borrows a fresh
+      // connection tagged for this organization and returns it at once.
+      releaseRequestConnection(res);
 
       // Generate report
       const startTime = Date.now();

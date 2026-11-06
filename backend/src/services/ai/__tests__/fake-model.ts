@@ -2,7 +2,12 @@
  * A stub model client for tests (no network). Every request is recorded with
  * its options; each response is a scripted Message, a scripted stream, or a
  * thrown error. Install it with setModelClientForTests(fake.client).
+ *
+ * A stalled response never finishes on its own. Like the SDK, it settles only
+ * when the request's signal aborts (with APIUserAbortError); with
+ * ignoresAbort it never settles at all.
  */
+import Anthropic from '@anthropic-ai/sdk';
 
 export interface RecordedRequest {
   transport: 'create' | 'stream';
@@ -14,7 +19,19 @@ export type Scripted =
   | { message: Record<string, unknown> }
   | { error: unknown }
   /** Stream events, then the final message (or an error part-way). */
-  | { events: Array<Record<string, unknown> | { throw: unknown }>; message?: Record<string, unknown>; finalError?: unknown };
+  | { events: Array<Record<string, unknown> | { throw: unknown }>; message?: Record<string, unknown>; finalError?: unknown }
+  /** Never finishes: for a stream, after any events are sent. */
+  | { stall: true; events?: Array<Record<string, unknown>>; ignoresAbort?: boolean };
+
+/** Settles only by rejecting when `signal` aborts, as the SDK does; never, if ignoresAbort. */
+function untilAborted(signal: AbortSignal | undefined, ignoresAbort: boolean | undefined): Promise<never> {
+  return new Promise<never>((_resolve, reject) => {
+    if (!signal || ignoresAbort) return;
+    const fail = () => reject(new Anthropic.APIUserAbortError());
+    if (signal.aborted) fail();
+    else signal.addEventListener('abort', fail, { once: true });
+  });
+}
 
 export function msg(content: unknown[], stop_reason: string | null = 'end_turn', extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -43,6 +60,7 @@ export function fakeModel(script: Scripted[] = []) {
   const create = jest.fn(async (body: Record<string, any>, options?: Record<string, any>) => {
     requests.push({ transport: 'create', body, options });
     const item = next();
+    if ('stall' in item) return untilAborted(options?.signal, item.ignoresAbort);
     if ('error' in item) throw item.error;
     if ('message' in item && !('events' in item)) return item.message;
     return (item as any).message;
@@ -56,15 +74,17 @@ export function fakeModel(script: Scripted[] = []) {
       abort: () => { aborted = true; aborts.push(requests.length); },
       async *[Symbol.asyncIterator]() {
         if ('error' in item) throw item.error;
-        if ('events' in item) {
+        if ('events' in item && item.events) {
           for (const event of item.events) {
             if (aborted) return;
             if ('throw' in event) throw event.throw;
             yield event;
           }
         }
+        if ('stall' in item) await untilAborted(options?.signal, item.ignoresAbort);
       },
       finalMessage: async () => {
+        if ('stall' in item) return untilAborted(options?.signal, item.ignoresAbort);
         if ('error' in item) throw item.error;
         if ('events' in item && item.finalError !== undefined) throw item.finalError;
         return item.message;

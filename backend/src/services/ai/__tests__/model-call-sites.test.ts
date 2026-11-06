@@ -5,7 +5,7 @@
  * setModelClientForTests(). No database: the pools are stubs.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { setModelClientForTests, ROUTE_CONFIG, MODEL_MAX_RETRIES, AI_MODEL } from '../model-client';
+import { setModelClientForTests, runModel, ROUTE_CONFIG, MODEL_MAX_RETRIES, AI_MODEL, type AIRoute } from '../model-client';
 import { fakeModel, msg, textBlock, thinkingBlock, toolBlock, textDelta, thinkingDelta, type Scripted } from './fake-model';
 import { AIReportGeneratorService, REPORT_OUTPUT_SCHEMA, type ReportData } from '../../ai-report-generator.service';
 import { AIChatService, CHAT_ERROR_REPLY, CHAT_REFUSAL_REPLY, CHAT_TRUNCATED_NOTICE, type ChatContext } from '../../ai-chat.service';
@@ -97,7 +97,7 @@ async function chatOutput(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 describe('request shape per route (sent by the real call site)', () => {
-  const options = (route: keyof typeof ROUTE_CONFIG) => ({ timeout: ROUTE_CONFIG[route].timeoutMs, maxRetries: 0 });
+  const options = (route: keyof typeof ROUTE_CONFIG) => ({ timeout: ROUTE_CONFIG[route].timeoutMs, maxRetries: 0, signal: expect.any(AbortSignal) });
 
   it('model and retries are pinned in one place', () => {
     expect(AI_MODEL).toBe('claude-sonnet-5');
@@ -222,6 +222,70 @@ describe('request shape per route (sent by the real call site)', () => {
     walk(DASHBOARD_SUMMARY_TOOL.input_schema);
     expect(objects.length).toBeGreaterThan(4);
     for (const o of objects) expect(o.additionalProperties).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Overall deadline per route (review L1)
+// ---------------------------------------------------------------------------
+
+describe('overall deadline per route (review L1)', () => {
+  const PENDING = Symbol('still pending');
+  /** Advances fake time by `ms`, then reports the call's result, or PENDING if it has not settled. */
+  async function after<T>(call: Promise<T>, ms: number): Promise<T | typeof PENDING> {
+    await jest.advanceTimersByTimeAsync(ms);
+    return Promise.race([call, new Promise<typeof PENDING>((resolve) => setImmediate(() => resolve(PENDING)))]);
+  }
+
+  beforeEach(() => jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] }));
+  afterEach(() => jest.useRealTimers());
+
+  it('every route has one: reports 90 s, chat 120 s, the others their SDK timeout, which never exceeds it', () => {
+    const deadlines = Object.fromEntries(Object.entries(ROUTE_CONFIG).map(([route, config]) => [route, config.deadlineMs]));
+    expect(deadlines).toEqual({ chat: 120_000, report: 90_000, nl_parse: 30_000, dashboard_summary: 30_000, forecast: 120_000, anomaly: 30_000 });
+    for (const config of Object.values(ROUTE_CONFIG)) expect(config.timeoutMs).toBeLessThanOrEqual(config.deadlineMs);
+  });
+
+  it.each([false, true])('report: a stalled stream is aborted at 90 s and the report falls back with reason error_timeout (transport ignores the abort: %s)', async (ignoresAbort) => {
+    const fake = install([{ stall: true, ignoresAbort }]);
+    const call = new AIReportGeneratorService(stubPool).generateWeeklyReport(reportData);
+    expect(await after(call, 89_999)).toBe(PENDING);
+    const result = await after(call, 1);
+    expect(result).toMatchObject({ wasFallback: true, fallbackReason: 'error_timeout' });
+    expect(fake.requests[0].options?.signal.aborted).toBe(true);
+    expect(fake.aborts).toHaveLength(1);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(modelLogs()).toEqual([expect.objectContaining({ route: 'report', outcome: 'error', errorCode: 'timeout', fallbackReason: 'error_timeout' })]);
+  });
+
+  it.each([false, true])('chat: a stream that stalls part-way is aborted at 120 s; the partial text is kept and the existing error reply follows (transport ignores the abort: %s)', async (ignoresAbort) => {
+    const fake = install([{ stall: true, ignoresAbort, events: [textDelta('Partial answer')] }]);
+    const call = chatOutput();
+    expect(await after(call, 119_999)).toBe(PENDING);
+    expect(await after(call, 1)).toBe(`Partial answer\n\n${CHAT_ERROR_REPLY}`);
+    expect(fake.requests[0].options?.signal.aborted).toBe(true);
+    expect(fake.aborts).toHaveLength(1);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(modelLogs()).toEqual([expect.objectContaining({ route: 'chat', outcome: 'error', errorCode: 'timeout', fallbackReason: 'error_timeout' })]);
+  });
+
+  it.each<AIRoute>(['nl_parse', 'dashboard_summary', 'forecast', 'anomaly'])('%s: a request that never answers ends at its deadline as error_timeout', async (route) => {
+    const fake = install([{ stall: true, ignoresAbort: true }]);
+    const call = runModel(route, 'deadline_test', { messages: [{ role: 'user', content: 'q' }] }, () => ({ ok: true, value: 'used' }));
+    expect(await after(call, ROUTE_CONFIG[route].deadlineMs - 1)).toBe(PENDING);
+    expect(await after(call, 1)).toMatchObject({ ok: false, reason: 'error_timeout' });
+    expect(fake.requests[0].options?.signal.aborted).toBe(true);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('a call that finishes in time is used, and leaves no timer behind', async () => {
+    install([
+      { message: msg([textBlock(JSON.stringify(VALID_REPORT))]) },
+      { events: [textDelta('hi')], message: msg([textBlock('hi')]) },
+    ]);
+    expect(await new AIReportGeneratorService(stubPool).generateWeeklyReport(reportData)).toMatchObject({ wasFallback: false });
+    expect(await chatOutput()).toBe('hi');
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
 

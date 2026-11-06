@@ -7,6 +7,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { AIChatService, ChatMessage } from '../services/ai-chat.service';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
+import { releaseRequestConnection } from '../middleware/request-lifecycle';
 
 /** Server-side history cap (founder decision A-D15): the newest messages kept, and the longest message accepted. */
 export const CHAT_MAX_MESSAGES = 20;
@@ -83,6 +84,8 @@ export class AIChatController {
 
       // Gather AWS context for the organization
       const context = await this.contextRepo.gatherContext(organizationId);
+      // The model call needs no database: no pooled connection is held while it streams.
+      releaseRequestConnection(res);
 
       // Set headers for Server-Sent Events (SSE)
       res.setHeader('Content-Type', 'text/event-stream');
@@ -148,6 +151,8 @@ export class AIChatController {
       console.log(`[AI Chat Controller] Sync chat for org: ${organizationId}`);
 
       const context = await this.contextRepo.gatherContext(organizationId);
+      // The model call needs no database: no pooled connection is held while it runs.
+      releaseRequestConnection(res);
       const response = await this.chatService.chatSync(history.messages, context);
 
       res.json({
