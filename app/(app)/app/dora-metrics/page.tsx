@@ -2,7 +2,10 @@
 
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/lib/contexts/auth-context';
+import { usePlan } from '@/lib/hooks/use-plan';
+import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements';
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
+import { PlanRequiredNotice } from '@/components/plan/plan-required-notice';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { TrendingUp, Activity, Clock, AlertTriangle, Timer, ArrowRight, Sparkles, FileText, Download } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
@@ -76,8 +79,11 @@ export default function DORAMetricsPage() {
   const [editLabel, setEditLabel] = useState<string>('Elite');
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { organization } = useAuth();
-  const isEnterprise = organization?.subscriptionTier === 'enterprise';
+  // DORA metrics, and custom benchmarks (reads included), are each on their own
+  // plan (PLAN_ENTITLEMENTS); neither is asked for below it.
+  const plan = usePlan();
+  const doraOnPlan = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraMetrics);
+  const isEnterprise = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraCustomBenchmarks);
   const queryClient = useQueryClient();
   const demoMode = useDemoMode();
   const salesDemoMode = useSalesDemo((state) => state.enabled);
@@ -85,8 +91,8 @@ export default function DORAMetricsPage() {
 
   const { data: services } = useQuery<Service[]>({ queryKey: ['services'], queryFn: () => servicesService.getAll() });
   const { data: teams } = useQuery<Team[]>({ queryKey: ['teams'], queryFn: teamsService.getAll });
-  const { data: metricsData, isLoading, error, refetch } = useQuery({ queryKey: ['dora-metrics', dateRange, selectedService, selectedTeam, selectedEnvironment], queryFn: async () => { const filters: DORAMetricsFilters = { dateRange }; if (selectedService !== 'all') filters.serviceId = selectedService; if (selectedTeam !== 'all') filters.teamId = selectedTeam; if (selectedEnvironment !== 'all') filters.environment = selectedEnvironment; return doraMetricsService.getDORAMetrics(filters); } });
-  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({ queryKey: ['dora-benchmarks'], queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; } });
+  const { data: metricsData, isLoading, error, refetch } = useQuery({ queryKey: ['dora-metrics', dateRange, selectedService, selectedTeam, selectedEnvironment], queryFn: async () => { const filters: DORAMetricsFilters = { dateRange }; if (selectedService !== 'all') filters.serviceId = selectedService; if (selectedTeam !== 'all') filters.teamId = selectedTeam; if (selectedEnvironment !== 'all') filters.environment = selectedEnvironment; return doraMetricsService.getDORAMetrics(filters); }, enabled: doraOnPlan });
+  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({ queryKey: ['dora-benchmarks'], queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; }, enabled: isEnterprise });
 
   const benchmarksMap: Record<string, CustomBenchmark> = (benchmarksData?.data || []).reduce((acc, b) => ({ ...acc, [b.metric_name]: b }), {});
 
@@ -124,6 +130,24 @@ export default function DORAMetricsPage() {
     : `Based on ${totalDeployments} ${isDemoActive ? '' : 'finished '}deployments`;
   const dataStateColor = dataState === 'pending' ? '#64748B' : dataState === 'inactive' ? '#DC2626' : dataState === 'insufficient' ? '#D97706' : '#059669';
   const exportDisabled = !isDemoActive && dataState !== 'active' && dataState !== 'insufficient';
+
+  if (!isDemoActive) {
+    if (plan.status === 'loading') return <PlanLoadingState />;
+    if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
+    if (!doraOnPlan) {
+      return (
+        <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">
+          <div>
+            <h1 className={`${PAGE_TITLE_CLASS} mb-1.5`}>Engineering Intelligence</h1>
+            <p className={`${PAGE_SUBTITLE_CLASS} mb-2 max-w-lg`}>DORA metrics and engineering performance, automatically measured from your deployment pipeline.</p>
+          </div>
+          <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-10">
+            <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="dora-plan-required" />
+          </div>
+        </div>
+      );
+    }
+  }
 
   return (
     <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">

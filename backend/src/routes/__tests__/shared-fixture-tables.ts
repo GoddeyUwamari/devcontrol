@@ -132,6 +132,30 @@ const SHARED_FIXTURE_TABLES = {
       created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+  // Verbatim from backend/migrations/011_create_custom_dora_benchmarks.sql,
+  // which CI does not bootstrap (index omitted).
+  custom_dora_benchmarks: `
+    CREATE TABLE IF NOT EXISTS custom_dora_benchmarks (
+      id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id   UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      metric_name       VARCHAR(50) NOT NULL CHECK (metric_name IN (
+        'deployment_frequency',
+        'lead_time',
+        'change_failure_rate',
+        'recovery_time'
+      )),
+      target_value      NUMERIC     NOT NULL CHECK (target_value > 0),
+      target_unit       VARCHAR(50) NOT NULL CHECK (target_unit IN (
+        'per_day',
+        'hours',
+        'percentage',
+        'minutes'
+      )),
+      performance_label VARCHAR(100) NOT NULL DEFAULT 'Elite',
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (organization_id, metric_name)
+    )`,
 } as const;
 
 export type SharedFixtureTable = keyof typeof SHARED_FIXTURE_TABLES;

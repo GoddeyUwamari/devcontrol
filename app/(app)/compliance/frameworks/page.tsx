@@ -9,6 +9,9 @@ import { useSecurityHub } from '@/lib/hooks/useSecurityHub';
 import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness';
 import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useAuth } from '@/lib/contexts/auth-context';
+import { usePlan } from '@/lib/hooks/use-plan';
+import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements';
+import { PlanRequiredNotice } from '@/components/plan/plan-required-notice';
 import { CreateFrameworkModal } from '@/components/compliance/CreateFrameworkModal';
 import { FrameworkDetailsModal } from '@/components/compliance/FrameworkDetailsModal';
 import { ScanResultsModal } from '@/components/compliance/ScanResultsModal';
@@ -379,7 +382,18 @@ function ComplianceResultsPage() {
   const role = useCurrentRole();
   const now = useNowEachLocalDay(true);
   const { query, evaluation, overlay } = useFrameworkEvaluations(['compliance', orgId, 'frameworks', FRAMEWORK_SCANS_LIMIT], !!orgId, now);
-  const { capability: shCapability, cis, pci, nist, error: shError, syncing: shSyncing, triggerSync: triggerSecurityHubSync } = useSecurityHub();
+  // Security Hub status, sync and the CIS / PCI DSS / NIST views are each on a plan
+  // (PLAN_ENTITLEMENTS). Nothing is asked for until the plan is known to include
+  // them; once it is known not to, each shows the upgrade state instead. While the
+  // plan is still loading the page is as before, with nothing read.
+  const plan = usePlan();
+  const shReadsOnPlan = plan.isKnown && [
+    PLAN_ENTITLEMENTS.securityHubStatus, PLAN_ENTITLEMENTS.securityHubCis, PLAN_ENTITLEMENTS.securityHubPci, PLAN_ENTITLEMENTS.securityHubNist,
+  ].every((tier) => plan.canAccess(tier));
+  const shPlanRequired = (tier: (typeof PLAN_ENTITLEMENTS)[keyof typeof PLAN_ENTITLEMENTS]) => plan.isKnown && !plan.canAccess(tier);
+  const syncPlanRequired = shPlanRequired(PLAN_ENTITLEMENTS.securityHubSync);
+  const [syncPlanShown, setSyncPlanShown] = useState(false);
+  const { capability: shCapability, cis, pci, nist, error: shError, syncing: shSyncing, triggerSync: triggerSecurityHubSync } = useSecurityHub({ enabled: shReadsOnPlan });
   const { data: soc2Criteria, isLoading: soc2Loading, error: soc2QueryError } = useSoc2Readiness();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [detailsFramework, setDetailsFramework] = useState<ComplianceFramework | null>(null);
@@ -589,6 +603,7 @@ function ComplianceResultsPage() {
           const isPci = fw.key === 'pci';
           const isNist = fw.key === 'nist';
           const isSoc2 = fw.key === 'soc2';
+          const standardEntitlement = isCis ? PLAN_ENTITLEMENTS.securityHubCis : isPci ? PLAN_ENTITLEMENTS.securityHubPci : isNist ? PLAN_ENTITLEMENTS.securityHubNist : null;
           const evaluated = isCis ? cisEvaluated : isPci ? pciEvaluated : isNist ? nistEvaluated : false;
           const readiness = isCis ? cis : isPci ? pci : isNist ? nist : null;
           const additionalEvidenceCount = readiness?.controls.filter((c) => c.mappingType === 'ADDITIONAL_EVIDENCE').length ?? 0;
@@ -607,9 +622,13 @@ function ComplianceResultsPage() {
               <p className="text-label text-slate-600 mb-0.5">
                 {fw.attribution === 'security_hub' ? 'Security Hub-backed' : fw.attribution === 'soc2_evidence' ? 'Technical + customer evidence' : 'Not yet implemented'}
               </p>
-              <p className="text-meta text-ink-muted mb-3">
-                {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : isSoc2 ? soc2Subtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
-              </p>
+              {standardEntitlement && shPlanRequired(standardEntitlement) ? (
+                <PlanRequiredNotice requiredTier={standardEntitlement} testId={`standard-${fw.key}-plan-required`} className="mb-3" />
+              ) : (
+                <p className="text-meta text-ink-muted mb-3">
+                  {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : isSoc2 ? soc2Subtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
+                </p>
+              )}
               {isSoc2 ? (
                 <button
                   type="button"
@@ -693,7 +712,7 @@ function ComplianceResultsPage() {
             </span>
             <button
               type="button"
-              onClick={() => triggerSecurityHubSync()}
+              onClick={() => (syncPlanRequired ? setSyncPlanShown(true) : triggerSecurityHubSync())}
               disabled={shSyncing || !canSync}
               aria-describedby={syncReason ? 'security-hub-sync-reason' : undefined}
               className="flex items-center gap-1.5 bg-white text-violet-600 border border-violet-200 rounded-lg px-3 py-1.5 text-label cursor-pointer hover:bg-violet-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
@@ -701,6 +720,9 @@ function ComplianceResultsPage() {
               <RefreshCw size={11} className={shSyncing ? 'animate-spin' : ''} /> {shSyncing ? 'Syncing…' : 'Sync Security Hub'}
             </button>
             {syncReason && <p id="security-hub-sync-reason" className={REASON}>{syncReason}</p>}
+            {syncPlanRequired && syncPlanShown && (
+              <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.securityHubSync} testId="security-hub-sync-plan-required" />
+            )}
             <a href="/docs" className="text-label text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
               Learn more <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </a>

@@ -30,11 +30,13 @@ jest.mock('../../middleware/auth.middleware', () => {
   return { authenticate, authenticateToken: authenticate };
 });
 
-// The forecast's Pro plan gate reads Postgres; it is covered with a real
-// database by plan-server-enforcement.test.ts. Here it admits every caller,
-// so the organization handling below is what is under test.
+// The forecast's Pro plan gate and the benchmarks' plan gate read Postgres;
+// they are covered with a real database by plan-server-enforcement.test.ts
+// and plan-gates-pr1a.test.ts. Here they admit every caller, so the
+// organization handling below is what is under test.
 jest.mock('../../middleware/subscription.middleware', () => ({
   requirePro: (_req: unknown, _res: unknown, next: () => void) => next(),
+  requireEntitlement: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 /** The organization the removed fallback used to select. */

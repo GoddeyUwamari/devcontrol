@@ -22,8 +22,10 @@ jest.mock('../../middleware/auth.middleware', () => ({
   },
 }));
 
+// The plan gates are covered against Postgres by plan-gates-pr1a.test.ts;
+// here they admit every caller, so the dispatch is what is under test.
 jest.mock('../../middleware/subscription.middleware', () => ({
-  requireEnterprise: (_req: any, _res: any, next: any) => next(),
+  requireEntitlement: () => (_req: any, _res: any, next: any) => next(),
 }));
 
 jest.mock('../../middleware/rateLimiter', () => ({

@@ -25,6 +25,8 @@ import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements'
+import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
 import { Rocket, RefreshCw, ArrowRight, XCircle, X, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
@@ -129,7 +131,12 @@ function DeploymentsContent() {
   const demoMode      = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive  = demoMode || salesDemoMode
-  const { tier }      = usePlan()
+  const plan          = usePlan()
+  const { tier }      = plan
+  // The change failure rate is a DORA metric (lib/plan/entitlements.ts): below
+  // its plan the server leaves it out and the card shows the upgrade state.
+  // The counts and the last deployment are on every plan.
+  const cfrPlanRequired = !isDemoActive && plan.isKnown && !plan.canAccess(PLAN_ENTITLEMENTS.doraMetrics)
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
@@ -357,8 +364,14 @@ function DeploymentsContent() {
         ].map(({ label, value, sub, valueClass, small }) => (
           <div key={label} className="bg-white rounded-xl p-5 sm:p-8 border border-slate-200" data-testid={`deployment-card-${label.toLowerCase().replace(/ /g, '-')}`}>
             <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">{label}</p>
-            <div className={`${small ? 'text-section' : 'text-kpi'} tabular-nums leading-none mb-2 ${valueClass}`}>{value}</div>
-            <p className="text-meta text-ink-muted m-0">{sub}</p>
+            {label === 'Change Failure Rate' && cfrPlanRequired ? (
+              <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="deployment-cfr-plan-required" />
+            ) : (
+              <>
+                <div className={`${small ? 'text-section' : 'text-kpi'} tabular-nums leading-none mb-2 ${valueClass}`}>{value}</div>
+                <p className="text-meta text-ink-muted m-0">{sub}</p>
+              </>
+            )}
           </div>
         ))}
       </div>

@@ -6,6 +6,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
+import { PLAN_ENTITLEMENTS, type PlanEntitlement } from '../config/plan-entitlements';
 
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -118,8 +119,11 @@ export function isOrgRestricted(row: {
  * paid tier to the client -- restriction affects access, not what plan the
  * customer is shown as being on.
  */
-export async function getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
-  const result = await pool.query(
+export async function getOrganizationTier(
+  organizationId: string,
+  executor: Pool | PoolClient = pool
+): Promise<SubscriptionTier> {
+  const result = await executor.query(
     `SELECT subscription_tier, billing_lifecycle_state, grace_period_ends_at
      FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
     [organizationId]
@@ -243,6 +247,29 @@ export const requireFeature = (feature: string) => {
 export const requireStarter = requireTier('starter');
 export const requirePro = requireTier('pro');
 export const requireEnterprise = requireTier('enterprise');
+
+/**
+ * requireTier for one feature, at the plan PLAN_ENTITLEMENTS gives it: the
+ * same refusal (402 TIER_REQUIRED) and the same fail-closed 500.
+ */
+export const requireEntitlement = (entitlement: PlanEntitlement) =>
+  requireTier(PLAN_ENTITLEMENTS[entitlement]);
+
+/**
+ * Whether the organization's plan, resolved as for every request
+ * (getOrganizationTier: a restricted or lapsed organization is free),
+ * includes the feature. For server paths that adjust a result rather than
+ * refuse a request. Throws if the plan cannot be read; callers decide what
+ * that means for their result.
+ */
+export async function organizationHasEntitlement(
+  organizationId: string,
+  entitlement: PlanEntitlement,
+  executor: Pool | PoolClient = pool
+): Promise<boolean> {
+  const tier = await getOrganizationTier(organizationId, executor);
+  return tierMeetsRequirement(tier, PLAN_ENTITLEMENTS[entitlement]);
+}
 
 /**
  * Resource limit types that can be checked
