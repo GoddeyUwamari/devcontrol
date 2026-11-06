@@ -74,10 +74,11 @@ describe('reads (D1, D7)', () => {
     expect(screen.getAllByTestId('evaluation-history-row').map((r) => r.textContent)).toEqual(['Example baseline · Completed Oct 21, 3:00 PM · 90% Re-evaluate now'])
   })
 
-  it('402: the Enterprise sentence and See plans; no tiles, no history and no empty state', async () => {
+  it('402: the custom-frameworks plan sentence and See plans; no tiles, no history and no empty state', async () => {
     await show({ [FRAMEWORKS]: failWith(402, 'TIER_REQUIRED'), [SCANS]: failWith(402, 'TIER_REQUIRED') })
     const plan = screen.getByTestId('compliance-plan')
-    expect(plan).toHaveTextContent('Compliance frameworks are on the Enterprise plan.')
+    expect(plan.textContent).toBe('Custom compliance frameworks are on the Revenue Protection plan.See plans')
+    expect(plan.textContent).not.toMatch(/Enterprise/)
     expect(within(plan).getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/settings/billing/upgrade')
     expect(screen.queryAllByTestId('compliance-tile')).toHaveLength(0)
     for (const text of ['No frameworks yet', 'Not yet evaluated', 'No active compliance evaluations', "Couldn't load"]) {

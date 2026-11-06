@@ -830,7 +830,7 @@ function InfrastructureContent() {
                   data-testid="inventory-export-button"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 cursor-pointer hover:bg-slate-50"
                 >
-                  <Download size={13} /> Export Resources
+                  <Download size={13} /> Export inventory
                 </button>
                 {exportPlanRequired && exportPlanShown && (
                   <PlanRequiredNotice requiredTier={RESOURCE_EXPORT_TIER} testId="inventory-export-plan-required" />

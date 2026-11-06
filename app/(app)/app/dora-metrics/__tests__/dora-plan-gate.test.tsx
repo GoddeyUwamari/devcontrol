@@ -11,7 +11,7 @@
  * stubbed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import api from '@/lib/api'
@@ -91,6 +91,16 @@ describe('DORA page — plan', () => {
     expect(screen.getByText('Custom DORA Benchmarking')).toBeInTheDocument()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(asked('/api/dora/benchmarks')).toBe(false)
+  })
+
+  it('on pro: the benchmark lock names the plan by its customer-facing name', async () => {
+    auth.tier = 'pro'
+    renderPage()
+
+    const lock = screen.getByText('Custom DORA Benchmarking').parentElement as HTMLElement
+    expect(lock).toHaveTextContent('Available on the Revenue Protection plan.')
+    expect(within(lock).getByRole('link', { name: 'Upgrade to Revenue Protection →' })).toHaveAttribute('href', '/settings/billing')
+    expect(lock.textContent).not.toMatch(/Enterprise/)
   })
 
   it('on enterprise: both are requested', async () => {

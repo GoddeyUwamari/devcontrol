@@ -305,7 +305,7 @@ function DeploymentsContent() {
           <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Summary · {windowLabel}</p>
           <p className="text-ui text-slate-800 leading-relaxed m-0">
             {stats
-              ? deploymentSummaryText(stats)
+              ? deploymentSummaryText(cfrPlanRequired ? { ...stats, change_failure_rate: undefined } : stats)
               : statsError
                 ? 'The deployment summary could not be loaded.'
                 : 'Loading deployment summary…'}

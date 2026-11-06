@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements';
+import { PLAN_DISPLAY_NAME } from '@/lib/plan/plan-names';
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
 import { PlanRequiredNotice } from '@/components/plan/plan-required-notice';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
@@ -494,8 +495,8 @@ export default function DORAMetricsPage() {
           <div className="p-10 sm:p-16 text-center bg-slate-50">
             <div className="w-11 h-11 bg-slate-100 rounded-xl flex items-center justify-center text-xl mx-auto mb-4">🔒</div>
             <p className="text-ui font-semibold text-slate-900 mb-1.5">Custom DORA Benchmarking</p>
-            <p className="text-meta text-ink-muted leading-relaxed mb-5 max-w-sm mx-auto">Set custom performance thresholds per metric so your team is measured against your own standards, not just industry averages. Available on the Enterprise plan.</p>
-            <a href="/settings/billing" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-label no-underline transition-colors">Upgrade to Enterprise →</a>
+            <p className="text-meta text-ink-muted leading-relaxed mb-5 max-w-sm mx-auto">Set custom performance thresholds per metric so your team is measured against your own standards, not just industry averages. Available on the {PLAN_DISPLAY_NAME.enterprise} plan.</p>
+            <a href="/settings/billing" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-label no-underline transition-colors">Upgrade to {PLAN_DISPLAY_NAME.enterprise} →</a>
           </div>
         ) : (
           <div>

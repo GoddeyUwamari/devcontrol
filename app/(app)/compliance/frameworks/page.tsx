@@ -549,7 +549,7 @@ function ComplianceResultsPage() {
       {/* KPI strip; below Enterprise, the plan (D7: the existing Enterprise upsell, never "Not yet evaluated"). */}
       {view.status === 'plan' ? (
         <div data-testid="compliance-plan" className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 mb-6 flex flex-col gap-1.5">
-          <p className="text-ui text-ink-body">{EVALUATION_COPY.enterprisePlan}</p>
+          <p className="text-ui text-ink-body">{COMPLIANCE_COPY.customFrameworksPlan}</p>
           <Link href={SEE_PLANS.href} className={PLAN_LINK}>{SEE_PLANS.label}</Link>
         </div>
       ) : (

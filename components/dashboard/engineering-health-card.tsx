@@ -35,23 +35,26 @@ const WINDOW_LABEL = 'Last 30 days'
  * Demo mode keeps the existing demonstration metrics, laid out as a compact
  * 4-up stat grid.
  *
- * DORA metrics are on the plan in PLAN_ENTITLEMENTS.doraMetrics. Below it the
- * card shows the upgrade state and asks the server for nothing; until the
- * plan is known it asks for nothing either.
+ * DORA metrics (deployment frequency, change failure rate) are on the plan in
+ * PLAN_ENTITLEMENTS.doraMetrics. Below it those two figures are replaced by
+ * the upgrade state and GET /api/metrics/dora is never requested; the last
+ * deploy, from GET /api/deployments/stats, is shown on every plan. Until the
+ * plan is known the DORA figures are not requested either.
  */
 export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHealthCardProps) {
   const { organization } = useAuth()
   const plan = usePlan()
   const doraOnPlan = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraMetrics)
   const planRequired = !isDemoActive && plan.isKnown && !doraOnPlan
-  const enabled = !isDemoActive && !!organization?.id && doraOnPlan
+  const statsEnabled = !isDemoActive && !!organization?.id
+  const doraEnabled = statsEnabled && doraOnPlan
 
   // Keyed by organization, like every tenant-data query on the dashboard, so
   // one organization's cached values can never be shown to another.
   const dora = useQuery({
     queryKey: ['engineering-health-dora', organization?.id, WINDOW],
     queryFn: () => doraMetricsService.getDORAMetrics({ dateRange: WINDOW }),
-    enabled,
+    enabled: doraEnabled,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: false,
@@ -59,7 +62,7 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
   const stats = useQuery({
     queryKey: ['engineering-health-deployment-stats', organization?.id, WINDOW],
     queryFn: () => deploymentsService.getStats({ dateRange: WINDOW }),
-    enabled,
+    enabled: statsEnabled,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: false,
@@ -67,7 +70,9 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
 
   const doraData = dora.data?.success ? dora.data.data : undefined
   const statsData = stats.data
-  const failed = plan.status === 'error' || (dora.isError && !doraData) || (stats.isError && !statsData)
+  const failed = plan.status === 'error' || (doraOnPlan && dora.isError && !doraData) || (stats.isError && !statsData)
+  // Below the plan the DORA figures are not part of the card, so the last deploy alone completes it.
+  const loaded = !!statsData && (planRequired || !!doraData)
   // Known to have no deployment at all -- only ever from a loaded answer.
   const noneRecorded = statsData?.organization_has_deployments === false
 
@@ -134,16 +139,17 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
             )
           })}
         </div>
-      ) : planRequired ? (
-        <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="engineering-health-plan" />
       ) : noneRecorded ? (
         <p className="text-ui text-ink-muted leading-relaxed m-0" data-testid="engineering-health-empty">
           No deployments recorded · Connect your CI
         </p>
       ) : (
-        <div data-testid="engineering-health-metrics" data-state={failed ? 'error' : doraData && statsData ? 'loaded' : 'loading'}>
+        <div data-testid="engineering-health-metrics" data-state={failed ? 'error' : loaded ? 'loaded' : 'loading'}>
           <div className="grid grid-cols-3 gap-4">
-            {realRows.map(({ key, label, value, sub }) => (
+            {planRequired && (
+              <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="engineering-health-plan" className="col-span-2" />
+            )}
+            {realRows.filter(({ key }) => !planRequired || key === 'last-deploy').map(({ key, label, value, sub }) => (
               <div key={key} data-testid={`engineering-health-${key}`}>
                 <div className="text-section text-ink leading-none mb-1.5"><Num>{value}</Num></div>
                 <p className="text-label font-normal text-ink-muted leading-snug m-0">{label}</p>
@@ -151,9 +157,11 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
               </div>
             ))}
           </div>
-          <p className="text-meta text-ink-muted leading-relaxed m-0 mt-3" data-testid="engineering-health-note">
-            {failed ? 'Deployment metrics could not be loaded. ' : ''}Lead time and time to restore: not tracked
-          </p>
+          {(!planRequired || failed) && (
+            <p className="text-meta text-ink-muted leading-relaxed m-0 mt-3" data-testid="engineering-health-note">
+              {failed ? 'Deployment metrics could not be loaded. ' : ''}{planRequired ? '' : 'Lead time and time to restore: not tracked'}
+            </p>
+          )}
         </div>
       )}
     </div>

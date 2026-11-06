@@ -15,7 +15,7 @@ import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import api from '@/lib/api'
 import DeploymentsPage from '../page'
 
-const auth = vi.hoisted(() => ({ tier: 'free' as string }))
+const auth = vi.hoisted(() => ({ tier: 'free' as string, staleRate: false }))
 vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({
     organization: { id: 'org-1', subscriptionTier: auth.tier },
@@ -50,7 +50,8 @@ const adapter: AxiosAdapter = async (config) => {
   let data: unknown = { success: true }
   if (url.startsWith('/api/deployments/stats')) {
     // What the server sends for the plan: the rate only from Pro.
-    const entitled = auth.tier === 'pro' || auth.tier === 'enterprise'
+    // staleRate: the answer still carries the rate (e.g. the plan changed after the page loaded).
+    const entitled = auth.staleRate || auth.tier === 'pro' || auth.tier === 'enterprise'
     data = { success: true, stats: entitled ? { ...COUNTS, change_failure_rate: 20 } : COUNTS }
   } else if (url.startsWith('/api/deployments')) {
     data = { success: true, data: [], total: 0 }
@@ -72,6 +73,7 @@ const card = (name: string) => screen.getByTestId(`deployment-card-${name}`)
 describe('Deployments page — change failure rate and the plan', () => {
   beforeEach(() => {
     requests.length = 0
+    auth.staleRate = false
     localStorage.setItem('accessToken', 'test-access-token')
     api.defaults.adapter = adapter
   })
@@ -91,7 +93,10 @@ describe('Deployments page — change failure rate and the plan', () => {
     const rate = card('change-failure-rate')
     expect(within(rate).getByTestId('deployment-cfr-plan-required')).toHaveTextContent('This feature is on the Optimization Engine plan.')
     expect(within(rate).getByText('See plans').closest('a')).toHaveAttribute('href', '/settings/billing/upgrade')
+    // Neither the rate nor the raw failed-of-finished line that states it in another form.
+    expect(rate.textContent).toBe('Change Failure RateThis feature is on the Optimization Engine plan.See plans')
     expect(rate).not.toHaveTextContent('%')
+    expect(rate).not.toHaveTextContent(/\d+ of \d+|finished deployment/)
 
     // The summary sentence keeps the counts and leaves the rate out.
     const summary = screen.getByText(/8 of 10 finished deployments in the last 30 days succeeded and 2 failed/)
@@ -102,11 +107,24 @@ describe('Deployments page — change failure rate and the plan', () => {
     expect(requests.some((r) => (r.url ?? '').startsWith('/api/deployments/stats'))).toBe(true)
   })
 
+  it('below Pro, a rate the answer still carries is shown nowhere (card or summary)', async () => {
+    auth.tier = 'free'
+    auth.staleRate = true
+    renderPage()
+
+    expect(await within(card('succeeded')).findByText('8')).toBeInTheDocument()
+    expect(within(card('change-failure-rate')).getByTestId('deployment-cfr-plan-required')).toBeInTheDocument()
+    expect(card('change-failure-rate')).not.toHaveTextContent(/20%|\d+ of \d+/)
+    expect(screen.getByText(/succeeded and 2 failed/).textContent).toBe('8 of 10 finished deployments in the last 30 days succeeded and 2 failed.')
+    expect(document.body.textContent).not.toContain('20%')
+  })
+
   it.each(['pro', 'enterprise'])('on %s: the rate is shown as before', async (tier) => {
     auth.tier = tier
     renderPage()
 
     expect(await within(card('change-failure-rate')).findByText('20%')).toBeInTheDocument()
+    expect(card('change-failure-rate')).toHaveTextContent('2 of 10 finished deployments failed')
     expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
     expect(screen.getByText(/\(change failure rate 20%\)\./)).toBeInTheDocument()
   })

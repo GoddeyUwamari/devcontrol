@@ -98,7 +98,10 @@ describe('/infrastructure resource inventory export', () => {
     plan.tier = tier
     renderPage()
 
-    fireEvent.click(await screen.findByTestId('inventory-export-button'))
+    const button = await screen.findByTestId('inventory-export-button')
+    expect(button.textContent?.trim()).toBe('Export inventory')
+    fireEvent.click(button)
+    // The existing dialog, with its own title.
     expect(await screen.findByRole('dialog')).toHaveTextContent('Export Resources')
     expect(screen.queryByTestId('inventory-export-plan-required')).not.toBeInTheDocument()
 
@@ -113,7 +116,7 @@ describe('/infrastructure resource inventory export', () => {
     renderPage()
 
     const button = await screen.findByTestId('inventory-export-button')
-    expect(button).toHaveTextContent('Export Resources')
+    expect(button.textContent?.trim()).toBe('Export inventory')
     expect(button).toBeEnabled()
     fireEvent.click(button)
 
