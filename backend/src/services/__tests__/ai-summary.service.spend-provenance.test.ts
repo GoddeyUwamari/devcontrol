@@ -193,7 +193,7 @@ describe('Dashboard AI summary -- monitoring, security, recommendations', () => 
   it('unevaluated outage evidence can never produce "no outages"', async () => {
     const { prompt, result } = await run();
     expect(prompt).not.toMatch(/No critical outages/);
-    expect(prompt).toMatch(/Outage and incident status: not available — DevControl does not currently evaluate outages, incidents, or anomalies\. Do not state or imply that there are no outages/);
+    expect(prompt).toMatch(/Outage and incident status: not available — CloudWatch alarms are not yet included in this summary \(they are shown on the Operational Health page\), and DevControl does not detect outages, incidents, or anomalies\. Do not state or imply that there are no outages/);
     // The model returned "No critical outages are currently active." -- it is replaced.
     expect(result.systemStatus).toBe(SYSTEM_STATUS_UNAVAILABLE);
   });

@@ -4,8 +4,8 @@
  * Streams responses for better UX
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
+import { getModelClient, streamModelText } from './ai/model-client';
 import {
   CONTEXT_STATE_LABELS,
   type ContextDataState,
@@ -173,16 +173,18 @@ export interface ChatMessage {
   content: string;
 }
 
-export class AIChatService {
-  private anthropic: Anthropic | null = null;
+/** The existing chat error reply, reused for every outcome that is not a usable answer. */
+export const CHAT_ERROR_REPLY = 'I apologize, but I encountered an error processing your request. Please try again.';
 
+/** Appended when the model stopped at its length limit: what was streamed is not the whole answer. */
+export const CHAT_TRUNCATED_NOTICE = '(Answer cut short: it reached the maximum response length. Ask a narrower question for a complete answer.)';
+
+/** The reply when the model declined the request (stop_reason refusal). */
+export const CHAT_REFUSAL_REPLY = "I can't help with that request.";
+
+export class AIChatService {
   constructor(private pool: Pool) {
-    if (process.env.ANTHROPIC_API_KEY) {
-      this.anthropic = new Anthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
-      });
-      console.log('[AI Chat] Service initialized with Anthropic API');
-    } else {
+    if (!getModelClient()) {
       console.warn('[AI Chat] ANTHROPIC_API_KEY not found - AI chat will use fallback responses');
     }
   }
@@ -574,7 +576,7 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       resources.lines.push(...this.formatResourceLines(context.resources.data));
     }
 
-    const alerts = this.formatSectionHeader('Alerts & incidents', context.alerts);
+    const alerts = this.formatSectionHeader('Alerts', context.alerts);
     if (alerts.showData && context.alerts.data) {
       const { total, critical, recent } = context.alerts.data;
       alerts.lines.push(`- active alerts: ${total}`, `- critical alerts: ${critical}`);
@@ -620,59 +622,52 @@ ${dora.lines.join('\n')}
   }
 
   /**
-   * Chat with AI (streaming)
+   * Chat with AI (streaming). Text is streamed as it arrives; how the stream
+   * ended decides what follows it (model-response.ts):
+   *   - a finished answer: nothing;
+   *   - stopped at the length limit: CHAT_TRUNCATED_NOTICE, so a cut-off
+   *     answer never reads as complete;
+   *   - a refusal: CHAT_REFUSAL_REPLY (after any text already streamed);
+   *   - an empty answer, an unexpected response or a failed call:
+   *     CHAT_ERROR_REPLY (after any text already streamed).
    */
   async *chat(
     messages: ChatMessage[],
     context: ChatContext
   ): AsyncGenerator<string> {
     // If no API key, return fallback response
-    if (!this.anthropic) {
+    if (!getModelClient()) {
       yield this.getFallbackResponse(messages, context);
       return;
     }
 
+    const contextString = this.formatContext(context);
+
+    // Context is injected into the first user message.
+    const messagesWithContext = messages.map((m, index) => ({
+      role: m.role,
+      content: index === 0 && m.role === 'user' ? `${contextString}\n\nUser question: ${m.content}` : m.content,
+    }));
+
+    const stream = streamModelText('chat', 'ai_chat', { system: this.getSystemPrompt(), messages: messagesWithContext });
+    let streamedText = false;
+    let step = await stream.next();
     try {
-      const systemPrompt = this.getSystemPrompt();
-      const contextString = this.formatContext(context);
-
-      // Build messages with context injected into first user message
-      const messagesWithContext: Anthropic.MessageParam[] = messages.map((m, index) => {
-        if (index === 0 && m.role === 'user') {
-          return {
-            role: 'user' as const,
-            content: `${contextString}\n\nUser question: ${m.content}`,
-          };
-        }
-        return {
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        };
-      });
-
-      console.log('[AI Chat] Sending request to Claude API...');
-
-      const stream = await this.anthropic.messages.stream({
-        model: 'claude-sonnet-5',
-        max_tokens: 2048,
-        system: systemPrompt,
-        messages: messagesWithContext,
-      });
-
-      for await (const chunk of stream) {
-        if (
-          chunk.type === 'content_block_delta' &&
-          chunk.delta.type === 'text_delta'
-        ) {
-          yield chunk.delta.text;
-        }
+      while (!step.done) {
+        if (step.value.length > 0) streamedText = true;
+        yield step.value;
+        step = await stream.next();
       }
-
-      console.log('[AI Chat] Response complete');
-    } catch (error: any) {
-      console.error('[AI Chat] Error:', error.message);
-      yield 'I apologize, but I encountered an error processing your request. Please try again.';
+    } finally {
+      // Our consumer stopped early: let streamModelText abort the request and log it.
+      if (!step.done) await stream.return({ kind: 'error', code: 'aborted', httpStatus: null, meta: null });
     }
+    const outcome = step.value;
+
+    if (outcome.kind === 'text') return;
+    const separator = streamedText ? '\n\n' : '';
+    const reply = outcome.kind === 'truncated' ? CHAT_TRUNCATED_NOTICE : outcome.kind === 'refused' ? CHAT_REFUSAL_REPLY : CHAT_ERROR_REPLY;
+    yield `${separator}${reply}`;
   }
 
   /**

@@ -13,7 +13,6 @@
  *   - POST, PUT, DELETE /api/compliance-frameworks, and its rules; POST /:id/scan
  *   - POST /api/onboarding/complete/:step, /dismiss, /re-enable
  *   - POST /api/ai-reports/generate; DELETE /api/ai-reports/bulk, /:id
- *   - POST /api/ai-insights/clear-cache
  *
  * A refused viewer changes nothing: the write each route exists for is never
  * reached. Real routes and real authentication (see role-gate-harness.ts);
@@ -42,7 +41,6 @@ import { CustomComplianceService } from '../../services/custom-compliance.servic
 import { SloService } from '../../services/slo.service';
 import { onboardingService } from '../../services/onboarding.service';
 import { AIReportGeneratorService } from '../../services/ai-report-generator.service';
-import { AIInsightsService } from '../../services/ai-insights.service';
 import { pool as appPool } from '../../config/database';
 import { createRoleGateHarness, MEMBER_REFUSAL, RoleGateOrg } from './role-gate-harness';
 
@@ -132,7 +130,6 @@ beforeEach(() => {
       .spyOn(AIReportGeneratorService.prototype, 'generateWeeklyReport')
       .mockResolvedValue({ report: {}, wasFallback: true } as never),
     reportSave: jest.spyOn(AIReportGeneratorService.prototype, 'saveGeneratedReport').mockResolvedValue(ID as never),
-    cacheClear: jest.spyOn(AIInsightsService.prototype, 'clearCache').mockReturnValue(0),
   };
 });
 
@@ -213,7 +210,6 @@ const mutations: Mutation[] = [
   // The id travels in the route slot only so `happened` can look the row up.
   { name: 'DELETE /api/ai-reports/bulk', method: 'DELETE', route: () => '/ai-reports/bulk', prepare: insertReport, allowed: 200, happened: reportDeleted },
 
-  { name: 'POST /api/ai-insights/clear-cache', method: 'POST', route: () => '/ai-insights/clear-cache', prepare: none, allowed: 200, happened: called('cacheClear') },
 ];
 
 describe.each(mutations)('$name', ({ name, method, route, body, prepare, allowed, happened }) => {
@@ -289,20 +285,9 @@ describe('routes this change leaves alone', () => {
     jest.spyOn(SloService.prototype, 'listSlos').mockResolvedValue([] as never);
     jest.spyOn(ComplianceFrameworksRepository.prototype, 'findAllFrameworks').mockResolvedValue([] as never);
 
-    for (const route of ['/anomalies', '/slos', '/compliance-frameworks', '/onboarding/status', '/dora/benchmarks', '/ai-insights/cache-stats']) {
+    for (const route of ['/anomalies', '/slos', '/compliance-frameworks', '/onboarding/status', '/dora/benchmarks']) {
       expect([route, (await sendAs(org.orgId, org.viewer, 'GET', route)).status]).toEqual([route, 200]);
     }
-  });
-
-  it('a viewer can still ask the AI to analyze a cost change', async () => {
-    const analyze = jest.spyOn(AIInsightsService.prototype, 'analyzeCostIncrease').mockResolvedValue({} as never);
-
-    const response = await sendAs(org.orgId, org.viewer, 'POST', '/ai-insights/analyze-cost', {});
-
-    // Answered by the handler (its own validation or result), not by a role gate.
-    expect(response.status).not.toBe(403);
-    expect(response.status).not.toBe(401);
-    analyze.mockRestore();
   });
 
   it('starting an anomaly scan is still owner and admin only', async () => {

@@ -79,7 +79,7 @@ function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, do
         lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
       },
     },
-    alerts: noData('not_supported', { source: 'DevControl alert history', reason: "Organization-scoped alert data is not connected to the assistant: DevControl's alert sync does not yet associate alerts with an organization, so this account's alert counts cannot be determined." }),
+    alerts: noData('not_supported', { source: 'DevControl alerts', reason: "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page." }),
     anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
     dora,
   };

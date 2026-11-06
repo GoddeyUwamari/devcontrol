@@ -1,5 +1,11 @@
 # AI-Powered Cost Insights - Setup Guide
 
+> **Retired (AI truth PR 1).** `POST /api/ai-insights/analyze-cost`, `GET /api/ai-insights/cache-stats`,
+> `POST /api/ai-insights/clear-cache`, the frontend `lib/services/ai-insights.service.ts` client and the
+> `useAIInsights` hook were removed: no product page used them, and cost analysis was run on
+> client-supplied numbers rather than evidence DevControl holds. The routes now return 404. This guide
+> is kept only as a historical record. Model calls now go through `backend/src/services/ai/model-client.ts`.
+
 ## Overview
 
 The AI Insights feature uses Claude (Anthropic AI) to analyze your AWS cost patterns and provide intelligent recommendations for optimization. This feature includes:

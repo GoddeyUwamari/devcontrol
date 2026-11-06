@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { AIReportGeneratorService } from '../services/ai-report-generator.service';
 import { pool } from '../config/database';
+import { releaseRequestConnection } from '../middleware/request-lifecycle';
 import { z } from 'zod';
 
 const service = new AIReportGeneratorService(pool);
@@ -59,9 +60,14 @@ export class AIReportsController {
       // organization field, so a client-supplied one is stripped by zod.
       const data = await service.fetchReportData(organizationId, dateRange || defaultDateRange, reportType || 'weekly_summary');
 
+      // No pooled connection is held while the model writes the report (up to
+      // the report route's deadline). The save below borrows a fresh
+      // connection tagged for this organization and returns it at once.
+      releaseRequestConnection(res);
+
       // Generate report
       const startTime = Date.now();
-      const { report, wasFallback } = await service.generateWeeklyReport(data, reportType || 'weekly_summary');
+      const { report, wasFallback, fallbackReason } = await service.generateWeeklyReport(data, reportType || 'weekly_summary');
       const generationTime = Date.now() - startTime;
 
       // Save to database -- was_fallback is recorded so the report page never
@@ -72,7 +78,8 @@ export class AIReportsController {
         data.dateRange,
         reportType || 'weekly_summary',
         undefined,
-        wasFallback
+        wasFallback,
+        fallbackReason ?? null
       );
 
       console.log(`[AI Reports] Report generated successfully in ${generationTime}ms`);

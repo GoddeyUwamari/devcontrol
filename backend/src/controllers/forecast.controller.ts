@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { CostForecastService } from '../services/cost-forecast.service';
 import { ForecastAIService } from '../services/forecast-ai.service';
 import { ScenarioPlanningService } from '../services/scenario-planning.service';
+import { releaseRequestConnection } from '../middleware/request-lifecycle';
 
 /**
  * Logs a failed forecast without the error object. The response never
@@ -44,6 +45,9 @@ export class ForecastController {
 
       // Generate forecast
       let forecast = await this.forecastService.generateForecast(organizationId, period);
+
+      // The model call needs no database: no pooled connection is held while it runs.
+      releaseRequestConnection(res);
 
       // Enrich with AI analysis
       forecast = await this.aiService.analyzeForecast(forecast);

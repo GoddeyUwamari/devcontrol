@@ -17,7 +17,6 @@
  * and an inventory estimate is always labeled an estimate.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
 import { AWSResourcesRepository } from '../repositories/awsResources.repository';
 import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
@@ -38,10 +37,8 @@ import {
   type SectionMeta,
 } from './ai-context-contract';
 import { monthOverMonthSection, spendSection, type MonthOverMonthEvidence, type SpendEvidence } from './cost-context-sections';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { runModel, type Interpretation } from './ai/model-client';
+import type { FallbackReason } from './ai/model-response';
 
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
@@ -151,6 +148,127 @@ export interface GeneratedReportResult {
   report: GeneratedReport;
   /** True when the deterministic template was used instead of the model. */
   wasFallback: boolean;
+  /** Why the template was used (model-response.ts); null when the model's report was used. */
+  fallbackReason: FallbackReason | null;
+}
+
+/** Stored with the report in report_data.meta -- set by DevControl, never by the model. */
+export interface GeneratedReportMeta {
+  wasFallback: boolean;
+  fallbackReason: FallbackReason | null;
+}
+
+const IMPACTS = ['high', 'medium', 'low'] as const;
+const EFFORTS = ['low', 'medium', 'high'] as const;
+const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
+
+function analysisSchema(detailField: 'trends' | 'topRisks' | 'doraMetrics'): Record<string, unknown> {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: { overview: { type: 'string' }, [detailField]: { type: 'string' }, recommendations: STRING_ARRAY },
+    required: ['overview', detailField, 'recommendations'],
+  };
+}
+
+/**
+ * The report's JSON shape, sent as output_config.format (structured output)
+ * and enforced again by parseGeneratedReport(). Only the fields the report
+ * page renders; estimatedSavingsPriceUnknown is set by DevControl, never here.
+ */
+export const REPORT_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    summary: { type: 'string' },
+    keyHighlights: STRING_ARRAY,
+    costAnalysis: analysisSchema('trends'),
+    securityAnalysis: analysisSchema('topRisks'),
+    performanceAnalysis: analysisSchema('doraMetrics'),
+    topRecommendations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string' },
+          impact: { type: 'string', enum: [...IMPACTS] },
+          description: { type: 'string' },
+          estimatedSavings: { type: 'number' },
+          effort: { type: 'string', enum: [...EFFORTS] },
+        },
+        required: ['title', 'impact', 'description', 'effort'],
+      },
+    },
+    executiveSummary: { type: 'string' },
+  },
+  required: ['summary', 'keyHighlights', 'topRecommendations', 'executiveSummary'],
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
+type Analysis<K extends string> = { overview: string; recommendations: string[] } & Record<K, string>;
+
+function parseAnalysis<K extends 'trends' | 'topRisks' | 'doraMetrics'>(value: unknown, detail: K): Analysis<K> | null | 'invalid' {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || typeof value.overview !== 'string' || typeof value[detail] !== 'string' || !isStringArray(value.recommendations)) return 'invalid';
+  return { overview: value.overview, [detail]: value[detail], recommendations: value.recommendations } as Analysis<K>;
+}
+
+/**
+ * The model's report, or null when its text is not exactly one report object
+ * of REPORT_OUTPUT_SCHEMA's shape. The whole text must be the JSON (one
+ * surrounding code fence is tolerated); only known fields are copied, so the
+ * model cannot add fields such as meta or estimatedSavingsPriceUnknown.
+ */
+export function parseGeneratedReport(text: string): GeneratedReport | null {
+  const trimmed = text.trim();
+  const fenced = /^```(?:json)?[ \t]*\n([\s\S]*?)\n?```$/.exec(trimmed);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fenced ? fenced[1] : trimmed);
+  } catch {
+    return null;
+  }
+  if (!isRecord(raw)) return null;
+  if (typeof raw.summary !== 'string' || typeof raw.executiveSummary !== 'string' || !isStringArray(raw.keyHighlights) || !Array.isArray(raw.topRecommendations)) return null;
+
+  const recommendations: GeneratedReport['topRecommendations'] = [];
+  for (const item of raw.topRecommendations) {
+    if (!isRecord(item)) return null;
+    const { title, impact, description, effort, estimatedSavings } = item;
+    if (typeof title !== 'string' || typeof description !== 'string') return null;
+    if (!(IMPACTS as readonly unknown[]).includes(impact) || !(EFFORTS as readonly unknown[]).includes(effort)) return null;
+    if (estimatedSavings !== undefined && estimatedSavings !== null && (typeof estimatedSavings !== 'number' || !Number.isFinite(estimatedSavings))) return null;
+    recommendations.push({
+      title,
+      impact: impact as GeneratedReport['topRecommendations'][number]['impact'],
+      description,
+      effort: effort as GeneratedReport['topRecommendations'][number]['effort'],
+      ...(typeof estimatedSavings === 'number' ? { estimatedSavings } : {}),
+    });
+  }
+
+  const cost = parseAnalysis(raw.costAnalysis, 'trends');
+  const security = parseAnalysis(raw.securityAnalysis, 'topRisks');
+  const performance = parseAnalysis(raw.performanceAnalysis, 'doraMetrics');
+  if (cost === 'invalid' || security === 'invalid' || performance === 'invalid') return null;
+
+  return {
+    summary: raw.summary,
+    keyHighlights: raw.keyHighlights,
+    ...(cost ? { costAnalysis: cost } : {}),
+    ...(security ? { securityAnalysis: security } : {}),
+    ...(performance ? { performanceAnalysis: performance } : {}),
+    topRecommendations: recommendations,
+    executiveSummary: raw.executiveSummary,
+  };
 }
 
 const SECTION_TITLES: Record<keyof ReportData['sections'], string> = {
@@ -169,8 +287,9 @@ const SECTION_TITLES: Record<keyof ReportData['sections'], string> = {
   alerts: 'Alerts',
 };
 
+// Model-facing, and repeated to customers: names no internal mechanism.
 const ALERTS_NOT_SUPPORTED_REASON =
-  "DevControl's alert sync does not yet associate alerts with an organization, so this account's alert counts cannot be determined.";
+  "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.";
 const RESOURCE_CHANGE_NOT_SUPPORTED_REASON =
   'DevControl keeps only the current resource inventory, not its state at the start of the period, so resources added or removed during the period cannot be determined.';
 const SECURITY_SCORE_NOT_SUPPORTED_REASON =
@@ -187,7 +306,7 @@ const PROMPT_RULES = [
   'There is no security score and no earlier security result: do not state, estimate, or compare either.',
   'Resource changes over the period are not tracked: do not describe resource growth or decline.',
   '"Average time between successful deployments" is not DORA lead time for changes: never call it lead time.',
-  'Alert data is not supported: never say there were no alerts, zero alerts, or that alerting is healthy.',
+  'Alert data is not part of this evidence: never say there were no alerts, zero alerts, or that alerting is healthy.',
   'Configuration-check findings cover only DevControl\'s checks on discovered resources: no findings means none from those checks, not that no security issues exist.',
   'Recommend only actions grounded in the supplied evidence. Do not recommend rightsizing, Reserved Instances, or Savings Plans unless a supplied recommendation says so.',
   'Savings are DevControl estimates of potential savings, never realized savings. In topRecommendations, set estimatedSavings only to a value copied from the idle/unused-resource recommendation evidence; otherwise omit the field.',
@@ -221,54 +340,25 @@ export class AIReportGeneratorService {
   }
 
   async generateWeeklyReport(data: ReportData, reportType: string = 'weekly_summary'): Promise<GeneratedReportResult> {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.warn('[AI Report Generator] ANTHROPIC_API_KEY not set - using fallback report');
-      return { report: this.generateFallbackReport(data), wasFallback: true };
-    }
-
-    const systemPrompt = this.buildSystemPrompt(reportType);
-    const userPrompt = this.buildUserPrompt(data, reportType);
-
-    try {
-      console.log('[AI Report Generator] Generating report with Claude API...');
-
-      const response = await anthropic.messages.create(
-        {
-          model: 'claude-sonnet-5',
-          max_tokens: 4000,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: userPrompt,
-            },
-          ],
-        },
-        { timeout: 60000 }
-      );
-
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response type');
+    const result = await runModel(
+      'report',
+      'ai_reports',
+      {
+        system: this.buildSystemPrompt(reportType),
+        messages: [{ role: 'user', content: this.buildUserPrompt(data, reportType) }],
+        jsonSchema: REPORT_OUTPUT_SCHEMA,
+      },
+      (outcome): Interpretation<GeneratedReport> => {
+        if (outcome.kind === 'tool') return { ok: false, reason: 'unexpected_tool' };
+        const parsed = parseGeneratedReport(outcome.text);
+        return parsed ? { ok: true, value: parsed } : { ok: false, reason: 'malformed_output' };
       }
+    );
 
-      // Extract JSON from response
-      let jsonText = content.text.trim();
-      if (jsonText.startsWith('```json')) {
-        jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-      } else if (jsonText.startsWith('```')) {
-        jsonText = jsonText.replace(/```\n?/g, '');
-      }
-
-      const report: GeneratedReport = JSON.parse(jsonText);
-
-      console.log('[AI Report Generator] Report generated successfully');
-      return { report: this.stripUngroundedSavings(report, data), wasFallback: false };
-    } catch (error: any) {
-      console.error('[AI Report Generator] Error:', error.message);
-      console.log('[AI Report Generator] Falling back to basic report');
-      return { report: this.generateFallbackReport(data), wasFallback: true };
+    if (result.ok) {
+      return { report: this.stripUngroundedSavings(result.value, data), wasFallback: false, fallbackReason: null };
     }
+    return { report: this.generateFallbackReport(data), wasFallback: true, fallbackReason: result.reason };
   }
 
   /** The model-facing request: every section as toModelEvidence() JSON, plus the claim rules. */
@@ -590,7 +680,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     }
 
     if (s.alerts) {
-      highlights.push('Alert counts are not available: DevControl does not yet associate alerts with an organization.');
+      highlights.push('Alert counts are not included in this report yet. See Operational Health for your active CloudWatch alarms.');
     }
 
     report.summary = highlights.slice(0, 3).join(' ');
@@ -608,8 +698,10 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     dateRange: { from: string; to: string },
     reportType: string = 'weekly',
     scheduledReportId?: string,
-    wasFallback: boolean = false
+    wasFallback: boolean = false,
+    fallbackReason: FallbackReason | null = null
   ): Promise<string> {
+    const meta: GeneratedReportMeta = { wasFallback, fallbackReason: wasFallback ? fallbackReason : null };
     try {
       const result = await this.pool.query(
         `INSERT INTO generated_reports
@@ -622,7 +714,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
           reportType,
           dateRange.from,
           dateRange.to,
-          JSON.stringify(report),
+          JSON.stringify({ ...report, meta }),
           wasFallback,
         ]
       );
@@ -747,7 +839,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     }
 
     if (needsAlerts) {
-      sections.alerts = notSupported({ source: 'DevControl alert history' }, ALERTS_NOT_SUPPORTED_REASON);
+      sections.alerts = notSupported({ source: 'DevControl alerts' }, ALERTS_NOT_SUPPORTED_REASON);
     }
 
     await Promise.all(tasks);

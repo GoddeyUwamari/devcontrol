@@ -31,10 +31,8 @@ import {
 } from '../../repositories/weekly-summary.repository';
 import { buildRecommendationPrompt, checkRecommendationText, composeWeeklySummary } from '../weekly-summary-content';
 import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../../jobs/weekly-ai-summary.job';
-import { AIInsightsService } from '../ai-insights.service';
+import { setModelClientForTests } from '../ai/model-client';
 
-// AIInsightsService starts a cache-cleanup setInterval in its constructor; not under test here.
-jest.spyOn(AIInsightsService.prototype as any, 'startCacheCleanup').mockImplementation(() => {});
 
 const fetchCostTrend = awsCostService.fetchCostTrend as jest.Mock;
 const NOW = new Date('2026-09-28T09:00:00.000Z');
@@ -338,10 +336,12 @@ describe('Weekly Summary email wording', () => {
 describe('Weekly Summary model-written recommendation (disabled, PR #136 review B1)', () => {
   it('B1: generateAIRecommendation returns null and makes no model call, even with open recommendations and findings', async () => {
     const e = await evidence(); // 3 open recommendations, 7 active findings: the old code would have called the model
-    const spy = jest.spyOn(AIInsightsService.prototype, 'generateDashboardSummary');
+    // Every model call goes through the shared model client; a stub that records calls proves none is made.
+    const spy = jest.fn();
+    setModelClientForTests({ messages: { create: spy, stream: spy } } as never);
     expect(await job.generateAIRecommendation(e, composeWeeklySummary(e))).toBeNull();
     expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
+    setModelClientForTests(undefined);
   });
 
   it('B1: with no recommendation, no AI section or AI claim renders in HTML or plain text; the deterministic savings line still does', async () => {

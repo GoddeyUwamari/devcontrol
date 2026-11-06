@@ -10,6 +10,7 @@
  * (the client is stubbed; no real call is made) -- and the non-LLM fallback
  * text shown to users directly.
  */
+import { setModelClientForTests } from '../ai/model-client';
 import { Pool } from 'pg';
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection } from '../ai-chat.service';
 import { AIChatContextRepository } from '../../repositories/ai-chat-context.repository';
@@ -83,7 +84,7 @@ function everyStateContext(): ChatContext {
       rds: { count: 2, estimatedMonthlyCost: 0, estimatedForCount: 2 },
       lambda: { count: 3, invocations: 150, invocationsKnownForCount: 2 },
     }, { asOf: '2026-09-25T06:00:03.693Z', scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only' }),
-    alerts: noData('not_supported', { source: 'DevControl alert history', reason: "Organization-scoped alert data is not connected to the assistant: DevControl's alert sync does not yet associate alerts with an organization, so this account's alert counts cannot be determined." }),
+    alerts: noData('not_supported', { source: 'DevControl alerts', reason: "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page." }),
     anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
     dora: section('available', { deploymentFrequency: '115 deployments in 30 days', leadTime: '6.2 hours (Average time between consecutive deployments)', mttr: '71.35 minutes (1 incidents recovered)' }, {
       source: 'DevControl deployment records', asOf: '2026-09-25T15:21:05.794Z',
@@ -116,9 +117,18 @@ function estimatedCostContext(): ChatContext {
 /** The exact system prompt and first user message chat() sends to the model. */
 async function finalModelInput(context: ChatContext, question = 'What is my AWS spend this month?'): Promise<string> {
   const service = new AIChatService({} as Pool);
-  const stream = jest.fn().mockResolvedValue((async function* () { /* no chunks */ })());
-  (service as any).anthropic = { messages: { stream } };
-  for await (const _chunk of service.chat([{ role: 'user', content: question }], context)) { /* drain */ }
+  // Model calls go through the shared client (services/ai/model-client.ts): a stub stream with no chunks.
+  const stream = jest.fn().mockReturnValue({
+    async *[Symbol.asyncIterator]() { /* no chunks */ },
+    finalMessage: async () => ({ content: [], stop_reason: 'end_turn' }),
+    abort: () => undefined,
+  });
+  setModelClientForTests({ messages: { stream, create: jest.fn() } } as never);
+  try {
+    for await (const _chunk of service.chat([{ role: 'user', content: question }], context)) { /* drain */ }
+  } finally {
+    setModelClientForTests(undefined);
+  }
 
   expect(stream).toHaveBeenCalledTimes(1);
   const params = stream.mock.calls[0][0];

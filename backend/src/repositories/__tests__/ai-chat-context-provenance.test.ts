@@ -340,8 +340,9 @@ describe('Alerts section', () => {
 
     const context = await contextFor(orgId);
 
-    expect(context.alerts).toMatchObject({ state: 'not_supported', data: null, source: 'DevControl alert history' });
-    expect(context.alerts.reason).toMatch(/does not yet associate alerts with an organization/);
+    expect(context.alerts).toMatchObject({ state: 'not_supported', data: null, source: 'DevControl alerts' });
+    expect(context.alerts.reason).toBe('Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.');
+    expect(context.alerts.reason).not.toMatch(/Prometheus|not associated with an organization/);
     const formatted = format(context);
     expect(formatted).not.toMatch(/active alerts: 0|Total active alerts|No recent incidents/i);
   });
@@ -491,7 +492,7 @@ describe('Inventory freshness: completed vs incomplete vs unknown discovery', ()
     expect(context.resources.data!.ec2.count).toBe(1);
 
     const formatted = format(context);
-    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts & incidents'));
+    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts:'));
     expect(inventory).toMatch(/- Status: Partial/);
     expect(inventory).toMatch(/- Limitation: Latest discovery run is incomplete; inventory data may be stale or incomplete\./);
     expect(inventory).toMatch(/- EC2: 1 instances/);

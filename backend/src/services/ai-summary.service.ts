@@ -63,8 +63,8 @@ const PROMPT_VERSION = 'dashboard-summary-v3';
  */
 export const SECURITY_EVALUATION_MAX_AGE_SECONDS = 2 * 6 * 60 * 60 + MAX_LEASE_AGE_SECONDS;
 
-/** Shown instead of any model-written status while DevControl evaluates no outage/anomaly source. */
-export const SYSTEM_STATUS_UNAVAILABLE = 'Outage status unavailable: DevControl does not currently evaluate outages or incidents.';
+/** Shown instead of any model-written status while this summary reads no alarm or outage source. */
+export const SYSTEM_STATUS_UNAVAILABLE = 'Outage status unavailable: this summary does not yet include CloudWatch alarms. See Operational Health for active alarms.';
 
 /**
  * identified         = topRisk states a finding present in the evidence
@@ -121,7 +121,7 @@ function missing(section: ContextSection<unknown>): string {
 }
 
 export class AISummaryService {
-  private aiInsightsService = new AIInsightsService(pool);
+  private aiInsightsService = new AIInsightsService();
   private riskTrackingService = new RiskTrackingService(pool);
   private accountFindingsRepository = new AccountSecurityFindingsRepository();
   private costRecommendationsRepository = new CostRecommendationsRepository();
@@ -244,7 +244,7 @@ export class AISummaryService {
 
     const monitoring = notSupported<never>(
       { source: 'DevControl outage and anomaly detection' },
-      'DevControl does not currently evaluate outages, incidents, or anomalies'
+      'CloudWatch alarms are not yet included in this summary (they are shown on the Operational Health page), and DevControl does not detect outages, incidents, or anomalies'
     );
 
     return { systemScore, securityPosture, accountFindings, securityEvaluation, recommendations, spend, monthOverMonth, monitoring };

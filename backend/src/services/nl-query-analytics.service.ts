@@ -51,7 +51,9 @@ export class NLQueryAnalyticsService {
         ]
       );
 
-      console.log(`[NL Analytics] Logged query: "${data.query}" -> ${data.target} (${data.responseTime}ms)`);
+      // Neither the question nor model text is logged (AI truth PR 1): only a known target name.
+      const target = typeof data.target === 'string' && /^[a-z_]{1,32}$/.test(data.target) ? data.target : 'other';
+      console.log(`[NL Analytics] Logged a query -> ${target} (${data.responseTime}ms)`);
     } catch (error: any) {
       // Don't fail the request if analytics logging fails
       console.error('[NL Analytics] Failed to log query:', error.message);

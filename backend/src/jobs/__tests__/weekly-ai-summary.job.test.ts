@@ -5,7 +5,7 @@
  */
 import { Pool } from 'pg';
 import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../weekly-ai-summary.job';
-import { AIInsightsService } from '../../services/ai-insights.service';
+import { setModelClientForTests } from '../../services/ai/model-client';
 import { verifyUnsubscribeToken } from '../../services/unsubscribe-token';
 import { FAKE_RESEND_KEY, guardFetch, startFakeResendApi } from '../../__tests__/helpers/fake-resend-api';
 
@@ -110,7 +110,9 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
   it('P/16/B1: an eligible org is sent only to its own recipient, with no model call, no AI section, and a subject with no AI claim', async () => {
     const { job, send, repository } = setup(org => ({ userId: userOf(org), email: `owner@${org}.test`, fullName: 'Pat Owner' }));
     const gather = stubEvidence(repository);
-    const modelCall = jest.spyOn(AIInsightsService.prototype, 'generateDashboardSummary');
+    // Every model call goes through the shared model client; a stub that records calls proves none is made.
+    const modelCall = jest.fn();
+    setModelClientForTests({ messages: { create: modelCall, stream: modelCall } } as never);
 
     const result = await job.triggerManual(ORG_B);
 
@@ -140,7 +142,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       expect(body).not.toMatch(/AI recommendation|AI-Powered/i);
       expect(body).toContain('Estimated savings opportunity: $845/month');
     }
-    modelCall.mockRestore();
+    setModelClientForTests(undefined);
   });
 
   it('H1: a Resend { error } result is a failed send -- counted as an error, never as sent, with a sanitized log', async () => {

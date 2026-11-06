@@ -99,7 +99,7 @@ const DEPLOYMENT_PERIOD_NOT_SUPPORTED = 'Ask AI can filter deployments to the la
 
 const TARGET_NOT_SUPPORTED: Record<string, string> = {
   alerts:
-    "Ask AI can't answer alert questions: DevControl's alert sync does not yet associate alerts with an organization, so this organization's alerts cannot be determined.",
+    "Ask AI can't answer alert questions yet. See Operational Health for your active CloudWatch alarms.",
   teams: "Ask AI can't list teams. Open the Teams page to see them.",
 };
 

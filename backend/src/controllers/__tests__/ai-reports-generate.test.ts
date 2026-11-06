@@ -33,6 +33,7 @@ describe('POST /api/ai-reports/generate', () => {
     jest.spyOn(AIReportGeneratorService.prototype, 'generateWeeklyReport').mockResolvedValue({
       report: { summary: 's', keyHighlights: [], topRecommendations: [], executiveSummary: 'e' },
       wasFallback: true,
+      fallbackReason: 'truncated',
     });
     const save = jest.spyOn(AIReportGeneratorService.prototype, 'saveGeneratedReport').mockResolvedValue('report-id');
     const res = mockRes();
@@ -43,7 +44,7 @@ describe('POST /api/ai-reports/generate', () => {
     );
 
     expect(fetchReportData).toHaveBeenCalledWith(ORG, expect.any(Object), 'weekly_summary');
-    expect(save).toHaveBeenCalledWith(ORG, expect.any(Object), data.dateRange, 'weekly_summary', undefined, true);
+    expect(save).toHaveBeenCalledWith(ORG, expect.any(Object), data.dateRange, 'weekly_summary', undefined, true, 'truncated');
     expect(JSON.stringify(res.json.mock.calls)).not.toContain(OTHER_ORG);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, data: expect.objectContaining({ wasFallback: true }) }));
   });

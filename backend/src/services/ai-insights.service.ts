@@ -1,100 +1,18 @@
 /**
  * AI Insights Service
- * Analyzes cost changes using Claude AI and provides actionable insights
- * Includes 1-hour, organization-scoped caching to minimize API costs
+ *
+ * Turns the Dashboard summary's fact-only prompt (built by ai-summary.service.ts)
+ * into the summary's 4 fields through one tool call.
+ *
+ * The other model paths this service used to hold -- cost-change analysis
+ * (POST /api/ai-insights/analyze-cost, which fed client-supplied numbers to
+ * the model), its cache endpoints, the plain-text dashboard summary and the
+ * weekly-summary text -- had no caller in the product and were retired in AI
+ * truth PR 1 (founder decision A-D8).
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { createHash } from 'crypto';
-import { Pool } from 'pg';
-import { requireOrganizationId } from './ai-context-contract';
-
-export interface CostData {
-  previousCost: number;
-  currentCost: number;
-  percentageIncrease: number;
-  newResources?: Array<{
-    id: string;
-    type: string;
-    name: string;
-    cost: number;
-    region: string;
-  }>;
-  topSpenders?: Array<{
-    service: string;
-    cost: number;
-    change: number;
-  }>;
-  timeRange: string;
-}
-
-export interface AIInsightResponse {
-  rootCause: string;
-  recommendation: string;
-  estimatedSavings: number | null;
-  confidence: 'high' | 'medium' | 'low';
-  rawResponse: string;
-  cached?: boolean;
-  cacheAge?: number; // in seconds
-}
-
-type CostAnalysisType = 'increase' | 'decrease' | 'trend';
-
-interface CacheEntry {
-  data: AIInsightResponse;
-  timestamp: number;
-  cacheKey: string;
-  // Owning tenant. Stored alongside the key (which also digests it) so
-  // per-org stats/clear filter on an exact field, never on key parsing.
-  organizationId: string;
-}
-
-// Weekly Summary Types
-export interface WeeklySummaryData {
-  costs: {
-    previous: number;
-    current: number;
-    changePercent: number;
-    topChanges?: Array<{
-      service: string;
-      change: number;
-    }>;
-  };
-  alerts: {
-    total: number;
-    critical: number;
-    topAlert?: {
-      title: string;
-      severity: string;
-    };
-  };
-  dora: {
-    deploymentFrequency: string;
-    leadTime: string;
-    mttr: string;
-    changeFailureRate: number;
-    // Industry-standard DORA benchmark tier per metric, when there's enough
-    // data to grade one — see WeeklySummaryRepository.getWeeklyDORAMetrics.
-    // Optional so any other/older caller constructing this shape without it
-    // still type-checks.
-    benchmarks?: {
-      deploymentFrequency: { level: string; isCustom: boolean } | null;
-      leadTime: { level: string; isCustom: boolean } | null;
-      changeFailureRate: { level: string; isCustom: boolean } | null;
-      mttr: { level: string; isCustom: boolean } | null;
-    };
-  };
-}
-
-export interface WeeklySummary {
-  costs: WeeklySummaryData['costs'] & { summary: string };
-  alerts: WeeklySummaryData['alerts'] & { summary: string };
-  dora: WeeklySummaryData['dora'] & { summary: string };
-  recommendation: {
-    text: string;
-    estimatedSavings: number | null;
-  };
-}
+import { getModelClient, runModel, type Interpretation } from './ai/model-client';
 
 // Structured Dashboard Summary Types
 export interface StructuredDashboardSummary {
@@ -104,717 +22,91 @@ export interface StructuredDashboardSummary {
   systemStatus: string | null;
 }
 
+export const DASHBOARD_SUMMARY_TOOL_NAME = 'render_dashboard_summary';
+
+const NULLABLE_STRING = (description: string) => ({ anyOf: [{ type: 'string' }, { type: 'null' }], description });
+
+/** Strict tool: every object closes with additionalProperties false; nullable fields use anyOf. */
+export const DASHBOARD_SUMMARY_TOOL: Anthropic.Tool = {
+  name: DASHBOARD_SUMMARY_TOOL_NAME,
+  description: 'Render the dashboard summary as 4 distinct fields for a scannable executive view.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      overallHealth: {
+        type: 'object',
+        additionalProperties: false,
+        description: 'Composite health assessment.',
+        properties: {
+          score: {
+            anyOf: [{ type: 'number' }, { type: 'null' }],
+            description: 'Composite System Intelligence score out of 100, exactly as given in the facts, or null if not available.',
+          },
+          context: NULLABLE_STRING('One brief clause of context for the score (e.g. what is driving it), or null if not available.'),
+        },
+        required: ['score', 'context'],
+      },
+      topRisk: NULLABLE_STRING('The single most urgent finding, one short sentence, or null if there is none.'),
+      cloudSpend: NULLABLE_STRING('Current spend, trend, and optimization potential in one short sentence, or null if no spend data is available.'),
+      systemStatus: NULLABLE_STRING('Outage/incident state in one short clause, or null if not available.'),
+    },
+    required: ['overallHealth', 'topRisk', 'cloudSpend', 'systemStatus'],
+  },
+};
+
+/** Tool choice is 'auto' (forced tool choice is not used), so the prompt asks for the call. */
+const TOOL_INSTRUCTION = `\n\nRespond only by calling the ${DASHBOARD_SUMMARY_TOOL_NAME} tool once.`;
+
+function nullableString(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value === 'string') return value.trim().length > 0 ? value : null;
+  return undefined; // wrong type
+}
+
+/** The tool input as summary fields, or null when any field has the wrong type. */
+export function parseDashboardSummaryInput(input: unknown): StructuredDashboardSummary | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const i = input as Record<string, unknown>;
+  const health = i.overallHealth;
+  if (!health || typeof health !== 'object' || Array.isArray(health)) return null;
+  const h = health as Record<string, unknown>;
+  const score = h.score === null ? null : typeof h.score === 'number' && Number.isFinite(h.score) ? h.score : undefined;
+  const context = nullableString(h.context);
+  const topRisk = nullableString(i.topRisk);
+  const cloudSpend = nullableString(i.cloudSpend);
+  const systemStatus = nullableString(i.systemStatus);
+  if (score === undefined || context === undefined || topRisk === undefined || cloudSpend === undefined || systemStatus === undefined) return null;
+  return { overallHealth: { score, context }, topRisk, cloudSpend, systemStatus };
+}
+
 export class AIInsightsService {
-  private anthropic: Anthropic | null = null;
-  private pool: Pool;
-  private cache: Map<string, CacheEntry> = new Map();
-  private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
-  private readonly CACHE_CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 minutes
-
-  constructor(pool: Pool) {
-    this.pool = pool;
-
-    // Only initialize Anthropic if API key is available
-    if (process.env.ANTHROPIC_API_KEY) {
-      this.anthropic = new Anthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
-      });
-      console.log('[AI Insights] Service initialized with Anthropic API');
-    } else {
-      console.warn('[AI Insights] ANTHROPIC_API_KEY not found - AI insights will use fallback responses');
-    }
-
-    // Set up cache cleanup
-    this.startCacheCleanup();
-  }
-
   /**
-   * Analyze cost increase and provide AI-powered insights
-   */
-  async analyzeCostIncrease(organizationId: string, data: CostData): Promise<AIInsightResponse> {
-    const cacheKey = this.generateCacheKey(organizationId, 'increase', data);
-
-    // Check cache first
-    const cached = this.getFromCache(organizationId, cacheKey);
-    if (cached) {
-      console.log(`[AI Insights] Cache hit for cost increase (age: ${cached.cacheAge}s)`);
-      return cached.data;
-    }
-
-    // If no API key available, return fallback
-    if (!this.anthropic) {
-      console.log('[AI Insights] No API key - returning fallback response');
-      return this.getFallbackResponse('increase', data);
-    }
-
-    try {
-      const prompt = this.buildCostAnalysisPrompt(data);
-
-      console.log('[AI Insights] Analyzing cost increase with Claude...');
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      });
-
-      const response = this.extractTextContent(message.content);
-      const result = this.parseAIResponse(response);
-
-      // Cache the result
-      this.setCache(organizationId, cacheKey, result);
-      console.log('[AI Insights] Cost increase analysis complete - cached for 1 hour');
-
-      return result;
-
-    } catch (error: any) {
-      console.error('[AI Insights] API Error:', error.message);
-      // Return intelligent fallback based on data
-      return this.getFallbackResponse('increase', data);
-    }
-  }
-
-  /**
-   * Analyze cost decrease
-   */
-  async analyzeCostDecrease(organizationId: string, data: CostData): Promise<AIInsightResponse> {
-    const cacheKey = this.generateCacheKey(organizationId, 'decrease', data);
-
-    const cached = this.getFromCache(organizationId, cacheKey);
-    if (cached) {
-      console.log(`[AI Insights] Cache hit for cost decrease (age: ${cached.cacheAge}s)`);
-      return cached.data;
-    }
-
-    if (!this.anthropic) {
-      return this.getFallbackResponse('decrease', data);
-    }
-
-    try {
-      const prompt = `Analyze this AWS cost DECREASE:
-
-Previous cost: $${data.previousCost.toFixed(2)}
-Current cost: $${data.currentCost.toFixed(2)}
-Decrease: ${Math.abs(data.percentageIncrease).toFixed(1)}%
-Time range: ${data.timeRange}
-
-${data.newResources && data.newResources.length > 0 ? `
-Removed or scaled-down resources:
-${data.newResources.map(r => `- ${r.type} ${r.name}: -$${r.cost.toFixed(2)} (${r.region})`).join('\n')}
-` : ''}
-
-${data.topSpenders && data.topSpenders.length > 0 ? `
-Services with cost reductions:
-${data.topSpenders.map(s => `- ${s.service}: $${s.cost.toFixed(2)} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}% change)`).join('\n')}
-` : ''}
-
-Provide a concise analysis in this format:
-
-ROOT CAUSE: [One clear sentence explaining the main reason for the decrease]
-
-RECOMMENDATION: [One actionable suggestion to maintain or further reduce costs]
-
-ESTIMATED_SAVINGS: [Number only, or 0 if not applicable]
-
-Be specific, technical, and actionable. Focus on AWS-specific optimizations.`;
-
-      console.log('[AI Insights] Analyzing cost decrease with Claude...');
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      });
-
-      const response = this.extractTextContent(message.content);
-      const result = this.parseAIResponse(response);
-
-      this.setCache(organizationId, cacheKey, result);
-      console.log('[AI Insights] Cost decrease analysis complete - cached for 1 hour');
-
-      return result;
-
-    } catch (error: any) {
-      console.error('[AI Insights] API Error:', error.message);
-      return this.getFallbackResponse('decrease', data);
-    }
-  }
-
-  /**
-   * General cost analysis (when no significant change)
-   */
-  async analyzeCostTrend(organizationId: string, data: CostData): Promise<AIInsightResponse> {
-    const cacheKey = this.generateCacheKey(organizationId, 'trend', data);
-
-    const cached = this.getFromCache(organizationId, cacheKey);
-    if (cached) {
-      console.log(`[AI Insights] Cache hit for cost trend (age: ${cached.cacheAge}s)`);
-      return cached.data;
-    }
-
-    if (!this.anthropic) {
-      return this.getFallbackResponse('trend', data);
-    }
-
-    try {
-      const prompt = `Analyze this AWS cost trend:
-
-Current cost: $${data.currentCost.toFixed(2)}
-Previous period: $${data.previousCost.toFixed(2)}
-Change: ${data.percentageIncrease >= 0 ? '+' : ''}${data.percentageIncrease.toFixed(1)}%
-Time range: ${data.timeRange}
-
-${data.topSpenders && data.topSpenders.length > 0 ? `
-Top spending services:
-${data.topSpenders.map(s => `- ${s.service}: $${s.cost.toFixed(2)} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}% change)`).join('\n')}
-` : ''}
-
-Provide optimization recommendations in this format:
-
-ROOT CAUSE: [One sentence describing the current cost pattern]
-
-RECOMMENDATION: [One specific, actionable optimization suggestion]
-
-ESTIMATED_SAVINGS: [Number only, or 0 if not applicable]
-
-Focus on AWS cost optimization opportunities.`;
-
-      console.log('[AI Insights] Analyzing cost trend with Claude...');
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      });
-
-      const response = this.extractTextContent(message.content);
-      const result = this.parseAIResponse(response);
-
-      this.setCache(organizationId, cacheKey, result);
-      console.log('[AI Insights] Cost trend analysis complete - cached for 1 hour');
-
-      return result;
-
-    } catch (error: any) {
-      console.error('[AI Insights] API Error:', error.message);
-      return this.getFallbackResponse('trend', data);
-    }
-  }
-
-  /**
-   * Generate a short natural-language dashboard summary from a pre-built, fact-only
-   * prompt (see ai-summary.service.ts for fact-gathering and caching). Unlike the
-   * cost-analysis methods above, this never returns canned fallback text — the caller
-   * must be able to tell "no API key" / "API error" apart from "here is a real
-   * summary" so it can omit the card entirely rather than show a plausible-looking
-   * placeholder that isn't actually grounded in the org's real data.
-   */
-  async generateDashboardSummary(prompt: string): Promise<string | null> {
-    if (!this.anthropic) {
-      console.log('[AI Insights] No API key - skipping dashboard summary');
-      return null;
-    }
-
-    try {
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 300,
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      const response = this.extractTextContent(message.content).trim();
-      return response.length > 0 ? response : null;
-    } catch (error: any) {
-      console.error('[AI Insights] Dashboard summary API error:', error.message);
-      return null;
-    }
-  }
-
-  /**
-   * Same fact-only-prompt contract as generateDashboardSummary above, but returns
-   * the summary as 4 distinct fields (overallHealth, topRisk, cloudSpend, systemStatus)
-   * instead of free-text prose, via a forced tool call — Claude's structured-output
-   * mechanism — so the dashboard can render a scannable bulleted layout without
-   * having to parse a sentence back into categories client-side.
+   * The summary as 4 distinct fields (overallHealth, topRisk, cloudSpend,
+   * systemStatus) from one strict tool call, so the dashboard can render a
+   * scannable layout. Returns null -- never canned text -- when there is no
+   * API key, the call fails, or the answer is not one valid tool call, so the
+   * caller shows only its deterministic fields.
    */
   async generateStructuredDashboardSummary(prompt: string): Promise<StructuredDashboardSummary | null> {
-    if (!this.anthropic) {
+    if (!getModelClient()) {
       console.log('[AI Insights] No API key - skipping dashboard summary');
       return null;
     }
 
-    const tool: Anthropic.Tool = {
-      name: 'render_dashboard_summary',
-      description: 'Render the dashboard summary as 4 distinct fields for a scannable executive view.',
-      input_schema: {
-        type: 'object',
-        properties: {
-          overallHealth: {
-            type: 'object',
-            description: 'Composite health assessment.',
-            properties: {
-              score: {
-                type: ['number', 'null'],
-                description: 'Composite System Intelligence score out of 100, exactly as given in the facts, or null if not available.',
-              },
-              context: {
-                type: ['string', 'null'],
-                description: 'One brief clause of context for the score (e.g. what is driving it), or null if not available.',
-              },
-            },
-            required: ['score', 'context'],
-          },
-          topRisk: {
-            type: ['string', 'null'],
-            description: 'The single most urgent finding, one short sentence, or null if there is none.',
-          },
-          cloudSpend: {
-            type: ['string', 'null'],
-            description: 'Current spend, trend, and optimization potential in one short sentence, or null if no spend data is available.',
-          },
-          systemStatus: {
-            type: ['string', 'null'],
-            description: 'Outage/incident state in one short clause, or null if not available.',
-          },
-        },
-        required: ['overallHealth', 'topRisk', 'cloudSpend', 'systemStatus'],
-      },
-    };
-
-    try {
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 400,
-        tools: [tool],
-        tool_choice: { type: 'tool', name: tool.name },
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      const toolUse = message.content.find(
-        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
-      );
-      if (!toolUse) return null;
-
-      const input = toolUse.input as Partial<StructuredDashboardSummary>;
-      return {
-        overallHealth: {
-          score: input.overallHealth?.score ?? null,
-          context: input.overallHealth?.context || null,
-        },
-        topRisk: input.topRisk || null,
-        cloudSpend: input.cloudSpend || null,
-        systemStatus: input.systemStatus || null,
-      };
-    } catch (error: any) {
-      console.error('[AI Insights] Structured dashboard summary API error:', error.message);
-      return null;
-    }
-  }
-
-  /**
-   * Build detailed prompt for cost analysis
-   */
-  private buildCostAnalysisPrompt(data: CostData): string {
-    return `Analyze this AWS cost increase:
-
-Previous cost: $${data.previousCost.toFixed(2)}
-Current cost: $${data.currentCost.toFixed(2)}
-Increase: ${data.percentageIncrease.toFixed(1)}%
-Time range: ${data.timeRange}
-
-${data.newResources && data.newResources.length > 0 ? `
-New or changed resources:
-${data.newResources.map(r => `- ${r.type} ${r.name}: $${r.cost.toFixed(2)}/mo (${r.region})`).join('\n')}
-` : ''}
-
-${data.topSpenders && data.topSpenders.length > 0 ? `
-Top spending services:
-${data.topSpenders.map(s => `- ${s.service}: $${s.cost.toFixed(2)} (${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}% change)`).join('\n')}
-` : ''}
-
-Provide a concise, actionable analysis in this exact format:
-
-ROOT CAUSE: [One clear sentence explaining the primary driver of cost increase]
-
-RECOMMENDATION: [One specific, actionable recommendation to optimize costs]
-
-ESTIMATED_SAVINGS: [Number only representing monthly savings in USD, or 0 if not applicable]
-
-Be specific, technical, and focus on AWS-specific optimizations. Keep each section to one sentence.`;
-  }
-
-  /**
-   * Extract text content from Claude response
-   */
-  private extractTextContent(content: any[]): string {
-    const textBlock = content.find((block: any) => block.type === 'text');
-    return textBlock ? textBlock.text : '';
-  }
-
-  /**
-   * Render a DORA benchmark tier as short, explicitly-sourced text, e.g.
-   * " (industry benchmark: Elite)" or " (org benchmark: High)". Returns ''
-   * when there's no benchmark to show — callers must not fall back to
-   * inventing a qualitative word themselves in that case.
-   */
-  private benchmarkLabel(b?: { level: string; isCustom: boolean } | null): string {
-    if (!b) return '';
-    const level = b.level.charAt(0).toUpperCase() + b.level.slice(1);
-    return ` (${b.isCustom ? 'org' : 'industry'} benchmark: ${level})`;
-  }
-
-  /**
-   * Parse AI response into structured format
-   */
-  private parseAIResponse(response: string): AIInsightResponse {
-    const lines = response.split('\n').filter(line => line.trim());
-
-    let rootCause = '';
-    let recommendation = '';
-    let estimatedSavings: number | null = null;
-
-    for (const line of lines) {
-      if (line.includes('ROOT CAUSE:')) {
-        rootCause = line.replace('ROOT CAUSE:', '').trim();
-      } else if (line.includes('RECOMMENDATION:')) {
-        recommendation = line.replace('RECOMMENDATION:', '').trim();
-      } else if (line.includes('ESTIMATED_SAVINGS:')) {
-        const savingsStr = line.replace('ESTIMATED_SAVINGS:', '').trim();
-        const match = savingsStr.match(/\d+/);
-        estimatedSavings = match ? parseInt(match[0]) : null;
+    const result = await runModel(
+      'dashboard_summary',
+      'dashboard_summary',
+      { messages: [{ role: 'user', content: `${prompt}${TOOL_INSTRUCTION}` }], tools: [DASHBOARD_SUMMARY_TOOL] },
+      (outcome): Interpretation<StructuredDashboardSummary> => {
+        if (outcome.kind === 'text') return { ok: false, reason: 'no_tool_call' };
+        const call = outcome.calls.find((c) => c.name === DASHBOARD_SUMMARY_TOOL_NAME);
+        if (!call) return { ok: false, reason: 'unexpected_tool' };
+        const fields = parseDashboardSummaryInput(call.input);
+        return fields ? { ok: true, value: fields } : { ok: false, reason: 'malformed_output' };
       }
-    }
-
-    return {
-      rootCause: rootCause || 'Unable to determine root cause from available data.',
-      recommendation: recommendation || 'Continue monitoring costs and review resource utilization.',
-      estimatedSavings,
-      confidence: this.calculateConfidence(rootCause, recommendation),
-      rawResponse: response
-    };
-  }
-
-  /**
-   * Calculate confidence level based on response quality
-   */
-  private calculateConfidence(rootCause: string, recommendation: string): 'high' | 'medium' | 'low' {
-    if (rootCause.length > 50 && recommendation.length > 50) {
-      return 'high';
-    } else if (rootCause.length > 20 && recommendation.length > 20) {
-      return 'medium';
-    }
-    return 'low';
-  }
-
-  /**
-   * Intelligent fallback response based on data patterns
-   */
-  private getFallbackResponse(type: 'increase' | 'decrease' | 'trend', data: CostData): AIInsightResponse {
-    const change = Math.abs(data.percentageIncrease);
-
-    if (type === 'increase') {
-      const topSpender = data.topSpenders?.[0];
-      return {
-        rootCause: topSpender
-          ? `Cost increased by ${change.toFixed(1)}% primarily driven by ${topSpender.service} spending.`
-          : `AWS infrastructure costs increased by ${change.toFixed(1)}% compared to the previous period.`,
-        recommendation: topSpender
-          ? `Review ${topSpender.service} usage patterns and consider implementing Reserved Instances or Savings Plans for predictable workloads.`
-          : 'Review AWS Cost Explorer for detailed breakdown and identify optimization opportunities.',
-        estimatedSavings: topSpender ? Math.round(topSpender.cost * 0.2) : 0,
-        confidence: 'medium',
-        rawResponse: 'AI service unavailable - using intelligent fallback'
-      };
-    }
-
-    if (type === 'decrease') {
-      return {
-        rootCause: `Successfully reduced costs by ${change.toFixed(1)}% through recent optimization efforts.`,
-        recommendation: 'Maintain current optimization practices and continue monitoring for further opportunities.',
-        estimatedSavings: 0,
-        confidence: 'medium',
-        rawResponse: 'AI service unavailable - using intelligent fallback'
-      };
-    }
-
-    // trend
-    const topSpender = data.topSpenders?.[0];
-    return {
-      rootCause: topSpender
-        ? `Current spending is stable with ${topSpender.service} as the primary cost driver.`
-        : 'AWS costs are stable with no significant changes detected.',
-      recommendation: 'Review compute utilization and consider rightsizing opportunities to optimize costs.',
-      estimatedSavings: 0,
-      confidence: 'low',
-      rawResponse: 'AI service unavailable - using intelligent fallback'
-    };
-  }
-
-  /**
-   * Fail closed: every cache operation is tenant-scoped, so a missing
-   * organization id is a caller bug, never a cue to fall back to a shared
-   * or global cache.
-   */
-  private requireOrganizationId(organizationId: string): string {
-    return requireOrganizationId(organizationId, 'AI Insights', 'cache access');
-  }
-
-  /**
-   * Generate an organization-scoped cache key: a digest of the owning org,
-   * the analysis type, and every input value the prompt (and fallback)
-   * actually renders, at the precision it renders them. Two orgs with
-   * identical cost figures must never share an entry.
-   */
-  private generateCacheKey(organizationId: string, type: CostAnalysisType, data: CostData): string {
-    this.requireOrganizationId(organizationId);
-    const input = {
-      previousCost: data.previousCost.toFixed(2),
-      currentCost: data.currentCost.toFixed(2),
-      percentageIncrease: data.percentageIncrease.toFixed(1),
-      timeRange: data.timeRange,
-      newResources: (data.newResources ?? []).map(r => [r.type, r.name, r.cost.toFixed(2), r.region]),
-      topSpenders: (data.topSpenders ?? []).map(s => [s.service, s.cost.toFixed(2), s.change.toFixed(1)]),
-    };
-    const digest = createHash('sha256')
-      .update(JSON.stringify([organizationId, type, input]))
-      .digest('hex');
-    return `${type}:${digest}`;
-  }
-
-  /**
-   * Get item from cache if not expired
-   */
-  private getFromCache(organizationId: string, key: string): { data: AIInsightResponse; cacheAge: number } | null {
-    this.requireOrganizationId(organizationId);
-    const entry = this.cache.get(key);
-    if (!entry || entry.organizationId !== organizationId) return null;
-
-    const age = Date.now() - entry.timestamp;
-    if (age > this.CACHE_TTL) {
-      this.cache.delete(key);
-      return null;
-    }
-
-    return {
-      data: {
-        ...entry.data,
-        cached: true,
-        cacheAge: Math.floor(age / 1000)
-      },
-      cacheAge: Math.floor(age / 1000)
-    };
-  }
-
-  /**
-   * Set item in cache
-   */
-  private setCache(organizationId: string, key: string, data: AIInsightResponse): void {
-    this.requireOrganizationId(organizationId);
-    this.cache.set(key, {
-      data,
-      timestamp: Date.now(),
-      cacheKey: key,
-      organizationId
-    });
-  }
-
-  /**
-   * Start periodic cache cleanup. The timer is unref'd: it runs while the
-   * process is up, but does not by itself keep the process (or a test
-   * worker) alive -- the service is created when its modules are imported.
-   */
-  private startCacheCleanup(): void {
-    setInterval(() => {
-      const now = Date.now();
-      let cleaned = 0;
-
-      const entries = Array.from(this.cache.entries());
-      for (const [key, entry] of entries) {
-        if (now - entry.timestamp > this.CACHE_TTL) {
-          this.cache.delete(key);
-          cleaned++;
-        }
-      }
-
-      if (cleaned > 0) {
-        console.log(`[AI Insights] Cache cleanup: removed ${cleaned} expired entries`);
-      }
-    }, this.CACHE_CLEANUP_INTERVAL).unref();
-  }
-
-  /**
-   * Get cache statistics for one organization's entries only
-   */
-  getCacheStats(organizationId: string): { size: number; keys: string[] } {
-    this.requireOrganizationId(organizationId);
-    const keys = Array.from(this.cache.values())
-      .filter(entry => entry.organizationId === organizationId)
-      .map(entry => entry.cacheKey);
-    return { size: keys.length, keys };
-  }
-
-  /**
-   * Clear one organization's cache entries; other orgs' entries are untouched
-   */
-  clearCache(organizationId: string): number {
-    this.requireOrganizationId(organizationId);
-    let removed = 0;
-    for (const [key, entry] of Array.from(this.cache.entries())) {
-      if (entry.organizationId === organizationId) {
-        this.cache.delete(key);
-        removed++;
-      }
-    }
-    console.log(`[AI Insights] Cache cleared for organization ${organizationId}: ${removed} entries removed`);
-    return removed;
-  }
-
-  /**
-   * Generate weekly summary with AI insights
-   */
-  async generateWeeklySummary(data: WeeklySummaryData): Promise<WeeklySummary> {
-    try {
-      if (!this.anthropic) {
-        console.log('[AI Insights] No API key - returning fallback weekly summary');
-        return this.getFallbackWeeklySummary(data);
-      }
-
-      const prompt = `Generate a concise weekly summary for an engineering team:
-
-COST DATA:
-- Previous week: $${data.costs.previous.toFixed(2)}
-- This week: $${data.costs.current.toFixed(2)}
-- Change: ${data.costs.changePercent > 0 ? '+' : ''}${data.costs.changePercent.toFixed(1)}%
-${data.costs.topChanges ? `
-Top cost changes:
-${data.costs.topChanges.map(c => `- ${c.service}: ${c.change > 0 ? '+' : ''}${c.change}%`).join('\n')}
-` : ''}
-
-ALERTS:
-- Total alerts: ${data.alerts.total}
-- Critical: ${data.alerts.critical}
-${data.alerts.topAlert ? `
-Most significant: ${data.alerts.topAlert.title} (${data.alerts.topAlert.severity})
-` : ''}
-
-DORA METRICS (any "benchmark" label is the industry-standard DORA 2024 tier for that exact measured value — not a DevControl opinion):
-- Deployment frequency: ${data.dora.deploymentFrequency}${this.benchmarkLabel(data.dora.benchmarks?.deploymentFrequency)}
-- Lead time: ${data.dora.leadTime}${this.benchmarkLabel(data.dora.benchmarks?.leadTime)}
-- MTTR: ${data.dora.mttr}${this.benchmarkLabel(data.dora.benchmarks?.mttr)}
-- Change failure rate: ${data.dora.changeFailureRate}%${this.benchmarkLabel(data.dora.benchmarks?.changeFailureRate)}
-
-Provide:
-1. COST_SUMMARY: One sentence explaining cost change
-2. ALERT_SUMMARY: One sentence about most important alert (or "No critical alerts this week" if none)
-3. DORA_SUMMARY: One sentence stating the measured DORA value(s) above worth calling out. Only use a qualitative word like "healthy", "strong", "low", or "elite" if it exactly matches a benchmark label given above for that metric — never invent your own qualitative judgment about a metric with no benchmark label. If a value is "N/A", do not speculate about why; just don't mention it.
-4. RECOMMENDATION: One actionable recommendation with estimated savings if applicable
-
-Keep it concise and actionable. Do not use markdown formatting, asterisks, bullet points, or bold syntax in your response.`;
-
-      console.log('[AI Insights] Generating weekly summary with Claude...');
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      });
-
-      const response = this.extractTextContent(message.content);
-      return this.parseWeeklySummaryResponse(response, data);
-
-    } catch (error: any) {
-      console.error('[AI Insights] Weekly summary error:', error.message);
-      return this.getFallbackWeeklySummary(data);
-    }
-  }
-
-  /**
-   * Parse weekly summary AI response
-   */
-  private parseWeeklySummaryResponse(response: string, data: WeeklySummaryData): WeeklySummary {
-    const lines = response.split('\n').filter(line => line.trim());
-
-    let costSummary = '';
-    let alertSummary = '';
-    let doraSummary = '';
-    let recommendation = '';
-    let estimatedSavings: number | null = null;
-
-    for (const line of lines) {
-      if (line.includes('COST_SUMMARY:')) {
-        costSummary = line.replace('COST_SUMMARY:', '').trim();
-      } else if (line.includes('ALERT_SUMMARY:')) {
-        alertSummary = line.replace('ALERT_SUMMARY:', '').trim();
-      } else if (line.includes('DORA_SUMMARY:')) {
-        doraSummary = line.replace('DORA_SUMMARY:', '').trim();
-      } else if (line.includes('RECOMMENDATION:')) {
-        recommendation = line.replace('RECOMMENDATION:', '').trim();
-        const match = recommendation.match(/\$(\d+)/);
-        estimatedSavings = match ? parseInt(match[1]) : null;
-      }
-    }
-
-    return {
-      costs: {
-        ...data.costs,
-        summary: costSummary || 'Cost data analyzed.'
-      },
-      alerts: {
-        ...data.alerts,
-        summary: alertSummary || 'Alerts monitored.'
-      },
-      dora: {
-        ...data.dora,
-        summary: doraSummary || 'DORA metrics tracked.'
-      },
-      recommendation: {
-        text: recommendation || 'Continue monitoring your infrastructure.',
-        estimatedSavings
-      }
-    };
-  }
-
-  /**
-   * Fallback weekly summary when AI fails
-   */
-  private getFallbackWeeklySummary(data: WeeklySummaryData): WeeklySummary {
-    const costDirection = data.costs.changePercent > 0 ? 'increased' : 'decreased';
-    const costChange = Math.abs(data.costs.changePercent);
-
-    return {
-      costs: {
-        ...data.costs,
-        summary: `Costs ${costDirection} ${costChange.toFixed(1)}% this week ($${data.costs.previous.toFixed(0)} → $${data.costs.current.toFixed(0)}).`
-      },
-      alerts: {
-        ...data.alerts,
-        summary: data.alerts.total > 0
-          ? `${data.alerts.total} alerts this week, ${data.alerts.critical} critical.`
-          : 'No alerts this week.'
-      },
-      dora: {
-        ...data.dora,
-        summary: [
-          `Deployment frequency: ${data.dora.deploymentFrequency}${this.benchmarkLabel(data.dora.benchmarks?.deploymentFrequency)}.`,
-          `Lead time: ${data.dora.leadTime}${this.benchmarkLabel(data.dora.benchmarks?.leadTime)}.`,
-          `Change failure rate: ${data.dora.changeFailureRate}%${this.benchmarkLabel(data.dora.benchmarks?.changeFailureRate)}.`,
-          data.dora.mttr !== 'N/A'
-            ? `MTTR: ${data.dora.mttr}${this.benchmarkLabel(data.dora.benchmarks?.mttr)}.`
-            : null,
-        ].filter(Boolean).join(' ')
-      },
-      recommendation: {
-        text: 'Review your dashboard for detailed insights and optimization opportunities.',
-        estimatedSavings: null
-      }
-    };
+    );
+    return result.ok ? result.value : null;
   }
 }
