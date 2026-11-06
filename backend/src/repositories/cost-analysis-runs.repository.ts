@@ -3,6 +3,15 @@ import { pool } from '../config/database';
 import type { CostAnalysisCheck, DetectorSummary, ReconcileCounts } from '../services/cost-analysis-outcome';
 import { SCAN_KIND_DISCOVERY, SCAN_WAIT_CAP_MS } from '../services/scan-session';
 import { HeldLease, withFencedTransaction } from '../services/scan-lease';
+import { withConnectionFenceOn } from '../services/aws-connection-fence';
+
+/**
+ * What a run row's creation is fenced with (AWS connect PR C): the scan lease of
+ * the worker creating it, or, before any lease is held (Analyze), the identity
+ * of the connection the run belongs to. A worker whose lease is lost, or whose
+ * connection is no longer the organization's active one, creates no row.
+ */
+export type RunCreationFence = { lease: HeldLease } | { connection: string };
 
 export type CostAnalysisRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'interrupted';
 export type CostAnalysisRunSource = 'manual' | 'discovery';
@@ -78,8 +87,9 @@ export class CostAnalysisRunsRepository {
   }
 
   /**
-   * Creates a 'running' row. Callers treat a failure here as non-fatal:
-   * bookkeeping must never block the analysis itself.
+   * Creates a 'running' row, unfenced. For test fixtures only: production code
+   * creates run rows with createFenced() (AWS connect PR C), and a static test
+   * pins that no production file calls this.
    */
   async create(
     organizationId: string,
@@ -97,6 +107,33 @@ export class CostAnalysisRunsRepository {
   }
 
   /** The run now holds the scan lease: from here on recovery can tell whether its worker is gone. */
+  /**
+   * create(), inside ONE transaction that starts with `fence` (the scan lease's
+   * fence, or the connection fence): every production caller uses this, so a
+   * stale worker never creates a run row. create() itself stays for test fixtures
+   * only (a static test pins that no production file calls it).
+   */
+  async createFenced(
+    organizationId: string,
+    options: { source?: CostAnalysisRunSource; discoveryJobId?: string; leaseAcquiredAt?: Date },
+    fence: RunCreationFence
+  ): Promise<CostAnalysisRun> {
+    return this.withOrgClient(organizationId, async (client) => {
+      const insert = async (): Promise<CostAnalysisRun> => {
+        const result = await client.query(
+          `INSERT INTO cost_analysis_runs (organization_id, status, started_at, source, discovery_job_id, lease_acquired_at)
+           VALUES ($1, 'running', NOW(), $2, $3, $4)
+           RETURNING *`,
+          [organizationId, options.source ?? 'manual', options.discoveryJobId ?? null, options.leaseAcquiredAt ?? null]
+        );
+        return result.rows[0];
+      };
+      return 'lease' in fence
+        ? withFencedTransaction(client, fence.lease, insert)
+        : withConnectionFenceOn(client, organizationId, fence.connection, insert);
+    });
+  }
+
   async markLeaseAcquired(id: string, organizationId: string, leaseAcquiredAt: Date): Promise<void> {
     await this.withOrgClient(organizationId, async (client) => {
       await client.query(

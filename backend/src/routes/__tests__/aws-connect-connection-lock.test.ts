@@ -17,13 +17,7 @@ import awsRoutes, { connectTestHooks, resetConnectTestHooks } from '../aws.route
 import { authService } from '../../services/auth.service';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
 import * as accountsRepository from '../../repositories/aws-accounts.repository';
-import {
-  AWS_CONNECTION_LOCK_KEY_SQL,
-  ConnectionChangedError,
-  assertConnectionUnchanged,
-  currentConnectionIdentity,
-  lockConnectionShared,
-} from '../../services/aws-connection-fence';
+import { AWS_CONNECTION_LOCK_KEY_SQL, ConnectionChangedError, assertConnectionUnchanged, currentConnectionIdentity, lockConnectionShared } from '../../services/aws-connection-fence';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import type { RoleCheckPolicy } from '../../services/connect-role-check';
 import type { ProbeClients } from '../../services/connect-permission-check';
@@ -182,14 +176,15 @@ describe('POST /api/aws/accounts takes the connection lock exclusive', () => {
     const orgId = await insertOwner();
     const accountId = uniqueAccountId();
 
-    // A fenced write already in flight: it checked "no connection" and holds the shared lock.
+    // A write already in flight holding the shared connection lock (no connection is
+    // never a pass for a fence since AWS connect PR C, so it takes the lock itself).
     const writer = await pool.connect();
     let pending: Promise<{ status: number; body: any }>;
     const started = Date.now();
     let heldMs: number;
     try {
       await writer.query('BEGIN');
-      await assertConnectionUnchanged(writer, orgId, null);
+      await lockConnectionShared(writer, orgId);
 
       let settled = false;
       pending = connect(roleArnFor(accountId)).then((result) => {

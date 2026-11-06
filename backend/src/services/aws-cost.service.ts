@@ -457,11 +457,25 @@ class AWSCostService {
    * connected account -- there is no other source of credentials.
    */
   async fetchMonthlyCosts(organizationId: string): Promise<MonthlyCost> {
+    return (await this.fetchMonthlyCostsWithConnection(organizationId)).costs
+  }
+
+  /**
+   * fetchMonthlyCosts(), plus the identity of the connection the costs belong to:
+   * the row read first, whose credentials fetched them (or whose cache entry they
+   * came from). A caller that persists them fences its write on this identity.
+   */
+  async fetchMonthlyCostsWithConnection(organizationId: string): Promise<{ costs: MonthlyCost; connection: string }> {
     this.requireOrganizationId(organizationId)
 
     // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
     const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
-    const key = costCacheKey(organizationId, awsConnectionIdentity(account))
+    const connection = awsConnectionIdentity(account)
+    return { costs: await this.monthlyCostsFor(organizationId, account, connection), connection }
+  }
+
+  private async monthlyCostsFor(organizationId: string, account: AwsAccountRow, connection: string): Promise<MonthlyCost> {
+    const key = costCacheKey(organizationId, connection)
 
     const cached = this.monthlyCostCache.get(key)
     if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {

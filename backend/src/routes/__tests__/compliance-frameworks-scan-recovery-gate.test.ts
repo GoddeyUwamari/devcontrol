@@ -8,6 +8,7 @@
 import complianceFrameworksRoutes from '../compliance-frameworks.routes';
 import { SCAN_INTERRUPTED_MESSAGE } from '../../services/custom-compliance.service';
 import { createRoleGateHarness, MEMBER_REFUSAL, RoleGateOrg } from './role-gate-harness';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from '../../services/__tests__/helpers/scan-source';
 
 const harness = createRoleGateHarness('scan-recovery-gate');
 const { pool, sendAs } = harness;
@@ -18,6 +19,8 @@ let orphanId: string;
 
 beforeAll(async () => {
   org = await harness.buildOrg();
+  // A scan needs an AWS connection (AWS connect PR C).
+  await connectPlaceholderAccount(pool, org.orgId);
   const { rows } = await pool.query(
     `INSERT INTO compliance_frameworks (organization_id, name, framework_type) VALUES ($1, 'Recovery gate', 'custom') RETURNING id`,
     [org.orgId]
@@ -45,6 +48,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  await removePlaceholderAccounts(pool, [org.orgId]);
   await harness.close();
 });
 

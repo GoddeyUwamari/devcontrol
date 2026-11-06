@@ -615,6 +615,35 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
+   * The scan's own job row and the lease's link to it (F15, so a manual Sync can
+   * join it), in ONE fenced transaction (AWS connect PR C). The fence
+   * (scan-lease.ts fence()) runs first: a worker whose lease is lost, or whose
+   * connection is no longer the organization's active one, creates no row.
+   * Returns the new job's id.
+   */
+  private async openDiscoveryJob(
+    client: PoolClient,
+    session: LeaseSession,
+    organizationId: string,
+    allowedTypes: ResourceType[],
+    regions: string[]
+  ): Promise<string> {
+    return session.fenced(client, async () => {
+      const jobResult = await client.query(
+        `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, resource_types, regions)
+         VALUES ($1, $2, NOW(), $3, $4)
+         RETURNING id`,
+        // The regions this scan lists resources in: the home region only until
+        // multi-region fan-out (M7). S3 and CloudFront are account-wide listings.
+        [organizationId, 'running' as DiscoveryJobStatus, allowedTypes, regions]
+      );
+      const id: string = jobResult.rows[0].id;
+      if (!(await linkScanLeaseJob(client, session.lease, id))) throw new LeaseLostError('lease_lost', session.lease.key);
+      return id;
+    });
+  }
+
+  /**
    * The same recovery for cost_analysis_runs. Bookkeeping, so it never stops the scan,
    * and needs no fence: it only closes rows whose lease is strictly older than this
    * scan's, which a worker that lost its lease cannot get wrong.
@@ -679,24 +708,11 @@ export class AWSResourceDiscoveryService {
       await this.recoverInterruptedJobs(client, scan, organizationId);
       await this.recoverInterruptedCostRuns(scan, organizationId);
 
-      // Create discovery job with allowed resource types
-      const jobResult = await client.query(
-        `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, resource_types, regions)
-         VALUES ($1, $2, NOW(), $3, $4)
-         RETURNING id`,
-        [
-          organizationId,
-          'running' as DiscoveryJobStatus,
-          allowedTypes,
-          // The regions this scan lists resources in: the home region only until
-          // multi-region fan-out (M7). S3 and CloudFront are account-wide listings.
-          [scanContext.region]
-        ]
-      );
-      jobId = jobResult.rows[0].id;
+      // This scan's job row and the lease's link to it, in one fenced transaction
+      // (AWS connect PR C): a worker whose lease or connection is no longer current
+      // creates no job row at all.
+      jobId = await this.openDiscoveryJob(client, scan, organizationId, allowedTypes, [scanContext.region]);
       console.log(`📋 [Discovery] Created discovery job: ${jobId}`);
-      // F15: the lease names its job, so a manual Sync can join it.
-      if (!(await linkScanLeaseJob(client, scan.lease, jobId))) throw new LeaseLostError('lease_lost', scan.lease.key);
       const connectedClients = scanContext.clientsFor(scanContext.region);
 
       if (!connectedClients.enabled) {
@@ -1335,8 +1351,10 @@ export class AWSResourceDiscoveryService {
       const costRuns = new CostAnalysisRunsRepository();
       let costRunId: string | undefined;
       try {
-        costRunId = (await costRuns.create(organizationId, { source: 'discovery', discoveryJobId: jobId, leaseAcquiredAt: scan.lease.acquiredAt })).id;
+        // Created under the scan lease's fence (AWS connect PR C): a stale worker creates no run row.
+        costRunId = (await costRuns.createFenced(organizationId, { source: 'discovery', discoveryJobId: jobId, leaseAcquiredAt: scan.lease.acquiredAt }, { lease: scan.lease })).id;
       } catch (trackingError: any) {
+        abortIfLeaseLost(trackingError);
         console.error(`[Discovery] Could not create the cost analysis run record (non-fatal):`, trackingError.message);
       }
       try {

@@ -20,6 +20,7 @@
 import { Pool } from 'pg';
 import { CustomComplianceService } from '../custom-compliance.service';
 import { ComplianceFrameworksRepository } from '../../repositories/compliance-frameworks.repository';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from './helpers/scan-source';
 
 function dbConfig() {
   return {
@@ -53,6 +54,8 @@ async function insertOrg(): Promise<string> {
     [`Scan Lifecycle Org ${suffix}`, `scan-lifecycle-org-${suffix}`, `Scan Lifecycle Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan needs an AWS connection (AWS connect PR C): every test organization has one.
+  await connectPlaceholderAccount(pool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -89,6 +92,7 @@ async function insertResource(orgId: string, isEncrypted: boolean): Promise<stri
 
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

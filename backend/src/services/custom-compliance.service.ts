@@ -82,6 +82,9 @@ export const SCAN_CONNECTION_CHANGED_MESSAGE = 'Interrupted: the AWS connection 
 
 const LOCK_NOT_AVAILABLE = '55P03';
 
+/** acquireLockAndCreateScan's answer when the organization has no eligible AWS connection. */
+const NOT_CONNECTED = 'not_connected' as const;
+
 const SET_TENANT_SQL = "SELECT set_config('app.current_organization_id', $1, false)";
 
 /**
@@ -92,6 +95,18 @@ export class ScanInProgressError extends Error {
   constructor() {
     super('A scan is already in progress for this framework.');
     this.name = 'ScanInProgressError';
+  }
+}
+
+/**
+ * Thrown by executeScan() when the organization has no eligible AWS connection:
+ * a scan reads only AWS-derived inventory, so there is nothing to evaluate, and
+ * no scan row is created (AWS connect PR C).
+ */
+export class ScanNotConnectedError extends Error {
+  constructor() {
+    super('No eligible AWS connection: a compliance scan needs a connected AWS account.');
+    this.name = 'ScanNotConnectedError';
   }
 }
 
@@ -117,7 +132,8 @@ class ScanNoLongerActiveError extends Error {
 
 export type ScanStartResult =
   | { status: 'started'; scanId: string }
-  | { status: 'already_in_progress' };
+  | { status: 'already_in_progress' }
+  | { status: 'not_connected' };
 
 /** The Postgres session a scan runs on. pid plus backend_start never names a different session, even after pid reuse. */
 type ScanSession = { pid: number; backendStart: string };
@@ -166,6 +182,7 @@ export class CustomComplianceService {
     console.log(`[CustomCompliance] Starting scan for framework ${frameworkId}`);
 
     const claim = await this.acquireLockAndCreateScan(frameworkId, organizationId, userId, resourceFilters);
+    if (claim === NOT_CONNECTED) throw new ScanNotConnectedError();
     if (!claim) {
       throw new ScanInProgressError();
     }
@@ -191,6 +208,7 @@ export class CustomComplianceService {
     console.log(`[CustomCompliance] Starting scan for framework ${frameworkId}`);
 
     const claim = await this.acquireLockAndCreateScan(frameworkId, organizationId, userId, resourceFilters);
+    if (claim === NOT_CONNECTED) return { status: 'not_connected' };
     if (!claim) {
       return { status: 'already_in_progress' };
     }
@@ -209,6 +227,8 @@ export class CustomComplianceService {
   /**
    * Acquire the framework-scoped session advisory lock and, only if
    * acquired, create the pending scan row -- both on one dedicated client.
+   * An organization with no eligible AWS connection gets NOT_CONNECTED before
+   * the lock is tried: no lock, no row, client released (AWS connect PR C).
    * Every exit path leaves the client in exactly one of two states: released
    * here (lock not acquired, or acquired but createScan failed), or handed
    * back to the caller for immediate, synchronous handoff into
@@ -232,7 +252,7 @@ export class CustomComplianceService {
     organizationId: string,
     userId?: string,
     resourceFilters?: Record<string, any>
-  ): Promise<ScanClaim | null> {
+  ): Promise<ScanClaim | typeof NOT_CONNECTED | null> {
     const client = await this.pool.connect();
     const lockKey = `${organizationId}:${frameworkId}`;
     const onClientError = this.watchScanClient(client, lockKey);
@@ -240,6 +260,16 @@ export class CustomComplianceService {
 
     try {
       await client.query(SET_TENANT_SQL, [organizationId]);
+
+      // No eligible AWS connection: nothing to scan, so no lock and no scan row
+      // (AWS connect PR C). This is the answer the caller gets, not the guarantee:
+      // the scan body's own fence refuses a scan whose connection is gone or never
+      // existed (no connection is never a pass), so a race past this check still
+      // writes no finding.
+      if ((await currentConnectionIdentity(client, organizationId)) === null) {
+        this.releaseScanClient(client, onClientError);
+        return NOT_CONNECTED;
+      }
 
       if (!(await this.tryLock(client, lockKey))) {
         this.releaseScanClient(client, onClientError);
@@ -567,7 +597,8 @@ export class CustomComplianceService {
     try {
       // The connection this scan's findings belong to (AWS connect PR B), read before
       // it starts: the findings and the completion commit only while it is still the
-      // active connection (null: the organization had none, and still has none).
+      // active connection. None (the connection went away after the start check) is
+      // refused by the fence below: no connection is never a pass (AWS connect PR C).
       const connection = await currentConnectionIdentity(client, organizationId);
 
       // Update scan to running (committed on its own, so the run shows as running while it works)

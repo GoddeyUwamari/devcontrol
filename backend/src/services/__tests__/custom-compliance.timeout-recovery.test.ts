@@ -24,6 +24,7 @@ import {
   SCAN_TIMED_OUT_MESSAGE,
 } from '../custom-compliance.service';
 import { ComplianceFrameworksRepository, ComplianceScan } from '../../repositories/compliance-frameworks.repository';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from './helpers/scan-source';
 
 // Must match custom-compliance.service.ts's SCAN_CONCURRENCY_LOCK_SALT (see
 // custom-compliance.concurrency.test.ts for the redeclaration convention).
@@ -58,6 +59,8 @@ async function insertOrg(db: Pool = pool): Promise<string> {
     [`Scan Timeout Org ${suffix}`, `scan-timeout-org-${suffix}`, `Scan Timeout Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan needs an AWS connection (AWS connect PR C): every test organization has one.
+  await connectPlaceholderAccount(pool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -266,6 +269,7 @@ afterEach(() => {
 
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

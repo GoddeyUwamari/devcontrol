@@ -212,4 +212,16 @@ describe('SecurityHubSyncService.sync', () => {
       expect(recordSyncResult).not.toHaveBeenCalled();
     });
   });
+
+  describe('AWS connect PR C: no connection is never a pass', () => {
+    it('an organization with no eligible connection: no AWS call, nothing written, answered notConnected', async () => {
+      connection.current = null;
+      const outcome = await new SecurityHubSyncService().sync('org-1');
+      expect(outcome).toMatchObject({ notConnected: true, syncStatus: 'FAILED', error: 'NOT_CONNECTED', pagesProcessed: 0, findingsCount: 0 });
+      expect(markSyncStarted).not.toHaveBeenCalled();
+      expect(recordSyncResult).not.toHaveBeenCalled();
+      expect(upsertFindings).not.toHaveBeenCalled();
+      expect(AWSClientFactory.createClients).not.toHaveBeenCalled();
+    });
+  });
 });

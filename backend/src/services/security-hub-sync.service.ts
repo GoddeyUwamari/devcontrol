@@ -39,6 +39,11 @@ export interface SecurityHubSyncOutcome {
    * result (the stored state belongs to the current connection).
    */
   connectionChanged?: boolean;
+  /**
+   * True when the organization has no eligible AWS connection: nothing ran and
+   * nothing was written (no connection is never a pass for a fenced write).
+   */
+  notConnected?: boolean;
 }
 
 /** The answer of a sync stopped by a connection change; `error` is a fixed code, never free text. */
@@ -87,6 +92,19 @@ export class SecurityHubSyncService {
       };
     }
 
+    // No connection: nothing to sync, and nothing is recorded for it.
+    if (identity === null) {
+      console.log(`[SecurityHubSync] sync.skipped org=${organizationId} reason=not_connected`);
+      return {
+        capability: { status: 'ERROR', checkedAt: new Date().toISOString(), error: 'NOT_CONNECTED' },
+        syncStatus: 'FAILED',
+        pagesProcessed: 0,
+        findingsCount: 0,
+        error: 'NOT_CONNECTED',
+        notConnected: true,
+      };
+    }
+
     const key = inFlightKey(organizationId, identity);
     const existing = inFlightSyncs.get(key);
     if (existing) {
@@ -113,7 +131,7 @@ export class SecurityHubSyncService {
    * and each page's upsert commit only while it is still the active connection. A
    * change throws ConnectionChangedError out of a write; sync() answers it.
    */
-  private async runSync(organizationId: string, identity: string | null): Promise<SecurityHubSyncOutcome> {
+  private async runSync(organizationId: string, identity: string): Promise<SecurityHubSyncOutcome> {
     const startedAt = Date.now();
     console.log(`[SecurityHubSync] sync.start org=${organizationId}`);
     await this.stateRepo.markSyncStarted(organizationId, identity);

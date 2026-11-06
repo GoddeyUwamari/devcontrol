@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Pool } from 'pg';
 import { ComplianceFrameworksRepository } from '../repositories/compliance-frameworks.repository';
 import { CustomComplianceService } from '../services/custom-compliance.service';
+import { AWS_NOT_CONNECTED_CODE, COMPLIANCE_SCAN_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 import { isReservedFrameworkName } from '../utils/reservedFrameworkNames';
 import { checkTagPattern } from '../utils/tagPatternMatcher';
 
@@ -542,6 +543,15 @@ export class ComplianceFrameworksController {
       // scan's total duration. The long-running scan work itself remains
       // asynchronous (see CustomComplianceService.startScan).
       const result = await this.complianceService.startScan(frameworkId, organizationId, userId, resource_filters);
+
+      if (result.status === 'not_connected') {
+        res.status(409).json({
+          success: false,
+          error: AWS_NOT_CONNECTED_CODE,
+          message: COMPLIANCE_SCAN_NOT_CONNECTED_MESSAGE,
+        });
+        return;
+      }
 
       if (result.status === 'already_in_progress') {
         res.status(409).json({

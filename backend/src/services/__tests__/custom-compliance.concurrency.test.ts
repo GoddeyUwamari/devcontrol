@@ -16,6 +16,7 @@
 import { Pool, PoolClient } from 'pg';
 import { CustomComplianceService, ScanInProgressError, ScanStartResult } from '../custom-compliance.service';
 import { ComplianceFrameworksRepository, ComplianceScan } from '../../repositories/compliance-frameworks.repository';
+import { connectPlaceholderAccount, removePlaceholderAccounts } from './helpers/scan-source';
 
 // Must match custom-compliance.service.ts's SCAN_CONCURRENCY_LOCK_SALT --
 // kept as a locally redeclared literal in the test rather than exported from
@@ -56,6 +57,8 @@ async function insertOrg(): Promise<string> {
     [`Scan Concurrency Org ${suffix}`, `scan-concurrency-org-${suffix}`, `Scan Concurrency Org ${suffix}`]
   );
   createdOrgIds.push(rows[0].id);
+  // A scan needs an AWS connection (AWS connect PR C): every test organization has one.
+  await connectPlaceholderAccount(pool, rows[0].id);
   return rows[0].id as string;
 }
 
@@ -143,6 +146,7 @@ async function waitForScanTerminal(scanId: string, timeoutMs = 5000): Promise<Co
 
 afterAll(async () => {
   if (createdOrgIds.length > 0) {
+    await removePlaceholderAccounts(pool, createdOrgIds);
     await pool.query('DELETE FROM organizations WHERE id = ANY($1)', [createdOrgIds]);
   }
   await pool.end();

@@ -14,6 +14,7 @@ import { standardRateLimiter } from '../middleware/rateLimiter';
 import { SecurityHubSyncService } from '../services/security-hub-sync.service';
 import { SecurityHubComplianceService } from '../services/security-hub-compliance.service';
 import { SecurityHubStateRepository } from '../repositories/security-hub-state.repository';
+import { AWS_NOT_CONNECTED_CODE, AWS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 
 const router = Router();
 const syncService = new SecurityHubSyncService();
@@ -68,6 +69,10 @@ router.post('/sync', requireAdmin, requireEnterprise, standardRateLimiter, async
     }
 
     const outcome = await syncService.sync(organizationId);
+    if (outcome.notConnected) {
+      res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, error: AWS_NOT_CONNECTED_MESSAGE });
+      return;
+    }
     res.json({ success: true, message: 'Security Hub sync completed', outcome });
   } catch (error: unknown) {
     console.error('[SecurityHub] Error running sync:', error);

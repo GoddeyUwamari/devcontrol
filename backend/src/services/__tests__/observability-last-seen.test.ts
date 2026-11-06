@@ -292,7 +292,8 @@ describe('storage isolation and failure', () => {
     })
   })
 
-  it('(L7b) devcontrol has SELECT, INSERT, UPDATE and nothing else; both tables force RLS', async () => {
+  // DELETE was added by the AWS disconnect expand migration (aws_disconnect_expand) for the disconnect cleanup; RLS still scopes it.
+  it('(L7b) devcontrol has SELECT, INSERT, UPDATE, DELETE and nothing else; both tables force RLS', async () => {
     const { rows } = await pool.query(
       `SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privileges
          FROM information_schema.role_table_grants
@@ -300,8 +301,8 @@ describe('storage isolation and failure', () => {
         GROUP BY table_name ORDER BY table_name`
     )
     expect(rows).toEqual([
-      { table_name: 'observability_collection_scopes', privileges: 'INSERT,SELECT,UPDATE' },
-      { table_name: 'resource_telemetry_observations', privileges: 'INSERT,SELECT,UPDATE' },
+      { table_name: 'observability_collection_scopes', privileges: 'DELETE,INSERT,SELECT,UPDATE' },
+      { table_name: 'resource_telemetry_observations', privileges: 'DELETE,INSERT,SELECT,UPDATE' },
     ])
     const { rows: rls } = await pool.query(
       `SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('resource_telemetry_observations', 'observability_collection_scopes') ORDER BY relname`

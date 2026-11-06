@@ -5,6 +5,7 @@
  * would) and reports timings to the parent over IPC. The parent kills this
  * process if it misses its deadline, so a regression can never hang jest.
  */
+const { connectedScanClient } = require('./connected-scan-client');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
@@ -67,7 +68,7 @@ async function scan(rules, scanResources) {
       evalMs.push(performance.now() - start);
     }
   };
-  await svc.runScanBody({ query: async () => ({ rows: [] }) }, { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
+  await svc.runScanBody(connectedScanClient(), { id: 'scan-1' }, 'framework-1', 'org-1', undefined);
   return { summary, findings, evalMs };
 }
 
