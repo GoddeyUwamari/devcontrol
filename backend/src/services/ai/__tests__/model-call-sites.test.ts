@@ -13,6 +13,7 @@ import { NLQueryService, NLParserUnavailableError } from '../../nl-query.service
 import { AIInsightsService, DASHBOARD_SUMMARY_TOOL, DASHBOARD_SUMMARY_TOOL_NAME } from '../../ai-insights.service';
 import { ForecastAIService } from '../../forecast-ai.service';
 import { AnomalyAIService } from '../../anomaly-ai.service';
+import { chatCosts, evidenceBundle } from '../../__tests__/chat-context-fixtures';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 let logs: string[];
@@ -61,16 +62,15 @@ const chatContext: ChatContext = {
   discovery: none('discovery'),
   account: none('account'),
   services: none('services'),
-  costs: {
+  costs: chatCosts({
     state: 'unavailable', source: 'unavailable', current: null, asOf: null, period: null, scope: null, topSpenders: null,
     costExplorer: { state: 'unavailable', reason: null }, estimateCoverage: null,
     comparison: { state: 'unavailable', note: null, currentWindow: null, previousWindow: null, currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null, currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: 'b' },
-  },
+  }),
   inventoryScope: { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: null },
   resources: none('resources'),
-  alerts: none('alerts'),
-  anomalies: none('anomalies'),
   dora: none('dora'),
+  evidence: evidenceBundle(),
 };
 
 const forecast: any = {

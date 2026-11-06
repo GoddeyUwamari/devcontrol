@@ -42,7 +42,7 @@ function renderPage() {
 /** Page text with the explanatory note removed, so "not ... healthy" in it doesn't count as a claim. */
 function claimsText(): string {
   return (document.body.textContent ?? '').replaceAll(
-    "DevControl's alert sync does not yet associate alerts with an organization, so an empty list here does not mean your services are healthy.",
+    "Alert history isn't available here yet, so an empty list doesn't mean your services are healthy. See Operational Health for your active CloudWatch alarms.",
     ''
   )
 }
@@ -58,7 +58,7 @@ describe('Active Alerts -- no alerts', () => {
     renderPage()
 
     expect((await screen.findAllByText('No alerts recorded')).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/does not yet associate alerts with an organization/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Alert history isn't available here yet/).length).toBeGreaterThan(0)
     expect((await screen.findAllByText('Not available for this organization')).length).toBe(3)
     expect(screen.queryByText('None recorded')).not.toBeInTheDocument()
     expect(claimsText()).not.toMatch(HEALTH_CLAIMS)

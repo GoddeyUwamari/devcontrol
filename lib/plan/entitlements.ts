@@ -14,6 +14,8 @@ export const PLAN_ENTITLEMENTS = {
   securityHubCis: 'pro',
   securityHubPci: 'pro',
   securityHubNist: 'pro',
+  riskScore: 'pro',
+  complianceFrameworks: 'enterprise',
 } as const satisfies Record<string, PaidTier>
 
 export type PlanEntitlement = keyof typeof PLAN_ENTITLEMENTS

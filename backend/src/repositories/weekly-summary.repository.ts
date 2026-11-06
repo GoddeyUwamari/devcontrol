@@ -14,10 +14,12 @@ import {
   collectSection,
   deriveSection,
   hasEvidence,
-  notSupported,
   type ContextSection,
   type CostExplorerScope,
 } from '../services/ai-context-contract';
+import { collectProvider } from '../services/ai/evidence/registry';
+import { createEvidenceBasis } from '../services/ai/evidence/basis';
+import { alertHistoryProvider } from '../services/ai/evidence/providers/not-built';
 import { changeFailureRate } from '../services/deployment-status';
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { CostRecommendationsRepository } from './cost-recommendations.repository';
@@ -131,9 +133,6 @@ const COMPARISON_SOURCE = 'DevControl week-over-week comparison';
 const ESTIMATE_SOURCE = 'DevControl inventory cost estimate';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Same limitation AI Reports records for alert_history (see migration 028). */
-export const WEEKLY_ALERTS_NOT_SUPPORTED_REASON =
-  "DevControl's alert sync does not yet associate alerts with an organization, so this organization's alert counts cannot be determined";
 
 const COST_EXPLORER_SCOPE: CostExplorerScope = {
   kind: 'cost_explorer',
@@ -239,7 +238,8 @@ export class WeeklySummaryRepository {
       ),
     ]);
 
-    return { period, ...spend, alerts: this.getWeeklyAlerts(), delivery, security, recommendations };
+    const alerts = await this.getWeeklyAlerts(organizationId, period);
+    return { period, ...spend, alerts, delivery, security, recommendations };
   }
 
   /**
@@ -382,13 +382,19 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * Alerts for the week. alert_history rows written by the Prometheus alert
-   * sync carry no organization_id (migration 028), so an org-scoped count
-   * cannot establish that there were zero alerts -- the section is
-   * not_supported, never a count of 0.
+   * Alerts for the week: the alert history provider (alerts.history) of the
+   * shared evidence registry. DevControl keeps no organization-scoped history
+   * of past alerts (alert_history's only writer stores no organization), so
+   * the section is not_built -- never a count of 0. CloudWatch alarms are
+   * current state, not a weekly history, so they are not read here.
    */
-  getWeeklyAlerts(): ContextSection<WeeklyAlertEvidence> {
-    return notSupported<WeeklyAlertEvidence>({ source: 'DevControl alert history' }, WEEKLY_ALERTS_NOT_SUPPORTED_REASON);
+  getWeeklyAlerts(organizationId: string, period: WeeklySummaryPeriod): Promise<ContextSection<WeeklyAlertEvidence>> {
+    return collectProvider(alertHistoryProvider, {
+      organizationId,
+      now: new Date(period.generatedAt),
+      period: { from: period.delivery.start, to: period.delivery.end },
+      basis: createEvidenceBasis(organizationId),
+    });
   }
 
   /**

@@ -25,6 +25,10 @@ export const PLAN_ENTITLEMENTS = {
   securityHubPci: 'pro',
   /** GET /api/security-hub/frameworks/nist. */
   securityHubNist: 'pro',
+  /** GET /api/risk-score/trend and /current: the security posture score and its daily history. */
+  riskScore: 'pro',
+  /** /api/compliance-frameworks: custom compliance frameworks and their scans. */
+  complianceFrameworks: 'enterprise',
 } as const satisfies Record<string, SubscriptionTier>;
 
 export type PlanEntitlement = keyof typeof PLAN_ENTITLEMENTS;

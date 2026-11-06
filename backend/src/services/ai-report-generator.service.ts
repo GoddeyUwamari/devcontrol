@@ -18,39 +18,38 @@
  */
 
 import { Pool } from 'pg';
-import { AWSResourcesRepository } from '../repositories/awsResources.repository';
-import { CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
-import { classifySavingsBasis, EC2_PRICE_SOURCE_DEFAULT } from './estimated-savings';
-import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
-import type { ChatContext } from './ai-chat.service';
 import {
   AI_CONTEXT_CONTRACT_VERSION,
   collectSection,
   deriveSection,
   EVIDENCE_CLAIM_RULES,
   hasEvidence,
-  notSupported,
+  notEntitled,
   requireOrganizationId,
   toModelEvidence,
   type ContextSection,
   type EvidencePeriod,
-  type SectionMeta,
 } from './ai-context-contract';
-import { monthOverMonthSection, spendSection, type MonthOverMonthEvidence, type SpendEvidence } from './cost-context-sections';
+import type { MonthOverMonthEvidence, SpendEvidence } from './cost-context-sections';
 import { runModel, type Interpretation } from './ai/model-client';
 import type { FallbackReason } from './ai/model-response';
+import { collectEvidence, sectionOf } from './ai/evidence/registry';
+import { defaultEvidenceRegistry } from './ai/evidence/providers';
+import { canSeeLines, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import type { EvidenceBundle } from './ai/evidence/types';
+import type { ConfigChecksEvidence, AccountFindingsEvidence, RiskScoreEvidence, SecurityHubEvidence } from './ai/evidence/providers/security';
+import type { CostFindingsEvidence, TopEstimatedResources } from './ai/evidence/providers/cost';
+import type { ResourceCounts } from './ai/evidence/providers/inventory';
+import type { AlarmsEvidence, CpuTelemetryEvidence, ResourceHealthEvidence } from './ai/evidence/providers/operations';
+import type { CustomFrameworkScansEvidence, FrameworkEvaluationsEvidence } from './ai/evidence/providers/compliance';
+import type { DeploymentRecordsEvidence } from './ai/evidence/providers/delivery';
+import type { ConnectionScopeEvidence, RegionCoverageEvidence } from './ai/evidence/providers/scope';
 
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 
-export interface ComplianceFindingsEvidence {
-  /** Non-terminated discovered resources the checks ran against. */
-  resourcesEvaluated: number;
-  resourcesWithFindings: number;
-  findingsBySeverity: Record<Severity, number>;
-  /** Per category, with severities and resource types taken from the findings themselves. */
-  byCategory: Array<{ category: string; findings: number; highestSeverity: Severity; resourceTypes: string[] }>;
-}
+/** Configuration-check findings on discovered resources (security.config_checks). */
+export type ComplianceFindingsEvidence = ConfigChecksEvidence;
 
 export interface DeploymentCounts {
   total: number;
@@ -80,12 +79,6 @@ export interface IdleResourceRecommendations {
   totalEstimatedMonthlySavings: number;
 }
 
-interface DeploymentRecord {
-  serviceId: string;
-  status: string;
-  deployedAt: string;
-}
-
 /** The evidence one report is written from. A section absent here was not requested for this report type. */
 export interface ReportData {
   organizationId: string;
@@ -93,20 +86,30 @@ export interface ReportData {
   /** The requested report period; `to` is exclusive (matching the deployment query). */
   dateRange: { from: string; to: string };
   sections: {
+    connection?: ContextSection<ConnectionScopeEvidence>;
+    regions?: ContextSection<RegionCoverageEvidence>;
     spend?: ContextSection<SpendEvidence>;
     monthOverMonth?: ContextSection<MonthOverMonthEvidence>;
-    topEstimatedResources?: ContextSection<Array<{ resourceId: string; resourceType: string; name: string; estimatedMonthlyCost: number }>>;
+    topEstimatedResources?: ContextSection<TopEstimatedResources>;
     idleResourceRecommendations?: ContextSection<IdleResourceRecommendations>;
-    resourceInventory?: ContextSection<{ total: number; byType: Record<string, number> }>;
+    resourceInventory?: ContextSection<ResourceCounts>;
     resourceChange?: ContextSection<never>;
     securityFindings?: ContextSection<ComplianceFindingsEvidence>;
-    securityScore?: ContextSection<never>;
-    securityHistory?: ContextSection<never>;
+    accountSecurityFindings?: ContextSection<AccountFindingsEvidence>;
+    securityScore?: ContextSection<RiskScoreEvidence>;
+    securityHub?: ContextSection<SecurityHubEvidence>;
+    complianceEvaluations?: ContextSection<FrameworkEvaluationsEvidence>;
+    customComplianceScans?: ContextSection<CustomFrameworkScansEvidence>;
     deployments?: ContextSection<DeploymentCounts>;
     deliveryRates?: ContextSection<DeliveryRates>;
     timeBetweenDeployments?: ContextSection<TimeBetweenDeployments>;
-    alerts?: ContextSection<never>;
+    cloudwatchAlarms?: ContextSection<AlarmsEvidence>;
+    operationalHealth?: ContextSection<ResourceHealthEvidence>;
+    cpuTelemetry?: ContextSection<CpuTelemetryEvidence>;
+    alertHistory?: ContextSection<never>;
   };
+  /** Every evidence source's state (the registry bundle); absent only in hand-built test data. */
+  evidence?: EvidenceBundle;
 }
 
 export interface GeneratedReport {
@@ -272,6 +275,8 @@ export function parseGeneratedReport(text: string): GeneratedReport | null {
 }
 
 const SECTION_TITLES: Record<keyof ReportData['sections'], string> = {
+  connection: 'Connected AWS account',
+  regions: 'AWS regions and scan coverage',
   spend: 'Cloud spend',
   monthOverMonth: 'Month-over-month cost comparison',
   topEstimatedResources: 'Highest estimated-cost discovered resources',
@@ -279,39 +284,74 @@ const SECTION_TITLES: Record<keyof ReportData['sections'], string> = {
   resourceInventory: 'Discovered resource inventory',
   resourceChange: 'Resource changes over the report period',
   securityFindings: 'Configuration-check findings on discovered resources',
-  securityScore: 'Security score',
-  securityHistory: 'Previous-period security results',
+  accountSecurityFindings: 'Account security findings (security groups, IAM)',
+  securityScore: 'DevControl security posture score (calculated) and its daily history',
+  securityHub: 'AWS Security Hub',
+  complianceEvaluations: 'Compliance framework evaluations',
+  customComplianceScans: 'Custom compliance framework scans',
   deployments: 'Deployments recorded in the report period',
   deliveryRates: 'Deployment rates',
   timeBetweenDeployments: 'Average time between successful deployments of the same service (NOT DORA lead time)',
-  alerts: 'Alerts',
+  cloudwatchAlarms: 'CloudWatch alarms (current state)',
+  operationalHealth: 'Operational Health resource checks',
+  cpuTelemetry: 'EC2 CPU utilization (CloudWatch)',
+  alertHistory: 'Alert history (past alerts)',
 };
 
-// Model-facing, and repeated to customers: names no internal mechanism.
-const ALERTS_NOT_SUPPORTED_REASON =
-  "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.";
-const RESOURCE_CHANGE_NOT_SUPPORTED_REASON =
-  'DevControl keeps only the current resource inventory, not its state at the start of the period, so resources added or removed during the period cannot be determined.';
-const SECURITY_SCORE_NOT_SUPPORTED_REASON =
-  'DevControl does not compute a validated security score for reports; the configuration-check findings are reported as counts instead.';
-const SECURITY_HISTORY_NOT_SUPPORTED_REASON =
-  "Each resource's configuration-check result is overwritten on every scan, so no earlier period's results exist to compare against.";
+/** Which section each registry provider fills (the report's own section names are kept). */
+const SECTION_PROVIDERS: Partial<Record<keyof ReportData['sections'], string>> = {
+  connection: 'connection.scope',
+  regions: 'coverage.regions',
+  spend: 'cost.spend',
+  monthOverMonth: 'cost.month_over_month',
+  topEstimatedResources: 'cost.top_estimated_resources',
+  resourceInventory: 'inventory.resource_counts',
+  resourceChange: 'inventory.change_history',
+  securityFindings: 'security.config_checks',
+  accountSecurityFindings: 'security.account_findings',
+  securityScore: 'security.risk_score',
+  securityHub: 'security.security_hub',
+  complianceEvaluations: 'compliance.framework_evaluations',
+  customComplianceScans: 'compliance.custom_scans',
+  cloudwatchAlarms: 'ops.cloudwatch_alarms',
+  operationalHealth: 'ops.resource_health',
+  cpuTelemetry: 'telemetry.cpu',
+  alertHistory: 'alerts.history',
+};
 
-const CHECKS_COVERAGE =
-  "DevControl's configuration checks (encryption, backups, public access, tagging, IAM and other checks) on resources discovered in the connected account's discovery region. Does not include account-level security findings or AWS Security Hub.";
+type SectionKey = keyof ReportData['sections'];
+const COMMON_SECTIONS: SectionKey[] = ['connection', 'regions'];
+const COST_SECTIONS: SectionKey[] = ['spend', 'monthOverMonth'];
+const RESOURCE_SECTIONS: SectionKey[] = ['resourceInventory', 'topEstimatedResources', 'idleResourceRecommendations', 'resourceChange'];
+const SECURITY_SECTIONS: SectionKey[] = ['securityFindings', 'accountSecurityFindings', 'securityScore', 'securityHub', 'complianceEvaluations', 'customComplianceScans'];
+const DELIVERY_SECTIONS: SectionKey[] = ['deployments', 'deliveryRates', 'timeBetweenDeployments'];
+const OPERATIONS_SECTIONS: SectionKey[] = ['cloudwatchAlarms', 'operationalHealth', 'cpuTelemetry', 'alertHistory'];
+
+/** The sections each report type is written from (its topic set). */
+export const REPORT_SECTIONS: Record<string, SectionKey[]> = {
+  cost_analysis: [...COMMON_SECTIONS, ...COST_SECTIONS, ...RESOURCE_SECTIONS],
+  security_insights: [...COMMON_SECTIONS, ...SECURITY_SECTIONS],
+  infrastructure_health: [...COMMON_SECTIONS, ...DELIVERY_SECTIONS, ...RESOURCE_SECTIONS, ...OPERATIONS_SECTIONS],
+  executive_summary: [...COMMON_SECTIONS, ...COST_SECTIONS, ...RESOURCE_SECTIONS, ...SECURITY_SECTIONS, ...DELIVERY_SECTIONS, ...OPERATIONS_SECTIONS],
+};
+const ALL_SECTIONS = REPORT_SECTIONS.executive_summary;
+
+/** Evidence budget for one report, in estimated tokens (step1 §2.5). */
+export const REPORT_EVIDENCE_BUDGET_TOKENS = 30_000;
 
 const PROMPT_RULES = [
   'Cost figures have their own period (month-to-date billed spend, or a point-in-time monthly run-rate estimate), which may differ from the requested report period -- always state which one a figure is.',
   'Never state a previous-period cost, a trend, or a percentage change unless the month-over-month comparison section carries evidence. Never invent history.',
-  'There is no security score and no earlier security result: do not state, estimate, or compare either.',
+  'The security posture score is calculated by DevControl from its own checks: call it a calculated score, and describe a change only from its own daily history. Configuration-check results are overwritten on every scan, so there is no earlier configuration-check result to compare.',
   'Resource changes over the period are not tracked: do not describe resource growth or decline.',
   '"Average time between successful deployments" is not DORA lead time for changes: never call it lead time.',
-  'Alert data is not part of this evidence: never say there were no alerts, zero alerts, or that alerting is healthy.',
-  'Configuration-check findings cover only DevControl\'s checks on discovered resources: no findings means none from those checks, not that no security issues exist.',
+  'CloudWatch alarms and Operational Health checks are current-state readings at their as-of time, not a history for the report period. There is no alert history: never say there were no alerts during the period, and never call an alarm count of 0 "no incidents".',
+  'Configuration-check and account-level findings cover only DevControl\'s own checks: no findings means none from those checks, not that no security issues exist. An accepted-risk or dismissed finding is still active; say it was accepted or dismissed by the customer.',
   'Recommend only actions grounded in the supplied evidence. Do not recommend rightsizing, Reserved Instances, or Savings Plans unless a supplied recommendation says so.',
   'Savings are DevControl estimates of potential savings, never realized savings. In topRecommendations, set estimatedSavings only to a value copied from the idle/unused-resource recommendation evidence; otherwise omit the field.',
   'An idle/unused-resource item with priceKnown: false carries a DevControl default figure, used because the instance type\'s price is unknown. Never present that amount as a known price or as the instance\'s cost; wherever you mention it, say the price is unknown.',
   'When a section has no evidence, say that data is not available in the relevant analysis -- do not fill it in.',
+  UNTRUSTED_TEXT_RULE,
 ].map(rule => `- ${rule}`).join('\n');
 
 function money(amount: number): string {
@@ -329,15 +369,7 @@ function unavailablePhrase(section: ContextSection<unknown>): string {
 }
 
 export class AIReportGeneratorService {
-  private awsResourcesRepo: AWSResourcesRepository;
-  private costRecommendationsRepo: CostRecommendationsRepository;
-  private contextRepo: AIChatContextRepository;
-
-  constructor(private pool: Pool) {
-    this.awsResourcesRepo = new AWSResourcesRepository(pool);
-    this.costRecommendationsRepo = new CostRecommendationsRepository();
-    this.contextRepo = new AIChatContextRepository(pool);
-  }
+  constructor(private pool: Pool) {}
 
   async generateWeeklyReport(data: ReportData, reportType: string = 'weekly_summary'): Promise<GeneratedReportResult> {
     const result = await runModel(
@@ -364,12 +396,21 @@ export class AIReportGeneratorService {
   /** The model-facing request: every section as toModelEvidence() JSON, plus the claim rules. */
   buildUserPrompt(data: ReportData, reportType: string): string {
     const sections = (Object.keys(data.sections) as Array<keyof ReportData['sections']>)
-      .map(name => `### ${SECTION_TITLES[name]}\n${JSON.stringify(toModelEvidence(data.sections[name] as ContextSection<unknown>))}`)
+      .map(name => {
+        const section = data.sections[name] as ContextSection<unknown>;
+        const untrusted = section.untrusted ?? [];
+        const fence = untrusted.length > 0 && section.data !== null ? `\n${untrustedBlock(SECTION_PROVIDERS[name] ?? name, untrusted)}` : '';
+        return `### ${SECTION_TITLES[name]}\n${JSON.stringify(toModelEvidence(section))}${fence}`;
+      })
       .join('\n\n');
+    const sources = data.evidence ? canSeeLines(data.evidence.results) : null;
+    const sourceLines = sources
+      ? `\nEVERY EVIDENCE SOURCE DEVCONTROL HAS, with its state (sections below carry the data of the ones this report uses):\nWhat DevControl can see:\n${sources.canSee.join('\n') || '- (none)'}\nWhat DevControl can't see:\n${sources.cantSee.join('\n') || '- (none)'}\n`
+      : '';
 
     return `Generate a ${this.buildReportLabel(reportType)}. Requested report period: ${data.dateRange.from} to ${data.dateRange.to} (end date exclusive).
-
-EVIDENCE (contract version ${AI_CONTEXT_CONTRACT_VERSION}): each section below is JSON with its state (available / partial / unavailable / error / not_supported), whether evidence is present, provenance (actual / estimated / derived), source, scope, period, asOf (when it was obtained), completeness, coverage, reason, and data. The meaning of each state and provenance is included with it.
+${sourceLines}
+EVIDENCE (contract version ${AI_CONTEXT_CONTRACT_VERSION}): each section below is JSON with its state (available / partial / stale / unavailable / not_connected / error / not_entitled / not_built), whether evidence is present, its classification (billed / measured / calculated / estimated / configured / customer_decision), source, scope, period, asOf (when it was observed), retrievedAt (when DevControl read it), freshness, completeness, coverage, reason, failure, truncation, and data. The meaning of each state and classification is included with it. AWS or customer text follows a section in an <untrusted_evidence> block.
 
 RULES:
 ${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}
@@ -387,7 +428,7 @@ Return JSON with this structure (omit costAnalysis, securityAnalysis, or perform
     "recommendations": ["recommendation grounded in the evidence"]
   },
   "securityAnalysis": {
-    "overview": "configuration-check findings, with what they cover",
+    "overview": "security and compliance evidence (configuration checks, account-level findings, the posture score, frameworks), with what each covers",
     "topRisks": "the most severe categories found, or that none were found by these checks",
     "recommendations": ["recommendation grounded in the evidence"]
   },
@@ -439,17 +480,17 @@ FOCUS: Cost evidence and the active DevControl recommendations.
       case 'security_insights':
         return `${base}
 
-FOCUS: DevControl configuration-check findings on discovered resources.
-- Lead with the most severe finding categories present in the evidence
+FOCUS: DevControl security evidence: configuration checks on discovered resources, account-level findings (security groups, IAM) with the customer's dispositions, the calculated security posture score, framework evaluations, and Security Hub when present.
+- Lead with the most severe findings present in the evidence
 - Map each finding category present to a concrete remediation action
 - Rank recommendations by the severity recorded in the evidence (critical, high, medium, low)`;
 
       case 'infrastructure_health':
         return `${base}
 
-FOCUS: Deployment activity and the resource inventory supplied.
+FOCUS: Deployment activity, the resource inventory, and the current operational state supplied.
 - Lead with the deployment evidence for the report period
-- Availability, error-rate, and alert data are not part of this report's evidence -- do not describe them`;
+- CloudWatch alarms and Operational Health checks are current-state readings at their as-of time; describe them as such, never as availability or error rates over the period`;
 
       case 'executive_summary':
         return `${base}
@@ -594,6 +635,30 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     return parts.join(' ');
   }
 
+  private postureScoreSentence(section: ContextSection<RiskScoreEvidence> | undefined): string {
+    if (!section) return '';
+    if (!hasEvidence(section)) return ` The security posture score is not available: ${unavailablePhrase(section)}.`;
+    return ` DevControl's calculated security posture score is ${section.data.score}/100 (grade ${section.data.grade}).`;
+  }
+
+  private accountFindingsSentence(section: ContextSection<AccountFindingsEvidence>): string {
+    if (!hasEvidence(section)) return `Account-level security findings are not available: ${unavailablePhrase(section)}.`;
+    const d = section.data;
+    if (d.total === 0) return "DevControl's account-level checks (security groups, IAM) found no active findings.";
+    const counts = SEVERITIES.map(sev => `${d.bySeverity[sev]} ${sev}`).join(', ');
+    const reviewed = d.byDisposition.accepted_risk + d.byDisposition.dismissed;
+    const reviewedText = reviewed > 0 ? `; ${reviewed} of them accepted as a risk or dismissed by your team, and still active` : '';
+    return `DevControl's account-level checks (security groups, IAM) found ${d.total} active findings (${counts})${reviewedText}.`;
+  }
+
+  private alarmsSentence(section: ContextSection<AlarmsEvidence>): string {
+    if (!hasEvidence(section)) return `CloudWatch alarm status is not available: ${unavailablePhrase(section)}.`;
+    const d = section.data;
+    const region = section.scope?.kind === 'aws_account_region' && section.scope.region ? ` in ${section.scope.region}` : '';
+    const atLeast = d.inAlarmComplete ? '' : 'at least ';
+    return `CloudWatch reported ${atLeast}${d.inAlarmCount} alarm${d.inAlarmCount !== 1 ? 's' : ''} in ALARM${region} as of ${section.asOf ?? 'an unknown time'} (current state, not a history for the period).`;
+  }
+
   private generateFallbackReport(data: ReportData): GeneratedReport {
     const s = data.sections;
     const highlights: string[] = [];
@@ -636,7 +701,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       const findings = hasEvidence(s.securityFindings) ? s.securityFindings.data : null;
       const severe = findings ? findings.findingsBySeverity.critical + findings.findingsBySeverity.high : 0;
       report.securityAnalysis = {
-        overview: `${security} DevControl does not compute a security score for reports, and earlier-period results are not stored.`,
+        overview: `${security}${this.postureScoreSentence(s.securityScore)} Earlier configuration-check results are not kept.`,
         topRisks: !findings
           ? 'Not available.'
           : findings.byCategory.length > 0
@@ -679,8 +744,12 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
         : `Resource inventory is not available: ${unavailablePhrase(s.resourceInventory)}.`);
     }
 
-    if (s.alerts) {
-      highlights.push('Alert counts are not included in this report yet. See Operational Health for your active CloudWatch alarms.');
+    if (s.accountSecurityFindings) {
+      highlights.push(this.accountFindingsSentence(s.accountSecurityFindings));
+    }
+
+    if (s.cloudwatchAlarms) {
+      highlights.push(this.alarmsSentence(s.cloudwatchAlarms));
     }
 
     report.summary = highlights.slice(0, 3).join(' ');
@@ -763,7 +832,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   }
 
   // -------------------------------------------------------------------------
-  // Evidence
+  // Evidence (the shared evidence registry, services/ai/evidence/)
   // -------------------------------------------------------------------------
 
   async fetchReportData(
@@ -775,278 +844,118 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     const fetchStart = Date.now();
     console.log(`[AI Report Generator] Fetching data... (org=${organizationId}, type=${reportType}, range=${dateRange.from}→${dateRange.to})`);
 
-    // Determine which data sources are needed for this report type
-    const needsCost       = ['cost_analysis', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
-    const needsSecurity   = ['security_insights', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
-    const needsDeploys    = ['infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
-    const needsResources  = ['cost_analysis', 'infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
-    const needsAlerts     = ['infrastructure_health', 'executive_summary', 'weekly_summary', 'monthly_summary'].includes(reportType);
+    const wanted = REPORT_SECTIONS[reportType] ?? ALL_SECTIONS;
+    const providerIds = wanted.map(key => SECTION_PROVIDERS[key]).filter((id): id is string => !!id);
+    if (wanted.includes('idleResourceRecommendations')) providerIds.push('cost.findings');
+    if (wanted.includes('deployments')) providerIds.push('delivery.deployments', 'delivery.dora');
 
-    // Discovery state gates every inventory-backed section; the cost path
-    // (which also calls Cost Explorer) runs only when cost is requested.
-    const basis = needsCost
-      ? await this.contextRepo.gatherCostContext(organizationId)
-      : await this.contextRepo.gatherInventoryBasis(organizationId);
-    const { discovery, inventoryScope } = basis;
-
-    // Shared by the inventory and security sections; each awaits it inside its
-    // own getter, so a failure becomes that section's 'error', not a crash.
-    const statsPromise = needsResources || needsSecurity ? this.awsResourcesRepo.getStats(organizationId) : null;
-    statsPromise?.catch(() => undefined);
+    // Every provider runs (so the prompt states every source's state); the
+    // report's sections load data.
+    const evidence = await collectEvidence(defaultEvidenceRegistry(), {
+      organizationId,
+      consumer: 'ai_reports',
+      select: { providerIds },
+      budgetTokens: REPORT_EVIDENCE_BUDGET_TOKENS,
+      period: dateRange,
+    });
 
     const sections: ReportData['sections'] = {};
-    const tasks: Array<Promise<void>> = [];
-
-    if (needsCost && 'costs' in basis) {
-      const costs = (basis as Pick<ChatContext, 'costs'>).costs;
-      tasks.push((async () => {
-        [sections.spend, sections.monthOverMonth] = await Promise.all([spendSection(costs), monthOverMonthSection(costs)]);
-      })());
+    for (const key of wanted) {
+      const providerId = SECTION_PROVIDERS[key];
+      if (providerId) (sections as Record<string, ContextSection<unknown>>)[key] = sectionOf(evidence, providerId);
     }
-
-    if (needsResources && statsPromise) {
-      tasks.push((async () => {
-        sections.resourceInventory = await this.discoveryGated(
-          { source: 'DevControl resource inventory (periodic AWS discovery)', provenance: 'actual', scope: inventoryScope, period: { kind: 'point_in_time' } },
-          discovery,
-          d => d.total === 0,
-          async () => {
-            const stats = await statsPromise;
-            return { total: stats.total_resources, byType: this.convertByTypeToRecord(stats.by_type) };
-          }
-        );
-      })());
-      tasks.push((async () => { sections.topEstimatedResources = await this.fetchTopEstimatedResources(organizationId, discovery, inventoryScope); })());
-      tasks.push((async () => { sections.idleResourceRecommendations = await this.fetchIdleResourceRecommendations(organizationId, inventoryScope); })());
-      sections.resourceChange = notSupported({ source: 'DevControl resource inventory', scope: inventoryScope }, RESOURCE_CHANGE_NOT_SUPPORTED_REASON);
+    if (wanted.includes('idleResourceRecommendations')) {
+      sections.idleResourceRecommendations = await this.idleRecommendationsFrom(sectionOf<CostFindingsEvidence>(evidence, 'cost.findings'));
     }
-
-    if (needsSecurity && statsPromise) {
-      tasks.push((async () => {
-        sections.securityFindings = await this.discoveryGated<ComplianceFindingsEvidence>(
-          { source: 'DevControl configuration checks on discovered resources', provenance: 'actual', scope: inventoryScope, period: { kind: 'point_in_time' }, coverage: CHECKS_COVERAGE },
-          discovery,
-          d => d.resourcesWithFindings === 0,
-          async () => this.summarizeComplianceFindings(organizationId, (await statsPromise).total_resources)
-        );
-      })());
-      sections.securityScore = notSupported({ source: 'DevControl security score' }, SECURITY_SCORE_NOT_SUPPORTED_REASON);
-      sections.securityHistory = notSupported({ source: 'DevControl configuration checks on discovered resources', scope: inventoryScope }, SECURITY_HISTORY_NOT_SUPPORTED_REASON);
+    if (wanted.includes('deployments')) {
+      Object.assign(sections, await this.deliverySectionsFrom(
+        sectionOf<DeploymentRecordsEvidence>(evidence, 'delivery.deployments'),
+        sectionOf<unknown>(evidence, 'delivery.dora'),
+        dateRange
+      ));
     }
-
-    if (needsDeploys) {
-      tasks.push((async () => { Object.assign(sections, await this.fetchDeploymentSections(organizationId, dateRange)); })());
-    }
-
-    if (needsAlerts) {
-      sections.alerts = notSupported({ source: 'DevControl alerts' }, ALERTS_NOT_SUPPORTED_REASON);
-    }
-
-    await Promise.all(tasks);
 
     const states = (Object.keys(sections) as Array<keyof ReportData['sections']>).map(k => `${k}=${sections[k]!.state}`).join(', ');
     console.log(`[AI Report Generator] Evidence gathered in ${Date.now() - fetchStart}ms: ${states}`);
 
-    return { organizationId, reportType, dateRange, sections };
+    return { organizationId, reportType, dateRange, sections, evidence };
   }
 
   /**
-   * An inventory-backed read: 'available' (and an empty result a confirmed
-   * zero) only once the latest discovery run has completed. Otherwise an empty
-   * result is 'unavailable' and existing rows are 'partial'. Mirrors AI Chat's
-   * inventorySection() gating so both surfaces agree.
+   * The idle/unused-resource subset of the cost findings the report's savings
+   * are grounded in: of the 10 active findings with the highest estimated
+   * savings, those for idle or unused resources whose figure is an estimate
+   * (a ceiling, or a figure with no savings basis, is never "estimated savings").
    */
-  private discoveryGated<T>(
-    meta: SectionMeta,
-    discovery: ChatContext['discovery'],
-    isEmpty: (data: T) => boolean,
-    query: () => Promise<T>
-  ): Promise<ContextSection<T>> {
-    return collectSection<T>(meta, async () => {
-      const data = await query();
-      if (discovery.state === 'available' && discovery.data) {
-        return { state: 'available', data, asOf: discovery.data.completedAt };
-      }
-      const problem = discovery.state === 'error'
-        ? 'the status of the latest discovery run could not be determined'
-        : 'the latest discovery run has not completed';
-      if (isEmpty(data)) {
-        return { state: 'unavailable', reason: `${problem}, so an empty result is not a confirmed zero` };
-      }
-      return { state: 'partial', data, asOf: null, reason: `${problem}; data may be stale or incomplete` };
-    });
-  }
-
-  /** Counts, severities, and resource types taken from the recorded findings -- no severity is assigned by category. */
-  private async summarizeComplianceFindings(organizationId: string, resourcesEvaluated: number): Promise<ComplianceFindingsEvidence> {
-    const rows = await this.awsResourcesRepo.getComplianceIssues(organizationId);
-    const findingsBySeverity: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-    const categories = new Map<string, { findings: number; severities: Set<Severity>; resourceTypes: Set<string> }>();
-
-    for (const row of rows) {
-      for (const issue of row.issues ?? []) {
-        const severity = issue.severity as Severity;
-        if (severity in findingsBySeverity) findingsBySeverity[severity]++;
-        const entry = categories.get(issue.category) ?? { findings: 0, severities: new Set<Severity>(), resourceTypes: new Set<string>() };
-        entry.findings++;
-        entry.severities.add(severity);
-        entry.resourceTypes.add(String(row.resource_type));
-        categories.set(issue.category, entry);
-      }
-    }
-
-    const rank = (s: Severity) => SEVERITIES.indexOf(s);
-    const byCategory = [...categories.entries()]
-      .map(([category, e]) => ({
-        category,
-        findings: e.findings,
-        highestSeverity: [...e.severities].sort((a, b) => rank(a) - rank(b))[0],
-        resourceTypes: [...e.resourceTypes].sort(),
-      }))
-      .sort((a, b) => rank(a.highestSeverity) - rank(b.highestSeverity) || b.findings - a.findings)
-      .slice(0, 5);
-
-    return {
-      resourcesEvaluated,
-      resourcesWithFindings: rows.filter(r => (r.issues ?? []).length > 0).length,
-      findingsBySeverity,
-      byCategory,
+  private idleRecommendationsFrom(findings: ContextSection<CostFindingsEvidence>): Promise<ContextSection<IdleResourceRecommendations>> {
+    const meta = {
+      source: 'DevControl cost recommendations',
+      classification: 'estimated' as const,
+      scope: findings.scope,
+      period: { kind: 'point_in_time' } as EvidencePeriod,
+      coverage: 'the 10 active recommendations with the highest estimated savings, filtered to idle or unused resources',
     };
-  }
-
-  private fetchTopEstimatedResources(
-    organizationId: string,
-    discovery: ChatContext['discovery'],
-    inventoryScope: ChatContext['inventoryScope']
-  ): Promise<NonNullable<ReportData['sections']['topEstimatedResources']>> {
-    return this.discoveryGated(
-      {
-        source: 'DevControl inventory cost estimates',
-        provenance: 'estimated',
-        scope: inventoryScope,
-        period: { kind: 'point_in_time' },
-        coverage: 'list-price monthly estimates for individual discovered resources -- not AWS billed spend',
-      },
-      discovery,
-      rows => rows.length === 0,
-      async () => {
-        const result = await this.pool.query(
-          `SELECT resource_id, resource_type, estimated_monthly_cost, resource_name
-           FROM aws_resources
-           WHERE organization_id = $1
-           AND estimated_monthly_cost > 0
-           AND status != 'terminated'
-           ORDER BY estimated_monthly_cost DESC
-           LIMIT 5`,
-          [organizationId]
-        );
-        return result.rows.map(row => ({
-          resourceId: row.resource_id,
-          resourceType: row.resource_type,
-          name: row.resource_name || row.resource_id,
-          estimatedMonthlyCost: round(parseFloat(row.estimated_monthly_cost), 2),
+    if (!hasEvidence(findings)) {
+      return Promise.resolve({ ...findings, source: meta.source, coverage: meta.coverage, data: null });
+    }
+    return collectSection<IdleResourceRecommendations>(meta, async () => {
+      const items = findings.data.items
+        .slice(0, 10)
+        .filter(rec => rec.issue.toLowerCase().includes('idle') || rec.issue.toLowerCase().includes('unused'))
+        .filter(rec => rec.savingsBasis === 'estimate')
+        .slice(0, 5)
+        .map(rec => ({
+          resourceId: rec.resourceId,
+          resourceType: rec.resourceType,
+          issue: rec.issue,
+          estimatedMonthlySavings: rec.estimatedMonthlySavings,
+          priceKnown: rec.priceKnown,
         }));
-      }
-    );
-  }
-
-  private fetchIdleResourceRecommendations(
-    organizationId: string,
-    inventoryScope: ChatContext['inventoryScope']
-  ): Promise<NonNullable<ReportData['sections']['idleResourceRecommendations']>> {
-    return collectSection<IdleResourceRecommendations>(
-      {
-        source: 'DevControl cost recommendations',
-        provenance: 'estimated',
-        scope: inventoryScope,
-        period: { kind: 'point_in_time' },
-        coverage: 'the 10 active recommendations with the highest estimated savings, filtered to idle or unused resources',
-      },
-      async () => {
-        const active = await this.costRecommendationsRepo.findAll(organizationId, { status: 'ACTIVE', limit: 10 });
-        const items = active
-          .filter(rec => rec.issue.toLowerCase().includes('idle') || rec.issue.toLowerCase().includes('unused'))
-          // Only figures with an estimate basis are "estimated savings"; a ceiling
-          // or a figure with no savings_basis is never reported as one.
-          .filter(rec => classifySavingsBasis(rec.metadata?.savings_basis) === 'estimate')
-          .slice(0, 5)
-          .map(rec => ({
-            resourceId: rec.resource_id,
-            resourceType: rec.resource_type,
-            issue: rec.issue,
-            estimatedMonthlySavings: round(Number(rec.potential_savings), 2),
-            priceKnown: rec.metadata?.price_source !== EC2_PRICE_SOURCE_DEFAULT,
-          }));
-        const baseReason = 'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings';
-        return {
-          state: 'available',
-          data: { items, totalEstimatedMonthlySavings: round(items.reduce((sum, i) => sum + i.estimatedMonthlySavings, 0), 2) },
-          // An empty list is only "none recorded", never "nothing can be saved".
-          // A default figure (priceKnown false) is never a known price (PR 4, S4).
-          reason: items.some((i) => !i.priceKnown)
-            ? `${baseReason}; some idle-instance figures use a default because the instance type's price is unknown`
-            : baseReason,
-        };
-      }
-    );
+      const baseReason = 'lists only active recommendations DevControl has recorded; savings are estimates of potential, not realized, savings';
+      return {
+        state: 'available',
+        asOf: findings.asOf,
+        data: { items, totalEstimatedMonthlySavings: round(items.reduce((sum, i) => sum + i.estimatedMonthlySavings, 0), 2) },
+        // An empty list is only "none recorded", never "nothing can be saved".
+        // A default figure (priceKnown false) is never a known price (PR 4, S4).
+        reason: items.some((i) => !i.priceKnown)
+          ? `${baseReason}; some idle-instance figures use a default because the instance type's price is unknown`
+          : baseReason,
+      };
+    });
   }
 
   /**
    * Deployment counts for the report period (end exclusive), plus rates and
    * the average gap between successful deployments -- each derived from the
-   * same records, never from a default.
+   * same records, never from a default. The rates are DORA metrics, so they
+   * follow the DORA plan entitlement: below it they are not_entitled.
    */
-  private async fetchDeploymentSections(
-    organizationId: string,
+  private async deliverySectionsFrom(
+    records: ContextSection<DeploymentRecordsEvidence>,
+    dora: ContextSection<unknown>,
     dateRange: { from: string; to: string }
   ): Promise<Pick<ReportData['sections'], 'deployments' | 'deliveryRates' | 'timeBetweenDeployments'>> {
     const period: EvidencePeriod = { kind: 'range', start: dateRange.from, endExclusive: dateRange.to };
-    const periodDays = Math.max(1, this.calculateDaysBetween(dateRange.from, dateRange.to));
 
-    const records = await collectSection<DeploymentRecord[]>(
-      { source: 'DevControl deployment records', provenance: 'actual', period, scope: { kind: 'organization', window: `${dateRange.from} to ${dateRange.to} (end exclusive)` } },
-      async () => {
-        const result = await this.pool.query(
-          `SELECT d.service_id, d.status, d.deployed_at
-           FROM deployments d
-           JOIN services s ON d.service_id = s.id
-           WHERE s.organization_id = $1
-           AND d.deployed_at >= $2
-           AND d.deployed_at < $3
-           ORDER BY d.deployed_at`,
-          [organizationId, dateRange.from, dateRange.to]
-        );
-        return {
-          state: 'available',
-          data: result.rows.map(r => ({ serviceId: String(r.service_id), status: r.status, deployedAt: new Date(r.deployed_at).toISOString() })),
-          asOf: new Date().toISOString(),
-        };
-      }
-    );
-
-    // The counts are the same records, summarized -- same state and provenance.
     const deployments: ContextSection<DeploymentCounts> = hasEvidence(records)
-      ? {
-          ...records,
-          data: {
-            total: records.data.length,
-            successful: records.data.filter(r => r.status === 'success').length,
-            failed: records.data.filter(r => r.status === 'failed').length,
-          },
-        }
+      ? { ...records, data: { total: records.data.total, successful: records.data.successful, failed: records.data.failed } }
       : { ...records, data: null };
 
-    const deliveryRates = await deriveSection(
-      { source: 'DevControl calculation from deployment records', period },
-      [deployments] as const,
-      ([d]) => ({
-        successRatePercent: d.total > 0 ? round((d.successful / d.total) * 100, 1) : null,
-        changeFailureRatePercent: d.total > 0 ? round((d.failed / d.total) * 100, 1) : null,
-        deploymentsPerDay: round(d.total / periodDays, 2),
-      })
-    );
+    const periodDays = hasEvidence(records) ? records.data.periodDays : 1;
+    const deliveryRates = dora.state === 'not_entitled'
+      ? notEntitled<DeliveryRates>({ source: 'DevControl calculation from deployment records', period }, dora.reason ?? "not included in this organization's current plan")
+      : await deriveSection(
+          { source: 'DevControl calculation from deployment records', period },
+          [deployments] as const,
+          ([d]) => ({
+            successRatePercent: d.total > 0 ? round((d.successful / d.total) * 100, 1) : null,
+            changeFailureRatePercent: d.total > 0 ? round((d.failed / d.total) * 100, 1) : null,
+            deploymentsPerDay: round(d.total / periodDays, 2),
+          })
+        );
 
-    const intervals = hasEvidence(records) ? this.successfulDeploymentIntervals(records.data) : null;
+    const intervals = hasEvidence(records) ? records.data.successfulIntervals : null;
     const timeBetweenDeployments = intervals && intervals.hours.length === 0
       ? await collectSection<TimeBetweenDeployments>(
           { source: 'DevControl calculation from deployment records', period },
@@ -1058,53 +967,10 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
           () => ({
             averageHours: round(intervals!.hours.reduce((a, b) => a + b, 0) / intervals!.hours.length, 1),
             intervalsMeasured: intervals!.hours.length,
-            servicesMeasured: intervals!.services,
+            servicesMeasured: intervals!.servicesMeasured,
           })
         );
 
     return { deployments, deliveryRates, timeBetweenDeployments };
-  }
-
-  /** Hours between consecutive successful deployments of the same service (the report period only). */
-  private successfulDeploymentIntervals(records: DeploymentRecord[]): { hours: number[]; services: number } {
-    const byService = new Map<string, number[]>();
-    for (const r of records) {
-      if (r.status !== 'success') continue;
-      const times = byService.get(r.serviceId) ?? [];
-      times.push(new Date(r.deployedAt).getTime());
-      byService.set(r.serviceId, times);
-    }
-    const hours: number[] = [];
-    let services = 0;
-    for (const times of byService.values()) {
-      if (times.length < 2) continue;
-      services++;
-      times.sort((a, b) => a - b);
-      for (let i = 1; i < times.length; i++) hours.push((times[i] - times[i - 1]) / 3_600_000);
-    }
-    return { hours, services };
-  }
-
-  /**
-   * Helper: Calculate days between two dates
-   */
-  private calculateDaysBetween(from: string, to: string): number {
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
-    const diffTime = Math.abs(toDate.getTime() - fromDate.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  }
-
-  /**
-   * Helper: Convert by_type object to Record format
-   */
-  private convertByTypeToRecord(byType: any): Record<string, number> {
-    const result: Record<string, number> = {};
-    if (byType) {
-      Object.entries(byType).forEach(([key, value]) => {
-        result[key] = value as number;
-      });
-    }
-    return result;
   }
 }

@@ -45,7 +45,7 @@ const chatContext = {
   services: { state: 'unavailable', data: null },
   costs: { current: null, state: 'unavailable', source: 'unavailable', asOf: null },
   discovery: { data: null },
-  alerts: { state: 'not_supported', data: null },
+  evidence: { results: [] },
 } as never;
 
 beforeEach(() => {
@@ -110,7 +110,8 @@ describe('the request connection is not held across a model call', () => {
 
     await new AIChatController({} as any)[handler](req, res);
 
-    expect(gatherContext).toHaveBeenCalledWith(ORG);
+    // The conversation is passed only to choose the evidence topics.
+    expect(gatherContext).toHaveBeenCalledWith(ORG, expect.any(Array));
     expect(gatherContext.mock.invocationCallOrder[0]).toBeLessThan(connection.release.mock.invocationCallOrder[0]);
     expect(releasedAtModelCall).toEqual([true]);
     expect(connection.release).toHaveBeenCalledTimes(1);

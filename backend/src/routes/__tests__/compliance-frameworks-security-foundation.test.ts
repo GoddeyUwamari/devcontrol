@@ -58,6 +58,8 @@ jest.mock('../../middleware/auth.middleware', () => ({
 
 jest.mock('../../middleware/subscription.middleware', () => ({
   requireEnterprise: (_req: any, _res: any, next: any) => next(),
+  // The routes gate on the complianceFrameworks plan key (AI truth PR 2): same tier, passed through here.
+  requireEntitlement: () => (_req: any, _res: any, next: any) => next(),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires

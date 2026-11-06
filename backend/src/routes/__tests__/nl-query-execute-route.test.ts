@@ -127,12 +127,14 @@ async function ask(query: string, org = PRO_ORG, extraBody: object = {}) {
 const resourceQueryOrgs = () =>
   mockCalls.filter(c => c.sql.includes('FROM aws_resources')).map(c => c.params[0]);
 
+import { chatCosts, type LegacyChatCosts } from '../../services/__tests__/chat-context-fixtures';
+
 const actualCosts = () => mockGatherCostContext.mockResolvedValue({
-  costs: {
+  costs: chatCosts({
     state: 'available', source: 'actual', current: 42.5, asOf: '2026-09-27T08:00:00.000Z',
     period: { start: '2026-09-01', endExclusive: '2026-09-28' }, scope: null, topSpenders: [],
     costExplorer: { state: 'available', reason: null }, estimateCoverage: null, comparison: { state: 'unavailable' },
-  },
+  } as unknown as LegacyChatCosts),
 });
 
 /** Not answered, nothing queried, no cost lookup. */
@@ -250,10 +252,10 @@ describe('prompt injection cannot invent evidence', () => {
   it('a costs answer comes from evidence: unavailable billing is unavailable, never $0', async () => {
     modelReplies(reply('costs'));
     mockGatherCostContext.mockResolvedValue({
-      costs: {
+      costs: chatCosts({
         state: 'unavailable', source: 'unavailable', current: null, asOf: null, period: null, scope: null, topSpenders: null,
         costExplorer: { state: 'unavailable', reason: 'no AWS account is connected' }, estimateCoverage: null, comparison: { state: 'unavailable' },
-      },
+      } as unknown as LegacyChatCosts),
     });
     const { body } = await ask('what is my aws spend');
     expect(body.data.data.outcome).toBe('unavailable');

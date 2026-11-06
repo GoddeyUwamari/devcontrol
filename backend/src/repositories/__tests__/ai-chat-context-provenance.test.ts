@@ -146,9 +146,9 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('available');
-    expect(context.costs.source).toBe('actual');
+    expect(context.costs.provenance).toBe('actual');
     expect(context.costs.asOf).toBe(fetchedAt);
-    expect(context.costs.current).toBe(250.5); // cents precision, never whole-dollar rounding
+    expect(context.costs.data!.current).toBe(250.5); // cents precision, never whole-dollar rounding
   });
 
   it('Cost Explorer failing, with a usable aws_resources estimate present, falls back to source "estimated" using discovery freshness as its asOf', async () => {
@@ -162,8 +162,8 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('available');
-    expect(context.costs.source).toBe('estimated');
-    expect(context.costs.current).toBe(42);
+    expect(context.costs.provenance).toBe('estimated');
+    expect(context.costs.data!.current).toBe(42);
     expect(context.costs.asOf).toBe(completedAt.toISOString());
   });
 
@@ -175,8 +175,8 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('unavailable');
-    expect(context.costs.source).toBe('unavailable');
-    expect(context.costs.current).toBeNull();
+    expect(context.costs.provenance).toBeNull();
+    expect(context.costs.data).toBeNull();
     expect(context.costs.asOf).toBeNull();
   });
 
@@ -200,8 +200,8 @@ describe('AIChatContextRepository -- cost provenance (actual / estimated / unava
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('available');
-    expect(context.costs.source).toBe('actual');
-    expect(context.costs.current).toBe(0);
+    expect(context.costs.provenance).toBe('actual');
+    expect(context.costs.data!.current).toBe(0);
   });
 });
 
@@ -302,7 +302,7 @@ describe('Resources section', () => {
     expect(resources.data).not.toEqual({});
   });
 
-  it('EC2 utilization is "not_supported" -- a cpu_utilization tag is never read as a measurement, and "0 underutilized" is never stated', async () => {
+  it('EC2 CPU is never read from the inventory: a cpu_utilization tag is not a measurement, and "0 underutilized" is never stated', async () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
     await insertResource(orgId, 'ec2', null, { cpu_utilization: '5' });
@@ -310,11 +310,11 @@ describe('Resources section', () => {
     const context = await contextFor(orgId);
     const ec2 = context.resources.data!.ec2;
 
-    expect(ec2.count).toBe(1);
-    expect(ec2.utilization).toMatchObject({ state: 'not_supported', data: null });
-    expect(ec2.utilization.reason).toMatch(/does not collect EC2 CPU utilization/);
+    expect(ec2).toEqual({ count: 1 });
+    const cpu = context.evidence.results.find((r) => r.id === 'telemetry.cpu')!.section;
+    expect(JSON.stringify(cpu)).not.toMatch(/"cpuPercent":5\b|"5"/);
     const formatted = format(context);
-    expect(formatted).toMatch(/EC2 utilization: Not supported/);
+    expect(formatted).toMatch(/CPU utilization is its own evidence source below/);
     expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d/);
   });
 
@@ -334,22 +334,25 @@ describe('Resources section', () => {
   });
 });
 
-describe('Alerts section', () => {
-  it('is "not_supported" with a reason -- never a fabricated "0 active alerts" or "No recent incidents"', async () => {
+describe('Alerts', () => {
+  it('alert history is not_built and CloudWatch alarms are their own provider -- never a fabricated "0 active alerts" or "No recent incidents"', async () => {
     const orgId = await insertOrg();
 
     const context = await contextFor(orgId);
+    const history = context.evidence.results.find((r) => r.id === 'alerts.history')!.section;
+    const alarms = context.evidence.results.find((r) => r.id === 'ops.cloudwatch_alarms')!.section;
 
-    expect(context.alerts).toMatchObject({ state: 'not_supported', data: null, source: 'DevControl alerts' });
-    expect(context.alerts.reason).toBe('Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.');
-    expect(context.alerts.reason).not.toMatch(/Prometheus|not associated with an organization/);
+    expect(history).toMatchObject({ state: 'not_built', data: null, source: 'DevControl alert history' });
+    expect(history.reason).not.toMatch(/Prometheus|not associated with an organization/);
+    expect(['not_connected', 'error', 'unavailable']).toContain(alarms.state);
+    expect(alarms.data).toBeNull();
     const formatted = format(context);
     expect(formatted).not.toMatch(/active alerts: 0|Total active alerts|No recent incidents/i);
   });
 });
 
 describe('Anomalies section', () => {
-  it('is "not_supported" even when resources meet the old cost_spike threshold -- those rows are never shown as anomalies', async () => {
+  it('is not_built even when resources meet the old cost_spike threshold -- those rows are never shown as anomalies', async () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
     // Two EC2 resources at $300 each: >$100 per resource and >$500 per type --
@@ -359,10 +362,10 @@ describe('Anomalies section', () => {
 
     const context = await contextFor(orgId);
 
-    expect(context.anomalies).toEqual({
-      state: 'not_supported', source: 'DevControl anomaly detection', provenance: null, asOf: null, scope: null,
-      period: null, completeness: null, coverage: null, reason: "No anomaly detection is connected to the assistant's context.",
-      derivedFrom: null, data: null,
+    const anomalies = context.evidence.results.find((r) => r.id === 'anomalies.cost')!.section;
+    expect(anomalies).toMatchObject({
+      state: 'not_built', source: 'DevControl anomaly detection', provenance: null, asOf: null, data: null,
+      reason: 'DevControl does not detect cost anomalies yet',
     });
     const formatted = format(context);
     expect(formatted).not.toMatch(/cost_spike|Detected Anomalies|resources with high spend/);
@@ -373,6 +376,7 @@ describe('DORA section', () => {
   const METRICS = {
     deploymentFrequency: { tracked: true, value: 3.8, unit: 'per day', description: '114 successful deployments in 30 days' },
     leadTime: { tracked: false, reason: 'no change timestamp is recorded' },
+    changeFailureRate: { tracked: true, value: 1.7, unit: 'percentage', description: '2 failed out of 116 finished deployments' },
     mttr: { tracked: false, reason: 'no incident records are collected' },
     deployments: { successful: 114, failed: 2, finished: 116 },
   };
@@ -390,6 +394,8 @@ describe('DORA section', () => {
     expect(Date.parse(dora.asOf)).toBeGreaterThanOrEqual(before - 1000);
     expect(dora.data.leadTime).toBe('Not tracked (no change timestamp is recorded)');
     expect(dora.data.mttr).toBe('Not tracked (no incident records are collected)');
+    expect(dora.data.changeFailureRate).toBe('1.7% (2 failed out of 116 finished deployments)');
+    expect(dora.classification).toBe('calculated');
   });
 
   it('no finished deployments in the window is "unavailable" -- not an omitted section', async () => {
@@ -449,11 +455,12 @@ describe('gatherContext() negative control: every getter throws', () => {
     for (const name of ['discovery', 'account', 'services', 'resources', 'dora'] as const) {
       expect({ name, state: context[name].state, data: context[name].data }).toEqual({ name, state: 'error', data: null });
     }
-    // Alerts/anomalies have no source to fail -- not_supported, still no data.
-    expect(context.alerts).toMatchObject({ state: 'not_supported', data: null });
-    expect(context.anomalies).toMatchObject({ state: 'not_supported', data: null });
+    // Alert history and anomalies have no source to fail -- not_built, still no data.
+    const stateOf = (id: string) => context.evidence.results.find((r) => r.id === id)!.section;
+    expect(stateOf('alerts.history')).toMatchObject({ state: 'not_built', data: null });
+    expect(stateOf('anomalies.cost')).toMatchObject({ state: 'not_built', data: null });
     // Cost stays an error: no Cost Explorer figure and no estimate -- never $0.
-    expect(context.costs).toMatchObject({ state: 'error', source: 'unavailable', current: null, topSpenders: null });
+    expect(context.costs).toMatchObject({ state: 'error', provenance: null, data: null });
     expect(context.costs.costExplorer.state).toBe('error');
     expect(context.costs.comparison.currentWindowTotal).toBeNull();
 
@@ -492,7 +499,7 @@ describe('Inventory freshness: completed vs incomplete vs unknown discovery', ()
     expect(context.resources.data!.ec2.count).toBe(1);
 
     const formatted = format(context);
-    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('Alerts:'));
+    const inventory = formatted.slice(formatted.indexOf('Resource inventory ('), formatted.indexOf('DORA metrics'));
     expect(inventory).toMatch(/- Status: Partial/);
     expect(inventory).toMatch(/- Limitation: Latest discovery run is incomplete; inventory data may be stale or incomplete\./);
     expect(inventory).toMatch(/- EC2: 1 instances/);

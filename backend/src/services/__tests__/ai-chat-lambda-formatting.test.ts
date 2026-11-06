@@ -15,6 +15,9 @@
  * not_supported and must never be printed as "Detected Anomalies".
  */
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, InventoryResources } from '../ai-chat.service';
+import { chatCosts, evidenceBundle } from './chat-context-fixtures';
+import { ANOMALIES_NOT_BUILT_REASON } from '../ai/evidence/providers/not-built';
+import { notBuilt } from '../ai-context-contract';
 
 function noData(state: ContextSection<never>['state'], reason: string | null = null): ContextSection<never> {
   return { state, source: 'test source', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason, data: null };
@@ -26,7 +29,7 @@ function withLambda(lambda: InventoryResources['lambda']): ChatContext['resource
     state: 'available', source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-06T06:00:00.000Z',
     scope: null, coverage: null, reason: null, provenance: null, period: null, completeness: null, derivedFrom: null,
     data: {
-      ec2: { count: 0, utilization: noData('not_supported', 'DevControl does not collect EC2 CPU utilization into the resource inventory.') },
+      ec2: { count: 0 },
       rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },
       lambda,
     },
@@ -38,7 +41,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
     discovery: noData('unavailable', 'no discovery run has ever run for this account'),
     account: noData('unavailable', 'no AWS account is connected'),
     services: noData('unavailable', 'no resource discovery run has completed as the latest run, so an empty inventory is not a confirmed zero'),
-    costs: {
+    costs: chatCosts({
       state: 'unavailable',
       source: 'unavailable',
       current: null,
@@ -53,12 +56,11 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
         currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null,
         currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
       },
-    },
+    }),
     inventoryScope: { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: null },
     resources: noData('unavailable', 'no resource discovery run has completed as the latest run, so an empty inventory is not a confirmed zero'),
-    alerts: noData('not_supported', "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page."),
-    anomalies: noData('not_supported', "No anomaly detection is connected to the assistant's context."),
     dora: noData('unavailable', 'no deployments were recorded for this organization in the last 30 days'),
+    evidence: evidenceBundle({ 'anomalies.cost': notBuilt({ source: 'DevControl anomaly detection' }, ANOMALIES_NOT_BUILT_REASON) }),
     ...overrides,
   };
 }
@@ -113,13 +115,11 @@ describe('AIChatService.formatContext -- Lambda invocation line', () => {
 describe('AIChatService.formatContext -- anomalies', () => {
   const service = new AIChatService({} as any);
 
-  it('a not_supported anomalies section states its reason and is never presented as detected anomalies or as "none"', () => {
+  it('anomalies are not_built: stated as not provided yet, never as detected anomalies or as "none"', () => {
     const formatted: string = (service as any).formatContext(baseContext());
-    const anomalies = formatted.slice(formatted.indexOf('Anomalies:'), formatted.indexOf('DORA metrics'));
+    const anomalies = formatted.split('\n').find((l) => l.startsWith('- Cost anomalies:')) ?? '';
 
-    expect(anomalies).toMatch(/Status: Not supported/);
-    expect(anomalies).toMatch(/No anomaly detection is connected to the assistant's context\./);
-    expect(anomalies).toMatch(/This is not a zero, "none", or "no findings"/);
+    expect(anomalies).toBe("- Cost anomalies: DevControl doesn't provide this yet (DevControl does not detect cost anomalies yet) -- never say none were found, and never offer it as a DevControl feature.");
     expect(formatted).not.toMatch(/Detected Anomalies/);
     expect(formatted).not.toMatch(/cost_spike/);
     expect(anomalies).not.toMatch(/none detected/);

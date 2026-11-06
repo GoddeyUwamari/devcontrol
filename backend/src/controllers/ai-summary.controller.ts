@@ -35,6 +35,8 @@ export class AISummaryController {
           systemStatus: SYSTEM_STATUS_UNAVAILABLE,
           topRiskStatus: 'unavailable',
           generatedAt: new Date().toISOString(),
+          summarySource: 'ai_unavailable',
+          aiGeneratedAt: null,
         },
       });
     }

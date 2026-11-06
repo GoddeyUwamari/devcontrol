@@ -155,15 +155,16 @@ describe('Cost Explorer success', () => {
     const { costs } = await contextRepo.gatherContext(orgId);
 
     expect(costs.state).toBe('available');
-    expect(costs.source).toBe('actual');
-    expect(costs.current).toBe(300);
+    expect(costs.provenance).toBe('actual');
+    expect(costs.classification).toBe('billed');
+    expect(costs.data!.current).toBe(300);
     expect(costs.asOf).toBe(FETCHED_AT);
-    expect(costs.period).toEqual({ start: '2026-09-01', endExclusive: '2026-09-25' });
+    expect(costs.period).toEqual({ kind: 'range', start: '2026-09-01', endExclusive: '2026-09-25' });
     expect(costs.costExplorer).toEqual({ state: 'available', reason: null });
-    expect(costs.topSpenders!.map(s => s.service)).toEqual([
+    expect(costs.data!.topSpenders!.map((s: { service: string }) => s.service)).toEqual([
       'Amazon Elastic Compute Cloud - Compute', 'Amazon Simple Storage Service', 'AWS Lambda',
     ]);
-    expect(costs.topSpenders![0].percentage).toBeCloseTo(83.33, 2);
+    expect(costs.data!.topSpenders![0].percentage).toBeCloseTo(83.33, 2);
   });
 
   it('scope is the connected role\'s billing scope: no linked-account filter, consolidation unknown, all regions', async () => {
@@ -202,9 +203,9 @@ describe('Cost Explorer success', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('available');
-    expect(context.costs.source).toBe('actual');
-    expect(context.costs.current).toBe(0);
-    expect(context.costs.topSpenders).toEqual([]); // a real, empty breakdown -- not a stand-in for "unknown"
+    expect(context.costs.provenance).toBe('actual');
+    expect(context.costs.data!.current).toBe(0);
+    expect(context.costs.data!.topSpenders).toEqual([]); // a real, empty breakdown -- not a stand-in for "unknown"
     const formatted = format(context);
     expect(formatted).toMatch(/Month-to-date spend: \$0\.00/);
     expect(formatted).toMatch(/Cost Explorer returned no billed service line items/);
@@ -223,9 +224,9 @@ describe('Cost Explorer success', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('available');
-    expect(context.costs.source).toBe('actual');
-    expect(context.costs.current).toBe(-12.34);
-    expect(context.costs.topSpenders!.every(s => s.percentage === null)).toBe(true);
+    expect(context.costs.provenance).toBe('actual');
+    expect(context.costs.data!.current).toBe(-12.34);
+    expect(context.costs.data!.topSpenders!.every((s: { percentage: number | null }) => s.percentage === null)).toBe(true);
     expect(format(context)).toMatch(/Month-to-date spend: -\$12\.34 \(net negative/);
   });
 
@@ -237,7 +238,7 @@ describe('Cost Explorer success', () => {
 
     const context = await contextRepo.gatherContext(orgId);
 
-    expect(context.costs.current).toBe(0.4);
+    expect(context.costs.data!.current).toBe(0.4);
     expect(format(context)).toMatch(/Month-to-date spend: \$0\.40/);
   });
 });
@@ -252,10 +253,11 @@ describe('Cost Explorer failure', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('error');
-    expect(context.costs.source).toBe('unavailable');
+    expect(context.costs.provenance).toBeNull();
+    expect(context.costs.data).toBeNull();
     expect(context.costs.costExplorer).toEqual({ state: 'error', reason: 'the Cost Explorer request failed' });
-    expect(context.costs.current).toBeNull();
-    expect(context.costs.topSpenders).toBeNull();
+    expect(context.costs.data?.current ?? null).toBeNull();
+    expect(context.costs.data?.topSpenders ?? null).toBeNull();
     expect(context.costs.scope).toBeNull();
     expect(context.costs.comparison.state).toBe('unavailable');
     expect(context.costs.comparison.previousWindowTotal).toBeNull();
@@ -279,7 +281,7 @@ describe('Cost Explorer failure', () => {
 
     expect(context.costs.state).toBe('unavailable');
     expect(context.costs.costExplorer).toEqual({ state: 'unavailable', reason: 'no connected AWS account' });
-    expect(context.costs.current).toBeNull();
+    expect(context.costs.data?.current ?? null).toBeNull();
   });
 
   it('a failed estimate query is "error", not an unavailable-looking empty result', async () => {
@@ -287,13 +289,13 @@ describe('Cost Explorer failure', () => {
     const repo = new AIChatContextRepository(throwingPool);
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED: none'));
 
-    const costs: ChatContext['costs'] = await (repo as any).getCostData(
+    const costs: ChatContext['costs'] = await repo.collectCosts(
       'org-id', null, null, { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: null }
     );
 
     expect(costs.costExplorer.state).toBe('unavailable');
     expect(costs.state).toBe('error');
-    expect(costs.current).toBeNull();
+    expect(costs.data?.current ?? null).toBeNull();
   });
 });
 
@@ -309,12 +311,13 @@ describe('Inventory estimate fallback', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('available');
-    expect(context.costs.source).toBe('estimated');
-    expect(context.costs.current).toBe(42.5);
-    expect(context.costs.period).toBeNull();
-    expect(context.costs.topSpenders).toBeNull();
+    expect(context.costs.provenance).toBe('estimated');
+    expect(context.costs.classification).toBe('estimated');
+    expect(context.costs.data!.current).toBe(42.5);
+    expect(context.costs.period).toEqual({ kind: 'point_in_time' });
+    expect(context.costs.data?.topSpenders ?? null).toBeNull();
     expect(context.costs.costExplorer.state).toBe('error');
-    expect(context.costs.estimateCoverage).toEqual({ estimatedResources: 2, totalResources: 2 });
+    expect(context.costs.data!.estimateCoverage).toEqual({ estimatedResources: 2, totalResources: 2 });
     expect(context.costs.scope).toEqual({ kind: 'resource_inventory', connectedAccountId: ACCOUNT_ID, discoveryRegion: 'us-east-1' });
     expect(context.costs.scope).not.toHaveProperty('regions');
     expect(context.costs.scope).not.toHaveProperty('linkedAccountFilter');
@@ -340,7 +343,7 @@ describe('Inventory estimate fallback', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('partial');
-    expect(context.costs.estimateCoverage).toEqual({ estimatedResources: 1, totalResources: 2 });
+    expect(context.costs.data!.estimateCoverage).toEqual({ estimatedResources: 1, totalResources: 2 });
     expect(format(context)).toMatch(/Coverage: 1 of 2 discovered resources have a cost estimate/);
   });
 });
@@ -382,7 +385,7 @@ describe('Month-over-month comparison', () => {
     expect(comparison.currentWindowTotal).toBeNull();
     expect(comparison.changeAmount).toBeNull();
     expect(comparison.changePercent).toBeNull();
-    expect(comparison.previousWindowTotal).not.toBe(context.costs.current);
+    expect(comparison.previousWindowTotal).not.toBe(context.costs.data!.current);
 
     const formatted = format(context);
     expect(formatted).toMatch(/Previous period: not available -- do not assume spend was unchanged/);
@@ -399,7 +402,7 @@ describe('Month-over-month comparison', () => {
     const { costs } = await contextRepo.gatherContext(orgId);
 
     expect(costs.state).toBe('available');
-    expect(costs.current).toBe(500);
+    expect(costs.data!.current).toBe(500);
     expect(costs.comparison.state).toBe('error');
     expect(costs.comparison.previousWindowTotal).toBeNull();
     expect(costs.comparison.changePercent).toBeNull();
@@ -587,6 +590,7 @@ describe('DORA context labeling', () => {
     jest.spyOn((contextRepo as any).doraMetricsService, 'getComprehensiveMetrics').mockResolvedValue({
       deploymentFrequency: { tracked: true, value: 3.8, unit: 'per day', description: '114 successful deployments in 30 days' },
       leadTime: { tracked: false, reason: 'no change timestamp is recorded' },
+      changeFailureRate: { tracked: true, value: 1.7, unit: 'percentage', description: '2 failed out of 116 finished deployments' },
       mttr: { tracked: false, reason: 'no incident records are collected' },
       deployments: { successful: 114, failed: 2, finished: 116 },
     });
@@ -596,6 +600,7 @@ describe('DORA context labeling', () => {
     expect(dora.state).toBe('available');
     expect(dora.data).toEqual({
       deploymentFrequency: '114 successful deployments in 30 days',
+      changeFailureRate: '1.7% (2 failed out of 116 finished deployments)',
       leadTime: 'Not tracked (no change timestamp is recorded)',
       mttr: 'Not tracked (no incident records are collected)',
     });
@@ -664,7 +669,7 @@ describe('Credits: month-to-date spend vs the comparison window total', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     // The existing calculations are unchanged: two different, correctly-sourced figures.
-    expect(context.costs.current).toBe(10);
+    expect(context.costs.data!.current).toBe(10);
     expect(context.costs.comparison.currentWindowTotal).toBe(15);
     expect(context.costs.comparison.changeAmount).toBe(3);
 

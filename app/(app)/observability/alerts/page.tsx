@@ -35,9 +35,10 @@ const getDemoCostImpact = (a: Alert) => a.status === 'resolved' || a.status === 
 
 
 // alert_history's only writer (the Prometheus alert sync) stores no organization,
-// so org-scoped reads cannot see its alerts -- the same caveat the AI assistant
-// applies (ai-chat-context.repository.ts). An empty list is not "all healthy".
-const NO_ORG_ALERTS_NOTE = "DevControl's alert sync does not yet associate alerts with an organization, so an empty list here does not mean your services are healthy.";
+// so org-scoped reads cannot see its alerts -- the AI evidence registry states the
+// same (alerts.history: not_built). An empty list is not "all healthy". The copy
+// names no internal mechanism and points at the live alerts source.
+const NO_ORG_ALERTS_NOTE = "Alert history isn't available here yet, so an empty list doesn't mean your services are healthy. See Operational Health for your active CloudWatch alarms.";
 
 export default function AlertsPage() {
   return (

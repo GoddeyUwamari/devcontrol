@@ -43,9 +43,11 @@ function expectPlaceholdersMatchBindings(sql: string, params: unknown[]) {
 }
 
 /** A ChatContext['costs'] fixture -- only the fields spendSection() reads. */
+import { chatCosts, type LegacyChatCosts } from './chat-context-fixtures';
+
 function costs(overrides: Record<string, unknown>) {
   return {
-    costs: {
+    costs: chatCosts({
       state: 'available',
       source: 'actual',
       current: 0,
@@ -57,7 +59,7 @@ function costs(overrides: Record<string, unknown>) {
       estimateCoverage: null,
       comparison: { state: 'unavailable' },
       ...overrides,
-    },
+    } as unknown as LegacyChatCosts),
   };
 }
 

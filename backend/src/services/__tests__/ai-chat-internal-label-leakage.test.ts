@@ -15,6 +15,8 @@ import { Pool } from 'pg';
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection } from '../ai-chat.service';
 import { AIChatContextRepository } from '../../repositories/ai-chat-context.repository';
 import awsCostService from '../aws-cost.service';
+import { chatCosts, evidenceBundle } from './chat-context-fixtures';
+import { notBuilt } from '../ai-context-contract';
 
 /** Identifiers used by the context contract and the cost context. */
 const INTERNAL_IDENTIFIERS = [
@@ -34,7 +36,12 @@ const INTERNAL_IDENTIFIERS = [
 const SNAKE_CASE = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/g;
 const CAMEL_CASE = /\b[a-z]+[A-Z][A-Za-z0-9]*\b/g;
 
-function expectNoInternalLabels(text: string) {
+/**
+ * The untrusted-text fence is the one deliberate delimiter in the model input
+ * (the system prompt names it): its tag is removed before the checks.
+ */
+function expectNoInternalLabels(raw: string) {
+  const text = raw.replace(/<\/?untrusted_evidence[^>]*>/g, '');
   for (const identifier of INTERNAL_IDENTIFIERS) {
     expect({ identifier, found: text.includes(identifier) }).toEqual({ identifier, found: false });
   }
@@ -60,7 +67,7 @@ function everyStateContext(): ChatContext {
       scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only',
       reason: 'Latest discovery run is incomplete; inventory data may be stale or incomplete.',
     }),
-    costs: {
+    costs: chatCosts({
       state: 'available', source: 'actual', current: 15.07, asOf: '2026-09-25T15:17:36.123Z',
       period: { start: '2026-09-01', endExclusive: '2026-09-26' },
       scope: { kind: 'cost_explorer', connectedAccountId: '123456789012', linkedAccountFilter: 'none', consolidatedBilling: 'unknown', regions: 'all' },
@@ -77,19 +84,30 @@ function everyStateContext(): ChatContext {
         coverage: { currentDays: 24, previousDays: 25, expectedCurrentDays: 25, expectedPreviousDays: 25 },
         currentWindowIncludesToday: true, finishedThrough: null, asOf: '2026-09-25T15:17:36.123Z', basis: COMPARISON_BASIS,
       },
-    },
+    }),
     inventoryScope: INVENTORY_SCOPE,
     resources: section('available', {
-      ec2: { count: 1, utilization: noData('not_supported', { source: 'EC2 CPU utilization', reason: 'DevControl does not collect EC2 CPU utilization into the resource inventory.' }) },
+      ec2: { count: 1 },
       rds: { count: 2, estimatedMonthlyCost: 0, estimatedForCount: 2 },
       lambda: { count: 3, invocations: 150, invocationsKnownForCount: 2 },
     }, { asOf: '2026-09-25T06:00:03.693Z', scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only' }),
-    alerts: noData('not_supported', { source: 'DevControl alerts', reason: "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page." }),
-    anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
-    dora: section('available', { deploymentFrequency: '115 deployments in 30 days', leadTime: '6.2 hours (Average time between consecutive deployments)', mttr: '71.35 minutes (1 incidents recovered)' }, {
+    dora: section('available', { deploymentFrequency: '115 deployments in 30 days', changeFailureRate: '0.9% (1 failed out of 115 finished deployments)', leadTime: '6.2 hours (Average time between consecutive deployments)', mttr: '71.35 minutes (1 incidents recovered)' }, {
       source: 'DevControl deployment records', asOf: '2026-09-25T15:21:05.794Z',
       scope: { kind: 'organization', window: 'last 30 days' },
       coverage: 'deployments and incidents recorded in DevControl for this organization; deployments made outside DevControl are not included',
+    }),
+    // Every state the registry produces, in words: not provided yet, not in the plan, and available data.
+    evidence: evidenceBundle({
+      'alerts.history': notBuilt({ source: 'DevControl alert history' }, 'DevControl does not keep a history of past alerts for your organization yet'),
+      'security.security_hub': { ...noData('not_entitled', { source: 'AWS Security Hub (last DevControl sync)', reason: "not included in this organization's current plan" }) },
+      'ops.cloudwatch_alarms': section('available', {
+        outcome: 'found', inAlarmCount: 1, inAlarmComplete: true, configuredCount: 2, configuredCountComplete: true,
+        items: [{ ref: 'a1', type: 'metric', namespace: 'AWS/EC2', metric: 'CPUUtilization', comparison: 'GreaterThanThreshold', threshold: 80, inAlarmSince: null, resourceType: 'ec2' }],
+      }, {
+        source: 'Amazon CloudWatch alarms', asOf: '2026-09-25T15:17:00.000Z', classification: 'measured',
+        scope: { kind: 'aws_account_region', connectedAccountId: '123456789012', region: 'us-east-1' },
+        untrusted: [{ field: 'a1 alarm name', text: 'web high CPU' }],
+      }),
     }),
   };
 }
@@ -99,7 +117,7 @@ function estimatedCostContext(): ChatContext {
   const base = everyStateContext();
   return {
     ...base,
-    costs: {
+    costs: chatCosts({
       state: 'partial', source: 'estimated', current: 42.5, asOf: '2026-09-25T06:00:03.693Z', period: null,
       scope: INVENTORY_SCOPE, topSpenders: null,
       costExplorer: { state: 'error', reason: 'the Cost Explorer request failed' },
@@ -109,7 +127,7 @@ function estimatedCostContext(): ChatContext {
         currentWindow: null, previousWindow: null, currentWindowTotal: null, previousWindowTotal: null,
         changeAmount: null, changePercent: null, coverage: null, currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
       },
-    },
+    }),
     dora: noData('unavailable', { source: 'DevControl deployment records', scope: { kind: 'organization', window: 'last 30 days' }, reason: 'no deployments were recorded for this organization in the last 30 days' }),
   };
 }
@@ -145,7 +163,9 @@ describe('final model-facing text never exposes internal identifiers', () => {
     const text = await finalModelInput(everyStateContext());
 
     // The states and scopes really are present -- in natural language.
-    expect(text).toMatch(/Status: Not supported/);
+    expect(text).toMatch(/Alert history \(past alerts\): DevControl doesn't provide this yet/);
+    expect(text).toMatch(/AWS Security Hub: not included in this organization's current plan/);
+    expect(text).toMatch(/- in alarm count: 1/);
     expect(text).toMatch(/Status: Partial/);
     expect(text).toMatch(/AWS resources DevControl discovered/);
     expect(text).toMatch(/2026-09-01 through 2026-09-25 inclusive \(September 1–25, 2026\)/);

@@ -106,7 +106,7 @@ async function evidence(o: Overrides = {}): Promise<WeeklyEvidence> {
   return {
     period,
     ...spend,
-    alerts: repository.getWeeklyAlerts(),
+    alerts: await repository.getWeeklyAlerts(ORG, period),
     delivery: o.delivery ?? await available<WeeklyDORAMetrics>('DevControl deployment records', DELIVERY),
     security: o.security ?? await available<WeeklySecurityEvidence>('DevControl security posture score and configuration checks', {
       score: 72, accountLevelFindings: 2, resourceComplianceIssues: 5,
@@ -229,7 +229,8 @@ describe('Weekly Summary email wording', () => {
 
   it('J: alerts are stated as unavailable, never "no alerts"', async () => {
     const out = render(await evidence());
-    expect(out).toContain("Alert data was unavailable for this period: DevControl's alert sync does not yet associate alerts with an organization");
+    expect(out).toContain('Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.');
+    expect(out).not.toMatch(/alert sync|associate alerts with an organization/);
     expect(out).not.toMatch(UNSUPPORTED.noAlerts);
   });
 
@@ -405,7 +406,7 @@ describe('Weekly Summary model-written recommendation (disabled, PR #136 review 
     const e = await evidence({ trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); } });
     const prompt = buildRecommendationPrompt(e, composeWeeklySummary(e))!;
     expect(prompt).toContain('Cloud spend data was unavailable for this period');
-    expect(prompt).toContain('Alert data was unavailable for this period');
+    expect(prompt).toContain('Alerts: Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.');
     expect(prompt).toMatch(/never describe it as zero, none/);
     expect(prompt).toMatch(/Do not recommend rightsizing, Reserved Instances, or Savings Plans/);
     expect(prompt).not.toMatch(/Current monthly cloud spend/);

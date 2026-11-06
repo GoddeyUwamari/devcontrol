@@ -26,7 +26,15 @@ jest.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
+// Every evidence provider reads through the shared pool; here it is the fake below.
+const mockPools: { app?: unknown } = {};
+jest.mock('../../config/database', () => {
+  const actual = jest.requireActual('../../config/database');
+  return { ...actual, get pool() { return mockPools.app; } };
+});
+
 import { AIReportGeneratorService, ReportData } from '../ai-report-generator.service';
+import { chatCosts } from './chat-context-fixtures';
 import { AIChatContextRepository } from '../../repositories/ai-chat-context.repository';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
@@ -54,30 +62,30 @@ const AVAILABLE_COMPARISON: ChatContext['costs']['comparison'] = {
 };
 
 function actualCosts(amount: number, comparison = unavailableComparison()): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: 'available', source: 'actual', current: amount, asOf: '2026-09-26T06:00:00.000Z',
     period: { start: '2026-09-01', endExclusive: '2026-09-27' }, scope: CE_SCOPE,
     topSpenders: [{ service: 'Amazon EC2', cost: amount, percentage: amount > 0 ? 100 : null }],
     costExplorer: { state: 'available', reason: null }, estimateCoverage: null, comparison,
-  };
+  });
 }
 
 function estimatedCosts(amount: number, estimated: number, total: number): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: estimated < total ? 'partial' : 'available', source: 'estimated', current: amount, asOf: '2026-09-26T05:00:00.000Z',
     period: null, scope: INVENTORY_SCOPE, topSpenders: null,
     costExplorer: { state: 'unavailable', reason: 'no connected AWS account' },
     estimateCoverage: { estimatedResources: estimated, totalResources: total },
     comparison: unavailableComparison('no Cost Explorer data for the current period, so there is nothing to compare'),
-  };
+  });
 }
 
 function noCosts(state: 'error' | 'unavailable'): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state, source: 'unavailable', current: null, asOf: null, period: null, scope: null, topSpenders: null,
     costExplorer: { state, reason: state === 'error' ? 'the Cost Explorer request failed' : 'no connected AWS account' },
     estimateCoverage: null, comparison: unavailableComparison(),
-  };
+  });
 }
 
 async function basis(discoveryState: 'available' | 'unavailable' = 'available') {
@@ -93,13 +101,29 @@ async function basis(discoveryState: 'available' | 'unavailable' = 'available') 
 
 type Deployment = { service_id: string; status: string; deployed_at: string };
 
-function fakePool(deployments: Deployment[] = []) {
+/**
+ * The fake pool: answers the reads the report's sections need (deployments,
+ * the top estimated resources, the plan lookup, the cost-finding lifecycle
+ * counts); every other read fails, so the sources this suite does not set up
+ * are 'error' sections -- never invented data.
+ */
+function fakePool(deployments: Deployment[] = [], recommendations: unknown[] = []) {
+  const unexpected = (sql: string) => { throw new Error(`unexpected query: ${sql}`); };
   return {
     query: jest.fn(async (sql: string) => {
       if (/FROM deployments/.test(sql)) return { rows: deployments };
       if (/estimated_monthly_cost > 0/.test(sql)) return { rows: [{ resource_id: 'i-1', resource_type: 'ec2', estimated_monthly_cost: '42.50', resource_name: 'web' }] };
-      throw new Error(`unexpected query: ${sql}`);
+      if (/FROM organizations WHERE id/.test(sql)) return { rows: [{ subscription_tier: 'pro', billing_lifecycle_state: null, grace_period_ends_at: null }] };
+      return unexpected(sql);
     }),
+    connect: jest.fn(async () => ({
+      query: jest.fn(async (sql: string) => {
+        if (/set_config/.test(sql)) return { rows: [] };
+        if (/GROUP BY status/.test(sql)) return { rows: [{ status: 'ACTIVE', n: String(recommendations.length) }] };
+        return unexpected(sql);
+      }),
+      release: jest.fn(),
+    })),
   } as any;
 }
 
@@ -110,10 +134,7 @@ function mockSources(opts: {
   statsFails?: boolean;
   recommendations?: Array<{ resource_id: string; resource_type: string; issue: string; potential_savings: number; metadata?: Record<string, unknown> }>;
 } = {}) {
-  jest.spyOn(AIChatContextRepository.prototype, 'gatherCostContext').mockImplementation(async () => ({
-    ...(await basis(opts.discovery)),
-    costs: opts.costs ?? actualCosts(14.83),
-  }));
+  jest.spyOn(AIChatContextRepository.prototype, 'collectCosts').mockImplementation(async () => opts.costs ?? actualCosts(14.83));
   jest.spyOn(AIChatContextRepository.prototype, 'gatherInventoryBasis').mockImplementation(() => basis(opts.discovery));
   const getStats = jest.spyOn(AWSResourcesRepository.prototype, 'getStats');
   if (opts.statsFails) {
@@ -143,7 +164,9 @@ afterAll(() => {
 
 async function evidence(opts: Parameters<typeof mockSources>[0] = {}, deployments: Deployment[] = [], reportType = 'weekly_summary'): Promise<ReportData> {
   mockSources(opts);
-  return new AIReportGeneratorService(fakePool(deployments)).fetchReportData(ORG, RANGE, reportType);
+  const pool = fakePool(deployments, opts.recommendations ?? []);
+  mockPools.app = pool;
+  return new AIReportGeneratorService(pool).fetchReportData(ORG, RANGE, reportType);
 }
 
 describe('AI Reports evidence -- cost', () => {
@@ -190,10 +213,12 @@ describe('AI Reports evidence -- cost', () => {
 });
 
 describe('AI Reports evidence -- security, resources, alerts', () => {
-  it('there is no security score and no previous score -- both are explicitly not supported', async () => {
-    const { sections } = await evidence();
-    expect(sections.securityScore).toMatchObject({ state: 'not_supported', data: null });
-    expect(sections.securityHistory).toMatchObject({ state: 'not_supported', data: null });
+  it('the security score is the plan-gated posture-score provider (A-D12), never a not_supported placeholder; there is no separate previous-score section', async () => {
+    const { sections, evidence: bundle } = await evidence();
+    expect(sections.securityScore?.state).not.toBe('not_supported');
+    expect(sections.securityScore?.source).toBe('DevControl security posture score');
+    expect(sections).not.toHaveProperty('securityHistory');
+    expect(bundle?.results.find((r) => r.id === 'security.risk_score')?.section).toBe(sections.securityScore);
     expect(JSON.stringify(sections)).not.toMatch(/previousScore/);
   });
 
@@ -221,15 +246,18 @@ describe('AI Reports evidence -- security, resources, alerts', () => {
     expect(sections.securityFindings).toMatchObject({ state: 'unavailable', data: null });
   });
 
-  it('resource change over the period is not supported -- no invented growth', async () => {
+  it('resource change over the period is not built -- no invented growth', async () => {
     const { sections } = await evidence();
-    expect(sections.resourceChange).toMatchObject({ state: 'not_supported', data: null });
+    expect(sections.resourceChange).toMatchObject({ state: 'not_built', data: null });
+    expect(sections.resourceChange?.reason).toMatch(/keeps only the current resource inventory/);
     expect(sections.resourceInventory).toMatchObject({ state: 'available', data: { total: 12 } });
   });
 
-  it('alerts are not supported -- never "0 alerts"', async () => {
+  it('alerts are CloudWatch alarms (A-D10); alarms that could not be read are an error with a safe code, never "0 alerts"; alert history is not built', async () => {
     const { sections } = await evidence();
-    expect(sections.alerts).toMatchObject({ state: 'not_supported', data: null, source: 'DevControl alerts', reason: 'Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.' });
+    expect(sections.cloudwatchAlarms).toMatchObject({ state: 'error', data: null, source: 'Amazon CloudWatch alarms', failure: { code: 'internal' } });
+    expect(sections.alertHistory).toMatchObject({ state: 'not_built', data: null, source: 'DevControl alert history' });
+    expect(sections).not.toHaveProperty('alerts');
   });
 
   it('a failed inventory read is an error section with a safe reason, and other sections are unaffected', async () => {
@@ -409,9 +437,11 @@ describe('AI Reports prompt grounding', () => {
 
     expect(prompt).toContain('"provenance":"estimated"');
     expect(prompt).toContain('"basis":"estimated_monthly_run_rate"');
-    expect(prompt).toMatch(/### Month-over-month cost comparison\n\{"contractVersion":1,"state":"unavailable"[^\n]*"evidencePresent":false/);
-    expect(prompt).toMatch(/### Alerts\n[^\n]*"state":"not_supported"/);
-    expect(prompt).toMatch(/never say there were no alerts, zero alerts/);
+    expect(prompt).toMatch(/### Month-over-month cost comparison\n\{"contractVersion":2,"state":"unavailable"[^\n]*"evidencePresent":false/);
+    expect(prompt).toMatch(/### Alert history \(past alerts\)\n[^\n]*"state":"not_built"/);
+    expect(prompt).toMatch(/### CloudWatch alarms \(current state\)\n[^\n]*"state":"error"/);
+    expect(prompt).toMatch(/never say there were no alerts during the period/);
+    expect(prompt).toMatch(/- \[ops\.cloudwatch_alarms\] CloudWatch alarms \(current state\): couldn't be retrieved right now/);
     expect(prompt).toMatch(/never describe it as zero, none, empty, unchanged, flat, or "no findings"/);
     expect(prompt).toMatch(/Never state a previous-period cost, a trend, or a percentage change unless/);
     expect(prompt).toMatch(/never call it lead time/);
@@ -464,7 +494,7 @@ describe('AI Reports deterministic fallback', () => {
     const text = JSON.stringify(report);
 
     expect(text).toContain('Cloud spend is not available');
-    expect(text).toContain('Alert counts are not included in this report yet. See Operational Health for your active CloudWatch alarms.');
+    expect(text).toContain('CloudWatch alarm status is not available: Amazon CloudWatch alarms could not be retrieved.');
     expect(text).not.toMatch(/Prometheus|not associated with an organization/);
     expect(text).not.toMatch(/\$0(\.00)?\b/);
     expect(text).not.toMatch(/\b0 alerts|no alerts|0 critical alerts/i);

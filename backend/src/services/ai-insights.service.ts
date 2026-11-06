@@ -81,6 +81,20 @@ export function parseDashboardSummaryInput(input: unknown): StructuredDashboardS
   return { overallHealth: { score, context }, topRisk, cloudSpend, systemStatus };
 }
 
+/**
+ * Who wrote a summary (AI truth PR 1 review L4):
+ *   ai_written      the model's fields are used
+ *   facts_only      the model answered, but not usably (refused, truncated,
+ *                   no or a malformed tool call): deterministic fields only
+ *   ai_unavailable  the model could not be called (no key, or the call failed)
+ */
+export type SummarySource = 'ai_written' | 'facts_only' | 'ai_unavailable';
+
+export interface DashboardSummaryOutcome {
+  fields: StructuredDashboardSummary | null;
+  source: SummarySource;
+}
+
 export class AIInsightsService {
   /**
    * The summary as 4 distinct fields (overallHealth, topRisk, cloudSpend,
@@ -90,9 +104,14 @@ export class AIInsightsService {
    * caller shows only its deterministic fields.
    */
   async generateStructuredDashboardSummary(prompt: string): Promise<StructuredDashboardSummary | null> {
+    return (await this.summarizeDashboard(prompt)).fields;
+  }
+
+  /** As generateStructuredDashboardSummary(), saying who wrote the result. */
+  async summarizeDashboard(prompt: string): Promise<DashboardSummaryOutcome> {
     if (!getModelClient()) {
       console.log('[AI Insights] No API key - skipping dashboard summary');
-      return null;
+      return { fields: null, source: 'ai_unavailable' };
     }
 
     const result = await runModel(
@@ -107,6 +126,8 @@ export class AIInsightsService {
         return fields ? { ok: true, value: fields } : { ok: false, reason: 'malformed_output' };
       }
     );
-    return result.ok ? result.value : null;
+    if (result.ok) return { fields: result.value, source: 'ai_written' };
+    const unreachable = result.reason === 'not_configured' || result.reason.startsWith('error_');
+    return { fields: null, source: unreachable ? 'ai_unavailable' : 'facts_only' };
   }
 }

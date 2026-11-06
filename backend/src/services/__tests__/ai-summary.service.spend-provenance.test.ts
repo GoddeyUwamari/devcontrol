@@ -12,7 +12,32 @@
  * actual prompt handed to AIInsightsService.generateStructuredDashboardSummary()
  * and on the returned fields.
  */
-import { AISummaryService, SYSTEM_STATUS_UNAVAILABLE } from '../ai-summary.service';
+// Every evidence provider reads through the shared pool: a fake that refuses
+// every read except the two the cost findings need, so a source this suite
+// does not set up is an 'error' section, never invented data.
+const mockPools: { activeRecommendations: number } = { activeRecommendations: 0 };
+jest.mock('../../config/database', () => {
+  const actual = jest.requireActual('../../config/database');
+  const refuse = async (sql: string) => { throw new Error(`unexpected query: ${String(sql).slice(0, 40)}`); };
+  return {
+    ...actual,
+    pool: {
+      query: jest.fn(refuse),
+      connect: jest.fn(async () => ({
+        query: jest.fn(async (sql: string) => {
+          if (/set_config/.test(sql)) return { rows: [] };
+          if (/GROUP BY status/.test(sql)) return { rows: [{ status: 'ACTIVE', n: String(mockPools.activeRecommendations) }] };
+          return refuse(sql);
+        }),
+        release: jest.fn(),
+      })),
+    },
+  };
+});
+
+import { AISummaryService, SYSTEM_STATUS_UNAVAILABLE, systemStatusFor } from '../ai-summary.service';
+import { operationsSources } from '../ai/evidence/providers/operations';
+import { chatCosts } from './chat-context-fixtures';
 import { SystemIntelligenceService, SystemIntelligenceResult } from '../system-intelligence.service';
 import { RiskTrackingService } from '../risk-tracking.service';
 import { AccountSecurityFindingsRepository } from '../../repositories/account-security-findings.repository';
@@ -36,26 +61,26 @@ function unavailableComparison(): ChatContext['costs']['comparison'] {
 }
 
 function actualCosts(amount: number, comparison = unavailableComparison()): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: 'available', source: 'actual', current: amount, asOf: '2026-09-26T06:00:00.000Z',
     period: { start: '2026-09-01', endExclusive: '2026-09-27' }, scope: CE_SCOPE, topSpenders: [],
     costExplorer: { state: 'available', reason: null }, estimateCoverage: null, comparison,
-  };
+  });
 }
 
 function estimatedCosts(amount: number): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: 'available', source: 'estimated', current: amount, asOf: '2026-09-26T05:00:00.000Z', period: null, scope: INVENTORY_SCOPE,
     topSpenders: null, costExplorer: { state: 'unavailable', reason: 'no connected AWS account' },
     estimateCoverage: { estimatedResources: 5, totalResources: 5 }, comparison: unavailableComparison(),
-  };
+  });
 }
 
 function noCosts(): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: 'error', source: 'unavailable', current: null, asOf: null, period: null, scope: null, topSpenders: null,
     costExplorer: { state: 'error', reason: 'the Cost Explorer request failed' }, estimateCoverage: null, comparison: unavailableComparison(),
-  };
+  });
 }
 
 function intelligence(): SystemIntelligenceResult {
@@ -82,6 +107,10 @@ const sumCounts = (a: Counts, b: Counts): Counts => ({
   critical: a.critical + b.critical, high: a.high + b.high, medium: a.medium + b.medium, low: a.low + b.low,
 });
 
+// A fresh reading: alarms older than five minutes are out of date (the provider's freshness rule).
+const ALARMS_AT = new Date().toISOString();
+const ALARMS_FAILED_STATUS = "CloudWatch alarm status is unavailable: couldn't be retrieved right now (internal error). See Operational Health for your active CloudWatch alarms.";
+
 const MODEL_FIELDS = { overallHealth: { score: 80, context: 'x' }, topRisk: 'No risks at all', cloudSpend: 'Spend is $0', systemStatus: 'No critical outages are currently active.' };
 
 function mockDependencies(opts: {
@@ -97,7 +126,14 @@ function mockDependencies(opts: {
   recommendations?: { active: number; savings: number } | Error;
   model?: typeof MODEL_FIELDS | null;
   intelligence?: SystemIntelligenceResult;
+  /** CloudWatch alarms in ALARM; null (the default) = the read failed. */
+  alarmsInAlarm?: number | null;
 } = {}) {
+  const alarmsInAlarm = opts.alarmsInAlarm ?? null;
+  jest.spyOn(operationsSources, 'alarms').mockResolvedValue(alarmsInAlarm === null
+    ? { status: 'error', reason: 'failed', checked_at: ALARMS_AT, region: 'us-east-1', in_alarm: null, in_alarm_complete: null, configured_count: null, configured_count_complete: null, truncated: null }
+    : { status: 'ok', reason: null, checked_at: ALARMS_AT, region: 'us-east-1', in_alarm: Array.from({ length: alarmsInAlarm }, (_, i) => ({ name: `alarm-${i}`, type: 'metric', namespace: 'AWS/EC2', metric: 'CPUUtilization', comparison: 'GreaterThanThreshold', threshold: 80, state_since: null, resource: null })), in_alarm_complete: true, configured_count: 4, configured_count_complete: true, truncated: false });
+  jest.spyOn(operationsSources, 'peekEvaluation').mockReturnValue(null);
   jest.spyOn(SystemIntelligenceService.prototype, 'getSystemIntelligence').mockResolvedValue(opts.intelligence ?? intelligence());
   const perSource = opts.accountCounts && opts.resourceCounts
     ? {
@@ -117,19 +153,29 @@ function mockDependencies(opts: {
   const getActive = jest.spyOn(AccountSecurityFindingsRepository.prototype, 'getActive');
   if (opts.findings instanceof Error) getActive.mockRejectedValue(opts.findings);
   else getActive.mockResolvedValue((opts.findings ?? []) as any);
-  const getStats = jest.spyOn(CostRecommendationsRepository.prototype, 'getStats');
-  if (opts.recommendations instanceof Error) getStats.mockRejectedValue(opts.recommendations);
-  else getStats.mockResolvedValue({
-    total_recommendations: 0, active_recommendations: opts.recommendations?.active ?? 0,
-    total_potential_savings: opts.recommendations?.savings ?? 0, potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {}, by_severity: { high: 0, medium: 0, low: 0 },
-  });
-  jest.spyOn(AIChatContextRepository.prototype, 'gatherCostContext').mockImplementation(async () => {
+  const findAll = jest.spyOn(CostRecommendationsRepository.prototype, 'findAll');
+  if (opts.recommendations instanceof Error) {
+    findAll.mockRejectedValue(opts.recommendations);
+    mockPools.activeRecommendations = 0;
+  } else {
+    const active = opts.recommendations?.active ?? 0;
+    const each = active > 0 ? (opts.recommendations?.savings ?? 0) / active : 0;
+    findAll.mockResolvedValue(Array.from({ length: active }, (_, i) => ({
+      id: `rec-${i}`, resource_id: `vol-${i}`, resource_type: 'ebs', issue: 'Unused EBS Volume', potential_savings: each,
+      severity: 'MEDIUM', status: 'ACTIVE', metadata: { savings_basis: 'estimated: list price' },
+    })) as any);
+    mockPools.activeRecommendations = active;
+  }
+  const discoveryBasis = async () => {
     const discovery = await collectSection<{ completedAt: string }>({ source: 'DevControl resource discovery runs' }, async () => ({ state: 'available', data: { completedAt: '2026-09-26T05:00:00.000Z' } }));
     const account = await collectSection<{ accountId: string | null; region: string | null }>({ source: 'DevControl connected AWS account record' }, async () => ({ state: 'available', data: { accountId: '111122223333', region: 'us-east-1' } }));
-    return { discovery, account, inventoryScope: INVENTORY_SCOPE, costs: opts.costs ?? actualCosts(1000) };
-  });
-  return jest.spyOn(AIInsightsService.prototype, 'generateStructuredDashboardSummary')
-    .mockResolvedValue(opts.model === undefined ? MODEL_FIELDS : opts.model);
+    return { discovery, account, inventoryScope: INVENTORY_SCOPE };
+  };
+  jest.spyOn(AIChatContextRepository.prototype, 'gatherInventoryBasis').mockImplementation(discoveryBasis);
+  jest.spyOn(AIChatContextRepository.prototype, 'collectCosts').mockImplementation(async () => opts.costs ?? actualCosts(1000));
+  const model = opts.model === undefined ? MODEL_FIELDS : opts.model;
+  return jest.spyOn(AIInsightsService.prototype, 'summarizeDashboard')
+    .mockResolvedValue({ fields: model, source: model ? 'ai_written' : 'ai_unavailable' });
 }
 
 beforeEach(() => {
@@ -190,12 +236,28 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
 });
 
 describe('Dashboard AI summary -- monitoring, security, recommendations', () => {
-  it('unevaluated outage evidence can never produce "no outages"', async () => {
+  it('alarms that could not be read can never produce "no outages": System Status says so, the model\'s words are replaced', async () => {
     const { prompt, result } = await run();
     expect(prompt).not.toMatch(/No critical outages/);
-    expect(prompt).toMatch(/Outage and incident status: not available — CloudWatch alarms are not yet included in this summary \(they are shown on the Operational Health page\), and DevControl does not detect outages, incidents, or anomalies\. Do not state or imply that there are no outages/);
+    expect(prompt).toMatch(/CloudWatch alarms: couldn't be retrieved right now \(internal error\) -- this is missing data, never "none"\. Do not state or imply that there are no alarms, outages, incidents, or anomalies\./);
     // The model returned "No critical outages are currently active." -- it is replaced.
-    expect(result.systemStatus).toBe(SYSTEM_STATUS_UNAVAILABLE);
+    expect(result.systemStatus).toBe(ALARMS_FAILED_STATUS);
+  });
+
+  it('System Status is the CloudWatch alarm state (A-D10): a real zero is stated as zero in ALARM, never "no outages"', async () => {
+    const zero = await run({ alarmsInAlarm: 0 });
+    expect(zero.prompt).toContain('CloudWatch alarms in us-east-1: 0 in ALARM, 4 configured (current state only). DevControl does not detect outages, incidents, or anomalies: never infer that there are none.');
+    expect(zero.result.systemStatus).toBe(`No CloudWatch alarms are in ALARM in us-east-1 as of ${ALARMS_AT}. See Operational Health for details.`);
+
+    jest.restoreAllMocks();
+    const two = await run({ alarmsInAlarm: 2 });
+    expect(two.result.systemStatus).toBe(`2 CloudWatch alarms are in ALARM in us-east-1 as of ${ALARMS_AT}. See Operational Health for details.`);
+    expect(JSON.stringify(two.result)).not.toContain('No critical outages');
+  });
+
+  it('the whole-summary failure status names no internal mechanism', () => {
+    expect(SYSTEM_STATUS_UNAVAILABLE).toBe('CloudWatch alarm status is unavailable right now. See Operational Health for your active CloudWatch alarms.');
+    expect(systemStatusFor).toBeInstanceOf(Function);
   });
 
   it('failed security evidence is not "no risks": the fact says not available and topRisk is unavailable', async () => {
@@ -219,13 +281,14 @@ describe('Dashboard AI summary -- monitoring, security, recommendations', () => 
   it('an identified risk is always the finding itself -- model text can never replace it', async () => {
     // The model returns topRisk "No risks at all" alongside a critical finding.
     const identified = await run({ findings: [{ title: 'SSH open to the internet', severity: 'critical' }], combined: 1 });
-    expect(identified.prompt).toContain('Top active finding: "SSH open to the internet" (severity: critical).');
+    expect(identified.prompt).toContain('Top active finding: severity critical; its title is the "top title" entry of the untrusted_evidence block below.');
+    expect(identified.prompt).toMatch(/<untrusted_evidence source="security\.top_risk"[^\n]*>\n\[\{"field":"top title","text":"SSH open to the internet"\}\]\n<\/untrusted_evidence>/);
     expect(identified.result).toMatchObject({ topRisk: 'SSH open to the internet (critical severity)', topRiskStatus: 'identified' });
     expect(JSON.stringify(identified.result)).not.toContain('No risks at all');
 
     jest.restoreAllMocks();
     const noModel = await run({ findings: [{ title: 'SSH open to the internet', severity: 'critical' }], combined: 1, model: null });
-    expect(noModel.result).toMatchObject({ topRisk: 'SSH open to the internet (critical severity)', topRiskStatus: 'identified', systemStatus: SYSTEM_STATUS_UNAVAILABLE });
+    expect(noModel.result).toMatchObject({ topRisk: 'SSH open to the internet (critical severity)', topRiskStatus: 'identified', systemStatus: ALARMS_FAILED_STATUS });
   });
 
   it('account findings unavailable, posture available: the combined count is labeled combined -- never resource-compliance-only', async () => {

@@ -82,8 +82,8 @@ export class AIChatController {
       console.log(`[AI Chat Controller] Processing chat for org: ${organizationId}`);
       console.log(`[AI Chat Controller] Message count: ${messages.length}`);
 
-      // Gather AWS context for the organization
-      const context = await this.contextRepo.gatherContext(organizationId);
+      // Gather AWS context for the organization; the conversation chooses the evidence topics only.
+      const context = await this.contextRepo.gatherContext(organizationId, history.messages);
       // The model call needs no database: no pooled connection is held while it streams.
       releaseRequestConnection(res);
 
@@ -150,11 +150,12 @@ export class AIChatController {
 
       console.log(`[AI Chat Controller] Sync chat for org: ${organizationId}`);
 
-      const context = await this.contextRepo.gatherContext(organizationId);
+      const context = await this.contextRepo.gatherContext(organizationId, history.messages);
       // The model call needs no database: no pooled connection is held while it runs.
       releaseRequestConnection(res);
       const response = await this.chatService.chatSync(history.messages, context);
 
+      const alarms = context.evidence.results.find((r) => r.id === 'ops.cloudwatch_alarms')?.section;
       res.json({
         success: true,
         data: {
@@ -164,13 +165,14 @@ export class AIChatController {
           context: {
             services: context.services.state === 'available' ? context.services.data?.length ?? null : null,
             servicesState: context.services.state,
-            currentCost: context.costs.current,
+            currentCost: context.costs.data?.current ?? null,
             costState: context.costs.state,
-            costSource: context.costs.source,
+            costSource: context.costs.provenance ?? 'unavailable',
             costDataAsOf: context.costs.asOf,
             resourceDataAsOf: context.discovery.data?.completedAt ?? null,
-            alertCount: context.alerts.state === 'available' ? context.alerts.data?.total ?? null : null,
-            alertState: context.alerts.state,
+            // Alerts are CloudWatch alarms (the alerts source): how many are in ALARM now.
+            alertCount: alarms?.state === 'available' ? (alarms.data as { inAlarmCount: number } | null)?.inAlarmCount ?? null : null,
+            alertState: alarms?.state ?? 'error',
           },
         },
       });
