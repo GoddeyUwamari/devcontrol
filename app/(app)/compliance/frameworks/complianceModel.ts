@@ -26,7 +26,6 @@ import {
 } from '@/lib/compliance/evaluation'
 import type { FrameworkResults } from '@/lib/compliance/useFrameworkEvaluations'
 import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
-import { PLAN_DISPLAY_NAME } from '@/lib/plan/plan-names'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'plan' } | { status: 'error' } | { status: 'ready'; data: T }
 
@@ -44,8 +43,9 @@ export const COMPLIANCE_COPY = {
   viewerCantAddFrameworks: "Viewers can't add frameworks.",
   // The sync is requireAdmin (security-hub.routes.ts:61): members and viewers alike (founder follow-up, Oct 27).
   onlyAdminsSyncSecurityHub: 'Only admins can sync Security Hub.',
-  // The KPI strip below Enterprise: custom frameworks only (the Security Hub standards are on Pro), by the plan's customer-facing name.
-  customFrameworksPlan: `Custom compliance frameworks are on the ${PLAN_DISPLAY_NAME.enterprise} plan.`,
+  // The KPI strip below Enterprise: custom frameworks only (the Security Hub standards are on Pro). The same sentence
+  // the Security page tile and a refused start show.
+  customFrameworksPlan: EVALUATION_COPY.enterprisePlan,
   // The failed banner (founder wording, Oct 28): mirrors the out-of-date banner; "Try again" on the newest failed run.
   tryAgain: 'Try again',
   // D3: the Security Hub card body, per state (Q5: in place of the "isn't enabled" text).

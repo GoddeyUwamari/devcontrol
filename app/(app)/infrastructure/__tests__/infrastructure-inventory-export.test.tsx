@@ -101,8 +101,9 @@ describe('/infrastructure resource inventory export', () => {
     const button = await screen.findByTestId('inventory-export-button')
     expect(button.textContent?.trim()).toBe('Export inventory')
     fireEvent.click(button)
-    // The existing dialog, with its own title.
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Export Resources')
+    // The existing dialog, titled as the button.
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Export inventory')
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Export Resources')
     expect(screen.queryByTestId('inventory-export-plan-required')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))

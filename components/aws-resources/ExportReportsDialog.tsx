@@ -140,7 +140,7 @@ export function ExportReportsDialog({
               <Download className="h-5 w-5 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <DialogTitle>Export Resources</DialogTitle>
+              <DialogTitle>Export inventory</DialogTitle>
               <DialogDescription>
                 Export {totalResources} AWS resource{totalResources !== 1 ? 's' : ''} to CSV or PDF
               </DialogDescription>

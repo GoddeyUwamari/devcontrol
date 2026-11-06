@@ -182,10 +182,10 @@ describe('a start that didn\'t happen keeps the previous state', () => {
     const before = row().textContent
     expect(within(row()).queryByRole('link', { name: 'See plans' })).toBeNull()
     fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
-    await waitFor(() => expect(row()).toHaveTextContent('Compliance frameworks are on the Enterprise plan.'))
+    await waitFor(() => expect(row()).toHaveTextContent('Custom compliance frameworks are on the Revenue Protection plan.'))
     await settled(client)
     expect(row()).toHaveAttribute('data-state', 'out_of_date')
-    expect(row().textContent).toBe(`${before}Compliance frameworks are on the Enterprise plan.See plans`)
+    expect(row().textContent).toBe(`${before}Custom compliance frameworks are on the Revenue Protection plan.See plans`)
     expect(within(row()).getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/settings/billing/upgrade')
     expect(within(row()).getByRole('button', { name: 'Re-evaluate now' })).toBeEnabled()
   })

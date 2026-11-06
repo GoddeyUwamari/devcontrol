@@ -151,7 +151,7 @@ describe('starting a run (D5, 409 contract)', () => {
   it('402 → the Enterprise sentence and See plans under the button', async () => {
     await show({ [START]: failWith(402, 'TIER_REQUIRED') })
     fireEvent.click(within(row()).getByRole('button', { name: 'Re-evaluate now' }))
-    await waitFor(() => expect(within(row()).getByRole('alert')).toHaveTextContent('Compliance frameworks are on the Enterprise plan.'))
+    await waitFor(() => expect(within(row()).getByRole('alert')).toHaveTextContent('Custom compliance frameworks are on the Revenue Protection plan.'))
     expect(within(row()).getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/settings/billing/upgrade')
   })
 })

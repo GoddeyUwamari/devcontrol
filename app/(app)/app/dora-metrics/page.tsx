@@ -485,11 +485,11 @@ export default function DORAMetricsPage() {
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         <div className="px-5 sm:px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
-            <div className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Enterprise · Custom Benchmarks</div>
+            <div className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">{PLAN_DISPLAY_NAME.enterprise} · Custom Benchmarks</div>
             <p className="text-ui font-semibold text-slate-900 mb-1">Benchmark Settings</p>
             <p className="text-meta text-ink-muted">Override industry-standard DORA thresholds with targets specific to your organization.</p>
           </div>
-          {isEnterprise && <span className="text-label text-ink-success bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap self-start">Enterprise Active</span>}
+          {isEnterprise && <span className="text-label text-ink-success bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap self-start">{PLAN_DISPLAY_NAME.enterprise} active</span>}
         </div>
         {!isEnterprise ? (
           <div className="p-10 sm:p-16 text-center bg-slate-50">

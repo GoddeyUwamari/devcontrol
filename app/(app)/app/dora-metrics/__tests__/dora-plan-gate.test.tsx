@@ -101,6 +101,10 @@ describe('DORA page — plan', () => {
     expect(lock).toHaveTextContent('Available on the Revenue Protection plan.')
     expect(within(lock).getByRole('link', { name: 'Upgrade to Revenue Protection →' })).toHaveAttribute('href', '/settings/billing')
     expect(lock.textContent).not.toMatch(/Enterprise/)
+    // The section label uses the customer-facing name; the active badge is Enterprise-only.
+    expect(screen.getByText('Revenue Protection · Custom Benchmarks')).toBeInTheDocument()
+    expect(screen.queryByText('Revenue Protection active')).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Enterprise · Custom Benchmarks|Enterprise Active/)
   })
 
   it('on enterprise: both are requested', async () => {
@@ -110,6 +114,9 @@ describe('DORA page — plan', () => {
     await waitFor(() => expect(asked('/api/metrics/dora')).toBe(true))
     await waitFor(() => expect(asked('/api/dora/benchmarks')).toBe(true))
     expect(screen.queryByText('Custom DORA Benchmarking')).not.toBeInTheDocument()
+    expect(screen.getByText('Revenue Protection · Custom Benchmarks')).toBeInTheDocument()
+    expect(screen.getByText('Revenue Protection active')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Enterprise · Custom Benchmarks|Enterprise Active/)
   })
 
   it('while the plan is loading: the loading state, no upgrade state, no request', async () => {
