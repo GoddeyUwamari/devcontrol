@@ -17,7 +17,7 @@ import api from '@/lib/api'
 import DORAMetricsPage from '../page'
 
 vi.mock('@/lib/contexts/auth-context', () => ({
-  useAuth: () => ({ organization: { id: 'org-1', subscriptionTier: 'enterprise' } }),
+  useAuth: () => ({ organization: { id: 'org-1', subscriptionTier: 'enterprise' }, organizationStatus: 'ready' }),
 }))
 
 vi.mock('@/components/demo/demo-mode-toggle', () => ({

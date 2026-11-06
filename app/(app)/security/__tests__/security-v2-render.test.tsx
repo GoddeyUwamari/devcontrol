@@ -256,12 +256,12 @@ describe('tiles: unavailable is never 0', () => {
   })
   it('compliance: Enterprise note only for a real 402; any other failure is an error', async () => {
     const a = await show({ 'GET /api/compliance-frameworks': fail(402), [`GET ${SCANS_PATH}`]: fail(402) })
-    expect(screen.getByTestId('security-tile-compliance')).toHaveTextContent('Compliance frameworks are on the Enterprise plan.')
+    expect(screen.getByTestId('security-tile-compliance')).toHaveTextContent('Custom compliance frameworks are on the Revenue Protection plan.')
     expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/settings/billing/upgrade')
     a.unmount()
     await show({ 'GET /api/compliance-frameworks': fail(500) })
     expect(screen.getByTestId('security-tile-compliance')).toHaveTextContent("Couldn't load compliance frameworks.")
-    expect(screen.queryByText('Compliance frameworks are on the Enterprise plan.')).toBeNull()
+    expect(screen.queryByText('Custom compliance frameworks are on the Revenue Protection plan.')).toBeNull()
   })
   it('zero frameworks: "No frameworks yet."', async () => {
     await show({ 'GET /api/compliance-frameworks': ok([]), [`GET ${SCANS_PATH}`]: ok([]) })

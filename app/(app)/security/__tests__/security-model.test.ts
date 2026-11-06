@@ -439,8 +439,8 @@ describe('frameworks', () => {
   })
   it('below Enterprise: the plan note and See plans; every framework is listed (no cap)', () => {
     const plan = describeSecurity(inputs({ frameworks: PLAN }), NOW)
-    expect(plan.frameworks).toMatchObject({ status: 'plan', note: 'Compliance frameworks are on the Enterprise plan.', action: { label: 'See plans' } })
-    expect(plan.tiles.compliance).toEqual({ label: 'Compliance frameworks are on the Enterprise plan.', lastEvaluated: null })
+    expect(plan.frameworks).toMatchObject({ status: 'plan', note: 'Custom compliance frameworks are on the Revenue Protection plan.', action: { label: 'See plans' } })
+    expect(plan.tiles.compliance).toEqual({ label: 'Custom compliance frameworks are on the Revenue Protection plan.', lastEvaluated: null })
     const many = describeSecurity(inputs({ frameworks: ready({ frameworks: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => fw(id)), scans: [], scansLimit: 50 }) }), NOW)
     expect(many.frameworks.frameworks).toHaveLength(6)
   })

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Pool } from 'pg';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireMember } from '../middleware/rbac.middleware';
+import { requireEntitlement } from '../middleware/subscription.middleware';
 
 const VALID_METRICS = [
   'deployment_frequency',
@@ -36,6 +37,9 @@ export function createDoraBenchmarksRoutes(pool: Pool): Router {
   const router = Router();
 
   router.use(authenticateToken);
+  // Every benchmark route, reads included, is on the plan in
+  // PLAN_ENTITLEMENTS.doraCustomBenchmarks; it runs before the role gates.
+  router.use(requireEntitlement('doraCustomBenchmarks'));
 
   /**
    * GET /api/dora/benchmarks

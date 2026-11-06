@@ -4,7 +4,7 @@ import { pool } from '../config/database';
 import { DeploymentsController } from '../controllers/deployments.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireMember } from '../middleware/rbac.middleware';
-import { checkResourceLimit } from '../middleware/subscription.middleware';
+import { checkResourceLimit, organizationHasEntitlement } from '../middleware/subscription.middleware';
 import {
   DEPLOYMENT_ENVIRONMENTS,
   IN_PROGRESS_MAX_AGE_HOURS,
@@ -27,6 +27,12 @@ const controller = new DeploymentsController();
 // is whether the organization has any deployment at all, in any environment
 // or window -- what separates "nothing matches these filters" from "nothing
 // has ever been recorded".
+//
+// The counts and the last deployment are served on every plan (the
+// Deployments page needs them). change_failure_rate is a DORA metric: it is
+// in the answer only when the organization's plan includes DORA metrics
+// (PLAN_ENTITLEMENTS.doraMetrics), and left out otherwise -- including when
+// the plan cannot be read.
 export async function deploymentStatsHandler(req: Request, res: Response): Promise<void> {
   try {
     // Never run unscoped: no organization means no query at all.
@@ -55,7 +61,7 @@ export async function deploymentStatsHandler(req: Request, res: Response): Promi
     const sinceParam = `$${scopeValues.length + 1}`;
     const maxAgeParam = `$${scopeValues.length + 2}`;
 
-    const [counts, last, any] = await Promise.all([
+    const [counts, last, any, includesDora] = await Promise.all([
       pool.query(
         `SELECT
            COUNT(*)                                     AS total,
@@ -84,6 +90,10 @@ export async function deploymentStatsHandler(req: Request, res: Response): Promi
         'SELECT EXISTS (SELECT 1 FROM deployments WHERE organization_id = $1) AS has_deployments',
         [orgId]
       ),
+      organizationHasEntitlement(orgId, 'doraMetrics').catch((err) => {
+        console.error('[Deployments/stats] plan lookup failed', err?.message ?? err);
+        return false;
+      }),
     ]);
 
     const row = counts.rows[0];
@@ -101,7 +111,7 @@ export async function deploymentStatsHandler(req: Request, res: Response): Promi
         in_progress: parseInt(row.in_progress) || 0,
         no_completion_recorded: parseInt(row.no_completion_recorded) || 0,
         unknown: parseInt(row.unknown) || 0,
-        change_failure_rate: changeFailureRate(success, failed),
+        ...(includesDora ? { change_failure_rate: changeFailureRate(success, failed) } : {}),
         organization_has_deployments: any.rows[0]?.has_deployments === true,
         last_deployment: lastRow && lastRow.deployed_at
           ? { status: lastRow.status, deployed_at: new Date(lastRow.deployed_at).toISOString() }

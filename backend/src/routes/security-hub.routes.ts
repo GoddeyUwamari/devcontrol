@@ -6,10 +6,11 @@
  * sync, and Security Hub-backed framework readiness (CIS, PCI DSS v4.0.1, NIST SP
  * 800-53 Rev. 5), all served by one parameterized route (see FRAMEWORK_EVALUATORS below).
  */
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
-import { requireEnterprise } from '../middleware/subscription.middleware';
+import { requireEntitlement } from '../middleware/subscription.middleware';
+import type { PlanEntitlement } from '../config/plan-entitlements';
 import { standardRateLimiter } from '../middleware/rateLimiter';
 import { SecurityHubSyncService } from '../services/security-hub-sync.service';
 import { SecurityHubComplianceService } from '../services/security-hub-compliance.service';
@@ -24,7 +25,7 @@ const stateRepo = new SecurityHubStateRepository();
 router.use(authenticateToken);
 
 /** GET /api/security-hub/capability — last-known capability + sync bookkeeping, no AWS call. */
-router.get('/capability', async (req: Request, res: Response): Promise<void> => {
+router.get('/capability', requireEntitlement('securityHubStatus'), async (req: Request, res: Response): Promise<void> => {
   try {
     const organizationId = req.organizationId;
     if (!organizationId) {
@@ -59,8 +60,11 @@ router.get('/capability', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
-/** POST /api/security-hub/sync — owner/admin, Enterprise only, manual trigger, in-flight-deduplicated. */
-router.post('/sync', requireAdmin, requireEnterprise, standardRateLimiter, async (req: Request, res: Response): Promise<void> => {
+/**
+ * POST /api/security-hub/sync — manual trigger, in-flight-deduplicated. The plan
+ * (PLAN_ENTITLEMENTS.securityHubSync) is checked first, then owner/admin.
+ */
+router.post('/sync', requireEntitlement('securityHubSync'), requireAdmin, standardRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const organizationId = req.organizationId;
     if (!organizationId) {
@@ -93,7 +97,31 @@ const FRAMEWORK_EVALUATORS: Record<string, (organizationId: string) => ReturnTyp
   nist: (organizationId) => complianceService.evaluateNist(organizationId),
 };
 
-router.get('/frameworks/:framework', async (req: Request, res: Response): Promise<void> => {
+/**
+ * Each standard's own plan entry. An unknown framework value has none and goes
+ * on to the handler's 400, which reads nothing.
+ */
+const FRAMEWORK_ENTITLEMENTS: Record<string, PlanEntitlement> = {
+  cis: 'securityHubCis',
+  pci: 'securityHubPci',
+  nist: 'securityHubNist',
+};
+const FRAMEWORK_PLAN_GATES = Object.fromEntries(
+  Object.entries(FRAMEWORK_ENTITLEMENTS).map(([framework, entitlement]) => [framework, requireEntitlement(entitlement)])
+);
+
+function requireFrameworkEntitlement(req: Request, res: Response, next: NextFunction): void {
+  const gate = Object.prototype.hasOwnProperty.call(FRAMEWORK_PLAN_GATES, req.params.framework)
+    ? FRAMEWORK_PLAN_GATES[req.params.framework]
+    : null;
+  if (!gate) {
+    next();
+    return;
+  }
+  void gate(req, res, next);
+}
+
+router.get('/frameworks/:framework', requireFrameworkEntitlement, async (req: Request, res: Response): Promise<void> => {
   try {
     const organizationId = req.organizationId;
     if (!organizationId) {

@@ -2,7 +2,11 @@
 
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/lib/contexts/auth-context';
+import { usePlan } from '@/lib/hooks/use-plan';
+import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements';
+import { PLAN_DISPLAY_NAME } from '@/lib/plan/plan-names';
+import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
+import { PlanRequiredNotice } from '@/components/plan/plan-required-notice';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { TrendingUp, Activity, Clock, AlertTriangle, Timer, ArrowRight, Sparkles, FileText, Download } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
@@ -76,8 +80,11 @@ export default function DORAMetricsPage() {
   const [editLabel, setEditLabel] = useState<string>('Elite');
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { organization } = useAuth();
-  const isEnterprise = organization?.subscriptionTier === 'enterprise';
+  // DORA metrics, and custom benchmarks (reads included), are each on their own
+  // plan (PLAN_ENTITLEMENTS); neither is asked for below it.
+  const plan = usePlan();
+  const doraOnPlan = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraMetrics);
+  const isEnterprise = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraCustomBenchmarks);
   const queryClient = useQueryClient();
   const demoMode = useDemoMode();
   const salesDemoMode = useSalesDemo((state) => state.enabled);
@@ -85,8 +92,8 @@ export default function DORAMetricsPage() {
 
   const { data: services } = useQuery<Service[]>({ queryKey: ['services'], queryFn: () => servicesService.getAll() });
   const { data: teams } = useQuery<Team[]>({ queryKey: ['teams'], queryFn: teamsService.getAll });
-  const { data: metricsData, isLoading, error, refetch } = useQuery({ queryKey: ['dora-metrics', dateRange, selectedService, selectedTeam, selectedEnvironment], queryFn: async () => { const filters: DORAMetricsFilters = { dateRange }; if (selectedService !== 'all') filters.serviceId = selectedService; if (selectedTeam !== 'all') filters.teamId = selectedTeam; if (selectedEnvironment !== 'all') filters.environment = selectedEnvironment; return doraMetricsService.getDORAMetrics(filters); } });
-  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({ queryKey: ['dora-benchmarks'], queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; } });
+  const { data: metricsData, isLoading, error, refetch } = useQuery({ queryKey: ['dora-metrics', dateRange, selectedService, selectedTeam, selectedEnvironment], queryFn: async () => { const filters: DORAMetricsFilters = { dateRange }; if (selectedService !== 'all') filters.serviceId = selectedService; if (selectedTeam !== 'all') filters.teamId = selectedTeam; if (selectedEnvironment !== 'all') filters.environment = selectedEnvironment; return doraMetricsService.getDORAMetrics(filters); }, enabled: doraOnPlan });
+  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({ queryKey: ['dora-benchmarks'], queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; }, enabled: isEnterprise });
 
   const benchmarksMap: Record<string, CustomBenchmark> = (benchmarksData?.data || []).reduce((acc, b) => ({ ...acc, [b.metric_name]: b }), {});
 
@@ -124,6 +131,24 @@ export default function DORAMetricsPage() {
     : `Based on ${totalDeployments} ${isDemoActive ? '' : 'finished '}deployments`;
   const dataStateColor = dataState === 'pending' ? '#64748B' : dataState === 'inactive' ? '#DC2626' : dataState === 'insufficient' ? '#D97706' : '#059669';
   const exportDisabled = !isDemoActive && dataState !== 'active' && dataState !== 'insufficient';
+
+  if (!isDemoActive) {
+    if (plan.status === 'loading') return <PlanLoadingState />;
+    if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
+    if (!doraOnPlan) {
+      return (
+        <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">
+          <div>
+            <h1 className={`${PAGE_TITLE_CLASS} mb-1.5`}>Engineering Intelligence</h1>
+            <p className={`${PAGE_SUBTITLE_CLASS} mb-2 max-w-lg`}>DORA metrics and engineering performance, automatically measured from your deployment pipeline.</p>
+          </div>
+          <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-10">
+            <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="dora-plan-required" />
+          </div>
+        </div>
+      );
+    }
+  }
 
   return (
     <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">
@@ -460,18 +485,18 @@ export default function DORAMetricsPage() {
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         <div className="px-5 sm:px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
-            <div className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Enterprise · Custom Benchmarks</div>
+            <div className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">{PLAN_DISPLAY_NAME.enterprise} · Custom Benchmarks</div>
             <p className="text-ui font-semibold text-slate-900 mb-1">Benchmark Settings</p>
             <p className="text-meta text-ink-muted">Override industry-standard DORA thresholds with targets specific to your organization.</p>
           </div>
-          {isEnterprise && <span className="text-label text-ink-success bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap self-start">Enterprise Active</span>}
+          {isEnterprise && <span className="text-label text-ink-success bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap self-start">{PLAN_DISPLAY_NAME.enterprise} active</span>}
         </div>
         {!isEnterprise ? (
           <div className="p-10 sm:p-16 text-center bg-slate-50">
             <div className="w-11 h-11 bg-slate-100 rounded-xl flex items-center justify-center text-xl mx-auto mb-4">🔒</div>
             <p className="text-ui font-semibold text-slate-900 mb-1.5">Custom DORA Benchmarking</p>
-            <p className="text-meta text-ink-muted leading-relaxed mb-5 max-w-sm mx-auto">Set custom performance thresholds per metric so your team is measured against your own standards, not just industry averages. Available on the Enterprise plan.</p>
-            <a href="/settings/billing" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-label no-underline transition-colors">Upgrade to Enterprise →</a>
+            <p className="text-meta text-ink-muted leading-relaxed mb-5 max-w-sm mx-auto">Set custom performance thresholds per metric so your team is measured against your own standards, not just industry averages. Available on the {PLAN_DISPLAY_NAME.enterprise} plan.</p>
+            <a href="/settings/billing" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-label no-underline transition-colors">Upgrade to {PLAN_DISPLAY_NAME.enterprise} →</a>
           </div>
         ) : (
           <div>

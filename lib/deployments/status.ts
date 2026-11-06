@@ -72,8 +72,12 @@ export interface DeploymentStats {
   in_progress: number
   no_completion_recorded: number
   unknown: number
-  /** failed / (success + failed) as a percentage; null when nothing finished. */
-  change_failure_rate: number | null
+  /**
+   * failed / (success + failed) as a percentage; null when nothing finished.
+   * A DORA metric: the server leaves it out when the organization's plan does
+   * not include DORA metrics (lib/plan/entitlements.ts, doraMetrics).
+   */
+  change_failure_rate?: number | null
   /**
    * Whether the organization has any deployment at all, in any environment
    * or window: what separates "nothing matches these filters" from "nothing
@@ -197,7 +201,7 @@ export function deploymentSummaryText(stats: DeploymentStats): string {
   } else {
     parts.push(
       `${stats.success} of ${plural(finished, 'finished deployment', 'finished deployments')} in ${window} succeeded and ${stats.failed} failed` +
-      ` (change failure rate ${formatChangeFailureRate(stats.change_failure_rate)}).`
+      (stats.change_failure_rate === undefined ? '.' : ` (change failure rate ${formatChangeFailureRate(stats.change_failure_rate)}).`)
     )
   }
   if (stats.in_progress > 0) parts.push(`${plural(stats.in_progress, 'is', 'are')} in progress.`)

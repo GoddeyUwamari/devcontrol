@@ -18,8 +18,16 @@ import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import api from '@/lib/api'
 import { EngineeringHealthCard } from '../engineering-health-card'
 
-const auth = vi.hoisted(() => ({ organization: { id: 'org-a' } as { id: string } | null }))
-vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: auth.organization }) }))
+// The organization carries its plan, which usePlan reads (DORA metrics are on Pro
+// and above). No organization yet is the auth context's loading state.
+const auth = vi.hoisted(() => ({ organization: { id: 'org-a', subscriptionTier: 'pro' } as { id: string; subscriptionTier: string } | null }))
+vi.mock('@/lib/contexts/auth-context', () => ({
+  useAuth: () => ({
+    organization: auth.organization,
+    organizationStatus: auth.organization ? 'ready' : 'loading',
+    retryOrganizationLoad: async () => {},
+  }),
+}))
 
 const HOUR = 3_600_000
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
@@ -85,7 +93,7 @@ const cardText = () => screen.getByTestId('engineering-health-card').textContent
 describe('Engineering Health card', () => {
   beforeEach(() => {
     requests.length = 0
-    auth.organization = { id: 'org-a' }
+    auth.organization = { id: 'org-a', subscriptionTier: 'pro' }
     dora = doraBody(45, 5, 1.5, 10)
     stats = statsBody()
     localStorage.setItem('accessToken', 'test-access-token')
@@ -225,6 +233,77 @@ describe('Engineering Health card', () => {
     const card = screen.getByTestId('engineering-health-card')
     expect(card.className).toContain('self-start')
     expect(card.className).not.toContain('h-full')
+  })
+
+  it.each(['pro', 'enterprise'])('on %s: the DORA metrics are requested and shown', async (tier) => {
+    auth.organization = { id: 'org-a', subscriptionTier: tier }
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
+    expect(requests.map(r => r.url)).toContain('/api/metrics/dora?date_range=30d')
+    expect(screen.queryByTestId('engineering-health-plan')).not.toBeInTheDocument()
+  })
+
+  it.each(['free', 'starter'])('on %s: the DORA figures are replaced by the upgrade state, the last deploy stays, and DORA is never requested', async (tier) => {
+    auth.organization = { id: 'org-a', subscriptionTier: tier }
+    // What the server answers below Pro: the counts and last deployment, no change_failure_rate.
+    const countsOnly: Record<string, unknown> = { ...statsBody().stats }
+    delete countsOnly.change_failure_rate
+    stats = { success: true, stats: countsOnly }
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
+    const notice = screen.getByTestId('engineering-health-plan')
+    expect(notice).toHaveTextContent('This feature is on the Optimization Engine plan.')
+    expect(within(notice).getByText('See plans').closest('a')).toHaveAttribute('href', '/settings/billing/upgrade')
+
+    // The last deploy is shown as on every plan.
+    expect(cell('last-deploy')).toHaveTextContent('about 3 hours ago')
+    expect(cell('last-deploy')).toHaveTextContent('Succeeded')
+
+    // No DORA figure, nor the raw failed-of-finished count, in any form.
+    expect(screen.queryByTestId('engineering-health-deploys-per-day')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('engineering-health-change-failure-rate')).not.toBeInTheDocument()
+    expect(cardText()).not.toMatch(/Deployment frequency|Change failure rate|\/day|%|finished failed|successful ·/)
+    expect(screen.queryByTestId('engineering-health-note')).not.toBeInTheDocument()
+
+    // Only the deployment stats are requested -- never the DORA endpoint, even after a tick.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(requests.map(r => r.url)).toEqual(['/api/deployments/stats?date_range=30d'])
+    // The link to the DORA page stays.
+    expect(screen.getByText('View details →').closest('a')).toHaveAttribute('href', '/app/dora-metrics')
+  })
+
+  it('below Pro with no deployment at all: "No deployments recorded", and still no DORA request', async () => {
+    auth.organization = { id: 'org-a', subscriptionTier: 'free' }
+    stats = statsBody({ organization_has_deployments: false, total: 0, success: 0, failed: 0, last_deployment: null })
+    renderCard()
+
+    expect(await screen.findByTestId('engineering-health-empty')).toHaveTextContent('No deployments recorded · Connect your CI')
+    expect(requests.some(r => (r.url ?? '').startsWith('/api/metrics/dora'))).toBe(false)
+  })
+
+  it('below Pro, when the stats fail: the last deploy is a dash and the plain error line shows', async () => {
+    auth.organization = { id: 'org-a', subscriptionTier: 'starter' }
+    stats = fail
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'error'))
+    expect(within(cell('last-deploy')).getByText('—')).toBeInTheDocument()
+    expect(screen.getByTestId('engineering-health-note')).toHaveTextContent('Deployment metrics could not be loaded.')
+    expect(screen.getByTestId('engineering-health-plan')).toBeInTheDocument()
+    expect(requests.some(r => (r.url ?? '').startsWith('/api/metrics/dora'))).toBe(false)
+  })
+
+  it('when the plan cannot be read: the plain error line, never the upgrade state, and DORA is not requested', async () => {
+    auth.organization = { id: 'org-a', subscriptionTier: 'team' }
+    renderCard()
+
+    expect(screen.queryByTestId('engineering-health-plan')).not.toBeInTheDocument()
+    expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'error')
+    expect(screen.getByTestId('engineering-health-note')).toHaveTextContent('Deployment metrics could not be loaded.')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(requests.some(r => (r.url ?? '').startsWith('/api/metrics/dora'))).toBe(false)
   })
 
   it('demo mode keeps the demonstration metrics, fills the row and requests nothing', () => {
