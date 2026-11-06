@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useQuery } from '@tanstack/react-query'
 import {
   Server, Database, HardDrive, Zap, Globe, Network,
-  RefreshCw, ArrowRight, Sparkles, Check, Plus, AlertTriangle,
+  RefreshCw, ArrowRight, Sparkles, Check, Plus, AlertTriangle, Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
@@ -20,6 +20,8 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/components/aws/discovery-warning-notice'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { ExportReportsDialog } from '@/components/aws-resources/ExportReportsDialog'
+import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { DEFAULT_PRICE_SUFFIX, isDefaultPriceEstimate, rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
 import { formatCalculatedAgo } from './calculatedAgo'
@@ -191,6 +193,9 @@ export default function InfrastructurePage() {
   return <InfrastructureOverviewV2 demoFallback={legacy} />
 }
 
+/** The plan the resource inventory export endpoint requires (awsResources.routes.ts, POST /export). */
+const RESOURCE_EXPORT_TIER = 'starter' as const
+
 function InfrastructureContent() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
@@ -220,7 +225,14 @@ function InfrastructureContent() {
   const demoMode     = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive  = demoMode || salesDemoMode
-  const { isFree, isStarter, isPro } = usePlan()
+  const plan = usePlan()
+  const { isFree, isStarter, isPro } = plan
+  // Resource inventory export: POST /api/aws-resources/export, requireTier('starter')
+  // (backend/src/routes/awsResources.routes.ts). Below it the button shows the
+  // upgrade state instead of opening the dialog.
+  const exportPlanRequired = plan.isKnown && !plan.canAccess(RESOURCE_EXPORT_TIER)
+  const [exportOpen,        setExportOpen]        = useState(false)
+  const [exportPlanShown,   setExportPlanShown]   = useState(false)
   const FREE_RESOURCE_TYPES = ['ec2', 'rds', 's3', 'EC2', 'RDS', 'S3']
   const STARTER_RESOURCE_TYPES = [
     'ec2', 'rds', 's3', 'lambda', 'eks', 'ecs', 'elb', 'alb',
@@ -810,6 +822,21 @@ function InfrastructureContent() {
                   ? <p className="text-[13px] text-gray-500">{effectiveResources.length} of {totalResources ?? allResources.length} resources</p>
                   : <p className="text-[13px] text-gray-500">0 resources</p>}
             </div>
+            {!isDemoActive && (
+              <div className="flex flex-col items-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => (exportPlanRequired ? setExportPlanShown(true) : setExportOpen(true))}
+                  data-testid="inventory-export-button"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 cursor-pointer hover:bg-slate-50"
+                >
+                  <Download size={13} /> Export Resources
+                </button>
+                {exportPlanRequired && exportPlanShown && (
+                  <PlanRequiredNotice requiredTier={RESOURCE_EXPORT_TIER} testId="inventory-export-plan-required" />
+                )}
+              </div>
+            )}
           </div>
           <div className="flex gap-2 mb-3">
             <select value={issueFilter} onChange={(e) => setIssueFilter(e.target.value)} className="text-xs font-semibold text-gray-700 border border-gray-200 rounded-full px-3 py-1 bg-white cursor-pointer">
@@ -974,6 +1001,14 @@ function InfrastructureContent() {
           </div>
         )}
       </div>
+
+      {!isDemoActive && !exportPlanRequired && (
+        <ExportReportsDialog
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          totalResources={totalResources ?? allResources.length}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,10 @@
  * that adds only this test. Later commits must leave them unchanged: the
  * same cases run with the flag unset and with it set to 'false'.
  *
+ * One deliberate change since: the resource inventory export button on the
+ * resource table (Pricing PR 1A). The .html files were re-recorded with only
+ * that button's markup inserted; the .requests.txt files are unchanged.
+ *
  * Determinism: the zone is pinned to UTC and the clock is frozen before the
  * page module loads (DEMO_RESOURCES calls new Date() at load; rows render
  * "Added {date}"; the posture strip renders "Calculated … ago"). Only Date is

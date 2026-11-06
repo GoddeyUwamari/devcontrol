@@ -1,6 +1,7 @@
 /**
  * ExportReportsDialog Component
- * Allows Pro+ users to export AWS resource data to CSV or PDF
+ * Resource inventory export to CSV or PDF (POST /api/aws-resources/export,
+ * Starter and above on the server).
  */
 
 'use client';
@@ -15,6 +16,7 @@ import { toast } from 'sonner';
 import { FileText, Download, FileSpreadsheet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { logError } from '@/lib/safe-log';
+import { planRequiredText, tierRequiredOf } from '@/lib/plan/tier-required';
 
 interface ExportReportsDialogProps {
   open: boolean;
@@ -111,7 +113,9 @@ export function ExportReportsDialog({
         try {
           const text = await error.response.data.text();
           const errorData = JSON.parse(text);
-          errorMessage = errorData.message || errorMessage;
+          // The server's plan refusal: the plan's own sentence, as on every gated page.
+          const required = tierRequiredOf({ status: error.response.status, body: errorData });
+          errorMessage = required ? planRequiredText(required) : errorData.message || errorMessage;
         } catch (e) {
           // Use default message if parsing fails
         }
