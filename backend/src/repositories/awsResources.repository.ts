@@ -131,11 +131,23 @@ export class AWSResourcesRepository {
   }
 
   /**
-   * Get resource statistics
+   * Get resource statistics.
+   *
+   * With no executor, the statistics run on a dedicated connection tagged
+   * with this organization (app.current_organization_id), the same pattern as
+   * AccountSecurityFindingsRepository.withOrgClient(). pool.connect() is not
+   * the request's tagged client (config/database.ts), and aws_resources is
+   * under RLS for the application role, so an untagged connection counts 0
+   * rows. The tag is cleared when the connection goes back to the pool
+   * (installTenantTagReset). Every query also filters organization_id itself.
+   * An executor is used as given: its caller owns its tenant context.
    */
   async getStats(organizationId: string, executor?: PoolClient): Promise<ResourceStats> {
     const client = executor ?? await this.pool.connect();
     try {
+      if (!executor) {
+        await client.query("SELECT set_config('app.current_organization_id', $1, false)", [organizationId]);
+      }
       // ResourceStats represents CURRENT resource inventory/posture (dashboard totals,
       // cost, compliance, encryption/public/backup posture) — every sub-query below
       // excludes soft-terminated rows (see resourceReconciliation.service.ts) so a

@@ -28,9 +28,11 @@ const INVENTORY_SOURCE = 'DevControl resource inventory (periodic AWS discovery)
 // alert_history's only writer (the Prometheus alert sync) stores no
 // organization_id, so org-scoped reads can never see its rows (see
 // AlertHistoryRepository.create()). Until that is fixed, "0 alerts" would be
-// a fabricated fact -- the section is not_supported instead.
+// a fabricated fact -- the section is not_supported instead. CloudWatch
+// alarms are a separate, org-scoped source the assistant does not read yet
+// (AI truth PR 2), so the reason says so rather than "no alerts exist".
 const ALERTS_NOT_SUPPORTED_REASON =
-  "Organization-scoped alert data is not connected to the assistant: DevControl's alert sync does not yet associate alerts with an organization, so this account's alert counts cannot be determined.";
+  "DevControl's alert history (from its Prometheus alert sync) is not associated with an organization, so it is not supported here. CloudWatch alarms are shown on the Operational Health page but are not yet part of the assistant's context.";
 
 // The former cost_spike query was a fixed spend threshold over inventory
 // estimates, not anomaly detection; anomaly_detections is not wired in yet.
@@ -93,7 +95,7 @@ export class AIChatContextRepository {
       this.getServices(organizationId, discovery, inventoryScope),
       this.getDORAMetrics(organizationId),
     ]);
-    const alerts = notSupported<NonNullable<ChatContext['alerts']['data']>>({ source: 'DevControl alert history' }, ALERTS_NOT_SUPPORTED_REASON);
+    const alerts = notSupported<NonNullable<ChatContext['alerts']['data']>>({ source: 'DevControl alert history (Prometheus alert sync)' }, ALERTS_NOT_SUPPORTED_REASON);
     const anomalies = notSupported<NonNullable<ChatContext['anomalies']['data']>>({ source: 'DevControl anomaly detection' }, ANOMALIES_NOT_SUPPORTED_REASON);
 
     console.log(`[AI Chat Context] Context gathered: services ${services.state}, resources ${resources.state}, dora ${dora.state}, cost state ${costs.state} (source: ${costs.source})`);

@@ -8,6 +8,39 @@ import { Pool } from 'pg';
 import { AIChatService, ChatMessage } from '../services/ai-chat.service';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 
+/** Server-side history cap (founder decision A-D15): the newest messages kept, and the longest message accepted. */
+export const CHAT_MAX_MESSAGES = 20;
+export const CHAT_MAX_MESSAGE_CHARS = 8000;
+
+const INVALID_MESSAGE_FORMAT = 'Invalid message format - each message must have role (user|assistant) and content';
+const MESSAGE_TOO_LONG = `Each message must be at most ${CHAT_MAX_MESSAGE_CHARS.toLocaleString('en-US')} characters`;
+
+/**
+ * Validates a client-sent history and applies the cap: every message must be
+ * a non-empty user/assistant message of at most CHAT_MAX_MESSAGE_CHARS
+ * characters (a longer one is refused, never silently cut), and only the
+ * newest CHAT_MAX_MESSAGES are kept. The kept history starts at a user
+ * message, as the model API requires.
+ */
+export function prepareChatHistory(messages: unknown[]): { ok: true; messages: ChatMessage[] } | { ok: false; error: string } {
+  const valid = messages.every(
+    (m: any) =>
+      m &&
+      typeof m.role === 'string' &&
+      ['user', 'assistant'].includes(m.role) &&
+      typeof m.content === 'string' &&
+      m.content.trim().length > 0
+  );
+  if (!valid) return { ok: false, error: INVALID_MESSAGE_FORMAT };
+  const history = (messages as ChatMessage[]).map((m) => ({ role: m.role, content: m.content }));
+  if (history.some((m) => m.content.length > CHAT_MAX_MESSAGE_CHARS)) return { ok: false, error: MESSAGE_TOO_LONG };
+
+  const kept = history.slice(-CHAT_MAX_MESSAGES);
+  const firstUser = kept.findIndex((m) => m.role === 'user');
+  if (firstUser === -1) return { ok: false, error: INVALID_MESSAGE_FORMAT };
+  return { ok: true, messages: kept.slice(firstUser) };
+}
+
 export class AIChatController {
   private chatService: AIChatService;
   private contextRepo: AIChatContextRepository;
@@ -40,21 +73,9 @@ export class AIChatController {
         });
       }
 
-      // Validate message format
-      const validMessages = messages.every(
-        (m: any) =>
-          m &&
-          typeof m.role === 'string' &&
-          ['user', 'assistant'].includes(m.role) &&
-          typeof m.content === 'string' &&
-          m.content.trim().length > 0
-      );
-
-      if (!validMessages) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid message format - each message must have role (user|assistant) and content',
-        });
+      const history = prepareChatHistory(messages);
+      if (!history.ok) {
+        return res.status(400).json({ success: false, error: history.error });
       }
 
       console.log(`[AI Chat Controller] Processing chat for org: ${organizationId}`);
@@ -70,7 +91,7 @@ export class AIChatController {
       res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
 
       // Stream response chunks
-      for await (const chunk of this.chatService.chat(messages as ChatMessage[], context)) {
+      for await (const chunk of this.chatService.chat(history.messages, context)) {
         // Send chunk as SSE data
         res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
       }
@@ -119,10 +140,15 @@ export class AIChatController {
         });
       }
 
+      const history = prepareChatHistory(messages);
+      if (!history.ok) {
+        return res.status(400).json({ success: false, error: history.error });
+      }
+
       console.log(`[AI Chat Controller] Sync chat for org: ${organizationId}`);
 
       const context = await this.contextRepo.gatherContext(organizationId);
-      const response = await this.chatService.chatSync(messages as ChatMessage[], context);
+      const response = await this.chatService.chatSync(history.messages, context);
 
       res.json({
         success: true,

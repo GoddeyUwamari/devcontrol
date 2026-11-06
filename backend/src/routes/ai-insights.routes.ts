@@ -1,36 +1,22 @@
 /**
  * AI Insights Routes
- * API endpoints for AI-powered cost analysis and insights
+ * The weekly summary email's manual trigger and preview.
+ *
+ * POST /analyze-cost, GET /cache-stats and POST /clear-cache were retired in
+ * AI truth PR 1 (founder decision A-D8): no product page called them, and
+ * /analyze-cost asked the model about client-supplied cost numbers rather
+ * than evidence DevControl holds. They now get the app's ordinary 404.
  */
 
 import { Router } from 'express';
 import { pool } from '../config/database';
-import { AIInsightsService } from '../services/ai-insights.service';
-import { AIInsightsController } from '../controllers/ai-insights.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { requireMember, requireOwner } from '../middleware/rbac.middleware';
+import { requireOwner } from '../middleware/rbac.middleware';
 import { weeklySummaryTriggerRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-// Initialize service and controller
-const aiInsightsService = new AIInsightsService(pool);
-const aiInsightsController = new AIInsightsController(aiInsightsService);
-
 router.use(authenticate);
-
-// POST /api/ai-insights/analyze-cost
-// Analyze cost changes and get AI-powered recommendations
-router.post('/analyze-cost', aiInsightsController.analyzeCost);
-
-// GET /api/ai-insights/cache-stats
-// Get the caller's organization's cache statistics (for monitoring/debugging)
-router.get('/cache-stats', aiInsightsController.getCacheStats);
-
-// POST /api/ai-insights/clear-cache
-// Clear the caller's organization's insights cache (other orgs untouched).
-// Member or above.
-router.post('/clear-cache', requireMember, aiInsightsController.clearCache);
 
 // POST /api/ai-insights/trigger-weekly-summary
 // Manually send the weekly summary email for the caller's own org. Owner only

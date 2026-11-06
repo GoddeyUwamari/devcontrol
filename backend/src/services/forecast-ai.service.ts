@@ -1,53 +1,37 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { CostForecast } from '../types/forecast.types';
+import { runModel } from './ai/model-client';
 
 export class ForecastAIService {
-  private anthropic: Anthropic;
-
-  constructor() {
-    this.anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-  }
-
   /**
-   * Enrich forecast with AI analysis
+   * Enrich forecast with AI analysis. Only a complete text answer is used; a
+   * truncated, refused, empty or failed one falls back to the basic analysis
+   * (model-response.ts), and the call is logged once by the model client.
    */
   async analyzeForecast(forecast: CostForecast): Promise<CostForecast> {
-    console.log('[Forecast AI] Analyzing forecast with Claude...');
+    const result = await runModel<ReturnType<ForecastAIService['parseAIResponse']>>(
+      'forecast',
+      'forecast_ai',
+      { messages: [{ role: 'user', content: this.buildAnalysisPrompt(forecast) }] },
+      (outcome) => (outcome.kind === 'text' ? { ok: true, value: this.parseAIResponse(outcome.text) } : { ok: false, reason: 'unexpected_tool' })
+    );
 
-    try {
-      const prompt = this.buildAnalysisPrompt(forecast);
-
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 2048,
-        messages: [{
-          role: 'user',
-          content: prompt,
-        }],
-      });
-
-      const response = this.extractTextContent(message.content);
-      const parsed = this.parseAIResponse(response);
-
+    if (result.ok) {
+      const parsed = result.value;
       return {
         ...forecast,
         aiSummary: parsed.summary,
         aiRisks: parsed.risks,
         aiRecommendations: parsed.recommendations,
       };
-    } catch (error) {
-      console.error('[Forecast AI] Error:', error);
-
-      // Fallback to basic analysis
-      return {
-        ...forecast,
-        aiSummary: this.getFallbackSummary(forecast),
-        aiRisks: this.getFallbackRisks(forecast),
-        aiRecommendations: this.getFallbackRecommendations(forecast),
-      };
     }
+
+    // Fallback to basic analysis
+    return {
+      ...forecast,
+      aiSummary: this.getFallbackSummary(forecast),
+      aiRisks: this.getFallbackRisks(forecast),
+      aiRecommendations: this.getFallbackRecommendations(forecast),
+    };
   }
 
   /**
@@ -156,15 +140,5 @@ Be specific, quantify where possible, and provide actionable insights.`;
     recs.push('Review Reserved Instances to reduce baseline costs');
 
     return recs;
-  }
-
-  /**
-   * Extract text from Claude response
-   */
-  private extractTextContent(content: any[]): string {
-    return content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('\n');
   }
 }

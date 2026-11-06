@@ -3,8 +3,8 @@
  * Parses user queries into structured navigation intents
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from 'pg';
+import { getModelClient, runModel } from './ai/model-client';
 import { NLQueryAnalyticsService } from './nl-query-analytics.service';
 import { detectPeriod, fullyRecognized, type NLPeriod } from './nl-query-guard';
 
@@ -55,18 +55,12 @@ interface CacheEntry {
 }
 
 export class NLQueryService {
-  private anthropic: Anthropic | null = null;
   private cache: Map<string, CacheEntry> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
   private analytics: NLQueryAnalyticsService;
 
   constructor(private pool: Pool) {
-    if (process.env.ANTHROPIC_API_KEY) {
-      this.anthropic = new Anthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
-      });
-      console.log('[NL Query] Service initialized with Anthropic API');
-    } else {
+    if (!getModelClient()) {
       console.warn('[NL Query] ANTHROPIC_API_KEY not found - Ask AI will answer "temporarily unavailable"');
     }
 
@@ -114,7 +108,8 @@ export class NLQueryService {
       return null;
     }
 
-    console.log(`[NL Query] Cache hit for: "${query}" (age: ${Math.round(age / 1000)}s)`);
+    // The question is customer text: never logged (AI truth PR 1).
+    console.log(`[NL Query] Cache hit (age: ${Math.round(age / 1000)}s)`);
     return entry.intent;
   }
 
@@ -124,7 +119,7 @@ export class NLQueryService {
       intent,
       timestamp: Date.now(),
     });
-    console.log(`[NL Query] Cached query: "${query}" (cache size: ${this.cache.size})`);
+    console.log(`[NL Query] Cached a parsed query (cache size: ${this.cache.size})`);
   }
 
   /**
@@ -177,21 +172,20 @@ export class NLQueryService {
     // No model, no answer: the keyword fallback is retired as an answer
     // source (PR #137 re-review B1/H-a/H-c -- it could invert negations and
     // misread amounts). Single-word questions go through the model too.
-    if (!this.anthropic) {
+    if (!getModelClient()) {
       throw new NLParserUnavailableError('ANTHROPIC_API_KEY is not configured');
     }
 
+    // Only a complete text answer is parsed: a truncated, refused, empty or
+    // tool answer, or a failed call, is "Ask AI unavailable" (model-response.ts).
+    const result = await runModel<string>('nl_parse', 'nl_query', { messages: [{ role: 'user', content: this.buildPrompt(query) }] },
+      (outcome) => (outcome.kind === 'text' ? { ok: true, value: outcome.text } : { ok: false, reason: 'unexpected_tool' }));
+    if (!result.ok) {
+      throw new NLParserUnavailableError(`the model answer was not usable (${result.reason})`);
+    }
+
     try {
-      const prompt = this.buildPrompt(query);
-
-      const message = await this.anthropic.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 512,
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      const response = this.extractTextContent(message.content);
-      const intent = this.parseResponse(response, query);
+      const intent = this.parseResponse(result.value, query);
 
       // Cache successful parse
       this.saveToCache(query, organizationId, intent);
@@ -881,8 +875,4 @@ Now parse: ${quoted}`;
     return unsupportedIntent();
   }
 
-  private extractTextContent(content: any[]): string {
-    const textBlock = content.find((block: any) => block.type === 'text');
-    return textBlock ? textBlock.text : '';
-  }
 }

@@ -178,7 +178,7 @@ const SURFACES: Array<[string, string]> = [
   ['GET', '/api/security-hub/capability'],
   ['GET', '/api/soc2/readiness'],
   ['GET', '/api/soc2/customer-evidence'],
-  ['POST', '/api/ai-insights/analyze-cost'],
+  ['GET', '/api/ai-insights/preview-weekly-summary'],
   ['GET', '/api/ai-chat/context'],
   ['POST', '/api/nl-query/parse'],
   ['POST', '/api/ai-reports/generate'],

@@ -1,14 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { AnomalyDetection, AnomalyType, AnomalySeverity } from '../types/anomaly.types';
+import { getModelClient, runModel } from './ai/model-client';
 
 export class AnomalyAIService {
-  private client: Anthropic | null = null;
-
   constructor() {
-    if (process.env.ANTHROPIC_API_KEY) {
-      this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      console.log('[Anomaly AI] Service initialized with Anthropic API');
-    } else {
+    if (!getModelClient()) {
       console.warn('[Anomaly AI] No ANTHROPIC_API_KEY — using statistical fallbacks');
     }
   }
@@ -24,7 +19,7 @@ export class AnomalyAIService {
 
     console.log(`[Anomaly AI] Validating and enriching ${anomalies.length} candidates...`);
 
-    if (!this.client) {
+    if (!getModelClient()) {
       console.warn('[Anomaly AI] No API client — applying statistical fallbacks');
       return anomalies.map(a => this.applyFallback(a));
     }
@@ -50,34 +45,30 @@ export class AnomalyAIService {
    * and generates executive-grade insights.
    */
   private async validateAndEnrich(anomaly: AnomalyDetection): Promise<AnomalyDetection> {
-    try {
-      const prompt = this.buildValidationPrompt(anomaly);
+    // Only a complete text answer is used; anything else keeps the statistical
+    // detection with fallback copy. The model client logs the call once,
+    // without content or error messages.
+    const result = await runModel<ReturnType<AnomalyAIService['parseValidationResponse']>>(
+      'anomaly',
+      'anomaly_ai',
+      { messages: [{ role: 'user', content: this.buildValidationPrompt(anomaly) }] },
+      (outcome) => (outcome.kind === 'text' ? { ok: true, value: this.parseValidationResponse(outcome.text) } : { ok: false, reason: 'unexpected_tool' })
+    );
+    if (!result.ok) return this.applyFallback(anomaly);
 
-      const message = await this.client!.messages.create({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      const responseText = this.extractText(message.content);
-      const parsed = this.parseValidationResponse(responseText);
-
-      return {
-        ...anomaly,
-        // Claude may reclassify the type if the statistical detector mislabelled it
-        type: parsed.confirmedType ?? anomaly.type,
-        severity: parsed.severity ?? anomaly.severity,
-        confidence: parsed.confidence ?? 50,
-        title: parsed.title ?? anomaly.title,
-        description: parsed.description ?? anomaly.description,
-        aiExplanation: parsed.explanation,
-        impact: parsed.impact,
-        recommendation: parsed.recommendation,
-      };
-    } catch (err) {
-      console.error('[Anomaly AI] Claude call failed, applying fallback:', err);
-      return this.applyFallback(anomaly);
-    }
+    const parsed = result.value;
+    return {
+      ...anomaly,
+      // Claude may reclassify the type if the statistical detector mislabelled it
+      type: parsed.confirmedType ?? anomaly.type,
+      severity: parsed.severity ?? anomaly.severity,
+      confidence: parsed.confidence ?? 50,
+      title: parsed.title ?? anomaly.title,
+      description: parsed.description ?? anomaly.description,
+      aiExplanation: parsed.explanation,
+      impact: parsed.impact,
+      recommendation: parsed.recommendation,
+    };
   }
 
   /**
@@ -233,12 +224,5 @@ RECOMMENDATION: [3 specific numbered actions an engineer should take immediately
       memory_spike:       '1. Check for memory leaks in application logs. 2. Review CloudWatch memory metrics trend. 3. Consider instance right-sizing or memory optimization.',
     };
     return map[type ?? 'cost_spike'] ?? '1. Investigate the affected resource. 2. Review recent changes. 3. Monitor for recurrence.';
-  }
-
-  private extractText(content: Anthropic.Messages.ContentBlock[]): string {
-    return content
-      .filter((block): block is Anthropic.Messages.TextBlock => block.type === 'text')
-      .map(block => block.text)
-      .join('\n');
   }
 }

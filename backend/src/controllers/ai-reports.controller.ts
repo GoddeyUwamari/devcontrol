@@ -61,7 +61,7 @@ export class AIReportsController {
 
       // Generate report
       const startTime = Date.now();
-      const { report, wasFallback } = await service.generateWeeklyReport(data, reportType || 'weekly_summary');
+      const { report, wasFallback, fallbackReason } = await service.generateWeeklyReport(data, reportType || 'weekly_summary');
       const generationTime = Date.now() - startTime;
 
       // Save to database -- was_fallback is recorded so the report page never
@@ -72,7 +72,8 @@ export class AIReportsController {
         data.dateRange,
         reportType || 'weekly_summary',
         undefined,
-        wasFallback
+        wasFallback,
+        fallbackReason ?? null
       );
 
       console.log(`[AI Reports] Report generated successfully in ${generationTime}ms`);

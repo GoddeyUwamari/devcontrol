@@ -14,9 +14,16 @@
  * itself, and the Anthropic SDK is mocked.
  */
 const mockCreate = jest.fn();
+// Reports read a complete response through the streaming API (model-client.ts
+// ROUTE_CONFIG.report); finalMessage() resolves to what mockCreate returns.
 jest.mock('@anthropic-ai/sdk', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({ messages: { create: mockCreate } })),
+  default: jest.fn().mockImplementation(() => ({
+    messages: {
+      create: mockCreate,
+      stream: (...args: unknown[]) => ({ finalMessage: () => mockCreate(...args) }),
+    },
+  })),
 }));
 
 import { AIReportGeneratorService, ReportData } from '../ai-report-generator.service';
