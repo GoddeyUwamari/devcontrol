@@ -176,10 +176,15 @@ function deliverySummary(e: WeeklyEvidence): string {
   }
   const finished = d.successfulDeployments + d.failedDeployments;
   const unfinished = d.deploymentCount - finished;
-  return [
+  const counts =
     `${plural(d.deploymentCount, 'deployment')} recorded in DevControl in the 7 days before this summary: ` +
     `${d.successfulDeployments} succeeded, ${d.failedDeployments} failed` +
-    `${unfinished > 0 ? `, ${unfinished} with no finished status` : ''}.`,
+    `${unfinished > 0 ? `, ${unfinished} with no finished status` : ''}.`;
+  // Below the DORA metrics plan the repository leaves the DORA figures out
+  // (getWeeklyDeliveryOnPlan), and the counts are the whole line.
+  if (d.deploymentFrequency === undefined || d.changeFailureRate === undefined) return counts;
+  return [
+    counts,
     `Deployment frequency (successful deployments): ${d.deploymentFrequency}.`,
     d.changeFailureRate === null
       ? 'Change failure rate: — (no deployment finished).'

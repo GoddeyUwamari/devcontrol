@@ -4,6 +4,13 @@
  * of GET /api/deployments/stats; its card shows the upgrade state and the
  * summary sentence leaves the rate out. The counts, the last deployment and
  * the deployment list are on every plan, and the page asks for no DORA data.
+ * "Below Pro" is the tier the server enforces (organization.effectiveTier), so
+ * a restricted or lapsed paid organization is below Pro.
+ *
+ * While the plan is loading or could not be loaded, the card shows no upgrade
+ * state (so a Pro organization never sees one flash) and states only what the
+ * server sent: below Pro it sends no rate, and the card then shows neither the
+ * rate nor the failed-of-finished line.
  *
  * The real page, service and shared axios client, with only the transport
  * stubbed.
@@ -15,14 +22,21 @@ import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import api from '@/lib/api'
 import DeploymentsPage from '../page'
 
-const auth = vi.hoisted(() => ({ tier: 'free' as string, staleRate: false }))
+// tier: stored; effective: what the server enforces (it decides the stats answer);
+// status: the organization load. While it is not 'ready' there is no organization yet.
+const auth = vi.hoisted(() => ({ tier: 'free' as string, effective: 'free' as string, status: 'ready' as string, staleRate: false }))
 vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({
-    organization: { id: 'org-1', subscriptionTier: auth.tier },
-    organizationStatus: 'ready',
+    organization: auth.status === 'ready' ? { id: 'org-1', subscriptionTier: auth.tier, effectiveTier: auth.effective } : null,
+    organizationStatus: auth.status,
     retryOrganizationLoad: async () => {},
   }),
 }))
+const setPlan = (stored: string, enforced: string, status = 'ready') => {
+  auth.tier = stored
+  auth.effective = enforced
+  auth.status = status
+}
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
@@ -51,7 +65,7 @@ const adapter: AxiosAdapter = async (config) => {
   if (url.startsWith('/api/deployments/stats')) {
     // What the server sends for the plan: the rate only from Pro.
     // staleRate: the answer still carries the rate (e.g. the plan changed after the page loaded).
-    const entitled = auth.staleRate || auth.tier === 'pro' || auth.tier === 'enterprise'
+    const entitled = auth.staleRate || auth.effective === 'pro' || auth.effective === 'enterprise'
     data = { success: true, stats: entitled ? { ...COUNTS, change_failure_rate: 20 } : COUNTS }
   } else if (url.startsWith('/api/deployments')) {
     data = { success: true, data: [], total: 0 }
@@ -61,19 +75,24 @@ const adapter: AxiosAdapter = async (config) => {
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const tree = () => (
     <QueryClientProvider client={queryClient}>
       <DeploymentsPage />
     </QueryClientProvider>
   )
+  const result = render(tree())
+  /** Render again with the same cache, e.g. after the plan finished loading. */
+  return { ...result, rerenderPage: () => result.rerender(tree()) }
 }
 
 const card = (name: string) => screen.getByTestId(`deployment-card-${name}`)
+const doraRequested = () => requests.some((r) => (r.url ?? '').startsWith('/api/metrics/dora'))
 
 describe('Deployments page — change failure rate and the plan', () => {
   beforeEach(() => {
     requests.length = 0
     auth.staleRate = false
+    setPlan('free', 'free')
     localStorage.setItem('accessToken', 'test-access-token')
     api.defaults.adapter = adapter
   })
@@ -82,8 +101,13 @@ describe('Deployments page — change failure rate and the plan', () => {
     localStorage.clear()
   })
 
-  it.each(['free', 'starter'])('on %s: the counts and last deployment are shown; the rate card shows the upgrade state', async (tier) => {
-    auth.tier = tier
+  it.each([
+    ['free', 'free', 'free'],
+    ['starter', 'starter', 'starter'],
+    ['pro, restricted', 'pro', 'free'],
+    ['enterprise, grace period ended', 'enterprise', 'free'],
+  ])('on %s: the counts and last deployment are shown; the rate card shows the upgrade state', async (_name, stored, enforced) => {
+    setPlan(stored, enforced)
     renderPage()
 
     expect(await within(card('succeeded')).findByText('8')).toBeInTheDocument()
@@ -108,7 +132,7 @@ describe('Deployments page — change failure rate and the plan', () => {
   })
 
   it('below Pro, a rate the answer still carries is shown nowhere (card or summary)', async () => {
-    auth.tier = 'free'
+    setPlan('free', 'free')
     auth.staleRate = true
     renderPage()
 
@@ -120,12 +144,50 @@ describe('Deployments page — change failure rate and the plan', () => {
   })
 
   it.each(['pro', 'enterprise'])('on %s: the rate is shown as before', async (tier) => {
-    auth.tier = tier
+    setPlan(tier, tier)
     renderPage()
 
     expect(await within(card('change-failure-rate')).findByText('20%')).toBeInTheDocument()
     expect(card('change-failure-rate')).toHaveTextContent('2 of 10 finished deployments failed')
     expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
     expect(screen.getByText(/\(change failure rate 20%\)\./)).toBeInTheDocument()
+  })
+
+  // ─── Plan loading / failed to load (no organization yet) ───────────────────
+
+  it.each(['loading', 'error'])('plan %s, Pro organization: no upgrade state, the rate the server sent is shown, no DORA request', async (status) => {
+    setPlan('pro', 'pro', status)
+    renderPage()
+
+    expect(await within(card('change-failure-rate')).findByText('20%')).toBeInTheDocument()
+    expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
+    expect(doraRequested()).toBe(false)
+  })
+
+  it.each(['loading', 'error'])('plan %s, below Pro: no upgrade state and no rate data -- neither the rate nor the failed-of-finished line', async (status) => {
+    setPlan('free', 'free', status)
+    renderPage()
+
+    expect(await within(card('succeeded')).findByText('8')).toBeInTheDocument()
+    const rate = card('change-failure-rate')
+    expect(within(rate).queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
+    expect(rate.textContent).toBe('Change Failure Rate—Last 30 days')
+    expect(rate).not.toHaveTextContent(/%|\d+ of \d+|finished deployment/)
+    expect(screen.getByText(/succeeded and 2 failed/).textContent).toBe('8 of 10 finished deployments in the last 30 days succeeded and 2 failed.')
+    expect(doraRequested()).toBe(false)
+  })
+
+  it('Pro organization: no upgrade state while the plan loads, nor once it is known', async () => {
+    setPlan('pro', 'pro', 'loading')
+    const { rerenderPage } = renderPage()
+    expect(await within(card('change-failure-rate')).findByText('20%')).toBeInTheDocument()
+    expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
+
+    setPlan('pro', 'pro', 'ready')
+    rerenderPage()
+    expect(within(card('change-failure-rate')).getByText('20%')).toBeInTheDocument()
+    expect(card('change-failure-rate')).toHaveTextContent('2 of 10 finished deployments failed')
+    expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
+    expect(doraRequested()).toBe(false)
   })
 })

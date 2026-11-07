@@ -44,8 +44,8 @@ const WINDOW_LABEL = 'Last 30 days'
 export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHealthCardProps) {
   const { organization } = useAuth()
   const plan = usePlan()
-  const doraOnPlan = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraMetrics)
-  const planRequired = !isDemoActive && plan.isKnown && !doraOnPlan
+  const doraOnPlan = plan.hasEntitlement('doraMetrics')
+  const planRequired = !isDemoActive && plan.lacksEntitlement('doraMetrics')
   const statsEnabled = !isDemoActive && !!organization?.id
   const doraEnabled = statsEnabled && doraOnPlan
 

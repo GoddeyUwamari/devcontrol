@@ -43,10 +43,20 @@ vi.mock('@/lib/api', () => {
   return { default: api, api, handleApiResponse: (r: { data: { data: unknown } }) => r.data.data }
 })
 
-const auth = vi.hoisted(() => ({ tier: 'free' as string, status: 'ready' as string }))
+// effective: the tier the server enforces (organization.effectiveTier); null = the same as the stored tier.
+const auth = vi.hoisted(() => ({ tier: 'free' as string, effective: null as string | null, status: 'ready' as string }))
 vi.mock('@/lib/contexts/auth-context', () => ({
-  useAuth: () => ({ organization: { id: 'org-1', subscriptionTier: auth.tier }, organizationStatus: auth.status }),
+  useAuth: () => ({
+    organization: { id: 'org-1', subscriptionTier: auth.tier, effectiveTier: auth.effective ?? auth.tier },
+    organizationStatus: auth.status,
+  }),
 }))
+const BELOW_PRO: Array<[string, string, string]> = [
+  ['free', 'free', 'free'],
+  ['starter', 'starter', 'starter'],
+  ['pro, restricted', 'pro', 'free'],
+  ['enterprise, grace period ended', 'enterprise', 'free'],
+]
 vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'owner' }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
@@ -64,10 +74,12 @@ describe('Compliance page — Security Hub and the plan', () => {
     calls.get.length = 0
     calls.post.length = 0
     auth.status = 'ready'
+    auth.effective = null
   })
 
-  it.each(['free', 'starter'])('on %s: no Security Hub request; the CIS, PCI DSS and NIST cards show the upgrade state', async (tier) => {
-    auth.tier = tier
+  it.each(BELOW_PRO)('on %s: no Security Hub request; the CIS, PCI DSS and NIST cards show the upgrade state', async (_name, stored, enforced) => {
+    auth.tier = stored
+    auth.effective = enforced
     render()
     await tick()
 
@@ -83,8 +95,9 @@ describe('Compliance page — Security Hub and the plan', () => {
     expect(calls.get).toContain('/api/compliance-frameworks')
   })
 
-  it.each(['free', 'starter'])('on %s: Sync Security Hub stays, and pressing it shows the upgrade state and sends nothing', async (tier) => {
-    auth.tier = tier
+  it.each(BELOW_PRO)('on %s: Sync Security Hub stays, and pressing it shows the upgrade state and sends nothing', async (_name, stored, enforced) => {
+    auth.tier = stored
+    auth.effective = enforced
     render()
 
     const sync = screen.getByRole('button', { name: /Sync Security Hub/ })
@@ -117,6 +130,16 @@ describe('Compliance page — Security Hub and the plan', () => {
 
   it('while the plan is loading: nothing is read and no upgrade state is shown', async () => {
     auth.tier = 'free'
+    auth.status = 'loading'
+    render()
+    await tick()
+
+    expect(securityHubGets()).toEqual([])
+    expect(screen.queryByTestId(/plan-required/)).not.toBeInTheDocument()
+  })
+
+  it('while the plan is loading with a leftover Enterprise organization: still nothing is read and no upgrade state', async () => {
+    auth.tier = 'enterprise'
     auth.status = 'loading'
     render()
     await tick()

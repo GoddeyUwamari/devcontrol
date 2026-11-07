@@ -110,8 +110,26 @@ export function isOrgRestricted(row: {
 }
 
 /**
+ * The tier the plan gates enforce for an organization row: its stored tier,
+ * or 'free' while it is restricted (isOrgRestricted). The one definition of
+ * the effective tier: getOrganizationTier resolves every request with it,
+ * and the organization responses the UI loads (/api/auth/me,
+ * /api/organizations, login, registration) report it as `effectiveTier`, so
+ * the UI shows what the server will decide. An unrecognised stored tier is
+ * passed through unchanged.
+ */
+export function effectiveTierOf(row: {
+  subscription_tier: string | null;
+  billing_lifecycle_state: string | null;
+  grace_period_ends_at: Date | string | null;
+}): SubscriptionTier {
+  if (isOrgRestricted(row)) return 'free';
+  return (row.subscription_tier as SubscriptionTier) || 'free';
+}
+
+/**
  * Get organization's subscription tier from the database, downgraded to
- * 'free' for enforcement purposes while restricted (see isOrgRestricted).
+ * 'free' for enforcement purposes while restricted (see effectiveTierOf).
  * This never touches or reads the organization's real subscription_tier
  * value's persistence -- it's purely an in-memory substitution for this
  * one lookup, so the stored tier is always intact for recovery. Contrast
@@ -133,11 +151,7 @@ export async function getOrganizationTier(
     return 'free'; // Default to free if org not found
   }
 
-  if (isOrgRestricted(result.rows[0])) {
-    return 'free';
-  }
-
-  return (result.rows[0].subscription_tier as SubscriptionTier) || 'free';
+  return effectiveTierOf(result.rows[0]);
 }
 
 /**

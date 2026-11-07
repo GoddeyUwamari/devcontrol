@@ -136,7 +136,7 @@ function DeploymentsContent() {
   // The change failure rate is a DORA metric (lib/plan/entitlements.ts): below
   // its plan the server leaves it out and the card shows the upgrade state.
   // The counts and the last deployment are on every plan.
-  const cfrPlanRequired = !isDemoActive && plan.isKnown && !plan.canAccess(PLAN_ENTITLEMENTS.doraMetrics)
+  const cfrPlanRequired = !isDemoActive && plan.lacksEntitlement('doraMetrics')
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
@@ -345,7 +345,9 @@ function DeploymentsContent() {
           {
             label: 'Change Failure Rate',
             value: stats ? formatChangeFailureRate(stats.change_failure_rate) : '—',
-            sub: !stats
+            // The server leaves the rate out below its plan (or when it cannot read the
+            // plan); the failed-of-finished line, the same figure in another form, goes too.
+            sub: !stats || stats.change_failure_rate === undefined
               ? windowLabel
               : finishedCount > 0
                 ? `${stats.failed} of ${finishedCount} finished deployment${finishedCount !== 1 ? 's' : ''} failed`

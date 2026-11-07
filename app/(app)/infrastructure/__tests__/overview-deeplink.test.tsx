@@ -22,7 +22,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: m.push, replace: m.replace }),
 }))
 vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test' } }) }))
-vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ isFree: false, isStarter: true, isPro: true, tier: 'pro' }) }))
+vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ isFree: false, isStarter: true, isPro: true, tier: 'pro', lacksEntitlement: () => false }) }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => m.demo }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: (s: { enabled: boolean }) => unknown) => selector({ enabled: false }) }))
 vi.mock('@/lib/services/aws-services.service', () => ({

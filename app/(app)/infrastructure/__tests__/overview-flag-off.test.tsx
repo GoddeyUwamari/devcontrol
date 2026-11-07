@@ -34,7 +34,7 @@ const m = vi.hoisted(() => ({
   resourceParam: null as string | null,
   demo: false,
   salesDemo: false,
-  plan: { isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true } as Record<string, unknown>,
+  plan: { isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true, lacksEntitlement: () => false } as Record<string, unknown>,
   getAll: vi.fn(),
   recsGetAll: vi.fn(),
   recsGetStats: vi.fn(),
@@ -168,7 +168,7 @@ beforeEach(() => {
   m.resourceParam = null
   m.demo = false
   m.salesDemo = false
-  m.plan = { isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true }
+  m.plan = { isFree: false, isStarter: true, isPro: true, isEnterprise: false, tier: 'pro', canAccess: () => true, lacksEntitlement: () => false }
   m.getAll.mockReset().mockResolvedValue(RESOURCES)
   m.recsGetAll.mockReset().mockResolvedValue(RECS)
   m.recsGetStats.mockReset().mockResolvedValue(RECS_STATS)
@@ -228,12 +228,12 @@ const CASES: Record<string, () => Promise<{ html: string; requests: string }>> =
   },
   // 5. Free plan banner.
   free: () => {
-    m.plan = { isFree: true, isStarter: false, isPro: false, isEnterprise: false, tier: 'free', canAccess: () => false }
+    m.plan = { isFree: true, isStarter: false, isPro: false, isEnterprise: false, tier: 'free', canAccess: () => false, lacksEntitlement: () => false }
     return capture()
   },
   // 6. Starter plan banner.
   starter: () => {
-    m.plan = { isFree: false, isStarter: true, isPro: false, isEnterprise: false, tier: 'starter', canAccess: () => false }
+    m.plan = { isFree: false, isStarter: true, isPro: false, isEnterprise: false, tier: 'starter', canAccess: () => false, lacksEntitlement: () => false }
     return capture()
   },
   // 7. /api/services/stats and /api/platform/stats/dashboard both fail.

@@ -18,7 +18,7 @@ import { renderInfrastructure, settled } from './overview-harness'
 
 vi.mock('../overview/InfrastructureOverviewV2', () => { throw new Error('V2 module loaded') })
 vi.mock('next/navigation', () => ({ useSearchParams: () => ({ get: () => null }), useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
-vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ isFree: false, isStarter: true, isPro: true, tier: 'pro' }) }))
+vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ isFree: false, isStarter: true, isPro: true, tier: 'pro', lacksEntitlement: () => false }) }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => m.demo }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: (s: { enabled: boolean }) => unknown) => selector({ enabled: false }) }))
 vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService: { getAll: vi.fn().mockResolvedValue([]) } }))

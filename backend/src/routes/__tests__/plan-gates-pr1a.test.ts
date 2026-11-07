@@ -240,6 +240,8 @@ describe('PLAN_ENTITLEMENTS', () => {
       securityHubCis: 'pro',
       securityHubPci: 'pro',
       securityHubNist: 'pro',
+      // Resource inventory export (Pricing PR 1A follow-up; its gate is plan-gates-followup.test.ts).
+      resourceInventoryExport: 'starter',
     });
   });
 });
