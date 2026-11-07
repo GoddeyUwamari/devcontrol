@@ -3,16 +3,17 @@ import { pool } from '../config/database';
 import { ComplianceFrameworksController } from '../controllers/compliance-frameworks.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireMember } from '../middleware/rbac.middleware';
-import { requireEnterprise } from '../middleware/subscription.middleware';
+import { requireEntitlement } from '../middleware/subscription.middleware';
 
 const router = Router();
 
 // Initialize controller
 const controller = new ComplianceFrameworksController(pool);
 
-// All routes require authentication and Enterprise tier
+// All routes require authentication and the complianceFrameworks plan
+// entitlement (config/plan-entitlements.ts)
 router.use(authenticateToken);
-router.use(requireEnterprise);
+router.use(requireEntitlement('complianceFrameworks'));
 
 // Framework management. Every mutation below, and starting a scan, is member
 // or above; viewers keep the reads.

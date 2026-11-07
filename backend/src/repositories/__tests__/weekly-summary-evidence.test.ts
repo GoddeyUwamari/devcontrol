@@ -21,7 +21,8 @@ jest.mock('../../services/aws-cost.service', () => ({
 
 import { Pool } from 'pg';
 import awsCostService from '../../services/aws-cost.service';
-import { WeeklySummaryRepository, weeklySummaryPeriod, WEEKLY_ALERTS_NOT_SUPPORTED_REASON } from '../weekly-summary.repository';
+import { WeeklySummaryRepository, weeklySummaryPeriod } from '../weekly-summary.repository';
+import { ALERT_HISTORY_NOT_BUILT_REASON } from '../../services/ai/evidence/providers/not-built';
 
 const fetchCostTrend = awsCostService.fetchCostTrend as jest.Mock;
 const NOW = new Date('2026-09-28T09:00:00.000Z');
@@ -188,10 +189,11 @@ describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
 });
 
 describe('WeeklySummaryRepository.getWeeklyAlerts', () => {
-  it('J: alert counts are not_supported (alert_history is not org-attributed) -- never a count of 0', () => {
-    const alerts = repository.getWeeklyAlerts();
-    expect(alerts.state).toBe('not_supported');
+  it('J: alert history comes from the registry\'s alerts.history provider: not_built, never a count of 0', async () => {
+    const alerts = await repository.getWeeklyAlerts(ORG, weeklySummaryPeriod(new Date('2026-09-28T09:00:00.000Z')));
+    expect(alerts.state).toBe('not_built');
     expect(alerts.data).toBeNull();
-    expect(alerts.reason).toBe(WEEKLY_ALERTS_NOT_SUPPORTED_REASON);
+    expect(alerts.reason).toBe(ALERT_HISTORY_NOT_BUILT_REASON);
+    expect(alerts.reason).not.toMatch(/alert sync|associate alerts with an organization/);
   });
 });

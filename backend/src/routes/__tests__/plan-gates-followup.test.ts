@@ -323,9 +323,9 @@ describe('A2: the weekly summary preview applies the same rule', () => {
     const pro = await preview();
     await setPlan(STATES['pro, restricted']);
     const restricted = await preview();
-    // Everything but the delivery section (and the generation time).
+    // Everything but the delivery section (and the generation time, and each section's per-call retrievedAt).
     const strip = (b: any) => {
-      const evidence = { ...b.evidence };
+      const evidence = JSON.parse(JSON.stringify(b.evidence, (key, value) => (key === 'retrievedAt' ? undefined : value)));
       const content = { ...b.content };
       delete evidence.delivery;
       delete evidence.period;

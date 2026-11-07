@@ -12,6 +12,11 @@
  */
 import { Pool } from 'pg';
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, InventoryResources } from '../ai-chat.service';
+import { chatCosts, evidenceBundle } from './chat-context-fixtures';
+import { collectSection } from '../ai-context-contract';
+import { collectEvidence, EvidenceRegistry } from '../ai/evidence/registry';
+import { cpuTelemetryProvider, type CpuTelemetryEvidence } from '../ai/evidence/providers/operations';
+import { CHAT_EVIDENCE_BUDGET_TOKENS } from '../../repositories/ai-chat-context.repository';
 
 const pool = {} as Pool; // AIChatService's constructor stores it but never queries it directly
 
@@ -23,8 +28,20 @@ const NO_COMPARISON: ChatContext['costs']['comparison'] = {
 
 /** A section in a given state -- data only when available/partial, as the repository builds them. */
 function section<T>(state: ContextSection<T>['state'], data: T | null, extra: Partial<ContextSection<T>> = {}): ContextSection<T> {
-  return { state, source: 'test source', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data, ...extra };
+  return { state, source: 'test source', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data, untrusted: [], failure: null, ...extra };
 }
+
+const ALARMS_AS_OF = '2026-09-06T10:05:00.000Z';
+/** The evidence bundle every base context carries: alarms could not be read; no alert history; no anomaly detection; no CPU yet. */
+function evidence(alarms: ContextSection<unknown> = noData('error', { source: 'Amazon CloudWatch alarms', failure: { code: 'aws_denied', retryable: false } })) {
+  return evidenceBundle({
+    'ops.cloudwatch_alarms': alarms,
+    'telemetry.cpu': noData('unavailable', { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', reason: 'no EC2 CPU telemetry has been recorded yet' }),
+    'alerts.history': noData('not_built', { source: 'DevControl alert history', reason: 'DevControl does not keep a history of past alerts for your organization yet' }),
+    'anomalies.cost': noData('not_built', { source: 'DevControl anomaly detection', reason: 'DevControl does not detect cost anomalies yet' }),
+  });
+}
+const alarmsAvailable = (inAlarmCount: number) => section('available', { outcome: inAlarmCount > 0 ? 'found' : 'none_found', inAlarmCount, inAlarmComplete: true, configuredCount: 4, configuredCountComplete: true, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF });
 
 /** A section with no data (error / not_supported / unavailable). */
 function noData(state: ContextSection<never>['state'], extra: Partial<ContextSection<never>> = {}): ContextSection<never> {
@@ -32,7 +49,7 @@ function noData(state: ContextSection<never>['state'], extra: Partial<ContextSec
 }
 
 const RESOURCES: InventoryResources = {
-  ec2: { count: 3, utilization: noData('not_supported', { reason: 'DevControl does not collect EC2 CPU utilization into the resource inventory.' }) },
+  ec2: { count: 3 },
   rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },
   lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
 };
@@ -42,20 +59,20 @@ const INVENTORY_SCOPE: ChatContext['inventoryScope'] = {
 };
 
 function estimatedCosts(current: number): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: 'available', source: 'estimated', current, asOf: '2026-09-06T06:00:00.000Z', period: null,
     scope: INVENTORY_SCOPE, topSpenders: null,
     costExplorer: { state: 'error', reason: 'the Cost Explorer request failed' },
     estimateCoverage: { estimatedResources: 3, totalResources: 3 }, comparison: NO_COMPARISON,
-  };
+  });
 }
 
 function unavailableCosts(): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: 'unavailable', source: 'unavailable', current: null, asOf: null, period: null, scope: null,
     topSpenders: null, costExplorer: { state: 'unavailable', reason: 'no connected AWS account' },
     estimateCoverage: null, comparison: NO_COMPARISON,
-  };
+  });
 }
 
 function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
@@ -63,7 +80,7 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
     discovery: section('available', { completedAt: '2026-09-06T06:00:00.000Z' }, { asOf: '2026-09-06T06:00:00.000Z' }),
     account: section('available', { accountId: '123456789012', region: 'us-east-1' }),
     services: section('available', ['ec2', 'rds'], { source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-06T06:00:00.000Z', scope: INVENTORY_SCOPE }),
-    costs: {
+    costs: chatCosts({
       state: 'available',
       source: 'actual',
       current: 1000,
@@ -80,12 +97,11 @@ function baseContext(overrides: Partial<ChatContext> = {}): ChatContext {
         coverage: { currentDays: 6, previousDays: 6, expectedCurrentDays: 6, expectedPreviousDays: 6 },
         currentWindowIncludesToday: true, finishedThrough: null, asOf: '2026-09-06T10:00:00.000Z', basis: COMPARISON_BASIS,
       },
-    },
+    }),
     inventoryScope: INVENTORY_SCOPE,
     resources: section('available', RESOURCES, { source: 'DevControl resource inventory (periodic AWS discovery)', asOf: '2026-09-06T06:00:00.000Z', scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only' }),
-    alerts: noData('not_supported', { source: 'DevControl alerts', reason: "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page." }),
-    anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
     dora: noData('unavailable', { source: 'DevControl deployment records', reason: 'no deployments were recorded for this organization in the last 30 days' }),
+    evidence: evidence(),
     ...overrides,
   };
 }
@@ -219,15 +235,21 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     expect(formatted).not.toMatch(/relation "aws_resources"/);
   });
 
-  it('"not_supported" states its reason and never prints a zero or "none"', () => {
+  it('a source DevControl does not provide (not_built) says so from its provider state, and never "none"', () => {
     const formatted = format(baseContext());
-    const alerts = sectionOf(formatted, 'Alerts:', 'Anomalies:');
+    const history = formatted.split('\n').find((l) => l.startsWith('- Alert history (past alerts):')) ?? '';
+    const anomalies = formatted.split('\n').find((l) => l.startsWith('- Cost anomalies:')) ?? '';
 
-    expect(alerts).toMatch(/Status: Not supported/);
-    expect(alerts).toMatch(/Alert data is not part of this context yet\. CloudWatch alarms are shown on the Operational Health page\./);
-    expect(alerts).not.toMatch(/Prometheus|not associated with an organization/);
-    expect(alerts).toMatch(/This is not a zero, "none", or "no findings"/);
+    expect(history).toMatch(/DevControl doesn't provide this yet .*never say none were found/);
+    expect(anomalies).toMatch(/DevControl doesn't provide this yet \(DevControl does not detect cost anomalies yet\)/);
+    expect(formatted).not.toMatch(/Prometheus|not associated with an organization|Status: Not supported/);
     expect(formatted).not.toMatch(/active alerts: 0|Total active alerts|No recent incidents|recent: none/i);
+  });
+
+  it('alarms that could not be read are "couldn\'t be retrieved", with a safe code -- never "none"', () => {
+    const formatted = format(baseContext());
+    const alarms = formatted.split('\n').find((l) => l.startsWith('- CloudWatch alarms (current state):')) ?? '';
+    expect(alarms).toMatch(/couldn't be retrieved right now \(AWS denied access\) -- this is missing data, never "none"/);
   });
 
   it('"unavailable" prints no figure, only why', () => {
@@ -238,13 +260,12 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     expect(dora).not.toMatch(/Deployment frequency|Lead time|Mean time/);
   });
 
-  it('an "available" genuine zero is printed as a zero', () => {
-    const formatted = format(baseContext({ alerts: section('available', { total: 0, critical: 0, recent: [] }, { source: 'DevControl alerts' }) }));
-    const alerts = sectionOf(formatted, 'Alerts:', 'Anomalies:');
+  it('an "available" genuine zero is stated as checked, none found, with its data', () => {
+    const formatted = format(baseContext({ evidence: evidence(alarmsAvailable(0)) }));
+    const alarms = formatted.split('\n').find((l) => l.startsWith('- CloudWatch alarms (current state):')) ?? '';
 
-    expect(alerts).toMatch(/- active alerts: 0/);
-    expect(alerts).toMatch(/- critical alerts: 0/);
-    expect(alerts).toMatch(/- recent: none firing/);
+    expect(alarms).toBe(`- CloudWatch alarms (current state): checked, none found (Amazon CloudWatch alarms, as of ${ALARMS_AS_OF}). [data below]`);
+    expect(formatted).toMatch(/- in alarm count: 0/);
   });
 
   it('"partial" makes its limitation explicit alongside its data', () => {
@@ -259,18 +280,20 @@ describe('AIChatService formatContext -- section states (PR A contract)', () => 
     expect(services).toMatch(/types: ec2/);
   });
 
-  it('an unsupported EC2 utilization is never stated as "0 underutilized"', () => {
+  it('EC2 CPU utilization is its own source: never stated as "0 underutilized" from the inventory', () => {
     const formatted = format(baseContext());
 
-    expect(formatted).toMatch(/- EC2: 3 instances/);
-    expect(formatted).toMatch(/EC2 utilization: Not supported -- DevControl does not collect EC2 CPU utilization/);
-    expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d/);
+    expect(formatted).toMatch(/- EC2: 3 instances \(CPU utilization is its own evidence source below\)/);
+    expect(formatted).toMatch(/- EC2 CPU utilization \(CloudWatch\): not available: no EC2 CPU telemetry has been recorded yet/);
+    expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d|does not collect EC2 CPU/);
   });
 
   it('the system prompt forbids reading error / not_supported / unavailable as none or zero', () => {
     const prompt: string = (service as any).getSystemPrompt();
 
-    expect(prompt).toMatch(/never treat "Not available", "Could not be retrieved", or\s+"Not supported" as \$0, zero, none, empty, unchanged, or "no findings"/);
+    expect(prompt).toMatch(/never treat\s+any of those as \$0, zero, none, empty, unchanged, or "no findings"/);
+    expect(prompt).toMatch(/"Not included in this plan"/);
+    expect(prompt).toMatch(/"Not provided\s+by DevControl yet"/);
   });
 });
 
@@ -285,17 +308,110 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     return chunks.join('');
   }
 
-  it('never claims "0 underutilized" (or that utilization is "being gathered") when utilization is not_supported', async () => {
+  it('never claims "0 underutilized" (or that utilization is "being gathered") when there is no CPU evidence', async () => {
     const response = await fallbackFor('Which instances are underutilized?', baseContext());
 
-    expect(response).toMatch(/I don't have EC2 utilization data for this account \(DevControl does not collect EC2 CPU utilization into the resource inventory\)/);
+    expect(response).toMatch(/I don't have EC2 CPU utilization data for this account right now \(not available: no EC2 CPU telemetry has been recorded yet\)/);
     expect(response).not.toMatch(/\d+ of your \d+ EC2 instances|being gathered/);
   });
 
-  it('never claims "0 active alerts" or "No recent incidents" when alerts are not_supported', async () => {
+  it('with CPU evidence, says how many instances it has, in the approved words (founder §L)', async () => {
+    const withCpu = baseContext();
+    withCpu.evidence = evidenceBundle({
+      ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])),
+      'telemetry.cpu': section('available', { instances: 2, items: [{ ref: 'u1', instanceId: 'i-1234567890abcdef0' }, { ref: 'u2', instanceId: 'i-0123456789abcdef0' }] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
+    });
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 2 EC2 instances (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+  });
+
+  it('L2: counts distinct EC2 instances -- one instance in the latest check and an idle finding is "1 EC2 instance"', async () => {
+    const withCpu = baseContext();
+    withCpu.evidence = evidenceBundle({
+      ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])),
+      // The provider counts distinct instances (providers.test.ts); the line states its count.
+      'telemetry.cpu': section('available', { instances: 1, items: [
+        { ref: 'u1', instanceId: 'i-1234567890abcdef0', basis: 'latest_check_last_hour', cpuPercent: 2 },
+        { ref: 'u2', instanceId: 'i-1234567890abcdef0', basis: 'idle_finding_7_day_average', cpuPercent: 1.5 },
+      ] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
+    });
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 1 EC2 instance (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+  });
+
+  it('re-review 2 L7: a CPU list the chat budget shortened still states every instance (60, not the kept items)', async () => {
+    const items: CpuTelemetryEvidence['items'] = Array.from({ length: 60 }, (_, i) => ({
+      ref: `u${i + 1}`, instanceId: `i-${(0x10000000000000 + i).toString(16).padStart(17, '0')}`, basis: 'latest_check_last_hour', cpuPercent: 2 + (i % 5), observedAt: ALARMS_AS_OF, datapointsObserved: null, datapointsExpected: null,
+    }));
+    const registry = new EvidenceRegistry().register({
+      ...cpuTelemetryProvider,
+      collect: async () => collectSection<CpuTelemetryEvidence>({ source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', classification: 'measured' }, async () => ({
+        state: 'available', asOf: ALARMS_AS_OF,
+        data: { latestCheck: { observedAt: ALARMS_AS_OF, instances: 60 }, idleInstanceEvidence: 0, instances: 60, collection: null, items },
+      })),
+    });
+    const bundle = await collectEvidence(registry, { organizationId: '00000000-0000-4000-8000-0000000000c7', consumer: 'test', select: { providerIds: ['telemetry.cpu'] }, budgetTokens: CHAT_EVIDENCE_BUDGET_TOKENS });
+    const cpu = bundle.results.find((r) => r.id === 'telemetry.cpu')!;
+    expect(cpu.mode).toBe('summarised');
+    expect((cpu.section.data as CpuTelemetryEvidence).items.length).toBeLessThan(60);
+
+    const withCpu = baseContext();
+    withCpu.evidence = evidenceBundle({ ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])), 'telemetry.cpu': cpu.section });
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 60 EC2 instances (as of ${ALARMS_AS_OF}).`);
+  });
+
+  it('re-review 3 L9: with the CPU section omitted by the budget, the fallback (no model call) still states the 60-instance CPU line', async () => {
+    const items: CpuTelemetryEvidence['items'] = Array.from({ length: 60 }, (_, i) => ({
+      ref: `u${i + 1}`, instanceId: `i-${(0x10000000000000 + i).toString(16).padStart(17, '0')}`, basis: 'latest_check_last_hour', cpuPercent: 2 + (i % 5), observedAt: ALARMS_AS_OF, datapointsObserved: null, datapointsExpected: null,
+    }));
+    const registry = new EvidenceRegistry().register({
+      ...cpuTelemetryProvider,
+      collect: async () => collectSection<CpuTelemetryEvidence>({ source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', classification: 'measured' }, async () => ({
+        state: 'available', asOf: ALARMS_AS_OF,
+        data: { latestCheck: { observedAt: ALARMS_AS_OF, instances: 60 }, idleInstanceEvidence: 0, instances: 60, collection: null, items },
+      })),
+    });
+    // A total budget too small for any CPU block: the section is omitted.
+    const bundle = await collectEvidence(registry, { organizationId: '00000000-0000-4000-8000-0000000000c7', consumer: 'test', select: { providerIds: ['telemetry.cpu'] }, budgetTokens: 100 });
+    const cpu = bundle.results.find((r) => r.id === 'telemetry.cpu')!;
+    expect(cpu.section).toMatchObject({ state: 'omitted', data: null });
+
+    const withCpu = baseContext();
+    withCpu.evidence = { ...withCpu.evidence, results: [...withCpu.evidence.results.filter((r) => r.id !== 'telemetry.cpu'), cpu] };
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 60 EC2 instances (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+    expect(response).not.toMatch(/I don't have EC2 CPU utilization data|too large/);
+  });
+
+  it('L3: the Active alerts line says "at least" for a capped read, never otherwise; "1 CloudWatch alarm" singular', async () => {
+    const capped = (n: number) => section('partial', { outcome: 'found', inAlarmCount: n, inAlarmComplete: false, configuredCount: 9, configuredCountComplete: false, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF, reason: 'capped' });
+    const expectLine = async (alarms: ContextSection<unknown>, line: string) => {
+      const response = await fallbackFor('Give me an overview', baseContext({ evidence: evidence(alarms) }));
+      expect(response).toContain(`- Active alerts: ${line}`);
+    };
+
+    await expectLine(capped(3), `at least 3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+    await expectLine(capped(1), `at least 1 CloudWatch alarm in ALARM (as of ${ALARMS_AS_OF})`);
+    await expectLine(alarmsAvailable(3), `3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+    await expectLine(alarmsAvailable(1), `1 CloudWatch alarm in ALARM (as of ${ALARMS_AS_OF})`);
+  });
+
+  it('re-review N4: only a capped in-ALARM count is "at least"; a capped configured count leaves it exact', async () => {
+    const configuredOnly = section('partial', { outcome: 'found', inAlarmCount: 3, inAlarmComplete: true, configuredCount: 1000, configuredCountComplete: false, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF, reason: 'capped' });
+    const inAlarmCapped = section('partial', { outcome: 'found', inAlarmCount: 3, inAlarmComplete: false, configuredCount: 1000, configuredCountComplete: false, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF, reason: 'capped' });
+    const lineFor = async (alarms: ContextSection<unknown>) => (await fallbackFor('Give me an overview', baseContext({ evidence: evidence(alarms) }))).split('\n').find((l) => l.startsWith('- Active alerts:'));
+
+    expect(await lineFor(configuredOnly)).toBe(`- Active alerts: 3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+    expect(await lineFor(inAlarmCapped)).toBe(`- Active alerts: at least 3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+  });
+
+  it('never claims "0 active alerts" or "No recent incidents" when alarms could not be read', async () => {
     const response = await fallbackFor('Give me an overview', baseContext());
 
-    expect(response).toMatch(/Active alerts: not available -- Alert data is not part of this context yet\. CloudWatch alarms are shown on the Operational Health page/);
+    expect(response).toMatch(/Active alerts: not available -- couldn't be retrieved right now \(AWS denied access\)/);
     expect(response).not.toMatch(/Active alerts: 0|No recent incidents/);
   });
 
@@ -307,9 +423,9 @@ describe('AIChatService getFallbackResponse -- section states', () => {
   });
 
   it('states real counts when the sections are genuinely available', async () => {
-    const response = await fallbackFor('Give me an overview', baseContext({ alerts: section('available', { total: 2, critical: 1, recent: ['HighCPU'] }) }));
+    const response = await fallbackFor('Give me an overview', baseContext({ evidence: evidence(alarmsAvailable(2)) }));
 
     expect(response).toMatch(/I can see 2 discovered resource types/);
-    expect(response).toMatch(/Active alerts: 2 \(1 critical\)/);
+    expect(response).toMatch(new RegExp(`Active alerts: 2 CloudWatch alarms in ALARM \\(as of ${ALARMS_AS_OF}\\)`));
   });
 });

@@ -23,11 +23,27 @@ import {
   InventoryScope,
   isCurrentContractVersion,
   notSupported,
+  notBuilt,
+  notConnected,
+  notEntitled,
   requireOrganizationId,
   toModelEvidence,
+  CONTEXT_DATA_STATES,
+  CONTEXT_STATE_LABELS,
+  CONTEXT_STATE_MEANINGS,
+  EVIDENCE_CLASSIFICATIONS,
+  classificationFromProvenance,
+  provenanceFor,
+  stateCarriesData,
 } from '../ai-context-contract';
 
-const ENVELOPE_KEYS = ['completeness', 'coverage', 'data', 'derivedFrom', 'period', 'provenance', 'reason', 'scope', 'source', 'state', 'asOf'].sort();
+const ENVELOPE_KEYS = [
+  'completeness', 'coverage', 'data', 'derivedFrom', 'period', 'provenance', 'reason', 'scope', 'source', 'state', 'asOf',
+  // contract version 2
+  'retrievedAt', 'freshness', 'classification', 'untrusted', 'failure', 'truncation',
+].sort();
+/** The version-2 fields a builder sets when it knows nothing more (retrievedAt is the build time). */
+const V2_EMPTY = { retrievedAt: expect.any(String), freshness: null, untrusted: [], failure: null, truncation: null };
 const SCOPE = { kind: 'organization' as const, window: 'last 30 days' };
 
 function expectEnvelope(section: ContextSection<unknown>) {
@@ -45,6 +61,7 @@ describe('collectSection', () => {
     expect(section).toEqual({
       state: 'available', source: 'test source', provenance: null, asOf: '2026-09-25T06:00:00.000Z', scope: SCOPE,
       period: null, completeness: null, coverage: 'everything', reason: null, derivedFrom: null, data: ['ec2', 's3'],
+      ...V2_EMPTY, classification: null,
     });
   });
 
@@ -145,7 +162,7 @@ describe('notSupported', () => {
     expect(section).toEqual({
       state: 'not_supported', source: 'DevControl anomaly detection', provenance: null, asOf: null, scope: SCOPE,
       period: null, completeness: null, coverage: null, reason: "No anomaly detection is connected to the assistant's context.",
-      derivedFrom: null, data: null,
+      derivedFrom: null, data: null, ...V2_EMPTY, classification: null,
     });
   });
 });
@@ -475,15 +492,21 @@ describe('truth/provenance foundation', () => {
         status: 'Partial',
         stateMeaning: expect.stringMatching(/Only part of the requested evidence/),
         evidencePresent: true,
+        classification: 'measured',
+        classificationMeaning: 'Observed directly from the stated source.',
         provenance: 'actual',
         provenanceMeaning: 'Observed directly from the stated source.',
         source: 'AWS Cost Explorer',
         scope: CE_SCOPE,
         period: MTD,
         asOf: '2026-09-26T06:00:00.000Z',
+        retrievedAt: expect.any(String),
+        freshness: null,
         completeness: { ...completeness, complete: false },
         coverage: null,
         reason: '5 of 7 days obtained',
+        failure: null,
+        truncation: null,
         derivedFrom: null,
         data: { total: 9.99 },
       });
@@ -505,5 +528,76 @@ describe('truth/provenance foundation', () => {
       expect(EVIDENCE_CLAIM_RULES).toMatch(/"estimated" is an estimate, not billed/);
       expect(EVIDENCE_CLAIM_RULES).toMatch(/only when the section is available and its outcome is no_candidate_identified/);
     });
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Contract version 2 (AI truth PR 2): states, classification, failure codes
+// ---------------------------------------------------------------------------
+
+describe('contract version 2', () => {
+  it('every state has a label and a meaning, and none of the no-data states reads as zero or none', () => {
+    for (const state of CONTEXT_DATA_STATES) {
+      expect(CONTEXT_STATE_LABELS[state]).toEqual(expect.any(String));
+      expect(CONTEXT_STATE_MEANINGS[state]).toEqual(expect.any(String));
+    }
+    for (const state of ['not_built', 'not_connected', 'not_entitled'] as const) {
+      expect(CONTEXT_STATE_MEANINGS[state]).toMatch(/NOT|never/i);
+    }
+    expect(CONTEXT_STATE_MEANINGS.stale).toMatch(/never present it as current/);
+    expect(CONTEXT_STATE_LABELS).toMatchObject({ not_built: 'Not provided by DevControl yet', not_entitled: 'Not included in this plan', not_connected: 'Not connected', stale: 'Out of date' });
+  });
+
+  it('only available, partial and stale carry data', () => {
+    expect(CONTEXT_DATA_STATES.filter(stateCarriesData)).toEqual(['available', 'partial', 'stale']);
+  });
+
+  it('notBuilt / notConnected / notEntitled are distinct states with their reason and no data', () => {
+    expect(notBuilt({ source: 's' }, 'r')).toMatchObject({ state: 'not_built', data: null, reason: 'r', classification: null });
+    expect(notConnected({ source: 's' }, 'r')).toMatchObject({ state: 'not_connected', data: null, reason: 'r' });
+    expect(notEntitled({ source: 's' }, 'r')).toMatchObject({ state: 'not_entitled', data: null, reason: 'r' });
+    expect(toModelEvidence(notEntitled({ source: 's' }, 'r'))).toMatchObject({ evidencePresent: false, status: 'Not included in this plan' });
+  });
+
+  it('classification decides and provenance is its alias (A-D2)', async () => {
+    const billed = await collectSection({ source: 'CE', classification: 'billed' }, async () => ({ state: 'available', data: 1 }));
+    const calculated = await collectSection({ source: 'x', classification: 'calculated' }, async () => ({ state: 'available', data: 1 }));
+    const decision = await collectSection({ source: 'x' }, async () => ({ state: 'available', data: 1, classification: 'customer_decision' as const }));
+    expect([billed.classification, billed.provenance]).toEqual(['billed', 'actual']);
+    expect([calculated.classification, calculated.provenance]).toEqual(['calculated', 'derived']);
+    expect([decision.classification, decision.provenance]).toEqual(['customer_decision', 'actual']);
+    expect(EVIDENCE_CLASSIFICATIONS).not.toContain('general_knowledge');
+    expect(classificationFromProvenance('estimated')).toBe('estimated');
+    expect(provenanceFor('estimated')).toBe('estimated');
+  });
+
+  it('a throw gets a safe failure code from the error class, never its text', async () => {
+    const cases: Array<[unknown, string]> = [
+      [Object.assign(new Error('relation "x" does not exist'), { code: '42P01' }), 'db_error'],
+      [Object.assign(new Error('User is not authorized'), { name: 'AccessDeniedException' }), 'aws_denied'],
+      [Object.assign(new Error('Rate exceeded'), { name: 'ThrottlingException' }), 'aws_throttled'],
+      [Object.assign(new Error('aborted'), { name: 'AbortError' }), 'timeout'],
+      [new Error('anything else'), 'internal'],
+    ];
+    for (const [error, code] of cases) {
+      const section = await collectSection({ source: 's' }, async () => { throw error; });
+      expect(section.failure?.code).toBe(code);
+      expect(JSON.stringify(toModelEvidence(section))).not.toMatch(/relation|not authorized|Rate exceeded/);
+    }
+  });
+
+  it('a not_entitled input keeps a derived value not_entitled -- never "no data"', async () => {
+    const derived = await deriveSection({ source: 'rate' }, [notEntitled<number>({ source: 'dora' }, 'plan')] as const, ([n]) => n);
+    expect(derived.state).toBe('not_entitled');
+  });
+
+  it('untrusted text is not part of the model evidence JSON, but is part of the fingerprint', async () => {
+    const a = await collectSection({ source: 's' }, async () => ({ state: 'available', data: { n: 1 }, untrusted: [{ field: 'x name', text: 'alpha' }] }));
+    const b = { ...a, untrusted: [{ field: 'x name', text: 'beta' }] };
+    expect(JSON.stringify(toModelEvidence(a))).not.toContain('alpha');
+    const fp = (section: ContextSection<unknown>) => evidenceFingerprint({ organizationId: 'org-a', sections: { s: section } });
+    expect(fp(a)).not.toBe(fp(b));
+    expect(fp({ ...a, retrievedAt: '2030-01-01T00:00:00.000Z' })).toBe(fp(a));
   });
 });

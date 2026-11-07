@@ -25,7 +25,7 @@ import {
   type CostExplorerScope,
   type EvidencePeriod,
 } from './ai-context-contract';
-import { COMPARISON_BASIS, lastIncludedDay, type ChatContext } from './ai-chat.service';
+import { COMPARISON_BASIS, lastIncludedDay, type ChatCostSection } from './ai-chat.service';
 
 export interface SpendEvidence {
   /** USD. May be 0 or negative (credits exceed charges) for billed spend. */
@@ -82,21 +82,19 @@ function nextDay(date: string): string {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
-export async function spendSection(costs: ChatContext['costs']): Promise<ContextSection<SpendEvidence>> {
-  if (costs.source === 'actual' && costs.current !== null) {
-    const period: EvidencePeriod | null = costs.period
-      ? { kind: 'range', start: costs.period.start, endExclusive: costs.period.endExclusive }
-      : null;
-    const lastDay = costs.period ? lastIncludedDay(costs.period.endExclusive) : null;
+export async function spendSection(costs: ChatCostSection): Promise<ContextSection<SpendEvidence>> {
+  if (costs.provenance === 'actual' && costs.data) {
+    const period: EvidencePeriod | null = costs.period?.kind === 'range' ? costs.period : null;
+    const lastDay = period?.kind === 'range' ? lastIncludedDay(period.endExclusive) : null;
     const lastDayInProgress = lastDay !== null && costs.asOf !== null && costs.asOf.slice(0, 10) === lastDay;
-    const current = costs.current;
-    return collectSection<SpendEvidence>({ source: CE_SOURCE, provenance: 'actual', scope: costs.scope, period }, async () => ({
+    const { current, topSpenders } = costs.data;
+    return collectSection<SpendEvidence>({ source: CE_SOURCE, classification: 'billed', scope: costs.scope, period }, async () => ({
       state: costs.state === 'partial' ? 'partial' : 'available',
       asOf: costs.asOf,
       data: {
         amount: current,
         basis: 'billed_month_to_date',
-        topServices: (costs.topSpenders ?? []).map(s => ({ service: s.service, amount: s.cost, sharePercent: s.percentage })),
+        topServices: (topSpenders ?? []).map(s => ({ service: s.service, amount: s.cost, sharePercent: s.percentage })),
         lastDayInProgress,
         finishedThrough: costs.comparison.finishedThrough,
       },
@@ -104,13 +102,13 @@ export async function spendSection(costs: ChatContext['costs']): Promise<Context
     }));
   }
 
-  if (costs.source === 'estimated' && costs.current !== null) {
-    const current = costs.current;
-    const coverage = costs.estimateCoverage;
+  if (costs.provenance === 'estimated' && costs.data) {
+    const current = costs.data.current;
+    const coverage = costs.data.estimateCoverage;
     return collectSection<SpendEvidence>(
       {
         source: ESTIMATE_SOURCE,
-        provenance: 'estimated',
+        classification: 'estimated',
         scope: costs.scope,
         period: { kind: 'point_in_time' },
         coverage: `used because AWS Cost Explorer is ${CONTEXT_STATE_LABELS[costs.costExplorer.state].toLowerCase()}${costs.costExplorer.reason ? ` (${costs.costExplorer.reason})` : ''}`,
@@ -136,7 +134,7 @@ export async function spendSection(costs: ChatContext['costs']): Promise<Context
   return collectSection<SpendEvidence>({ source: CE_SOURCE }, async () => ({ state: 'unavailable', reason }));
 }
 
-export async function monthOverMonthSection(costs: ChatContext['costs']): Promise<ContextSection<MonthOverMonthEvidence>> {
+export async function monthOverMonthSection(costs: ChatCostSection): Promise<ContextSection<MonthOverMonthEvidence>> {
   const c = costs.comparison;
   const scope: CostExplorerScope | null = costs.scope?.kind === 'cost_explorer' ? costs.scope : null;
   const period: EvidencePeriod | null = c.previousWindow && c.currentWindow
@@ -151,7 +149,7 @@ export async function monthOverMonthSection(costs: ChatContext['costs']): Promis
       }
     : null;
 
-  const trend = await collectSection<DailyTrendWindows>({ source: TREND_SOURCE, provenance: 'actual', scope, period }, async () => {
+  const trend = await collectSection<DailyTrendWindows>({ source: TREND_SOURCE, classification: 'billed', scope, period }, async () => {
     if (c.state === 'error') throw new Error(c.note ?? 'the Cost Explorer daily trend request failed');
     if (
       (c.state !== 'available' && c.state !== 'partial') ||

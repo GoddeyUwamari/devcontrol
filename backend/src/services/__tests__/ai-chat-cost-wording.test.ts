@@ -19,6 +19,7 @@
  * No DB needed: formatContext()/getSystemPrompt() never touch the pool.
  */
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, formatInclusiveRange, lastIncludedDay } from '../ai-chat.service';
+import { chatCosts, evidenceBundle, type LegacyChatCosts } from './chat-context-fixtures';
 
 function noData(state: ContextSection<never>['state'], extra: Partial<ContextSection<never>> = {}): ContextSection<never> {
   return { state, source: 'test source', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data: null, ...extra };
@@ -37,14 +38,14 @@ function systemPrompt(): string {
 }
 
 /** The real production context shape observed 2026-09-25 (figures as returned by /api/ai-chat/context). */
-function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, dora: ChatContext['dora'] = NO_DEPLOYMENTS): ChatContext {
+function productionLikeContext(overrides: Partial<LegacyChatCosts> = {}, dora: ChatContext['dora'] = NO_DEPLOYMENTS): ChatContext {
   const inventoryScope: ChatContext['inventoryScope'] = { kind: 'resource_inventory', connectedAccountId: '123456789012', discoveryRegion: 'us-east-1' };
   const inventory = { source: 'DevControl resource inventory (periodic AWS discovery)', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: '2026-09-25T06:00:03.693Z', scope: inventoryScope, reason: null };
   return {
     discovery: { state: 'available', source: 'DevControl resource discovery runs', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: '2026-09-25T06:00:03.693Z', scope: null, coverage: null, reason: null, data: { completedAt: '2026-09-25T06:00:03.693Z' } },
     account: { state: 'available', source: 'DevControl connected AWS account record', provenance: null, period: null, completeness: null, derivedFrom: null, asOf: null, scope: null, coverage: null, reason: null, data: { accountId: '123456789012', region: 'us-east-1' } },
     services: { state: 'available', ...inventory, coverage: null, data: ['ec2', 's3', 'sns', 'vpc'] },
-    costs: {
+    costs: chatCosts({
       state: 'available',
       source: 'actual',
       current: 14.83,
@@ -69,19 +70,18 @@ function productionLikeContext(overrides: Partial<ChatContext['costs']> = {}, do
         currentWindowIncludesToday: true, finishedThrough: null, asOf: '2026-09-25T08:57:16.538Z', basis: COMPARISON_BASIS,
       },
       ...overrides,
-    },
+    }),
     inventoryScope,
     resources: {
       state: 'available', ...inventory, coverage: 'EC2, RDS, and Lambda resources only',
       data: {
-        ec2: { count: 1, utilization: noData('not_supported', { reason: 'DevControl does not collect EC2 CPU utilization into the resource inventory.' }) },
+        ec2: { count: 1 },
         rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },
         lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
       },
     },
-    alerts: noData('not_supported', { source: 'DevControl alerts', reason: "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page." }),
-    anomalies: noData('not_supported', { source: 'DevControl anomaly detection', reason: "No anomaly detection is connected to the assistant's context." }),
     dora,
+    evidence: evidenceBundle(),
   };
 }
 
@@ -217,6 +217,7 @@ describe('DORA metrics in the cost context', () => {
     reason: null,
     data: {
       deploymentFrequency: '114 deployments in 30 days',
+      changeFailureRate: '1.8% (2 failed out of 114 finished deployments)',
       leadTime: '6.12 hours (Average time between consecutive deployments)',
       mttr: '71.35 minutes (1 incidents recovered)',
     },

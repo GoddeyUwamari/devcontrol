@@ -147,11 +147,15 @@ function securitySummary(e: WeeklyEvidence): string {
   );
 }
 
+/** The email's alert line while DevControl keeps no history of past alerts (alerts.history is not_built). */
+export const WEEKLY_ALERT_HISTORY_LINE = 'Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.';
+
 function alertSummary(e: WeeklyEvidence): string {
   const a = e.alerts;
   if (hasEvidence(a)) {
     return `${plural(a.data.total, 'alert')} this period, ${a.data.critical} critical.`;
   }
+  if (a.state === 'not_built') return WEEKLY_ALERT_HISTORY_LINE;
   return a.state === 'error'
     ? 'Alert data could not be retrieved for this period.'
     : `Alert data was unavailable for this period: ${reasonOf(a)}.`;

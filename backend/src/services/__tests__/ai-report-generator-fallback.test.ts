@@ -26,7 +26,15 @@ jest.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
+// Every evidence provider reads through the shared pool; here it is the fake below.
+const mockPools: { app?: unknown } = {};
+jest.mock('../../config/database', () => {
+  const actual = jest.requireActual('../../config/database');
+  return { ...actual, get pool() { return mockPools.app; } };
+});
+
 import { AIReportGeneratorService, ReportData } from '../ai-report-generator.service';
+import { chatCosts } from './chat-context-fixtures';
 import { AIChatContextRepository } from '../../repositories/ai-chat-context.repository';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
@@ -54,30 +62,30 @@ const AVAILABLE_COMPARISON: ChatContext['costs']['comparison'] = {
 };
 
 function actualCosts(amount: number, comparison = unavailableComparison()): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: 'available', source: 'actual', current: amount, asOf: '2026-09-26T06:00:00.000Z',
     period: { start: '2026-09-01', endExclusive: '2026-09-27' }, scope: CE_SCOPE,
     topSpenders: [{ service: 'Amazon EC2', cost: amount, percentage: amount > 0 ? 100 : null }],
     costExplorer: { state: 'available', reason: null }, estimateCoverage: null, comparison,
-  };
+  });
 }
 
 function estimatedCosts(amount: number, estimated: number, total: number): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state: estimated < total ? 'partial' : 'available', source: 'estimated', current: amount, asOf: '2026-09-26T05:00:00.000Z',
     period: null, scope: INVENTORY_SCOPE, topSpenders: null,
     costExplorer: { state: 'unavailable', reason: 'no connected AWS account' },
     estimateCoverage: { estimatedResources: estimated, totalResources: total },
     comparison: unavailableComparison('no Cost Explorer data for the current period, so there is nothing to compare'),
-  };
+  });
 }
 
 function noCosts(state: 'error' | 'unavailable'): ChatContext['costs'] {
-  return {
+  return chatCosts({
     state, source: 'unavailable', current: null, asOf: null, period: null, scope: null, topSpenders: null,
     costExplorer: { state, reason: state === 'error' ? 'the Cost Explorer request failed' : 'no connected AWS account' },
     estimateCoverage: null, comparison: unavailableComparison(),
-  };
+  });
 }
 
 async function basis(discoveryState: 'available' | 'unavailable' = 'available') {
@@ -93,13 +101,29 @@ async function basis(discoveryState: 'available' | 'unavailable' = 'available') 
 
 type Deployment = { service_id: string; status: string; deployed_at: string };
 
-function fakePool(deployments: Deployment[] = []) {
+/**
+ * The fake pool: answers the reads the report's sections need (deployments,
+ * the top estimated resources, the plan lookup, the cost-finding lifecycle
+ * counts); every other read fails, so the sources this suite does not set up
+ * are 'error' sections -- never invented data.
+ */
+function fakePool(deployments: Deployment[] = [], recommendations: unknown[] = [], tier = 'pro') {
+  const unexpected = (sql: string) => { throw new Error(`unexpected query: ${sql}`); };
   return {
     query: jest.fn(async (sql: string) => {
       if (/FROM deployments/.test(sql)) return { rows: deployments };
       if (/estimated_monthly_cost > 0/.test(sql)) return { rows: [{ resource_id: 'i-1', resource_type: 'ec2', estimated_monthly_cost: '42.50', resource_name: 'web' }] };
-      throw new Error(`unexpected query: ${sql}`);
+      if (/FROM organizations WHERE id/.test(sql)) return { rows: [{ subscription_tier: tier, billing_lifecycle_state: null, grace_period_ends_at: null }] };
+      return unexpected(sql);
     }),
+    connect: jest.fn(async () => ({
+      query: jest.fn(async (sql: string) => {
+        if (/set_config/.test(sql)) return { rows: [] };
+        if (/GROUP BY status/.test(sql)) return { rows: [{ status: 'ACTIVE', n: String(recommendations.length) }] };
+        return unexpected(sql);
+      }),
+      release: jest.fn(),
+    })),
   } as any;
 }
 
@@ -110,10 +134,7 @@ function mockSources(opts: {
   statsFails?: boolean;
   recommendations?: Array<{ resource_id: string; resource_type: string; issue: string; potential_savings: number; metadata?: Record<string, unknown> }>;
 } = {}) {
-  jest.spyOn(AIChatContextRepository.prototype, 'gatherCostContext').mockImplementation(async () => ({
-    ...(await basis(opts.discovery)),
-    costs: opts.costs ?? actualCosts(14.83),
-  }));
+  jest.spyOn(AIChatContextRepository.prototype, 'collectCosts').mockImplementation(async () => opts.costs ?? actualCosts(14.83));
   jest.spyOn(AIChatContextRepository.prototype, 'gatherInventoryBasis').mockImplementation(() => basis(opts.discovery));
   const getStats = jest.spyOn(AWSResourcesRepository.prototype, 'getStats');
   if (opts.statsFails) {
@@ -141,9 +162,11 @@ afterAll(() => {
   if (ORIGINAL_ANTHROPIC_API_KEY !== undefined) process.env.ANTHROPIC_API_KEY = ORIGINAL_ANTHROPIC_API_KEY;
 });
 
-async function evidence(opts: Parameters<typeof mockSources>[0] = {}, deployments: Deployment[] = [], reportType = 'weekly_summary'): Promise<ReportData> {
+async function evidence(opts: Parameters<typeof mockSources>[0] = {}, deployments: Deployment[] = [], reportType = 'weekly_summary', tier = 'pro'): Promise<ReportData> {
   mockSources(opts);
-  return new AIReportGeneratorService(fakePool(deployments)).fetchReportData(ORG, RANGE, reportType);
+  const pool = fakePool(deployments, opts.recommendations ?? [], tier);
+  mockPools.app = pool;
+  return new AIReportGeneratorService(pool).fetchReportData(ORG, RANGE, reportType);
 }
 
 describe('AI Reports evidence -- cost', () => {
@@ -190,10 +213,12 @@ describe('AI Reports evidence -- cost', () => {
 });
 
 describe('AI Reports evidence -- security, resources, alerts', () => {
-  it('there is no security score and no previous score -- both are explicitly not supported', async () => {
-    const { sections } = await evidence();
-    expect(sections.securityScore).toMatchObject({ state: 'not_supported', data: null });
-    expect(sections.securityHistory).toMatchObject({ state: 'not_supported', data: null });
+  it('the security score is the plan-gated posture-score provider (A-D12), never a not_supported placeholder; there is no separate previous-score section', async () => {
+    const { sections, evidence: bundle } = await evidence();
+    expect(sections.securityScore?.state).not.toBe('not_supported');
+    expect(sections.securityScore?.source).toBe('DevControl security posture score');
+    expect(sections).not.toHaveProperty('securityHistory');
+    expect(bundle?.results.find((r) => r.id === 'security.risk_score')?.section).toBe(sections.securityScore);
     expect(JSON.stringify(sections)).not.toMatch(/previousScore/);
   });
 
@@ -221,15 +246,18 @@ describe('AI Reports evidence -- security, resources, alerts', () => {
     expect(sections.securityFindings).toMatchObject({ state: 'unavailable', data: null });
   });
 
-  it('resource change over the period is not supported -- no invented growth', async () => {
+  it('resource change over the period is not built -- no invented growth', async () => {
     const { sections } = await evidence();
-    expect(sections.resourceChange).toMatchObject({ state: 'not_supported', data: null });
+    expect(sections.resourceChange).toMatchObject({ state: 'not_built', data: null });
+    expect(sections.resourceChange?.reason).toMatch(/keeps only the current resource inventory/);
     expect(sections.resourceInventory).toMatchObject({ state: 'available', data: { total: 12 } });
   });
 
-  it('alerts are not supported -- never "0 alerts"', async () => {
+  it('alerts are CloudWatch alarms (A-D10); alarms that could not be read are an error with a safe code, never "0 alerts"; alert history is not built', async () => {
     const { sections } = await evidence();
-    expect(sections.alerts).toMatchObject({ state: 'not_supported', data: null, source: 'DevControl alerts', reason: 'Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.' });
+    expect(sections.cloudwatchAlarms).toMatchObject({ state: 'error', data: null, source: 'Amazon CloudWatch alarms', failure: { code: 'internal' } });
+    expect(sections.alertHistory).toMatchObject({ state: 'not_built', data: null, source: 'DevControl alert history' });
+    expect(sections).not.toHaveProperty('alerts');
   });
 
   it('a failed inventory read is an error section with a safe reason, and other sections are unaffected', async () => {
@@ -364,6 +392,22 @@ describe('AI Reports evidence -- the EC2 default price (PR 4, S4)', () => {
     expect(listed).not.toHaveProperty('estimatedSavingsPriceUnknown');
   });
 
+  it('re-review 3 N5: one idle recommendation is singular, two plural (every one listed)', async () => {
+    const idle = (id: string, savings: number) => ({ resource_id: id, resource_type: 'EC2', issue: 'Idle Instance', potential_savings: savings, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } });
+    const lines = async (recommendations: Array<ReturnType<typeof idle>>) => {
+      const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(await evidence({ recommendations }));
+      return { recs: report.costAnalysis?.recommendations, top: report.topRecommendations.find((r) => r.title === 'Review idle or unused resources')?.description };
+    };
+    expect(await lines([idle('i-one', 40)])).toEqual({
+      recs: ['Review 1 active recommendation for idle or unused resources (estimated potential savings of $40.00/month; a DevControl estimate, not realized savings).'],
+      top: '1 active DevControl recommendation flags idle or unused resources. Savings are DevControl estimates, not realized savings.',
+    });
+    expect(await lines([idle('i-one', 40), idle('i-two', 30)])).toEqual({
+      recs: ['Review 2 active recommendations for idle or unused resources (estimated potential savings of $70.00/month; a DevControl estimate, not realized savings).'],
+      top: '2 active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.',
+    });
+  });
+
   it('with no default figure the reason is unchanged', async () => {
     const { sections } = await evidence({
       recommendations: [
@@ -409,9 +453,11 @@ describe('AI Reports prompt grounding', () => {
 
     expect(prompt).toContain('"provenance":"estimated"');
     expect(prompt).toContain('"basis":"estimated_monthly_run_rate"');
-    expect(prompt).toMatch(/### Month-over-month cost comparison\n\{"contractVersion":1,"state":"unavailable"[^\n]*"evidencePresent":false/);
-    expect(prompt).toMatch(/### Alerts\n[^\n]*"state":"not_supported"/);
-    expect(prompt).toMatch(/never say there were no alerts, zero alerts/);
+    expect(prompt).toMatch(/### Month-over-month cost comparison\n\{"contractVersion":2,"state":"unavailable"[^\n]*"evidencePresent":false/);
+    expect(prompt).toMatch(/### Alert history \(past alerts\)\n[^\n]*"state":"not_built"/);
+    expect(prompt).toMatch(/### CloudWatch alarms \(current state\)\n[^\n]*"state":"error"/);
+    expect(prompt).toMatch(/never say there were no alerts during the period/);
+    expect(prompt).toMatch(/- \[ops\.cloudwatch_alarms\] CloudWatch alarms \(current state\): couldn't be retrieved right now/);
     expect(prompt).toMatch(/never describe it as zero, none, empty, unchanged, flat, or "no findings"/);
     expect(prompt).toMatch(/Never state a previous-period cost, a trend, or a percentage change unless/);
     expect(prompt).toMatch(/never call it lead time/);
@@ -464,7 +510,7 @@ describe('AI Reports deterministic fallback', () => {
     const text = JSON.stringify(report);
 
     expect(text).toContain('Cloud spend is not available');
-    expect(text).toContain('Alert counts are not included in this report yet. See Operational Health for your active CloudWatch alarms.');
+    expect(text).toContain('CloudWatch alarm status is not available: Amazon CloudWatch alarms could not be retrieved.');
     expect(text).not.toMatch(/Prometheus|not associated with an organization/);
     expect(text).not.toMatch(/\$0(\.00)?\b/);
     expect(text).not.toMatch(/\b0 alerts|no alerts|0 critical alerts/i);
@@ -507,6 +553,98 @@ describe('AI Reports deterministic fallback', () => {
 
     expect(report.securityAnalysis!.topRisks).toBe('encryption: 1 findings (highest severity: low; resource types: s3)');
     expect(report.topRecommendations.some(r => /critical/i.test(r.title))).toBe(false);
+  });
+});
+
+describe('AI Reports evidence -- review fixes (AI truth PR 2 review)', () => {
+  it('L1: a section the size budget cut prints no data; its line and truncation say so', async () => {
+    // 400 deployments of one service, 7 minutes apart: hundreds of long interval figures, far over the provider's cap.
+    const start = Date.parse('2026-09-19T00:00:00Z');
+    const many = Array.from({ length: 400 }, (_, i) => ({ service_id: 'svc-1', status: 'success', deployed_at: new Date(start + i * 7 * 60_000).toISOString() }));
+    const data = await evidence({}, many, 'infrastructure_health');
+    const records = data.evidence!.results.find((r) => r.id === 'delivery.deployments')!;
+
+    expect(records.mode).toBe('header');
+    expect(records.section).toMatchObject({ state: 'omitted', reason: 'not included in this answer (too large)', data: null, truncation: { kept: 0, by: 'provider_cap' } });
+    expect(data.sections.deployments).toMatchObject({ data: null });
+    expect(data.sections.deliveryRates?.reason).toMatch(/DevControl deployment records: not included in this answer \(too large\)/);
+
+    const prompt = new AIReportGeneratorService(fakePool()).buildUserPrompt(data, 'infrastructure_health');
+    expect(prompt).toMatch(/- \[delivery\.deployments\] Deployments recorded in the period: not included in this answer \(too large\)\./);
+    expect(prompt).toMatch(/### Deployments recorded in the report period\n\{[^\n]*"state":"omitted"[^\n]*"evidencePresent":false[^\n]*"truncation":\{"kept":0,"total":1,"by":"provider_cap"\}[^\n]*"data":null\}/);
+    expect(prompt).not.toContain('0.11666');
+  });
+
+  it('L4: below the DORA plan, the report\'s deployment rates are not_entitled; counts stay', async () => {
+    const records = [
+      { service_id: 'svc-1', status: 'success', deployed_at: '2026-09-20T10:00:00Z' },
+      { service_id: 'svc-1', status: 'failed', deployed_at: '2026-09-21T10:00:00Z' },
+    ];
+    const starter = await evidence({}, records, 'infrastructure_health', 'starter');
+    expect(starter.sections.deliveryRates).toMatchObject({ state: 'not_entitled', data: null });
+    expect(starter.sections.deployments).toMatchObject({ state: 'available', data: { total: 2 } });
+
+    const pro = await evidence({}, records, 'infrastructure_health', 'pro');
+    expect(pro.sections.deliveryRates).toMatchObject({ state: 'available', data: { changeFailureRatePercent: 50 } });
+  });
+});
+
+describe('AI Reports deterministic fallback -- approved copy (AI truth PR 2, founder §L)', () => {
+  async function findingsHighlight(dispositions: { dismissed: number; accepted_risk: number }): Promise<string[]> {
+    const section = await collectSection({ source: 'DevControl account-level security findings (security groups, IAM)' }, async () => ({
+      state: 'available' as const,
+      data: {
+        outcome: 'found', total: 3, bySeverity: { critical: 1, high: 2, medium: 0, low: 0 },
+        byDisposition: { open: 3 - dispositions.dismissed - dispositions.accepted_risk, acknowledged: 0, ...dispositions }, byCategory: { networking: 3 }, items: [],
+      },
+    }));
+    const data: ReportData = { organizationId: ORG, reportType: 'security_insights', dateRange: RANGE, sections: { accountSecurityFindings: section as never } };
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'security_insights');
+    return report.keyHighlights;
+  }
+
+  it('one active finding is "1 active finding" (singular), with "is" for the one marked', async () => {
+    const section = await collectSection({ source: 'DevControl account-level security findings (security groups, IAM)' }, async () => ({
+      state: 'available' as const,
+      data: {
+        outcome: 'found', total: 1, bySeverity: { critical: 0, high: 1, medium: 0, low: 0 },
+        byDisposition: { open: 0, acknowledged: 0, dismissed: 0, accepted_risk: 1 }, byCategory: { networking: 1 }, items: [],
+      },
+    }));
+    const data: ReportData = { organizationId: ORG, reportType: 'security_insights', dateRange: RANGE, sections: { accountSecurityFindings: section as never } };
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'security_insights');
+    expect(report.keyHighlights).toContain(
+      "DevControl's account-level checks (security groups, IAM) found 1 active finding (0 critical, 1 high, 0 medium, 0 low); 1 of these is marked as accepted risk or dismissed by your team."
+    );
+  });
+
+  async function alarmsHighlight(inAlarmCount: number, complete: boolean): Promise<string[]> {
+    const section = await collectSection({ source: 'Amazon CloudWatch alarms', scope: { kind: 'aws_account_region', connectedAccountId: null, region: 'us-east-1' } }, async () => ({
+      state: complete ? 'available' as const : 'partial' as const,
+      asOf: '2026-09-26T06:00:00.000Z',
+      data: { outcome: inAlarmCount > 0 ? 'found' : 'none_found', inAlarmCount, inAlarmComplete: complete, configuredCount: 9, configuredCountComplete: complete, items: [] },
+      reason: complete ? null : 'capped',
+    }));
+    const data: ReportData = { organizationId: ORG, reportType: 'infrastructure_health', dateRange: RANGE, sections: { cloudwatchAlarms: section as never } };
+    return (await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'infrastructure_health')).report.keyHighlights;
+  }
+
+  it('the alarm line: "1 alarm" singular, "at least" when the read was capped', async () => {
+    expect(await alarmsHighlight(1, true)).toContain('CloudWatch reported 1 alarm in ALARM in us-east-1 as of 2026-09-26T06:00:00.000Z (current state, not a history for the period).');
+    expect(await alarmsHighlight(2, false)).toContain('CloudWatch reported at least 2 alarms in ALARM in us-east-1 as of 2026-09-26T06:00:00.000Z (current state, not a history for the period).');
+    expect(await alarmsHighlight(1, false)).toContain('CloudWatch reported at least 1 alarm in ALARM in us-east-1 as of 2026-09-26T06:00:00.000Z (current state, not a history for the period).');
+  });
+
+  it('states account-level findings with the counts, and the one the team marked ("is" for one)', async () => {
+    expect(await findingsHighlight({ dismissed: 0, accepted_risk: 1 })).toContain(
+      "DevControl's account-level checks (security groups, IAM) found 3 active findings (1 critical, 2 high, 0 medium, 0 low); 1 of these is marked as accepted risk or dismissed by your team."
+    );
+  });
+
+  it('states account-level findings with the counts, and the ones the team marked ("are" for more than one)', async () => {
+    expect(await findingsHighlight({ dismissed: 1, accepted_risk: 1 })).toContain(
+      "DevControl's account-level checks (security groups, IAM) found 3 active findings (1 critical, 2 high, 0 medium, 0 low); 2 of these are marked as accepted risk or dismissed by your team."
+    );
   });
 });
 

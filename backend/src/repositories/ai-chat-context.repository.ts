@@ -2,7 +2,10 @@
  * AI Chat Context Repository
  * Gathers the AI Assistant's context: each source becomes a section that
  * carries its own state, source, as-of, scope, and coverage
- * (see services/ai-context-contract.ts).
+ * (see services/ai-context-contract.ts). Every source other than the cost and
+ * inventory sections the chat prompt formats itself comes from the shared
+ * evidence registry (services/ai/evidence/), so what the assistant can and
+ * can't see is generated from provider states, not written here.
  */
 
 import { Pool } from 'pg';
@@ -10,38 +13,66 @@ import {
   COMPARISON_BASIS,
   costFinishedThrough,
   type ChatContext,
+  type ChatCostSection,
   type ContextDataState,
   type CostComparison,
   type CostExplorerScope,
   type InventoryResources,
   type InventoryScope,
 } from '../services/ai-chat.service';
-import { collectSection, notSupported, type ContextSection } from '../services/ai-context-contract';
+import { collectSection, type ContextSection } from '../services/ai-context-contract';
 import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
 import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { AWSResourcesRepository } from './awsResources.repository';
 import { findEligibleAwsAccount } from './aws-accounts.repository';
+import { createEvidenceBasis, defaultBasisSources } from '../services/ai/evidence/basis';
+import { collectEvidence, sectionOf } from '../services/ai/evidence/registry';
+import { defaultEvidenceRegistry } from '../services/ai/evidence/providers';
+import { topicsForConversation } from '../services/ai/evidence/select';
 
 const INVENTORY_SOURCE = 'DevControl resource inventory (periodic AWS discovery)';
 
-// alert_history's only writer (the Prometheus alert sync) stores no
-// organization_id, so org-scoped reads can never see its rows (see
-// AlertHistoryRepository.create()). Until that is fixed, "0 alerts" would be
-// a fabricated fact -- the section is not_supported instead. CloudWatch
-// alarms are a separate, org-scoped source the assistant does not read yet
-// (AI truth PR 2), so the reason says so rather than "no alerts exist".
-// The model repeats this text to customers, so it names no internal mechanism.
-const ALERTS_NOT_SUPPORTED_REASON =
-  "Alert data is not part of this context yet. CloudWatch alarms are shown on the Operational Health page.";
+/**
+ * Evidence budget for one chat answer, in estimated tokens (step1 §2.5).
+ * The budget counts each section at its JSON block size and each line at a
+ * flat 60 tokens, more than chat's prose renders, so the figure carries that
+ * margin (re-review 3 M4). Counting what chat actually renders is PR 3.
+ */
+export const CHAT_EVIDENCE_BUDGET_TOKENS = 20_000;
 
-// The former cost_spike query was a fixed spend threshold over inventory
-// estimates, not anomaly detection; anomaly_detections is not wired in yet.
-const ANOMALIES_NOT_SUPPORTED_REASON = "No anomaly detection is connected to the assistant's context.";
+/**
+ * Providers whose data AI Chat always loads -- the sections it has always had
+ * (cost, the month-over-month comparison, the inventory counts and types,
+ * DORA), plus the connection and region scope every context includes. The
+ * question's topics add the rest.
+ */
+export const CHAT_CORE_PROVIDERS = [
+  'connection.scope',
+  'coverage.regions',
+  'cost.spend',
+  'cost.month_over_month',
+  'inventory.resource_types',
+  'inventory.compute_detail',
+  'delivery.dora',
+] as const;
 
-// No source writes a CPU figure into aws_resources (the old query read a
-// tags->>'cpu_utilization' key nothing sets), so "0 underutilized" was never a measurement.
-const EC2_UTILIZATION_NOT_SUPPORTED_REASON = 'DevControl does not collect EC2 CPU utilization into the resource inventory.';
+const COST_EXPLORER_SOURCE = 'AWS Cost Explorer';
+const ESTIMATE_SOURCE = 'DevControl inventory cost estimate';
+const NO_COST_SOURCE = 'AWS Cost Explorer and DevControl inventory cost estimate';
+
+/** The version-2 fields a cost section built here carries. */
+function costSectionFields(classification: 'billed' | 'estimated' | null) {
+  return {
+    retrievedAt: new Date().toISOString(),
+    freshness: null,
+    classification,
+    untrusted: [],
+    failure: null,
+    truncation: null,
+    derivedFrom: null,
+  };
+}
 
 /** Whole cents -- the unit every displayed money figure (and any arithmetic between them) is done in. */
 function toCents(amount: number): number {
@@ -82,35 +113,33 @@ export class AIChatContextRepository {
   }
 
   /**
-   * Gather complete context for AI chat
+   * Gather complete context for AI chat. `messages` is the conversation; its
+   * last 3 user turns choose the evidence topics (select.ts). The question
+   * text is used only for that choice: it is never logged or stored here.
    */
-  async gatherContext(organizationId: string): Promise<ChatContext> {
-    console.log(`[AI Chat Context] Gathering context for org: ${organizationId}`);
+  async gatherContext(organizationId: string, messages: ReadonlyArray<{ role: string; content: string }> = []): Promise<ChatContext> {
+    const basis = createEvidenceBasis(organizationId, { ...defaultBasisSources(), context: this });
+    const evidence = await collectEvidence(defaultEvidenceRegistry(), {
+      organizationId,
+      consumer: 'ai_chat',
+      select: { topics: topicsForConversation(messages), providerIds: [...CHAT_CORE_PROVIDERS] },
+      budgetTokens: CHAT_EVIDENCE_BUDGET_TOKENS,
+      basis,
+    });
 
-    const { discovery, account, inventoryScope } = await this.gatherInventoryBasis(organizationId);
-    const connectedAccount = account.data;
-
-    const [costs, resources, services, dora] = await Promise.all([
-      this.getCostData(organizationId, discovery.data?.completedAt ?? null, connectedAccount?.accountId ?? null, inventoryScope),
-      this.getResourceData(organizationId, discovery, inventoryScope),
-      this.getServices(organizationId, discovery, inventoryScope),
-      this.getDORAMetrics(organizationId),
+    const [discovery, account, inventoryScope, costs] = await Promise.all([
+      basis.discovery(), basis.account(), basis.inventoryScope(), basis.costs(),
     ]);
-    const alerts = notSupported<NonNullable<ChatContext['alerts']['data']>>({ source: 'DevControl alerts' }, ALERTS_NOT_SUPPORTED_REASON);
-    const anomalies = notSupported<NonNullable<ChatContext['anomalies']['data']>>({ source: 'DevControl anomaly detection' }, ANOMALIES_NOT_SUPPORTED_REASON);
-
-    console.log(`[AI Chat Context] Context gathered: services ${services.state}, resources ${resources.state}, dora ${dora.state}, cost state ${costs.state} (source: ${costs.source})`);
 
     return {
       discovery,
       account,
-      services,
+      services: sectionOf<string[]>(evidence, 'inventory.resource_types'),
       costs,
       inventoryScope,
-      resources,
-      alerts,
-      anomalies,
-      dora,
+      resources: sectionOf<InventoryResources>(evidence, 'inventory.compute_detail'),
+      dora: sectionOf<ChatContext['dora']['data'] & object>(evidence, 'delivery.dora'),
+      evidence,
     };
   }
 
@@ -148,7 +177,7 @@ export class AIChatContextRepository {
    */
   async gatherCostContext(organizationId: string): Promise<Pick<ChatContext, 'discovery' | 'account' | 'inventoryScope' | 'costs'>> {
     const basis = await this.gatherInventoryBasis(organizationId);
-    const costs = await this.getCostData(
+    const costs = await this.collectCosts(
       organizationId,
       basis.discovery.data?.completedAt ?? null,
       basis.account.data?.accountId ?? null,
@@ -354,14 +383,14 @@ export class AIChatContextRepository {
    *   - Neither: current is null, state 'error' if either attempt failed,
    *     'unavailable' otherwise.
    */
-  private async getCostData(
+  async collectCosts(
     organizationId: string,
     discoveryAsOf: string | null,
     connectedAccountId: string | null,
     inventoryScope: InventoryScope
-  ): Promise<ChatContext['costs']> {
+  ): Promise<ChatCostSection> {
     let monthlyCost: MonthlyCost | null = null;
-    let costExplorer: ChatContext['costs']['costExplorer'];
+    let costExplorer: ChatCostSection['costExplorer'];
     try {
       monthlyCost = await awsCostService.fetchMonthlyCosts(organizationId);
       costExplorer = Number.isFinite(monthlyCost?.total)
@@ -407,14 +436,17 @@ export class AIChatContextRepository {
 
       return {
         state: 'available',
-        source: 'actual',
-        current: roundCents(total),
+        source: COST_EXPLORER_SOURCE,
+        provenance: 'actual',
         asOf: monthlyCost.fetchedAt ?? null,
-        period: { start: monthlyCost.period.start, endExclusive: monthlyCost.period.end },
         scope,
-        topSpenders,
+        period: { kind: 'range', start: monthlyCost.period.start, endExclusive: monthlyCost.period.end },
+        completeness: null,
+        coverage: null,
+        reason: null,
+        data: { current: roundCents(total), topSpenders, estimateCoverage: null },
+        ...costSectionFields('billed'),
         costExplorer,
-        estimateCoverage: null,
         comparison,
       };
     }
@@ -438,16 +470,20 @@ export class AIChatContextRepository {
       const estimatedResources = parseInt(rows[0]?.estimated_resources ?? '0', 10);
 
       if (estimatedResources > 0) {
+        const partial = estimatedResources < totalResources;
         return {
-          state: estimatedResources < totalResources ? 'partial' : 'available',
-          source: 'estimated',
-          current: roundCents(parseFloat(rows[0].total)),
+          state: partial ? 'partial' : 'available',
+          source: ESTIMATE_SOURCE,
+          provenance: 'estimated',
           asOf: discoveryAsOf,
-          period: null,
           scope: inventoryScope,
-          topSpenders: null,
+          period: { kind: 'point_in_time' },
+          completeness: { unit: 'discovered resources with a cost estimate', expected: totalResources, received: estimatedResources, missing: null },
+          coverage: null,
+          reason: partial ? `${estimatedResources} of ${totalResources} discovered resources have a cost estimate` : null,
+          data: { current: roundCents(parseFloat(rows[0].total)), topSpenders: null, estimateCoverage: { estimatedResources, totalResources } },
+          ...costSectionFields('estimated'),
           costExplorer,
-          estimateCoverage: { estimatedResources, totalResources },
           comparison: noCurrentPeriod,
         };
       }
@@ -458,16 +494,23 @@ export class AIChatContextRepository {
     }
 
     // Neither a Cost Explorer result nor a DB estimate exists -- no figure at all.
+    const failed = costExplorer.state === 'error' || estimateState === 'error';
     return {
-      state: costExplorer.state === 'error' || estimateState === 'error' ? 'error' : 'unavailable',
-      source: 'unavailable',
-      current: null,
+      state: failed ? 'error' : 'unavailable',
+      source: NO_COST_SOURCE,
+      provenance: null,
       asOf: null,
-      period: null,
       scope: null,
-      topSpenders: null,
+      period: null,
+      completeness: null,
+      coverage: null,
+      reason: failed
+        ? 'cost data could not be retrieved: no Cost Explorer result and no inventory estimate'
+        : 'no Cost Explorer result and no inventory estimate',
+      data: null,
+      ...costSectionFields(null),
+      failure: failed ? { code: costExplorer.state === 'error' ? 'internal' : 'db_error', retryable: true } : null,
       costExplorer,
-      estimateCoverage: null,
       comparison: noCurrentPeriod,
     };
   }
@@ -476,7 +519,7 @@ export class AIChatContextRepository {
    * EC2/RDS/Lambda counts from the resource inventory. Every count is explicit,
    * including a real 0; a failed query is 'error', never {} or "no resources".
    */
-  private getResourceData(
+  getResourceData(
     organizationId: string,
     discovery: ChatContext['discovery'],
     inventoryScope: InventoryScope
@@ -533,10 +576,7 @@ export class AIChatContextRepository {
 
       const rdsEstimatedCount = parseInt(rdsResult.rows[0]?.estimated_count ?? '0', 10);
       return {
-        ec2: {
-          count: parseInt(ec2Result.rows[0]?.total ?? '0', 10),
-          utilization: notSupported<{ underutilized: number }>({ source: 'EC2 CPU utilization' }, EC2_UTILIZATION_NOT_SUPPORTED_REASON),
-        },
+        ec2: { count: parseInt(ec2Result.rows[0]?.total ?? '0', 10) },
         rds: {
           count: parseInt(rdsResult.rows[0]?.total ?? '0', 10),
           estimatedMonthlyCost: rdsEstimatedCount > 0 ? roundCents(parseFloat(rdsResult.rows[0].estimated_cost)) : null,
@@ -555,7 +595,7 @@ export class AIChatContextRepository {
    * Distinct discovered resource types. An empty list is only "none" once a
    * discovery run has completed; a failed query is 'error', never [].
    */
-  private getServices(
+  getServices(
     organizationId: string,
     discovery: ChatContext['discovery'],
     inventoryScope: InventoryScope
@@ -583,9 +623,10 @@ export class AIChatContextRepository {
    * the moment it was computed. No deployments in the window is 'unavailable'
    * and a failed computation is 'error' -- never an omitted section.
    */
-  private getDORAMetrics(organizationId: string): Promise<ChatContext['dora']> {
+  getDORAMetrics(organizationId: string): Promise<ChatContext['dora']> {
     return collectSection<NonNullable<ChatContext['dora']['data']>>({
       source: 'DevControl deployment records',
+      classification: 'calculated',
       scope: { kind: 'organization', window: 'last 30 days' },
       coverage: 'deployments recorded in DevControl for this organization; deployments made outside DevControl are not included',
     }, async () => {
@@ -607,6 +648,9 @@ export class AIChatContextRepository {
         data: {
           deploymentFrequency: metrics.deploymentFrequency.description
             ?? `${metrics.deploymentFrequency.value} ${metrics.deploymentFrequency.unit}`,
+          changeFailureRate: metrics.changeFailureRate.value !== null
+            ? `${metrics.changeFailureRate.value}% (${metrics.changeFailureRate.description ?? 'of finished deployments'})`
+            : `Not measured (${metrics.changeFailureRate.description ?? 'no finished deployments in this period'})`,
           // Neither is measurable from deployment records. The model is given
           // the reason, never a number it could restate as the real metric.
           leadTime: `Not tracked (${metrics.leadTime.reason})`,
