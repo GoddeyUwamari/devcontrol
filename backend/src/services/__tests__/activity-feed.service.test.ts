@@ -101,6 +101,38 @@ describe('optimization activity -- the EC2 default price (PR 4, S3)', () => {
   });
 });
 
+describe('optimization activity -- low-activity findings (FP PR 2b, C-11)', () => {
+  // As pg returns the selected JSON: metadata->'rule_version' and ->'rule'->'version' parse to numbers.
+  const v2 = { rule_version: 2, rule_id: 'ec2_low_activity', rule_object_version: 2 };
+  const rows = [
+    { created_at: T(1), potential_savings: '8.50', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: list price', price_source: 'list_table', ...v2 },
+    { created_at: T(2), potential_savings: '50.00', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: list price', price_source: 'default_unlisted_type', ...v2 },
+    // A CPU-only row (no rule identity) and a marker without the rule object keep their stored text.
+    { created_at: T(3), potential_savings: '8.50', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: list price', price_source: 'list_table', rule_version: null, rule_id: null, rule_object_version: null },
+    { created_at: T(4), potential_savings: '8.50', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: list price', price_source: 'list_table', rule_version: 2, rule_id: null, rule_object_version: null },
+    // The identity on another issue changes nothing.
+    { created_at: T(5), potential_savings: '0.48', issue: 'Unattached EBS Volume', severity: 'LOW', savings_basis: 'estimated: list price', ...v2 },
+  ];
+
+  it('labels only low-activity rows "Low-activity instance", with their figure as "up to"', async () => {
+    mockClientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM cost_recommendations')) return { rows };
+      return { rows: [] };
+    });
+    const events = await new ActivityFeedService().getActivityFeed(ORG);
+    const [sql] = sqlFor('cost_recommendations');
+    expect(sql).toMatch(/metadata->'rule_version' AS rule_version/);
+    expect(sql).not.toMatch(/low_activity/);
+    expect(events.filter((e) => e.type === 'optimization').map((e) => e.message)).toEqual([
+      'Cost optimization found · Low-activity instance — up to $8.50/month',
+      'Cost optimization found · Low-activity instance — up to $50.00/month (default estimate, price unknown)',
+      'Cost optimization found · Idle Instance — ~$8.50/month opportunity',
+      'Cost optimization found · Idle Instance — ~$8.50/month opportunity',
+      'Cost optimization found · Unattached EBS Volume — ~$0.48/month opportunity',
+    ]);
+  });
+});
+
 describe('anomaly activity', () => {
   it('while ANOMALY_DETECTION_ACTIVE is false, anomaly_detections is not read and no anomaly event appears', async () => {
     routeQueries();

@@ -57,46 +57,43 @@ describe('CostRecommendationsController.getOptimizationRulesConfiguration', () =
 
   it('(2) resolves and returns the effective configuration for every configurable rule, scoped to the authenticated organization', async () => {
     const resolveSpy = jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockImplementation(async (_org, ruleId, parameterId) =>
-      ruleId === 'ec2_idle'
-        ? { ruleId, parameterId, value: 5, source: 'default' }
-        : { ruleId, parameterId, value: 10, source: 'default' }
+      ({ ruleId, parameterId, value: 10, source: 'default' })
     );
     const { req, res, json } = mockReqRes({ user: { organizationId: 'org-42' } });
 
     await controller.getOptimizationRulesConfiguration(req, res);
 
-    expect(resolveSpy).toHaveBeenCalledWith('org-42', 'ec2_idle', 'cpu_threshold_percent');
+    // FP PR 2b: ec2_idle is no longer configurable (the low-activity rule's thresholds are fixed).
+    expect(resolveSpy).toHaveBeenCalledTimes(1);
     expect(resolveSpy).toHaveBeenCalledWith('org-42', 'lambda_low_usage', 'max_invocations');
 
     const { data } = json.mock.calls[0][0];
-    const ec2Entry = data.find((d: any) => d.ruleId === 'ec2_idle');
-    expect(ec2Entry).toEqual({
-      ruleId: 'ec2_idle',
-      parameterId: 'cpu_threshold_percent',
-      value: 5,
+    expect(data.map((d: any) => d.ruleId)).toEqual(['lambda_low_usage']);
+    expect(data[0]).toEqual({
+      ruleId: 'lambda_low_usage',
+      parameterId: 'max_invocations',
+      value: 10,
       source: 'default',
-      default: 5,
-      min: 1,
-      max: 20,
-      unit: 'percent',
-      type: 'number',
+      default: 10,
+      min: 0,
+      max: 1000,
+      unit: 'invocations_per_30d',
+      type: 'integer',
     });
   });
 
   it('(3) reflects an organization_override source and value when one is in effect', async () => {
     jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockImplementation(async (_org, ruleId, parameterId) =>
-      ruleId === 'ec2_idle'
-        ? { ruleId, parameterId, value: 15, source: 'organization_override' }
-        : { ruleId, parameterId, value: 10, source: 'default' }
+      ({ ruleId, parameterId, value: 150, source: 'organization_override' })
     );
     const { req, res, json } = mockReqRes();
 
     await controller.getOptimizationRulesConfiguration(req, res);
 
     const { data } = json.mock.calls[0][0];
-    const ec2Entry = data.find((d: any) => d.ruleId === 'ec2_idle');
-    expect(ec2Entry.value).toBe(15);
-    expect(ec2Entry.source).toBe('organization_override');
+    const lambdaEntry = data.find((d: any) => d.ruleId === 'lambda_low_usage');
+    expect(lambdaEntry.value).toBe(150);
+    expect(lambdaEntry.source).toBe('organization_override');
   });
 
   it('(4) a resolver failure returns 500, not a fabricated default', async () => {
@@ -125,19 +122,19 @@ describe('CostRecommendationsController.updateOptimizationRuleConfiguration', ()
   it('(6) upserts using the authenticated organizationId, never one from params/body, and returns the override with source "organization_override"', async () => {
     const upsertSpy = jest
       .spyOn(OptimizationRuleConfigService.prototype, 'upsertOverride')
-      .mockResolvedValue({ id: 'row-1', organizationId: 'org-7', ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 12, createdAt: new Date(), updatedAt: new Date() });
+      .mockResolvedValue({ id: 'row-1', organizationId: 'org-7', ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 12, createdAt: new Date(), updatedAt: new Date() });
     const { req, res, json } = mockReqRes({
       user: { organizationId: 'org-7' },
-      params: { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent' },
+      params: { ruleId: 'lambda_low_usage', parameterId: 'max_invocations' },
       body: { value: 12, organizationId: 'attacker-controlled-org' }, // must be ignored
     });
 
     await controller.updateOptimizationRuleConfiguration(req, res);
 
-    expect(upsertSpy).toHaveBeenCalledWith('org-7', 'ec2_idle', 'cpu_threshold_percent', 12);
+    expect(upsertSpy).toHaveBeenCalledWith('org-7', 'lambda_low_usage', 'max_invocations', 12);
     const payload = json.mock.calls[0][0];
     expect(payload.success).toBe(true);
-    expect(payload.data).toEqual({ ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 12, source: 'organization_override' });
+    expect(payload.data).toEqual({ ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 12, source: 'organization_override' });
   });
 
   it('(7) coerces a string-encoded numeric value from the request body', async () => {
@@ -204,9 +201,19 @@ describe('CostRecommendationsController.resetOptimizationRuleConfiguration', () 
     expect(deleteSpy).not.toHaveBeenCalled();
   });
 
+  it('(12b) FP PR 2b: a reset of ec2_idle is refused with 400 and never deletes the stored override', async () => {
+    const deleteSpy = jest.spyOn(OptimizationRuleConfigService.prototype, 'deleteOverride');
+    const { req, res, status } = mockReqRes({ params: { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent' } });
+
+    await controller.resetOptimizationRuleConfiguration(req, res);
+
+    expect(status).toHaveBeenCalledWith(400);
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
   it('(13) a reset on an already-default parameter still returns success (idempotent no-op)', async () => {
     jest.spyOn(OptimizationRuleConfigService.prototype, 'deleteOverride').mockResolvedValue(undefined);
-    const { req, res, json, status } = mockReqRes({ params: { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent' } });
+    const { req, res, json, status } = mockReqRes({ params: { ruleId: 'lambda_low_usage', parameterId: 'max_invocations' } });
 
     await controller.resetOptimizationRuleConfiguration(req, res);
 

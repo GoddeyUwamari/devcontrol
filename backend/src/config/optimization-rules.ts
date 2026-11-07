@@ -82,8 +82,8 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
   {
     id: 'ec2_idle',
     service: 'EC2',
-    name: 'Idle EC2 instances',
-    detail: 'CPU utilization below 5% averaged over 7 days',
+    name: 'Low-activity EC2 instances',
+    detail: 'CPU below 10% and network below 5 MB every day for 30 days, and not behind a load balancer or in an Auto Scaling group',
     status: 'implemented',
     issue: ISSUE_EC2_IDLE_INSTANCE,
   },
@@ -428,22 +428,12 @@ export interface OptimizationRuleParameterDefinition {
   unit: string;
 }
 
-/**
- * The existing detectIdleEC2Instances() has always used a bare, unbounded
- * `avgCPU < 5` literal -- [1, 20] is a NEW product constraint introduced by
- * 3B, not inherited from existing code, which enforced no range at all.
- * Comparison semantics are unchanged: qualifies when observed average CPU
- * over the existing 7-day evidence window is strictly less than this value.
- */
-const EC2_IDLE_CPU_THRESHOLD_PARAMETER: OptimizationRuleParameterDefinition = {
-  ruleId: 'ec2_idle',
-  parameterId: 'cpu_threshold_percent',
-  type: 'number',
-  default: 5,
-  min: 1,
-  max: 20,
-  unit: 'percent',
-};
+// ec2_idle/cpu_threshold_percent (an average-CPU threshold, 1-20%) was
+// configurable until false-positives PR 2b. The low-activity rule that
+// replaced the CPU-only check uses fixed thresholds (config/low-activity-rule.ts),
+// so it is no longer offered here: it is neither listed nor accepted on write.
+// Organizations' stored ec2_idle rows in organization_optimization_rule_configs
+// are kept as they are and are not read.
 
 /**
  * The existing LAMBDA_LOW_USAGE_MAX_INVOCATIONS_30D constant (=10) has never
@@ -463,7 +453,6 @@ const LAMBDA_LOW_USAGE_MAX_INVOCATIONS_PARAMETER: OptimizationRuleParameterDefin
 };
 
 export const OPTIMIZATION_RULE_PARAMETERS: OptimizationRuleParameterDefinition[] = [
-  EC2_IDLE_CPU_THRESHOLD_PARAMETER,
   LAMBDA_LOW_USAGE_MAX_INVOCATIONS_PARAMETER,
 ];
 

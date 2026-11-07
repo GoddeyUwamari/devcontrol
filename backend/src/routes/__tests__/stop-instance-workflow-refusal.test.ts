@@ -30,7 +30,8 @@ import { createRemediationRoutes } from '../remediation.routes';
 import { pool as appPool } from '../../config/database';
 import { RoleGateOrg, createRoleGateHarness } from './role-gate-harness';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
-import { insertEligibleStopFinding } from './eligible-stop-finding';
+import { ELIGIBLE_STOP_METADATA, insertEligibleStopFinding } from './eligible-stop-finding';
+import { lowActivityMetadata } from '../../services/__tests__/helpers/low-activity-fixture';
 
 const harness = createRoleGateHarness('stop-instance-workflow-refusal');
 const { pool, sendAs } = harness;
@@ -60,7 +61,7 @@ async function insertFinding(
       `INSERT INTO cost_recommendations (organization_id, resource_id, resource_type, issue, severity, aws_region, status, metadata)
        VALUES ($1, $2, $3, $4, 'LOW', 'us-east-1', $5, $6) RETURNING id`,
       [org.orgId, resourceId, options.resourceType ?? 'EC2', options.issue ?? 'Idle Instance', options.status ?? 'ACTIVE',
-        JSON.stringify(options.metadata ?? { rule_version: 2 })]
+        JSON.stringify(options.metadata ?? ELIGIBLE_STOP_METADATA)]
     );
     return rows[0].id as string;
   }
@@ -204,6 +205,9 @@ describe('create refuses a stop that is not backed by an eligible finding', () =
     ['(b) a RESOLVED decision row, even with the marker', { status: 'RESOLVED' }, 'finding_not_active'],
     ['(b) a DISMISSED decision row', { status: 'DISMISSED' }, 'finding_not_active'],
     ['a marked finding for another issue on the same instance', { issue: 'Old-Generation Instance' }, 'finding_mismatch'],
+    // FP PR 2b condition 7 (FP2b-Q13): the low-activity evidence must be at most 13 hours old.
+    ['(f) low-activity evidence evaluated 14 hours ago', { metadata: lowActivityMetadata({ evaluatedAt: new Date(Date.now() - 14 * 3_600_000) }) }, 'evidence_stale'],
+    ['(f) the marker with no low-activity evidence', { metadata: { rule_version: 2 } }, 'evidence_stale'],
   ])('%s: 403, nothing written, audited with the reason', async (_label, options, reason) => {
     const resourceId = instanceId();
     const recommendationId = await insertFinding(resourceId, options as any);
@@ -238,6 +242,22 @@ describe('create refuses a stop that is not backed by an eligible finding', () =
 });
 
 describe('approve and execute refuse stored workflows that are not eligible', () => {
+  it('approve (FP PR 2b): a pending stop whose low-activity evidence has gone stale stays pending, audited as evidence_stale', async () => {
+    const resourceId = instanceId();
+    const recommendationId = await insertFinding(resourceId, { metadata: lowActivityMetadata({ evaluatedAt: new Date(Date.now() - 20 * 3_600_000) }) });
+    const { id } = await insertWorkflow('pending_approval', recommendationId, resourceId);
+    const before = await workflowRow(id);
+    const since = await dbNow();
+
+    await expectRefused(await act(id, 'approve'));
+
+    expect(await workflowRow(id)).toEqual(before);
+    expect(await refusalsSince(since)).toEqual([
+      expect.objectContaining({ user_id: org.admin, resource_id: id, metadata: expect.objectContaining({ stage: 'approve', reason: 'evidence_stale' }) }),
+    ]);
+    expectNoAwsCall();
+  });
+
   it('approve: a pending stop with no finding (stored before PR 2a) stays pending, audited with the admin', async () => {
     const { id } = await insertWorkflow('pending_approval', null);
     const before = await workflowRow(id);

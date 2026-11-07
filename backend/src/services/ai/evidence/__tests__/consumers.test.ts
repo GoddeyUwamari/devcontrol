@@ -15,6 +15,7 @@
  * No model is called: the prompt is captured before it would be sent.
  */
 import type { Pool } from 'pg';
+import { LOW_ACTIVITY_FINDING_RULE } from '../render';
 
 const mockPools: { app?: Pool } = {};
 jest.mock('../../../../config/database', () => {
@@ -149,6 +150,11 @@ describe('AI Chat', () => {
     expect(prompt).toContain('Cost data:'); // the established chat cost section is kept
     expectFenced(prompt);
   });
+
+  it('FP PR 2b: the system prompt states how a low-activity finding may be described', () => {
+    const system = (new AIChatService(db.roleApp) as unknown as { getSystemPrompt(): string }).getSystemPrompt();
+    expect(system).toContain(`- ${LOW_ACTIVITY_FINDING_RULE}`);
+  });
 });
 
 describe('AI Reports', () => {
@@ -168,6 +174,7 @@ describe('AI Reports', () => {
     const prompt = service.buildUserPrompt(data, 'executive_summary');
     expectCoreEvidence(prompt, 'json');
     expectFenced(prompt);
+    expect(prompt).toContain(`- ${LOW_ACTIVITY_FINDING_RULE}`); // FP PR 2b
   });
 });
 
@@ -184,6 +191,7 @@ describe('Dashboard summary', () => {
     // findings list (and so an accepted finding's title) stays out (false positives PR 1).
     expectCoreEvidence(prompt, 'json', { dispositions: false });
     expectFenced(prompt);
+    expect(prompt).toContain(`- ${LOW_ACTIVITY_FINDING_RULE}`); // FP PR 2b
     expect(result.systemStatus).toMatch(/^1 CloudWatch alarm is in ALARM in us-east-1 as of /);
     expect(result.summarySource).toBe('facts_only');
     expect(result.aiGeneratedAt).toBeNull();

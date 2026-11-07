@@ -14,6 +14,7 @@ import { EMPTY_RECONCILE_COUNTS, ReconcileCounts } from '../services/cost-analys
 import { AuditEventAction, AuditRequestContext, insertAuditEventInTransaction } from '../services/auditEvents.service';
 import { DetectionState, NotConfirmedReason, judgeFreshness } from '../services/cost-finding-freshness';
 import { LatestLeasedRun, latestLeasedRun } from './cost-analysis-runs.repository';
+import { displayIssue } from '../services/finding-display';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
   ISSUE_RDS_OVERSIZED_INSTANCE,
@@ -262,6 +263,11 @@ export interface HiddenFinding {
   decidedBy: string | null;
   decisionCount: number;
   issue: string;
+  /**
+   * The label to show: "Low-activity instance" when the latest detection was
+   * made by the low-activity rule, otherwise the stored issue text.
+   */
+  issueLabel: string;
   resourceId: string;
   resourceName: string | null;
   resourceType: string;
@@ -499,7 +505,10 @@ export class CostRecommendationsRepository {
    * AWS-not-connected must never be interpreted as disappearance. The same
    * holds, within a successful category, for each resource in the
    * observation's unknownResourceIds (listed but not evaluated this scan):
-   * its occurrence is not ended and its ACTIVE row is not deleted.
+   * its occurrence is not ended and its ACTIVE row is not deleted -- except
+   * that an observation with endActiveForUnknown (the low-activity rule) has
+   * the ACTIVE rows of its unknown resources removed too; their decisions are
+   * still left open.
    *
    * `scope` limits the home-listed issues (HOME_REGION_SCOPED_ISSUES) to the
    * scan's home region; every scan passes it. Without it no region limit
@@ -584,12 +593,17 @@ export class CostRecommendationsRepository {
             if (openDecisions.has(resourceId)) hiddenObserved.push({ outcome: 'unknown', resourceId, issue: observation.issue });
           }
 
+          // A category that asks for it (the low-activity rule, FP2b-Q12) keeps no
+          // ACTIVE row for a resource it could not check: the row goes like any
+          // other ACTIVE row of this scan. Only ACTIVE rows: the decisions of an
+          // unknown resource were left open above and are never touched here.
+          const keepActiveFor = observation.endActiveForUnknown ? [] : unknownResourceIds;
           await client.query(
             `DELETE FROM cost_recommendations
              WHERE organization_id = $1 AND status = 'ACTIVE' AND issue = $2
                AND resource_id <> ALL($3::varchar[])
                AND ($4::varchar IS NULL OR aws_region = $4 OR aws_region IS NULL)`,
-            [organizationId, observation.issue, unknownResourceIds, regionLimit]
+            [organizationId, observation.issue, keepActiveFor, regionLimit]
           );
 
           for (const rec of observation.recommendations) {
@@ -832,6 +846,7 @@ export class CostRecommendationsRepository {
           decidedBy: actorOf.get(row.id) ?? null,
           decisionCount: parseInt(row.decision_count, 10),
           issue: row.issue,
+          issueLabel: displayIssue(row.issue, detected?.metadata ?? null),
           resourceId: row.resource_id,
           resourceName: row.resource_name,
           resourceType: row.resource_type,

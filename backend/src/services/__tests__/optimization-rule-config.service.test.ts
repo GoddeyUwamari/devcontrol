@@ -88,8 +88,6 @@ afterAll(async () => {
 
 describe('validateParameterValue — pure validation, no DB access', () => {
   it.each([
-    ['ec2_idle', 'cpu_threshold_percent', 0],
-    ['ec2_idle', 'cpu_threshold_percent', 20.1],
     ['lambda_low_usage', 'max_invocations', -1],
     ['lambda_low_usage', 'max_invocations', 1001],
     ['lambda_low_usage', 'max_invocations', 10.5],
@@ -98,8 +96,6 @@ describe('validateParameterValue — pure validation, no DB access', () => {
   });
 
   it.each([
-    ['ec2_idle', 'cpu_threshold_percent', 1],
-    ['ec2_idle', 'cpu_threshold_percent', 20],
     ['lambda_low_usage', 'max_invocations', 0],
     ['lambda_low_usage', 'max_invocations', 1000],
     ['lambda_low_usage', 'max_invocations', 10],
@@ -115,6 +111,11 @@ describe('validateParameterValue — pure validation, no DB access', () => {
     expect(() => validateParameterValue('ec2_idle', 'unknown_param', 5)).toThrow(OptimizationRuleConfigValidationError);
   });
 
+  // FP PR 2b: the low-activity EC2 rule has fixed thresholds; ec2_idle is no longer configurable.
+  it.each([1, 5, 20])('(2b) rejects ec2_idle/cpu_threshold_percent = %s: no longer configurable', (value) => {
+    expect(() => validateParameterValue('ec2_idle', 'cpu_threshold_percent', value)).toThrow(OptimizationRuleConfigValidationError);
+  });
+
   it('(5) rejects a mismatched rule/parameter pair', () => {
     expect(() => validateParameterValue('ec2_idle', 'max_invocations', 5)).toThrow(OptimizationRuleConfigValidationError);
     expect(() => validateParameterValue('lambda_low_usage', 'cpu_threshold_percent', 5)).toThrow(OptimizationRuleConfigValidationError);
@@ -122,10 +123,9 @@ describe('validateParameterValue — pure validation, no DB access', () => {
 });
 
 describe('OptimizationRuleConfigService — default resolution (no override)', () => {
-  it('(6) EC2 resolves to the registry default of 5 with source "default"', async () => {
+  it('(6) ec2_idle is no longer resolved: an unsupported combination, never a guessed default', async () => {
     const service = new OptimizationRuleConfigService(pool);
-    const effective = await service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent');
-    expect(effective).toEqual({ ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' });
+    await expect(service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent')).rejects.toBeInstanceOf(OptimizationRuleConfigValidationError);
   });
 
   it('(7) Lambda resolves to the registry default of 10 with source "default"', async () => {
@@ -136,12 +136,21 @@ describe('OptimizationRuleConfigService — default resolution (no override)', (
 });
 
 describe('OptimizationRuleConfigService — override resolution', () => {
-  it('(8) a stored EC2 override of 10 resolves to 10 with source "organization_override"', async () => {
+  it('(8) a stored ec2_idle override is kept as it is, and neither written nor read (FP PR 2b)', async () => {
     const service = new OptimizationRuleConfigService(pool);
-    await service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 10);
+    await admin.query(
+      `INSERT INTO organization_optimization_rule_configs (organization_id, rule_id, parameter_id, value_numeric) VALUES ($1, 'ec2_idle', 'cpu_threshold_percent', 10)`,
+      [orgA]
+    );
+    const before = (await admin.query(`SELECT * FROM organization_optimization_rule_configs WHERE organization_id = $1 AND rule_id = 'ec2_idle'`, [orgA])).rows;
 
-    const effective = await service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent');
-    expect(effective).toEqual({ ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 10, source: 'organization_override' });
+    await expect(service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 12)).rejects.toBeInstanceOf(OptimizationRuleConfigValidationError);
+    await expect(service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent')).rejects.toBeInstanceOf(OptimizationRuleConfigValidationError);
+
+    const after = (await admin.query(`SELECT * FROM organization_optimization_rule_configs WHERE organization_id = $1 AND rule_id = 'ec2_idle'`, [orgA])).rows;
+    expect(after).toEqual(before);
+    expect(after).toHaveLength(1);
+    await admin.query(`DELETE FROM organization_optimization_rule_configs WHERE organization_id = $1 AND rule_id = 'ec2_idle'`, [orgA]);
   });
 
   it('(9) a stored Lambda override of 100 resolves to 100 with source "organization_override"', async () => {
@@ -154,21 +163,21 @@ describe('OptimizationRuleConfigService — override resolution', () => {
 
   it('(10) upsertOverride rejects an out-of-range value before it ever reaches the database', async () => {
     const service = new OptimizationRuleConfigService(pool);
-    await expect(service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 25)).rejects.toBeInstanceOf(OptimizationRuleConfigValidationError);
-    expect(await service.getOverride(orgA, 'ec2_idle', 'cpu_threshold_percent')).toBeNull();
+    await expect(service.upsertOverride(orgA, 'lambda_low_usage', 'max_invocations', 1001)).rejects.toBeInstanceOf(OptimizationRuleConfigValidationError);
+    expect(await service.getOverride(orgA, 'lambda_low_usage', 'max_invocations')).toBeNull();
   });
 });
 
 describe('OptimizationRuleConfigService — reset', () => {
   it('(11) deleting an override reverts resolution to the registry default', async () => {
     const service = new OptimizationRuleConfigService(pool);
-    await service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 15);
-    expect((await service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent')).source).toBe('organization_override');
+    await service.upsertOverride(orgA, 'lambda_low_usage', 'max_invocations', 150);
+    expect((await service.resolveEffectiveConfig(orgA, 'lambda_low_usage', 'max_invocations')).source).toBe('organization_override');
 
-    await service.deleteOverride(orgA, 'ec2_idle', 'cpu_threshold_percent');
+    await service.deleteOverride(orgA, 'lambda_low_usage', 'max_invocations');
 
-    const effective = await service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent');
-    expect(effective).toEqual({ ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' });
+    const effective = await service.resolveEffectiveConfig(orgA, 'lambda_low_usage', 'max_invocations');
+    expect(effective).toEqual({ ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' });
   });
 
   it('(12) resetting an already-default parameter (no row exists) is a no-op success, not an error', async () => {
@@ -180,27 +189,28 @@ describe('OptimizationRuleConfigService — reset', () => {
 describe('OptimizationRuleConfigService — tenant isolation', () => {
   it('(13) org A\'s override is invisible to org B\'s resolution — org B still gets the default', async () => {
     const service = new OptimizationRuleConfigService(pool);
-    await service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 18);
+    await service.upsertOverride(orgA, 'lambda_low_usage', 'max_invocations', 180);
 
-    const orgAEffective = await service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent');
-    const orgBEffective = await service.resolveEffectiveConfig(orgB, 'ec2_idle', 'cpu_threshold_percent');
+    const orgAEffective = await service.resolveEffectiveConfig(orgA, 'lambda_low_usage', 'max_invocations');
+    const orgBEffective = await service.resolveEffectiveConfig(orgB, 'lambda_low_usage', 'max_invocations');
 
-    expect(orgAEffective).toEqual({ ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 18, source: 'organization_override' });
-    expect(orgBEffective).toEqual({ ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' });
+    expect(orgAEffective).toEqual({ ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 180, source: 'organization_override' });
+    expect(orgBEffective).toEqual({ ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' });
+    await service.deleteOverride(orgA, 'lambda_low_usage', 'max_invocations');
   });
 
   it('(14) getOverride/getAllOverrides never cross the organization boundary', async () => {
     const service = new OptimizationRuleConfigService(pool);
-    await service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 12);
+    await service.upsertOverride(orgA, 'lambda_low_usage', 'max_invocations', 120);
     await service.upsertOverride(orgB, 'lambda_low_usage', 'max_invocations', 200);
 
-    expect(await service.getOverride(orgB, 'ec2_idle', 'cpu_threshold_percent')).toBeNull();
-    expect(await service.getOverride(orgA, 'lambda_low_usage', 'max_invocations')).toBeNull();
+    expect((await service.getOverride(orgA, 'lambda_low_usage', 'max_invocations'))?.value).toBe(120);
+    expect((await service.getOverride(orgB, 'lambda_low_usage', 'max_invocations'))?.value).toBe(200);
 
     const orgAAll = await service.getAllOverrides(orgA);
     const orgBAll = await service.getAllOverrides(orgB);
-    expect(orgAAll.map((o) => o.ruleId)).toEqual(['ec2_idle']);
-    expect(orgBAll.map((o) => o.ruleId)).toEqual(['lambda_low_usage']);
+    expect(orgAAll.map((o) => [o.organizationId, o.value])).toEqual([[orgA, 120]]);
+    expect(orgBAll.map((o) => [o.organizationId, o.value])).toEqual([[orgB, 200]]);
   });
 
   it('(15) the DB CHECK constraint itself rejects an out-of-range value even bypassing the service', async () => {
@@ -234,18 +244,18 @@ describe('OptimizationRuleConfigService — tenant isolation', () => {
 describe('OptimizationRuleConfigService — idempotency / upsert', () => {
   it('(18) repeatedly setting the same organization/rule/parameter updates the existing row, never creates duplicates', async () => {
     const service = new OptimizationRuleConfigService(pool);
-    await service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 8);
-    await service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 12);
-    await service.upsertOverride(orgA, 'ec2_idle', 'cpu_threshold_percent', 16);
+    await service.upsertOverride(orgA, 'lambda_low_usage', 'max_invocations', 80);
+    await service.upsertOverride(orgA, 'lambda_low_usage', 'max_invocations', 120);
+    await service.upsertOverride(orgA, 'lambda_low_usage', 'max_invocations', 160);
 
     const { rows } = await admin.query(
-      `SELECT COUNT(*)::int AS count FROM organization_optimization_rule_configs WHERE organization_id = $1 AND rule_id = 'ec2_idle' AND parameter_id = 'cpu_threshold_percent'`,
+      `SELECT COUNT(*)::int AS count FROM organization_optimization_rule_configs WHERE organization_id = $1 AND rule_id = 'lambda_low_usage' AND parameter_id = 'max_invocations'`,
       [orgA]
     );
     expect(rows[0].count).toBe(1);
 
-    const effective = await service.resolveEffectiveConfig(orgA, 'ec2_idle', 'cpu_threshold_percent');
-    expect(effective.value).toBe(16);
+    const effective = await service.resolveEffectiveConfig(orgA, 'lambda_low_usage', 'max_invocations');
+    expect(effective.value).toBe(160);
   });
 
   it('(19) upsertOverride updates updated_at on a repeated call', async () => {

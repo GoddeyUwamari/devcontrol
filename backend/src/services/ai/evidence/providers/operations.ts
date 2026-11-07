@@ -19,6 +19,8 @@ import { lifecycleStateFor } from '../../../../utils/resourceLifecycle';
 import { pool } from '../../../../config/database';
 import type { ContextDataState } from '../../../ai-context-contract';
 import { defineProvider, iso, ref, summarizeItems, untrustedFor, withOrgClient } from './shared';
+import { LOW_ACTIVITY_RULE } from '../../../../config/low-activity-rule';
+import { isLowActivityFinding } from '../../../finding-display';
 
 /** Replaceable in tests: the two reads the operations providers make. */
 export const operationsSources = {
@@ -212,7 +214,7 @@ export const resourceHealthProvider = defineProvider<ResourceHealthEvidence>({
 export interface CpuTelemetryEvidence {
   /** EC2 CPU from the latest Operational Health check (CloudWatch CPUUtilization, last hour); null when none is cached. */
   latestCheck: { observedAt: string; instances: number } | null;
-  /** The 7-day CPU evidence behind each active idle-instance cost finding. */
+  /** The CPU evidence behind each active idle-instance cost finding (a 30-day peak for low-activity findings). */
   idleInstanceEvidence: number;
   /** Distinct EC2 instances with a CPU reading, over every reading (kept when the list is shortened). */
   instances: number;
@@ -221,7 +223,7 @@ export interface CpuTelemetryEvidence {
   items: Array<{
     ref: string;
     instanceId: string;
-    basis: 'latest_check_last_hour' | 'idle_finding_7_day_average';
+    basis: 'latest_check_last_hour' | 'idle_finding_7_day_average' | 'low_activity_finding_30_day_peak';
     cpuPercent: number;
     observedAt: string | null;
     datapointsObserved: number | null;
@@ -246,7 +248,7 @@ export const cpuTelemetryProvider = defineProvider<CpuTelemetryEvidence>({
       source: CPU_SOURCE,
       classification: 'measured' as const,
       scope: { kind: 'aws_account_region' as const, connectedAccountId: account.data?.accountId ?? null, region: account.data?.region ?? null },
-      coverage: "EC2 instances in the connected account's home region: the last hour's average from the latest Operational Health check when one is cached, and the 7-day hourly average behind each idle-instance finding. Memory is not collected",
+      coverage: "EC2 instances in the connected account's home region: the last hour's average from the latest Operational Health check when one is cached, and the 30-day hourly peak CPU behind each low-activity instance finding. Memory is not collected",
     };
     if (account.state === 'unavailable') return notConnected<CpuTelemetryEvidence>(meta, 'no AWS account is connected');
     return collectSection<CpuTelemetryEvidence>(meta, async () => {
@@ -257,18 +259,32 @@ export const cpuTelemetryProvider = defineProvider<CpuTelemetryEvidence>({
           const cpu = s.metrics?.find((m) => m.label === 'CPU');
           return cpu ? [{ instanceId: s.resourceId, cpuPercent: cpu.value }] : [];
         });
-      const idle = (await basis.activeCostRecommendations())
-        .filter((r) => r.metadata && typeof (r.metadata as any).average_cpu === 'number')
-        .map((r) => {
-          const m = r.metadata as Record<string, any>;
-          return {
+      const activeRecommendations = await basis.activeCostRecommendations();
+      // A low-activity finding's evidence is its 30-day peak (FP2b); a finding
+      // written by the earlier CPU-only check carries a 7-day average instead.
+      const lowActivityHours = LOW_ACTIVITY_RULE.window.days * LOW_ACTIVITY_RULE.completeness.hours_per_day_required;
+      const idle = activeRecommendations.flatMap((r): Array<Omit<CpuTelemetryEvidence['items'][number], 'ref'>> => {
+        const m = (r.metadata ?? {}) as Record<string, any>;
+        if (isLowActivityFinding(String(r.issue), m) && typeof m.low_activity?.worst?.cpu_peak_percent === 'number') {
+          return [{
             instanceId: String(r.resource_id),
-            cpuPercent: Math.round(Number(m.average_cpu) * 100) / 100,
-            observedAt: typeof m.cpu_evidence?.window_end === 'string' ? m.cpu_evidence.window_end : null,
-            datapointsObserved: typeof m.cpu_evidence?.datapoints_observed === 'number' ? m.cpu_evidence.datapoints_observed : null,
-            datapointsExpected: typeof m.cpu_evidence?.datapoints_expected === 'number' ? m.cpu_evidence.datapoints_expected : null,
-          };
-        });
+            basis: 'low_activity_finding_30_day_peak' as const,
+            cpuPercent: Math.round(Number(m.low_activity.worst.cpu_peak_percent) * 100) / 100,
+            observedAt: typeof m.low_activity.window_end === 'string' ? m.low_activity.window_end : null,
+            datapointsObserved: lowActivityHours,
+            datapointsExpected: lowActivityHours,
+          }];
+        }
+        if (typeof m.average_cpu !== 'number') return [];
+        return [{
+          instanceId: String(r.resource_id),
+          basis: 'idle_finding_7_day_average' as const,
+          cpuPercent: Math.round(Number(m.average_cpu) * 100) / 100,
+          observedAt: typeof m.cpu_evidence?.window_end === 'string' ? m.cpu_evidence.window_end : null,
+          datapointsObserved: typeof m.cpu_evidence?.datapoints_observed === 'number' ? m.cpu_evidence.datapoints_observed : null,
+          datapointsExpected: typeof m.cpu_evidence?.datapoints_expected === 'number' ? m.cpu_evidence.datapoints_expected : null,
+        }];
+      });
       const collection = await withOrgClient(organizationId, async (client) => {
         const obs = await client.query(
           `SELECT COUNT(*)::int AS tracked, COUNT(last_datapoint_at)::int AS with_datapoints, MAX(last_datapoint_at) AS newest
@@ -290,7 +306,7 @@ export const cpuTelemetryProvider = defineProvider<CpuTelemetryEvidence>({
       }
       const items: CpuTelemetryEvidence['items'] = [
         ...latest.map((l) => ({ instanceId: l.instanceId, basis: 'latest_check_last_hour' as const, cpuPercent: l.cpuPercent, observedAt: evaluation?.capturedAt ?? null, datapointsObserved: null, datapointsExpected: null })),
-        ...idle.map((d) => ({ ...d, basis: 'idle_finding_7_day_average' as const })),
+        ...idle,
       ].map((item, i) => ({ ref: ref('u', i), ...item }));
       const asOf = [evaluation?.capturedAt ?? null, collection?.newestDatapointAt ?? null, ...idle.map((d) => d.observedAt)]
         .filter((t): t is string => typeof t === 'string')

@@ -13,6 +13,7 @@ import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { formatSavingsCents } from '../utils/formatSavingsCurrency';
 import { classifySavingsBasis, EC2_PRICE_SOURCE_DEFAULT } from './estimated-savings';
+import { displayIssue, isLowActivityFinding } from './finding-display';
 import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service';
 
 export type ActivityEventType = 'sync' | 'optimization' | 'security' | 'score' | 'anomaly';
@@ -165,7 +166,9 @@ export class ActivityFeedService {
   private async getOptimizationEvents(client: PoolClient, organizationId: string): Promise<ActivityEvent[]> {
     const result = await client.query(
       `SELECT created_at, potential_savings, issue, severity, metadata->>'savings_basis' AS savings_basis,
-              metadata->>'price_source' AS price_source
+              metadata->>'price_source' AS price_source,
+              metadata->'rule_version' AS rule_version, metadata->'rule'->>'id' AS rule_id,
+              metadata->'rule'->'version' AS rule_object_version
        FROM cost_recommendations
        WHERE organization_id = $1 AND status = 'ACTIVE'
        ORDER BY created_at DESC LIMIT $2`,
@@ -184,12 +187,22 @@ export class ActivityFeedService {
       if (kind === 'ceiling') return `up to ${formatSavingsCents(row.potential_savings as string)}/month opportunity`;
       return 'no dollar estimate';
     };
-    return result.rows.map((row) => ({
-      type: 'optimization' as const,
-      message: `Cost optimization found · ${row.issue} — ${savingsPhrase(row)}`,
-      timestamp: new Date(row.created_at).toISOString(),
-      severity: row.severity ? String(row.severity).toLowerCase() : undefined,
-    }));
+    // A low-activity finding (FP2b C-11): its label, and its figure as "up to"
+    // -- the full instance cost, saved only if it's no longer needed.
+    const lowActivityPhrase = (row: { potential_savings: unknown; price_source?: unknown }) =>
+      row.price_source === EC2_PRICE_SOURCE_DEFAULT
+        ? `up to ${formatSavingsCents(row.potential_savings as string)}/month (default estimate, price unknown)`
+        : `up to ${formatSavingsCents(row.potential_savings as string)}/month`;
+    return result.rows.map((row) => {
+      const ruleIdentity = { rule_version: row.rule_version, rule: { id: row.rule_id, version: row.rule_object_version } };
+      const lowActivity = isLowActivityFinding(row.issue, ruleIdentity);
+      return {
+        type: 'optimization' as const,
+        message: `Cost optimization found · ${displayIssue(row.issue, ruleIdentity)} — ${lowActivity ? lowActivityPhrase(row) : savingsPhrase(row)}`,
+        timestamp: new Date(row.created_at).toISOString(),
+        severity: row.severity ? String(row.severity).toLowerCase() : undefined,
+      };
+    });
   }
 
   private async getSecurityEvents(client: PoolClient, organizationId: string): Promise<ActivityEvent[]> {

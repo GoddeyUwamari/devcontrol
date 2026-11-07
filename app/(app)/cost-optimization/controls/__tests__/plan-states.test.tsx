@@ -7,8 +7,8 @@ import { vi } from 'vitest'
 import { describePlanStates } from '@/lib/contexts/__tests__/org-load-harness'
 
 const getConfig = vi.hoisted(() => vi.fn(async () => [{
-  ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default',
-  default: 5, min: 1, max: 20, unit: 'percent', type: 'number',
+  ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default',
+  default: 10, min: 0, max: 1000, unit: 'invocations_per_30d', type: 'integer',
 }]))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
@@ -32,6 +32,6 @@ describePlanStates('/cost-optimization/controls', {
   notEntitledTier: 'pro',
   reset: () => getConfig.mockClear(),
   paidCalls: () => getConfig.mock.calls.length,
-  content: 'Idle EC2 instances',
+  content: 'Low-usage Lambda functions',
   gate: 'Upgrade to Enterprise',
 })

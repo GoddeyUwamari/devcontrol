@@ -58,6 +58,14 @@ describe('derivePrioritySeverity counts current findings only', () => {
     });
   });
 
+  it('FP PR 2b (C-12): a low-activity finding\'s reason is "Low-activity instance"; a CPU-only one keeps its text', () => {
+    const v2 = { severity: 'LOW', issue: 'Idle Instance', potential_savings: 8.5, rule_identity: { rule_version: 2, rule: { id: 'ec2_low_activity', version: 2 } } };
+    const cpuOnly = { severity: 'LOW', issue: 'Idle Instance', potential_savings: 8.5, rule_identity: { rule_version: null, rule: { id: null, version: null } } };
+    expect(derivePrioritySeverity('healthy', [], [v2]).reason).toBe('Low-activity instance');
+    expect(derivePrioritySeverity('healthy', [], [cpuOnly]).reason).toBe('Idle Instance');
+    expect(derivePrioritySeverity('healthy', [], [{ severity: 'LOW', issue: 'Idle Instance', potential_savings: 8.5 }]).reason).toBe('Idle Instance');
+  });
+
   it('leaves the operational-status signal alone', () => {
     expect(derivePrioritySeverity('critical', [keptUnavailable], [])).toEqual({
       priority_severity: 'critical', reason: 'Resource in a failed or terminated state', needs_attention: true,

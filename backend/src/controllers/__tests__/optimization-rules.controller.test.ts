@@ -79,7 +79,8 @@ describe('CostRecommendationsController.getOptimizationRules', () => {
   });
 
   // Enterprise Workstream 3B, Phase E
-  it('marks ec2_idle and lambda_low_usage as configurable, with their parameter definitions -- never an organization-specific value', async () => {
+  // FP PR 2b: ec2_idle (now the low-activity rule, fixed thresholds) is no longer configurable.
+  it('marks lambda_low_usage as configurable, with its parameter definition, and ec2_idle as fixed -- never an organization-specific value', async () => {
     const { req, res, json } = mockReqRes();
 
     await controller.getOptimizationRules(req, res);
@@ -88,10 +89,10 @@ describe('CostRecommendationsController.getOptimizationRules', () => {
     const ec2Idle = rules.find((r: any) => r.id === 'ec2_idle');
     const lambdaLowUsage = rules.find((r: any) => r.id === 'lambda_low_usage');
 
-    expect(ec2Idle.configurable).toBe(true);
-    expect(ec2Idle.parameters).toEqual([
-      { parameterId: 'cpu_threshold_percent', type: 'number', default: 5, min: 1, max: 20, unit: 'percent' },
-    ]);
+    expect(ec2Idle.configurable).toBe(false);
+    expect(ec2Idle.parameters).toEqual([]);
+    expect(ec2Idle.name).toBe('Low-activity EC2 instances');
+    expect(ec2Idle.detail).toBe('CPU below 10% and network below 5 MB every day for 30 days, and not behind a load balancer or in an Auto Scaling group');
     expect(lambdaLowUsage.configurable).toBe(true);
     expect(lambdaLowUsage.parameters).toEqual([
       { parameterId: 'max_invocations', type: 'integer', default: 10, min: 0, max: 1000, unit: 'invocations_per_30d' },
@@ -100,8 +101,8 @@ describe('CostRecommendationsController.getOptimizationRules', () => {
     // Neither parameter definition object carries a `value` or `source` key --
     // those are organization-specific and belong only to
     // GET /optimization-rules/configuration (Enterprise-gated), never here.
-    expect(ec2Idle.parameters[0]).not.toHaveProperty('value');
-    expect(ec2Idle.parameters[0]).not.toHaveProperty('source');
+    expect(lambdaLowUsage.parameters[0]).not.toHaveProperty('value');
+    expect(lambdaLowUsage.parameters[0]).not.toHaveProperty('source');
   });
 
   it('marks every non-configurable rule with configurable: false and an empty parameters array', async () => {
@@ -110,7 +111,7 @@ describe('CostRecommendationsController.getOptimizationRules', () => {
     await controller.getOptimizationRules(req, res);
 
     const { rules } = json.mock.calls[0][0].data;
-    const nonConfigurable = rules.filter((r: any) => r.id !== 'ec2_idle' && r.id !== 'lambda_low_usage');
+    const nonConfigurable = rules.filter((r: any) => r.id !== 'lambda_low_usage');
     expect(nonConfigurable.length).toBeGreaterThan(0);
     for (const rule of nonConfigurable) {
       expect(rule.configurable).toBe(false);

@@ -16,6 +16,7 @@ import { lifecycleStateFor } from '../utils/resourceLifecycle';
 import { countEligibleAwsAccounts } from '../repositories/aws-accounts.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import { INLINE_TAG_TYPES } from '../services/complianceScanner';
+import { displayIssue } from '../services/finding-display';
 
 const router = Router();
 const controller = new ServicesController();
@@ -165,7 +166,7 @@ function worstCostRecommendation(recs: any[] | null): SeverityFinding | null {
       worst = r;
     }
   }
-  return { severity: COST_SEVERITY_MAP[worst.severity], reason: worst.issue };
+  return { severity: COST_SEVERITY_MAP[worst.severity], reason: displayIssue(worst.issue, worst.rule_identity) };
 }
 
 function statusSeverity(status: OperationalStatus): SeverityFinding | null {
@@ -357,7 +358,11 @@ export const INVENTORY_FROM = `aws_resources r
        ) os`;
 
 // A resource's active cost recommendations, scoped by the row's own organization.
-const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings))
+// Only the rule identity of the metadata is read (the label of a low-activity
+// finding, FP2b C-12), never its evidence.
+const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr.issue, 'severity', cr.severity, 'potential_savings', cr.potential_savings,
+                                         'rule_identity', json_build_object('rule_version', cr.metadata->'rule_version',
+                                                                            'rule', json_build_object('id', cr.metadata->'rule'->'id', 'version', cr.metadata->'rule'->'version'))))
         FROM cost_recommendations cr
        WHERE cr.organization_id = r.organization_id
          AND cr.resource_id = r.resource_id

@@ -88,8 +88,16 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   })
 
   it('renders each card\'s figure through formatRecommendationSavings ("Up to $X/mo" for a ceiling, "No dollar estimate" without a basis)', () => {
-    expect(source).toMatch(/\{formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
+    // FP PR 2b: a low-activity finding's figure reads "Up to $X/mo if it's no longer needed" (W3);
+    // every other card still goes through formatRecommendationSavings.
+    expect(source).toMatch(/\{isLowActivityFinding\(rec\)\s*\? lowActivitySavingsHeadline\(rec\.potentialSavings, formatSavingsCurrency\)\s*: formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
     expect(source).not.toMatch(/formatSavings\(rec\.potentialSavings\)/)
+  })
+
+  it('FP PR 2b: the card title is displayIssue(rec) -- "Low-activity instance" only for the new rule\'s findings', () => {
+    expect(source).toMatch(/\{displayIssue\(rec\) \|\| '—'\}/)
+    expect(source).not.toMatch(/\{rec\.issue \|\| '—'\}/)
+    expect(source).toMatch(/import \{[^}]*\bdisplayIssue\b[^}]*\bisLowActivityFinding\b[^}]*\} from '@\/lib\/finding-display'/)
   })
 
   it('the Estimated Monthly Savings KPI excludes ceilings and states each type\'s upper bound on its own line', () => {

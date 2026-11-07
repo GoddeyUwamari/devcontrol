@@ -2,7 +2,8 @@
  * Cost evidence: spend (S1), the month-over-month comparison (S2), the
  * highest inventory cost estimates (S3), and DevControl's cost findings with
  * their savings basis, lifecycle and customer decisions (S6), including the
- * CPU evidence behind each idle-instance finding (S15).
+ * evidence behind each idle-instance finding (S15): for a low-activity finding
+ * its worst-day summary, never the daily series.
  */
 import { collectSection, type InventoryScope } from '../../../ai-context-contract';
 import { monthOverMonthSection, spendSection, type MonthOverMonthEvidence, type SpendEvidence } from '../../../cost-context-sections';
@@ -10,6 +11,7 @@ import { aggregateEstimatedSavings, classifySavingsBasis, EC2_PRICE_SOURCE_DEFAU
 import { pool } from '../../../../config/database';
 import { defineProvider, ref, summarizeItems, untrustedFor, withOrgClient } from './shared';
 import { discoveryGated } from './inventory';
+import { isLowActivityFinding } from '../../../finding-display';
 
 export const spendProvider = defineProvider<SpendEvidence>({
   id: 'cost.spend',
@@ -119,6 +121,22 @@ export interface CostFindingItem {
     datapointsExpected: number | null;
     windowEnd: string | null;
   } | null;
+  /**
+   * For a low-activity finding (FP2b): the summary of the evidence it was made
+   * from -- the window, its busiest hour of CPU and busiest day of network
+   * traffic, and that the load balancer and Auto Scaling checks were made.
+   * Null for every other finding.
+   */
+  lowActivityEvidence: {
+    ruleVersion: number;
+    windowStart: string;
+    windowEnd: string;
+    days: number;
+    worstDayCpuPeakPercent: number;
+    worstDayNetworkMB: number;
+    loadBalancerChecked: true;
+    autoScalingChecked: true;
+  } | null;
 }
 
 export interface CostFindingsEvidence {
@@ -152,6 +170,24 @@ export function isIdleEstimate(rec: { issue: string; savingsBasis: SavingsBasis 
 }
 
 const COST_FINDING_LIST_CAP = 25;
+
+function lowActivityEvidenceOf(issue: string, m: Record<string, any>): CostFindingItem['lowActivityEvidence'] {
+  if (!isLowActivityFinding(issue, m)) return null;
+  const la = m.low_activity;
+  const worst = la?.worst;
+  if (!la || typeof la.window_start !== 'string' || typeof la.window_end !== 'string'
+    || typeof worst?.cpu_peak_percent !== 'number' || typeof worst?.network_bytes_max !== 'number') return null;
+  return {
+    ruleVersion: m.rule_version,
+    windowStart: la.window_start,
+    windowEnd: la.window_end,
+    days: Array.isArray(la.days) ? la.days.length : 0,
+    worstDayCpuPeakPercent: Math.round(worst.cpu_peak_percent * 10) / 10,
+    worstDayNetworkMB: Math.round((worst.network_bytes_max / 1_000_000) * 100) / 100,
+    loadBalancerChecked: true,
+    autoScalingChecked: true,
+  };
+}
 
 function numberOrNull(value: unknown): number | null {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
@@ -224,6 +260,7 @@ export const costFindingsProvider = defineProvider<CostFindingsEvidence>({
               datapointsExpected: numberOrNull(m.cpu_evidence?.datapoints_expected),
               windowEnd: typeof m.cpu_evidence?.window_end === 'string' ? m.cpu_evidence.window_end : null,
             },
+            lowActivityEvidence: lowActivityEvidenceOf(String(r.issue), m),
           };
         });
         return {

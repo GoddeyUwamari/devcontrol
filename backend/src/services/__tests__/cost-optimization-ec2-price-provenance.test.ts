@@ -11,8 +11,6 @@
  *
  * Mock-only: no network calls to AWS.
  */
-import { EC2Client } from '@aws-sdk/client-ec2';
-import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import costOptimizationService, { EC2_MONTHLY_LIST_PRICES, EC2_UNLISTED_DEFAULT_MONTHLY_COST } from '../cost-optimization.service';
 import {
   EC2_PRICE_SOURCE_DEFAULT,
@@ -21,25 +19,22 @@ import {
   aggregateEstimatedSavings,
   classifySavingsBasis,
 } from '../estimated-savings';
+import { fakeAutoScaling, fakeClassicElb, fakeCloudWatch, fakeEc2, fakeElb } from './helpers/low-activity-aws';
 
-const LONG_RUNNING = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-const CONFIG = { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' };
+const NOW = new Date('2026-11-07T15:00:00Z');
+const LONG_RUNNING = new Date('2026-09-01T00:00:00Z');
 const GENUINE_FIFTY = 'x9.placeholder-fifty';
 
-function withMockedSend<T extends { send: (...args: any[]) => any }>(client: T, send: jest.Mock): T {
-  (client as any).send = send;
-  return client;
-}
-
-/** `instanceType: undefined` omits InstanceType entirely. */
+/** One low-activity instance (FP PR 2b detector). `instanceType: undefined` omits InstanceType entirely. */
 async function detect(instanceType: string | undefined, instanceId = 'i-pr4') {
-  const ec2 = withMockedSend(new EC2Client({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({
-    Reservations: [{ Instances: [{ InstanceId: instanceId, InstanceType: instanceType, LaunchTime: LONG_RUNNING, Placement: { AvailabilityZone: 'us-east-1a' } }] }],
-  }));
-  const cw = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({
-    Datapoints: Array.from({ length: 168 }, () => ({ Average: 1 })),
-  }));
-  const result = await (costOptimizationService as any).detectIdleEC2Instances(ec2, cw, CONFIG);
+  const clients = {
+    ec2: fakeEc2([{ InstanceId: instanceId, InstanceType: instanceType, LaunchTime: LONG_RUNNING }]),
+    cloudWatch: fakeCloudWatch(NOW, {}),
+    elb: fakeElb({}),
+    elbClassic: fakeClassicElb({}),
+    autoScaling: fakeAutoScaling({}),
+  };
+  const result = await (costOptimizationService as any).detectLowActivityEC2Instances(clients, 'us-east-1', NOW);
   expect(result.success).toBe(true);
   expect(result.issues).toHaveLength(1);
   return result.issues[0];
@@ -70,14 +65,13 @@ describe('idle EC2 price provenance', () => {
 
   it('1b. a listed row is otherwise unchanged: same basis text and claim as before PR 4', async () => {
     const issue = await detect('m5.large');
-    const { price_source: _added, cpu_evidence: _evidence, ...rest } = issue.metadata;
+    // PR 2b replaced the CPU-average evidence (average_cpu, days_analyzed, cpu_evidence, configuration)
+    // with the low-activity rule's identity and evidence; the price fields are as before.
+    const { price_source: _added, rule_version: _marker, rule: _rule, low_activity: _evidence, ...rest } = issue.metadata;
     expect(rest).toEqual({
       instance_type: 'm5.large',
-      average_cpu: 1,
-      days_analyzed: 7,
       savings_basis: 'estimated: compute cost from DevControl\'s list-price table (a default estimate for unlisted instance types); not billed cost or guaranteed savings',
       savings_claim: { kind: 'full_resource_cost', resource_ids: ['i-pr4'] },
-      configuration: { parameter: 'cpu_threshold_percent', value: 5, source: 'default' },
     });
   });
 

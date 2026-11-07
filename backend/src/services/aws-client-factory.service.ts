@@ -22,6 +22,8 @@ import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { ECSClient } from '@aws-sdk/client-ecs';
 import { ElasticLoadBalancingV2Client } from '@aws-sdk/client-elastic-load-balancing-v2';
+import { ElasticLoadBalancingClient } from '@aws-sdk/client-elastic-load-balancing';
+import { AutoScalingClient } from '@aws-sdk/client-auto-scaling';
 import { EKSClient } from '@aws-sdk/client-eks';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { CloudFrontClient } from '@aws-sdk/client-cloudfront';
@@ -51,6 +53,13 @@ export interface AWSClients {
   lambda: LambdaClient;
   ecs: ECSClient;
   elb: ElasticLoadBalancingV2Client;
+  /**
+   * Classic Load Balancers and EC2 Auto Scaling, read by the low-activity rule's
+   * topology checks. Optional so mocks that never reach those checks need not
+   * provide them; a missing client makes the check "couldn't check", never "none".
+   */
+  elbClassic?: ElasticLoadBalancingClient;
+  autoScaling?: AutoScalingClient;
   eks: EKSClient;
   dynamodb: DynamoDBClient;
   cloudFront: CloudFrontClient;
@@ -170,6 +179,8 @@ export class AWSClientFactory {
       lambda: new LambdaClient(config),
       ecs: new ECSClient(config),
       elb: new ElasticLoadBalancingV2Client(config),
+      elbClassic: new ElasticLoadBalancingClient(config),
+      autoScaling: new AutoScalingClient(config),
       eks: new EKSClient(config),
       dynamodb: new DynamoDBClient(config),
       cloudFront: new CloudFrontClient({ ...config, region: 'us-east-1' }),

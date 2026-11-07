@@ -16,8 +16,11 @@
  *
  * Every non-configurable detector is neutralized via spies so this suite is
  * purely about the orchestration wiring, not AWS behavior -- that behavior
- * is already covered by cost-optimization-ec2-idle.test.ts and
+ * is covered by cost-optimization-low-activity.test.ts and
  * cost-optimization-lambda.test.ts.
+ *
+ * FP PR 2b: the low-activity EC2 rule replaced the configurable CPU-average
+ * check; only lambda_low_usage is resolved now.
  */
 import costOptimizationService from '../cost-optimization.service';
 import { AWSClientFactory } from '../aws-client-factory.service';
@@ -36,7 +39,6 @@ function mockClients() {
   };
 }
 
-const DEFAULT_EC2_CONFIG = { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' as const };
 const DEFAULT_LAMBDA_CONFIG = { ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' as const };
 
 describe('CostOptimizationService.analyzeAllResources — configuration resolution wiring', () => {
@@ -57,40 +59,41 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
     jest.restoreAllMocks();
   });
 
-  it('(1) resolves both configurable rules exactly once per scan, keyed by organizationId -- never per resource', async () => {
+  // FP PR 2b: the low-activity EC2 rule has fixed thresholds (config/low-activity-rule.ts).
+  // ec2_idle/cpu_threshold_percent is no longer resolved, and its detector runs whatever
+  // the Lambda configuration does.
+  it('(1) resolves the Lambda rule exactly once per scan, keyed by organizationId, and never ec2_idle', async () => {
     const resolveSpy = jest
       .spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig')
-      .mockResolvedValueOnce(DEFAULT_EC2_CONFIG)
-      .mockResolvedValueOnce(DEFAULT_LAMBDA_CONFIG);
-    jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances').mockResolvedValue({ success: true, issues: [] });
+      .mockResolvedValue(DEFAULT_LAMBDA_CONFIG);
+    jest.spyOn(costOptimizationService as any, 'detectLowActivityEC2Instances').mockResolvedValue({ success: true, issues: [] });
     jest.spyOn(costOptimizationService as any, 'detectLowUsageLambdaFunctions').mockResolvedValue({ success: true, issues: [] });
 
     await costOptimizationService.analyzeAllResources('org-1');
 
-    expect(resolveSpy).toHaveBeenCalledTimes(2);
-    expect(resolveSpy).toHaveBeenCalledWith('org-1', 'ec2_idle', 'cpu_threshold_percent');
+    expect(resolveSpy).toHaveBeenCalledTimes(1);
     expect(resolveSpy).toHaveBeenCalledWith('org-1', 'lambda_low_usage', 'max_invocations');
+    expect(resolveSpy).not.toHaveBeenCalledWith('org-1', 'ec2_idle', expect.anything());
   });
 
-  it('(2) passes the resolved EC2 config object directly into detectIdleEC2Instances', async () => {
-    const resolvedConfig = { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 12, source: 'organization_override' as const };
-    jest
-      .spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig')
-      .mockImplementation(async (_org, ruleId) => (ruleId === 'ec2_idle' ? resolvedConfig : DEFAULT_LAMBDA_CONFIG));
-    const ec2DetectorSpy = jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances').mockResolvedValue({ success: true, issues: [] });
+  it('(2) runs the low-activity detector with the scan\'s own clients and home region', async () => {
+    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockResolvedValue(DEFAULT_LAMBDA_CONFIG);
+    const ec2DetectorSpy = jest.spyOn(costOptimizationService as any, 'detectLowActivityEC2Instances').mockResolvedValue({ success: true, issues: [] });
     jest.spyOn(costOptimizationService as any, 'detectLowUsageLambdaFunctions').mockResolvedValue({ success: true, issues: [] });
 
     await costOptimizationService.analyzeAllResources('org-2');
 
-    expect(ec2DetectorSpy).toHaveBeenCalledWith(expect.anything(), expect.anything(), resolvedConfig, 'us-east-1');
+    expect(ec2DetectorSpy).toHaveBeenCalledTimes(1);
+    const [clients, region] = ec2DetectorSpy.mock.calls[0] as [any, string];
+    expect(region).toBe('us-east-1');
+    expect(clients.region).toBe('us-east-1');
+    expect(clients.enabled).toBe(true);
   });
 
   it('(3) passes the resolved Lambda config object directly into detectLowUsageLambdaFunctions', async () => {
     const resolvedConfig = { ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 250, source: 'organization_override' as const };
-    jest
-      .spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig')
-      .mockImplementation(async (_org, ruleId) => (ruleId === 'lambda_low_usage' ? resolvedConfig : DEFAULT_EC2_CONFIG));
-    jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances').mockResolvedValue({ success: true, issues: [] });
+    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockResolvedValue(resolvedConfig);
+    jest.spyOn(costOptimizationService as any, 'detectLowActivityEC2Instances').mockResolvedValue({ success: true, issues: [] });
     const lambdaDetectorSpy = jest.spyOn(costOptimizationService as any, 'detectLowUsageLambdaFunctions').mockResolvedValue({ success: true, issues: [] });
 
     await costOptimizationService.analyzeAllResources('org-3');
@@ -99,35 +102,30 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
     expect(lambdaDetectorSpy).toHaveBeenCalledWith('org-3', expect.anything(), expect.anything(), resolvedConfig, 'us-east-1', null);
   });
 
-  it('(4) a configuration-resolution failure for EC2 fails only that category (success:false), and the detector is never invoked with a guessed default', async () => {
-    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockImplementation(async (_org, ruleId) => {
-      if (ruleId === 'ec2_idle') throw new Error('connection terminated unexpectedly');
-      return DEFAULT_LAMBDA_CONFIG;
+  it('(4) the Idle observation carries the low-activity detector\'s result, its counts and the unknown-row rule (FP2b-Q12, Q21)', async () => {
+    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockResolvedValue(DEFAULT_LAMBDA_CONFIG);
+    const lowActivity = { evaluated: 2, low_activity: 0, not_low_activity: { cpu_peak: 1, network: 0, load_balancer: 0, auto_scaling: 0 }, couldnt_check: { too_new_or_restarted: 1, cloudwatch_failed: 0, cloudwatch_incomplete: 0, topology_unreadable: 0 } };
+    jest.spyOn(costOptimizationService as any, 'detectLowActivityEC2Instances').mockResolvedValue({
+      success: true, issues: [], unknownResourceIds: ['i-1234567890abcdef0'], endActiveForUnknown: true, lowActivity,
     });
-    const ec2DetectorSpy = jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances');
     jest.spyOn(costOptimizationService as any, 'detectLowUsageLambdaFunctions').mockResolvedValue({ success: true, issues: [] });
 
     const result = await costOptimizationService.analyzeAllResources('org-4');
 
-    expect(ec2DetectorSpy).not.toHaveBeenCalled();
-    const ec2Observation = result.observations.find((o) => o.issue === ISSUE_EC2_IDLE_INSTANCE);
-    expect(ec2Observation).toEqual({ issue: ISSUE_EC2_IDLE_INSTANCE, success: false, recommendations: [] });
-
-    const lambdaObservation = result.observations.find((o) => o.issue === ISSUE_LAMBDA_LOW_USAGE);
-    expect(lambdaObservation?.success).toBe(true);
+    expect(result.observations.find((o) => o.issue === ISSUE_EC2_IDLE_INSTANCE)).toEqual({
+      issue: ISSUE_EC2_IDLE_INSTANCE, success: true, recommendations: [], unknownResourceIds: ['i-1234567890abcdef0'], endActiveForUnknown: true, lowActivity,
+    });
   });
 
   it('(5) a configuration-resolution failure for Lambda fails only that category, EC2 is unaffected', async () => {
-    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockImplementation(async (_org, ruleId) => {
-      if (ruleId === 'lambda_low_usage') throw new Error('connection terminated unexpectedly');
-      return DEFAULT_EC2_CONFIG;
-    });
-    jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances').mockResolvedValue({ success: true, issues: [] });
+    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockRejectedValue(new Error('connection terminated unexpectedly'));
+    const ec2DetectorSpy = jest.spyOn(costOptimizationService as any, 'detectLowActivityEC2Instances').mockResolvedValue({ success: true, issues: [] });
     const lambdaDetectorSpy = jest.spyOn(costOptimizationService as any, 'detectLowUsageLambdaFunctions');
 
     const result = await costOptimizationService.analyzeAllResources('org-5');
 
     expect(lambdaDetectorSpy).not.toHaveBeenCalled();
+    expect(ec2DetectorSpy).toHaveBeenCalledTimes(1);
     const lambdaObservation = result.observations.find((o) => o.issue === ISSUE_LAMBDA_LOW_USAGE);
     expect(lambdaObservation).toEqual({ issue: ISSUE_LAMBDA_LOW_USAGE, success: false, recommendations: [] });
 
@@ -135,16 +133,14 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
     expect(ec2Observation?.success).toBe(true);
   });
 
-  it('(6) both rules failing to resolve never surfaces as a customer-visible "default" -- neither detector runs, both categories fail', async () => {
+  it('(6) a Lambda resolution failure never surfaces as a customer-visible "default" -- the Lambda detector does not run', async () => {
     jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockRejectedValue(new Error('ECONNREFUSED'));
-    const ec2DetectorSpy = jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances');
+    jest.spyOn(costOptimizationService as any, 'detectLowActivityEC2Instances').mockResolvedValue({ success: true, issues: [] });
     const lambdaDetectorSpy = jest.spyOn(costOptimizationService as any, 'detectLowUsageLambdaFunctions');
 
     const result = await costOptimizationService.analyzeAllResources('org-6');
 
-    expect(ec2DetectorSpy).not.toHaveBeenCalled();
     expect(lambdaDetectorSpy).not.toHaveBeenCalled();
-    expect(result.observations.find((o) => o.issue === ISSUE_EC2_IDLE_INSTANCE)).toEqual({ issue: ISSUE_EC2_IDLE_INSTANCE, success: false, recommendations: [] });
     expect(result.observations.find((o) => o.issue === ISSUE_LAMBDA_LOW_USAGE)).toEqual({ issue: ISSUE_LAMBDA_LOW_USAGE, success: false, recommendations: [] });
   });
 

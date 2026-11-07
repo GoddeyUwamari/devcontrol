@@ -36,7 +36,7 @@ import { runModel, type Interpretation } from './ai/model-client';
 import type { FallbackReason } from './ai/model-response';
 import { collectEvidence, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
-import { canSeeLines, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import { canSeeLines, LOW_ACTIVITY_FINDING_RULE, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
 import type { EvidenceBundle } from './ai/evidence/types';
 import type { ConfigChecksEvidence, AccountFindingsEvidence, RiskScoreEvidence, SecurityHubEvidence } from './ai/evidence/providers/security';
 import { isIdleEstimate, type CostFindingsEvidence, type TopEstimatedResources } from './ai/evidence/providers/cost';
@@ -354,6 +354,7 @@ const PROMPT_RULES = [
   'Recommend only actions grounded in the supplied evidence. Do not recommend rightsizing, Reserved Instances, or Savings Plans unless a supplied recommendation says so.',
   'Savings are DevControl estimates of potential savings, never realized savings. In topRecommendations, set estimatedSavings only to a value copied from the idle/unused-resource recommendation evidence; otherwise omit the field.',
   'An idle/unused-resource item with priceKnown: false carries a DevControl default figure, used because the instance type\'s price is unknown. Never present that amount as a known price or as the instance\'s cost; wherever you mention it, say the price is unknown.',
+  LOW_ACTIVITY_FINDING_RULE,
   'When a section has no evidence, say that data is not available in the relevant analysis -- do not fill it in.',
   UNTRUSTED_TEXT_RULE,
 ].map(rule => `- ${rule}`).join('\n');
@@ -706,8 +707,8 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       const costRecommendations: string[] = [];
       if (recsWithItems) {
         costRecommendations.push(idleSubset(recsWithItems)
-          ? `Review ${topOf(recsWithItems)} recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for ${theseListed(recsWithItems)}; a DevControl estimate, not realized savings).`
-          : `Review ${recsWithItems.items.length} active recommendation${recsWithItems.items.length !== 1 ? 's' : ''} for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
+          ? `Review ${topOf(recsWithItems)} recommendations for low-activity or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for ${theseListed(recsWithItems)}; a DevControl estimate, not realized savings).`
+          : `Review ${recsWithItems.items.length} active recommendation${recsWithItems.items.length !== 1 ? 's' : ''} for low-activity or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
       } else if (recs && !hasEvidence(recs)) {
         costRecommendations.push(missingSentence('Cost recommendations', recs, `Cost recommendations are not available: ${unavailablePhrase(recs)}.`));
       }
@@ -717,14 +718,14 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     if (recsWithItems) {
       const subset = idleSubset(recsWithItems);
       highlights.push(subset
-        ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from ${topOf(recsWithItems)} recommendations for idle or unused resources (a DevControl estimate, not realized savings).`
-        : `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from idle or unused resources (a DevControl estimate, not realized savings).`);
+        ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from ${topOf(recsWithItems)} recommendations for low-activity or unused resources (a DevControl estimate, not realized savings).`
+        : `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from low-activity or unused resources (a DevControl estimate, not realized savings).`);
       topRecommendations.push({
-        title: 'Review idle or unused resources',
+        title: 'Review low-activity or unused resources',
         impact: 'medium',
         description: subset
-          ? `${capitalize(topOf(recsWithItems))} recommendations ${recsWithItems.items.length === 1 ? 'flags' : 'flag'} idle or unused resources; the savings figure covers ${theseListed(recsWithItems)}. Savings are DevControl estimates, not realized savings.`
-          : `${recsWithItems.items.length} active DevControl recommendation${recsWithItems.items.length !== 1 ? 's flag' : ' flags'} idle or unused resources. Savings are DevControl estimates, not realized savings.`,
+          ? `${capitalize(topOf(recsWithItems))} recommendations ${recsWithItems.items.length === 1 ? 'flags' : 'flag'} low-activity or unused resources; the savings figure covers ${theseListed(recsWithItems)}. Savings are DevControl estimates, not realized savings.`
+          : `${recsWithItems.items.length} active DevControl recommendation${recsWithItems.items.length !== 1 ? 's flag' : ' flags'} low-activity or unused resources. Savings are DevControl estimates, not realized savings.`,
         estimatedSavings: recsWithItems.totalEstimatedMonthlySavings,
         effort: 'low',
       });

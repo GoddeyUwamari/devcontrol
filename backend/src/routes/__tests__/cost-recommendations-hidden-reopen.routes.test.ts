@@ -6,6 +6,7 @@
  */
 import costRecommendationsRoutes from '../cost-recommendations.routes';
 import { createRoleGateHarness, MEMBER_REFUSAL, RoleGateOrg } from './role-gate-harness';
+import { lowActivityMetadata } from '../../services/__tests__/helpers/low-activity-fixture';
 
 const harness = createRoleGateHarness('hidden-reopen');
 const { pool, sendAs } = harness;
@@ -54,8 +55,9 @@ async function detectedByLatestRun(orgId: string): Promise<void> {
   );
   await pool.query(
     `INSERT INTO cost_finding_detections (organization_id, resource_id, issue, run_id, outcome, observed_at, detected_at, resource_type, potential_savings, severity, metadata)
-     VALUES ($1, 'i-1234567890abcdef0', $2, $3, 'detected', NOW(), NOW(), 'EC2', 12.5, 'LOW', '{"savings_basis":"estimated: list price"}')`,
-    [orgId, IDLE, rows[0].id]
+     VALUES ($1, 'i-1234567890abcdef0', $2, $3, 'detected', NOW(), NOW(), 'EC2', 12.5, 'LOW', $4::jsonb)`,
+    // What the low-activity rule writes (FP PR 2b): only such an Idle detection reads still detected.
+    [orgId, IDLE, rows[0].id, JSON.stringify({ ...lowActivityMetadata(), savings_basis: 'estimated: list price' })]
   );
 }
 

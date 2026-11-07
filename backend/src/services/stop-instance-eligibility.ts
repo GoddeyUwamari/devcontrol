@@ -10,12 +10,17 @@
  * and only when that finding carries a positive marker,
  * metadata.rule_version, set to a version listed below. Only the multi-signal
  * low-activity rule sets that marker. A missing, unknown or older marker, a
- * missing finding, or a workflow with no finding at all is refused.
+ * missing finding, or a workflow with no finding at all is refused. The
+ * finding's own evaluation must also be recent (FP2b-Q13): its
+ * metadata.low_activity.evaluated_at no more than
+ * LOW_ACTIVITY_STOP_EVIDENCE_MAX_AGE_HOURS old, so a row that survived a
+ * failed scan is never acted on.
  *
  * The finding is read from the database each time it is judged; a result is
  * never carried from one stage to the next.
  */
 import { ISSUE_EC2_IDLE_INSTANCE } from '../config/optimization-rules';
+import { LOW_ACTIVITY_STOP_EVIDENCE_MAX_AGE_HOURS } from '../config/low-activity-rule';
 
 /** metadata.rule_version values whose findings may be acted on. Exact numbers only. */
 export const STOP_ELIGIBLE_IDLE_RULE_VERSIONS: readonly number[] = [2];
@@ -33,7 +38,8 @@ export type StopRefusalReason =
   | 'finding_mismatch'
   | 'finding_not_active'
   | 'marker_missing'
-  | 'marker_not_allowed';
+  | 'marker_not_allowed'
+  | 'evidence_stale';
 
 /** The cost_recommendations columns the rule reads. */
 export interface StopFindingRow {
@@ -72,6 +78,30 @@ export function judgeStopMarker(metadata: unknown): StopEligibility {
   return { eligible: true };
 }
 
+/** A clock skew allowance for an evaluation time slightly ahead of this process's clock. */
+const EVALUATED_AT_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+
+/**
+ * The evidence's own verdict (condition 7): metadata.low_activity.evaluated_at
+ * is an ISO time at most LOW_ACTIVITY_STOP_EVIDENCE_MAX_AGE_HOURS before `now`
+ * (and not more than a few minutes after it). Missing or unparseable is stale.
+ */
+export function judgeStopEvidenceFreshness(metadata: unknown, now: Date): StopEligibility {
+  const lowActivity = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>).low_activity
+    : undefined;
+  const evaluatedAt = lowActivity && typeof lowActivity === 'object' && !Array.isArray(lowActivity)
+    ? (lowActivity as Record<string, unknown>).evaluated_at
+    : undefined;
+  if (typeof evaluatedAt !== 'string') return { eligible: false, reason: 'evidence_stale' };
+  const at = Date.parse(evaluatedAt);
+  if (!Number.isFinite(at)) return { eligible: false, reason: 'evidence_stale' };
+  const age = now.getTime() - at;
+  if (age > LOW_ACTIVITY_STOP_EVIDENCE_MAX_AGE_HOURS * 60 * 60 * 1000) return { eligible: false, reason: 'evidence_stale' };
+  if (age < -EVALUATED_AT_FUTURE_TOLERANCE_MS) return { eligible: false, reason: 'evidence_stale' };
+  return { eligible: true };
+}
+
 /**
  * The rule itself, on rows already read. `recommendationId` is the workflow's
  * (or request's) reference; `finding` is what the database returned for it in
@@ -81,8 +111,11 @@ export function judgeStopEligibility(input: {
   resourceId: string;
   recommendationId: string | null | undefined;
   finding: StopFindingRow | null | undefined;
+  /** When the rule is judged; the evidence must be recent at this moment. */
+  now?: Date;
 }): StopEligibility {
   const { resourceId, recommendationId, finding } = input;
+  const now = input.now ?? new Date();
 
   // A stop must be backed by a finding.
   if (recommendationId === null || recommendationId === undefined || recommendationId === '') {
@@ -101,8 +134,12 @@ export function judgeStopEligibility(input: {
   // ...still open (a RESOLVED or DISMISSED row is a past decision, never a reason to act)...
   if (finding.status !== 'ACTIVE') return { eligible: false, reason: 'finding_not_active' };
 
-  // ...and produced by a rule on the allow-list.
-  return judgeStopMarker(finding.metadata);
+  // ...produced by a rule on the allow-list...
+  const marker = judgeStopMarker(finding.metadata);
+  if (!marker.eligible) return marker;
+
+  // ...from a recent evaluation.
+  return judgeStopEvidenceFreshness(finding.metadata, now);
 }
 
 /** Reads the finding fresh, scoped to the organization. */

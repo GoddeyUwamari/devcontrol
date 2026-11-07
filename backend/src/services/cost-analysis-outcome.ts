@@ -10,6 +10,7 @@
 import { getOptimizationRules, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, ISSUE_RDS_OVERSIZED_INSTANCE } from '../config/optimization-rules';
 import type { CreateRecommendationRequest } from '../types';
 import type { DetectorObservation } from './cost-optimization.service';
+import type { LowActivityCheckCounts } from './low-activity-evaluation';
 
 export type CheckOutcome = 'complete' | 'failed';
 export type CostAnalysisTerminalState = 'completed' | 'partial' | 'failed';
@@ -21,6 +22,12 @@ export interface CostAnalysisCheck {
   outcome: CheckOutcome;
   detected: number;
   unknown: number;
+  /**
+   * The low-activity EC2 check only (FP2b-Q21): how many instances it
+   * evaluated, found low-activity, found active (by reason) and couldn't check
+   * (by reason). Counts only.
+   */
+  low_activity?: LowActivityCheckCounts;
 }
 
 /** How one reconciliation's findings ended. Reserved Instances use new, refreshed and duplicate only. */
@@ -86,6 +93,7 @@ export function summarizeDetectors(
       outcome: observation.success ? 'complete' : 'failed',
       detected: observation.success ? observation.recommendations.length : 0,
       unknown: observation.unknownResourceIds?.length ?? 0,
+      ...(observation.success && observation.lowActivity ? { low_activity: observation.lowActivity } : {}),
     }));
   checks.push({
     rule_id: ruleIdForIssue(ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY),

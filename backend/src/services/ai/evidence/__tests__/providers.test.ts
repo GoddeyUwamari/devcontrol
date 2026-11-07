@@ -38,6 +38,9 @@ import { RiskTrackingService } from '../../../risk-tracking.service';
 import { AwsAccountAmbiguousError } from '../../../../repositories/aws-accounts.repository';
 import systemIntelligenceService from '../../../system-intelligence.service';
 import type { ProviderDefinition } from '../types';
+import { lowActivityMetadata } from '../../../__tests__/helpers/low-activity-fixture';
+import { DATA_SOURCES } from '../data-sources';
+import { LOW_ACTIVITY_FINDING_RULE } from '../render';
 
 const ORG = '00000000-0000-4000-8000-0000000000c3';
 const NOW = new Date('2026-11-06T12:00:00.000Z');
@@ -226,6 +229,46 @@ describe('cost', () => {
       costRecommendations: { findAll: async () => [] },
     });
     expect(await collectProvider(costFindingsProvider, ctx(noRun))).toMatchObject({ state: 'unavailable', data: null });
+  });
+
+  it('FP PR 2b: a low-activity finding gives the AI its evidence summary, never the daily series or a CPU average', async () => {
+    mockDb.answer = (sql) => (/GROUP BY status/.test(sql) ? { rows: [{ status: 'ACTIVE', n: '1' }] } : undefined);
+    const metadata = lowActivityMetadata({ evaluatedAt: NOW });
+    const rec = { id: 'r1', resource_id: 'i-0123456789abcdef0', resource_name: 'web', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW', status: 'ACTIVE', metadata };
+    const s = await collectProvider(costFindingsProvider, ctx(sources({ costRecommendations: { findAll: async () => [rec] } })));
+    const item = (s.data as any).items[0];
+    expect(item.cpuEvidence).toBeNull();
+    expect(item.lowActivityEvidence).toEqual({
+      ruleVersion: 2,
+      windowStart: (metadata.low_activity as any).window_start,
+      windowEnd: (metadata.low_activity as any).window_end,
+      days: 30,
+      worstDayCpuPeakPercent: 2.5,
+      worstDayNetworkMB: 0.7,
+      loadBalancerChecked: true,
+      autoScalingChecked: true,
+    });
+    expect(JSON.stringify(s.data)).not.toMatch(/network_in_bytes|cpu_peak_percent|"days":\[/);
+    // A CPU-only row (no rule identity) gets no low-activity summary.
+    const legacy = await collectProvider(costFindingsProvider, ctx(sources({ costRecommendations: { findAll: async () => [{ ...rec, metadata: { average_cpu: 1.2, savings_basis: 'estimated: list price' } }] } })));
+    expect((legacy.data as any).items[0]).toMatchObject({ lowActivityEvidence: null, cpuEvidence: { averageCpuPercent: 1.2 } });
+  });
+
+  it('FP PR 2b: telemetry.cpu reads a low-activity finding as its 30-day peak, with the approved coverage and source name', async () => {
+    (operationsSources.peekEvaluation as jest.Mock).mockReturnValue(undefined);
+    mockDb.answer = (sql) => (/resource_telemetry_observations|observability_collection_scopes/.test(sql) ? { rows: [{ tracked: 0, with_datapoints: 0, newest: null, last_full: null }] } : undefined);
+    const metadata = lowActivityMetadata({ evaluatedAt: NOW });
+    const rec = { id: 'r1', resource_id: 'i-0123456789abcdef0', resource_name: 'web', resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 8.5, severity: 'LOW', status: 'ACTIVE', metadata };
+    const s = await collectProvider(cpuTelemetryProvider, ctx(sources({ costRecommendations: { findAll: async () => [rec] } })));
+    expect(s.coverage).toBe("EC2 instances in the connected account's home region: the last hour's average from the latest Operational Health check when one is cached, and the 30-day hourly peak CPU behind each low-activity instance finding. Memory is not collected");
+    expect((s.data as any).items).toEqual([expect.objectContaining({
+      instanceId: 'i-0123456789abcdef0', basis: 'low_activity_finding_30_day_peak', cpuPercent: 2.5,
+      observedAt: (metadata.low_activity as any).window_end, datapointsObserved: 720, datapointsExpected: 720,
+    })]);
+    expect(DATA_SOURCES.find((d) => d.id === 'S15')?.name).toBe('Low-activity instance evidence (CPU peak, network, load balancer and Auto Scaling checks; stored with the S6 finding)');
+    expect(LOW_ACTIVITY_FINDING_RULE).toBe(
+      "A low-activity instance finding means CPU and network stayed under DevControl's thresholds every day for 30 days and the instance isn't behind a load balancer or in an Auto Scaling group. Never call it idle, unused, safe to stop or not needed; say it may no longer be needed and should be checked with its owner."
+    );
   });
 
   it('re-review 2 M3: cost.findings counts every active idle estimate, not only the 25 listed', async () => {

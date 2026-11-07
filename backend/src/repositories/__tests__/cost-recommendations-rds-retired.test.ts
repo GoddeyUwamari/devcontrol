@@ -84,7 +84,7 @@ function neutralizeOtherDetectors() {
     ruleId, parameterId, value: 5, source: 'default' as const,
   }) as any);
   for (const detector of [
-    'detectIdleEC2Instances',
+    'detectLowActivityEC2Instances',
     'detectUnusedElasticIPs',
     'detectUnattachedEBSVolumes',
     'detectGp2ToGp3Migrations',

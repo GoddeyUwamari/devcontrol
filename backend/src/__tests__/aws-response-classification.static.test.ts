@@ -89,6 +89,11 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-lambda:ListTagsCommand': metadataOnly('function tags'),
   'client-elastic-load-balancing-v2:DescribeLoadBalancersCommand': metadataOnly('load balancer ARNs, scheme, state, network'),
   'client-elastic-load-balancing-v2:DescribeTagsCommand': metadataOnly('load balancer tags'),
+  // The low-activity rule's topology checks (FP PR 2b): only target, instance and member IDs are read.
+  'client-elastic-load-balancing-v2:DescribeTargetGroupsCommand': metadataOnly('target group ARNs, target types, ports and health-check settings'),
+  'client-elastic-load-balancing-v2:DescribeTargetHealthCommand': metadataOnly('registered target IDs or IP addresses, ports and health states'),
+  'client-elastic-load-balancing:DescribeLoadBalancersCommand': metadataOnly('Classic Load Balancer names, listeners, network and registered instance IDs'),
+  'client-auto-scaling:DescribeAutoScalingInstancesCommand': metadataOnly('Auto Scaling group name, lifecycle state and launch template or configuration name per instance'),
   'client-cloudfront:ListDistributionsCommand': {
     kind: 'sanitised',
     projections: [{ items: ['DistributionList', 'Items'], sanitiser: 'projectCloudFrontDistribution' }],

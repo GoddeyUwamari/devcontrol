@@ -12,20 +12,15 @@ import { Lock, SlidersHorizontal, RotateCcw, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { LOW_ACTIVITY_FIXED_THRESHOLDS } from '@/lib/finding-display'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 
-// Enterprise Workstream 3B: product/UI copy for the two rules the backend
+// Enterprise Workstream 3B: product/UI copy for the rules the backend
 // registry (backend/src/config/optimization-rules.ts) allows an organization
 // to tune. Bounds/default/unit/type always come from the configuration API
 // below, never duplicated here -- this map is display text only, since the
 // API has no room for a human explanation of what a threshold means.
 const RULE_COPY: Record<string, { ruleName: string; parameterLabel: string; description: string }> = {
-  ec2_idle: {
-    ruleName: 'Idle EC2 instances',
-    parameterLabel: 'CPU utilization threshold',
-    description:
-      'An EC2 instance is considered idle when its average CPU utilization over the 7-day evaluation window is below this threshold.',
-  },
   lambda_low_usage: {
     ruleName: 'Low-usage Lambda functions',
     parameterLabel: 'Maximum invocations',
@@ -33,6 +28,11 @@ const RULE_COPY: Record<string, { ruleName: string; parameterLabel: string; desc
       'A Lambda function is considered low usage when it has at most this many invocations over the 30-day evaluation window.',
   },
 }
+
+// The low-activity EC2 rule's thresholds are fixed (false-positives PR 2b):
+// it was the adjustable ec2_idle control, and is shown read-only in its place.
+// Stored ec2_idle overrides are kept by the backend and no longer read.
+const FIXED_RULE_IDS: ReadonlySet<string> = new Set(['ec2_idle'])
 
 function keyFor(c: { ruleId: string; parameterId: string }): string {
   return `${c.ruleId}:${c.parameterId}`
@@ -70,7 +70,8 @@ export default function OptimizationControlsPage() {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const data = await costRecommendationsService.getOptimizationRuleConfiguration()
+      // An older backend may still list ec2_idle: never offer it as adjustable.
+      const data = (await costRecommendationsService.getOptimizationRuleConfiguration()).filter((c) => !FIXED_RULE_IDS.has(c.ruleId))
       setConfigs(data)
       setDrafts(Object.fromEntries(data.map((c) => [keyFor(c), String(c.value)])))
     } catch (err) {
@@ -183,7 +184,7 @@ export default function OptimizationControlsPage() {
         <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Optimization Controls</h1>
         <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-xl')}>
           Tune how DevControl identifies selected cost optimization opportunities for your organization. Only the
-          two thresholds below are configurable — every other check uses its built-in default.
+          threshold below is configurable — every other check uses its built-in default.
         </p>
       </div>
 
@@ -210,11 +211,15 @@ export default function OptimizationControlsPage() {
             </button>
           </div>
         ) : configs.length === 0 ? (
-          <div className="p-10 sm:p-16 text-center text-ui text-ink-muted">
-            No configurable optimization rules are available right now.
+          <div className="divide-y divide-slate-100">
+            <p className="p-5 sm:p-7 text-meta text-ink-muted leading-relaxed" data-testid="low-activity-fixed-thresholds">{LOW_ACTIVITY_FIXED_THRESHOLDS}</p>
+            <div className="p-10 sm:p-16 text-center text-ui text-ink-muted">
+              No configurable optimization rules are available right now.
+            </div>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
+            <p className="p-5 sm:p-7 text-meta text-ink-muted leading-relaxed" data-testid="low-activity-fixed-thresholds">{LOW_ACTIVITY_FIXED_THRESHOLDS}</p>
             {configs.map((config) => {
               const key = keyFor(config)
               const copy = RULE_COPY[config.ruleId] ?? {
