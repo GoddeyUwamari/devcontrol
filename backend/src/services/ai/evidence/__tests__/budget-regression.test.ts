@@ -32,6 +32,8 @@ import { defaultEvidenceRegistry } from '../providers';
 import { costFindingsProvider, type CostFindingsEvidence, type CostFindingItem } from '../providers/cost';
 import { budgetBandOf, dataTokens } from '../budget';
 import { collectEvidence, EvidenceRegistry } from '../registry';
+import { topicsForConversation } from '../select';
+import { CHAT_CORE_PROVIDERS, CHAT_EVIDENCE_BUDGET_TOKENS } from '../../../../repositories/ai-chat-context.repository';
 import { createEvidenceBasis, type BasisSources } from '../basis';
 import { AISummaryService, SUMMARY_EVIDENCE_BUDGET_TOKENS, SUMMARY_FACT_PROVIDERS, SUMMARY_PROVIDERS } from '../../../ai-summary.service';
 import { AIInsightsService } from '../../../ai-insights.service';
@@ -459,5 +461,100 @@ describe('re-review 2 M3: the report idle figures say when they are a top-N subs
       description: 'The top 5 of 13 recommendations flag idle or unused resources; the savings figure covers these 5. Savings are DevControl estimates, not realized savings.',
       estimatedSavings: 230,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Re-review 3 M4: a large account's chat question keeps Security Hub,
+// Operational Health and CPU within the chat budget (20,000).
+// ---------------------------------------------------------------------------
+
+const MORE_REGIONS = ['af-south-1', 'ap-east-1', 'ap-south-2', 'ap-southeast-3', 'eu-south-1', 'eu-central-2', 'me-south-1', 'me-central-1'];
+const SEVS = ['critical', 'high', 'medium', 'low'] as const;
+
+/** The reviewer's large account: 60 EC2, 25 regions, 25 cost findings, 10 alarms in ALARM, 48 account findings, 140 Security Hub findings (5 critical). */
+function largeAccountSections(): Record<string, () => Promise<ContextSection<unknown>>> {
+  const base = realisticSummarySections();
+  const regions = [...DEFAULT_REGIONS, ...MORE_REGIONS];
+  // asOf: the scan time, or (live: true) a current read, for sources with a short freshness rule.
+  const available = <T>(source: string, data: T, extra: Record<string, unknown> = {}, live = false) =>
+    () => collectSection<T>({ source, classification: 'measured', scope: { kind: 'aws_account_region', connectedAccountId: ACCOUNT, region: 'us-east-1' } }, async () => ({ state: 'available', asOf: live ? new Date().toISOString() : SCANNED_AT, data, ...extra })) as Promise<ContextSection<unknown>>;
+  const instance = (i: number) => `i-${(0x0a1b2c3d4e5f6000 + i).toString(16).slice(0, 17).padStart(17, '0')}`;
+  return {
+    ...base,
+    'coverage.regions': () => collectSection({
+      source: 'DevControl region coverage', classification: 'measured',
+      scope: { kind: 'aws_account_regions', connectedAccountId: ACCOUNT, homeRegion: 'us-east-1', regions: regions.map((region, i) => ({ region, status: i === 0 ? 'succeeded' : 'never_scanned' })) },
+    }, async () => ({
+      state: 'available' as const, asOf: SCANNED_AT,
+      data: {
+        homeRegion: 'us-east-1', scanScope: { homeRegionTypes: 'all inventoried types', s3: 'account-wide', cloudfront: 'global' },
+        enabledRegions: { known: true, count: 25, listedAt: SCANNED_AT }, scanInProgress: false, lastSuccessfulScanAt: SCANNED_AT,
+        items: regions.map((region, i) => ({ ref: `g${i + 1}`, region, home: i === 0, status: i === 0 ? 'succeeded' : 'never_scanned', lastScanFinishedAt: i === 0 ? SCANNED_AT : null, lastSuccessAt: i === 0 ? SCANNED_AT : null, lastErrorCode: null, stale: false })),
+      },
+    })) as Promise<ContextSection<unknown>>,
+    'ops.cloudwatch_alarms': () => collectSection({ source: 'Amazon CloudWatch alarms', classification: 'measured', scope: { kind: 'aws_account_region', connectedAccountId: ACCOUNT, region: 'us-east-1' } }, async () => ({
+      state: 'available' as const, asOf: new Date().toISOString(),
+      data: {
+        outcome: 'found', inAlarmCount: 10, inAlarmComplete: true, configuredCount: 85, configuredCountComplete: true,
+        items: Array.from({ length: 10 }, (_, i) => ({ ref: `a${i + 1}`, type: 'metric', namespace: i % 2 ? 'AWS/RDS' : 'AWS/EC2', metric: i % 2 ? 'FreeStorageSpace' : 'CPUUtilization', comparison: i % 2 ? 'LessThanThreshold' : 'GreaterThanThreshold', threshold: i % 2 ? 5_000_000_000 : 80, inAlarmSince: SCANNED_AT, resourceType: i % 2 ? 'RDS' : 'EC2' })),
+      },
+      untrusted: Array.from({ length: 10 }, (_, i) => ({ field: `a${i + 1} name`, text: `prod-service-${i + 1}-${i % 2 ? 'low-storage' : 'high-cpu'}` })),
+    })) as Promise<ContextSection<unknown>>,
+    'security.account_findings': available('DevControl account security findings', {
+      outcome: 'found', total: 48, bySeverity: { critical: 4, high: 14, medium: 20, low: 10 },
+      byDisposition: { open: 42, acknowledged: 0, dismissed: 2, accepted_risk: 4 }, byCategory: { security_group: 30, iam: 18 },
+      items: Array.from({ length: 48 }, (_, i) => ({ ref: `f${i + 1}`, findingId: `00000000-0000-4000-8000-${String(200000000000 + i)}`, category: i % 3 ? 'security_group' : 'iam', severity: SEVS[Math.min(3, Math.floor(i / 12))], region: 'us-east-1', disposition: null, detectedAt: SCANNED_AT, lastSeenAt: SCANNED_AT, frameworkControl: i % 2 ? 'CIS 5.2' : null })),
+    }, { untrusted: Array.from({ length: 48 }, (_, i) => ({ field: `f${i + 1} title`, text: `Security group sg-${(0x1000 + i).toString(16)} allows inbound traffic from 0.0.0.0/0 on port ${20 + i}` })) }),
+    'security.security_hub': available('AWS Security Hub', {
+      capabilityStatus: 'ENABLED', lastSyncStatus: 'COMPLETED', lastSyncCompletedAt: SCANNED_AT, enabledStandards: 2, activeFindings: 140,
+      activeBySeverity: { critical: 5, high: 35, medium: 60, low: 40 },
+      items: Array.from({ length: 25 }, (_, i) => ({ ref: `s${i + 1}`, severity: i < 5 ? 'CRITICAL' : 'HIGH', complianceStatus: 'FAILED', controlId: `EC2.${i + 1}`, lastSeenAt: SCANNED_AT })),
+    }, { untrusted: Array.from({ length: 25 }, (_, i) => ({ field: `s${i + 1} title`, text: `EC2.${i + 1} security groups should not allow unrestricted access to high-risk ports` })) }),
+    'ops.resource_health': available('DevControl Operational Health resource checks (CloudWatch, last hour)', {
+      counts: { healthy: 52, failing: 10, no_signal: 18, not_monitored: 0 },
+      items: Array.from({ length: 28 }, (_, i) => ({ ref: `r${i + 1}`, resourceId: instance(i), resourceType: 'ec2', state: i < 10 ? 'failing' : 'no_signal', reason: i < 10 ? 'CPUUtilization above 80% for the last hour' : 'no datapoints in the last hour' })),
+    }, {}, true),
+    'telemetry.cpu': available('Amazon CloudWatch CPUUtilization, as DevControl recorded it', {
+      latestCheck: { observedAt: SCANNED_AT, instances: 60 }, idleInstanceEvidence: 0, instances: 60,
+      collection: { resourcesTracked: 80, resourcesWithDatapoints: 62, newestDatapointAt: SCANNED_AT, lastFullCollectionAt: SCANNED_AT },
+      items: Array.from({ length: 60 }, (_, i) => ({ ref: `u${i + 1}`, instanceId: instance(i), basis: 'latest_check_last_hour', cpuPercent: 1 + (i % 37), observedAt: SCANNED_AT, datapointsObserved: null, datapointsExpected: null })),
+    }),
+    'cost.top_estimated_resources': available('DevControl inventory cost estimates', {
+      items: Array.from({ length: 25 }, (_, i) => ({ ref: `e${i + 1}`, resourceId: instance(i), resourceType: 'EC2', estimatedMonthlyCost: 300 - i * 7 })),
+    }),
+    'inventory.resource_types': available('DevControl resource inventory (periodic AWS discovery)', ['ec2', 'rds', 'lambda', 's3', 'elb', 'ebs', 'cloudfront', 'dynamodb', 'sqs', 'sns', 'ecs', 'eks']),
+    'inventory.compute_detail': available('DevControl resource inventory (periodic AWS discovery)', {
+      ec2: { count: 60 }, rds: { count: 12, estimatedMonthlyCost: 2140.5, estimatedForCount: 12 }, lambda: { count: 45, invocations: 1_820_400, invocationsKnownForCount: 43 },
+    }),
+  };
+}
+
+describe('re-review 3 M4: a large account keeps Security Hub, Operational Health and CPU in a chat answer', () => {
+  it('within the 20,000 chat budget, for the reviewer\'s question', async () => {
+    expect(CHAT_EVIDENCE_BUDGET_TOKENS).toBe(20_000);
+    stubProviders(25, largeAccountSections());
+    const question = 'What are my biggest security risks, which alarms are firing, and where can I save money?';
+    const bundle = await collectEvidence(defaultEvidenceRegistry(), {
+      organizationId: ORG, consumer: 'ai_chat',
+      select: { topics: topicsForConversation([{ role: 'user', content: question }]), providerIds: [...CHAT_CORE_PROVIDERS] },
+      budgetTokens: CHAT_EVIDENCE_BUDGET_TOKENS,
+    });
+    const omitted = bundle.results.filter((r) => r.section.state === 'omitted').map((r) => `${r.id} (${r.section.truncation?.by})`);
+    const shortened = bundle.results.filter((r) => r.mode === 'summarised').map((r) => `${r.id} ${r.section.truncation?.kept}/${r.section.truncation?.total}`);
+    console.info([
+      '[M4 large account, chat]',
+      `topics: ${bundle.topics.join(', ')}`,
+      `budget: used ${bundle.budget.usedTokens} of ${bundle.budget.totalTokens}`,
+      `omitted: ${omitted.join(', ') || '(none)'}`,
+      `shortened: ${shortened.join(', ') || '(none)'}`,
+      `selected: ${bundle.results.filter((r) => r.selected).map((r) => `${r.id}=${r.mode}`).join(', ')}`,
+    ].join('\n'));
+
+    for (const id of ['security.security_hub', 'ops.resource_health', 'telemetry.cpu']) {
+      const r = bundle.results.find((x) => x.id === id)!;
+      expect([id, r.selected, r.section.state]).toEqual([id, true, 'available']);
+    }
+    expect(bundle.budget.usedTokens).toBeLessThanOrEqual(20_000);
   });
 });

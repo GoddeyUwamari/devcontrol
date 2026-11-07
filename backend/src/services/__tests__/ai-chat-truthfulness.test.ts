@@ -363,6 +363,29 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     expect(response).toContain(`DevControl has CloudWatch CPU utilization for 60 EC2 instances (as of ${ALARMS_AS_OF}).`);
   });
 
+  it('re-review 3 L9: with the CPU section omitted by the budget, the fallback (no model call) still states the 60-instance CPU line', async () => {
+    const items: CpuTelemetryEvidence['items'] = Array.from({ length: 60 }, (_, i) => ({
+      ref: `u${i + 1}`, instanceId: `i-${(0x10000000000000 + i).toString(16).padStart(17, '0')}`, basis: 'latest_check_last_hour', cpuPercent: 2 + (i % 5), observedAt: ALARMS_AS_OF, datapointsObserved: null, datapointsExpected: null,
+    }));
+    const registry = new EvidenceRegistry().register({
+      ...cpuTelemetryProvider,
+      collect: async () => collectSection<CpuTelemetryEvidence>({ source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', classification: 'measured' }, async () => ({
+        state: 'available', asOf: ALARMS_AS_OF,
+        data: { latestCheck: { observedAt: ALARMS_AS_OF, instances: 60 }, idleInstanceEvidence: 0, instances: 60, collection: null, items },
+      })),
+    });
+    // A total budget too small for any CPU block: the section is omitted.
+    const bundle = await collectEvidence(registry, { organizationId: '00000000-0000-4000-8000-0000000000c7', consumer: 'test', select: { providerIds: ['telemetry.cpu'] }, budgetTokens: 100 });
+    const cpu = bundle.results.find((r) => r.id === 'telemetry.cpu')!;
+    expect(cpu.section).toMatchObject({ state: 'omitted', data: null });
+
+    const withCpu = baseContext();
+    withCpu.evidence = { ...withCpu.evidence, results: [...withCpu.evidence.results.filter((r) => r.id !== 'telemetry.cpu'), cpu] };
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 60 EC2 instances (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+    expect(response).not.toMatch(/I don't have EC2 CPU utilization data|too large/);
+  });
+
   it('L3: the Active alerts line says "at least" for a capped read, never otherwise; "1 CloudWatch alarm" singular', async () => {
     const capped = (n: number) => section('partial', { outcome: 'found', inAlarmCount: n, inAlarmComplete: false, configuredCount: 9, configuredCountComplete: false, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF, reason: 'capped' });
     const expectLine = async (alarms: ContextSection<unknown>, line: string) => {

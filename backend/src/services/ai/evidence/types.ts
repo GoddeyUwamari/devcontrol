@@ -104,6 +104,12 @@ export interface ProviderResult<T = unknown> {
   /** Whether this question asked for the provider's data. */
   selected: boolean;
   mode: LoadMode;
+  /**
+   * The section as collected, before the evidence budget shortened or cut it.
+   * Only for consumers that make no model call (the chat fallback), to which
+   * size does not apply. Never rendered, fingerprinted or sent to a model.
+   */
+  collected?: ContextSection<T>;
 }
 
 export interface EvidenceBundle {

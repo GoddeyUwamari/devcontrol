@@ -392,6 +392,22 @@ describe('AI Reports evidence -- the EC2 default price (PR 4, S4)', () => {
     expect(listed).not.toHaveProperty('estimatedSavingsPriceUnknown');
   });
 
+  it('re-review 3 N5: one idle recommendation is singular, two plural (every one listed)', async () => {
+    const idle = (id: string, savings: number) => ({ resource_id: id, resource_type: 'EC2', issue: 'Idle Instance', potential_savings: savings, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } });
+    const lines = async (recommendations: Array<ReturnType<typeof idle>>) => {
+      const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(await evidence({ recommendations }));
+      return { recs: report.costAnalysis?.recommendations, top: report.topRecommendations.find((r) => r.title === 'Review idle or unused resources')?.description };
+    };
+    expect(await lines([idle('i-one', 40)])).toEqual({
+      recs: ['Review 1 active recommendation for idle or unused resources (estimated potential savings of $40.00/month; a DevControl estimate, not realized savings).'],
+      top: '1 active DevControl recommendation flags idle or unused resources. Savings are DevControl estimates, not realized savings.',
+    });
+    expect(await lines([idle('i-one', 40), idle('i-two', 30)])).toEqual({
+      recs: ['Review 2 active recommendations for idle or unused resources (estimated potential savings of $70.00/month; a DevControl estimate, not realized savings).'],
+      top: '2 active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.',
+    });
+  });
+
   it('with no default figure the reason is unchanged', async () => {
     const { sections } = await evidence({
       recommendations: [

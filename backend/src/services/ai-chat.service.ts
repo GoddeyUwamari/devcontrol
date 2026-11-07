@@ -176,6 +176,15 @@ export interface ChatMessage {
 }
 
 /** Rendered by AI Chat in its own established format, so the generic evidence block leaves out their data. */
+/**
+ * A provider's section as collected, before the evidence budget: for the
+ * fallback replies, which make no model call, so size never applies to them.
+ */
+function collectedSection<T>(bundle: EvidenceBundle, id: string): ContextSection<T> | undefined {
+  const result = bundle.results.find(r => r.id === id);
+  return (result?.collected ?? result?.section) as ContextSection<T> | undefined;
+}
+
 export const CHAT_FORMATTED_PROVIDERS = [
   'cost.spend',
   'cost.month_over_month',
@@ -747,7 +756,8 @@ ${topSpender ? `Your top cost category is ${topSpender.service} at ${this.format
     if (lastMessage.includes('underutilized') || lastMessage.includes('optimize') || lastMessage.includes('saving')) {
       // CPU utilization is its own evidence source; only a section that carries
       // data says anything about it -- anything else is stated as missing data.
-      const cpu = context.evidence.results.find(r => r.id === 'telemetry.cpu')?.section as ContextSection<Pick<CpuTelemetryEvidence, 'instances'>> | undefined;
+      // This fallback makes no model call, so the evidence budget does not apply: the section as collected.
+      const cpu = collectedSection<Pick<CpuTelemetryEvidence, 'instances'>>(context.evidence, 'telemetry.cpu');
       // The provider's count of distinct instances over every reading, not the
       // items the budget kept (one instance can have a latest-check and an idle-finding reading).
       const measured = cpu && (cpu.state === 'available' || cpu.state === 'partial') && cpu.data
@@ -778,7 +788,7 @@ Underutilized resources typically represent 20-40% potential savings when rights
     const inventoryPhrase = services.state === 'available' && services.data
       ? `I can see ${services.data.length} discovered resource types in your AWS environment`
       : `I don't have a resource inventory for this account right now`;
-    const alarms = context.evidence.results.find(r => r.id === 'ops.cloudwatch_alarms')?.section as ContextSection<{ inAlarmCount: number; inAlarmComplete?: boolean }> | undefined;
+    const alarms = collectedSection<{ inAlarmCount: number; inAlarmComplete?: boolean }>(context.evidence, 'ops.cloudwatch_alarms');
     // Only a capped in-ALARM count is a lower bound (a capped configured count leaves it exact), as in reports and the summary.
     const atLeast = alarms?.data?.inAlarmComplete === false ? 'at least ' : '';
     const alertsPhrase = alarms && (alarms.state === 'available' || alarms.state === 'partial') && alarms.data

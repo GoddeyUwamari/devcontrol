@@ -188,5 +188,6 @@ export function applyBudget(
     planned[index] = fitted.result;
     used += fitted.tokens;
   }
-  return { results: planned, usedTokens: used };
+  // Each result keeps its section as collected, for consumers that make no model call.
+  return { results: planned.map((p, i) => ({ ...p, collected: results[i].section })), usedTokens: used };
 }

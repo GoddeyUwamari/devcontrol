@@ -693,7 +693,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       if (recsWithItems) {
         costRecommendations.push(idleSubset(recsWithItems)
           ? `Review the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for these ${recsWithItems.items.length}; a DevControl estimate, not realized savings).`
-          : `Review ${recsWithItems.items.length} active recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
+          : `Review ${recsWithItems.items.length} active recommendation${recsWithItems.items.length !== 1 ? 's' : ''} for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
       } else if (recs && !hasEvidence(recs)) {
         costRecommendations.push(missingSentence('Cost recommendations', recs, `Cost recommendations are not available: ${unavailablePhrase(recs)}.`));
       }
@@ -710,7 +710,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
         impact: 'medium',
         description: subset
           ? `The top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations flag idle or unused resources; the savings figure covers these ${recsWithItems.items.length}. Savings are DevControl estimates, not realized savings.`
-          : `${recsWithItems.items.length} active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.`,
+          : `${recsWithItems.items.length} active DevControl recommendation${recsWithItems.items.length !== 1 ? 's flag' : ' flags'} idle or unused resources. Savings are DevControl estimates, not realized savings.`,
         estimatedSavings: recsWithItems.totalEstimatedMonthlySavings,
         effort: 'low',
       });

@@ -33,8 +33,13 @@ import { topicsForConversation } from '../services/ai/evidence/select';
 
 const INVENTORY_SOURCE = 'DevControl resource inventory (periodic AWS discovery)';
 
-/** Evidence budget for one chat answer, in estimated tokens (step1 §2.5). */
-export const CHAT_EVIDENCE_BUDGET_TOKENS = 12_000;
+/**
+ * Evidence budget for one chat answer, in estimated tokens (step1 §2.5).
+ * The budget counts each section at its JSON block size and each line at a
+ * flat 60 tokens, more than chat's prose renders, so the figure carries that
+ * margin (re-review 3 M4). Counting what chat actually renders is PR 3.
+ */
+export const CHAT_EVIDENCE_BUDGET_TOKENS = 20_000;
 
 /**
  * Providers whose data AI Chat always loads -- the sections it has always had
