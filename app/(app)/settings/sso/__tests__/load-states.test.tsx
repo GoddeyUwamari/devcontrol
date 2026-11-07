@@ -5,7 +5,7 @@
  * gate naming the plan.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithKnownPlan } from "@/lib/contexts/__tests__/org-load-harness";
 import { resourceLimitBody, tierRequiredBody } from "@/lib/plan/__tests__/tier-required-fixture";
 import SSOSettingsPage from "../page";
@@ -94,7 +94,9 @@ describe("SSO settings: loading the config", () => {
     stubConfig(() => res(200, { success: true, data: CONFIG }));
     await renderWithKnownPlan(<SSOSettingsPage />, "enterprise");
     expect(await screen.findByText("Service Provider Details")).toBeTruthy();
-    expect(screen.getByDisplayValue("example.test")).toBeTruthy();
+    // The form is filled by an effect on the loaded config, one render after
+    // the details card appears: wait for it rather than reading it at once.
+    expect(await screen.findByDisplayValue("example.test")).toBeTruthy();
   });
 
   it("a save whose reload fails keeps the saved form, with a non-blocking note; Try again clears it", async () => {
@@ -114,8 +116,13 @@ describe("SSO settings: loading the config", () => {
     expect(screen.queryByText(ERROR_TEXT)).toBeNull();
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
-    await act(async () => {});
-    expect(screen.queryByText(RELOAD_NOTE)).toBeNull();
+    // React Query delivers the refetch result on a setTimeout(0) after the
+    // response body is read, so one act() flush is not enough on a slow
+    // machine: wait until the third GET has been served and the note is gone.
+    await waitFor(() => {
+      expect(g).toBe(3);
+      expect(screen.queryByText(RELOAD_NOTE)).toBeNull();
+    });
     expect(screen.getByText("Service Provider Details")).toBeTruthy();
   });
 
