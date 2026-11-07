@@ -29,6 +29,8 @@ export const PLAN_ENTITLEMENTS = {
   riskScore: 'pro',
   /** /api/compliance-frameworks: custom compliance frameworks and their scans. */
   complianceFrameworks: 'enterprise',
+  /** POST /api/aws-resources/export (resource inventory export). */
+  resourceInventoryExport: 'starter',
 } as const satisfies Record<string, SubscriptionTier>;
 
 export type PlanEntitlement = keyof typeof PLAN_ENTITLEMENTS;

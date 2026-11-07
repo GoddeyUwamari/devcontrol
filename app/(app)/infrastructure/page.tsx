@@ -22,6 +22,7 @@ import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/co
 import { usePlan } from '@/lib/hooks/use-plan'
 import { ExportReportsDialog } from '@/components/aws-resources/ExportReportsDialog'
 import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
+import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { DEFAULT_PRICE_SUFFIX, isDefaultPriceEstimate, rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
 import { formatCalculatedAgo } from './calculatedAgo'
@@ -193,9 +194,6 @@ export default function InfrastructurePage() {
   return <InfrastructureOverviewV2 demoFallback={legacy} />
 }
 
-/** The plan the resource inventory export endpoint requires (awsResources.routes.ts, POST /export). */
-const RESOURCE_EXPORT_TIER = 'starter' as const
-
 function InfrastructureContent() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
@@ -227,10 +225,10 @@ function InfrastructureContent() {
   const isDemoActive  = demoMode || salesDemoMode
   const plan = usePlan()
   const { isFree, isStarter, isPro } = plan
-  // Resource inventory export: POST /api/aws-resources/export, requireTier('starter')
-  // (backend/src/routes/awsResources.routes.ts). Below it the button shows the
+  // Resource inventory export: POST /api/aws-resources/export, on the plan in
+  // PLAN_ENTITLEMENTS.resourceInventoryExport. Below it the button shows the
   // upgrade state instead of opening the dialog.
-  const exportPlanRequired = plan.isKnown && !plan.canAccess(RESOURCE_EXPORT_TIER)
+  const exportPlanRequired = plan.lacksEntitlement('resourceInventoryExport')
   const [exportOpen,        setExportOpen]        = useState(false)
   const [exportPlanShown,   setExportPlanShown]   = useState(false)
   const FREE_RESOURCE_TYPES = ['ec2', 'rds', 's3', 'EC2', 'RDS', 'S3']
@@ -833,7 +831,7 @@ function InfrastructureContent() {
                   <Download size={13} /> Export inventory
                 </button>
                 {exportPlanRequired && exportPlanShown && (
-                  <PlanRequiredNotice requiredTier={RESOURCE_EXPORT_TIER} testId="inventory-export-plan-required" />
+                  <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.resourceInventoryExport} testId="inventory-export-plan-required" />
                 )}
               </div>
             )}

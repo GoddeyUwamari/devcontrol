@@ -244,6 +244,8 @@ describe('PLAN_ENTITLEMENTS', () => {
       // reads, registered at their unchanged tiers (founder decision).
       riskScore: 'pro',
       complianceFrameworks: 'enterprise',
+      // Resource inventory export (Pricing PR 1A follow-up; its gate is plan-gates-followup.test.ts).
+      resourceInventoryExport: 'starter',
     });
   });
 });

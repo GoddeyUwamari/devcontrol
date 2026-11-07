@@ -17,10 +17,11 @@ import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import api from '@/lib/api'
 import DORAMetricsPage from '../page'
 
-const auth = vi.hoisted(() => ({ tier: 'pro' as string, status: 'ready' as string }))
+// effective: the tier the server enforces (organization.effectiveTier); null = the same as the stored tier.
+const auth = vi.hoisted(() => ({ tier: 'pro' as string, effective: null as string | null, status: 'ready' as string }))
 vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({
-    organization: { id: 'org-1', subscriptionTier: auth.tier },
+    organization: { id: 'org-1', subscriptionTier: auth.tier, effectiveTier: auth.effective ?? auth.tier },
     organizationStatus: auth.status,
     retryOrganizationLoad: async () => {},
     logout: async () => {},
@@ -61,6 +62,7 @@ describe('DORA page — plan', () => {
   beforeEach(() => {
     requests.length = 0
     auth.status = 'ready'
+    auth.effective = null
     localStorage.setItem('accessToken', 'test-access-token')
     api.defaults.adapter = adapter
   })
@@ -69,8 +71,14 @@ describe('DORA page — plan', () => {
     localStorage.clear()
   })
 
-  it.each(['free', 'starter'])('on %s: the upgrade state, and no DORA or benchmark request', async (tier) => {
-    auth.tier = tier
+  it.each([
+    ['free', 'free', 'free'],
+    ['starter', 'starter', 'starter'],
+    ['pro, restricted', 'pro', 'free'],
+    ['enterprise, grace period ended', 'enterprise', 'free'],
+  ])('on %s: the upgrade state, and no DORA or benchmark request', async (_name, stored, enforced) => {
+    auth.tier = stored
+    auth.effective = enforced
     renderPage()
 
     const notice = screen.getByTestId('dora-plan-required')
@@ -128,6 +136,7 @@ describe('DORA page — plan', () => {
     expect(screen.queryByTestId('dora-plan-required')).not.toBeInTheDocument()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(asked('/api/metrics/dora')).toBe(false)
+    expect(asked('/api/dora/benchmarks')).toBe(false)
   })
 
   it('when the plan cannot be read: the workspace error, never the upgrade state', async () => {
@@ -138,5 +147,6 @@ describe('DORA page — plan', () => {
     expect(screen.queryByTestId('plan-loading')).not.toBeInTheDocument()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(asked('/api/metrics/dora')).toBe(false)
+    expect(asked('/api/dora/benchmarks')).toBe(false)
   })
 })

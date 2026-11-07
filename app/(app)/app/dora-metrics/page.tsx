@@ -83,8 +83,8 @@ export default function DORAMetricsPage() {
   // DORA metrics, and custom benchmarks (reads included), are each on their own
   // plan (PLAN_ENTITLEMENTS); neither is asked for below it.
   const plan = usePlan();
-  const doraOnPlan = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraMetrics);
-  const isEnterprise = plan.isKnown && plan.canAccess(PLAN_ENTITLEMENTS.doraCustomBenchmarks);
+  const doraOnPlan = plan.hasEntitlement('doraMetrics');
+  const isEnterprise = plan.hasEntitlement('doraCustomBenchmarks');
   const queryClient = useQueryClient();
   const demoMode = useDemoMode();
   const salesDemoMode = useSalesDemo((state) => state.enabled);

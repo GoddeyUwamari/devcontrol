@@ -2,12 +2,14 @@
  * /infrastructure with NEXT_PUBLIC_INFRA_OVERVIEW_V2 on (what Production serves):
  * the resource inventory export in the overview header's action column, under
  * Sync. The same existing ExportReportsDialog and POST /api/aws-resources/export
- * (requireTier('starter')) as on the legacy resource table.
+ * (PLAN_ENTITLEMENTS.resourceInventoryExport) as on the legacy resource table,
+ * decided on the tier the server enforces (the real usePlan).
  *
  *   - Starter and above: the button opens the dialog; its export calls the
  *     existing endpoint.
- *   - Free: the button stays; pressing it shows the plan text, opens no dialog
- *     and sends no export request.
+ *   - Free, and a restricted or lapsed paid organization (the server enforces
+ *     free): the button stays; pressing it shows the plan text, opens no
+ *     dialog and sends no export request.
  *   - No AWS account connected: the header has no action column, so no button.
  *
  * Same mocks as overview-render.test.tsx; every request is logged.
@@ -18,6 +20,7 @@ const m = vi.hoisted(() => {
   return {
     log: [] as string[],
     tier: 'starter' as string,
+    effective: 'starter' as string,
     responses: {} as Record<string, () => Promise<unknown>>,
   }
 })
@@ -41,21 +44,12 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/infrastructure',
 }))
-vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' } }) }))
-vi.mock('@/lib/hooks/use-plan', () => ({
-  usePlan: () => {
-    const rank = (t: string) => ({ free: 0, starter: 1, pro: 2, enterprise: 3 } as Record<string, number>)[t] ?? 0
-    return {
-      tier: m.tier,
-      isFree: m.tier === 'free',
-      isStarter: rank(m.tier) >= 1,
-      isPro: rank(m.tier) >= 2,
-      isEnterprise: m.tier === 'enterprise',
-      canAccess: (min: string) => rank(m.tier) >= rank(min),
-      isKnown: true,
-      status: 'known',
-    }
-  },
+vi.mock('@/lib/contexts/auth-context', () => ({
+  useAuth: () => ({
+    organization: { id: 'org-test', name: 'Org Test', subscriptionTier: m.tier, effectiveTier: m.effective },
+    organizationStatus: 'ready',
+    retryOrganizationLoad: vi.fn(),
+  }),
 }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: (s: { enabled: boolean }) => unknown) => selector({ enabled: false }) }))
@@ -110,6 +104,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   m.log.length = 0
   m.tier = 'starter'
+  m.effective = 'starter'
   vi.stubEnv('NEXT_PUBLIC_INFRA_OVERVIEW_V2', 'true')
   connected()
   localStorage.clear()
@@ -127,8 +122,9 @@ async function renderSettled() {
 }
 
 describe('Infrastructure Overview — Export inventory', () => {
-  it.each(['starter', 'pro', 'enterprise'])('on %s: the header button opens the existing dialog, whose export calls the existing endpoint', async (tier) => {
-    m.tier = tier
+  it.each([['starter', 'starter'], ['pro', 'pro'], ['enterprise', 'enterprise']])('on %s: the header button opens the existing dialog, whose export calls the existing endpoint', async (stored, enforced) => {
+    m.tier = stored
+    m.effective = enforced
     await renderSettled()
 
     const button = screen.getByTestId('overview-export-button')
@@ -149,8 +145,13 @@ describe('Infrastructure Overview — Export inventory', () => {
     expect(m.log.filter((l) => l === EXPORT)).toHaveLength(1)
   })
 
-  it('on free: the button stays; pressing it shows the plan text, opens no dialog and sends no export request', async () => {
-    m.tier = 'free'
+  it.each([
+    ['free', 'free', 'free'],
+    ['starter, restricted', 'starter', 'free'],
+    ['pro, grace period ended', 'pro', 'free'],
+  ])('on %s: the button stays; pressing it shows the plan text, opens no dialog and sends no export request', async (_name, stored, enforced) => {
+    m.tier = stored
+    m.effective = enforced
     await renderSettled()
 
     const button = screen.getByTestId('overview-export-button')

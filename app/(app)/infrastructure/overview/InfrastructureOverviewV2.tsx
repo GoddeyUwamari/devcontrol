@@ -16,6 +16,7 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { Download } from 'lucide-react'
 import { ExportReportsDialog } from '@/components/aws-resources/ExportReportsDialog'
 import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
+import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/components/aws/discovery-warning-notice'
@@ -55,17 +56,14 @@ function loadable<T>(q: { data?: T; isError: boolean }): Loadable<T> {
 
 const is402 = (error: unknown) => (error as { response?: { status?: number } } | null)?.response?.status === 402
 
-/** The plan the resource inventory export endpoint requires (awsResources.routes.ts, POST /export). */
-const RESOURCE_EXPORT_TIER = 'starter' as const
-
 function OverviewBody({ orgId }: { orgId: string | null }) {
   const queryClient = useQueryClient()
   const plan = usePlan()
   const { isFree, isStarter, isPro } = plan
   // Resource inventory export, as on the legacy resource table: the existing dialog and
-  // POST /api/aws-resources/export (requireTier('starter')). Below it the button shows the
-  // upgrade state instead of opening the dialog.
-  const exportPlanRequired = plan.isKnown && !plan.canAccess(RESOURCE_EXPORT_TIER)
+  // POST /api/aws-resources/export (PLAN_ENTITLEMENTS.resourceInventoryExport). Below it
+  // the button shows the upgrade state instead of opening the dialog.
+  const exportPlanRequired = plan.lacksEntitlement('resourceInventoryExport')
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPlanShown, setExportPlanShown] = useState(false)
   const realMode = !!orgId
@@ -179,7 +177,7 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
               <Download size={14} aria-hidden="true" /> Export inventory
             </button>
             {exportPlanRequired && exportPlanShown && (
-              <PlanRequiredNotice requiredTier={RESOURCE_EXPORT_TIER} testId="overview-export-plan-required" />
+              <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.resourceInventoryExport} testId="overview-export-plan-required" />
             )}
           </>
         )}

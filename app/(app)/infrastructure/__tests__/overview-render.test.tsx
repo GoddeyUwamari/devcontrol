@@ -17,7 +17,7 @@ const m = vi.hoisted(() => {
     calls: [] as { endpoint: string; args: unknown[] }[],
     demo: false,
     salesDemo: false,
-    plan: { isFree: false, isStarter: true, isPro: true, tier: 'pro' } as Record<string, unknown>,
+    plan: { isFree: false, isStarter: true, isPro: true, tier: 'pro', lacksEntitlement: () => false } as Record<string, unknown>,
     replace: vi.fn(),
     responses: {} as Record<string, () => Promise<unknown>>,
   }
@@ -144,7 +144,7 @@ beforeEach(() => {
   m.calls.length = 0
   m.demo = false
   m.salesDemo = false
-  m.plan = { isFree: false, isStarter: true, isPro: true, tier: 'pro' }
+  m.plan = { isFree: false, isStarter: true, isPro: true, tier: 'pro', lacksEntitlement: () => false }
   m.replace.mockReset()
   vi.mocked(toast.success).mockReset()
   vi.mocked(toast.error).mockReset()
@@ -472,13 +472,13 @@ describe('PB-1 plan banners and the limit prompt: the same text and links as the
     return { off, on }
   }
   it('Free plan', async () => {
-    m.plan = { isFree: true, isStarter: false, isPro: false, tier: 'free' }
+    m.plan = { isFree: true, isStarter: false, isPro: false, tier: 'free', lacksEntitlement: () => false }
     const { off, on } = await both(/Free plan shows EC2, RDS, and S3 only\./)
     expect(on).toEqual(off)
     expect(on.hrefs).toEqual(['/settings/billing/upgrade'])
   })
   it('Starter plan', async () => {
-    m.plan = { isFree: false, isStarter: true, isPro: false, tier: 'starter' }
+    m.plan = { isFree: false, isStarter: true, isPro: false, tier: 'starter', lacksEntitlement: () => false }
     const { off, on } = await both(/Starter plan shows 15 resource types\./)
     expect(on).toEqual(off)
   })

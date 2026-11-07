@@ -10,7 +10,7 @@ import { Pool } from 'pg';
 import { pool } from '../config/database';
 import { encryptionService } from './encryption.service';
 import { emailService } from './email.service';
-import { TIER_LIMITS } from '../middleware/subscription.middleware';
+import { TIER_LIMITS, effectiveTierOf } from '../middleware/subscription.middleware';
 import { trackFunnelEventOnce } from './analyticsEvents';
 import { getActiveMembershipRole } from './organization-authorization';
 
@@ -46,6 +46,8 @@ interface OrganizationMembership {
   organization_name: string;
   organization_display_name: string | null;
   organization_subscription_tier: string;
+  organization_billing_lifecycle_state: string | null;
+  organization_grace_period_ends_at: Date | null;
 }
 
 interface JWTPayload {
@@ -169,7 +171,7 @@ export class AuthService {
           max_users,
           max_deployments_per_month
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, name, slug, display_name, subscription_tier, created_at`,
+        RETURNING id, name, slug, display_name, subscription_tier, billing_lifecycle_state, grace_period_ends_at, created_at`,
         [
           organizationName,
           slug,
@@ -261,6 +263,7 @@ export class AuthService {
           slug: organization.slug,
           displayName: organization.display_name,
           subscriptionTier: organization.subscription_tier,
+          effectiveTier: effectiveTierOf(organization),
           createdAt: organization.created_at,
           role: 'owner',
         },
@@ -343,7 +346,9 @@ export class AuthService {
     // Get user's organizations
     const orgsResult = await pool.query<OrganizationMembership>(
       `SELECT om.organization_id, om.role, o.slug as organization_slug, o.name as organization_name,
-              o.display_name as organization_display_name, o.subscription_tier as organization_subscription_tier
+              o.display_name as organization_display_name, o.subscription_tier as organization_subscription_tier,
+              o.billing_lifecycle_state as organization_billing_lifecycle_state,
+              o.grace_period_ends_at as organization_grace_period_ends_at
        FROM organization_memberships om
        JOIN organizations o ON om.organization_id = o.id
        WHERE om.user_id = $1 AND om.is_active = true AND o.is_active = true AND o.deleted_at IS NULL
@@ -409,6 +414,11 @@ export class AuthService {
         name: primaryOrg.organization_name,
         displayName: primaryOrg.organization_display_name,
         subscriptionTier: primaryOrg.organization_subscription_tier,
+        effectiveTier: effectiveTierOf({
+          subscription_tier: primaryOrg.organization_subscription_tier,
+          billing_lifecycle_state: primaryOrg.organization_billing_lifecycle_state,
+          grace_period_ends_at: primaryOrg.organization_grace_period_ends_at,
+        }),
         role: primaryOrg.role,
       },
     };
@@ -866,7 +876,8 @@ export class AuthService {
 
     // Get organizations
     const orgsResult = await pool.query(
-      `SELECT o.id, o.name, o.slug, o.display_name, o.subscription_tier, om.role
+      `SELECT o.id, o.name, o.slug, o.display_name, o.subscription_tier,
+              o.billing_lifecycle_state, o.grace_period_ends_at, om.role
        FROM organization_memberships om
        JOIN organizations o ON om.organization_id = o.id
        WHERE om.user_id = $1 AND om.is_active = true AND o.is_active = true AND o.deleted_at IS NULL
@@ -888,6 +899,7 @@ export class AuthService {
         slug: org.slug,
         displayName: org.display_name,
         subscriptionTier: org.subscription_tier,
+        effectiveTier: effectiveTierOf(org),
         role: org.role,
       })),
     };

@@ -4,7 +4,7 @@ import { AWSResourcesController } from '../controllers/awsResources.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
-import { checkDiscoveryLimit, requireTier } from '../middleware/subscription.middleware';
+import { checkDiscoveryLimit, requireEntitlement, requireTier } from '../middleware/subscription.middleware';
 
 const router = Router();
 const controller = new AWSResourcesController(pool);
@@ -60,8 +60,8 @@ router.delete('/:id', authenticate, requireAdmin, (req, res, next) => controller
 
 /**
  * POST /api/aws-resources/export
- * Export AWS resources to CSV or PDF (Starter+ feature)
+ * Export AWS resources to CSV or PDF (PLAN_ENTITLEMENTS.resourceInventoryExport)
  */
-router.post('/export', authenticate, requireTier('starter'), (req, res, next) => controller.exportResources(req, res, next));
+router.post('/export', authenticate, requireEntitlement('resourceInventoryExport'), (req, res, next) => controller.exportResources(req, res, next));
 
 export default router;

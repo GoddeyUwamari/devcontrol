@@ -12,10 +12,12 @@ vi.mock("@/lib/contexts/auth-context", () => ({ useAuth: () => auth.value }));
 
 const retry = vi.fn(async () => {});
 
-function plan(organizationStatus: string, subscriptionTier?: unknown, withOrg = true) {
+function plan(organizationStatus: string, subscriptionTier?: unknown, withOrg = true, effectiveTier?: unknown) {
   auth.value = {
     organizationStatus,
-    organization: withOrg ? { id: "org-1", subscriptionTier } : null,
+    organization: withOrg
+      ? { id: "org-1", subscriptionTier, ...(effectiveTier === undefined ? {} : { effectiveTier }) }
+      : null,
     retryOrganizationLoad: retry,
   };
   return renderHook(() => usePlan()).result.current;
@@ -86,5 +88,84 @@ describe("usePlan: no workspace", () => {
 
   it.each(["idle", "loading", "ready", "error"])("%s → noWorkspace false", (s) => {
     expect(plan(s, "pro").noWorkspace).toBe(false);
+  });
+});
+
+/**
+ * hasEntitlement / lacksEntitlement: the features of lib/plan/entitlements.ts,
+ * decided by the tier the server enforces (organization.effectiveTier), never
+ * by the stored tier, and neither true until the plan is known.
+ */
+describe("usePlan: entitlements by the enforced tier", () => {
+  const FEATURES = {
+    resourceInventoryExport: "starter",
+    doraMetrics: "pro",
+    securityHubSync: "pro",
+    doraCustomBenchmarks: "enterprise",
+  } as const;
+  const RANK = { free: 0, starter: 1, pro: 2, enterprise: 3 } as const;
+
+  // [state, stored tier, enforced tier]
+  const STATES: Array<[string, string, string]> = [
+    ["free", "free", "free"],
+    ["starter", "starter", "starter"],
+    ["pro", "pro", "pro"],
+    ["enterprise", "enterprise", "enterprise"],
+    ["pro, restricted", "pro", "free"],
+    ["enterprise, restricted", "enterprise", "free"],
+    ["starter, grace period ended", "starter", "free"],
+    ["enterprise, grace period ended", "enterprise", "free"],
+  ];
+
+  it.each(STATES)("%s: each feature follows the enforced tier; the stored tier is still the plan shown", (_name, stored, enforced) => {
+    const p = plan("ready", stored, true, enforced);
+    expect(p.status).toBe("known");
+    expect(p.tier).toBe(stored);
+    for (const [feature, minimum] of Object.entries(FEATURES)) {
+      const included = RANK[enforced as keyof typeof RANK] >= RANK[minimum];
+      expect([feature, p.hasEntitlement(feature as keyof typeof FEATURES)]).toEqual([feature, included]);
+      expect([feature, p.lacksEntitlement(feature as keyof typeof FEATURES)]).toEqual([feature, !included]);
+    }
+  });
+
+  it("a restricted Pro organization lacks DORA metrics although it is shown as Pro", () => {
+    const p = plan("ready", "pro", true, "free");
+    expect(p.isPro).toBe(true);
+    expect(p.hasEntitlement("doraMetrics")).toBe(false);
+    expect(p.lacksEntitlement("doraMetrics")).toBe(true);
+  });
+
+  it.each([
+    ["idle, no organization", "idle", false],
+    ["loading, no organization", "loading", false],
+    ["loading, with a leftover organization", "loading", true],
+    ["error", "error", false],
+    ["none (no workspace)", "none", false],
+  ] as Array<[string, string, boolean]>)("%s: neither granted nor refused", (_name, status, withOrg) => {
+    const p = plan(status, "enterprise", withOrg, "enterprise");
+    for (const feature of Object.keys(FEATURES) as Array<keyof typeof FEATURES>) {
+      expect([feature, p.hasEntitlement(feature), p.lacksEntitlement(feature)]).toEqual([feature, false, false]);
+    }
+  });
+
+  it.each([[undefined], [null], ["team"], [""]])("stored tier %s: error, neither granted nor refused", (stored) => {
+    const p = plan("ready", stored, true, "pro");
+    expect(p.status).toBe("error");
+    expect(p.hasEntitlement("doraMetrics")).toBe(false);
+    expect(p.lacksEntitlement("doraMetrics")).toBe(false);
+  });
+
+  it.each([["team"], [""], [7]])("enforced tier %s (unrecognised): error, neither granted nor refused", (enforced) => {
+    const p = plan("ready", "enterprise", true, enforced);
+    expect(p.status).toBe("error");
+    expect(p.hasEntitlement("doraMetrics")).toBe(false);
+    expect(p.lacksEntitlement("doraMetrics")).toBe(false);
+  });
+
+  it("a response without effectiveTier (from before the field existed): the stored tier stands in", () => {
+    const p = plan("ready", "pro");
+    expect(p.status).toBe("known");
+    expect(p.hasEntitlement("doraMetrics")).toBe(true);
+    expect(p.lacksEntitlement("doraCustomBenchmarks")).toBe(true);
   });
 });

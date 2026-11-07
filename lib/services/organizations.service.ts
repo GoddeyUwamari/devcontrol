@@ -10,6 +10,12 @@ export interface Organization {
   displayName: string | null;
   description: string | null;
   subscriptionTier?: 'free' | 'starter' | 'pro' | 'enterprise';
+  /**
+   * The tier the server's plan gates enforce (backend effectiveTierOf): the
+   * stored tier, or free while the organization is restricted or its grace
+   * period has ended. subscriptionTier stays the plan the organization is on.
+   */
+  effectiveTier?: string;
   createdAt: string;
   updatedAt: string;
 }
