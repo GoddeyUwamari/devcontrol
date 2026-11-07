@@ -130,8 +130,25 @@ export interface CostFindingsEvidence {
   totalEstimatedMonthlySavings: number;
   /** Upper bounds that are not savings estimates, kept apart. */
   totalSavingsCeiling: number;
+  /**
+   * Active findings for idle or unused resources whose figure is a savings
+   * estimate (isIdleEstimate), over every active finding -- not only the
+   * listed ones.
+   */
+  activeIdleEstimates: number;
   /** Active findings, highest estimated savings first. */
   items: CostFindingItem[];
+}
+
+/** An idle or unused resource, by DevControl's finding type ("Idle EC2 Instance", "Unused Elastic IP"...). */
+export function isIdleOrUnusedIssue(issue: string): boolean {
+  const i = issue.toLowerCase();
+  return i.includes('idle') || i.includes('unused');
+}
+
+/** The report's idle-savings figures: an idle or unused resource whose figure is an estimate (never a ceiling). */
+export function isIdleEstimate(rec: { issue: string; savingsBasis: SavingsBasis }): boolean {
+  return isIdleOrUnusedIssue(rec.issue) && rec.savingsBasis === 'estimate';
 }
 
 const COST_FINDING_LIST_CAP = 25;
@@ -218,6 +235,10 @@ export const costFindingsProvider = defineProvider<CostFindingsEvidence>({
             activeBySeverity: bySeverity,
             totalEstimatedMonthlySavings: Math.round(savings.total * 100) / 100,
             totalSavingsCeiling: Math.round(savings.ceilingTotal * 100) / 100,
+            activeIdleEstimates: active.filter((r) => isIdleEstimate({
+              issue: String(r.issue),
+              savingsBasis: classifySavingsBasis(((r.metadata ?? {}) as Record<string, any>).savings_basis) ?? 'unknown',
+            })).length,
             items,
           },
           reason: active.length > COST_FINDING_LIST_CAP

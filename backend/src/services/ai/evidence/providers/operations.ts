@@ -57,6 +57,8 @@ const ALARM_FAILURES: Record<string, EvidenceFailureCode> = {
 
 export const cloudWatchAlarmsProvider = defineProvider<AlarmsEvidence>({
   id: 'ops.cloudwatch_alarms',
+  // System Status is formatted from it as a fact line: filled before the lists.
+  budgetBand: 'fact',
   version: 1,
   title: 'CloudWatch alarms (current state)',
   source: ALARMS_SOURCE,
@@ -212,6 +214,8 @@ export interface CpuTelemetryEvidence {
   latestCheck: { observedAt: string; instances: number } | null;
   /** The 7-day CPU evidence behind each active idle-instance cost finding. */
   idleInstanceEvidence: number;
+  /** Distinct EC2 instances with a CPU reading, over every reading (kept when the list is shortened). */
+  instances: number;
   /** What DevControl stored about telemetry collection; null when nothing is stored. */
   collection: { resourcesTracked: number; resourcesWithDatapoints: number; newestDatapointAt: string | null; lastFullCollectionAt: string | null } | null;
   items: Array<{
@@ -299,6 +303,7 @@ export const cpuTelemetryProvider = defineProvider<CpuTelemetryEvidence>({
         data: {
           latestCheck: evaluation && latest.length > 0 ? { observedAt: evaluation.capturedAt, instances: latest.length } : null,
           idleInstanceEvidence: idle.length,
+          instances: new Set(items.map((i) => i.instanceId)).size,
           collection,
           items,
         },

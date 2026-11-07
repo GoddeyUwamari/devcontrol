@@ -2,13 +2,18 @@
  * The evidence size budget (step1 §2.5). Deterministic: the same results and
  * budget always give the same plan.
  *
- *   - Selected providers are filled in order: priority, then id.
+ *   - Selected providers are filled in order: band ('fact' sections before
+ *     'list' sections, budgetBandOf), then priority, then id.  So a list is
+ *     shortened or left out before any status fact is.
  *   - A provider whose own data is over its cap is summarised (fewer list
  *     items, counts and totals kept) when it can be; otherwise it is cut to its
  *     line, state 'omitted'. The cap measures the provider's data and untrusted
  *     text, not the envelope every section shares.
- *   - A section without data (not built, error, not entitled...) is never cut.
- *   - Once the total budget is reached, later providers keep only their line.
+ *   - A section without data (not built, error, not entitled...) is never cut,
+ *     and it respects the total too: its block is counted only while it fits
+ *     (its line is always counted), so it never pushes the total over.
+ *   - A list over what is left of the total is shortened further to fit it;
+ *     only when even its smallest step does not fit is it cut to its line.
  *   - Every capped provider records `truncation` (kept, total, by), and its
  *     line says so. A provider is never dropped: every line is always printed.
  *
@@ -88,6 +93,13 @@ function carriesData(section: ContextSection<unknown>): boolean {
   return stateCarriesData(section.state) && section.data !== null && section.data !== undefined;
 }
 
+/** A provider's budget band: its own, or 'list' when it can summarise a list, else 'fact'. */
+export function budgetBandOf(def: Pick<ProviderDefinition, 'budgetBand' | 'summarize'> | undefined): 'fact' | 'list' {
+  return def?.budgetBand ?? (def?.summarize ? 'list' : 'fact');
+}
+
+const BAND_ORDER = { fact: 0, list: 1 } as const;
+
 /** Fits one provider under its own cap; returns the result to use and its token cost. */
 function fitProvider(result: ProviderResult, def: ProviderDefinition | undefined): { result: ProviderResult; tokens: number } {
   const maxTokens = def?.maxTokens ?? Number.POSITIVE_INFINITY;
@@ -113,6 +125,30 @@ function fitProvider(result: ProviderResult, def: ProviderDefinition | undefined
   };
 }
 
+/**
+ * A list section over what is left of the total: shortened further (fewer
+ * items, counts and totals kept) until its block fits what is left, or null
+ * when even the smallest step does not fit.
+ */
+function shortenToFit(original: ProviderResult, fitted: ProviderResult, def: ProviderDefinition | undefined, remaining: number): { result: ProviderResult; tokens: number } | null {
+  const data = original.section.data;
+  if (!def?.summarize || data === null || data === undefined) return null;
+  const current = fitted.section.truncation && fitted.mode === 'summarised' ? fitted.section.truncation.kept : Number.POSITIVE_INFINITY;
+  for (const maxItems of SUMMARY_STEPS) {
+    if (maxItems >= current) continue;
+    const summary = def.summarize(data, maxItems);
+    if (!summary) continue;
+    const candidate: ProviderResult = {
+      ...original,
+      section: withTruncation(original.section, { kept: summary.kept, total: summary.total, by: 'total_budget' }, summary.data),
+      mode: 'summarised',
+    };
+    const tokens = estimateTokens(renderProviderBlock(candidate));
+    if (tokens <= remaining) return { result: candidate, tokens };
+  }
+  return null;
+}
+
 export function applyBudget(
   results: readonly ProviderResult[],
   definitions: ReadonlyMap<string, ProviderDefinition>,
@@ -121,15 +157,31 @@ export function applyBudget(
   const order = results
     .map((r, index) => ({ r, index }))
     .filter(({ r }) => r.selected)
-    .sort((a, b) => a.r.priority - b.r.priority || (a.r.id < b.r.id ? -1 : a.r.id > b.r.id ? 1 : 0));
+    .sort((a, b) =>
+      BAND_ORDER[budgetBandOf(definitions.get(a.r.id))] - BAND_ORDER[budgetBandOf(definitions.get(b.r.id))] ||
+      a.r.priority - b.r.priority ||
+      (a.r.id < b.r.id ? -1 : a.r.id > b.r.id ? 1 : 0));
 
   const planned = results.map((r) => ({ ...r, mode: 'header' as const })) as ProviderResult[];
   let used = results.length * LINE_TOKENS;
 
   for (const { r, index } of order) {
     const fitted = fitProvider(r, definitions.get(r.id));
-    // The total budget cuts only a section that carries data; a no-data state keeps its line as it is.
-    if (fitted.result.mode !== 'header' && carriesData(fitted.result.section) && used + fitted.tokens > totalTokens) {
+    // A section without data is never cut (it keeps its state and line), and it
+    // respects the total: its block is counted only while it fits.
+    if (!carriesData(fitted.result.section)) {
+      planned[index] = fitted.result;
+      if (used + fitted.tokens <= totalTokens) used += fitted.tokens;
+      continue;
+    }
+    if (fitted.result.mode !== 'header' && used + fitted.tokens > totalTokens) {
+      // Over what is left of the total: a list is shortened to fit first; cut only when nothing fits.
+      const shorter = shortenToFit(r, fitted.result, definitions.get(r.id), totalTokens - used);
+      if (shorter) {
+        planned[index] = shorter.result;
+        used += shorter.tokens;
+        continue;
+      }
       planned[index] = { ...r, section: cutToLine(r.section, 'total_budget'), mode: 'header' };
       continue;
     }

@@ -7,6 +7,7 @@
 import { Pool } from 'pg';
 import { getModelClient, streamModelText } from './ai/model-client';
 import type { EvidenceBundle } from './ai/evidence/types';
+import type { CpuTelemetryEvidence } from './ai/evidence/providers/operations';
 import { renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
 import {
   CONTEXT_STATE_LABELS,
@@ -746,10 +747,11 @@ ${topSpender ? `Your top cost category is ${topSpender.service} at ${this.format
     if (lastMessage.includes('underutilized') || lastMessage.includes('optimize') || lastMessage.includes('saving')) {
       // CPU utilization is its own evidence source; only a section that carries
       // data says anything about it -- anything else is stated as missing data.
-      const cpu = context.evidence.results.find(r => r.id === 'telemetry.cpu')?.section as ContextSection<{ items: Array<{ instanceId?: string }> }> | undefined;
-      // Distinct instances: one instance can have a reading from the latest check and from an idle finding.
+      const cpu = context.evidence.results.find(r => r.id === 'telemetry.cpu')?.section as ContextSection<Pick<CpuTelemetryEvidence, 'instances'>> | undefined;
+      // The provider's count of distinct instances over every reading, not the
+      // items the budget kept (one instance can have a latest-check and an idle-finding reading).
       const measured = cpu && (cpu.state === 'available' || cpu.state === 'partial') && cpu.data
-        ? new Set(cpu.data.items.map(i => i.instanceId)).size
+        ? cpu.data.instances
         : null;
       const utilizationPhrase = measured !== null && measured > 0
         ? `DevControl has CloudWatch CPU utilization for ${measured} EC2 instance${measured !== 1 ? 's' : ''} (as of ${cpu?.asOf ?? 'unknown'}). Ask again when the AI assistant is available to analyze it.`

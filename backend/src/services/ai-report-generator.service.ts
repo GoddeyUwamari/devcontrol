@@ -39,7 +39,7 @@ import { defaultEvidenceRegistry } from './ai/evidence/providers';
 import { canSeeLines, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
 import type { EvidenceBundle } from './ai/evidence/types';
 import type { ConfigChecksEvidence, AccountFindingsEvidence, RiskScoreEvidence, SecurityHubEvidence } from './ai/evidence/providers/security';
-import type { CostFindingsEvidence, TopEstimatedResources } from './ai/evidence/providers/cost';
+import { isIdleEstimate, type CostFindingsEvidence, type TopEstimatedResources } from './ai/evidence/providers/cost';
 import type { ResourceCounts } from './ai/evidence/providers/inventory';
 import type { AlarmsEvidence, CpuTelemetryEvidence, ResourceHealthEvidence } from './ai/evidence/providers/operations';
 import type { CustomFrameworkScansEvidence, FrameworkEvaluationsEvidence } from './ai/evidence/providers/compliance';
@@ -77,7 +77,10 @@ export interface IdleResourceRecommendations {
    * type whose price is unknown (metadata.price_source), not a price.
    */
   items: Array<{ resourceId: string; resourceType: string; issue: string; estimatedMonthlySavings: number; priceKnown: boolean }>;
+  /** Of the listed items only. */
   totalEstimatedMonthlySavings: number;
+  /** Every active idle or unused-resource recommendation with a savings estimate; items.length < activeIdle means a top-N subset. */
+  activeIdle: number;
 }
 
 /** The evidence one report is written from. A section absent here was not requested for this report type. */
@@ -363,6 +366,11 @@ function money(amount: number): string {
 function round(value: number, places: number): number {
   const f = 10 ** places;
   return Math.round(value * f) / f;
+}
+
+/** The listed idle recommendations are a top-N subset of the active ones. */
+function idleSubset(recs: IdleResourceRecommendations): boolean {
+  return recs.items.length < recs.activeIdle;
 }
 
 /** A section without evidence, in a sentence: one left out for its size says so, never "not available". */
@@ -683,7 +691,9 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
         : '';
       const costRecommendations: string[] = [];
       if (recsWithItems) {
-        costRecommendations.push(`Review ${recsWithItems.items.length} active recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
+        costRecommendations.push(idleSubset(recsWithItems)
+          ? `Review the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} idle recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for these ${recsWithItems.items.length}; a DevControl estimate, not realized savings).`
+          : `Review ${recsWithItems.items.length} active recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
       } else if (recs && !hasEvidence(recs)) {
         costRecommendations.push(missingSentence('Cost recommendations', recs, `Cost recommendations are not available: ${unavailablePhrase(recs)}.`));
       }
@@ -691,11 +701,16 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     }
 
     if (recsWithItems) {
-      highlights.push(`Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from idle or unused resources (a DevControl estimate, not realized savings).`);
+      const subset = idleSubset(recsWithItems);
+      highlights.push(subset
+        ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} idle recommendations (a DevControl estimate, not realized savings).`
+        : `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from idle or unused resources (a DevControl estimate, not realized savings).`);
       topRecommendations.push({
         title: 'Review idle or unused resources',
         impact: 'medium',
-        description: `${recsWithItems.items.length} active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.`,
+        description: subset
+          ? `The top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} idle recommendations flag idle or unused resources; the savings figure covers these ${recsWithItems.items.length}. Savings are DevControl estimates, not realized savings.`
+          : `${recsWithItems.items.length} active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.`,
         estimatedSavings: recsWithItems.totalEstimatedMonthlySavings,
         effort: 'low',
       });
@@ -899,17 +914,17 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       classification: 'estimated' as const,
       scope: findings.scope,
       period: { kind: 'point_in_time' } as EvidencePeriod,
-      coverage: 'the 10 active recommendations with the highest estimated savings, filtered to idle or unused resources',
+      coverage: 'the active idle or unused-resource recommendations with the highest estimated savings (at most 5); activeIdle counts every active one, and the savings total covers the listed ones only',
     };
     if (!hasEvidence(findings)) {
       // The source's own state and reason (omitted stays omitted, with OMITTED_REASON).
       return Promise.resolve({ ...findings, source: meta.source, coverage: meta.coverage, data: null });
     }
     return collectSection<IdleResourceRecommendations>(meta, async () => {
+      // The listed findings are the highest-savings ones, so the first idle ones
+      // among them are the top idle recommendations overall.
       const items = findings.data.items
-        .slice(0, 10)
-        .filter(rec => rec.issue.toLowerCase().includes('idle') || rec.issue.toLowerCase().includes('unused'))
-        .filter(rec => rec.savingsBasis === 'estimate')
+        .filter(isIdleEstimate)
         .slice(0, 5)
         .map(rec => ({
           resourceId: rec.resourceId,
@@ -922,7 +937,11 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       return {
         state: 'available',
         asOf: findings.asOf,
-        data: { items, totalEstimatedMonthlySavings: round(items.reduce((sum, i) => sum + i.estimatedMonthlySavings, 0), 2) },
+        data: {
+          items,
+          totalEstimatedMonthlySavings: round(items.reduce((sum, i) => sum + i.estimatedMonthlySavings, 0), 2),
+          activeIdle: Math.max(findings.data.activeIdleEstimates, items.length),
+        },
         // An empty list is only "none recorded", never "nothing can be saved".
         // A default figure (priceKnown false) is never a known price (PR 4, S4).
         reason: items.some((i) => !i.priceKnown)

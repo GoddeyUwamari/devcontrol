@@ -55,8 +55,18 @@ export interface ProviderDefinition<T = unknown> {
   /** Data-source inventory ids (data-sources.ts) this provider covers. */
   dataSourceIds: string[];
   topics: EvidenceTopic[];
-  /** Budget order: 1 first. Also the default load set when no topic matched. */
+  /** Budget order within its band: 1 first. Also the default load set when no topic matched. */
   priority: 1 | 2 | 3;
+  /**
+   * Budget band. 'fact': a small status section, or one a consumer formats as
+   * a fact line (System Status, Top Risk, the security and health lines...).
+   * 'list': a large list section (cost findings, the region list...). Every
+   * 'fact' section is filled into the total budget before any 'list' section,
+   * so lists are shortened or left out before a status fact is. One budget:
+   * no section is exempt. Default: 'list' when the provider can summarise a
+   * list, otherwise 'fact'.
+   */
+  budgetBand?: 'fact' | 'list';
   /** Cap on this provider's rendered evidence, in estimated tokens. */
   maxTokens: number;
   /** Plan gate: a key of PLAN_ENTITLEMENTS. Absent = no plan gate. */

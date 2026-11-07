@@ -180,6 +180,12 @@ describe('ops.resource_health and telemetry.cpu never start a sweep', () => {
       state: 'available', classification: 'measured',
       data: { latestCheck: { instances: 1 }, items: [{ instanceId: 'i-0123456789abcdef0', basis: 'latest_check_last_hour', cpuPercent: 3.4 }] },
     });
+
+    // The same instance with an idle-finding reading too: two readings, one distinct instance.
+    const idleRec = { id: 'r1', resource_id: 'i-0123456789abcdef0', resource_name: 'web', resource_type: 'EC2', issue: 'Idle EC2 Instance', potential_savings: 30, severity: 'MEDIUM', status: 'ACTIVE', metadata: { savings_basis: 'estimated: list price', average_cpu: 1.2, cpu_evidence: { window_end: '2026-11-06T05:00:00.000Z' } } };
+    const both = await collectProvider(cpuTelemetryProvider, ctx(sources({ costRecommendations: { findAll: async () => [idleRec] } })));
+    expect((both.data as { items: unknown[] }).items).toHaveLength(2);
+    expect(both.data).toMatchObject({ instances: 1, idleInstanceEvidence: 1 });
   });
 });
 
@@ -209,6 +215,7 @@ describe('cost', () => {
       data: { outcome: 'found', lifecycle: { active: 1, dismissed: 2, resolved: 0 }, items: [{ savingsBasis: 'estimate', priceKnown: false, cpuEvidence: { averageCpuPercent: 1.2, daysAnalyzed: 7 } }] },
     });
     expect(JSON.stringify(s.data)).not.toContain('<script>');
+    expect(s.data).toMatchObject({ activeIdleEstimates: 1 });
 
     mockDb.answer = (sql) => (/GROUP BY status/.test(sql) ? { rows: [] } : undefined);
     const none = await collectProvider(costFindingsProvider, ctx(sources({ costRecommendations: { findAll: async () => [] } })));
@@ -219,6 +226,19 @@ describe('cost', () => {
       costRecommendations: { findAll: async () => [] },
     });
     expect(await collectProvider(costFindingsProvider, ctx(noRun))).toMatchObject({ state: 'unavailable', data: null });
+  });
+
+  it('re-review 2 M3: cost.findings counts every active idle estimate, not only the 25 listed', async () => {
+    const recs = [
+      ...Array.from({ length: 27 }, (_, i) => ({ id: `idle${i}`, resource_id: `i-${i}`, resource_name: null, resource_type: 'EC2', issue: i % 2 ? 'Idle EC2 Instance' : 'Unused Elastic IP', potential_savings: 100 - i, severity: 'MEDIUM', status: 'ACTIVE', metadata: { savings_basis: 'estimated: list price' } })),
+      { id: 'ceil', resource_id: 'i-c', resource_name: null, resource_type: 'EC2', issue: 'Idle EC2 Instance', potential_savings: 5, severity: 'LOW', status: 'ACTIVE', metadata: { savings_basis: 'ceiling: full instance cost' } },
+      { id: 'rds1', resource_id: 'db-1', resource_name: null, resource_type: 'RDS', issue: 'Oversized RDS Instance', potential_savings: 4, severity: 'LOW', status: 'ACTIVE', metadata: { savings_basis: 'estimated: list price' } },
+    ];
+    mockDb.answer = (sql) => (/GROUP BY status/.test(sql) ? { rows: [{ status: 'ACTIVE', n: String(recs.length) }] } : undefined);
+    const s = await collectProvider(costFindingsProvider, ctx(sources({ costRecommendations: { findAll: async () => recs } })));
+    expect((s.data as { items: unknown[] }).items).toHaveLength(25);
+    // 27 idle or unused with an estimate; the ceiling one and the rightsizing one are not counted.
+    expect(s.data).toMatchObject({ activeIdleEstimates: 27 });
   });
 });
 

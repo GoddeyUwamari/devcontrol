@@ -13,6 +13,10 @@
 import { Pool } from 'pg';
 import { AIChatService, ChatContext, COMPARISON_BASIS, ContextSection, InventoryResources } from '../ai-chat.service';
 import { chatCosts, evidenceBundle } from './chat-context-fixtures';
+import { collectSection } from '../ai-context-contract';
+import { collectEvidence, EvidenceRegistry } from '../ai/evidence/registry';
+import { cpuTelemetryProvider, type CpuTelemetryEvidence } from '../ai/evidence/providers/operations';
+import { CHAT_EVIDENCE_BUDGET_TOKENS } from '../../repositories/ai-chat-context.repository';
 
 const pool = {} as Pool; // AIChatService's constructor stores it but never queries it directly
 
@@ -315,7 +319,7 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     const withCpu = baseContext();
     withCpu.evidence = evidenceBundle({
       ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])),
-      'telemetry.cpu': section('available', { items: [{ ref: 'u1', instanceId: 'i-1234567890abcdef0' }, { ref: 'u2', instanceId: 'i-0123456789abcdef0' }] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
+      'telemetry.cpu': section('available', { instances: 2, items: [{ ref: 'u1', instanceId: 'i-1234567890abcdef0' }, { ref: 'u2', instanceId: 'i-0123456789abcdef0' }] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
     });
     const response = await fallbackFor('Which instances are underutilized?', withCpu);
 
@@ -326,7 +330,8 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     const withCpu = baseContext();
     withCpu.evidence = evidenceBundle({
       ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])),
-      'telemetry.cpu': section('available', { items: [
+      // The provider counts distinct instances (providers.test.ts); the line states its count.
+      'telemetry.cpu': section('available', { instances: 1, items: [
         { ref: 'u1', instanceId: 'i-1234567890abcdef0', basis: 'latest_check_last_hour', cpuPercent: 2 },
         { ref: 'u2', instanceId: 'i-1234567890abcdef0', basis: 'idle_finding_7_day_average', cpuPercent: 1.5 },
       ] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
@@ -334,6 +339,28 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     const response = await fallbackFor('Which instances are underutilized?', withCpu);
 
     expect(response).toContain(`DevControl has CloudWatch CPU utilization for 1 EC2 instance (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+  });
+
+  it('re-review 2 L7: a CPU list the chat budget shortened still states every instance (60, not the kept items)', async () => {
+    const items: CpuTelemetryEvidence['items'] = Array.from({ length: 60 }, (_, i) => ({
+      ref: `u${i + 1}`, instanceId: `i-${(0x10000000000000 + i).toString(16).padStart(17, '0')}`, basis: 'latest_check_last_hour', cpuPercent: 2 + (i % 5), observedAt: ALARMS_AS_OF, datapointsObserved: null, datapointsExpected: null,
+    }));
+    const registry = new EvidenceRegistry().register({
+      ...cpuTelemetryProvider,
+      collect: async () => collectSection<CpuTelemetryEvidence>({ source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', classification: 'measured' }, async () => ({
+        state: 'available', asOf: ALARMS_AS_OF,
+        data: { latestCheck: { observedAt: ALARMS_AS_OF, instances: 60 }, idleInstanceEvidence: 0, instances: 60, collection: null, items },
+      })),
+    });
+    const bundle = await collectEvidence(registry, { organizationId: '00000000-0000-4000-8000-0000000000c7', consumer: 'test', select: { providerIds: ['telemetry.cpu'] }, budgetTokens: CHAT_EVIDENCE_BUDGET_TOKENS });
+    const cpu = bundle.results.find((r) => r.id === 'telemetry.cpu')!;
+    expect(cpu.mode).toBe('summarised');
+    expect((cpu.section.data as CpuTelemetryEvidence).items.length).toBeLessThan(60);
+
+    const withCpu = baseContext();
+    withCpu.evidence = evidenceBundle({ ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])), 'telemetry.cpu': cpu.section });
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 60 EC2 instances (as of ${ALARMS_AS_OF}).`);
   });
 
   it('L3: the Active alerts line says "at least" for a capped read, never otherwise; "1 CloudWatch alarm" singular', async () => {

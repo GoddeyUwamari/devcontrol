@@ -86,7 +86,7 @@ export const SUMMARY_PROVIDERS = [
 ] as const;
 
 /** Expressed as the fact lines below, so the generic evidence block leaves out their data. */
-const SUMMARY_FACT_PROVIDERS = [
+export const SUMMARY_FACT_PROVIDERS = [
   'system.intelligence',
   'security.posture_counts',
   'security.top_risk',
