@@ -148,7 +148,7 @@ describe('H1 part 1: 25 active cost findings keep their evidence', () => {
     expect(idle.state).toBe('available');
     // All 25 are idle, so the 5 listed are the top 5 of 25 (re-review 2 M3).
     expect(generated.costAnalysis?.recommendations).toEqual([
-      'Review the top 5 of 25 idle recommendations for idle or unused resources (estimated potential savings of $72.50/month for these 5; a DevControl estimate, not realized savings).',
+      'Review the top 5 of 25 recommendations for idle or unused resources (estimated potential savings of $72.50/month for these 5; a DevControl estimate, not realized savings).',
     ]);
     expect(generated.topRecommendations.map((r) => r.title)).toContain('Review idle or unused resources');
   });
@@ -196,6 +196,8 @@ describe('H1 part 2: a section cut to its line is "not included in this answer (
       expect(prompt).toMatch(/- \[cost\.findings\] Cost findings \(savings opportunities\): not included in this answer \(too large\)\./);
       expect(prompt).toMatch(/### Active idle\/unused-resource recommendations\n\{[^\n]*"state":"omitted"[^\n]*"data":null\}/);
       expect(generated.costAnalysis?.recommendations).toEqual(['Cost recommendations: not included in this answer (too large).']);
+      // The prompt header lists the omitted state with its meaning.
+      expect(prompt).toContain('/ not_built / omitted; omitted means the section had data but it was not included in this answer because of its size, never that it is zero, none, or not available), whether');
       expect(JSON.stringify(generated)).not.toMatch(/is not available: DevControl cost recommendations is not available/);
     } finally {
       restore();
@@ -437,7 +439,7 @@ describe('re-review 2 M3: the report idle figures say when they are a top-N subs
     }));
   }
 
-  it('25 findings, 13 idle worth $494/month: "the top 5 of 13 idle recommendations", savings for those 5', async () => {
+  it('25 findings, 13 idle worth $494/month: "the top 5 of 13 recommendations for idle or unused resources", savings for those 5', async () => {
     const items = mixedItems();
     expect(items.filter((i) => i.issue.startsWith('Idle')).reduce((sum, i) => sum + i.estimatedMonthlySavings, 0)).toBe(494);
     stubProviders(25, {
@@ -450,11 +452,11 @@ describe('re-review 2 M3: the report idle figures say when they are a top-N subs
     console.info(`[M3] report fallback: ${JSON.stringify(generated.costAnalysis?.recommendations)} | highlight: ${generated.keyHighlights.find((h) => h.includes('idle'))} | top: ${JSON.stringify(generated.topRecommendations.find((r) => r.title === 'Review idle or unused resources'))}`);
     expect(data.sections.idleResourceRecommendations).toMatchObject({ state: 'available', data: { activeIdle: 13, totalEstimatedMonthlySavings: 230 } });
     expect(generated.costAnalysis?.recommendations).toEqual([
-      'Review the top 5 of 13 idle recommendations for idle or unused resources (estimated potential savings of $230.00/month for these 5; a DevControl estimate, not realized savings).',
+      'Review the top 5 of 13 recommendations for idle or unused resources (estimated potential savings of $230.00/month for these 5; a DevControl estimate, not realized savings).',
     ]);
-    expect(generated.keyHighlights).toContain('Estimated potential savings of $230.00/month from the top 5 of 13 idle recommendations (a DevControl estimate, not realized savings).');
+    expect(generated.keyHighlights).toContain('Estimated potential savings of $230.00/month from the top 5 of 13 recommendations for idle or unused resources (a DevControl estimate, not realized savings).');
     expect(generated.topRecommendations.find((r) => r.title === 'Review idle or unused resources')).toMatchObject({
-      description: 'The top 5 of 13 idle recommendations flag idle or unused resources; the savings figure covers these 5. Savings are DevControl estimates, not realized savings.',
+      description: 'The top 5 of 13 recommendations flag idle or unused resources; the savings figure covers these 5. Savings are DevControl estimates, not realized savings.',
       estimatedSavings: 230,
     });
   });

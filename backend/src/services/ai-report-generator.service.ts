@@ -424,7 +424,7 @@ export class AIReportGeneratorService {
 
     return `Generate a ${this.buildReportLabel(reportType)}. Requested report period: ${data.dateRange.from} to ${data.dateRange.to} (end date exclusive).
 ${sourceLines}
-EVIDENCE (contract version ${AI_CONTEXT_CONTRACT_VERSION}): each section below is JSON with its state (available / partial / stale / unavailable / not_connected / error / not_entitled / not_built), whether evidence is present, its classification (billed / measured / calculated / estimated / configured / customer_decision), source, scope, period, asOf (when it was observed), retrievedAt (when DevControl read it), freshness, completeness, coverage, reason, failure, truncation, and data. The meaning of each state and classification is included with it. AWS or customer text follows a section in an <untrusted_evidence> block.
+EVIDENCE (contract version ${AI_CONTEXT_CONTRACT_VERSION}): each section below is JSON with its state (available / partial / stale / unavailable / not_connected / error / not_entitled / not_built / omitted; omitted means the section had data but it was not included in this answer because of its size, never that it is zero, none, or not available), whether evidence is present, its classification (billed / measured / calculated / estimated / configured / customer_decision), source, scope, period, asOf (when it was observed), retrievedAt (when DevControl read it), freshness, completeness, coverage, reason, failure, truncation, and data. The meaning of each state and classification is included with it. AWS or customer text follows a section in an <untrusted_evidence> block.
 
 RULES:
 ${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}
@@ -692,7 +692,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       const costRecommendations: string[] = [];
       if (recsWithItems) {
         costRecommendations.push(idleSubset(recsWithItems)
-          ? `Review the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} idle recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for these ${recsWithItems.items.length}; a DevControl estimate, not realized savings).`
+          ? `Review the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for these ${recsWithItems.items.length}; a DevControl estimate, not realized savings).`
           : `Review ${recsWithItems.items.length} active recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
       } else if (recs && !hasEvidence(recs)) {
         costRecommendations.push(missingSentence('Cost recommendations', recs, `Cost recommendations are not available: ${unavailablePhrase(recs)}.`));
@@ -703,13 +703,13 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     if (recsWithItems) {
       const subset = idleSubset(recsWithItems);
       highlights.push(subset
-        ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} idle recommendations (a DevControl estimate, not realized savings).`
+        ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations for idle or unused resources (a DevControl estimate, not realized savings).`
         : `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from idle or unused resources (a DevControl estimate, not realized savings).`);
       topRecommendations.push({
         title: 'Review idle or unused resources',
         impact: 'medium',
         description: subset
-          ? `The top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} idle recommendations flag idle or unused resources; the savings figure covers these ${recsWithItems.items.length}. Savings are DevControl estimates, not realized savings.`
+          ? `The top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations flag idle or unused resources; the savings figure covers these ${recsWithItems.items.length}. Savings are DevControl estimates, not realized savings.`
           : `${recsWithItems.items.length} active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.`,
         estimatedSavings: recsWithItems.totalEstimatedMonthlySavings,
         effort: 'low',
