@@ -541,18 +541,28 @@ describe('AI Reports deterministic fallback', () => {
 });
 
 describe('AI Reports deterministic fallback -- approved copy (AI truth PR 2, founder §L)', () => {
-  it('states account-level findings with the counts, and the ones the team marked', async () => {
+  async function findingsHighlight(dispositions: { dismissed: number; accepted_risk: number }): Promise<string[]> {
     const section = await collectSection({ source: 'DevControl account-level security findings (security groups, IAM)' }, async () => ({
       state: 'available' as const,
       data: {
-        outcome: 'found', total: 2, bySeverity: { critical: 1, high: 1, medium: 0, low: 0 },
-        byDisposition: { open: 1, acknowledged: 0, dismissed: 0, accepted_risk: 1 }, byCategory: { networking: 2 }, items: [],
+        outcome: 'found', total: 3, bySeverity: { critical: 1, high: 2, medium: 0, low: 0 },
+        byDisposition: { open: 3 - dispositions.dismissed - dispositions.accepted_risk, acknowledged: 0, ...dispositions }, byCategory: { networking: 3 }, items: [],
       },
     }));
     const data: ReportData = { organizationId: ORG, reportType: 'security_insights', dateRange: RANGE, sections: { accountSecurityFindings: section as never } };
     const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'security_insights');
-    expect(report.keyHighlights).toContain(
-      "DevControl's account-level checks (security groups, IAM) found 2 active findings (1 critical, 1 high, 0 medium, 0 low); 1 of these are marked as accepted risk or dismissed by your team."
+    return report.keyHighlights;
+  }
+
+  it('states account-level findings with the counts, and the one the team marked ("is" for one)', async () => {
+    expect(await findingsHighlight({ dismissed: 0, accepted_risk: 1 })).toContain(
+      "DevControl's account-level checks (security groups, IAM) found 3 active findings (1 critical, 2 high, 0 medium, 0 low); 1 of these is marked as accepted risk or dismissed by your team."
+    );
+  });
+
+  it('states account-level findings with the counts, and the ones the team marked ("are" for more than one)', async () => {
+    expect(await findingsHighlight({ dismissed: 1, accepted_risk: 1 })).toContain(
+      "DevControl's account-level checks (security groups, IAM) found 3 active findings (1 critical, 2 high, 0 medium, 0 low); 2 of these are marked as accepted risk or dismissed by your team."
     );
   });
 });
