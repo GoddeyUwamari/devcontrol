@@ -93,6 +93,20 @@ function carriesData(section: ContextSection<unknown>): boolean {
   return stateCarriesData(section.state) && section.data !== null && section.data !== undefined;
 }
 
+/**
+ * Each budgeted result's section as collected, before the budget shortened or
+ * cut it. Kept outside the result objects (a WeakMap keyed by the result), so
+ * JSON.stringify, a spread or a response body can never include it. Read only
+ * by consumers that make no model call (the chat fallback), to which size does
+ * not apply -- through collectedSectionOf().
+ */
+const COLLECTED = new WeakMap<ProviderResult, ContextSection<unknown>>();
+
+/** The section as collected, before the budget; undefined for a result the budget did not plan. */
+export function collectedSectionOf<T>(result: ProviderResult | undefined): ContextSection<T> | undefined {
+  return result ? (COLLECTED.get(result) as ContextSection<T> | undefined) : undefined;
+}
+
 /** A provider's budget band: its own, or 'list' when it can summarise a list, else 'fact'. */
 export function budgetBandOf(def: Pick<ProviderDefinition, 'budgetBand' | 'summarize'> | undefined): 'fact' | 'list' {
   return def?.budgetBand ?? (def?.summarize ? 'list' : 'fact');
@@ -188,6 +202,8 @@ export function applyBudget(
     planned[index] = fitted.result;
     used += fitted.tokens;
   }
-  // Each result keeps its section as collected, for consumers that make no model call.
-  return { results: planned.map((p, i) => ({ ...p, collected: results[i].section })), usedTokens: used };
+  // Each result's section as collected, outside the result object (COLLECTED).
+  const out = planned.map((p) => ({ ...p }));
+  out.forEach((p, i) => COLLECTED.set(p, results[i].section));
+  return { results: out, usedTokens: used };
 }

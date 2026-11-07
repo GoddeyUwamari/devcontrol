@@ -30,10 +30,10 @@ jest.mock('../../../../config/database', () => {
 import { collectSection, notBuilt, type ContextSection } from '../../../ai-context-contract';
 import { defaultEvidenceRegistry } from '../providers';
 import { costFindingsProvider, type CostFindingsEvidence, type CostFindingItem } from '../providers/cost';
-import { budgetBandOf, dataTokens } from '../budget';
+import { budgetBandOf, collectedSectionOf, dataTokens } from '../budget';
 import { collectEvidence, EvidenceRegistry } from '../registry';
 import { topicsForConversation } from '../select';
-import { CHAT_CORE_PROVIDERS, CHAT_EVIDENCE_BUDGET_TOKENS } from '../../../../repositories/ai-chat-context.repository';
+import { AIChatContextRepository, CHAT_CORE_PROVIDERS, CHAT_EVIDENCE_BUDGET_TOKENS } from '../../../../repositories/ai-chat-context.repository';
 import { createEvidenceBasis, type BasisSources } from '../basis';
 import { AISummaryService, SUMMARY_EVIDENCE_BUDGET_TOKENS, SUMMARY_FACT_PROVIDERS, SUMMARY_PROVIDERS } from '../../../ai-summary.service';
 import { AIInsightsService } from '../../../ai-insights.service';
@@ -479,7 +479,7 @@ function largeAccountSections(): Record<string, () => Promise<ContextSection<unk
   // asOf: the scan time, or (live: true) a current read, for sources with a short freshness rule.
   const available = <T>(source: string, data: T, extra: Record<string, unknown> = {}, live = false) =>
     () => collectSection<T>({ source, classification: 'measured', scope: { kind: 'aws_account_region', connectedAccountId: ACCOUNT, region: 'us-east-1' } }, async () => ({ state: 'available', asOf: live ? new Date().toISOString() : SCANNED_AT, data, ...extra })) as Promise<ContextSection<unknown>>;
-  const instance = (i: number) => `i-${(0x0a1b2c3d4e5f6000 + i).toString(16).slice(0, 17).padStart(17, '0')}`;
+  const instance = (i: number) => instanceId(i);
   return {
     ...base,
     'coverage.regions': () => collectSection({
@@ -556,5 +556,83 @@ describe('re-review 3 M4: a large account keeps Security Hub, Operational Health
       expect([id, r.selected, r.section.state]).toEqual([id, true, 'available']);
     }
     expect(bundle.budget.usedTokens).toBeLessThanOrEqual(20_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Re-review 4: the pre-budget copy never leaves the server, and the chat
+// model prompt (the real gatherContext + formatContext) never reads it.
+// ---------------------------------------------------------------------------
+
+const LARGE_QUESTION = 'What are my biggest security risks, which alarms are firing, and where can I save money?';
+const instanceId = (i: number) => `i-0a1b2c3d4${String(i).padStart(8, '0')}`;
+/** Items the chat budget shortens away for the large account (kept: CPU 25/60, account findings 25/48, Security Hub 10/25). */
+const DROPPED_MARKERS = [instanceId(59), 'on port 67', 'EC2.25 security groups'];
+const KEPT_MARKERS = [instanceId(0), 'on port 20', 'EC2.1 security groups'];
+
+describe('re-review 4: the pre-budget copy is outside every serialized object', () => {
+  it('JSON.stringify, Object.keys and a spread of a bundle or result never include it; only collectedSectionOf reads it', async () => {
+    stubProviders(25, largeAccountSections());
+    const bundle = await collectEvidence(defaultEvidenceRegistry(), {
+      organizationId: ORG, consumer: 'ai_chat',
+      select: { topics: topicsForConversation([{ role: 'user', content: LARGE_QUESTION }]), providerIds: [...CHAT_CORE_PROVIDERS] },
+      budgetTokens: CHAT_EVIDENCE_BUDGET_TOKENS,
+    });
+    const cpu = bundle.results.find((r) => r.id === 'telemetry.cpu')!;
+    expect(cpu.mode).toBe('summarised');
+    // The copy exists and is complete...
+    expect((collectedSectionOf<{ items: unknown[] }>(cpu)!.data!).items).toHaveLength(60);
+    // ...and nothing that serializes the bundle carries it.
+    const serialized = JSON.stringify(bundle);
+    for (const marker of DROPPED_MARKERS) expect([marker, serialized.includes(marker)]).toEqual([marker, false]);
+    for (const marker of KEPT_MARKERS) expect([marker, serialized.includes(marker)]).toEqual([marker, true]);
+    expect(serialized).not.toContain('collected');
+    for (const r of bundle.results) expect(Object.keys(r)).not.toContain('collected');
+    expect(JSON.stringify({ ...cpu })).not.toContain(instanceId(59));
+    expect(JSON.stringify(structuredClone(bundle))).not.toContain(instanceId(59));
+  });
+});
+
+describe('re-review 4 L10: the real gatherContext hands the chat prompt the budgeted sections only', () => {
+  it('a large account: shortened-away items are absent from the formatted chat context, kept ones present', async () => {
+    stubProviders(25, largeAccountSections());
+    const available = (data: unknown) => collectSection({ source: 'fixture' }, async () => ({ state: 'available' as const, asOf: SCANNED_AT, data }));
+    jest.spyOn(AIChatContextRepository.prototype, 'gatherInventoryBasis').mockImplementation(async () => ({
+      discovery: await available({ completedAt: SCANNED_AT }),
+      account: await available({ accountId: ACCOUNT, region: 'us-east-1' }),
+      inventoryScope: { kind: 'resource_inventory', connectedAccountId: ACCOUNT, discoveryRegion: 'us-east-1' },
+    }) as never);
+    jest.spyOn(AIChatContextRepository.prototype, 'collectCosts').mockImplementation(async () => chatCosts({
+      state: 'unavailable', source: 'unavailable', current: null, asOf: null, period: null, scope: null, topSpenders: null,
+      costExplorer: { state: 'unavailable', reason: null }, estimateCoverage: null,
+      comparison: { state: 'unavailable', note: null, currentWindow: null, previousWindow: null, currentWindowTotal: null, previousWindowTotal: null, changeAmount: null, changePercent: null, coverage: null, currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS },
+    }) as never);
+
+    const context = await new AIChatContextRepository({} as never).gatherContext(ORG, [{ role: 'user', content: LARGE_QUESTION }]);
+    const cpu = context.evidence.results.find((r) => r.id === 'telemetry.cpu')!;
+    expect([cpu.mode, cpu.section.truncation?.kept, cpu.section.truncation?.total]).toEqual(['summarised', 25, 60]);
+
+    const prompt: string = (new AIChatService({} as never) as unknown as { formatContext(c: ChatContext): string }).formatContext(context);
+    for (const marker of DROPPED_MARKERS) expect([marker, prompt.includes(marker)]).toEqual([marker, false]);
+    for (const marker of KEPT_MARKERS) expect([marker, prompt.includes(marker)]).toEqual([marker, true]);
+  });
+});
+
+describe('re-review 4 N7: one listed of several idle recommendations', () => {
+  it('"Review the top one of 13 recommendations … for this one"', async () => {
+    const items = findingItems(1).map((i) => ({ ...i, estimatedMonthlySavings: 50 }));
+    stubProviders(1, {
+      'cost.findings': () => collectSection<CostFindingsEvidence>({ source: 'DevControl cost findings', classification: 'estimated' }, async () => ({
+        state: 'available', asOf: SCANNED_AT,
+        data: { outcome: 'found', lifecycle: { active: 13, resolved: 0, dismissed: 0 }, activeBySeverity: { high: 0, medium: 13, low: 0 }, totalEstimatedMonthlySavings: 494, totalSavingsCeiling: 0, activeIdleEstimates: 13, items },
+      })) as Promise<ContextSection<unknown>>,
+    });
+    const { generated } = await report();
+    expect(generated.costAnalysis?.recommendations).toEqual([
+      'Review the top one of 13 recommendations for idle or unused resources (estimated potential savings of $50.00/month for this one; a DevControl estimate, not realized savings).',
+    ]);
+    expect(generated.keyHighlights).toContain('Estimated potential savings of $50.00/month from the top one of 13 recommendations for idle or unused resources (a DevControl estimate, not realized savings).');
+    expect(generated.topRecommendations.find((r) => r.title === 'Review idle or unused resources')?.description)
+      .toBe('The top one of 13 recommendations flags idle or unused resources; the savings figure covers this one. Savings are DevControl estimates, not realized savings.');
   });
 });

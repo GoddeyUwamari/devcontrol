@@ -230,6 +230,36 @@ export async function collectEvidence(registry: EvidenceRegistry, options: Colle
   return bundle;
 }
 
+/** One provider in a bundle summary: its id, state, fixed reason, source, as-of and counts. Never data or free text. */
+export interface ProviderSummary {
+  id: string;
+  state: ContextSection<unknown>['state'];
+  reason: string | null;
+  source: string;
+  asOf: string | null;
+  /** Items kept and total, when the provider or the budget already counted them; else null. */
+  counts: { kept: number; total: number } | null;
+}
+
+/**
+ * A bundle as a small per-provider summary, for a response body (GET
+ * /api/ai-chat/context). No evidence data, no untrusted (AWS or customer)
+ * text, no pre-budget copy: only what DevControl's own code wrote.
+ */
+export function summarizeBundle(bundle: EvidenceBundle): { retrievedAt: string; providers: ProviderSummary[] } {
+  return {
+    retrievedAt: bundle.retrievedAt,
+    providers: bundle.results.map((r) => ({
+      id: r.id,
+      state: r.section.state,
+      reason: r.section.reason ?? null,
+      source: r.section.source,
+      asOf: r.section.asOf ?? null,
+      counts: r.section.truncation ? { kept: r.section.truncation.kept, total: r.section.truncation.total } : null,
+    })),
+  };
+}
+
 /** A provider's section from a bundle; throws if the id is not registered (a programming error). */
 export function sectionOf<T>(bundle: EvidenceBundle, id: string): ContextSection<T> {
   const result = bundle.results.find((r) => r.id === id);

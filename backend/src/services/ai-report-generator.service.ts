@@ -368,6 +368,20 @@ function round(value: number, places: number): number {
   return Math.round(value * f) / f;
 }
 
+/** "the top 5 of 13", or "the top one of 13" when one is listed. */
+function topOf(recs: IdleResourceRecommendations): string {
+  return `the top ${recs.items.length === 1 ? 'one' : recs.items.length} of ${recs.activeIdle}`;
+}
+
+/** "these 5", or "this one". */
+function theseListed(recs: IdleResourceRecommendations): string {
+  return recs.items.length === 1 ? 'this one' : `these ${recs.items.length}`;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /** The listed idle recommendations are a top-N subset of the active ones. */
 function idleSubset(recs: IdleResourceRecommendations): boolean {
   return recs.items.length < recs.activeIdle;
@@ -692,7 +706,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       const costRecommendations: string[] = [];
       if (recsWithItems) {
         costRecommendations.push(idleSubset(recsWithItems)
-          ? `Review the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for these ${recsWithItems.items.length}; a DevControl estimate, not realized savings).`
+          ? `Review ${topOf(recsWithItems)} recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for ${theseListed(recsWithItems)}; a DevControl estimate, not realized savings).`
           : `Review ${recsWithItems.items.length} active recommendation${recsWithItems.items.length !== 1 ? 's' : ''} for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
       } else if (recs && !hasEvidence(recs)) {
         costRecommendations.push(missingSentence('Cost recommendations', recs, `Cost recommendations are not available: ${unavailablePhrase(recs)}.`));
@@ -703,13 +717,13 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     if (recsWithItems) {
       const subset = idleSubset(recsWithItems);
       highlights.push(subset
-        ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from the top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations for idle or unused resources (a DevControl estimate, not realized savings).`
+        ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from ${topOf(recsWithItems)} recommendations for idle or unused resources (a DevControl estimate, not realized savings).`
         : `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from idle or unused resources (a DevControl estimate, not realized savings).`);
       topRecommendations.push({
         title: 'Review idle or unused resources',
         impact: 'medium',
         description: subset
-          ? `The top ${recsWithItems.items.length} of ${recsWithItems.activeIdle} recommendations flag idle or unused resources; the savings figure covers these ${recsWithItems.items.length}. Savings are DevControl estimates, not realized savings.`
+          ? `${capitalize(topOf(recsWithItems))} recommendations ${recsWithItems.items.length === 1 ? 'flags' : 'flag'} idle or unused resources; the savings figure covers ${theseListed(recsWithItems)}. Savings are DevControl estimates, not realized savings.`
           : `${recsWithItems.items.length} active DevControl recommendation${recsWithItems.items.length !== 1 ? 's flag' : ' flags'} idle or unused resources. Savings are DevControl estimates, not realized savings.`,
         estimatedSavings: recsWithItems.totalEstimatedMonthlySavings,
         effort: 'low',

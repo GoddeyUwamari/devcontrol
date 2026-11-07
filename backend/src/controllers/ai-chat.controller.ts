@@ -8,6 +8,7 @@ import { Pool } from 'pg';
 import { AIChatService, ChatMessage } from '../services/ai-chat.service';
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import { releaseRequestConnection } from '../middleware/request-lifecycle';
+import { summarizeBundle } from '../services/ai/evidence/registry';
 
 /** Server-side history cap (founder decision A-D15): the newest messages kept, and the longest message accepted. */
 export const CHAT_MAX_MESSAGES = 20;
@@ -177,10 +178,11 @@ export class AIChatController {
         },
       });
     } catch (error: any) {
+      // The raw message can carry database or infrastructure detail: log it, don't return it.
       console.error('[AI Chat Controller] Sync error:', error.message);
       res.status(500).json({
         success: false,
-        error: error.message,
+        error: 'Failed to generate a response',
       });
     }
   };
@@ -202,9 +204,11 @@ export class AIChatController {
 
       const context = await this.contextRepo.gatherContext(organizationId);
 
+      // A per-provider summary only: never evidence data, AWS or customer text,
+      // or the pre-budget copy (summarizeBundle).
       res.json({
         success: true,
-        data: context,
+        data: summarizeBundle(context.evidence),
       });
     } catch (error: any) {
       // The raw message can carry database/infrastructure detail: log it, don't return it.

@@ -7,6 +7,7 @@
 import { Pool } from 'pg';
 import { getModelClient, streamModelText } from './ai/model-client';
 import type { EvidenceBundle } from './ai/evidence/types';
+import { collectedSectionOf } from './ai/evidence/budget';
 import type { CpuTelemetryEvidence } from './ai/evidence/providers/operations';
 import { renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
 import {
@@ -175,16 +176,17 @@ export interface ChatMessage {
   content: string;
 }
 
-/** Rendered by AI Chat in its own established format, so the generic evidence block leaves out their data. */
 /**
  * A provider's section as collected, before the evidence budget: for the
  * fallback replies, which make no model call, so size never applies to them.
+ * Model prompts never read it (they read `section`).
  */
 function collectedSection<T>(bundle: EvidenceBundle, id: string): ContextSection<T> | undefined {
   const result = bundle.results.find(r => r.id === id);
-  return (result?.collected ?? result?.section) as ContextSection<T> | undefined;
+  return (collectedSectionOf<T>(result) ?? result?.section) as ContextSection<T> | undefined;
 }
 
+/** Rendered by AI Chat in its own established format, so the generic evidence block leaves out their data. */
 export const CHAT_FORMATTED_PROVIDERS = [
   'cost.spend',
   'cost.month_over_month',
