@@ -275,7 +275,7 @@ function realisticSummarySections(): Record<string, () => Promise<ContextSection
       { score: 64, combinedFindings: 9, urgentFindings: 4, accountUrgentFindings: 2 }),
     'security.top_risk': section({ source: 'DevControl account security findings', classification: 'measured' },
       { count: 3, top: { ref: 'top', severity: 'high' }, reviewedUrgent: 0 },
-      { untrusted: [{ field: 'top title', text: 'Security group sg-0a1b2c3d allows SSH from 0.0.0.0/0' }] }),
+      { untrusted: [{ field: 'top title', text: 'Security group sg-1234567890abcdef0 allows SSH from 0.0.0.0/0' }] }),
     'security.evaluation_status': section({ source: 'DevControl security evaluation runs (resource checks, security groups, IAM)', classification: 'measured' }, { current: true }),
     'security.config_checks': section({ source: 'DevControl configuration checks', classification: 'measured' }, {
       outcome: 'found', resourcesEvaluated: 48, resourcesWithFindings: 6,
@@ -369,7 +369,7 @@ describe('re-review 2 H2: status sections are filled before lists in one budget'
 
     expect(result.systemStatus).toMatch(/^2 CloudWatch alarms are in ALARM in us-east-1 as of \S+\. See Operational Health for details\.$/);
     expect(result.topRiskStatus).toBe('identified');
-    expect(result.topRisk).toBe('Security group sg-0a1b2c3d allows SSH from 0.0.0.0/0 (high severity)');
+    expect(result.topRisk).toBe('Security group sg-1234567890abcdef0 allows SSH from 0.0.0.0/0 (high severity)');
     expect(line('- Composite System Intelligence score')).toMatch(/^- Composite System Intelligence score: 72\/100/);
     expect(line('- Security posture score')).toMatch(/^- Security posture score: 64\/100/);
     expect(line('- 25 active cost optimizations')).not.toBe('(missing)');
@@ -504,7 +504,7 @@ function largeAccountSections(): Record<string, () => Promise<ContextSection<unk
     'security.account_findings': available('DevControl account security findings', {
       outcome: 'found', total: 48, bySeverity: { critical: 4, high: 14, medium: 20, low: 10 },
       byDisposition: { open: 42, acknowledged: 0, dismissed: 2, accepted_risk: 4 }, byCategory: { security_group: 30, iam: 18 },
-      items: Array.from({ length: 48 }, (_, i) => ({ ref: `f${i + 1}`, findingId: `00000000-0000-4000-8000-${String(200000000000 + i)}`, category: i % 3 ? 'security_group' : 'iam', severity: SEVS[Math.min(3, Math.floor(i / 12))], region: 'us-east-1', disposition: null, detectedAt: SCANNED_AT, lastSeenAt: SCANNED_AT, frameworkControl: i % 2 ? 'CIS 5.2' : null })),
+      items: Array.from({ length: 48 }, (_, i) => ({ ref: `f${i + 1}`, findingId: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, category: i % 3 ? 'security_group' : 'iam', severity: SEVS[Math.min(3, Math.floor(i / 12))], region: 'us-east-1', disposition: null, detectedAt: SCANNED_AT, lastSeenAt: SCANNED_AT, frameworkControl: i % 2 ? 'CIS 5.2' : null })),
     }, { untrusted: Array.from({ length: 48 }, (_, i) => ({ field: `f${i + 1} title`, text: `Security group sg-${(0x1000 + i).toString(16)} allows inbound traffic from 0.0.0.0/0 on port ${20 + i}` })) }),
     'security.security_hub': available('AWS Security Hub', {
       capabilityStatus: 'ENABLED', lastSyncStatus: 'COMPLETED', lastSyncCompletedAt: SCANNED_AT, enabledStandards: 2, activeFindings: 140,
