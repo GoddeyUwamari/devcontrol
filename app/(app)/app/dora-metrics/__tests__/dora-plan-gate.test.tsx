@@ -136,6 +136,7 @@ describe('DORA page — plan', () => {
     expect(screen.queryByTestId('dora-plan-required')).not.toBeInTheDocument()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(asked('/api/metrics/dora')).toBe(false)
+    expect(asked('/api/dora/benchmarks')).toBe(false)
   })
 
   it('when the plan cannot be read: the workspace error, never the upgrade state', async () => {
@@ -146,5 +147,6 @@ describe('DORA page — plan', () => {
     expect(screen.queryByTestId('plan-loading')).not.toBeInTheDocument()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(asked('/api/metrics/dora')).toBe(false)
+    expect(asked('/api/dora/benchmarks')).toBe(false)
   })
 })
