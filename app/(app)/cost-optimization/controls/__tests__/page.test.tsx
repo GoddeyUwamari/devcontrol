@@ -85,6 +85,18 @@ describe('Optimization Controls page — real API-backed states for an Enterpris
     expect(screen.getByDisplayValue('10')).toBeInTheDocument()
   })
 
+  it('the subtitle names one configurable threshold, keeping the original sentence otherwise', async () => {
+    mockGetConfig.mockResolvedValue([lambdaDefault()])
+
+    render(<OptimizationControlsPage />)
+
+    await screen.findByText('Low-usage Lambda functions')
+    const subtitle = screen.getByText(/Tune how DevControl identifies/)
+    expect(subtitle.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Only the threshold below is configurable — every other check uses its built-in default.'
+    )
+  })
+
   it('an older backend that still lists ec2_idle never gets an adjustable EC2 input', async () => {
     mockGetConfig.mockResolvedValue([ec2Default(), lambdaDefault()])
 
