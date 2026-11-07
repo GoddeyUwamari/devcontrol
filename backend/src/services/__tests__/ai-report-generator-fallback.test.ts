@@ -540,6 +540,23 @@ describe('AI Reports deterministic fallback', () => {
   });
 });
 
+describe('AI Reports deterministic fallback -- approved copy (AI truth PR 2, founder §L)', () => {
+  it('states account-level findings with the counts, and the ones the team marked', async () => {
+    const section = await collectSection({ source: 'DevControl account-level security findings (security groups, IAM)' }, async () => ({
+      state: 'available' as const,
+      data: {
+        outcome: 'found', total: 2, bySeverity: { critical: 1, high: 1, medium: 0, low: 0 },
+        byDisposition: { open: 1, acknowledged: 0, dismissed: 0, accepted_risk: 1 }, byCategory: { networking: 2 }, items: [],
+      },
+    }));
+    const data: ReportData = { organizationId: ORG, reportType: 'security_insights', dateRange: RANGE, sections: { accountSecurityFindings: section as never } };
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'security_insights');
+    expect(report.keyHighlights).toContain(
+      "DevControl's account-level checks (security groups, IAM) found 2 active findings (1 critical, 1 high, 0 medium, 0 low); 1 of these are marked as accepted risk or dismissed by your team."
+    );
+  });
+});
+
 describe('AI Reports tenant identity', () => {
   it('fails closed without an organization id', async () => {
     mockSources();

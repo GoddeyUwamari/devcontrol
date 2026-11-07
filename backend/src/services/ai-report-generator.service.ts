@@ -647,7 +647,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     if (d.total === 0) return "DevControl's account-level checks (security groups, IAM) found no active findings.";
     const counts = SEVERITIES.map(sev => `${d.bySeverity[sev]} ${sev}`).join(', ');
     const reviewed = d.byDisposition.accepted_risk + d.byDisposition.dismissed;
-    const reviewedText = reviewed > 0 ? `; ${reviewed} of them accepted as a risk or dismissed by your team, and still active` : '';
+    const reviewedText = reviewed > 0 ? `; ${reviewed} of these are marked as accepted risk or dismissed by your team` : '';
     return `DevControl's account-level checks (security groups, IAM) found ${d.total} active findings (${counts})${reviewedText}.`;
   }
 

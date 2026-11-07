@@ -745,7 +745,7 @@ ${topSpender ? `Your top cost category is ${topSpender.service} at ${this.format
       const cpu = context.evidence.results.find(r => r.id === 'telemetry.cpu')?.section as ContextSection<{ items: unknown[] }> | undefined;
       const measured = cpu && (cpu.state === 'available' || cpu.state === 'partial') && cpu.data ? cpu.data.items.length : null;
       const utilizationPhrase = measured !== null && measured > 0
-        ? `DevControl has CloudWatch CPU utilization for ${measured} EC2 instance${measured !== 1 ? 's' : ''} (as of ${cpu?.asOf ?? 'unknown'}). Ask again when the AI service is available for an analysis of it.`
+        ? `DevControl has CloudWatch CPU utilization for ${measured} EC2 instance${measured !== 1 ? 's' : ''} (as of ${cpu?.asOf ?? 'unknown'}). Ask again when the AI assistant is available to analyze it.`
         : `I don't have EC2 CPU utilization data for this account right now${cpu ? ` (${statusPhrase(cpu).replace(/ -- .*$/, '')})` : ''}, so I can't say which instances are underutilized.`;
       return `**🔍 What's happening**
 

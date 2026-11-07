@@ -311,6 +311,17 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     expect(response).not.toMatch(/\d+ of your \d+ EC2 instances|being gathered/);
   });
 
+  it('with CPU evidence, says how many instances it has, in the approved words (founder §L)', async () => {
+    const withCpu = baseContext();
+    withCpu.evidence = evidenceBundle({
+      ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])),
+      'telemetry.cpu': section('available', { items: [{ ref: 'u1' }, { ref: 'u2' }] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
+    });
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 2 EC2 instances (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+  });
+
   it('never claims "0 active alerts" or "No recent incidents" when alarms could not be read', async () => {
     const response = await fallbackFor('Give me an overview', baseContext());
 
