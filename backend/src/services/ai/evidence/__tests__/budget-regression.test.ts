@@ -60,6 +60,7 @@ function findingItems(n: number): CostFindingItem[] {
     priceKnown: true,
     detectedAt: '2026-11-06T06:00:00.000Z',
     cpuEvidence: { averageCpuPercent: 1.25, daysAnalyzed: 7, datapointsObserved: 160, datapointsExpected: 168, windowEnd: '2026-11-06T05:00:00.000Z' },
+    lowActivityEvidence: null,
   }));
 }
 
@@ -150,9 +151,9 @@ describe('H1 part 1: 25 active cost findings keep their evidence', () => {
     expect(idle.state).toBe('available');
     // All 25 are idle, so the 5 listed are the top 5 of 25 (re-review 2 M3).
     expect(generated.costAnalysis?.recommendations).toEqual([
-      'Review the top 5 of 25 recommendations for idle or unused resources (estimated potential savings of $72.50/month for these 5; a DevControl estimate, not realized savings).',
+      'Review the top 5 of 25 recommendations for low-activity or unused resources (estimated potential savings of $72.50/month for these 5; a DevControl estimate, not realized savings).',
     ]);
-    expect(generated.topRecommendations.map((r) => r.title)).toContain('Review idle or unused resources');
+    expect(generated.topRecommendations.map((r) => r.title)).toContain('Review low-activity or unused resources');
   });
 });
 
@@ -441,7 +442,7 @@ describe('re-review 2 M3: the report idle figures say when they are a top-N subs
     }));
   }
 
-  it('25 findings, 13 idle worth $494/month: "the top 5 of 13 recommendations for idle or unused resources", savings for those 5', async () => {
+  it('25 findings, 13 idle worth $494/month: "the top 5 of 13 recommendations for low-activity or unused resources", savings for those 5', async () => {
     const items = mixedItems();
     expect(items.filter((i) => i.issue.startsWith('Idle')).reduce((sum, i) => sum + i.estimatedMonthlySavings, 0)).toBe(494);
     stubProviders(25, {
@@ -451,14 +452,14 @@ describe('re-review 2 M3: the report idle figures say when they are a top-N subs
       })) as Promise<ContextSection<unknown>>,
     });
     const { data, generated } = await report();
-    console.info(`[M3] report fallback: ${JSON.stringify(generated.costAnalysis?.recommendations)} | highlight: ${generated.keyHighlights.find((h) => h.includes('idle'))} | top: ${JSON.stringify(generated.topRecommendations.find((r) => r.title === 'Review idle or unused resources'))}`);
+    console.info(`[M3] report fallback: ${JSON.stringify(generated.costAnalysis?.recommendations)} | highlight: ${generated.keyHighlights.find((h) => h.includes('idle'))} | top: ${JSON.stringify(generated.topRecommendations.find((r) => r.title === 'Review low-activity or unused resources'))}`);
     expect(data.sections.idleResourceRecommendations).toMatchObject({ state: 'available', data: { activeIdle: 13, totalEstimatedMonthlySavings: 230 } });
     expect(generated.costAnalysis?.recommendations).toEqual([
-      'Review the top 5 of 13 recommendations for idle or unused resources (estimated potential savings of $230.00/month for these 5; a DevControl estimate, not realized savings).',
+      'Review the top 5 of 13 recommendations for low-activity or unused resources (estimated potential savings of $230.00/month for these 5; a DevControl estimate, not realized savings).',
     ]);
-    expect(generated.keyHighlights).toContain('Estimated potential savings of $230.00/month from the top 5 of 13 recommendations for idle or unused resources (a DevControl estimate, not realized savings).');
-    expect(generated.topRecommendations.find((r) => r.title === 'Review idle or unused resources')).toMatchObject({
-      description: 'The top 5 of 13 recommendations flag idle or unused resources; the savings figure covers these 5. Savings are DevControl estimates, not realized savings.',
+    expect(generated.keyHighlights).toContain('Estimated potential savings of $230.00/month from the top 5 of 13 recommendations for low-activity or unused resources (a DevControl estimate, not realized savings).');
+    expect(generated.topRecommendations.find((r) => r.title === 'Review low-activity or unused resources')).toMatchObject({
+      description: 'The top 5 of 13 recommendations flag low-activity or unused resources; the savings figure covers these 5. Savings are DevControl estimates, not realized savings.',
       estimatedSavings: 230,
     });
   });
@@ -629,10 +630,10 @@ describe('re-review 4 N7: one listed of several idle recommendations', () => {
     });
     const { generated } = await report();
     expect(generated.costAnalysis?.recommendations).toEqual([
-      'Review the top one of 13 recommendations for idle or unused resources (estimated potential savings of $50.00/month for this one; a DevControl estimate, not realized savings).',
+      'Review the top one of 13 recommendations for low-activity or unused resources (estimated potential savings of $50.00/month for this one; a DevControl estimate, not realized savings).',
     ]);
-    expect(generated.keyHighlights).toContain('Estimated potential savings of $50.00/month from the top one of 13 recommendations for idle or unused resources (a DevControl estimate, not realized savings).');
-    expect(generated.topRecommendations.find((r) => r.title === 'Review idle or unused resources')?.description)
-      .toBe('The top one of 13 recommendations flags idle or unused resources; the savings figure covers this one. Savings are DevControl estimates, not realized savings.');
+    expect(generated.keyHighlights).toContain('Estimated potential savings of $50.00/month from the top one of 13 recommendations for low-activity or unused resources (a DevControl estimate, not realized savings).');
+    expect(generated.topRecommendations.find((r) => r.title === 'Review low-activity or unused resources')?.description)
+      .toBe('The top one of 13 recommendations flags low-activity or unused resources; the savings figure covers this one. Savings are DevControl estimates, not realized savings.');
   });
 });

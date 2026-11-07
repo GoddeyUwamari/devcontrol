@@ -12,7 +12,6 @@
  * live Postgres are covered in routes/__tests__/stop-instance-*.test.ts.
  */
 import { EC2Client, StopInstancesCommand, CreateSnapshotCommand } from '@aws-sdk/client-ec2';
-import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import {
   STOP_ELIGIBLE_IDLE_RULE_VERSIONS,
   STOP_NOT_ELIGIBLE_PREFIX,
@@ -26,6 +25,8 @@ import { RemediationService } from '../remediation.service';
 import { publicRemediationMessage } from '../remediation-public-message';
 import costOptimizationService from '../cost-optimization.service';
 import { eligibleStopFindingRow, isStopFindingRead } from '../../routes/__tests__/eligible-stop-finding';
+import { lowActivityMetadata } from './helpers/low-activity-fixture';
+import { fakeAutoScaling, fakeClassicElb, fakeCloudWatch, fakeEc2, fakeElb } from './helpers/low-activity-aws';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 const REC = '00000000-0000-4000-8000-0000000000a2';
@@ -100,31 +101,68 @@ describe('the rule', () => {
   });
 });
 
-describe('today\'s idle detector never sets the marker, so every current finding is refused', () => {
-  // Until PR 2b ships the multi-signal rule. PR 2b changes this test on purpose.
-  it('a qualifying CPU-only finding carries no rule_version and is not eligible', async () => {
-    const launched = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const ec2 = new EC2Client({ region: 'us-east-1' });
-    (ec2 as any).send = jest.fn().mockResolvedValueOnce({
-      Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: 't3.micro', LaunchTime: launched, Placement: { AvailabilityZone: 'us-east-1a' } }] }],
-    });
-    const cw = new CloudWatchClient({ region: 'us-east-1' });
-    (cw as any).send = jest.fn().mockResolvedValueOnce({ Datapoints: Array.from({ length: 168 }, () => ({ Average: 1 })) });
+describe('FP PR 2b: the low-activity detector sets the marker only on its own findings', () => {
+  // PR 2a pinned "today's idle detector never sets the marker"; PR 2b changes it on purpose.
+  const NOW = new Date('2026-11-07T15:00:00Z');
+  const run = async (metrics: Record<string, any> = {}, launch = new Date('2026-09-01T00:00:00Z')) => {
+    const clients = {
+      ec2: fakeEc2([{ InstanceId: INSTANCE, InstanceType: 't3.micro', LaunchTime: launch }]),
+      cloudWatch: fakeCloudWatch(NOW, metrics), elb: fakeElb({}), elbClassic: fakeClassicElb({}), autoScaling: fakeAutoScaling({}),
+    };
+    return (costOptimizationService as any).detectLowActivityEC2Instances(clients, 'us-east-1', NOW);
+  };
+  const asFinding = (metadata: unknown): StopFindingRow => ({ id: REC, resource_id: INSTANCE, resource_type: 'EC2', issue: 'Idle Instance', status: 'ACTIVE', metadata });
 
-    const result = await (costOptimizationService as any).detectIdleEC2Instances(ec2, cw, {
-      ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default',
-    });
-
+  it('a low-activity finding carries rule_version 2 and is eligible while its evidence is fresh', async () => {
+    const result = await run();
     expect(result.issues).toHaveLength(1);
-    const issue = result.issues[0];
-    expect(issue.metadata).not.toHaveProperty('rule_version');
-    expect(
-      judgeStopEligibility({
-        resourceId: issue.resourceId,
-        recommendationId: REC,
-        finding: { id: REC, resource_id: issue.resourceId, resource_type: issue.resourceType, issue: issue.issue, status: 'ACTIVE', metadata: issue.metadata },
-      })
-    ).toEqual({ eligible: false, reason: 'marker_missing' });
+    expect(result.issues[0].metadata.rule_version).toBe(2);
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: asFinding(result.issues[0].metadata), now: NOW })).toEqual({ eligible: true });
+  });
+
+  it('a not-low-activity or couldn\'t-check instance produces nothing to stop', async () => {
+    expect((await run({ [INSTANCE]: { cpu: () => 40 } })).issues).toEqual([]);
+    expect((await run({}, new Date('2026-11-01T00:00:00Z'))).issues).toEqual([]);
+  });
+});
+
+describe('FP PR 2b condition 7: the low-activity evidence must be recent (FP2b-Q13)', () => {
+  const NOW = new Date('2026-11-07T15:00:00Z');
+  const at = (hoursAgo: number) => new Date(NOW.getTime() - hoursAgo * 3_600_000);
+  const marked = (evaluatedAt: Date) => finding({ metadata: lowActivityMetadata({ evaluatedAt }) });
+
+  it.each([0, 1, 12.9, 13])('evaluated %p h ago: eligible', (hours) => {
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: marked(at(hours)), now: NOW })).toEqual({ eligible: true });
+  });
+
+  it.each([13.01, 24, 24 * 30])('evaluated %p h ago: refused as stale', (hours) => {
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: marked(at(hours)), now: NOW })).toEqual({ eligible: false, reason: 'evidence_stale' });
+  });
+
+  it('an evaluation time well in the future is refused; a few minutes of clock skew is not', () => {
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: marked(at(-1)), now: NOW })).toEqual({ eligible: false, reason: 'evidence_stale' });
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: marked(at(-0.05)), now: NOW })).toEqual({ eligible: true });
+  });
+
+  it.each([
+    ['no evidence at all (marker only)', { rule_version: 2 }],
+    ['no evaluation time', { rule_version: 2, low_activity: {} }],
+    ['an unparseable evaluation time', { rule_version: 2, low_activity: { evaluated_at: 'yesterday' } }],
+    ['a numeric evaluation time', { rule_version: 2, low_activity: { evaluated_at: Date.now() } }],
+    ['evidence as an array', { rule_version: 2, low_activity: [{ evaluated_at: NOW.toISOString() }] }],
+  ])('%s: refused as stale', (_label, metadata) => {
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: finding({ metadata }), now: NOW })).toEqual({ eligible: false, reason: 'evidence_stale' });
+  });
+
+  it('the marker is still checked first: fresh evidence never rescues an older marker', () => {
+    const metadata = { ...lowActivityMetadata({ evaluatedAt: NOW }), rule_version: 1 };
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: finding({ metadata }), now: NOW })).toEqual({ eligible: false, reason: 'marker_not_allowed' });
+  });
+
+  it('judges against the current time when none is passed', () => {
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: finding({ metadata: lowActivityMetadata({ evaluatedAt: new Date(Date.now() - 14 * 3_600_000) }) }) }))
+      .toEqual({ eligible: false, reason: 'evidence_stale' });
+    expect(judgeStopEligibility({ resourceId: INSTANCE, recommendationId: REC, finding: finding() })).toEqual({ eligible: true });
   });
 });
 

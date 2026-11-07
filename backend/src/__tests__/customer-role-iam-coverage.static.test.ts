@@ -73,6 +73,11 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-lambda:ListTagsCommand': read('lambda:ListTags'),
   'client-elastic-load-balancing-v2:DescribeLoadBalancersCommand': read('elasticloadbalancing:DescribeLoadBalancers'),
   'client-elastic-load-balancing-v2:DescribeTagsCommand': read('elasticloadbalancing:DescribeTags'),
+  // The low-activity rule's topology checks (FP PR 2b).
+  'client-elastic-load-balancing-v2:DescribeTargetGroupsCommand': read('elasticloadbalancing:DescribeTargetGroups'),
+  'client-elastic-load-balancing-v2:DescribeTargetHealthCommand': read('elasticloadbalancing:DescribeTargetHealth'),
+  'client-elastic-load-balancing:DescribeLoadBalancersCommand': read('elasticloadbalancing:DescribeLoadBalancers'),
+  'client-auto-scaling:DescribeAutoScalingInstancesCommand': read('autoscaling:DescribeAutoScalingInstances'),
   'client-cloudfront:ListDistributionsCommand': read('cloudfront:ListDistributions'),
   'client-cloudwatch:GetMetricDataCommand': read('cloudwatch:GetMetricData'),
   'client-cloudwatch:GetMetricStatisticsCommand': read('cloudwatch:GetMetricStatistics'),

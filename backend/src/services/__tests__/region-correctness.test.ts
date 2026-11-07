@@ -18,6 +18,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import costOptimizationService from '../cost-optimization.service';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import { OptimizationRuleConfigService } from '../optimization-rule-config.service';
+import { fakeAutoScaling, fakeClassicElb, fakeCloudWatch, fakeEc2, fakeElb } from './helpers/low-activity-aws';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 
 function withMockedSend<T extends { send: (...args: any[]) => any }>(client: T, send: jest.Mock): T {
@@ -66,19 +67,18 @@ describe('detector region labels are the scanned region', () => {
     expect(result.issues[0].awsRegion).toBe('us-west-2');
   });
 
-  it('an idle instance in a Local Zone is labelled with the region it was listed in', async () => {
-    const ec2 = withMockedSend(new EC2Client({ region: 'us-west-2' }), jest.fn().mockResolvedValueOnce({
+  it('a low-activity instance in a Local Zone is labelled with the region it was listed in', async () => {
+    const now = new Date();
+    const ec2 = fakeEc2([{ InstanceId: 'i-1234567890abcdef0', InstanceType: 't3.micro', LaunchTime: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) }]);
+    (ec2.send as jest.Mock).mockResolvedValueOnce({
       Reservations: [{ Instances: [{
         InstanceId: 'i-1234567890abcdef0', InstanceType: 't3.micro',
-        LaunchTime: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), Placement: { AvailabilityZone: LOCAL_ZONE },
+        LaunchTime: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), Placement: { AvailabilityZone: LOCAL_ZONE },
       }] }],
-    }));
-    const cw = withMockedSend(new CloudWatchClient({ region: 'us-west-2' }), jest.fn().mockResolvedValueOnce({
-      Datapoints: Array.from({ length: 168 }, () => ({ Average: 1 })),
-    }));
-    const config = { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' };
+    });
+    const clients = { ec2, cloudWatch: fakeCloudWatch(now, {}), elb: fakeElb({}), elbClassic: fakeClassicElb({}), autoScaling: fakeAutoScaling({}) };
 
-    const result = await service.detectIdleEC2Instances(ec2, cw, config, 'us-west-2');
+    const result = await service.detectLowActivityEC2Instances(clients, 'us-west-2', now);
 
     expect(result.issues).toHaveLength(1);
     expect(result.issues[0].awsRegion).toBe('us-west-2');
@@ -133,7 +133,7 @@ describe('detector region labels are the scanned region', () => {
     ) => ({ ruleId, parameterId, value: 5, source: 'default' })) as any);
     const ok = { success: true, issues: [] };
     const spies = Object.fromEntries(
-      ['detectIdleEC2Instances', 'detectUnusedElasticIPs', 'detectUnattachedEBSVolumes', 'detectGp2ToGp3Migrations',
+      ['detectLowActivityEC2Instances', 'detectUnusedElasticIPs', 'detectUnattachedEBSVolumes', 'detectGp2ToGp3Migrations',
         'detectLowUsageLambdaFunctions', 'detectReservedInstanceOpportunities', 'detectS3LifecycleOptimization',
         'detectDynamoDBCapacityOptimization', 'detectDynamoDBOnDemandVsProvisionedOptimization']
         .map((name) => [name, jest.spyOn(service, name).mockResolvedValue(ok)])
@@ -141,7 +141,7 @@ describe('detector region labels are the scanned region', () => {
 
     await costOptimizationService.analyzeAllResources('org-region');
 
-    for (const name of ['detectIdleEC2Instances', 'detectUnusedElasticIPs', 'detectUnattachedEBSVolumes',
+    for (const name of ['detectLowActivityEC2Instances', 'detectUnusedElasticIPs', 'detectUnattachedEBSVolumes',
       'detectGp2ToGp3Migrations', 'detectLowUsageLambdaFunctions', 'detectReservedInstanceOpportunities']) {
       const args = spies[name].mock.calls[0];
       // The low-usage Lambda detector takes the clients' connection identity after the

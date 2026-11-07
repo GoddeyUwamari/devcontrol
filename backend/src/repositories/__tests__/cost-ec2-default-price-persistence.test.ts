@@ -9,14 +9,13 @@
  * reconciliation.
  */
 import { Pool } from 'pg';
-import { EC2Client } from '@aws-sdk/client-ec2';
-import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { CostDecisionActor, CostRecommendationsRepository } from '../cost-recommendations.repository';
 import costOptimizationService, { EC2_MONTHLY_LIST_PRICES } from '../../services/cost-optimization.service';
 import type { DetectorObservation } from '../../services/cost-optimization.service';
 import { EC2_PRICE_SOURCE_DEFAULT, EC2_PRICE_SOURCE_LIST_TABLE, SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE } from '../../services/estimated-savings';
 import type { CreateRecommendationRequest } from '../../types';
 import { TestLeases } from '../../services/__tests__/helpers/scan-source';
+import { fakeAutoScaling, fakeClassicElb, fakeCloudWatch, fakeEc2, fakeElb } from '../../services/__tests__/helpers/low-activity-aws';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -33,7 +32,8 @@ const createdUserIds: string[] = [];
 const IDLE = 'Idle Instance';
 const INSTANCE = 'i-1234567890abcdef0';
 const GENUINE_FIFTY = 'x9.placeholder-fifty';
-const LONG_RUNNING = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+// Launched well before the low-activity window (30 complete days ending before now).
+const LONG_RUNNING = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
 let actor: CostDecisionActor;
 let leaseOffset = 0;
 
@@ -61,20 +61,17 @@ async function insertRun(orgId: string): Promise<string> {
   return rows[0].id;
 }
 
-function withMockedSend<T extends { send: (...args: any[]) => any }>(client: T, send: jest.Mock): T {
-  (client as any).send = send;
-  return client;
-}
-
-/** One real detector pass over an idle instance of `instanceType`, mapped as the service maps it. */
+/** One real detector pass over a low-activity instance of `instanceType` (FP PR 2b), mapped as the service maps it. */
 async function idleObservation(instanceType: string): Promise<DetectorObservation> {
-  const ec2 = withMockedSend(new EC2Client({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({
-    Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: instanceType, LaunchTime: LONG_RUNNING, Placement: { AvailabilityZone: 'us-east-1a' } }] }],
-  }));
-  const cw = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({
-    Datapoints: Array.from({ length: 168 }, () => ({ Average: 1 })),
-  }));
-  const result = await (costOptimizationService as any).detectIdleEC2Instances(ec2, cw, { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' });
+  const now = new Date();
+  const clients = {
+    ec2: fakeEc2([{ InstanceId: INSTANCE, InstanceType: instanceType, LaunchTime: LONG_RUNNING }]),
+    cloudWatch: fakeCloudWatch(now, {}),
+    elb: fakeElb({}),
+    elbClassic: fakeClassicElb({}),
+    autoScaling: fakeAutoScaling({}),
+  };
+  const result = await (costOptimizationService as any).detectLowActivityEC2Instances(clients, 'us-east-1', now);
   const recommendations: CreateRecommendationRequest[] = result.issues.map((issue: any) => ({
     resource_id: issue.resourceId,
     resource_name: issue.resourceName,

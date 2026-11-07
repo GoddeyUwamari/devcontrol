@@ -33,7 +33,7 @@ export const DATA_SOURCES: readonly DataSource[] = [
   { id: 'S12', name: 'AWS Security Hub state and findings', tables: ['organization_security_hub_state', 'security_hub_findings'] },
   { id: 'S13', name: 'CloudWatch alarms (live read, 60-second cache)', tables: [] },
   { id: 'S14', name: 'Telemetry collection: newest datapoint and last check per resource', tables: ['resource_telemetry_observations', 'observability_collection_scopes'] },
-  { id: 'S15', name: 'Idle-instance CPU evidence (stored with the S6 finding)', tables: [] },
+  { id: 'S15', name: 'Low-activity instance evidence (CPU peak, network, load balancer and Auto Scaling checks; stored with the S6 finding)', tables: [] },
   {
     id: 'S16',
     name: 'Operational Health resource checks',

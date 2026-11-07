@@ -10,6 +10,7 @@ import {
   DescribeReservedInstancesCommand,
   DescribeVolumesCommand,
   Instance,
+  Reservation,
 } from '@aws-sdk/client-ec2';
 import { S3Client, ListBucketsCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
@@ -19,6 +20,20 @@ import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
 import { AWSClientFactory, AWSClients } from './aws-client-factory.service';
 import type { ScanContext } from './scan-context';
 import { ConnectionChangedError, connectionIdentityOfClients } from './aws-connection-fence';
+import { fetchMetricDataBatchWithStatus, type BatchMetricQuery } from './cloudwatch-metric-batch.util';
+import {
+  emptyLowActivityCounts,
+  judgeLowActivityMetrics,
+  judgeLowActivityTopology,
+  lowActivityDescription,
+  lowActivityFindingMetadata,
+  lowActivityWindow,
+  type InstanceMetricReadings,
+  type LowActivityCheckCounts,
+  type MetricReading,
+} from './low-activity-evaluation';
+import { readLowActivityTopology } from './low-activity-topology';
+import { LOW_ACTIVITY_RULE } from '../config/low-activity-rule';
 import { pool } from '../config/database';
 import {
   EC2_PRICE_SOURCE_DEFAULT,
@@ -32,6 +47,7 @@ import {
   MAX_LIST_FUNCTIONS_PAGES,
   listAllPages,
   withCallPolicyOnClients,
+  type Listing,
 } from '../utils/awsCallPolicy';
 import {
   ISSUE_EC2_IDLE_INSTANCE,
@@ -130,20 +146,10 @@ const DYNAMODB_MODE_COMPARISON_UTILIZATION_REFERENCE_PERCENT = 35;
 const DYNAMODB_MODE_COMPARISON_VARIABILITY_PEAK_FRACTION = 0.3;
 const DYNAMODB_MODE_COMPARISON_MIN_PERCENT_INTERVALS_BELOW_PEAK_FRACTION = 40;
 
-// ec2_idle evaluation window: 7 days of hourly CPUUtilization averages, so
-// 168 expected datapoints. An instance only becomes an idle candidate when at
-// least 80% of them actually exist -- the same data-completeness floor
-// DevControl already applies to DynamoDB's CloudWatch analysis above (DevControl
-// policy, not an AWS rule). Anything less is insufficient evidence, never a
-// "7-day average".
-const EC2_IDLE_WINDOW_DAYS = 7;
-const EC2_IDLE_PERIOD_SECONDS = 3600;
-const EC2_IDLE_EXPECTED_DATAPOINTS = (EC2_IDLE_WINDOW_DAYS * 24 * 60 * 60) / EC2_IDLE_PERIOD_SECONDS; // 168
-const EC2_IDLE_MIN_DATAPOINTS = Math.round(EC2_IDLE_EXPECTED_DATAPOINTS * 0.8); // 134
-
 /**
  * DevControl's monthly list-price table for EC2 instance types (us-east-1,
- * on-demand). Exported so tests can add a type; nothing else writes to it.
+ * on-demand), used for every region: the price lookup never reads the
+ * instance's region. Exported so tests can add a type; nothing else writes to it.
  */
 export const EC2_MONTHLY_LIST_PRICES: Record<string, number> = {
   't2.micro': 8.5,
@@ -171,12 +177,6 @@ export const EC2_MONTHLY_LIST_PRICES: Record<string, number> = {
 /** The figure used when an instance type is not in the table: its real price is unknown. */
 export const EC2_UNLISTED_DEFAULT_MONTHLY_COST = 50;
 
-
-/** A CPU average together with how much of the requested window actually backs it. */
-interface CPUUtilizationEvidence {
-  average: number;
-  datapoints: number;
-}
 
 // DevControl policy -- NOT AWS guidance. Both must hold before a modeled
 // cost difference becomes an actual recommendation, to avoid a
@@ -226,6 +226,10 @@ interface DetectorResult {
   success: boolean;
   issues: OptimizationIssue[];
   unknownResourceIds?: string[];
+  /** See DetectorObservation.endActiveForUnknown. */
+  endActiveForUnknown?: boolean;
+  /** See DetectorObservation.lowActivity. */
+  lowActivity?: LowActivityCheckCounts;
 }
 
 // One entry per non-RI detector category, tagged with the fixed `issue`
@@ -242,11 +246,35 @@ export interface DetectorObservation {
    * leaves their rows as they are. Absent means none.
    */
   unknownResourceIds?: string[];
+  /**
+   * The low-activity rule (FP2b-Q12): an ACTIVE row for a resource this scan
+   * could not check is removed like any other ACTIVE row instead of kept, so a
+   * finding never outlives the evidence for it. Decisions (RESOLVED/DISMISSED
+   * rows) of unknown resources are still left as they are.
+   */
+  endActiveForUnknown?: boolean;
+  /** The low-activity rule's checked / couldn't-check counts by reason (no resource IDs). */
+  lowActivity?: LowActivityCheckCounts;
+}
+
+/** Every private IPv4 and IPv6 address on an instance's network interfaces. */
+function instanceIpAddresses(instance: Instance): string[] {
+  const ips = new Set<string>();
+  if (instance.PrivateIpAddress) ips.add(instance.PrivateIpAddress);
+  if (instance.Ipv6Address) ips.add(instance.Ipv6Address);
+  for (const eni of instance.NetworkInterfaces ?? []) {
+    if (eni.PrivateIpAddress) ips.add(eni.PrivateIpAddress);
+    for (const address of eni.PrivateIpAddresses ?? []) if (address.PrivateIpAddress) ips.add(address.PrivateIpAddress);
+    for (const address of eni.Ipv6Addresses ?? []) if (address.Ipv6Address) ips.add(address.Ipv6Address);
+  }
+  return [...ips];
 }
 
 class CostOptimizationService {
   // Enterprise Workstream 3B, Phase D: resolves per-organization overrides of
-  // ec2_idle/cpu_threshold_percent and lambda_low_usage/max_invocations.
+  // lambda_low_usage/max_invocations. (The low-activity EC2 rule's thresholds
+  // are fixed, config/low-activity-rule.ts; stored ec2_idle overrides are kept
+  // but no longer read.)
   // Instantiated once, reused across scans -- resolveEffectiveConfig() itself
   // does no caching (see optimization-rule-config.service.ts), so this is just
   // avoiding repeated object construction, not a data cache.
@@ -329,23 +357,17 @@ class CostOptimizationService {
     // DetectorResult convention, exactly like any other detector's AWS-call
     // failure -- never silently run with the hardcoded default as if that
     // were a real, confirmed answer.
-    const [ec2IdleConfigResult, lambdaLowUsageConfigResult] = await Promise.allSettled([
-      this.optimizationRuleConfigService.resolveEffectiveConfig(organizationId, 'ec2_idle', 'cpu_threshold_percent'),
+    const [lambdaLowUsageConfigResult] = await Promise.allSettled([
       this.optimizationRuleConfigService.resolveEffectiveConfig(organizationId, 'lambda_low_usage', 'max_invocations'),
     ]);
 
-    if (ec2IdleConfigResult.status === 'rejected') {
-      console.error(`[CostOptimization] Failed to resolve ec2_idle configuration for org ${organizationId} -- skipping this scan's idle-EC2 detection:`, ec2IdleConfigResult.reason);
-    }
     if (lambdaLowUsageConfigResult.status === 'rejected') {
       console.error(`[CostOptimization] Failed to resolve lambda_low_usage configuration for org ${organizationId} -- skipping this scan's low-usage-Lambda detection:`, lambdaLowUsageConfigResult.reason);
     }
 
     try {
       const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities] = await Promise.all([
-        ec2IdleConfigResult.status === 'fulfilled'
-          ? this.detectIdleEC2Instances(clients.ec2, clients.cloudWatch, ec2IdleConfigResult.value, clients.region)
-          : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
+        this.detectLowActivityEC2Instances(clients, clients.region),
         this.detectUnusedElasticIPs(clients.ec2, clients.region),
         this.detectUnattachedEBSVolumes(clients.ec2, clients.region),
         this.detectGp2ToGp3Migrations(clients.ec2, clients.region),
@@ -374,7 +396,14 @@ class CostOptimizationService {
       });
 
       const observations: DetectorObservation[] = [
-        { issue: ISSUE_EC2_IDLE_INSTANCE, success: idleEC2.success, recommendations: idleEC2.issues.map(toRequest), unknownResourceIds: idleEC2.unknownResourceIds },
+        {
+          issue: ISSUE_EC2_IDLE_INSTANCE,
+          success: idleEC2.success,
+          recommendations: idleEC2.issues.map(toRequest),
+          unknownResourceIds: idleEC2.unknownResourceIds,
+          endActiveForUnknown: idleEC2.endActiveForUnknown,
+          lowActivity: idleEC2.lowActivity,
+        },
         // Retired detector (rds_rightsizing is 'planned'): it matched dev/staging/
         // test in the name plus "large" in the class, with no utilisation data,
         // and priced unlisted classes at a flat default. A successful, empty
@@ -405,137 +434,126 @@ class CostOptimizationService {
   }
 
   /**
-   * Detect idle EC2 instance candidates (average CPU below the configured
-   * threshold, default 5%, over a 7-day window with at least
-   * EC2_IDLE_MIN_DATAPOINTS hourly datapoints). A candidate is an instance
-   * worth reviewing, not a rightsizing recommendation -- average CPU alone
-   * says nothing about peaks, memory, or what size it should be.
-   * Enterprise Workstream 3B: the threshold is a
-   * per-organization EffectiveOptimizationRuleConfig, resolved once by the
-   * caller (analyzeAllResources()) -- this method never queries Postgres
-   * itself and must be able to assume `config` is already valid.
+   * Low-activity EC2 instances (false-positives PR 2b; the rule and its
+   * thresholds: config/low-activity-rule.ts, applied by
+   * low-activity-evaluation.ts). Emits the existing 'Idle Instance' identity so
+   * stored rows and decisions keep matching; only findings this rule produces
+   * carry its identity (metadata.rule_version + metadata.rule).
+   *
+   * Reads, all before any database write: the running instances
+   * (DescribeInstances, every page; an incomplete or failed listing fails the
+   * category), 30 complete UTC days of hourly CPUUtilization Maximum and
+   * NetworkIn/NetworkOut Sum for every one of them in GetMetricData batches,
+   * and -- only for instances whose metrics pass -- the region's load balancer
+   * and Auto Scaling membership. A failed metric or topology read makes the
+   * affected instances "couldn't check" (unknownResourceIds), never the whole
+   * category (FP2b-Q7), and never low-activity.
    */
-  private async detectIdleEC2Instances(
-    ec2Client: EC2Client,
-    cloudWatchClient: CloudWatchClient,
-    config: EffectiveOptimizationRuleConfig,
-    region: string
+  private async detectLowActivityEC2Instances(
+    clients: Pick<AWSClients, 'ec2' | 'cloudWatch' | 'elb' | 'elbClassic' | 'autoScaling'>,
+    region: string,
+    now: Date = new Date()
   ): Promise<DetectorResult> {
+    let listing: Listing<Reservation>;
     try {
-      const listing = await listAllPages('idle EC2: DescribeInstances', async (token) => {
-        const page = await ec2Client.send(new DescribeInstancesCommand({
-          Filters: [
-            {
-              Name: 'instance-state-name',
-              Values: ['running'],
-            },
-          ],
+      listing = await listAllPages('low activity EC2: DescribeInstances', async (token) => {
+        const page = await clients.ec2.send(new DescribeInstancesCommand({
+          Filters: [{ Name: 'instance-state-name', Values: ['running'] }],
           NextToken: token,
         }));
         return { items: page.Reservations || [], nextToken: page.NextToken };
       });
-      if (!listing.complete) return { success: false, issues: [] };
-
-      const issues: OptimizationIssue[] = [];
-      const unknownResourceIds: string[] = [];
-
-      for (const reservation of listing.items) {
-        for (const instance of reservation.Instances || []) {
-          if (!instance.InstanceId) continue;
-
-          // Check CPU utilization for the last 7 days. null means CloudWatch
-          // returned no datapoints -- AWS/EC2's CPUUtilization publishes
-          // continuously for any running instance, so this is anomalous/
-          // unavailable telemetry, never a legitimate "genuinely 0% CPU"
-          // signal (contrast with Lambda's Invocations metric, where zero
-          // datapoints IS the documented correct signal for zero invocations
-          // -- see lambda-usage.util.ts's header comment; deliberately not
-          // copying that behavior here). A thrown CloudWatch/API error
-          // propagates out of getAverageCPUUtilization() to this method's own
-          // catch block below, failing this whole detector category via the
-          // existing DetectorResult.success:false convention, rather than
-          // being caught here and treated as "not idle."
-          //
-          // LaunchTime is when the instance was LAST launched (AWS: "The time
-          // that the instance was last launched"; the first launch is the
-          // primary network interface's attachment time), so a stop/start
-          // resets it. A LaunchTime inside the window means the instance has
-          // not run continuously for the whole window -- not a full-window
-          // evaluation. A missing LaunchTime is insufficient evidence. Either
-          // way the instance is unknown this scan, not "not idle": a stored
-          // recommendation for it is kept as it is (so a stop/start does not end
-          // a dismissed occurrence).
-          const windowEnd = new Date();
-          const windowStart = new Date(windowEnd.getTime() - EC2_IDLE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-          if (!instance.LaunchTime || instance.LaunchTime.getTime() > windowStart.getTime()) {
-            unknownResourceIds.push(instance.InstanceId);
-            continue;
-          }
-
-          const cpu = await this.getAverageCPUUtilization(
-            cloudWatchClient,
-            instance.InstanceId,
-            windowStart,
-            windowEnd
-          );
-
-          // Missing or incomplete telemetry is insufficient evidence -- never assumed
-          // idle, and never taken as "no longer idle" either: the instance is unknown
-          // this scan, so a stored recommendation for it is kept as it is.
-          if (cpu === null || cpu.datapoints < EC2_IDLE_MIN_DATAPOINTS) {
-            unknownResourceIds.push(instance.InstanceId);
-            continue;
-          }
-
-          if (cpu.average < config.value) {
-            const nameTag = instance.Tags?.find((tag) => tag.Key === 'Name');
-            const { monthlyCost, priceSource } = this.estimateEC2Cost(instance.InstanceType || '');
-            const unknownPrice = priceSource === EC2_PRICE_SOURCE_DEFAULT;
-
-            issues.push({
-              resourceId: instance.InstanceId,
-              resourceName: nameTag?.Value || instance.InstanceId,
-              resourceType: 'EC2',
-              issue: ISSUE_EC2_IDLE_INSTANCE,
-              description: `This EC2 instance averaged ${cpu.average.toFixed(2)}% CPU utilization over the past ${EC2_IDLE_WINDOW_DAYS} days (${cpu.datapoints} of ${EC2_IDLE_EXPECTED_DATAPOINTS} hourly CloudWatch datapoints). It is an idle candidate: review whether it is still needed. Average CPU alone does not show peak load or memory use, so this is not a rightsizing recommendation.`,
-              potentialSavings: monthlyCost,
-              // The default figure is not a price, so it never sets severity:
-              // fixed LOW (founder decision Q7, interim until "not assessed").
-              severity: unknownPrice ? 'LOW' : this.calculateSeverity(monthlyCost),
-              awsRegion: region,
-              metadata: {
-                instance_type: instance.InstanceType,
-                price_source: priceSource,
-                ...(unknownPrice ? { severity_basis: SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE } : {}),
-                average_cpu: cpu.average,
-                days_analyzed: EC2_IDLE_WINDOW_DAYS,
-                cpu_evidence: {
-                  source: 'CloudWatch AWS/EC2 CPUUtilization (Average)',
-                  period_seconds: EC2_IDLE_PERIOD_SECONDS,
-                  window_start: windowStart.toISOString(),
-                  window_end: windowEnd.toISOString(),
-                  datapoints_observed: cpu.datapoints,
-                  datapoints_expected: EC2_IDLE_EXPECTED_DATAPOINTS,
-                  datapoints_required: EC2_IDLE_MIN_DATAPOINTS,
-                },
-                savings_basis: 'estimated: compute cost from DevControl\'s list-price table (a default estimate for unlisted instance types); not billed cost or guaranteed savings',
-                savings_claim: { kind: 'full_resource_cost', resource_ids: [instance.InstanceId] },
-                configuration: {
-                  parameter: 'cpu_threshold_percent',
-                  value: config.value,
-                  source: config.source,
-                },
-              },
-            });
-          }
-        }
-      }
-
-      return { success: true, issues, unknownResourceIds };
     } catch (error) {
-      console.error('Error detecting idle EC2 instances:', error);
+      console.error('Error listing EC2 instances for the low-activity check:', (error as Error)?.name ?? 'Error');
       return { success: false, issues: [] };
     }
+    if (!listing.complete) return { success: false, issues: [] };
+
+    const instances = listing.items.flatMap((reservation) => reservation.Instances ?? []).filter((i): i is Instance & { InstanceId: string } => !!i.InstanceId);
+    const counts = emptyLowActivityCounts();
+    counts.evaluated = instances.length;
+    const issues: OptimizationIssue[] = [];
+    const unknownResourceIds: string[] = [];
+    const done = (): DetectorResult => ({ success: true, issues, unknownResourceIds, endActiveForUnknown: true, lowActivity: counts });
+    if (instances.length === 0) return done();
+
+    const window = lowActivityWindow(now);
+    const dims = (instanceId: string) => [{ Name: 'InstanceId', Value: instanceId }];
+    const queries: BatchMetricQuery[] = instances.flatMap((instance, i) => [
+      { id: `c${i}`, namespace: LOW_ACTIVITY_RULE.cpu.namespace, metricName: LOW_ACTIVITY_RULE.cpu.metric, dimensions: dims(instance.InstanceId), period: LOW_ACTIVITY_RULE.cpu.period_seconds, stat: LOW_ACTIVITY_RULE.cpu.stat },
+      { id: `n${i}`, namespace: LOW_ACTIVITY_RULE.network.namespace, metricName: LOW_ACTIVITY_RULE.network.metrics[0], dimensions: dims(instance.InstanceId), period: LOW_ACTIVITY_RULE.network.period_seconds, stat: LOW_ACTIVITY_RULE.network.stat },
+      { id: `o${i}`, namespace: LOW_ACTIVITY_RULE.network.namespace, metricName: LOW_ACTIVITY_RULE.network.metrics[1], dimensions: dims(instance.InstanceId), period: LOW_ACTIVITY_RULE.network.period_seconds, stat: LOW_ACTIVITY_RULE.network.stat },
+    ]);
+
+    let fetched: Awaited<ReturnType<typeof fetchMetricDataBatchWithStatus>> | null = null;
+    try {
+      fetched = await fetchMetricDataBatchWithStatus(clients.cloudWatch, queries, window.start, window.end);
+    } catch (error) {
+      console.error('[LowActivity] CloudWatch read failed; every instance is reported as not checked:', (error as Error)?.name ?? 'Error');
+    }
+    const reading = (id: string): MetricReading => ({
+      outcome: fetched?.statuses.get(id)?.outcome ?? 'query_failed',
+      series: fetched?.results.get(id) ?? null,
+    });
+
+    const quiet: Array<{ instance: Instance & { InstanceId: string }; launchTime: Date; days: Parameters<typeof lowActivityFindingMetadata>[0]['days']; worst: Parameters<typeof lowActivityFindingMetadata>[0]['worst'] }> = [];
+    instances.forEach((instance, i) => {
+      const readings: InstanceMetricReadings = { cpu: reading(`c${i}`), networkIn: reading(`n${i}`), networkOut: reading(`o${i}`) };
+      const verdict = judgeLowActivityMetrics(readings, instance.LaunchTime, window);
+      if (verdict.kind === 'not_low_activity') counts.not_low_activity[verdict.reason] += 1;
+      else if (verdict.kind === 'couldnt_check') {
+        counts.couldnt_check[verdict.reason] += 1;
+        unknownResourceIds.push(instance.InstanceId);
+      } else quiet.push({ instance, launchTime: instance.LaunchTime as Date, days: verdict.days, worst: verdict.worst });
+    });
+    if (quiet.length === 0) return done();
+
+    const topology = await readLowActivityTopology(clients, quiet.map((q) => q.instance.InstanceId));
+    for (const { instance, launchTime, days, worst } of quiet) {
+      const verdict = judgeLowActivityTopology(
+        {
+          instanceId: instance.InstanceId,
+          ipAddresses: instanceIpAddresses(instance),
+          autoScalingTag: (instance.Tags ?? []).some((tag) => tag.Key === 'aws:autoscaling:groupName'),
+        },
+        topology
+      );
+      if (verdict.kind === 'not_low_activity') {
+        counts.not_low_activity[verdict.reason] += 1;
+        continue;
+      }
+      if (verdict.kind === 'couldnt_check') {
+        counts.couldnt_check[verdict.reason] += 1;
+        unknownResourceIds.push(instance.InstanceId);
+        continue;
+      }
+
+      counts.low_activity += 1;
+      const nameTag = instance.Tags?.find((tag) => tag.Key === 'Name');
+      const { monthlyCost, priceSource } = this.estimateEC2Cost(instance.InstanceType || '');
+      const unknownPrice = priceSource === EC2_PRICE_SOURCE_DEFAULT;
+      issues.push({
+        resourceId: instance.InstanceId,
+        resourceName: nameTag?.Value || instance.InstanceId,
+        resourceType: 'EC2',
+        issue: ISSUE_EC2_IDLE_INSTANCE,
+        description: lowActivityDescription(worst),
+        potentialSavings: monthlyCost,
+        // The default figure is not a price, so it never sets severity:
+        // fixed LOW (founder decision Q7, interim until "not assessed").
+        severity: unknownPrice ? 'LOW' : this.calculateSeverity(monthlyCost),
+        awsRegion: region,
+        metadata: {
+          ...lowActivityFindingMetadata({ window, evaluatedAt: now, launchTime, days, worst, topology: verdict.evidence }),
+          instance_type: instance.InstanceType,
+          price_source: priceSource,
+          ...(unknownPrice ? { severity_basis: SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE } : {}),
+          savings_basis: 'estimated: compute cost from DevControl\'s list-price table (a default estimate for unlisted instance types); not billed cost or guaranteed savings',
+          savings_claim: { kind: 'full_resource_cost', resource_ids: [instance.InstanceId] },
+        },
+      });
+    }
+    return done();
   }
 
   /**
@@ -2093,77 +2111,6 @@ class CostOptimizationService {
     } catch (error) {
       console.error('Error detecting RI opportunities:', error);
       return { success: false, issues: [] };
-    }
-  }
-
-  /**
-   * Get average CPU utilization from CloudWatch
-   */
-  /**
-   * Enterprise Workstream 3B, Phase D correction: previously returned `0` for
-   * BOTH "CloudWatch returned zero datapoints" and "the CloudWatch API call
-   * itself threw" -- silently making an idle-EC2 recommendation qualify an
-   * instance whose real CPU usage was actually unknown, not genuinely zero.
-   *
-   * Corrected semantics:
-   *   - a genuine average computed from real datapoints -> that number,
-   *     including a legitimate 0 when the datapoints themselves say so.
-   *   - zero datapoints (no exception, just nothing returned) -> `null`.
-   *     AWS/EC2's CPUUtilization publishes continuously for any running
-   *     instance, so an empty result here is anomalous/unavailable
-   *     telemetry, not a valid "genuinely idle" signal. This is the opposite
-   *     of Lambda's Invocations metric, where zero datapoints IS the
-   *     documented correct signal for zero invocations -- see
-   *     lambda-usage.util.ts's header comment for why; deliberately not
-   *     applying that same interpretation here.
-   *   - a thrown error from the API call itself -> no longer caught here.
-   *     It propagates to detectIdleEC2Instances()'s own try/catch, which
-   *     fails that whole detector category via the existing
-   *     DetectorResult.success:false convention -- the same mechanism every
-   *     other detector already uses for an AWS-call failure, rather than a
-   *     new, per-resource failure concept this change does not introduce.
-   */
-  //
-  // Returns the average together with the number of datapoints behind it, so
-  // the caller can judge completeness against the window it asked for.
-  // Datapoints without a numeric Average are not counted -- never read as 0%.
-  private async getAverageCPUUtilization(
-    cloudWatchClient: CloudWatchClient,
-    instanceId: string,
-    startTime: Date,
-    endTime: Date
-  ): Promise<CPUUtilizationEvidence | null> {
-    try {
-      const command = new GetMetricStatisticsCommand({
-        Namespace: 'AWS/EC2',
-        MetricName: 'CPUUtilization',
-        Dimensions: [
-          {
-            Name: 'InstanceId',
-            Value: instanceId,
-          },
-        ],
-        StartTime: startTime,
-        EndTime: endTime,
-        Period: EC2_IDLE_PERIOD_SECONDS,
-        Statistics: [Statistic.Average],
-      });
-
-      const response = await cloudWatchClient.send(command);
-
-      const averages = (response.Datapoints ?? [])
-        .map((dp) => dp.Average)
-        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-
-      if (averages.length === 0) {
-        return null; // insufficient evidence -- never assumed 0% CPU
-      }
-
-      const sum = averages.reduce((acc, value) => acc + value, 0);
-      return { average: sum / averages.length, datapoints: averages.length };
-    } catch (error) {
-      console.error(`Error getting CPU utilization for ${instanceId}:`, error);
-      throw error; // propagate -- see detectIdleEC2Instances()'s try/catch
     }
   }
 

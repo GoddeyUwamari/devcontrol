@@ -26,6 +26,7 @@ import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import costOptimizationService from '../cost-optimization.service';
 import { classifySavingsBasis } from '../estimated-savings';
 import { getImplementedOptimizationRules } from '../../config/optimization-rules';
+import { fakeAutoScaling, fakeClassicElb, fakeCloudWatch, fakeEc2, fakeElb } from './helpers/low-activity-aws';
 
 function withMockedSend<T extends { send: (...args: any[]) => any }>(client: T, send: jest.Mock): T {
   (client as any).send = send;
@@ -33,7 +34,6 @@ function withMockedSend<T extends { send: (...args: any[]) => any }>(client: T, 
 }
 
 const GB = 1024 * 1024 * 1024;
-const LONG_RUNNING = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 const service = costOptimizationService as any;
 
 type Issue = { potentialSavings: number; metadata: Record<string, unknown> };
@@ -41,13 +41,13 @@ type Issue = { potentialSavings: number; metadata: Record<string, unknown> };
 // Each entry drives one detector to a positive-savings finding.
 const DRIVEN: Record<string, () => Promise<Issue[]>> = {
   ec2_idle: async () => {
-    const ec2 = withMockedSend(new EC2Client({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({
-      Reservations: [{ Instances: [{ InstanceId: 'i-1234567890abcdef0', InstanceType: 'm5.large', LaunchTime: LONG_RUNNING, Placement: { AvailabilityZone: 'us-east-1a' } }] }],
-    }));
-    const cw = withMockedSend(new CloudWatchClient({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({
-      Datapoints: Array.from({ length: 168 }, () => ({ Average: 1 })),
-    }));
-    return (await service.detectIdleEC2Instances(ec2, cw, { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' })).issues;
+    // The low-activity rule (FP PR 2b) on a quiet, long-running instance.
+    const now = new Date();
+    const clients = {
+      ec2: fakeEc2([{ InstanceId: 'i-1234567890abcdef0', InstanceType: 'm5.large', LaunchTime: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) }]),
+      cloudWatch: fakeCloudWatch(now, {}), elb: fakeElb({}), elbClassic: fakeClassicElb({}), autoScaling: fakeAutoScaling({}),
+    };
+    return (await service.detectLowActivityEC2Instances(clients, 'us-east-1', now)).issues;
   },
   ec2_unused_elastic_ip: async () => {
     const ec2 = withMockedSend(new EC2Client({ region: 'us-east-1' }), jest.fn().mockResolvedValueOnce({

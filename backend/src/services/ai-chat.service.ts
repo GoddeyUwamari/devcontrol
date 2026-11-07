@@ -9,7 +9,7 @@ import { getModelClient, streamModelText } from './ai/model-client';
 import type { EvidenceBundle } from './ai/evidence/types';
 import { collectedSectionOf } from './ai/evidence/budget';
 import type { CpuTelemetryEvidence } from './ai/evidence/providers/operations';
-import { renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import { LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
 import {
   CONTEXT_STATE_LABELS,
   OMITTED_REASON,
@@ -363,6 +363,7 @@ If context is empty, state clearly what's missing.
 - When context directly states a fact, state it with full confidence — don't
   add hedging to facts that are actually in the context.
 - ${UNTRUSTED_TEXT_RULE}
+- ${LOW_ACTIVITY_FINDING_RULE}
 
 10. CONTINUITY
 - Treat follow-ups as part of same investigation

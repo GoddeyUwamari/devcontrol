@@ -74,7 +74,6 @@ const OTHER = 'eu-west-1';
 const repository = new CostRecommendationsRepository();
 const findingsRepository = new AccountSecurityFindingsRepository();
 const LAMBDA_CONFIG = { ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' };
-const EC2_CONFIG = { ruleId: 'ec2_idle', parameterId: 'cpu_threshold_percent', value: 5, source: 'default' };
 const QUICK_POLICY = { ...DEFAULT_AWS_CALL_POLICY, timeoutMs: 25, sleep: async () => {} };
 
 const awsError = (name: string) => Object.assign(new Error(name), { name });
@@ -249,16 +248,20 @@ describe('P-1: a resource the detector could not evaluate keeps its recommendati
     ]);
   });
 
-  it('idle EC2: an instance without enough CPU datapoints is unknown, not "no longer idle"', async () => {
-    const launched = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  it('low-activity EC2 (FP PR 2b): an instance without enough CPU and network datapoints is unknown, not "no longer low-activity"', async () => {
+    const launched = new Date(Date.now() - 60 * 24 * 3600 * 1000);
     const ec2 = withMockedSend(new EC2Client({ region: HOME }), async () => ({
       Reservations: [{ Instances: [{ InstanceId: 'i-quiet', LaunchTime: launched, InstanceType: 't3.micro' }] }],
     }));
-    const cw = withMockedSend(new CloudWatchClient({ region: HOME }), async () => ({ Datapoints: [] }));
+    // Every query completes with no datapoints.
+    const cw = withMockedSend(new CloudWatchClient({ region: HOME }), async (command) => ({
+      MetricDataResults: command.input.MetricDataQueries.map((q: any) => ({ Id: q.Id, Timestamps: [], Values: [], StatusCode: 'Complete' })),
+    }));
 
-    const result = await (costOptimizationService as any).detectIdleEC2Instances(ec2, cw, EC2_CONFIG, HOME);
+    const result = await (costOptimizationService as any).detectLowActivityEC2Instances({ ec2, cloudWatch: cw }, HOME);
 
-    expect(result).toEqual({ success: true, issues: [], unknownResourceIds: ['i-quiet'] });
+    expect(result).toMatchObject({ success: true, issues: [], unknownResourceIds: ['i-quiet'], endActiveForUnknown: true });
+    expect(result.lowActivity.couldnt_check.cloudwatch_incomplete).toBe(1);
   });
 
   it('S3 lifecycle: a bucket whose region, lifecycle or size cannot be read is unknown', async () => {
@@ -379,7 +382,7 @@ describe('P-2 / AC-3: the detectors read every page, and a cut-off listing is no
   const endless = (items: Record<string, unknown>, tokenField: string) => async () => ({ ...items, [tokenField]: 'more' });
 
   it.each([
-    ['idle EC2', (s: any) => s.detectIdleEC2Instances(withMockedSend(new EC2Client({ region: HOME }), endless({ Reservations: [] }, 'NextToken')), {}, EC2_CONFIG, HOME)],
+    ['low-activity EC2', (s: any) => s.detectLowActivityEC2Instances({ ec2: withMockedSend(new EC2Client({ region: HOME }), endless({ Reservations: [] }, 'NextToken')), cloudWatch: {} }, HOME)],
     ['unattached EBS', (s: any) => s.detectUnattachedEBSVolumes(withMockedSend(new EC2Client({ region: HOME }), endless({ Volumes: [] }, 'NextToken')), HOME)],
     ['gp2 to gp3', (s: any) => s.detectGp2ToGp3Migrations(withMockedSend(new EC2Client({ region: HOME }), endless({ Volumes: [] }, 'NextToken')), HOME)],
     ['S3 lifecycle', (s: any) => s.detectS3LifecycleOptimization(withMockedSend(new S3Client({ region: HOME }), endless({ Buckets: [] }, 'ContinuationToken')), {})],
@@ -895,26 +898,33 @@ describe('F1: DynamoDB detectors treat too little data as unknown, never as "no 
   });
 });
 
-describe('F2: idle EC2 without a full-window run is unknown', () => {
+describe('F2: low-activity EC2 without a full-window run is unknown', () => {
   const now = Date.now();
+  // FP PR 2b (FP2b-Q12): the dismissed occurrence is still kept, but the low-activity
+  // check keeps no ACTIVE row for an instance it could not check.
   it.each([
     ['restarted inside the window (stop/start)', new Date(now - 24 * 3600 * 1000)],
     ['no LaunchTime reported', undefined],
-  ])('%s: a dismissed idle occurrence and an ACTIVE row are kept', async (_name, launchTime) => {
+  ])('%s: a dismissed idle occurrence is kept; its ACTIVE row is not', async (_name, launchTime) => {
     const orgId = await insertOrg();
     await seedRec(orgId, { resourceId: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE });
     await seedRec(orgId, { resourceId: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'DISMISSED' });
     const ec2 = withMockedSend(new EC2Client({ region: HOME }), async () => ({
       Reservations: [{ Instances: [{ InstanceId: 'i-1234567890abcdef0', LaunchTime: launchTime, InstanceType: 't3.micro' }] }],
     }));
-    const cw = withMockedSend(new CloudWatchClient({ region: HOME }), async () => { throw awsError('NotCalled'); });
+    // Quiet (no activity), so the launch time decides: couldn't check.
+    const cw = withMockedSend(new CloudWatchClient({ region: HOME }), async () => { throw awsError('ThrottlingException'); });
 
-    const result = await (costOptimizationService as any).detectIdleEC2Instances(ec2, cw, EC2_CONFIG, HOME);
-    expect(result).toEqual({ success: true, issues: [], unknownResourceIds: ['i-1234567890abcdef0'] });
-    await reconcileResult(orgId, ISSUE_EC2_IDLE_INSTANCE, result);
+    const result = await (costOptimizationService as any).detectLowActivityEC2Instances({ ec2, cloudWatch: cw }, HOME);
+    expect(result).toMatchObject({ success: true, issues: [], unknownResourceIds: ['i-1234567890abcdef0'], endActiveForUnknown: true });
+    expect(result.lowActivity.couldnt_check.too_new_or_restarted).toBe(1);
+    await repository.reconcileActiveRecommendations(
+      orgId,
+      [{ issue: ISSUE_EC2_IDLE_INSTANCE, success: true, recommendations: [], unknownResourceIds: result.unknownResourceIds, endActiveForUnknown: result.endActiveForUnknown }],
+      { homeRegion: HOME }, await leases.hold(orgId)
+    );
 
     expect(await recs(orgId)).toEqual([
-      { resource_id: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'ACTIVE', aws_region: HOME, ended: false },
       { resource_id: 'i-1234567890abcdef0', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'DISMISSED', aws_region: HOME, ended: false },
     ]);
   });

@@ -217,7 +217,7 @@ export class CostRecommendationsController {
    * `configurable` and `parameters` -- static parameter DEFINITIONS only
    * (type/default/min/max/unit), never any organization's actual effective
    * value or override. This is why extending this existing, non-Enterprise-
-   * gated catalog is safe: "ec2_idle supports a tunable CPU threshold" is
+   * gated catalog is safe: "lambda_low_usage supports a tunable invocation threshold" is
    * product metadata available to every tier (drives upsell messaging); an
    * organization's actual configured value is a separate, Enterprise-gated
    * concern -- see getOptimizationRulesConfiguration() below, never

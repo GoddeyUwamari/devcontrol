@@ -13,6 +13,7 @@ import type { CostAnalysisCheck } from '../../services/cost-analysis-outcome';
 import type { CreateRecommendationRequest } from '../../types';
 import { TestLeases } from '../../services/__tests__/helpers/scan-source';
 import { ISSUE_RDS_OVERSIZED_INSTANCE } from '../../config/optimization-rules';
+import { lowActivityMetadata } from '../../services/__tests__/helpers/low-activity-fixture';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -73,6 +74,10 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+// An Idle finding as the low-activity rule writes it (FP PR 2b): only a detection
+// carrying that rule's identity reads still detected for this issue (FP2b-Q14).
+const IDLE_METADATA = { ...lowActivityMetadata(), savings_basis: 'estimated: list price' };
+
 function finding(resourceId: string, overrides: Partial<CreateRecommendationRequest> = {}): CreateRecommendationRequest {
   return {
     resource_id: resourceId,
@@ -83,7 +88,7 @@ function finding(resourceId: string, overrides: Partial<CreateRecommendationRequ
     potential_savings: 12.5,
     severity: 'LOW',
     aws_region: 'us-east-1',
-    metadata: { savings_basis: 'estimated: list price' },
+    metadata: IDLE_METADATA,
     ...overrides,
   };
 }
@@ -505,8 +510,8 @@ describe('reopen', () => {
       // While reopen waits, the "scan" records its detection, then releases.
       await holder.query(
         `INSERT INTO cost_finding_detections (organization_id, resource_id, issue, run_id, outcome, observed_at, detected_at, resource_type, potential_savings, severity, metadata)
-         VALUES ($1, 'i-1234567890abcdef0', $2, $3, 'detected', NOW(), NOW(), 'EC2', 12.5, 'LOW', '{"savings_basis":"estimated: list price"}')`,
-        [orgId, IDLE, runId]
+         VALUES ($1, 'i-1234567890abcdef0', $2, $3, 'detected', NOW(), NOW(), 'EC2', 12.5, 'LOW', $4::jsonb)`,
+        [orgId, IDLE, runId, JSON.stringify(IDLE_METADATA)]
       );
       await holder.query('SELECT pg_advisory_unlock(hashtextextended($1, 1))', [orgId]);
       expect(await pending).toMatchObject({ outcome: 'reopened', rowsEnded: 1, activeNow: true });

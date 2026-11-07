@@ -41,7 +41,7 @@ import type { MonthOverMonthEvidence, SpendEvidence } from './cost-context-secti
 import { noUrgentFindingsLine, reviewedFindingsLine } from './top-risk-selection';
 import { collectEvidence, fingerprintSections, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
-import { renderEvidence, statusPhrase, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import { LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
 import type { EvidenceBundle } from './ai/evidence/types';
 import { SECURITY_EVALUATION_MAX_AGE_SECONDS as EVALUATION_MAX_AGE, topRiskTitle, type PostureCountsEvidence, type TopRiskEvidence } from './ai/evidence/providers/security';
 import type { CostFindingsEvidence } from './ai/evidence/providers/cost';
@@ -456,7 +456,7 @@ export class AISummaryService {
       `generic advice or filler. Each field should be a short, plain-English clause or sentence, ` +
       `not a list. If a fact needed for a field is not present below, leave that field null ` +
       `rather than guessing.\n\n` +
-      `Evidence rules:\n${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}\n- ${UNTRUSTED_TEXT_RULE}\n\n` +
+      `Evidence rules:\n${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}\n- ${UNTRUSTED_TEXT_RULE}\n- ${LOW_ACTIVITY_FINDING_RULE}\n\n` +
       `Fields to populate:\n` +
       `- overallHealth: the composite System Intelligence score (if present) plus a brief ` +
       `clause of context on what's driving it.\n` +

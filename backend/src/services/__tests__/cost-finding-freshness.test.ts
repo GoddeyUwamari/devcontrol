@@ -1,10 +1,13 @@
 import { judgeFreshness, FreshnessInput, FreshnessRun } from '../cost-finding-freshness';
 import type { CostAnalysisCheck } from '../cost-analysis-outcome';
+import { lowActivityMetadata } from './helpers/low-activity-fixture';
 
 const IDLE = 'Idle Instance';
 const S3 = 'S3 Lifecycle Optimization';
 const DECIDED = '2026-09-03T18:54:05.000Z';
 const OBSERVED = '2026-11-04T00:00:02.000Z';
+/** An Idle detection made by the low-activity rule (FP PR 2b): the only kind that confirms an Idle finding. */
+const LOW_ACTIVITY = lowActivityMetadata({ evaluatedAt: new Date(OBSERVED) });
 
 const check = (issue: string, outcome: 'complete' | 'failed' = 'complete', detected = 1, unknown = 0): CostAnalysisCheck => ({
   rule_id: null, issue, outcome, detected, unknown,
@@ -20,7 +23,7 @@ const run = (overrides: Partial<FreshnessRun> = {}): FreshnessRun => ({
 const input = (overrides: Partial<FreshnessInput> = {}): FreshnessInput => ({
   issue: IDLE,
   decidedAt: DECIDED,
-  observation: { run_id: 'run-latest', outcome: 'detected', observed_at: OBSERVED },
+  observation: { run_id: 'run-latest', outcome: 'detected', observed_at: OBSERVED, metadata: LOW_ACTIVITY },
   latestRun: run(),
   ...overrides,
 });
@@ -85,7 +88,33 @@ describe('judgeFreshness', () => {
   });
 
   it('accepts Date values from pg as well as strings', () => {
-    expect(judgeFreshness(input({ decidedAt: new Date(DECIDED), observation: { run_id: 'run-latest', outcome: 'detected', observed_at: new Date(OBSERVED) } })))
+    expect(judgeFreshness(input({ decidedAt: new Date(DECIDED), observation: { run_id: 'run-latest', outcome: 'detected', observed_at: new Date(OBSERVED), metadata: LOW_ACTIVITY } })))
       .toEqual({ state: 'still_detected', reason: null });
+  });
+});
+
+describe('judgeFreshness -- an Idle detection needs the low-activity rule identity (FP2b-Q14)', () => {
+  it.each([
+    ['no metadata (written before the detections carried any)', undefined],
+    ['the CPU-only evidence of the earlier check', { average_cpu: 1.2, days_analyzed: 7, cpu_evidence: { window_end: OBSERVED } }],
+    ['the stop marker without the rule object', { rule_version: 2 }],
+    ['another rule version', { ...LOW_ACTIVITY, rule_version: 3 }],
+  ])('%s: "not checked since", never still detected', (_label, metadata) => {
+    expect(judgeFreshness(input({ observation: { run_id: 'run-latest', outcome: 'detected', observed_at: OBSERVED, metadata } })))
+      .toEqual({ state: 'not_confirmed', reason: 'not_checked_since' });
+  });
+
+  it('a low-activity detection in the latest run is still detected', () => {
+    expect(judgeFreshness(input())).toEqual({ state: 'still_detected', reason: null });
+  });
+
+  it("other issues do not need it: an S3 detection with no rule identity is still detected", () => {
+    expect(judgeFreshness(input({ issue: S3, observation: { run_id: 'run-latest', outcome: 'detected', observed_at: OBSERVED, metadata: { savings_basis: 'ceiling: x' } } })))
+      .toEqual({ state: 'still_detected', reason: null });
+  });
+
+  it('an unknown Idle observation by the new rule keeps "not fully checked" (C23), whatever evidence it kept', () => {
+    expect(judgeFreshness(input({ observation: { run_id: 'run-latest', outcome: 'unknown', observed_at: OBSERVED, metadata: { average_cpu: 1 } } })))
+      .toEqual({ state: 'not_confirmed', reason: 'not_fully_checked' });
   });
 });

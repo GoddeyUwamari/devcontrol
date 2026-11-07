@@ -365,7 +365,7 @@ describe('AWS connect PR B: the Cost Analyze race', () => {
     jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({ enabled: true, region: 'us-east-1', costExplorer: {}, ec2: {}, cloudWatch: {}, lambda: {}, s3: {} } as any);
     // The row the clients were built from is no longer the one the lease was taken for.
     jest.spyOn(fenceModule, 'connectionIdentityOfClients').mockReturnValue('["another-connection-row"]');
-    const detector = jest.spyOn(costOptimizationService as any, 'detectIdleEC2Instances');
+    const detector = jest.spyOn(costOptimizationService as any, 'detectLowActivityEC2Instances');
     const { status, json } = await analyze(orgId);
     expect(status).toHaveBeenCalledWith(409);
     expect(json).toHaveBeenCalledWith({ success: false, error: 'The analysis was interrupted before it finished. Run it again.' });

@@ -14,6 +14,7 @@ import costOptimizationService, { DetectorObservation } from '../cost-optimizati
 import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 import type { CreateRecommendationRequest } from '../../types';
+import { lowActivityMetadata } from './helpers/low-activity-fixture';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -47,7 +48,9 @@ async function insertOrg(): Promise<string> {
 
 const finding: CreateRecommendationRequest = {
   resource_id: RESOURCE, resource_name: 'placeholder', resource_type: 'EC2', issue: IDLE, description: 'placeholder',
-  potential_savings: 12.5, severity: 'LOW', aws_region: HOME, metadata: { savings_basis: 'estimated: placeholder' },
+  potential_savings: 12.5, severity: 'LOW', aws_region: HOME,
+  // What the low-activity rule writes (FP PR 2b): only such an Idle detection reads still detected.
+  metadata: { ...lowActivityMetadata(), savings_basis: 'estimated: placeholder' },
 };
 const observations: DetectorObservation[] = [{ issue: IDLE, success: true, recommendations: [finding] }];
 

@@ -2,7 +2,7 @@
  * Test fixture: a finding a stop_instance workflow may act on (see
  * services/stop-instance-eligibility.ts) -- the organization's ACTIVE EC2
  * "Idle Instance" recommendation for the instance, carrying the allow-listed
- * marker metadata.rule_version = 2.
+ * marker metadata.rule_version = 2 and recent low-activity evidence.
  *
  * Shared by every test that drives a stop through RemediationService for a
  * reason other than eligibility (region binding, target binding,
@@ -10,9 +10,14 @@
  * testing what they test. Not a test file itself.
  */
 import type { Pool } from 'pg';
+import { lowActivityMetadata } from '../../services/__tests__/helpers/low-activity-fixture';
 
-/** The marker only the multi-signal low-activity rule sets. */
-export const ELIGIBLE_STOP_METADATA: Readonly<Record<string, unknown>> = Object.freeze({ rule_version: 2 });
+/**
+ * What the low-activity rule writes on a finding: the marker rule_version 2,
+ * the rule object and its evidence, evaluated when this module loads -- well
+ * inside the stop rule's 13-hour freshness limit for any test run (PR 2b).
+ */
+export const ELIGIBLE_STOP_METADATA: Readonly<Record<string, unknown>> = Object.freeze(lowActivityMetadata());
 
 /** The columns stop-instance-eligibility.ts reads, as a mock Pool would return them. */
 export function eligibleStopFindingRow(

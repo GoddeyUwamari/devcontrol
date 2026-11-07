@@ -396,15 +396,15 @@ describe('AI Reports evidence -- the EC2 default price (PR 4, S4)', () => {
     const idle = (id: string, savings: number) => ({ resource_id: id, resource_type: 'EC2', issue: 'Idle Instance', potential_savings: savings, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } });
     const lines = async (recommendations: Array<ReturnType<typeof idle>>) => {
       const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(await evidence({ recommendations }));
-      return { recs: report.costAnalysis?.recommendations, top: report.topRecommendations.find((r) => r.title === 'Review idle or unused resources')?.description };
+      return { recs: report.costAnalysis?.recommendations, top: report.topRecommendations.find((r) => r.title === 'Review low-activity or unused resources')?.description };
     };
     expect(await lines([idle('i-one', 40)])).toEqual({
-      recs: ['Review 1 active recommendation for idle or unused resources (estimated potential savings of $40.00/month; a DevControl estimate, not realized savings).'],
-      top: '1 active DevControl recommendation flags idle or unused resources. Savings are DevControl estimates, not realized savings.',
+      recs: ['Review 1 active recommendation for low-activity or unused resources (estimated potential savings of $40.00/month; a DevControl estimate, not realized savings).'],
+      top: '1 active DevControl recommendation flags low-activity or unused resources. Savings are DevControl estimates, not realized savings.',
     });
     expect(await lines([idle('i-one', 40), idle('i-two', 30)])).toEqual({
-      recs: ['Review 2 active recommendations for idle or unused resources (estimated potential savings of $70.00/month; a DevControl estimate, not realized savings).'],
-      top: '2 active DevControl recommendations flag idle or unused resources. Savings are DevControl estimates, not realized savings.',
+      recs: ['Review 2 active recommendations for low-activity or unused resources (estimated potential savings of $70.00/month; a DevControl estimate, not realized savings).'],
+      top: '2 active DevControl recommendations flag low-activity or unused resources. Savings are DevControl estimates, not realized savings.',
     });
   });
 
@@ -538,8 +538,8 @@ describe('AI Reports deterministic fallback', () => {
   it('recommendation savings are described as estimates, and an empty list draws no "no savings" conclusion', async () => {
     const withRecs = await evidence({ recommendations: [{ resource_id: 'vol-1', resource_type: 'ebs', issue: 'Unused EBS volume', potential_savings: 42, metadata: { savings_basis: 'estimated: list price' } }] });
     const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(withRecs);
-    expect(report.executiveSummary).toContain('Estimated potential savings of $42.00/month from idle or unused resources (a DevControl estimate, not realized savings).');
-    expect(report.topRecommendations.find(r => r.title === 'Review idle or unused resources')?.estimatedSavings).toBe(42);
+    expect(report.executiveSummary).toContain('Estimated potential savings of $42.00/month from low-activity or unused resources (a DevControl estimate, not realized savings).');
+    expect(report.topRecommendations.find(r => r.title === 'Review low-activity or unused resources')?.estimatedSavings).toBe(42);
 
     jest.restoreAllMocks();
     const empty = await evidence();
