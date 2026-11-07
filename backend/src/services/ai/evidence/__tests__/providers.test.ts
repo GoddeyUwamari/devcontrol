@@ -30,7 +30,8 @@ import { createEvidenceBasis, type BasisSources } from '../basis';
 import { operationsSources, cloudWatchAlarmsProvider, resourceHealthProvider, cpuTelemetryProvider } from '../providers/operations';
 import { spendProvider, costFindingsProvider } from '../providers/cost';
 import { connectionScopeProvider, regionCoverageProvider } from '../providers/scope';
-import { accountFindingsProvider, topRiskProvider, riskScoreProvider, topRiskTitle } from '../providers/security';
+import { accountFindingsProvider, topRiskProvider, riskScoreProvider, topRiskTitle, securityHubProvider, SECURITY_HUB_FIRST_SYNC_REASON } from '../providers/security';
+import { SecurityHubStateRepository } from '../../../../repositories/security-hub-state.repository';
 import { anomaliesProvider, alertHistoryProvider } from '../providers/not-built';
 import { AccountSecurityFindingsRepository } from '../../../../repositories/account-security-findings.repository';
 import { RiskTrackingService } from '../../../risk-tracking.service';
@@ -292,6 +293,61 @@ describe('security', () => {
     trend.mockClear();
     expect((await collectProvider(riskScoreProvider, ctx(), async () => false)).state).toBe('not_entitled');
     expect(trend).not.toHaveBeenCalled();
+  });
+});
+
+describe('security.security_hub sync status (review M1)', () => {
+  const hubState = (over: Record<string, unknown>) => ({
+    organizationId: ORG, capabilityStatus: 'ENABLED', capabilityCheckedAt: '2026-11-06T11:00:00.000Z', capabilityError: null, enabledStandards: [{ arn: 'x' }],
+    lastSyncStatus: 'COMPLETED', lastSyncStartedAt: '2026-11-06T11:00:00.000Z', lastSyncCompletedAt: '2026-11-06T11:05:00.000Z',
+    lastSyncError: null, lastSyncPagesProcessed: 1, lastSyncFindingsCount: 0, ...over,
+  });
+  const run = async (over: Record<string, unknown>) => {
+    jest.spyOn(SecurityHubStateRepository.prototype, 'get').mockResolvedValue(hubState(over) as never);
+    mockDb.answer = (sql) => (/FROM security_hub_findings/.test(sql)
+      ? { rows: [{ severity: 'high', compliance_status: 'FAILED', security_control_id: 'EC2.1', title: 'fixture finding', last_seen_at: new Date('2026-11-06T11:04:00.000Z') }] }
+      : undefined);
+    return collectProvider(securityHubProvider, ctx(), async () => true);
+  };
+
+  it('COMPLETED -> available with its findings', async () => {
+    expect(await run({})).toMatchObject({ state: 'available', data: { lastSyncStatus: 'COMPLETED', activeFindings: 1 } });
+  });
+
+  it('PARTIAL -> partial, as before', async () => {
+    expect(await run({ lastSyncStatus: 'PARTIAL' })).toMatchObject({ state: 'partial', reason: 'the last sync read only part of the findings' });
+  });
+
+  it('FAILED -> error with a safe code: never "available, 0", and no AWS text', async () => {
+    const s = await run({ lastSyncStatus: 'FAILED', lastSyncFindingsCount: 0, lastSyncError: 'AccessDeniedException: secret AWS text' });
+    expect(s).toMatchObject({ state: 'error', data: null, failure: { code: 'internal' } });
+    expect(JSON.stringify(s)).not.toMatch(/"activeFindings"|secret AWS text/);
+  });
+
+  it('a first sync still RUNNING (placeholder capability ERROR, no completed sync) -> not available, "first sync in progress"', async () => {
+    const s = await run({ capabilityStatus: 'ERROR', lastSyncStatus: 'RUNNING', lastSyncCompletedAt: null });
+    expect(s).toMatchObject({ state: 'unavailable', data: null, reason: SECURITY_HUB_FIRST_SYNC_REASON });
+    expect(SECURITY_HUB_FIRST_SYNC_REASON).toBe('first sync in progress');
+    expect(s.reason).not.toMatch(/status: ERROR/);
+  });
+
+  it('a later sync RUNNING after a completed one keeps the completed sync\'s findings', async () => {
+    expect(await run({ lastSyncStatus: 'RUNNING' })).toMatchObject({ state: 'available', data: { activeFindings: 1 } });
+  });
+});
+
+describe('security.top_risk with no current evaluation (review M2)', () => {
+  it('no active findings and no current evaluation -> unavailable, the account-findings rule', async () => {
+    jest.spyOn(AccountSecurityFindingsRepository.prototype, 'isLatestSecurityEvaluationCurrent').mockResolvedValue(false);
+    const s = await collectProvider(topRiskProvider, ctx(sources({ accountFindings: { getActive: async () => [] } })));
+    expect(s).toMatchObject({ state: 'unavailable', data: null });
+    expect(s.reason).toMatch(/no completed, current security evaluation/);
+  });
+
+  it('no active findings with a current evaluation -> available, count 0', async () => {
+    jest.spyOn(AccountSecurityFindingsRepository.prototype, 'isLatestSecurityEvaluationCurrent').mockResolvedValue(true);
+    const s = await collectProvider(topRiskProvider, ctx(sources({ accountFindings: { getActive: async () => [] } })));
+    expect(s).toMatchObject({ state: 'available', data: { count: 0, top: null, reviewedUrgent: 0 } });
   });
 });
 

@@ -107,13 +107,13 @@ type Deployment = { service_id: string; status: string; deployed_at: string };
  * counts); every other read fails, so the sources this suite does not set up
  * are 'error' sections -- never invented data.
  */
-function fakePool(deployments: Deployment[] = [], recommendations: unknown[] = []) {
+function fakePool(deployments: Deployment[] = [], recommendations: unknown[] = [], tier = 'pro') {
   const unexpected = (sql: string) => { throw new Error(`unexpected query: ${sql}`); };
   return {
     query: jest.fn(async (sql: string) => {
       if (/FROM deployments/.test(sql)) return { rows: deployments };
       if (/estimated_monthly_cost > 0/.test(sql)) return { rows: [{ resource_id: 'i-1', resource_type: 'ec2', estimated_monthly_cost: '42.50', resource_name: 'web' }] };
-      if (/FROM organizations WHERE id/.test(sql)) return { rows: [{ subscription_tier: 'pro', billing_lifecycle_state: null, grace_period_ends_at: null }] };
+      if (/FROM organizations WHERE id/.test(sql)) return { rows: [{ subscription_tier: tier, billing_lifecycle_state: null, grace_period_ends_at: null }] };
       return unexpected(sql);
     }),
     connect: jest.fn(async () => ({
@@ -162,9 +162,9 @@ afterAll(() => {
   if (ORIGINAL_ANTHROPIC_API_KEY !== undefined) process.env.ANTHROPIC_API_KEY = ORIGINAL_ANTHROPIC_API_KEY;
 });
 
-async function evidence(opts: Parameters<typeof mockSources>[0] = {}, deployments: Deployment[] = [], reportType = 'weekly_summary'): Promise<ReportData> {
+async function evidence(opts: Parameters<typeof mockSources>[0] = {}, deployments: Deployment[] = [], reportType = 'weekly_summary', tier = 'pro'): Promise<ReportData> {
   mockSources(opts);
-  const pool = fakePool(deployments, opts.recommendations ?? []);
+  const pool = fakePool(deployments, opts.recommendations ?? [], tier);
   mockPools.app = pool;
   return new AIReportGeneratorService(pool).fetchReportData(ORG, RANGE, reportType);
 }
@@ -540,6 +540,39 @@ describe('AI Reports deterministic fallback', () => {
   });
 });
 
+describe('AI Reports evidence -- review fixes (AI truth PR 2 review)', () => {
+  it('L1: a section the size budget cut prints no data; its line and truncation say so', async () => {
+    // 400 deployments of one service, 7 minutes apart: hundreds of long interval figures, far over the provider's cap.
+    const start = Date.parse('2026-09-19T00:00:00Z');
+    const many = Array.from({ length: 400 }, (_, i) => ({ service_id: 'svc-1', status: 'success', deployed_at: new Date(start + i * 7 * 60_000).toISOString() }));
+    const data = await evidence({}, many, 'infrastructure_health');
+    const records = data.evidence!.results.find((r) => r.id === 'delivery.deployments')!;
+
+    expect(records.mode).toBe('header');
+    expect(records.section).toMatchObject({ state: 'available', data: null, truncation: { kept: 0, by: 'provider_cap' } });
+    expect(data.sections.deployments).toMatchObject({ data: null });
+    expect(data.sections.deliveryRates?.reason).toMatch(/DevControl deployment records: not included in this answer \(too large\)/);
+
+    const prompt = new AIReportGeneratorService(fakePool()).buildUserPrompt(data, 'infrastructure_health');
+    expect(prompt).toMatch(/- \[delivery\.deployments\] Deployments recorded in the period: available [^\n]*\[data not included: too large for this answer\]/);
+    expect(prompt).toMatch(/### Deployments recorded in the report period\n\{[^\n]*"evidencePresent":false[^\n]*"truncation":\{"kept":0,"total":1,"by":"provider_cap"\}[^\n]*"data":null\}/);
+    expect(prompt).not.toContain('0.11666');
+  });
+
+  it('L4: below the DORA plan, the report\'s deployment rates are not_entitled; counts stay', async () => {
+    const records = [
+      { service_id: 'svc-1', status: 'success', deployed_at: '2026-09-20T10:00:00Z' },
+      { service_id: 'svc-1', status: 'failed', deployed_at: '2026-09-21T10:00:00Z' },
+    ];
+    const starter = await evidence({}, records, 'infrastructure_health', 'starter');
+    expect(starter.sections.deliveryRates).toMatchObject({ state: 'not_entitled', data: null });
+    expect(starter.sections.deployments).toMatchObject({ state: 'available', data: { total: 2 } });
+
+    const pro = await evidence({}, records, 'infrastructure_health', 'pro');
+    expect(pro.sections.deliveryRates).toMatchObject({ state: 'available', data: { changeFailureRatePercent: 50 } });
+  });
+});
+
 describe('AI Reports deterministic fallback -- approved copy (AI truth PR 2, founder §L)', () => {
   async function findingsHighlight(dispositions: { dismissed: number; accepted_risk: number }): Promise<string[]> {
     const section = await collectSection({ source: 'DevControl account-level security findings (security groups, IAM)' }, async () => ({
@@ -553,6 +586,38 @@ describe('AI Reports deterministic fallback -- approved copy (AI truth PR 2, fou
     const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'security_insights');
     return report.keyHighlights;
   }
+
+  it('one active finding is "1 active finding" (singular), with "is" for the one marked', async () => {
+    const section = await collectSection({ source: 'DevControl account-level security findings (security groups, IAM)' }, async () => ({
+      state: 'available' as const,
+      data: {
+        outcome: 'found', total: 1, bySeverity: { critical: 0, high: 1, medium: 0, low: 0 },
+        byDisposition: { open: 0, acknowledged: 0, dismissed: 0, accepted_risk: 1 }, byCategory: { networking: 1 }, items: [],
+      },
+    }));
+    const data: ReportData = { organizationId: ORG, reportType: 'security_insights', dateRange: RANGE, sections: { accountSecurityFindings: section as never } };
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'security_insights');
+    expect(report.keyHighlights).toContain(
+      "DevControl's account-level checks (security groups, IAM) found 1 active finding (0 critical, 1 high, 0 medium, 0 low); 1 of these is marked as accepted risk or dismissed by your team."
+    );
+  });
+
+  async function alarmsHighlight(inAlarmCount: number, complete: boolean): Promise<string[]> {
+    const section = await collectSection({ source: 'Amazon CloudWatch alarms', scope: { kind: 'aws_account_region', connectedAccountId: null, region: 'us-east-1' } }, async () => ({
+      state: complete ? 'available' as const : 'partial' as const,
+      asOf: '2026-09-26T06:00:00.000Z',
+      data: { outcome: inAlarmCount > 0 ? 'found' : 'none_found', inAlarmCount, inAlarmComplete: complete, configuredCount: 9, configuredCountComplete: complete, items: [] },
+      reason: complete ? null : 'capped',
+    }));
+    const data: ReportData = { organizationId: ORG, reportType: 'infrastructure_health', dateRange: RANGE, sections: { cloudwatchAlarms: section as never } };
+    return (await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data, 'infrastructure_health')).report.keyHighlights;
+  }
+
+  it('the alarm line: "1 alarm" singular, "at least" when the read was capped', async () => {
+    expect(await alarmsHighlight(1, true)).toContain('CloudWatch reported 1 alarm in ALARM in us-east-1 as of 2026-09-26T06:00:00.000Z (current state, not a history for the period).');
+    expect(await alarmsHighlight(2, false)).toContain('CloudWatch reported at least 2 alarms in ALARM in us-east-1 as of 2026-09-26T06:00:00.000Z (current state, not a history for the period).');
+    expect(await alarmsHighlight(1, false)).toContain('CloudWatch reported at least 1 alarm in ALARM in us-east-1 as of 2026-09-26T06:00:00.000Z (current state, not a history for the period).');
+  });
 
   it('states account-level findings with the counts, and the one the team marked ("is" for one)', async () => {
     expect(await findingsHighlight({ dismissed: 0, accepted_risk: 1 })).toContain(

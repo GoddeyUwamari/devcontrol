@@ -648,7 +648,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     const counts = SEVERITIES.map(sev => `${d.bySeverity[sev]} ${sev}`).join(', ');
     const reviewed = d.byDisposition.accepted_risk + d.byDisposition.dismissed;
     const reviewedText = reviewed > 0 ? `; ${reviewed} of these ${reviewed === 1 ? 'is' : 'are'} marked as accepted risk or dismissed by your team` : '';
-    return `DevControl's account-level checks (security groups, IAM) found ${d.total} active findings (${counts})${reviewedText}.`;
+    return `DevControl's account-level checks (security groups, IAM) found ${d.total} active finding${d.total !== 1 ? 's' : ''} (${counts})${reviewedText}.`;
   }
 
   private alarmsSentence(section: ContextSection<AlarmsEvidence>): string {

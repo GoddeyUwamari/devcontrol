@@ -742,8 +742,11 @@ ${topSpender ? `Your top cost category is ${topSpender.service} at ${this.format
     if (lastMessage.includes('underutilized') || lastMessage.includes('optimize') || lastMessage.includes('saving')) {
       // CPU utilization is its own evidence source; only a section that carries
       // data says anything about it -- anything else is stated as missing data.
-      const cpu = context.evidence.results.find(r => r.id === 'telemetry.cpu')?.section as ContextSection<{ items: unknown[] }> | undefined;
-      const measured = cpu && (cpu.state === 'available' || cpu.state === 'partial') && cpu.data ? cpu.data.items.length : null;
+      const cpu = context.evidence.results.find(r => r.id === 'telemetry.cpu')?.section as ContextSection<{ items: Array<{ instanceId?: string }> }> | undefined;
+      // Distinct instances: one instance can have a reading from the latest check and from an idle finding.
+      const measured = cpu && (cpu.state === 'available' || cpu.state === 'partial') && cpu.data
+        ? new Set(cpu.data.items.map(i => i.instanceId)).size
+        : null;
       const utilizationPhrase = measured !== null && measured > 0
         ? `DevControl has CloudWatch CPU utilization for ${measured} EC2 instance${measured !== 1 ? 's' : ''} (as of ${cpu?.asOf ?? 'unknown'}). Ask again when the AI assistant is available to analyze it.`
         : `I don't have EC2 CPU utilization data for this account right now${cpu ? ` (${statusPhrase(cpu).replace(/ -- .*$/, '')})` : ''}, so I can't say which instances are underutilized.`;
@@ -769,9 +772,11 @@ Underutilized resources typically represent 20-40% potential savings when rights
     const inventoryPhrase = services.state === 'available' && services.data
       ? `I can see ${services.data.length} discovered resource types in your AWS environment`
       : `I don't have a resource inventory for this account right now`;
-    const alarms = context.evidence.results.find(r => r.id === 'ops.cloudwatch_alarms')?.section as ContextSection<{ inAlarmCount: number }> | undefined;
+    const alarms = context.evidence.results.find(r => r.id === 'ops.cloudwatch_alarms')?.section as ContextSection<{ inAlarmCount: number; inAlarmComplete?: boolean }> | undefined;
+    // A capped read is a lower bound, as in reports and the summary.
+    const atLeast = alarms && (alarms.state === 'partial' || alarms.data?.inAlarmComplete === false) ? 'at least ' : '';
     const alertsPhrase = alarms && (alarms.state === 'available' || alarms.state === 'partial') && alarms.data
-      ? `${alarms.data.inAlarmCount} CloudWatch alarm${alarms.data.inAlarmCount !== 1 ? 's' : ''} in ALARM (as of ${alarms.asOf ?? 'unknown'})`
+      ? `${atLeast}${alarms.data.inAlarmCount} CloudWatch alarm${alarms.data.inAlarmCount !== 1 ? 's' : ''} in ALARM (as of ${alarms.asOf ?? 'unknown'})`
       : `not available${alarms ? ` -- ${statusPhrase(alarms).replace(/ -- .*$/, '')}` : ''}`;
 
     return `**🔍 What's happening**

@@ -47,6 +47,15 @@ function withTruncation<T>(section: ContextSection<T>, truncation: EvidenceTrunc
   return { ...section, data, untrusted, truncation };
 }
 
+/**
+ * A section cut to its line by a cap: its data and untrusted text are dropped,
+ * so no consumer (the report's per-section evidence included) prints data its
+ * line says was not included. State, source, as-of and reason stay.
+ */
+function cutToLine<T>(section: ContextSection<T>, by: 'provider_cap' | 'total_budget'): ContextSection<T> {
+  return { ...section, data: null, untrusted: [], truncation: { kept: 0, total: itemCount(section), by } };
+}
+
 function itemCount(section: ContextSection<unknown>): number {
   const items = (section.data as { items?: unknown } | null)?.items;
   return Array.isArray(items) ? items.length : 1;
@@ -69,9 +78,8 @@ function fitProvider(result: ProviderResult, def: ProviderDefinition | undefined
       if (tokens <= maxTokens) return { result: candidate, tokens };
     }
   }
-  const total = itemCount(result.section);
   return {
-    result: { ...result, section: withTruncation(result.section, { kept: 0, total, by: 'provider_cap' }), mode: 'header' },
+    result: { ...result, section: cutToLine(result.section, 'provider_cap'), mode: 'header' },
     tokens: 0,
   };
 }
@@ -92,11 +100,7 @@ export function applyBudget(
   for (const { r, index } of order) {
     const fitted = fitProvider(r, definitions.get(r.id));
     if (fitted.result.mode !== 'header' && used + fitted.tokens > totalTokens) {
-      planned[index] = {
-        ...r,
-        section: withTruncation(r.section, { kept: 0, total: itemCount(r.section), by: 'total_budget' }),
-        mode: 'header',
-      };
+      planned[index] = { ...r, section: cutToLine(r.section, 'total_budget'), mode: 'header' };
       continue;
     }
     planned[index] = fitted.result;

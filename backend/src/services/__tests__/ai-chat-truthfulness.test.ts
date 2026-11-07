@@ -315,11 +315,38 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     const withCpu = baseContext();
     withCpu.evidence = evidenceBundle({
       ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])),
-      'telemetry.cpu': section('available', { items: [{ ref: 'u1' }, { ref: 'u2' }] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
+      'telemetry.cpu': section('available', { items: [{ ref: 'u1', instanceId: 'i-1234567890abcdef0' }, { ref: 'u2', instanceId: 'i-0123456789abcdef0' }] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
     });
     const response = await fallbackFor('Which instances are underutilized?', withCpu);
 
     expect(response).toContain(`DevControl has CloudWatch CPU utilization for 2 EC2 instances (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+  });
+
+  it('L2: counts distinct EC2 instances -- one instance in the latest check and an idle finding is "1 EC2 instance"', async () => {
+    const withCpu = baseContext();
+    withCpu.evidence = evidenceBundle({
+      ...Object.fromEntries(withCpu.evidence.results.map((r) => [r.id, r.section])),
+      'telemetry.cpu': section('available', { items: [
+        { ref: 'u1', instanceId: 'i-1234567890abcdef0', basis: 'latest_check_last_hour', cpuPercent: 2 },
+        { ref: 'u2', instanceId: 'i-1234567890abcdef0', basis: 'idle_finding_7_day_average', cpuPercent: 1.5 },
+      ] }, { source: 'Amazon CloudWatch CPUUtilization, as DevControl recorded it', asOf: ALARMS_AS_OF }),
+    });
+    const response = await fallbackFor('Which instances are underutilized?', withCpu);
+
+    expect(response).toContain(`DevControl has CloudWatch CPU utilization for 1 EC2 instance (as of ${ALARMS_AS_OF}). Ask again when the AI assistant is available to analyze it.`);
+  });
+
+  it('L3: the Active alerts line says "at least" for a capped read, never otherwise; "1 CloudWatch alarm" singular', async () => {
+    const capped = (n: number) => section('partial', { outcome: 'found', inAlarmCount: n, inAlarmComplete: false, configuredCount: 9, configuredCountComplete: false, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF, reason: 'capped' });
+    const expectLine = async (alarms: ContextSection<unknown>, line: string) => {
+      const response = await fallbackFor('Give me an overview', baseContext({ evidence: evidence(alarms) }));
+      expect(response).toContain(`- Active alerts: ${line}`);
+    };
+
+    await expectLine(capped(3), `at least 3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+    await expectLine(capped(1), `at least 1 CloudWatch alarm in ALARM (as of ${ALARMS_AS_OF})`);
+    await expectLine(alarmsAvailable(3), `3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+    await expectLine(alarmsAvailable(1), `1 CloudWatch alarm in ALARM (as of ${ALARMS_AS_OF})`);
   });
 
   it('never claims "0 active alerts" or "No recent incidents" when alarms could not be read', async () => {

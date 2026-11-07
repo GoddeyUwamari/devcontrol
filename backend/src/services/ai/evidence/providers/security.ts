@@ -28,6 +28,9 @@ export const SECURITY_EVALUATION_MAX_AGE_SECONDS = TWO_SCANS_SECONDS;
 
 const ACCOUNT_SCOPE_SOURCE = 'DevControl account-level security findings (security groups, IAM)';
 
+/** Account findings and Top Risk share it: no active findings without a current evaluation is not a "none". */
+const NO_CURRENT_EVALUATION_REASON = 'no completed, current security evaluation, so no active findings is not a confirmed "none"';
+
 export interface AccountFindingsEvidence {
   outcome: 'found' | 'none_found';
   total: number;
@@ -73,7 +76,7 @@ export const accountFindingsProvider = defineProvider<AccountFindingsEvidence>({
         if (active.length === 0) {
           const current = await new AccountSecurityFindingsRepository().isLatestSecurityEvaluationCurrent(organizationId, SECURITY_EVALUATION_MAX_AGE_SECONDS);
           if (!current) {
-            return { state: 'unavailable', reason: 'no completed, current security evaluation, so no active findings is not a confirmed "none"' };
+            return { state: 'unavailable', reason: NO_CURRENT_EVALUATION_REASON };
           }
         }
         const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 } as Record<Severity, number>;
@@ -139,13 +142,19 @@ export const topRiskProvider = defineProvider<TopRiskEvidence>({
   topics: ['security'],
   priority: 1,
   maxTokens: 400,
-  async collect({ basis }) {
+  async collect({ organizationId, basis }) {
     return collectSection<TopRiskEvidence>(
       { source: ACCOUNT_SCOPE_SOURCE, classification: 'calculated' },
       async () => {
         // getActive() returns newest first within each severity; the shared rule
         // skips accepted and dismissed findings and anything below medium.
         const active = await basis.activeAccountFindings();
+        // The account-findings rule: no active findings is only a real zero once the
+        // latest security evaluation completed and is current.
+        if (active.length === 0) {
+          const current = await new AccountSecurityFindingsRepository().isLatestSecurityEvaluationCurrent(organizationId, SECURITY_EVALUATION_MAX_AGE_SECONDS);
+          if (!current) return { state: 'unavailable', reason: NO_CURRENT_EVALUATION_REASON };
+        }
         const top = selectTopRiskFinding(active);
         return {
           state: 'available',
@@ -351,6 +360,9 @@ export const riskScoreProvider = defineProvider<RiskScoreEvidence>({
   summarize: summarizeItems,
 });
 
+/** Model-facing: the reason while the organization's first Security Hub sync is still running. */
+export const SECURITY_HUB_FIRST_SYNC_REASON = 'first sync in progress';
+
 export interface SecurityHubEvidence {
   capabilityStatus: string;
   lastSyncStatus: string;
@@ -382,6 +394,15 @@ export const securityHubProvider = defineProvider<SecurityHubEvidence>({
     if (!state) return notConnected<SecurityHubEvidence>(meta, 'Security Hub has not been synced for this organization yet');
     return collectSection<SecurityHubEvidence>(meta, async () => {
       // Error text from AWS (capabilityError, lastSyncError) is never read into evidence.
+      // A first sync still running has written only a placeholder capability (ERROR):
+      // not available yet -- never "Security Hub is not available".
+      if (state.lastSyncStatus === 'RUNNING' && !state.lastSyncCompletedAt) {
+        return { state: 'unavailable', reason: SECURITY_HUB_FIRST_SYNC_REASON };
+      }
+      // A failed sync is an error (its findings count is not a measurement), never "available, 0".
+      if (state.lastSyncStatus === 'FAILED') {
+        throw new Error('the last Security Hub sync failed');
+      }
       if (state.capabilityStatus !== 'ENABLED') {
         return { state: 'not_connected', reason: `Security Hub is not available to DevControl for this account (status: ${state.capabilityStatus})` };
       }

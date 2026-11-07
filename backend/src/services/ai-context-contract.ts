@@ -667,7 +667,11 @@ export async function deriveSection<T, Inputs extends readonly ContextSection<an
   const missing = inputs.filter(input => !hasEvidence(input));
   if (missing.length > 0) {
     // Input reasons are already customer-safe; only state labels are repeated here.
-    const reason = `cannot be calculated: ${missing.map(m => `${m.source}: ${CONTEXT_STATE_LABELS[m.state].toLowerCase()}`).join('; ')}`;
+    // An input whose data a size cap left out says so, not its (data-carrying) state.
+    const label = (m: ContextSection<unknown>) => (m.truncation && m.truncation.kept === 0 && m.data === null
+      ? 'not included in this answer (too large)'
+      : CONTEXT_STATE_LABELS[m.state].toLowerCase());
+    const reason = `cannot be calculated: ${missing.map(m => `${m.source}: ${label(m)}`).join('; ')}`;
     // A failure stays a failure, and a plan gate stays a plan gate (never "no data").
     const state = missing.some(m => m.state === 'error') ? 'error'
       : missing.some(m => m.state === 'not_entitled') ? 'not_entitled'

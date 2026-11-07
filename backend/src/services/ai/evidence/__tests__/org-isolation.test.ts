@@ -152,6 +152,18 @@ describe.each([
     expect(sectionOf<{ changeFailureRate: string }>(bundleB, 'delivery.dora').data?.changeFailureRate).toMatch(/^33\.3/);
   });
 
+  it('Security Hub, framework evaluations and the risk-score history are its own', () => {
+    const hub = (b: EvidenceBundle) => sectionOf<{ activeFindings: number }>(b, 'security.security_hub');
+    expect([hub(bundleA).state, hub(bundleA).data?.activeFindings]).toEqual(['available', 1]);
+    expect([hub(bundleB).state, hub(bundleB).data?.activeFindings]).toEqual(['available', 3]);
+    const frameworks = (b: EvidenceBundle) => sectionOf<{ items: Array<{ framework: string; checksByState: Record<string, number> }> }>(b, 'compliance.framework_evaluations').data?.items;
+    expect(frameworks(bundleA)).toEqual([expect.objectContaining({ framework: 'fixture-alpha', checksByState: { failed: 1 } })]);
+    expect(frameworks(bundleB)).toEqual([expect.objectContaining({ framework: 'fixture-bravo', checksByState: { failed: 3 } })]);
+    const history = (b: EvidenceBundle) => sectionOf<{ trendPoints: number }>(b, 'security.risk_score').data?.trendPoints;
+    expect(history(bundleA)).toBe(2);
+    expect(history(bundleB)).toBe(4);
+  });
+
   it('regions and the connected account are its own', () => {
     expect(sectionOf<{ connectedAccountId: string }>(bundleA, 'connection.scope').data?.connectedAccountId).toBe(orgA.accountId);
     expect(sectionOf<{ items: Array<{ region: string }> }>(bundleB, 'coverage.regions').data?.items.map((r) => r.region).sort()).toEqual(['eu-west-1', 'us-east-1']);

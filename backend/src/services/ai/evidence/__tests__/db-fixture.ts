@@ -200,6 +200,50 @@ export class EvidenceDb {
       );
     }
 
+    // AWS Security Hub: a completed sync and `count` active findings.
+    await this.admin.query(
+      `INSERT INTO organization_security_hub_state (organization_id, capability_status, last_sync_status, last_sync_started_at, last_sync_completed_at)
+       VALUES ($1, 'ENABLED', 'COMPLETED', NOW() - interval '10 minutes', NOW() - interval '5 minutes')`,
+      [id]
+    );
+    for (let i = 0; i < count; i++) {
+      const title = `fixture ${label} hub finding ${i}`;
+      markers.push(title);
+      await this.admin.query(
+        `INSERT INTO security_hub_findings (organization_id, finding_id, product_arn, title, severity, compliance_status, security_hub_created_at, security_hub_updated_at)
+         VALUES ($1, $2, 'arn:aws:securityhub:us-east-1::product/aws/securityhub', $3, 'high', 'FAILED', NOW(), NOW())`,
+        [id, `fixture-${label}-hub-${i}-${this.suffix}`, title]
+      );
+    }
+
+    // A finished framework evaluation run with one failed check per resource.
+    const framework = `fixture-${label}`;
+    markers.push(framework);
+    // generation is an identity column: the database assigns it.
+    const run = await this.admin.query(
+      `INSERT INTO framework_evaluation_runs (organization_id, framework, applicability, applicability_reason_code, status, started_at, heartbeat_at, finished_at, evaluator_version, resources_in_scope, resources_persisted, resources_failed)
+       VALUES ($1, $2, 'enabled', 'fixture_reason', 'complete', NOW() - interval '1 hour', NOW(), NOW() - interval '30 minutes', 'fixture-1', $3, $3, 0)
+       RETURNING generation`,
+      [id, framework, count]
+    );
+    const generation = run.rows[0].generation;
+    for (const [i, dbId] of resourceDbIds.entries()) {
+      await this.admin.query(
+        `INSERT INTO compliance_check_evaluations (organization_id, resource_id, source_kind, source_key, check_key, evaluation_state, severity, evidence_basis, reason_code, run_generation, evaluator_version)
+         VALUES ($1, $2, 'framework', $3, $4, 'failed', 'high', 'config', 'fixture_reason', $5, 'fixture-1')`,
+        [id, dbId, framework, `fixture.check.${i}`, generation]
+      );
+    }
+
+    // Daily posture-score history: `count + 1` snapshots.
+    for (let d = 0; d <= count; d++) {
+      await this.admin.query(
+        `INSERT INTO risk_score_history (organization_id, snapshot_date, overall_score, grade, encryption_score, public_access_score, backup_score, compliance_score, resource_management_score)
+         VALUES ($1, CURRENT_DATE - $2::int, $3, 'C', 70, 70, 70, 70, 70)`,
+        [id, d, 60 + d]
+      );
+    }
+
     return { id, label, accountId, resourceDbIds, markers };
   }
 }
