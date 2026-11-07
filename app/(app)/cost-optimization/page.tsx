@@ -25,6 +25,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { annualizeMonthly, cn, formatSavingsCurrency } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { DEFAULT_PRICE_DISCLOSURE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
+import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline } from '@/lib/finding-display';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -541,7 +542,7 @@ export default function CostOptimizationPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-start">
                       <div>
                         <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <span className="text-ui font-semibold text-slate-900">{rec.issue || '—'}</span>
+                          <span className="text-ui font-semibold text-slate-900">{displayIssue(rec) || '—'}</span>
                           {rec.severity && <SeverityBadge {...severityToBadge(rec.severity)} />}
                           <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-ink-muted">{rec.status || '—'}</span>
                         </div>
@@ -556,13 +557,22 @@ export default function CostOptimizationPage() {
                       <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3">
                         <div className="text-right">
                           <p className="text-section tabular-nums text-ink-success whitespace-nowrap">
-                            {formatRecommendationSavings(rec, formatSavingsCurrency)}
+                            {isLowActivityFinding(rec)
+                              ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency)
+                              : formatRecommendationSavings(rec, formatSavingsCurrency)}
                           </p>
                           {isSavingsCeiling(rec) && (
                             <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
                           )}
                           {isDefaultPriceEstimate(rec) && (
                             <p className="text-label text-ink-muted font-medium max-w-[16rem]" data-testid="default-price-disclosure">{DEFAULT_PRICE_DISCLOSURE}</p>
+                          )}
+                          {isLowActivityFinding(rec) && (
+                            <p className="text-label text-ink-muted font-medium max-w-[16rem]" data-testid="low-activity-savings-basis">
+                              {!isDefaultPriceEstimate(rec) && typeof rec.metadata?.instance_type === 'string'
+                                ? lowActivityListPriceBasis(rec.metadata.instance_type)
+                                : LOW_ACTIVITY_STORAGE_NOTE}
+                            </p>
                           )}
                         </div>
                         <div className="flex gap-2">

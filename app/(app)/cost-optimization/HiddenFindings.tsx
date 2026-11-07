@@ -95,7 +95,7 @@ function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: 
       <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="text-ui font-semibold text-slate-900 break-words">{item.issue}</span>
+            <span className="text-ui font-semibold text-slate-900 break-words">{item.issueLabel ?? item.issue}</span>
             {!inGroup && item.decision === 'DISMISSED' && (
               <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{DISMISSED_BADGE}</span>
             )}

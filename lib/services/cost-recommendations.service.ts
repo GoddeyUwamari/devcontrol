@@ -60,6 +60,8 @@ export interface HiddenFinding {
   decidedBy: string | null;
   decisionCount: number;
   issue: string;
+  /** The label to show ("Low-activity instance" for a low-activity detection); absent from an older backend. */
+  issueLabel?: string;
   resourceId: string;
   resourceName: string | null;
   resourceType: string;
