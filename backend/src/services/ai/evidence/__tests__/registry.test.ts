@@ -238,9 +238,13 @@ describe('budget and truncation', () => {
     });
     expect(bundle.results.map((x) => x.mode)).toEqual(['loaded', 'header', 'header']);
     expect(bundle.results[1].section.truncation).toEqual({ kept: 0, total: 120, by: 'total_budget' });
+    // A total-budget cut carries no data and is never "available" (re-review L6).
+    for (const cut of bundle.results.slice(1)) {
+      expect(cut.section).toMatchObject({ state: 'omitted', reason: 'not included in this answer (too large)', data: null, untrusted: [] });
+    }
     const text = renderEvidence(bundle);
     for (const id of ['test.first', 'test.second', 'test.third']) expect(text).toContain(`[${id}]`);
-    expect(text).toMatch(/\[test\.second\].*evidence size limit was reached/);
+    expect(text).toMatch(/- \[test\.second\] Alpha: not included in this answer \(too large\)\.$/m);
   });
 
   it('is deterministic: the same input gives the same plan', async () => {
@@ -278,6 +282,6 @@ describe('fingerprints', () => {
 
 it('every state the contract defines is accepted by the wrapper', () => {
   expect([...CONTEXT_DATA_STATES].sort()).toEqual(
-    ['available', 'error', 'not_built', 'not_connected', 'not_entitled', 'not_supported', 'partial', 'stale', 'unavailable']
+    ['available', 'error', 'not_built', 'not_connected', 'not_entitled', 'not_supported', 'omitted', 'partial', 'stale', 'unavailable']
   );
 });

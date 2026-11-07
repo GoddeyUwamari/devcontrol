@@ -69,6 +69,9 @@ export function isCurrentContractVersion(version: unknown): boolean {
  *   stale         = collected and complete for an older time than the
  *                   source's freshness rule allows; the data is kept, never
  *                   presented as current
+ *   omitted       = collected, but left out of this answer because of its
+ *                   size (the evidence budget); no data is carried, and it is
+ *                   never "available" and never "not available"
  *
  * "Empty" is not a state: a real zero is 'available' with an empty data set
  * and an explicit outcome; 'unavailable' means there was nothing to collect.
@@ -82,11 +85,15 @@ export type ContextDataState =
   | 'not_built'
   | 'not_connected'
   | 'not_entitled'
-  | 'stale';
+  | 'stale'
+  | 'omitted';
 
 export const CONTEXT_DATA_STATES: readonly ContextDataState[] = [
-  'available', 'partial', 'stale', 'unavailable', 'not_connected', 'error', 'not_entitled', 'not_built', 'not_supported',
+  'available', 'partial', 'stale', 'omitted', 'unavailable', 'not_connected', 'error', 'not_entitled', 'not_built', 'not_supported',
 ];
+
+/** How a section left out for its size reads, everywhere (model-facing and in fallbacks). */
+export const OMITTED_REASON = 'not included in this answer (too large)';
 
 /**
  * How each state reads in model-facing text. The model repeats what it is
@@ -102,6 +109,7 @@ export const CONTEXT_STATE_LABELS: Record<ContextDataState, string> = {
   not_connected: 'Not connected',
   not_entitled: 'Not included in this plan',
   stale: 'Out of date',
+  omitted: 'Not included in this answer (too large)',
 };
 
 /** What each state means, carried in the serialized evidence itself -- not left to prompt instructions alone. */
@@ -115,6 +123,7 @@ export const CONTEXT_STATE_MEANINGS: Record<ContextDataState, string> = {
   not_connected: 'The source needs setup before DevControl can read it (for example, no AWS account is connected). This is NOT zero or none.',
   not_entitled: "The organization's plan does not include this, so it was not read. This is NOT \"no data\", zero, or none.",
   stale: 'The data is older than this source\'s freshness rule allows. State its as-of time; never present it as current.',
+  omitted: 'DevControl has this evidence, but it was too large to include in this answer. This is NOT zero, none, or "not available".',
 };
 
 /** States whose section carries data (stale data is kept, labeled out of date). */
@@ -632,6 +641,7 @@ function referenceTo(section: ContextSection<unknown>): EvidenceReference {
  * error > unavailable > partial > available:
  *   - any input 'error'                         -> 'error' (a failure stays a failure)
  *   - any input 'not_entitled'                  -> 'not_entitled' (a plan gate stays one)
+ *   - any input 'omitted'                       -> 'omitted' (left out for size, not missing)
  *   - any other input without evidence          -> 'unavailable' (incl. stale)
  *   - any input 'partial'                       -> 'partial'
  * No inputs at all is 'unavailable': a derived value must cite its evidence.
@@ -645,7 +655,7 @@ export async function deriveSection<T, Inputs extends readonly ContextSection<an
 ): Promise<ContextSection<T>> {
   const derivedFrom = inputs.map(referenceTo);
   const provenance = meta.provenance ?? 'derived';
-  const noData = (state: 'error' | 'unavailable' | 'not_entitled', reason: string): ContextSection<T> => ({
+  const noData = (state: 'error' | 'unavailable' | 'not_entitled' | 'omitted', reason: string): ContextSection<T> => ({
     state,
     source: meta.source,
     provenance: null,
@@ -667,14 +677,11 @@ export async function deriveSection<T, Inputs extends readonly ContextSection<an
   const missing = inputs.filter(input => !hasEvidence(input));
   if (missing.length > 0) {
     // Input reasons are already customer-safe; only state labels are repeated here.
-    // An input whose data a size cap left out says so, not its (data-carrying) state.
-    const label = (m: ContextSection<unknown>) => (m.truncation && m.truncation.kept === 0 && m.data === null
-      ? 'not included in this answer (too large)'
-      : CONTEXT_STATE_LABELS[m.state].toLowerCase());
-    const reason = `cannot be calculated: ${missing.map(m => `${m.source}: ${label(m)}`).join('; ')}`;
+    const reason = `cannot be calculated: ${missing.map(m => `${m.source}: ${CONTEXT_STATE_LABELS[m.state].toLowerCase()}`).join('; ')}`;
     // A failure stays a failure, and a plan gate stays a plan gate (never "no data").
     const state = missing.some(m => m.state === 'error') ? 'error'
       : missing.some(m => m.state === 'not_entitled') ? 'not_entitled'
+      : missing.some(m => m.state === 'omitted') ? 'omitted'
       : 'unavailable';
     return noData(state, reason);
   }

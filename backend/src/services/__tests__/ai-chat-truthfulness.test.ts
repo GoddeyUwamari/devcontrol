@@ -349,6 +349,15 @@ describe('AIChatService getFallbackResponse -- section states', () => {
     await expectLine(alarmsAvailable(1), `1 CloudWatch alarm in ALARM (as of ${ALARMS_AS_OF})`);
   });
 
+  it('re-review N4: only a capped in-ALARM count is "at least"; a capped configured count leaves it exact', async () => {
+    const configuredOnly = section('partial', { outcome: 'found', inAlarmCount: 3, inAlarmComplete: true, configuredCount: 1000, configuredCountComplete: false, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF, reason: 'capped' });
+    const inAlarmCapped = section('partial', { outcome: 'found', inAlarmCount: 3, inAlarmComplete: false, configuredCount: 1000, configuredCountComplete: false, items: [] }, { source: 'Amazon CloudWatch alarms', asOf: ALARMS_AS_OF, reason: 'capped' });
+    const lineFor = async (alarms: ContextSection<unknown>) => (await fallbackFor('Give me an overview', baseContext({ evidence: evidence(alarms) }))).split('\n').find((l) => l.startsWith('- Active alerts:'));
+
+    expect(await lineFor(configuredOnly)).toBe(`- Active alerts: 3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+    expect(await lineFor(inAlarmCapped)).toBe(`- Active alerts: at least 3 CloudWatch alarms in ALARM (as of ${ALARMS_AS_OF})`);
+  });
+
   it('never claims "0 active alerts" or "No recent incidents" when alarms could not be read', async () => {
     const response = await fallbackFor('Give me an overview', baseContext());
 

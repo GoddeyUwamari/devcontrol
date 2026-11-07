@@ -362,6 +362,8 @@ export const riskScoreProvider = defineProvider<RiskScoreEvidence>({
 
 /** Model-facing: the reason while the organization's first Security Hub sync is still running. */
 export const SECURITY_HUB_FIRST_SYNC_REASON = 'first sync in progress';
+/** Model-facing: the reason while any later Security Hub sync is running. */
+export const SECURITY_HUB_SYNC_RUNNING_REASON = 'sync in progress';
 
 export interface SecurityHubEvidence {
   capabilityStatus: string;
@@ -394,10 +396,13 @@ export const securityHubProvider = defineProvider<SecurityHubEvidence>({
     if (!state) return notConnected<SecurityHubEvidence>(meta, 'Security Hub has not been synced for this organization yet');
     return collectSection<SecurityHubEvidence>(meta, async () => {
       // Error text from AWS (capabilityError, lastSyncError) is never read into evidence.
-      // A first sync still running has written only a placeholder capability (ERROR):
-      // not available yet -- never "Security Hub is not available".
-      if (state.lastSyncStatus === 'RUNNING' && !state.lastSyncCompletedAt) {
-        return { state: 'unavailable', reason: SECURITY_HUB_FIRST_SYNC_REASON };
+      // A sync still running: not available until it finishes. The row no longer
+      // says how the previous attempt ended (a failed one also sets the completed
+      // time), so its findings are never shown as current while a sync runs. A
+      // first sync has written only a placeholder capability (ERROR) -- never
+      // "Security Hub is not available".
+      if (state.lastSyncStatus === 'RUNNING') {
+        return { state: 'unavailable', reason: state.lastSyncCompletedAt ? SECURITY_HUB_SYNC_RUNNING_REASON : SECURITY_HUB_FIRST_SYNC_REASON };
       }
       // A failed sync is an error (its findings count is not a measurement), never "available, 0".
       if (state.lastSyncStatus === 'FAILED') {

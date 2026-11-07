@@ -25,6 +25,7 @@ import {
   EVIDENCE_CLAIM_RULES,
   hasEvidence,
   notEntitled,
+  OMITTED_REASON,
   requireOrganizationId,
   toModelEvidence,
   type ContextSection,
@@ -364,6 +365,11 @@ function round(value: number, places: number): number {
   return Math.round(value * f) / f;
 }
 
+/** A section without evidence, in a sentence: one left out for its size says so, never "not available". */
+function missingSentence(subject: string, section: ContextSection<unknown>, notAvailable: string): string {
+  return section.state === 'omitted' ? `${subject}: ${OMITTED_REASON}.` : notAvailable;
+}
+
 function unavailablePhrase(section: ContextSection<unknown>): string {
   return (section.reason ?? `${section.source} is not available`).replace(/\.$/, '');
 }
@@ -576,7 +582,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   // -------------------------------------------------------------------------
 
   private spendSentence(section: ContextSection<SpendEvidence>): string {
-    if (!hasEvidence(section)) return `Cloud spend is not available: ${unavailablePhrase(section)}.`;
+    if (!hasEvidence(section)) return missingSentence('Cloud spend', section, `Cloud spend is not available: ${unavailablePhrase(section)}.`);
     const d = section.data;
     if (d.basis === 'estimated_monthly_run_rate') {
       const partial = section.state === 'partial' && section.reason ? `; ${section.reason}` : '';
@@ -589,7 +595,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   }
 
   private monthOverMonthSentence(section: ContextSection<MonthOverMonthEvidence>): string {
-    if (!hasEvidence(section)) return `A month-over-month cost comparison is not available (${unavailablePhrase(section)}), so no cost trend is reported.`;
+    if (!hasEvidence(section)) return missingSentence('The month-over-month cost comparison', section, `A month-over-month cost comparison is not available (${unavailablePhrase(section)}), so no cost trend is reported.`);
     const d = section.data;
     const pct = d.changePercent !== null ? ` (${d.changePercent > 0 ? '+' : ''}${d.changePercent.toFixed(1)}%)` : ' (percentage undefined: the previous window totals $0.00)';
     const today = d.currentWindowIncludesToday ? " The current window's last day is today and still being billed." : '';
@@ -598,7 +604,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   }
 
   private securitySentence(section: ContextSection<ComplianceFindingsEvidence>): string {
-    if (!hasEvidence(section)) return `Configuration-check findings are not available: ${unavailablePhrase(section)}.`;
+    if (!hasEvidence(section)) return missingSentence('Configuration-check findings', section, `Configuration-check findings are not available: ${unavailablePhrase(section)}.`);
     const d = section.data;
     const partial = section.state === 'partial' && section.reason ? ` (${section.reason.replace(/\.$/, '')})` : '';
     const total = SEVERITIES.reduce((sum, s) => sum + d.findingsBySeverity[s], 0);
@@ -610,7 +616,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   }
 
   private deploymentsSentence(section: ContextSection<DeploymentCounts>, rates?: ContextSection<DeliveryRates>): string {
-    if (!hasEvidence(section)) return `Deployment data is not available: ${unavailablePhrase(section)}.`;
+    if (!hasEvidence(section)) return missingSentence('Deployment data', section, `Deployment data is not available: ${unavailablePhrase(section)}.`);
     const d = section.data;
     const rate = rates && hasEvidence(rates) && rates.data.successRatePercent !== null ? `, a ${rates.data.successRatePercent}% success rate` : '';
     return `${d.total} deployments were recorded in DevControl for the report period: ${d.successful} successful and ${d.failed} failed${rate}.`;
@@ -624,12 +630,12 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
         ? `Change failure rate: ${rates.data.changeFailureRatePercent}% of recorded deployments failed.`
         : 'Change failure rate: not applicable, no deployments were recorded.');
     } else if (rates) {
-      parts.push(`Deployment rates are not available: ${unavailablePhrase(rates)}.`);
+      parts.push(missingSentence('Deployment rates', rates, `Deployment rates are not available: ${unavailablePhrase(rates)}.`));
     }
     if (gap && hasEvidence(gap)) {
       parts.push(`Average time between consecutive successful deployments of the same service: ${gap.data.averageHours} hours (${gap.data.intervalsMeasured} intervals across ${gap.data.servicesMeasured} services).`);
     } else if (gap) {
-      parts.push(`Time between deployments is not available: ${unavailablePhrase(gap)}.`);
+      parts.push(missingSentence('Time between deployments', gap, `Time between deployments is not available: ${unavailablePhrase(gap)}.`));
     }
     parts.push('DevControl does not measure DORA lead time for changes.');
     return parts.join(' ');
@@ -637,12 +643,12 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
 
   private postureScoreSentence(section: ContextSection<RiskScoreEvidence> | undefined): string {
     if (!section) return '';
-    if (!hasEvidence(section)) return ` The security posture score is not available: ${unavailablePhrase(section)}.`;
+    if (!hasEvidence(section)) return ` ${missingSentence('The security posture score', section, `The security posture score is not available: ${unavailablePhrase(section)}.`)}`;
     return ` DevControl's calculated security posture score is ${section.data.score}/100 (grade ${section.data.grade}).`;
   }
 
   private accountFindingsSentence(section: ContextSection<AccountFindingsEvidence>): string {
-    if (!hasEvidence(section)) return `Account-level security findings are not available: ${unavailablePhrase(section)}.`;
+    if (!hasEvidence(section)) return missingSentence('Account-level security findings', section, `Account-level security findings are not available: ${unavailablePhrase(section)}.`);
     const d = section.data;
     if (d.total === 0) return "DevControl's account-level checks (security groups, IAM) found no active findings.";
     const counts = SEVERITIES.map(sev => `${d.bySeverity[sev]} ${sev}`).join(', ');
@@ -652,7 +658,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   }
 
   private alarmsSentence(section: ContextSection<AlarmsEvidence>): string {
-    if (!hasEvidence(section)) return `CloudWatch alarm status is not available: ${unavailablePhrase(section)}.`;
+    if (!hasEvidence(section)) return missingSentence('CloudWatch alarm status', section, `CloudWatch alarm status is not available: ${unavailablePhrase(section)}.`);
     const d = section.data;
     const region = section.scope?.kind === 'aws_account_region' && section.scope.region ? ` in ${section.scope.region}` : '';
     const atLeast = d.inAlarmComplete ? '' : 'at least ';
@@ -679,7 +685,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       if (recsWithItems) {
         costRecommendations.push(`Review ${recsWithItems.items.length} active recommendations for idle or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
       } else if (recs && !hasEvidence(recs)) {
-        costRecommendations.push(`Cost recommendations are not available: ${unavailablePhrase(recs)}.`);
+        costRecommendations.push(missingSentence('Cost recommendations', recs, `Cost recommendations are not available: ${unavailablePhrase(recs)}.`));
       }
       report.costAnalysis = { overview: `${spend}${top}`, trends: trend, recommendations: costRecommendations };
     }
@@ -741,7 +747,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     if (s.resourceInventory) {
       highlights.push(hasEvidence(s.resourceInventory)
         ? `${s.resourceInventory.data.total} discovered resources across ${Object.keys(s.resourceInventory.data.byType).length} types${s.resourceInventory.state === 'partial' ? ' (inventory may be incomplete)' : ''}. Changes over the period are not tracked.`
-        : `Resource inventory is not available: ${unavailablePhrase(s.resourceInventory)}.`);
+        : missingSentence('Resource inventory', s.resourceInventory, `Resource inventory is not available: ${unavailablePhrase(s.resourceInventory)}.`));
     }
 
     if (s.accountSecurityFindings) {
@@ -896,6 +902,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       coverage: 'the 10 active recommendations with the highest estimated savings, filtered to idle or unused resources',
     };
     if (!hasEvidence(findings)) {
+      // The source's own state and reason (omitted stays omitted, with OMITTED_REASON).
       return Promise.resolve({ ...findings, source: meta.source, coverage: meta.coverage, data: null });
     }
     return collectSection<IdleResourceRecommendations>(meta, async () => {

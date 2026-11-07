@@ -30,6 +30,7 @@ import { formatSavingsCurrency } from '../utils/formatSavingsCurrency';
 import {
   collectSection,
   EVIDENCE_CLAIM_RULES,
+  OMITTED_REASON,
   evidenceFingerprint,
   hasEvidence,
   requireOrganizationId,
@@ -182,6 +183,11 @@ function missing(section: ContextSection<unknown>): string {
   return (section.reason ?? 'no data').replace(/\.$/, '');
 }
 
+/** A missing fact in words: a section left out for its size says so, never "not available". */
+function notAvailable(section: ContextSection<unknown>): string {
+  return section.state === 'omitted' ? OMITTED_REASON : `not available (${missing(section)})`;
+}
+
 export class AISummaryService {
   private aiInsightsService = new AIInsightsService();
 
@@ -247,7 +253,10 @@ export class AISummaryService {
     });
     // The cost findings' counts, under the summary's established source name.
     const findings = sectionOf<CostFindingsEvidence>(evidence, 'cost.findings');
-    const recommendations = await collectSection<DashboardSections['recommendations'] extends ContextSection<infer T> ? T : never>(
+    // Left out for its size: stays omitted (never "no cost findings are available").
+    const recommendations = findings.state === 'omitted'
+      ? { ...findings, source: 'DevControl cost recommendations', data: null } as ContextSection<{ active: number; totalEstimatedMonthlySavings: number }>
+      : await collectSection<DashboardSections['recommendations'] extends ContextSection<infer T> ? T : never>(
       { source: 'DevControl cost recommendations', classification: 'estimated' },
       async () => {
         if (findings.state === 'error') throw new Error('cost findings could not be retrieved');
@@ -303,8 +312,8 @@ export class AISummaryService {
         `(encryption, backups, tagging, and other infrastructure checks) currently active.`
       );
     } else {
-      const reason = !hasEvidence(s.securityPosture) ? missing(s.securityPosture) : missing(s.accountFindings);
-      facts.push(`Security findings: not available (${reason}). Do not state or imply that there are no security findings or risks.`);
+      const gap = !hasEvidence(s.securityPosture) ? s.securityPosture : s.accountFindings;
+      facts.push(`Security findings: ${notAvailable(gap)}. Do not state or imply that there are no security findings or risks.`);
     }
 
     if (hasEvidence(s.accountFindings) && s.accountFindings.data.top) {
@@ -320,7 +329,7 @@ export class AISummaryService {
         );
       }
     } else {
-      facts.push(`Cost recommendations: not available (${missing(s.recommendations)}).`);
+      facts.push(`Cost recommendations: ${notAvailable(s.recommendations)}.`);
     }
 
     if (hasEvidence(s.monitoring)) {
@@ -355,7 +364,7 @@ export class AISummaryService {
         );
       }
     } else {
-      facts.push(`Cloud spend: not available (${missing(s.spend)}). Do not describe spend as $0 or unchanged.`);
+      facts.push(`Cloud spend: ${notAvailable(s.spend)}. Do not describe spend as $0 or unchanged.`);
     }
 
     if (hasEvidence(s.monthOverMonth)) {
@@ -370,7 +379,7 @@ export class AISummaryService {
         `daily charges with credits excluded${today}${partial}).`
       );
     } else if (hasEvidence(s.spend)) {
-      facts.push(`Month-over-month change: not available (${missing(s.monthOverMonth)}). Do not describe spend as up, down, flat, or unchanged.`);
+      facts.push(`Month-over-month change: ${notAvailable(s.monthOverMonth)}. Do not describe spend as up, down, flat, or unchanged.`);
     }
 
     return facts;

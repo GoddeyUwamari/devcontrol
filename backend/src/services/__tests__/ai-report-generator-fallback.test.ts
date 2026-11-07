@@ -549,13 +549,13 @@ describe('AI Reports evidence -- review fixes (AI truth PR 2 review)', () => {
     const records = data.evidence!.results.find((r) => r.id === 'delivery.deployments')!;
 
     expect(records.mode).toBe('header');
-    expect(records.section).toMatchObject({ state: 'available', data: null, truncation: { kept: 0, by: 'provider_cap' } });
+    expect(records.section).toMatchObject({ state: 'omitted', reason: 'not included in this answer (too large)', data: null, truncation: { kept: 0, by: 'provider_cap' } });
     expect(data.sections.deployments).toMatchObject({ data: null });
     expect(data.sections.deliveryRates?.reason).toMatch(/DevControl deployment records: not included in this answer \(too large\)/);
 
     const prompt = new AIReportGeneratorService(fakePool()).buildUserPrompt(data, 'infrastructure_health');
-    expect(prompt).toMatch(/- \[delivery\.deployments\] Deployments recorded in the period: available [^\n]*\[data not included: too large for this answer\]/);
-    expect(prompt).toMatch(/### Deployments recorded in the report period\n\{[^\n]*"evidencePresent":false[^\n]*"truncation":\{"kept":0,"total":1,"by":"provider_cap"\}[^\n]*"data":null\}/);
+    expect(prompt).toMatch(/- \[delivery\.deployments\] Deployments recorded in the period: not included in this answer \(too large\)\./);
+    expect(prompt).toMatch(/### Deployments recorded in the report period\n\{[^\n]*"state":"omitted"[^\n]*"evidencePresent":false[^\n]*"truncation":\{"kept":0,"total":1,"by":"provider_cap"\}[^\n]*"data":null\}/);
     expect(prompt).not.toContain('0.11666');
   });
 

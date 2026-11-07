@@ -30,7 +30,7 @@ import { createEvidenceBasis, type BasisSources } from '../basis';
 import { operationsSources, cloudWatchAlarmsProvider, resourceHealthProvider, cpuTelemetryProvider } from '../providers/operations';
 import { spendProvider, costFindingsProvider } from '../providers/cost';
 import { connectionScopeProvider, regionCoverageProvider } from '../providers/scope';
-import { accountFindingsProvider, topRiskProvider, riskScoreProvider, topRiskTitle, securityHubProvider, SECURITY_HUB_FIRST_SYNC_REASON } from '../providers/security';
+import { accountFindingsProvider, topRiskProvider, riskScoreProvider, topRiskTitle, securityHubProvider, SECURITY_HUB_FIRST_SYNC_REASON, SECURITY_HUB_SYNC_RUNNING_REASON } from '../providers/security';
 import { SecurityHubStateRepository } from '../../../../repositories/security-hub-state.repository';
 import { anomaliesProvider, alertHistoryProvider } from '../providers/not-built';
 import { AccountSecurityFindingsRepository } from '../../../../repositories/account-security-findings.repository';
@@ -331,8 +331,16 @@ describe('security.security_hub sync status (review M1)', () => {
     expect(s.reason).not.toMatch(/status: ERROR/);
   });
 
-  it('a later sync RUNNING after a completed one keeps the completed sync\'s findings', async () => {
-    expect(await run({ lastSyncStatus: 'RUNNING' })).toMatchObject({ state: 'available', data: { activeFindings: 1 } });
+  it('re-review L5: a sync RUNNING after a completed one -> not available, "sync in progress"', async () => {
+    const s = await run({ lastSyncStatus: 'RUNNING' });
+    expect(s).toMatchObject({ state: 'unavailable', data: null, reason: SECURITY_HUB_SYNC_RUNNING_REASON });
+    expect(SECURITY_HUB_SYNC_RUNNING_REASON).toBe('sync in progress');
+  });
+
+  it('re-review L5: a sync RUNNING after a FAILED one (capability ENABLED, completed time set, 0 findings) -> not available, never "available, 0"', async () => {
+    const s = await run({ lastSyncStatus: 'RUNNING', capabilityStatus: 'ENABLED', lastSyncFindingsCount: 0, lastSyncCompletedAt: '2026-11-06T10:00:00.000Z' });
+    expect(s).toMatchObject({ state: 'unavailable', data: null, reason: 'sync in progress' });
+    expect(JSON.stringify(s)).not.toMatch(/"activeFindings"/);
   });
 });
 

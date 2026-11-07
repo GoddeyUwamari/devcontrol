@@ -10,6 +10,7 @@ import type { EvidenceBundle } from './ai/evidence/types';
 import { renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
 import {
   CONTEXT_STATE_LABELS,
+  OMITTED_REASON,
   type ContextDataState,
   type ContextScope,
   type ContextSection,
@@ -445,6 +446,9 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       case 'not_built':
         lines.push(`- Data: DevControl doesn't provide this yet${section.reason ? ` -- ${section.reason}` : ''}. Never say none were found.`);
         break;
+      case 'omitted':
+        lines.push(`- Data: ${OMITTED_REASON}. DevControl has this data; it was left out of this answer. Never describe it as zero, none, or not available.`);
+        break;
       case 'partial':
       case 'stale':
         lines.push(`- Limitation: ${section.reason ?? 'only part of the stated scope is covered'}`);
@@ -773,8 +777,8 @@ Underutilized resources typically represent 20-40% potential savings when rights
       ? `I can see ${services.data.length} discovered resource types in your AWS environment`
       : `I don't have a resource inventory for this account right now`;
     const alarms = context.evidence.results.find(r => r.id === 'ops.cloudwatch_alarms')?.section as ContextSection<{ inAlarmCount: number; inAlarmComplete?: boolean }> | undefined;
-    // A capped read is a lower bound, as in reports and the summary.
-    const atLeast = alarms && (alarms.state === 'partial' || alarms.data?.inAlarmComplete === false) ? 'at least ' : '';
+    // Only a capped in-ALARM count is a lower bound (a capped configured count leaves it exact), as in reports and the summary.
+    const atLeast = alarms?.data?.inAlarmComplete === false ? 'at least ' : '';
     const alertsPhrase = alarms && (alarms.state === 'available' || alarms.state === 'partial') && alarms.data
       ? `${atLeast}${alarms.data.inAlarmCount} CloudWatch alarm${alarms.data.inAlarmCount !== 1 ? 's' : ''} in ALARM (as of ${alarms.asOf ?? 'unknown'})`
       : `not available${alarms ? ` -- ${statusPhrase(alarms).replace(/ -- .*$/, '')}` : ''}`;

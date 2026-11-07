@@ -13,6 +13,7 @@ import {
   AI_CONTEXT_CONTRACT_VERSION,
   CLASSIFICATION_MEANINGS,
   CONTEXT_STATE_LABELS,
+  OMITTED_REASON,
   stateCarriesData,
   toModelEvidence,
   type ContextScope,
@@ -108,6 +109,8 @@ export function statusPhrase(section: ContextSection<unknown>): string {
       return "not included in this organization's current plan, so it was not read -- never describe it as no data";
     case 'not_supported':
       return `not supported: ${reason ?? 'DevControl has no source for this'}`;
+    case 'omitted':
+      return OMITTED_REASON;
   }
 }
 
