@@ -269,10 +269,15 @@ describe('stored evidence and copy', () => {
     expect(JSON.stringify(metadata).length).toBeLessThan(8000);
   });
 
-  it('formats {peak} with one decimal', () => {
-    expect(formatPeakPercent(9.96)).toBe('10.0');
+  it('rounds {peak} DOWN to one decimal: a qualifying peak never reads 10.0%', () => {
+    expect(formatPeakPercent(9.95)).toBe('9.9');
+    expect(formatPeakPercent(9.97)).toBe('9.9');
+    expect(formatPeakPercent(9.99)).toBe('9.9');
+    expect(formatPeakPercent(4.26)).toBe('4.2');
     expect(formatPeakPercent(2.04)).toBe('2.0');
+    expect(formatPeakPercent(2.3)).toBe('2.3');
     expect(formatPeakPercent(3)).toBe('3.0');
+    expect(formatPeakPercent(0)).toBe('0.0');
   });
 
   it('rounds {maxDailyMb} up to one decimal, at least 0.1, always strictly above the total', () => {
@@ -285,7 +290,7 @@ describe('stored evidence and copy', () => {
 
   it('the description is W2b, word for word', () => {
     expect(lowActivityDescription({ cpu_peak_percent: 4.26, cpu_peak_date: '2026-10-09', network_bytes_max: 3_210_000, network_max_date: '2026-10-10' })).toBe(
-      "Over the past 30 days this instance's CPU peaked at 4.3%, its network traffic stayed under 3.3 MB a day, and it isn't registered with a load balancer or part of an Auto Scaling group. It may no longer be needed. Check with its owner before stopping it: low activity doesn't prove nothing depends on it."
+      "Over the past 30 days this instance's CPU peaked at 4.2%, its network traffic stayed under 3.3 MB a day, and it isn't registered with a load balancer or part of an Auto Scaling group. It may no longer be needed. Check with its owner before stopping it: low activity doesn't prove nothing depends on it."
     );
   });
 });

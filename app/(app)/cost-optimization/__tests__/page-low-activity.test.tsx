@@ -141,6 +141,20 @@ describe('the Hidden findings label', () => {
     await waitFor(() => expect(screen.getAllByText('Low-activity instance').length).toBeGreaterThan(2))
   })
 
+  it('a still-detected low-activity item\'s figure reads "Up to $X/mo if it\'s no longer needed"; a CPU-only one keeps "$X/mo"', async () => {
+    svc.getAll.mockResolvedValue([])
+    svc.getHidden.mockResolvedValue(hidden('Low-activity instance'))
+    const first = renderPage()
+    expect(await screen.findByText("Up to $9/mo if it's no longer needed")).toBeInTheDocument()
+    first.unmount()
+
+    svc.getHidden.mockResolvedValue(hidden(undefined))
+    renderPage()
+    await screen.findAllByText('Idle Instance')
+    expect(screen.queryByText("Up to $9/mo if it's no longer needed")).not.toBeInTheDocument()
+    expect(screen.getAllByText('$9/mo').length).toBeGreaterThan(0)
+  })
+
   it('falls back to the stored issue when an older backend sends no label', async () => {
     svc.getAll.mockResolvedValue([])
     renderPage()

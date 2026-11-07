@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronDown, ChevronUp, Loader2, RotateCcw, XCircle } fr
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service';
 import { cn, formatSavingsCurrency } from '@/lib/utils';
 import { DEFAULT_PRICE_DISCLOSURE, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
+import { LOW_ACTIVITY_DISPLAY_LABEL, lowActivitySavingsHeadline } from '@/lib/finding-display';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TRY_AGAIN } from './costScanBanner';
@@ -69,9 +70,14 @@ function Chip({ children }: { children: string }) {
 function ItemSavings({ item }: { item: HiddenFinding }) {
   if (item.detection.potentialSavings === null) return null;
   const rec = { potentialSavings: item.detection.potentialSavings, metadata: { savings_basis: item.detection.savingsBasis, price_source: item.detection.priceSource ?? null } };
+  // A still-detected low-activity finding (its latest detection carries the new rule's identity,
+  // which is what makes the backend label it): the C-3 "Up to ... if it's no longer needed" figure.
+  const lowActivity = item.detection.state === 'still_detected' && item.issueLabel === LOW_ACTIVITY_DISPLAY_LABEL;
   return (
     <div className="sm:text-right">
-      <p className="text-ui font-semibold tabular-nums text-slate-900 whitespace-nowrap">{formatRecommendationSavings(rec, formatSavingsCurrency)}</p>
+      <p className="text-ui font-semibold tabular-nums text-slate-900 whitespace-nowrap">
+        {lowActivity ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency) : formatRecommendationSavings(rec, formatSavingsCurrency)}
+      </p>
       {savingsBasisKind(rec) === 'ceiling' && (
         <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
       )}

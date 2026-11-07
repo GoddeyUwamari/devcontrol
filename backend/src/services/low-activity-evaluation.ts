@@ -307,9 +307,14 @@ export function lowActivityFindingMetadata(input: {
   };
 }
 
-/** {peak}: the highest hourly peak, one decimal. */
+/**
+ * {peak}: the highest hourly peak, rounded DOWN to one decimal, so a
+ * qualifying peak (always under 10%) never reads "10.0%": 9.97 reads "9.9".
+ * The tiny epsilon keeps binary floating point from dropping an exact tenth
+ * (e.g. 2.3 * 10 = 22.999...).
+ */
 export function formatPeakPercent(percent: number): string {
-  return (Math.round(percent * 10) / 10).toFixed(1);
+  return (Math.floor(percent * 10 + 1e-9) / 10).toFixed(1);
 }
 
 /**

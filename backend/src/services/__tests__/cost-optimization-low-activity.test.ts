@@ -77,7 +77,7 @@ describe('a low-activity instance', () => {
     expect(issue).toMatchObject({ resourceId: A, resourceType: 'EC2', issue: ISSUE_EC2_IDLE_INSTANCE, potentialSavings: 7.5, severity: 'LOW', awsRegion: 'us-east-1' });
     // Busiest network day (2026-10-09, hour 30): In 23 x 50,000 + 1,160,000 = 2,310,000, Out 24 x 100,000 = 2,400,000.
     expect(issue.description).toBe(
-      "Over the past 30 days this instance's CPU peaked at 4.3%, its network traffic stayed under 4.8 MB a day, and it isn't registered with a load balancer or part of an Auto Scaling group. It may no longer be needed. Check with its owner before stopping it: low activity doesn't prove nothing depends on it."
+      "Over the past 30 days this instance's CPU peaked at 4.2%, its network traffic stayed under 4.8 MB a day, and it isn't registered with a load balancer or part of an Auto Scaling group. It may no longer be needed. Check with its owner before stopping it: low activity doesn't prove nothing depends on it."
     );
     const m = issue.metadata;
     expect(hasLowActivityRuleIdentity(m)).toBe(true);
