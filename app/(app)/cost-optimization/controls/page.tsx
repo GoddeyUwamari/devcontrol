@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
-import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
+import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
+import { usePlanNotice } from '@/lib/plan/use-plan-notice'
 import {
   costRecommendationsService,
   EffectiveOptimizationRuleConfig,
@@ -56,6 +57,7 @@ export default function OptimizationControlsPage() {
   const isEnterprise = plan.isKnown && plan.isEnterprise
   // Set when the server refused for the plan (e.g. a restricted or changed plan): its gate.
   const [tierRequired, setTierRequired] = useState<TierRequired | null>(null)
+  const planNotice = usePlanNotice(tierRequired)
 
   const [configs, setConfigs] = useState<EffectiveOptimizationRuleConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -156,10 +158,13 @@ export default function OptimizationControlsPage() {
           </div>
           {tierRequired ? (
             <>
-              <h2 className="text-ui font-semibold text-gray-900 mb-6">{planRequiredText(tierRequired)}</h2>
-              <Link href={SEE_PLANS.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
-                {SEE_PLANS.label}
-              </Link>
+              <h2 className="text-ui font-semibold text-gray-900 mb-6">{planNotice?.text}</h2>
+              {planNotice?.link && (
+                <Link href={planNotice.link.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
+                  {planNotice.link.label}
+                </Link>
+              )}
+              {planNotice?.note && <p className="text-ui text-ink-muted leading-relaxed">{planNotice.note}</p>}
             </>
           ) : (
             <>

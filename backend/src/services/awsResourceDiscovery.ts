@@ -64,7 +64,7 @@ import {
   S3BucketMetadata,
   TagsState,
 } from '../types/aws-resources.types';
-import { SubscriptionTier } from '../middleware/subscription.middleware';
+import { SubscriptionTier, getOrganizationTier } from '../middleware/subscription.middleware';
 import { ComplianceScannerService } from './complianceScanner';
 import { getBucketTags, regionFromLocationConstraint } from './s3-bucket-tags.util';
 import { NetworkExposure, SecurityGroupRules, evaluateNetworkExposure } from '../utils/adminPortExposure';
@@ -478,17 +478,14 @@ export class AWSResourceDiscoveryService {
     }
   }
 
+  /**
+   * The organization's effective tier (subscription.middleware
+   * getOrganizationTier: lowered by a billing hold or a terminal
+   * subscription; 'free' if not found), which decides the resource types a
+   * scan discovers. Never the stored tier.
+   */
   private async getOrganizationTier(organizationId: string, executor?: PoolClient): Promise<SubscriptionTier> {
-    const result = await (executor ?? this.pool).query(
-      'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
-      [organizationId]
-    );
-
-    if (result.rows.length === 0) {
-      return 'free'; // Default to free if org not found
-    }
-
-    return (result.rows[0].subscription_tier as SubscriptionTier) || 'free';
+    return getOrganizationTier(organizationId, executor ?? this.pool);
   }
 
   /**

@@ -6,7 +6,7 @@
 import rateLimit from 'express-rate-limit';
 import { Request, Response } from 'express';
 import { pool } from '../config/database';
-import { SubscriptionTier } from './subscription.middleware';
+import { SubscriptionTier, getOrganizationTier as getEffectiveTier } from './subscription.middleware';
 import { presentedUnsubscribeToken, verifyUnsubscribeToken } from '../services/unsubscribe-token';
 
 // Extend Express Request type to include user data
@@ -39,8 +39,10 @@ function getRateLimitByTier(tier: string): number {
 }
 
 /**
- * Fetch organization's subscription tier from database
- * Caches the result per request to avoid multiple DB queries
+ * The organization's effective tier (subscription.middleware
+ * getOrganizationTier: the plan the gates enforce, lowered by a billing hold
+ * or a terminal subscription), cached for CACHE_TTL to avoid a lookup per
+ * request. Never the stored tier.
  */
 const tierCache = new Map<string, { tier: SubscriptionTier; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -53,16 +55,8 @@ async function getOrganizationTier(organizationId: string): Promise<Subscription
   }
 
   try {
-    const result = await pool.query(
-      'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
-      [organizationId]
-    );
-
-    if (result.rows.length === 0) {
-      return 'free'; // Default to free if org not found
-    }
-
-    const tier = (result.rows[0].subscription_tier as SubscriptionTier) || 'free';
+    // 'free' if the organization is not found.
+    const tier = await getEffectiveTier(organizationId, pool);
 
     // Update cache
     tierCache.set(organizationId, { tier, timestamp: Date.now() });

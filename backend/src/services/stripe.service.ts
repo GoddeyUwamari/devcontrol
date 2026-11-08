@@ -1,6 +1,8 @@
 import Stripe from 'stripe';
 import { pool } from '../config/database';
 import { TIER_LIMITS, SubscriptionTier } from '../middleware/subscription.middleware';
+import { TERMINAL_SUBSCRIPTION_STATUSES, isTerminalSubscriptionStatus } from '../config/subscription-status';
+import { safeErrorFields } from '../utils/safe-error-log';
 import { emailService } from './email.service';
 
 export type BillingLifecycleState = 'healthy' | 'grace_period' | 'restricted';
@@ -90,15 +92,15 @@ export function isSelfServePlan(tier: CheckoutTier, interval: BillingInterval): 
   return SELF_SERVE_TIERS.includes(tier) && isSupportedPlan(tier, interval);
 }
 
-// Subscription statuses after which Stripe never bills the subscription
-// again. Every other status ('trialing', 'active', 'past_due', 'unpaid',
-// 'incomplete', 'paused') belongs to a subscription that bills, or can
-// recover and bill, so it counts as the organization's billable
-// subscription.
-export const TERMINAL_SUBSCRIPTION_STATUSES: readonly string[] = ['canceled', 'incomplete_expired'];
+// The terminal statuses (canceled, incomplete_expired) live with the other
+// status lists in config/subscription-status.ts, shared with the
+// effective-tier decision; re-exported here for the existing importers.
+export { TERMINAL_SUBSCRIPTION_STATUSES, isTerminalSubscriptionStatus };
 
-export function isTerminalSubscriptionStatus(status: unknown): boolean {
-  return typeof status === 'string' && TERMINAL_SUBSCRIPTION_STATUSES.includes(status);
+/** A caught Stripe error's name and code, for logs; never its message or the error object, which can quote Stripe ids. */
+function stripeErrorKind(error: unknown): { name?: string; code?: string } {
+  const { name, code } = safeErrorFields(error);
+  return { name, code };
 }
 
 /**
@@ -338,7 +340,8 @@ export class StripeService {
     try {
       return await getStripeClient().checkout.sessions.retrieve(sessionId);
     } catch (error) {
-      console.error('Error retrieving checkout session:', error);
+      // Name and code only: a Stripe error message can quote the session id.
+      console.error('Error retrieving checkout session:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -352,7 +355,8 @@ export class StripeService {
     try {
       return await getStripeClient().checkout.sessions.expire(sessionId);
     } catch (error) {
-      console.error('Error expiring checkout session:', error);
+      // Name and code only: a Stripe error message can quote the session id.
+      console.error('Error expiring checkout session:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -761,7 +765,8 @@ export class StripeService {
     identity?: SubscriptionIdentityGuard
   ): Promise<{ applied: boolean }> {
     try {
-      console.log(`📝 Updating organization ${organizationId} with data:`, JSON.stringify(data, null, 2));
+      // Names the fields only: their values include Stripe ids, which are never logged.
+      console.log(`📝 Updating organization ${organizationId} subscription fields: ${Object.keys(data).filter(key => (data as Record<string, unknown>)[key] !== undefined).join(', ') || 'none'}`);
 
       const updates: string[] = [];
       const values: any[] = [];
@@ -887,8 +892,8 @@ export class StripeService {
           )${identityPredicates.map(p => `\n          AND ${p}`).join('')}
       `;
 
+      // The statement only; its bound values (Stripe ids among them) are never logged.
       console.log(`🔍 SQL Query: ${query}`);
-      console.log(`🔍 Values: ${JSON.stringify(values)}`);
 
       const result = await pool.query(query, values);
       const applied = (result.rowCount ?? 0) > 0;

@@ -5,7 +5,8 @@ import { anomalyService } from '@/lib/services/anomaly.service';
 import { logError } from '@/lib/safe-log';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
-import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
+import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
+import { usePlanNotice } from '@/lib/plan/use-plan-notice';
 import { AnomalyDetection, AnomalyStats } from '@/types/anomaly.types';
 import {
   AlertTriangle, AlertCircle, RefreshCw, Brain,
@@ -33,6 +34,7 @@ export default function AnomaliesPage() {
   const isEnterprise = plan.isKnown && plan.isEnterprise;
   // Set when the server refused for the plan (e.g. a restricted or changed plan): its gate.
   const [tierRequired, setTierRequired] = useState<TierRequired | null>(null);
+  const planNotice = usePlanNotice(tierRequired);
   const [anomalies, setAnomalies] = useState<AnomalyDetection[]>([]);
   const [stats, setStats] = useState<AnomalyStats | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -134,8 +136,13 @@ export default function AnomaliesPage() {
           <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto mb-5"><Lock size={24} className="text-violet-600" /></div>
           {tierRequired ? (
             <>
-              <h2 className="text-ui font-semibold text-slate-900 mb-6">{planRequiredText(tierRequired)}</h2>
-              <a href={SEE_PLANS.href} className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">{SEE_PLANS.label}</a>
+              <h2 className="text-ui font-semibold text-slate-900 mb-6">{planNotice?.text}</h2>
+              {planNotice?.link && (
+                <a href={planNotice.link.href} className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">
+                  {planNotice.link.label}
+                </a>
+              )}
+              {planNotice?.note && <p className="text-ui text-ink-muted leading-relaxed">{planNotice.note}</p>}
             </>
           ) : (
             <>

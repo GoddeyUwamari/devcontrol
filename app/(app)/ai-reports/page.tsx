@@ -11,7 +11,8 @@ import {
 } from 'lucide-react'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
-import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
+import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
+import { usePlanNotice } from '@/lib/plan/use-plan-notice'
 import { toast } from 'sonner'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -100,6 +101,7 @@ export default function AIReportsPage() {
   const { generateReport, getReportHistory, deleteReport, bulkDeleteReports, isGenerating, isFetchingHistory, error } = useAIReports()
   // Set when the server refused for the plan (e.g. a restricted or changed plan): its gate.
   const [tierRequired, setTierRequired] = useState<TierRequired | null>(null)
+  const planNotice = usePlanNotice(tierRequired)
   const [currentReport, setCurrentReport] = useState<GeneratedReport | null>(null)
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([])
   const [generatingType, setGeneratingType] = useState<string | null>(null)
@@ -202,8 +204,13 @@ export default function AIReportsPage() {
           </div>
           {tierRequired ? (
             <>
-              <h2 className="text-ui font-semibold text-slate-900 mb-6">{planRequiredText(tierRequired)}</h2>
-              <a href={SEE_PLANS.href} className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">{SEE_PLANS.label}</a>
+              <h2 className="text-ui font-semibold text-slate-900 mb-6">{planNotice?.text}</h2>
+              {planNotice?.link && (
+                <a href={planNotice.link.href} className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">
+                  {planNotice.link.label}
+                </a>
+              )}
+              {planNotice?.note && <p className="text-ui text-ink-muted leading-relaxed">{planNotice.note}</p>}
             </>
           ) : (
             <>

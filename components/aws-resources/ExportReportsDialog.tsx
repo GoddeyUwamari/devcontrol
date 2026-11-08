@@ -16,7 +16,9 @@ import { toast } from 'sonner';
 import { FileText, Download, FileSpreadsheet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { logError } from '@/lib/safe-log';
-import { planRequiredText, tierRequiredOf } from '@/lib/plan/tier-required';
+import { canManageBillingRole, planNoticeOf, tierRequiredOf } from '@/lib/plan/tier-required';
+import { usePlan } from '@/lib/hooks/use-plan';
+import { useCurrentRole } from '@/lib/hooks/use-current-role';
 
 interface ExportReportsDialogProps {
   open: boolean;
@@ -53,6 +55,8 @@ export function ExportReportsDialog({
     EXPORT_COLUMNS.filter(c => c.default).map(c => c.id)
   );
   const [isExporting, setIsExporting] = useState(false);
+  const plan = usePlan();
+  const canManageBilling = canManageBillingRole(useCurrentRole());
 
   const toggleColumn = (columnId: string) => {
     setSelectedColumns(prev =>
@@ -113,9 +117,14 @@ export function ExportReportsDialog({
         try {
           const text = await error.response.data.text();
           const errorData = JSON.parse(text);
-          // The server's plan refusal: the plan's own sentence, as on every gated page.
+          // The server's plan refusal: the same sentence as on every gated page
+          // (the billing sentence when a billing hold is why), and the
+          // ask-an-admin sentence after it for a member who cannot fix billing.
           const required = tierRequiredOf({ status: error.response.status, body: errorData });
-          errorMessage = required ? planRequiredText(required) : errorData.message || errorMessage;
+          const notice = required ? planNoticeOf(required, { planTier: plan.tier, canManageBilling }) : null;
+          errorMessage = notice
+            ? [notice.text, notice.note].filter(Boolean).join(' ')
+            : errorData.message || errorMessage;
         } catch (e) {
           // Use default message if parsing fails
         }

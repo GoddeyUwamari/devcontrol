@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { PLAN_DISPLAY_NAME } from '../plan-names'
-import { SEE_PLANS, planRequiredText, responseError, tierRequiredOf } from '../tier-required'
+import { SEE_PLANS, planNoticeOf, planRequiredText, responseError, tierRequiredOf } from '../tier-required'
 import { axiosError, tierRequiredBody } from './tier-required-fixture'
 
 describe('tierRequiredOf', () => {
@@ -63,5 +63,81 @@ describe('responseError', () => {
   it('a body that is not JSON is null', async () => {
     const err = await responseError(new Response('<html>', { status: 502 }), 'Failed')
     expect(err).toMatchObject({ status: 502, body: null })
+  })
+})
+
+// ─── Billing safety PR B (B4): the billing hold notice ──────────────────────
+
+describe('B4: details.reason and the billing hold notice', () => {
+  const PAYMENT_PRO =
+    'This feature is paused because of a payment issue. Your Optimization Engine plan is unchanged — update your payment details to restore access.'
+  const INACTIVE_PRO =
+    "This feature is paused because your Optimization Engine subscription isn't active. Go to billing to complete or resume it."
+  const ASK = 'Ask an organization owner or admin to update billing.'
+  const withReason = (requiredTier: string, reason: unknown) => {
+    const body = tierRequiredBody(requiredTier)
+    return axiosError(402, { ...body, details: { ...body.details, reason } })
+  }
+
+  it('tierRequiredOf carries a known reason, and drops an unknown one', () => {
+    expect(tierRequiredOf(withReason('pro', 'BILLING_RESTRICTED'))).toEqual({ requiredTier: 'pro', reason: 'BILLING_RESTRICTED' })
+    expect(tierRequiredOf(withReason('pro', 'SUBSCRIPTION_INACTIVE'))).toEqual({ requiredTier: 'pro', reason: 'SUBSCRIPTION_INACTIVE' })
+    expect(tierRequiredOf(withReason('pro', 'SOMETHING_ELSE'))).toEqual({ requiredTier: 'pro' })
+    expect(tierRequiredOf(withReason('pro', undefined))).toEqual({ requiredTier: 'pro' })
+  })
+
+  it('payment hold, owner or admin: the approved sentence and Go to billing', () => {
+    expect(planNoticeOf({ requiredTier: 'pro', reason: 'BILLING_RESTRICTED' }, { planTier: 'pro', canManageBilling: true })).toEqual({
+      text: PAYMENT_PRO,
+      link: { href: '/settings/billing', label: 'Go to billing' },
+      note: null,
+    })
+  })
+
+  it('payment hold, everyone else: the approved sentence and the ask-an-admin sentence, no link', () => {
+    expect(planNoticeOf({ requiredTier: 'pro', reason: 'BILLING_RESTRICTED' }, { planTier: 'pro', canManageBilling: false })).toEqual({
+      text: PAYMENT_PRO,
+      link: null,
+      note: ASK,
+    })
+  })
+
+  it('inactive subscription, owner or admin: the approved sentence and Go to billing', () => {
+    expect(planNoticeOf({ requiredTier: 'pro', reason: 'SUBSCRIPTION_INACTIVE' }, { planTier: 'pro', canManageBilling: true })).toEqual({
+      text: INACTIVE_PRO,
+      link: { href: '/settings/billing', label: 'Go to billing' },
+      note: null,
+    })
+  })
+
+  it('inactive subscription, everyone else: the approved sentence and the ask-an-admin sentence, no link', () => {
+    expect(planNoticeOf({ requiredTier: 'pro', reason: 'SUBSCRIPTION_INACTIVE' }, { planTier: 'pro', canManageBilling: false })).toEqual({
+      text: INACTIVE_PRO,
+      link: null,
+      note: ASK,
+    })
+  })
+
+  it('{Plan} is the organization\'s own plan, not the required one', () => {
+    expect(planNoticeOf({ requiredTier: 'starter', reason: 'BILLING_RESTRICTED' }, { planTier: 'enterprise', canManageBilling: true }).text).toBe(
+      'This feature is paused because of a payment issue. Your Revenue Protection plan is unchanged — update your payment details to restore access.'
+    )
+    expect(planNoticeOf({ requiredTier: 'starter', reason: 'SUBSCRIPTION_INACTIVE' }, { planTier: 'starter', canManageBilling: true }).text).toBe(
+      "This feature is paused because your Cost Control subscription isn't active. Go to billing to complete or resume it."
+    )
+  })
+
+  it.each([
+    ['no reason', { requiredTier: 'pro' as const }, 'pro'],
+    ['a reason but the plan is not known as paid', { requiredTier: 'pro' as const, reason: 'BILLING_RESTRICTED' as const }, 'free'],
+    ['a reason but no plan', { requiredTier: 'pro' as const, reason: 'BILLING_RESTRICTED' as const }, undefined],
+  ])('%s: the plan sentence and See plans, unchanged', (_label, tierRequired, planTier) => {
+    for (const canManageBilling of [true, false]) {
+      expect(planNoticeOf(tierRequired, { planTier, canManageBilling })).toEqual({
+        text: 'This feature is on the Optimization Engine plan.',
+        link: SEE_PLANS,
+        note: null,
+      })
+    }
   })
 })

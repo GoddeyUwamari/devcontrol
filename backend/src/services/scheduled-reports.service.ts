@@ -12,6 +12,7 @@ import {
 import { ReportGeneratorService } from './report-generator.service';
 import { ResourceFilters } from '../types/aws-resources.types';
 import { OutboundRefused, safeHttpsPost } from '../utils/safe-outbound';
+import { getOrganizationTier } from '../middleware/subscription.middleware';
 
 export class ScheduledReportsService {
   private repository: ScheduledReportsRepository;
@@ -70,13 +71,12 @@ export class ScheduledReportsService {
       );
 
       try {
-        // Verify organization still has Enterprise tier
-        const tierCheck = await client.query(
-          'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
-          [report.organization_id]
-        );
+        // Verify the organization's effective tier is still Enterprise (the
+        // plan the gates enforce, lowered by a billing hold or a terminal
+        // subscription; 'free' if the organization is gone).
+        const tier = await getOrganizationTier(report.organization_id, client);
 
-        if (tierCheck.rows.length === 0 || tierCheck.rows[0].subscription_tier !== 'enterprise') {
+        if (tier !== 'enterprise') {
           console.log(`[ScheduledReports] Organization ${report.organization_id} is not Enterprise tier, skipping`);
           // Disable the schedule
           await this.repository.update(report.id, report.organization_id, { enabled: false }, client);

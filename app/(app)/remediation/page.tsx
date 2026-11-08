@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
-import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
+import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
+import { usePlanNotice } from '@/lib/plan/use-plan-notice';
 import { remediationService, RemediationWorkflow, WorkflowStatus } from '@/lib/services/remediation.service';
 import { logError } from '@/lib/safe-log';
 
@@ -397,6 +398,7 @@ export default function RemediationPage() {
   // The server refused for the plan (e.g. a restricted or changed plan): its gate.
   const tierRequired =
     tierRequiredOf(listQuery.error) ?? tierRequiredOf(detailQuery.error) ?? actionTierRequired;
+  const planNotice = usePlanNotice(tierRequired);
 
   const panelWorkflow = detail ?? selected;
 
@@ -460,10 +462,13 @@ export default function RemediationPage() {
           </div>
           {tierRequired ? (
             <>
-              <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 28 }}>{planRequiredText(tierRequired)}</h2>
-              <a href={SEE_PLANS.href} style={{ display: 'inline-block', background: '#7C3AED', color: '#fff', padding: '10px 28px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
-                {SEE_PLANS.label}
-              </a>
+              <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 28 }}>{planNotice?.text}</h2>
+              {planNotice?.link && (
+                <a href={planNotice.link.href} style={{ display: 'inline-block', background: '#7C3AED', color: '#fff', padding: '10px 28px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
+                  {planNotice.link.label}
+                </a>
+              )}
+              {planNotice?.note && <p style={{ fontSize: '0.875rem', color: '#6B7280', margin: 0 }}>{planNotice.note}</p>}
             </>
           ) : (
             <>
