@@ -6,7 +6,8 @@ import { useAuth } from "@/lib/contexts/auth-context";
 import { usePlan } from "@/lib/hooks/use-plan";
 import { PlanLoadingState, WorkspaceLoadError } from "@/components/plan/plan-status";
 import { tokenManager } from "@/lib/services/auth.service";
-import { SEE_PLANS, planRequiredText, responseError, tierRequiredOf } from "@/lib/plan/tier-required";
+import { responseError, tierRequiredOf } from "@/lib/plan/tier-required";
+import { usePlanNotice } from "@/lib/plan/use-plan-notice";
 import { Lock, ShieldCheck, Copy, Check, Trash2, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -76,6 +77,7 @@ export default function SSOSettingsPage() {
   });
   // The server refused for the plan (e.g. a restricted or changed plan): its gate.
   const tierRequired = tierRequiredOf(configError);
+  const planNotice = usePlanNotice(tierRequired);
   // The load error replaces the form only when nothing has loaded yet; a
   // failed reload (e.g. after a save) keeps the last loaded settings.
   const configLoadFailed = configError != null && config === undefined;
@@ -164,10 +166,13 @@ export default function SSOSettingsPage() {
           </div>
           {tierRequired ? (
             <>
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">{planRequiredText(tierRequired)}</h2>
-              <a href={SEE_PLANS.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
-                {SEE_PLANS.label}
-              </a>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">{planNotice?.text}</h2>
+              {planNotice?.link && (
+                <a href={planNotice.link.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+                  {planNotice.link.label}
+                </a>
+              )}
+              {planNotice?.note && <p className="text-ui text-ink-muted leading-relaxed">{planNotice.note}</p>}
             </>
           ) : (
             <>

@@ -12,6 +12,7 @@ import {
 import { ReportGeneratorService } from './report-generator.service';
 import { ResourceFilters } from '../types/aws-resources.types';
 import { OutboundRefused, safeHttpsPost } from '../utils/safe-outbound';
+import { getOrganizationEntitlement, tierRequiredReasonOf } from '../middleware/subscription.middleware';
 
 export class ScheduledReportsService {
   private repository: ScheduledReportsRepository;
@@ -70,13 +71,25 @@ export class ScheduledReportsService {
       );
 
       try {
-        // Verify organization still has Enterprise tier
-        const tierCheck = await client.query(
-          'SELECT subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
-          [report.organization_id]
-        );
+        // Verify the organization's effective tier is still Enterprise (the
+        // plan the gates enforce, lowered by a billing hold or a terminal
+        // subscription).
+        const entitlement = await getOrganizationEntitlement(report.organization_id, client);
 
-        if (tierCheck.rows.length === 0 || tierCheck.rows[0].subscription_tier !== 'enterprise') {
+        if (entitlement && entitlement.effectiveTier !== 'enterprise' && tierRequiredReasonOf(entitlement, 'enterprise')) {
+          // A payment or inactive-subscription hold on a Revenue Protection
+          // plan: the schedule stays enabled and this run is skipped -- no run
+          // status, no execution row -- and the schedule moves to its next run,
+          // so it resumes by itself once the hold clears. Logged with ids and
+          // the hold only.
+          console.log(
+            `[ScheduledReports] Skipped report ${report.id} for organization ${report.organization_id}: billing hold ${entitlement.hold}`
+          );
+          await this.repository.advanceNextRun(report.id, report.organization_id, this.calculateNextRun(report), client);
+          return;
+        }
+
+        if (!entitlement || entitlement.effectiveTier !== 'enterprise') {
           console.log(`[ScheduledReports] Organization ${report.organization_id} is not Enterprise tier, skipping`);
           // Disable the schedule
           await this.repository.update(report.id, report.organization_id, { enabled: false }, client);

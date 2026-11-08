@@ -340,7 +340,12 @@ export class StripeController {
       }
 
       if (!(await recordCheckoutSession(organizationId, reservationId, session.id, sessionExpiresAt))) {
-        console.error(`[Billing] The checkout reservation for organization ${organizationId} changed before its session was recorded.`);
+        // The reservation is no longer this request's, so another checkout may
+        // hold the organization: this session is never handed out (it lapses
+        // unused at its expiry), and the caller is told a checkout is open.
+        console.error(`[Billing] The checkout reservation for organization ${organizationId} changed before its session was recorded; the session was not returned.`);
+        res.status(409).json({ success: false, code: 'CHECKOUT_IN_PROGRESS', error: CHECKOUT_IN_PROGRESS_MESSAGE });
+        return;
       }
 
       // Funnel: fires only after Stripe actually creates the session --
@@ -363,10 +368,12 @@ export class StripeController {
         },
       });
     } catch (error: any) {
+      // The error stays in the server log; the response is a fixed message,
+      // never the error's own text (it can name Stripe ids or internals).
       console.error('Error creating checkout session:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to create checkout session',
+        error: 'Failed to create checkout session',
       });
     }
   }

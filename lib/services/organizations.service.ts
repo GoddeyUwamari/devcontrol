@@ -16,6 +16,12 @@ export interface Organization {
    * period has ended. subscriptionTier stays the plan the organization is on.
    */
   effectiveTier?: string;
+  /**
+   * The billing hold that lowers effectiveTier below subscriptionTier
+   * (backend entitlementOf): 'payment' or 'subscription_inactive'; null when
+   * there is none.
+   */
+  entitlementHold?: 'payment' | 'subscription_inactive' | null;
   createdAt: string;
   updatedAt: string;
 }

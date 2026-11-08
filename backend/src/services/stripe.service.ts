@@ -1,6 +1,8 @@
 import Stripe from 'stripe';
 import { pool } from '../config/database';
 import { TIER_LIMITS, SubscriptionTier } from '../middleware/subscription.middleware';
+import { TERMINAL_SUBSCRIPTION_STATUSES, isTerminalSubscriptionStatus } from '../config/subscription-status';
+import { safeErrorFields } from '../utils/safe-error-log';
 import { emailService } from './email.service';
 
 export type BillingLifecycleState = 'healthy' | 'grace_period' | 'restricted';
@@ -90,15 +92,15 @@ export function isSelfServePlan(tier: CheckoutTier, interval: BillingInterval): 
   return SELF_SERVE_TIERS.includes(tier) && isSupportedPlan(tier, interval);
 }
 
-// Subscription statuses after which Stripe never bills the subscription
-// again. Every other status ('trialing', 'active', 'past_due', 'unpaid',
-// 'incomplete', 'paused') belongs to a subscription that bills, or can
-// recover and bill, so it counts as the organization's billable
-// subscription.
-export const TERMINAL_SUBSCRIPTION_STATUSES: readonly string[] = ['canceled', 'incomplete_expired'];
+// The terminal statuses (canceled, incomplete_expired) live with the other
+// status lists in config/subscription-status.ts, shared with the
+// effective-tier decision; re-exported here for the existing importers.
+export { TERMINAL_SUBSCRIPTION_STATUSES, isTerminalSubscriptionStatus };
 
-export function isTerminalSubscriptionStatus(status: unknown): boolean {
-  return typeof status === 'string' && TERMINAL_SUBSCRIPTION_STATUSES.includes(status);
+/** A caught Stripe error's name and code, for logs; never its message or the error object, which can quote Stripe ids. */
+function stripeErrorKind(error: unknown): { name?: string; code?: string } {
+  const { name, code } = safeErrorFields(error);
+  return { name, code };
 }
 
 /**
@@ -279,7 +281,7 @@ export class StripeService {
       console.log(`Created Stripe customer for organization ${organizationId}`);
       return customer;
     } catch (error) {
-      console.error('Error creating Stripe customer:', error);
+      console.error('Error creating Stripe customer:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -328,7 +330,7 @@ export class StripeService {
       console.log(`Created checkout session for organization ${organizationId}`);
       return session;
     } catch (error) {
-      console.error('Error creating checkout session:', error);
+      console.error('Error creating checkout session:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -338,7 +340,8 @@ export class StripeService {
     try {
       return await getStripeClient().checkout.sessions.retrieve(sessionId);
     } catch (error) {
-      console.error('Error retrieving checkout session:', error);
+      // Name and code only: a Stripe error message can quote the session id.
+      console.error('Error retrieving checkout session:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -352,7 +355,8 @@ export class StripeService {
     try {
       return await getStripeClient().checkout.sessions.expire(sessionId);
     } catch (error) {
-      console.error('Error expiring checkout session:', error);
+      // Name and code only: a Stripe error message can quote the session id.
+      console.error('Error expiring checkout session:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -372,10 +376,10 @@ export class StripeService {
         expand: ['latest_invoice.payment_intent'],
       });
 
-      console.log(`Created subscription ${subscription.id} for customer ${customerId}`);
+      console.log('Created a subscription');
       return subscription;
     } catch (error) {
-      console.error('Error creating subscription:', error);
+      console.error('Error creating subscription:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -387,10 +391,10 @@ export class StripeService {
     try {
       const subscription = await getStripeClient().subscriptions.cancel(subscriptionId);
 
-      console.log(`Canceled subscription ${subscriptionId}`);
+      console.log('Canceled a subscription');
       return subscription;
     } catch (error) {
-      console.error('Error canceling subscription:', error);
+      console.error('Error canceling subscription:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -406,10 +410,10 @@ export class StripeService {
         cancel_at_period_end: true,
       });
 
-      console.log(`Set subscription ${subscriptionId} to cancel at period end`);
+      console.log('Set a subscription to cancel at period end');
       return subscription;
     } catch (error) {
-      console.error('Error setting subscription to cancel at period end:', error);
+      console.error('Error setting subscription to cancel at period end:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -423,10 +427,10 @@ export class StripeService {
         cancel_at_period_end: false,
       });
 
-      console.log(`Resumed subscription ${subscriptionId}`);
+      console.log('Resumed a subscription');
       return subscription;
     } catch (error) {
-      console.error('Error resuming subscription:', error);
+      console.error('Error resuming subscription:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -453,10 +457,10 @@ export class StripeService {
         proration_behavior: 'create_prorations',
       });
 
-      console.log(`Updated subscription ${subscriptionId} to price ${newPriceId}`);
+      console.log('Updated a subscription to a new price');
       return updatedSubscription;
     } catch (error) {
-      console.error('Error updating subscription:', error);
+      console.error('Error updating subscription:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -478,7 +482,7 @@ export class StripeService {
       if (error.code === 'invoice_upcoming_none') {
         return null;
       }
-      console.error('Error retrieving upcoming invoice:', error);
+      console.error('Error retrieving upcoming invoice:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -500,7 +504,7 @@ export class StripeService {
 
       return invoices.data;
     } catch (error) {
-      console.error('Error listing invoices:', error);
+      console.error('Error listing invoices:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -518,10 +522,10 @@ export class StripeService {
         return_url: returnUrl,
       });
 
-      console.log(`Created portal session for customer ${customerId}`);
+      console.log('Created a customer portal session');
       return session;
     } catch (error) {
-      console.error('Error creating portal session:', error);
+      console.error('Error creating portal session:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -534,7 +538,7 @@ export class StripeService {
       const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);
       return subscription;
     } catch (error) {
-      console.error('Error retrieving subscription:', error);
+      console.error('Error retrieving subscription:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -549,7 +553,7 @@ export class StripeService {
     try {
       return await getStripeClient().charges.retrieve(chargeId);
     } catch (error) {
-      console.error('Error retrieving charge:', error);
+      console.error('Error retrieving charge:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -562,7 +566,7 @@ export class StripeService {
       const customer = await getStripeClient().customers.retrieve(customerId);
       return customer as Stripe.Customer;
     } catch (error) {
-      console.error('Error retrieving customer:', error);
+      console.error('Error retrieving customer:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -577,7 +581,7 @@ export class StripeService {
     try {
       return await getStripeClient().invoices.retrieve(invoiceId);
     } catch (error) {
-      console.error('Error retrieving invoice:', error);
+      console.error('Error retrieving invoice:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -600,7 +604,7 @@ export class StripeService {
       });
       return payments.data;
     } catch (error) {
-      console.error('Error listing invoice payments:', error);
+      console.error('Error listing invoice payments:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -617,7 +621,7 @@ export class StripeService {
         expand: ['latest_charge'],
       });
     } catch (error) {
-      console.error('Error retrieving payment intent:', error);
+      console.error('Error retrieving payment intent:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -641,10 +645,10 @@ export class StripeService {
   ): Promise<Stripe.Refund> {
     try {
       const refund = await getStripeClient().refunds.create(params, options);
-      console.log(`Created refund ${refund.id} for payment intent ${params.payment_intent}`);
+      console.log('Created a refund');
       return refund;
     } catch (error) {
-      console.error('Error creating refund:', error);
+      console.error('Error creating refund:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -667,7 +671,7 @@ export class StripeService {
       const event = getStripeClient().webhooks.constructEvent(payload, signature, webhookSecret);
       return event;
     } catch (error) {
-      console.error('Webhook signature verification failed:', error);
+      console.error('Webhook signature verification failed:', stripeErrorKind(error));
       return null;
     }
   }
@@ -761,7 +765,8 @@ export class StripeService {
     identity?: SubscriptionIdentityGuard
   ): Promise<{ applied: boolean }> {
     try {
-      console.log(`📝 Updating organization ${organizationId} with data:`, JSON.stringify(data, null, 2));
+      // Names the fields only: their values include Stripe ids, which are never logged.
+      console.log(`📝 Updating organization ${organizationId} subscription fields: ${Object.keys(data).filter(key => (data as Record<string, unknown>)[key] !== undefined).join(', ') || 'none'}`);
 
       const updates: string[] = [];
       const values: any[] = [];
@@ -887,8 +892,8 @@ export class StripeService {
           )${identityPredicates.map(p => `\n          AND ${p}`).join('')}
       `;
 
+      // The statement only; its bound values (Stripe ids among them) are never logged.
       console.log(`🔍 SQL Query: ${query}`);
-      console.log(`🔍 Values: ${JSON.stringify(values)}`);
 
       const result = await pool.query(query, values);
       const applied = (result.rowCount ?? 0) > 0;
@@ -902,7 +907,7 @@ export class StripeService {
 
       return { applied };
     } catch (error) {
-      console.error('❌ Error updating organization subscription:', error);
+      console.error('❌ Error updating organization subscription:', stripeErrorKind(error));
       throw error;
     }
   }
@@ -919,7 +924,7 @@ export class StripeService {
 
       return result.rows[0] || null;
     } catch (error) {
-      console.error('Error getting organization by customer ID:', error);
+      console.error('Error getting organization by customer ID:', stripeErrorKind(error));
       throw error;
     }
   }

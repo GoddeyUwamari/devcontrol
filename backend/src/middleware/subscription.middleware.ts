@@ -7,6 +7,7 @@ import { Request, Response, NextFunction } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { PLAN_ENTITLEMENTS, type PlanEntitlement } from '../config/plan-entitlements';
+import { isTerminalSubscriptionStatus } from '../config/subscription-status';
 
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -110,48 +111,180 @@ export function isOrgRestricted(row: {
 }
 
 /**
- * The tier the plan gates enforce for an organization row: its stored tier,
- * or 'free' while it is restricted (isOrgRestricted). The one definition of
- * the effective tier: getOrganizationTier resolves every request with it,
- * and the organization responses the UI loads (/api/auth/me,
- * /api/organizations, login, registration) report it as `effectiveTier`, so
- * the UI shows what the server will decide. An unrecognised stored tier is
- * passed through unchanged.
+ * Why an organization's effective tier is below its stored tier, when a
+ * billing hold is the reason:
+ *  - 'payment': a payment failure whose grace period has ended (restricted),
+ *    or an 'unpaid' subscription with no grace period running;
+ *  - 'subscription_inactive': the recorded subscription is 'incomplete' (its
+ *    first payment never completed) or 'paused'.
+ * Updating billing would restore the stored tier in both cases.
  */
-export function effectiveTierOf(row: {
+export type EntitlementHold = 'payment' | 'subscription_inactive';
+
+/** The organization columns the effective-tier decision reads. */
+export interface EntitlementRow {
+  /** Only for the unrecognised-status warning. */
+  id?: string | null;
   subscription_tier: string | null;
   billing_lifecycle_state: string | null;
   grace_period_ends_at: Date | string | null;
-}): SubscriptionTier {
-  if (isOrgRestricted(row)) return 'free';
-  return (row.subscription_tier as SubscriptionTier) || 'free';
+  stripe_subscription_id: string | null;
+  subscription_status: string | null;
+}
+
+export interface Entitlement {
+  /** The plan the organization is on, as stored; never rewritten by a hold. */
+  storedTier: SubscriptionTier;
+  /** The plan the gates enforce. */
+  effectiveTier: SubscriptionTier;
+  /** The billing hold that lowers it, or null (no hold, or nothing above free to withhold). */
+  hold: EntitlementHold | null;
 }
 
 /**
- * Get organization's subscription tier from the database, downgraded to
- * 'free' for enforcement purposes while restricted (see effectiveTierOf).
- * This never touches or reads the organization's real subscription_tier
- * value's persistence -- it's purely an in-memory substitution for this
- * one lookup, so the stored tier is always intact for recovery. Contrast
- * with StripeController.getSubscription, which always reports the real
- * paid tier to the client -- restriction affects access, not what plan the
- * customer is shown as being on.
+ * The one effective-tier decision: what an organization row is entitled to
+ * now, from its stored tier, its payment-failure grace (billing lifecycle)
+ * and its recorded Stripe subscription's status. Read time only: the stored
+ * tier, the grace and the subscription columns are never written here, so
+ * recovery needs no repair. In order:
+ *
+ *  1. A recorded subscription that is terminal (canceled,
+ *     incomplete_expired): free, with no hold. Paying would not restore it;
+ *     only a new subscription would. This also holds when a late or retried
+ *     event wrote a paid stored tier next to the terminal status.
+ *  2. Restricted, or a grace period whose deadline has passed
+ *     (isOrgRestricted): free, 'payment' hold. The existing grace, unchanged,
+ *     whatever the status.
+ *  3. No recorded subscription (stripe_subscription_id NULL): the stored
+ *     tier. The status column is ignored, so a hand-provisioned organization
+ *     ('free', NULL or any other status) keeps its plan.
+ *  4. The recorded subscription's status:
+ *     - active, trialing, past_due: the stored tier (past_due keeps it while
+ *       the grace in 2 runs, as before);
+ *     - unpaid: the stored tier while a grace period is still running (its
+ *       deadline is never moved), otherwise free with a 'payment' hold;
+ *     - incomplete, paused: free, 'subscription_inactive' hold;
+ *     - anything else ('free', NULL, an unrecognised string): the stored
+ *       tier, never cutting off a possibly paying customer, and a warning
+ *       naming the organization id and the status string only.
+ *
+ * A hold is reported only when it lowers a paid stored tier: an
+ * organization stored on free has nothing withheld. An unrecognised stored
+ * tier is passed through unchanged when nothing lowers it.
+ */
+export function entitlementOf(row: EntitlementRow): Entitlement {
+  const storedTier = ((row.subscription_tier as SubscriptionTier) || 'free');
+  const held = (hold: EntitlementHold): Entitlement => ({
+    storedTier,
+    effectiveTier: 'free',
+    hold: storedTier === 'free' ? null : hold,
+  });
+  const stored: Entitlement = { storedTier, effectiveTier: storedTier, hold: null };
+  const hasRecordedSubscription = row.stripe_subscription_id !== null && row.stripe_subscription_id !== undefined;
+  const status = row.subscription_status;
+
+  if (hasRecordedSubscription && isTerminalSubscriptionStatus(status)) {
+    return { storedTier, effectiveTier: 'free', hold: null };
+  }
+  if (isOrgRestricted(row)) return held('payment');
+  if (!hasRecordedSubscription) return stored;
+
+  switch (status) {
+    case 'active':
+    case 'trialing':
+    case 'past_due':
+      return stored;
+    case 'unpaid':
+      // Not restricted (2), so a grace period in 'grace_period' is still running.
+      return row.billing_lifecycle_state === 'grace_period' ? stored : held('payment');
+    case 'incomplete':
+    case 'paused':
+      return held('subscription_inactive');
+    default:
+      console.warn(
+        `[Billing] Organization ${row.id ?? '(id not loaded)'} has a recorded subscription with an unrecognised status ${JSON.stringify(status)}; its stored tier is kept.`
+      );
+      return stored;
+  }
+}
+
+/**
+ * The tier the plan gates enforce for an organization row (entitlementOf).
+ * getOrganizationTier resolves every request with it, and the organization
+ * responses the UI loads (/api/auth/me, /api/organizations, login,
+ * registration) report it as `effectiveTier`, next to `entitlementHold`, so
+ * the UI shows what the server will decide.
+ */
+export function effectiveTierOf(row: EntitlementRow): SubscriptionTier {
+  return entitlementOf(row).effectiveTier;
+}
+
+/**
+ * `effectiveTier` and `entitlementHold` for an organization response: the
+ * tier the plan gates enforce and the billing hold that lowers it, both from
+ * the one decision (entitlementOf), so the UI shows what the server decides.
+ */
+export function entitlementFields(row: EntitlementRow): {
+  effectiveTier: SubscriptionTier;
+  entitlementHold: EntitlementHold | null;
+} {
+  const { effectiveTier, hold } = entitlementOf(row);
+  return { effectiveTier, entitlementHold: hold };
+}
+
+/** The columns entitlementOf reads, for the organization lookups below. */
+const ENTITLEMENT_COLUMNS =
+  'subscription_tier, billing_lifecycle_state, grace_period_ends_at, stripe_subscription_id, subscription_status, id';
+
+/**
+ * An organization's entitlement (entitlementOf), or null if it does not
+ * exist or is deleted. Never writes anything: the stored tier stays intact
+ * for recovery. Contrast with StripeController.getSubscription, which
+ * reports the stored paid tier to the client -- a hold affects access, not
+ * what plan the customer is shown as being on.
+ */
+export async function getOrganizationEntitlement(
+  organizationId: string,
+  executor: Pool | PoolClient = pool
+): Promise<Entitlement | null> {
+  const result = await executor.query(
+    `SELECT ${ENTITLEMENT_COLUMNS}
+     FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
+    [organizationId]
+  );
+  return result.rows.length === 0 ? null : entitlementOf(result.rows[0]);
+}
+
+/**
+ * The organization's effective tier (entitlementOf), or 'free' if it does
+ * not exist. Every server path that decides by plan uses this (or
+ * getOrganizationEntitlement), never the stored subscription_tier.
  */
 export async function getOrganizationTier(
   organizationId: string,
   executor: Pool | PoolClient = pool
 ): Promise<SubscriptionTier> {
-  const result = await executor.query(
-    `SELECT subscription_tier, billing_lifecycle_state, grace_period_ends_at
-     FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
-    [organizationId]
-  );
+  const entitlement = await getOrganizationEntitlement(organizationId, executor);
+  return entitlement ? entitlement.effectiveTier : 'free';
+}
 
-  if (result.rows.length === 0) {
-    return 'free'; // Default to free if org not found
-  }
+/**
+ * The `details.reason` of a 402 TIER_REQUIRED: set only when the stored
+ * tier would meet the requirement, the effective tier does not, and a
+ * billing hold is why -- so the message says billing only when updating
+ * billing would actually unlock the feature. Otherwise undefined (the plan
+ * itself is too low, or a terminal subscription).
+ */
+export type TierRequiredReason = 'BILLING_RESTRICTED' | 'SUBSCRIPTION_INACTIVE';
 
-  return effectiveTierOf(result.rows[0]);
+export function tierRequiredReasonOf(
+  entitlement: Entitlement,
+  requiredTier: SubscriptionTier
+): TierRequiredReason | undefined {
+  if (entitlement.hold === null) return undefined;
+  if (!tierMeetsRequirement(entitlement.storedTier, requiredTier)) return undefined;
+  if (tierMeetsRequirement(entitlement.effectiveTier, requiredTier)) return undefined;
+  return entitlement.hold === 'payment' ? 'BILLING_RESTRICTED' : 'SUBSCRIPTION_INACTIVE';
 }
 
 /**
@@ -170,12 +303,14 @@ export const requireTier = (minimumTier: SubscriptionTier) => {
     }
 
     try {
-      const currentTier = await getOrganizationTier(req.organizationId);
+      const entitlement = await getOrganizationEntitlement(req.organizationId);
+      const currentTier: SubscriptionTier = entitlement ? entitlement.effectiveTier : 'free';
 
       if (!tierMeetsRequirement(currentTier, minimumTier)) {
         // Looked up for every refusal: an unrecognised stored tier has no
         // entry, so this throws and the request fails closed with the 500 below.
         const cta = UPGRADE_CTA[currentTier];
+        const reason = entitlement ? tierRequiredReasonOf(entitlement, minimumTier) : undefined;
 
         res.status(402).json({
           success: false,
@@ -185,6 +320,7 @@ export const requireTier = (minimumTier: SubscriptionTier) => {
             currentTier,
             requiredTier: minimumTier,
             message: `This feature requires a ${minimumTier} subscription or higher.`,
+            ...(reason ? { reason } : {}),
           },
           upgrade: {
             cta: cta.message,
@@ -293,9 +429,22 @@ export type ResourceLimitType = 'services' | 'users' | 'deployments' | 'aws_reso
 function resolveMaxUsers(
   org: { max_users: number | null },
   tier: SubscriptionTier,
-  restricted: boolean
+  lowered: boolean
 ): number {
-  return restricted ? TIER_LIMITS.free.maxUsers : (org.max_users || TIER_LIMITS[tier].maxUsers);
+  return lowered ? TIER_LIMITS.free.maxUsers : (org.max_users || TIER_LIMITS[tier].maxUsers);
+}
+
+/**
+ * The tier the resource limits use: the effective tier (entitlementOf), and
+ * whether it is below the stored one. While it is, the organization's own
+ * max_services/max_users/max_deployments_per_month override columns -- which
+ * still hold the stored paid tier's numbers, never rewritten by a hold or a
+ * cancellation, so recovery needs no repair -- are ignored for the free
+ * tier's limits.
+ */
+function limitsTierOf(org: EntitlementRow): { tier: SubscriptionTier; lowered: boolean } {
+  const { storedTier, effectiveTier } = entitlementOf(org);
+  return { tier: effectiveTier, lowered: effectiveTier !== storedTier };
 }
 
 /**
@@ -313,7 +462,8 @@ export async function assertOrganizationHasSeat(
   excludeUserId: string
 ): Promise<void> {
   const orgResult = await executor.query(
-    `SELECT subscription_tier, max_users, billing_lifecycle_state, grace_period_ends_at
+    `SELECT subscription_tier, max_users, billing_lifecycle_state, grace_period_ends_at,
+            stripe_subscription_id, subscription_status, id
      FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
     [organizationId]
   );
@@ -321,9 +471,8 @@ export async function assertOrganizationHasSeat(
     throw new Error('Organization not found');
   }
   const org = orgResult.rows[0];
-  const restricted = isOrgRestricted(org);
-  const tier: SubscriptionTier = restricted ? 'free' : ((org.subscription_tier as SubscriptionTier) || 'free');
-  const maxUsers = resolveMaxUsers(org, tier, restricted);
+  const { tier, lowered } = limitsTierOf(org);
+  const maxUsers = resolveMaxUsers(org, tier, lowered);
   if (maxUsers === -1) return;
 
   const usersResult = await executor.query(
@@ -367,7 +516,7 @@ async function getOrganizationLimits(organizationId: string): Promise<{
   // Get organization limits
   const orgResult = await pool.query(
     `SELECT subscription_tier, max_services, max_users, max_deployments_per_month,
-            billing_lifecycle_state, grace_period_ends_at
+            billing_lifecycle_state, grace_period_ends_at, stripe_subscription_id, subscription_status, id
      FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
     [organizationId]
   );
@@ -377,12 +526,9 @@ async function getOrganizationLimits(organizationId: string): Promise<{
   }
 
   const org = orgResult.rows[0];
-  const restricted = isOrgRestricted(org);
-  // While restricted, ignore the org's own max_services/max_users/
-  // max_deployments_per_month override columns -- those still hold the
-  // real paid tier's numbers (never rewritten by restriction, so recovery
-  // needs no repair) -- and use the free tier's limits instead.
-  const tier: SubscriptionTier = restricted ? 'free' : ((org.subscription_tier as SubscriptionTier) || 'free');
+  // While the effective tier is below the stored one, the free tier's limits
+  // (limitsTierOf).
+  const { tier, lowered: restricted } = limitsTierOf(org);
 
   // Get current usage counts in parallel
   const [servicesResult, usersResult, deploymentsResult, awsResourcesResult] = await Promise.all([

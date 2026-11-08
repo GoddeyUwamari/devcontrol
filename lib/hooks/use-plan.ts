@@ -1,5 +1,6 @@
 import { useAuth } from '@/lib/contexts/auth-context';
 import { PLAN_ENTITLEMENTS, type PlanEntitlement } from '@/lib/plan/entitlements';
+import type { PaidTier, TierRequiredReason } from '@/lib/plan/tier-required';
 
 type Tier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -46,6 +47,7 @@ export function usePlan() {
       : organizationStatus === 'error' || organizationStatus === 'none' ? 'error' : 'loading';
 
   const isKnown = status === 'known';
+  const hold = organization?.entitlementHold;
   /** Whether the enforced tier includes the feature; only asked once the plan is known. */
   const enforcedIncludes = (entitlement: PlanEntitlement) =>
     isTier(enforcedTier) && TIER_ORDER[enforcedTier] >= TIER_ORDER[PLAN_ENTITLEMENTS[entitlement]];
@@ -61,6 +63,19 @@ export function usePlan() {
     hasEntitlement: (entitlement: PlanEntitlement) => isKnown && enforcedIncludes(entitlement),
     /** The plan the server enforces is known and does not include the feature: show the plan notice. */
     lacksEntitlement: (entitlement: PlanEntitlement) => isKnown && !enforcedIncludes(entitlement),
+    /**
+     * Why the server refuses a feature of `requiredTier` although the stored
+     * plan includes it: the organization's billing hold (organization.
+     * entitlementHold, decided by the server), only while the enforced tier is
+     * below `requiredTier`. Undefined otherwise -- the plan itself is too low,
+     * or there is no hold -- so the plan notice is shown, as before.
+     */
+    holdReasonFor: (requiredTier: PaidTier): TierRequiredReason | undefined => {
+      if (!isKnown || (hold !== 'payment' && hold !== 'subscription_inactive')) return undefined;
+      if (TIER_ORDER[tier] < TIER_ORDER[requiredTier]) return undefined;
+      if (isTier(enforcedTier) && TIER_ORDER[enforcedTier] >= TIER_ORDER[requiredTier]) return undefined;
+      return hold === 'payment' ? 'BILLING_RESTRICTED' : 'SUBSCRIPTION_INACTIVE';
+    },
     status,
     isKnown,
     retry: retryOrganizationLoad,

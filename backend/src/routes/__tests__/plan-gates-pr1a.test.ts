@@ -129,6 +129,8 @@ interface PlanState {
   graceEndsInMs?: number;
   /** What the middleware should see; null when the tier is unrecognised. */
   effective: Tier | null;
+  /** The 402's details.reason, when a billing hold is why. */
+  reason?: 'BILLING_RESTRICTED';
 }
 
 const STATES: Record<string, PlanState> = {
@@ -136,8 +138,10 @@ const STATES: Record<string, PlanState> = {
   starter: { tier: 'starter', effective: 'starter' },
   pro: { tier: 'pro', effective: 'pro' },
   enterprise: { tier: 'enterprise', effective: 'enterprise' },
-  'enterprise, restricted': { tier: 'enterprise', billing: 'restricted', effective: 'free' },
-  'enterprise, grace period ended': { tier: 'enterprise', billing: 'grace_period', graceEndsInMs: -60_000, effective: 'free' },
+  // Billing safety PR B: the stored Revenue Protection plan includes every
+  // route here, so the refusal names the payment hold (details.reason).
+  'enterprise, restricted': { tier: 'enterprise', billing: 'restricted', effective: 'free', reason: 'BILLING_RESTRICTED' },
+  'enterprise, grace period ended': { tier: 'enterprise', billing: 'grace_period', graceEndsInMs: -60_000, effective: 'free', reason: 'BILLING_RESTRICTED' },
   'enterprise, grace period running': { tier: 'enterprise', billing: 'grace_period', graceEndsInMs: 86_400_000, effective: 'enterprise' },
   'unrecognised tier': { tier: 'team', effective: null },
 };
@@ -276,6 +280,7 @@ describe.each(Object.entries(STATES))('plan: %s', (_label, state) => {
           currentTier: state.effective,
           requiredTier: rc.minimum,
           message: `This feature requires a ${rc.minimum} subscription or higher.`,
+          ...(state.reason ? { reason: state.reason } : {}),
         },
         upgrade: {
           cta: expect.any(String),

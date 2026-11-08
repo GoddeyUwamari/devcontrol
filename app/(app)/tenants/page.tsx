@@ -18,7 +18,8 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
-import { SEE_PLANS, planRequiredText, tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
+import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
+import { usePlanNotice } from '@/lib/plan/use-plan-notice'
 import { api } from '@/lib/api'
 import { Tenant } from '@/lib/types'
 import { toast } from 'sonner'
@@ -152,11 +153,13 @@ export default function TenantsPage() {
 
   const isAuthError = !isDemoActive && !!error && ((error as any)?.response?.status === 401 || (error as any)?.status === 401)
 
-  if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
-  if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
-
   // The server refused for the plan (e.g. a restricted or changed plan): its gate, never an error or empty list.
   const tierRequired = isDemoActive ? null : tierRequiredOf(error) ?? addTierRequired
+
+  const planNotice = usePlanNotice(tierRequired)
+
+  if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
+  if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
 
   if ((!entitled || tierRequired) && !isDemoActive) {
     return (
@@ -171,10 +174,13 @@ export default function TenantsPage() {
           </div>
           {tierRequired ? (
             <>
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">{planRequiredText(tierRequired)}</h2>
-              <Link href={SEE_PLANS.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
-                {SEE_PLANS.label}
-              </Link>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">{planNotice?.text}</h2>
+              {planNotice?.link && (
+                <Link href={planNotice.link.href} className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
+                  {planNotice.link.label}
+                </Link>
+              )}
+              {planNotice?.note && <p className="text-ui text-ink-muted leading-relaxed">{planNotice.note}</p>}
             </>
           ) : (
             <>
