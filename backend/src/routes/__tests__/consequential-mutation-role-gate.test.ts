@@ -244,6 +244,20 @@ beforeEach(() => {
     .mockResolvedValue({ id: 'cs_role_gate', url: 'https://checkout.example/role-gate' } as never);
 });
 
+// Organizations a test moved off the shared fixture's plan (see the Checkout case).
+const orgsToRestoreToEnterprise = new Set<string>();
+afterEach(async () => {
+  if (orgsToRestoreToEnterprise.size === 0) return;
+  await pool.query(
+    `UPDATE organizations
+        SET subscription_tier = 'enterprise', checkout_reservation_id = NULL, checkout_reservation_plan = NULL,
+            checkout_reservation_expires_at = NULL, checkout_session_id = NULL
+      WHERE id = ANY($1)`,
+    [[...orgsToRestoreToEnterprise]]
+  );
+  orgsToRestoreToEnterprise.clear();
+});
+
 afterEach(() => {
   jest.restoreAllMocks();
   guard.restore();
@@ -435,7 +449,21 @@ const mutations: Mutation[] = [
     method: 'POST',
     route: () => '/stripe/create-checkout-session',
     body: { tier: 'pro', billingInterval: 'monthly' },
-    prepare: async () => '',
+    // Checkout is for an organization not on Revenue Protection (an
+    // enterprise organization is refused with CONTACT_SALES; see
+    // stripe-checkout-session.security.test.ts), with no open reservation.
+    // The shared org is put back on its plan after each case.
+    prepare: async (orgId: string) => {
+      orgsToRestoreToEnterprise.add(orgId);
+      await pool.query(
+        `UPDATE organizations
+            SET subscription_tier = 'free', checkout_reservation_id = NULL, checkout_reservation_plan = NULL,
+                checkout_reservation_expires_at = NULL, checkout_session_id = NULL
+          WHERE id = $1`,
+        [orgId]
+      );
+      return '';
+    },
     allowed: () => 200,
     refusal: BILLING_REFUSAL,
     happened: async () => stripeCustomerSpy.mock.calls.length + stripeSessionSpy.mock.calls.length > 0,

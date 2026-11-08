@@ -48,10 +48,13 @@ async function insertOrg(overrides: {
   paymentFailedAt?: Date | null;
   gracePeriodEndsAt?: Date | null;
   latestProcessedInvoiceCreatedAt?: Date | null;
-} = {}): Promise<{ orgId: string; customerId: string }> {
+} = {}): Promise<{ orgId: string; customerId: string; subscriptionId: string }> {
   const suffix = uniqueSuffix();
   const tier = overrides.tier ?? 'pro';
   const customerId = overrides.customerId ?? `cus_test_${suffix}`;
+  // The organization's recorded subscription: subscription events below are
+  // for this subscription (an event for another one is never applied).
+  const subscriptionId = `sub_test_${suffix}`;
 
   const { rows } = await pool.query(
     `INSERT INTO organizations (
@@ -67,7 +70,7 @@ async function insertOrg(overrides: {
       `Payment Failure Org ${suffix}`,
       tier,
       customerId,
-      `sub_test_${suffix}`,
+      subscriptionId,
       overrides.billingLifecycleState ?? 'healthy',
       overrides.paymentFailedAt ?? null,
       overrides.gracePeriodEndsAt ?? null,
@@ -75,7 +78,7 @@ async function insertOrg(overrides: {
     ]
   );
   createdOrgIds.push(rows[0].id);
-  return { orgId: rows[0].id as string, customerId };
+  return { orgId: rows[0].id as string, customerId, subscriptionId };
 }
 
 async function insertOwner(orgId: string): Promise<string> {
@@ -739,10 +742,10 @@ describe('grace period enforcement -- exercised through the real Express middlew
 
 describe('status transitions -- billing lifecycle is driven only by invoice.* events', () => {
   it('customer.subscription.updated alone (status -> past_due, same price) does not start a grace period', async () => {
-    const { orgId, customerId } = await insertOrg({ tier: 'pro' });
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
     const nowSec = Math.floor(Date.now() / 1000);
     const subscription = {
-      id: `sub_test_${uniqueSuffix()}`,
+      id: subscriptionId,
       customer: customerId,
       status: 'past_due',
       items: { data: [{ price: { id: 'irrelevant' } }] },
@@ -761,7 +764,7 @@ describe('status transitions -- billing lifecycle is driven only by invoice.* ev
   });
 
   it('customer.subscription.updated alone (status -> active) does not clear an existing grace period -- only invoice.paid recovers', async () => {
-    const { orgId, customerId } = await insertOrg({
+    const { orgId, customerId, subscriptionId } = await insertOrg({
       tier: 'pro',
       billingLifecycleState: 'grace_period',
       paymentFailedAt: new Date(),
@@ -769,7 +772,7 @@ describe('status transitions -- billing lifecycle is driven only by invoice.* ev
     });
     const nowSec = Math.floor(Date.now() / 1000);
     const subscription = {
-      id: `sub_test_${uniqueSuffix()}`,
+      id: subscriptionId,
       customer: customerId,
       status: 'active',
       items: { data: [{ price: { id: 'irrelevant' } }] },
@@ -787,7 +790,7 @@ describe('status transitions -- billing lifecycle is driven only by invoice.* ev
   });
 
   it('customer.subscription.updated -> unpaid does not change billing_lifecycle_state on a restricted org', async () => {
-    const { orgId, customerId } = await insertOrg({
+    const { orgId, customerId, subscriptionId } = await insertOrg({
       tier: 'pro',
       billingLifecycleState: 'restricted',
       paymentFailedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
@@ -795,7 +798,7 @@ describe('status transitions -- billing lifecycle is driven only by invoice.* ev
     });
     const nowSec = Math.floor(Date.now() / 1000);
     const subscription = {
-      id: `sub_test_${uniqueSuffix()}`,
+      id: subscriptionId,
       customer: customerId,
       status: 'unpaid',
       items: { data: [{ price: { id: 'irrelevant' } }] },
@@ -814,14 +817,14 @@ describe('status transitions -- billing lifecycle is driven only by invoice.* ev
   });
 
   it('cancellation/deletion after a payment failure resets billing lifecycle to healthy alongside the existing free-tier downgrade', async () => {
-    const { orgId, customerId } = await insertOrg({
+    const { orgId, customerId, subscriptionId } = await insertOrg({
       tier: 'pro',
       billingLifecycleState: 'restricted',
       paymentFailedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
       gracePeriodEndsAt: new Date(Date.now() - 13 * 24 * 60 * 60 * 1000),
     });
 
-    const subscription = { id: `sub_test_${uniqueSuffix()}`, customer: customerId, status: 'canceled' };
+    const subscription = { id: subscriptionId, customer: customerId, status: 'canceled' };
     const event = fakeEvent('customer.subscription.deleted', subscription);
     await deliverWebhook(event);
 
@@ -861,10 +864,10 @@ describe('grace-period-enforcement.job.ts -- reconciliation backstop', () => {
 
 describe('regression: existing entitlement-sync behavior on a healthy org is unaffected', () => {
   it('a normal tier-changing customer.subscription.updated on a healthy org does not touch billing_lifecycle_state', async () => {
-    const { orgId, customerId } = await insertOrg({ tier: 'free' });
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'free' });
     const nowSec = Math.floor(Date.now() / 1000);
     const subscription = {
-      id: `sub_test_${uniqueSuffix()}`,
+      id: subscriptionId,
       customer: customerId,
       status: 'active',
       items: { data: [{ price: { id: 'irrelevant' } }] },

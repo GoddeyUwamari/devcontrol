@@ -856,9 +856,12 @@ describe('resubscription: an old subscription cannot interfere with a newer one'
 
   it('checkout.session.completed establishes a fresh projection correctly and advances the mark', async () => {
     const { orgId, customerId } = await insertOrgWithSubscription('free');
+    // The organization's previous subscription has ended: it subscribes again.
+    await pool.query(`UPDATE organizations SET subscription_status = 'canceled' WHERE id = $1`, [orgId]);
     const newSubId = `sub_checkout_${uniqueSuffix()}`;
     jest.spyOn(stripeService, 'getSubscription').mockResolvedValue({
       id: newSubId,
+      customer: customerId,
       status: 'active',
       items: { data: [{ price: { id: 'price_starter' } }] },
       cancel_at_period_end: false,

@@ -89,8 +89,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202610161210_create_resource_health_evaluations.sql`**,
 **`202610191200_create_multi_region_scan_foundation.sql`**,
 **`202610281200_create_resource_telemetry_observations.sql`**,
-**`202611021200_extend_cost_analysis_runs.sql`**, and
-**`202611031200_create_aws_org_external_ids.sql`**.
+**`202611021200_extend_cost_analysis_runs.sql`**,
+**`202611031200_create_aws_org_external_ids.sql`**, and
+**`202611071200_add_checkout_reservation.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -959,3 +960,32 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 Existing connections keep working: each one's AssumeRole sends its own
 `aws_accounts.external_id`. The reverted release goes back to one-hour session
 values.
+
+## Classification -- `202611071200_add_checkout_reservation.sql`
+
+Adds the self-serve Checkout reservation to `organizations` (four nullable
+columns and a CHECK that they are set together) and two partial unique indexes:
+one Stripe subscription, and one Stripe customer, per organization at most. The
+customer index already exists where `202608270610_add_stripe_fields.sql` ran; it
+is created only if absent, and an existing one must match exactly. It is
+administrative because it alters a `postgres`-owned table and is applied by hand
+**before** the code that uses it is merged.
+
+It is additive and safe under the release already running: that release never
+reads or writes the new columns, and the indexes only refuse what the
+application never writes (one subscription or customer on two organizations).
+It raises an exception, with nothing applied, if production already holds such
+a duplicate.
+
+### Rollback
+
+`202611071200_add_checkout_reservation_rollback.sql`, manual only, as
+`postgres`, in one transaction, **after** reverting the application:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611071200_add_checkout_reservation_rollback.sql
+```
+
+Only open Checkout reservations are lost. It drops only objects that carry the
+migration's marker, so a customer index from `202608270610` is kept.

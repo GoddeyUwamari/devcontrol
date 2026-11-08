@@ -183,6 +183,10 @@ describe('createCheckoutSession -> checkout_started', () => {
       url: 'https://checkout.stripe.com/test-session',
     } as any);
 
+    // The second attempt is for another plan: the first session is expired
+    // in Stripe (mocked) before the new one is created.
+    jest.spyOn(stripeService, 'expireCheckoutSession').mockResolvedValue({ status: 'expired' } as any);
+
     const sharedUserId = await insertUser();
     const first = mockCheckoutReqRes({ tier: 'starter', billingInterval: 'monthly' }, orgId, sharedUserId);
     await stripeController.createCheckoutSession(first.req, first.res);

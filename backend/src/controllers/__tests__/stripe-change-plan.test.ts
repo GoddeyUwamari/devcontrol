@@ -19,7 +19,7 @@
 
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
-import { stripeController } from '../stripe.controller';
+import { stripeController, CONTACT_SALES_MESSAGE } from '../stripe.controller';
 import stripeService, {
   CHECKOUT_TIERS,
   BILLING_INTERVALS,
@@ -204,18 +204,16 @@ describe('no existing subscription -> 400, Stripe never called', () => {
   });
 });
 
-describe('enterprise does not support self-service annual billing, same as checkout', () => {
-  it('enterprise/annual -> 400 before any Stripe call', async () => {
-    const { orgId } = await insertOrgWithSubscription('enterprise');
+describe('Revenue Protection (enterprise) is never a self-serve plan change, same as checkout', () => {
+  it.each(['monthly', 'annual'])('switching a Cost Control subscription to enterprise/%s -> 400 CONTACT_SALES before any Stripe call', async (interval) => {
+    const { orgId } = await insertOrgWithSubscription('starter');
     const updateSpy = stubUpdateSubscription();
-    const { req, res, status, json } = mockReqRes({ tier: 'enterprise', billingInterval: 'annual' }, orgId);
+    const { req, res, status, json } = mockReqRes({ tier: 'enterprise', billingInterval: interval }, orgId);
 
     await stripeController.changePlan(req, res);
 
     expect(status).toHaveBeenCalledWith(400);
-    const [[payload]] = json.mock.calls;
-    expect(payload.error).toMatch(/enterprise/i);
-    expect(payload.error).toMatch(/annual/i);
+    expect(json).toHaveBeenCalledWith({ success: false, code: 'CONTACT_SALES', error: CONTACT_SALES_MESSAGE });
     expect(updateSpy).not.toHaveBeenCalled();
   });
 });
