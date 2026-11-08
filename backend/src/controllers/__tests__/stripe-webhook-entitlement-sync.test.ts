@@ -89,6 +89,7 @@ async function insertOrg(overrides: {
   maxUsers?: number;
   maxDeploymentsPerMonth?: number;
   stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
   cancelAtPeriodEnd?: boolean;
 } = {}): Promise<string> {
   const suffix = uniqueSuffix();
@@ -99,8 +100,8 @@ async function insertOrg(overrides: {
     `INSERT INTO organizations (
        name, slug, display_name, subscription_tier,
        max_services, max_users, max_deployments_per_month,
-       stripe_customer_id, subscription_cancel_at_period_end
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       stripe_customer_id, subscription_cancel_at_period_end, stripe_subscription_id
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id`,
     [
       `Entitlement Sync Org ${suffix}`,
@@ -112,6 +113,7 @@ async function insertOrg(overrides: {
       overrides.maxDeploymentsPerMonth ?? tierDefaults.maxDeploymentsPerMonth,
       overrides.stripeCustomerId ?? null,
       overrides.cancelAtPeriodEnd ?? false,
+      overrides.stripeSubscriptionId ?? null,
     ]
   );
   createdOrgIds.push(rows[0].id);
@@ -213,14 +215,17 @@ describe('customer.subscription.updated -- upgrade reaches entitlement sync', ()
 describe('customer.subscription.deleted -- downgrade/cancellation reaches entitlement sync', () => {
   it('pro -> free (cancellation) webhook lifecycle lowers max_services/max_users/max_deployments_per_month to TIER_LIMITS.free', async () => {
     const customerId = `cus_test_${uniqueSuffix()}`;
-    const orgId = await insertOrg({ tier: 'pro', stripeCustomerId: customerId });
+    // The deleted subscription is the organization's recorded one: only that
+    // subscription's deletion downgrades it.
+    const subscriptionId = `sub_test_${uniqueSuffix()}`;
+    const orgId = await insertOrg({ tier: 'pro', stripeCustomerId: customerId, stripeSubscriptionId: subscriptionId });
 
     const before = await fetchOrgRow(orgId);
     expect(before.subscription_tier).toBe('pro');
     expect(before.max_services).toBe(TIER_LIMITS.pro.maxServices);
 
     const subscription = {
-      id: `sub_test_${uniqueSuffix()}`,
+      id: subscriptionId,
       customer: customerId,
       status: 'canceled',
     };

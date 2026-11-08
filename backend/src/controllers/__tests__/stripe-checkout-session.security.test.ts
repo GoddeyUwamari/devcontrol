@@ -36,7 +36,9 @@ import stripeService, {
   CheckoutTier,
   BillingInterval,
   isSupportedPlan,
+  isSelfServePlan,
 } from '../../services/stripe.service';
+import { CONTACT_SALES_MESSAGE } from '../stripe.controller';
 
 function dbConfig() {
   return {
@@ -146,12 +148,11 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-describe('every supported tier x billingInterval combination', () => {
-  // Starter monthly, Starter annual, Pro monthly, Pro annual, Enterprise
-  // monthly -- enterprise/annual is intentionally excluded here and covered
-  // separately below as a rejected combination, not a valid one.
+describe('every self-serve tier x billingInterval combination', () => {
+  // Starter monthly, Starter annual, Pro monthly, Pro annual. Revenue
+  // Protection (enterprise) is sales-led and covered below as refused.
   const combos: Array<[CheckoutTier, BillingInterval]> = CHECKOUT_TIERS.flatMap(tier =>
-    BILLING_INTERVALS.filter(interval => isSupportedPlan(tier, interval)).map(
+    BILLING_INTERVALS.filter(interval => isSelfServePlan(tier, interval)).map(
       interval => [tier, interval] as [CheckoutTier, BillingInterval]
     )
   );
@@ -173,19 +174,16 @@ describe('every supported tier x billingInterval combination', () => {
   });
 });
 
-describe('enterprise does not support self-service annual billing', () => {
-  it('enterprise/annual -> 400 before any Stripe call, with a clear reason', async () => {
+describe('Revenue Protection (enterprise) is never sold through self-serve Checkout', () => {
+  it.each(['monthly', 'annual'])('enterprise/%s -> 400 CONTACT_SALES before any Stripe call', async (interval) => {
     const { orgId } = await insertOrgWithCustomer();
     const createSession = stubCreateCheckoutSession();
-    const { req, res, status, json } = mockReqRes({ tier: 'enterprise', billingInterval: 'annual' }, orgId);
+    const { req, res, status, json } = mockReqRes({ tier: 'enterprise', billingInterval: interval }, orgId);
 
     await stripeController.createCheckoutSession(req, res);
 
     expect(status).toHaveBeenCalledWith(400);
-    const [[payload]] = json.mock.calls;
-    expect(payload.success).toBe(false);
-    expect(payload.error).toMatch(/enterprise/i);
-    expect(payload.error).toMatch(/annual/i);
+    expect(json).toHaveBeenCalledWith({ success: false, code: 'CONTACT_SALES', error: CONTACT_SALES_MESSAGE });
     expect(createSession).not.toHaveBeenCalled();
   });
 

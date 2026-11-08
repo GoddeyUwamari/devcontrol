@@ -68,6 +68,63 @@ export function isSupportedPlan(tier: CheckoutTier, interval: BillingInterval): 
   return interval === 'monthly' || ANNUAL_CAPABLE_TIERS.has(tier);
 }
 
+// The plans a customer can buy or switch to on their own: Cost Control
+// (starter) and Optimization Engine (pro). Revenue Protection (enterprise)
+// is sales-led: it keeps its Stripe price (PRICE_ENV_VAR_CANDIDATES), so
+// getTierFromPriceId still maps every existing Revenue Protection
+// subscription to 'enterprise', but neither Checkout nor change-plan will
+// start or switch to it, and an organization on it cannot change its plan
+// itself.
+export const SELF_SERVE_TIERS: readonly CheckoutTier[] = ['starter', 'pro'];
+
+/** A tier with a Stripe price that is sold by the sales team, not self-serve. */
+export function isSalesLedTier(value: unknown): boolean {
+  return isCheckoutTier(value) && !SELF_SERVE_TIERS.includes(value);
+}
+
+/**
+ * Whether Checkout and change-plan may target this plan: a self-serve tier
+ * at a cadence it is offered in (isSupportedPlan).
+ */
+export function isSelfServePlan(tier: CheckoutTier, interval: BillingInterval): boolean {
+  return SELF_SERVE_TIERS.includes(tier) && isSupportedPlan(tier, interval);
+}
+
+// Subscription statuses after which Stripe never bills the subscription
+// again. Every other status ('trialing', 'active', 'past_due', 'unpaid',
+// 'incomplete', 'paused') belongs to a subscription that bills, or can
+// recover and bill, so it counts as the organization's billable
+// subscription.
+export const TERMINAL_SUBSCRIPTION_STATUSES: readonly string[] = ['canceled', 'incomplete_expired'];
+
+export function isTerminalSubscriptionStatus(status: unknown): boolean {
+  return typeof status === 'string' && TERMINAL_SUBSCRIPTION_STATUSES.includes(status);
+}
+
+/**
+ * Which recorded subscription a subscription write may land on.
+ *  - 'canonical': only the organization's recorded subscription.
+ *  - 'adoptable': the recorded subscription, or a new one when the
+ *    organization records none or only a terminal one (subscribing again
+ *    after a cancellation). Never a second subscription next to a billable
+ *    one.
+ * `customerId`, when given, must also be the organization's Stripe customer.
+ */
+export interface SubscriptionIdentityGuard {
+  subscriptionId: string;
+  match: 'canonical' | 'adoptable';
+  customerId?: string;
+}
+
+/** The id of a Stripe reference that may arrive expanded or as a bare id. */
+export function stripeIdOf(value: unknown): string | null {
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (value && typeof value === 'object' && typeof (value as { id?: unknown }).id === 'string') {
+    return (value as { id: string }).id;
+  }
+  return null;
+}
+
 // Refund reasons the client-facing UI offers (components/payments/
 // issue-refund-dialog.tsx). Broader than Stripe's own Refund.reason enum --
 // see toStripeRefundReason below for the mapping, and STRIPE_REFUND_REASONS
@@ -196,32 +253,30 @@ function getConfiguredPricePlans(): Array<{ tier: CheckoutTier; interval: Billin
 
 export class StripeService {
   /**
-   * Create a Stripe customer for an organization
+   * Create a Stripe customer for an organization. Only creates it in Stripe:
+   * the caller records it on the organization, and only if the organization
+   * has none yet (checkout-reservation.service attachCustomerIfAbsent), so an
+   * organization never ends up pointing at a second customer.
    */
   async createCustomer(
     email: string,
     name: string,
-    organizationId: string
+    organizationId: string,
+    options: { idempotencyKey: string }
   ): Promise<Stripe.Customer> {
     try {
-      const customer = await getStripeClient().customers.create({
-        email,
-        name,
-        metadata: {
-          organizationId,
+      const customer = await getStripeClient().customers.create(
+        {
+          email,
+          name,
+          metadata: {
+            organizationId,
+          },
         },
-      });
-
-      // Update organization with Stripe customer ID
-      await pool.query(
-        `UPDATE organizations
-         SET stripe_customer_id = $1,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $2`,
-        [customer.id, organizationId]
+        { idempotencyKey: options.idempotencyKey }
       );
 
-      console.log(`Created Stripe customer ${customer.id} for organization ${organizationId}`);
+      console.log(`Created Stripe customer for organization ${organizationId}`);
       return customer;
     } catch (error) {
       console.error('Error creating Stripe customer:', error);
@@ -230,43 +285,74 @@ export class StripeService {
   }
 
   /**
-   * Create a Checkout Session for subscription
+   * Create a Checkout Session for subscription. `expiresAt` (Unix seconds)
+   * bounds how long the session can be completed; the caller's reservation
+   * outlives it (checkout-reservation.service).
    */
   async createCheckoutSession(
     customerId: string,
     priceId: string,
     organizationId: string,
     successUrl: string,
-    cancelUrl: string
+    cancelUrl: string,
+    options: { expiresAt: number; idempotencyKey: string }
   ): Promise<Stripe.Checkout.Session> {
     try {
-      const session = await getStripeClient().checkout.sessions.create({
-        customer: customerId,
-        mode: 'subscription',
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price: priceId,
-            quantity: 1,
-          },
-        ],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        metadata: {
-          organizationId,
-        },
-        subscription_data: {
+      const session = await getStripeClient().checkout.sessions.create(
+        {
+          customer: customerId,
+          mode: 'subscription',
+          payment_method_types: ['card'],
+          line_items: [
+            {
+              price: priceId,
+              quantity: 1,
+            },
+          ],
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          expires_at: options.expiresAt,
           metadata: {
             organizationId,
           },
+          subscription_data: {
+            metadata: {
+              organizationId,
+            },
+          },
+          allow_promotion_codes: true,
         },
-        allow_promotion_codes: true,
-      });
+        { idempotencyKey: options.idempotencyKey }
+      );
 
-      console.log(`Created checkout session ${session.id} for customer ${customerId}`);
+      console.log(`Created checkout session for organization ${organizationId}`);
       return session;
     } catch (error) {
       console.error('Error creating checkout session:', error);
+      throw error;
+    }
+  }
+
+  /** Retrieve a Checkout Session (its status and, while open, its URL). */
+  async retrieveCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session> {
+    try {
+      return await getStripeClient().checkout.sessions.retrieve(sessionId);
+    } catch (error) {
+      console.error('Error retrieving checkout session:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Expire an open Checkout Session. Stripe only expires a session that is
+   * still open; once it returns, the session can never be completed. It
+   * throws for a session that has already completed or expired.
+   */
+  async expireCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session> {
+    try {
+      return await getStripeClient().checkout.sessions.expire(sessionId);
+    } catch (error) {
+      console.error('Error expiring checkout session:', error);
       throw error;
     }
   }
@@ -651,6 +737,15 @@ export class StripeService {
    * Callers must check this and skip any downstream effect (e.g.
    * recordPaymentRecovery) that would only be correct if the write actually
    * landed.
+   *
+   * `identity` (optional) makes the subscription id the identity of the
+   * write: the same atomic UPDATE also requires the organization's recorded
+   * subscription to be `identity.subscriptionId` ('canonical'), or allows a
+   * new one only while the organization records none or only a terminal one
+   * ('adoptable'), and optionally requires its Stripe customer to be
+   * `identity.customerId`. So an event or action for a subscription that is
+   * not the organization's own can never downgrade or overwrite it. A write
+   * refused for identity also returns `{ applied: false }`.
    */
   async updateOrganizationSubscription(
     organizationId: string,
@@ -662,7 +757,8 @@ export class StripeService {
       currentPeriodEnd?: Date;
       cancelAtPeriodEnd?: boolean;
     },
-    ordering: { asOf: Date; allowTie?: boolean }
+    ordering: { asOf: Date; allowTie?: boolean },
+    identity?: SubscriptionIdentityGuard
   ): Promise<{ applied: boolean }> {
     try {
       console.log(`📝 Updating organization ${organizationId} with data:`, JSON.stringify(data, null, 2));
@@ -757,6 +853,30 @@ export class StripeService {
 
       const comparisonOperator = ordering.allowTie ? '<=' : '<';
 
+      // Identity: the same statement as the ordering guard, so the check and
+      // the write cannot be separated by a concurrent write.
+      const identityPredicates: string[] = [];
+      if (identity) {
+        const subscriptionParamIndex = paramIndex++;
+        values.push(identity.subscriptionId);
+        if (identity.match === 'canonical') {
+          identityPredicates.push(`stripe_subscription_id = $${subscriptionParamIndex}`);
+        } else {
+          const terminalParamIndex = paramIndex++;
+          values.push(TERMINAL_SUBSCRIPTION_STATUSES);
+          identityPredicates.push(
+            `(stripe_subscription_id IS NULL
+              OR stripe_subscription_id = $${subscriptionParamIndex}
+              OR COALESCE(subscription_status, '') = ANY($${terminalParamIndex}::text[]))`
+          );
+        }
+        if (identity.customerId !== undefined) {
+          const customerParamIndex = paramIndex++;
+          values.push(identity.customerId);
+          identityPredicates.push(`stripe_customer_id = $${customerParamIndex}`);
+        }
+      }
+
       const query = `
         UPDATE organizations
         SET ${updates.join(', ')}
@@ -764,7 +884,7 @@ export class StripeService {
           AND (
             latest_processed_subscription_event_created_at IS NULL
             OR latest_processed_subscription_event_created_at ${comparisonOperator} $${asOfParamIndex}
-          )
+          )${identityPredicates.map(p => `\n          AND ${p}`).join('')}
       `;
 
       console.log(`🔍 SQL Query: ${query}`);
@@ -774,7 +894,7 @@ export class StripeService {
       const applied = (result.rowCount ?? 0) > 0;
 
       if (!applied) {
-        console.log(`⚠️ Stale subscription write ignored for organization ${organizationId} (asOf=${ordering.asOf.toISOString()} not newer than the recorded mark)`);
+        console.log(`⚠️ Subscription write not applied for organization ${organizationId} (asOf=${ordering.asOf.toISOString()}): stale against the recorded mark${identity ? ', or not the organization\'s own subscription' : ''}`);
       } else {
         console.log(`✅ Database update result: ${result.rowCount} row(s) affected`);
         console.log(`✅ Updated organization ${organizationId} subscription info`);
@@ -853,6 +973,19 @@ export class StripeService {
   getTierFromPriceId(priceId: string): string {
     const match = getConfiguredPricePlans().find(plan => plan.priceId === priceId);
     return match ? match.tier : 'free';
+  }
+
+  /**
+   * The tier a subscription snapshot grants: 'free' once it is terminal
+   * (canceled / incomplete_expired: its items still name the old, or
+   * never-paid, price), otherwise the tier of its price. Used by every
+   * webhook path that writes a tier from a subscription, so a late or
+   * re-read terminal subscription can never write a paid tier.
+   */
+  tierForSubscription(subscription: { status?: string; items?: { data?: Array<{ price?: { id?: string } }> } }): string {
+    if (isTerminalSubscriptionStatus(subscription.status)) return 'free';
+    const priceId = subscription.items?.data?.[0]?.price?.id;
+    return priceId ? this.getTierFromPriceId(priceId) : 'free';
   }
 
   /**

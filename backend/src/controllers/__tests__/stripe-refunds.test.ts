@@ -481,9 +481,13 @@ describe('refund webhook idempotency and status sync', () => {
     // charge.refunded/refund.updated cases added to the same switch.
     const customerId = `cus_test_${uniqueSuffix()}`;
     const { orgId } = await insertOrgWithCustomer();
-    await pool.query('UPDATE organizations SET stripe_customer_id = $1, subscription_tier = $2 WHERE id = $3', [customerId, 'pro', orgId]);
+    const subscriptionId = `sub_test_${uniqueSuffix()}`;
+    await pool.query(
+      'UPDATE organizations SET stripe_customer_id = $1, subscription_tier = $2, stripe_subscription_id = $3 WHERE id = $4',
+      [customerId, 'pro', subscriptionId, orgId]
+    );
 
-    const subscription = { id: `sub_test_${uniqueSuffix()}`, customer: customerId, status: 'canceled' };
+    const subscription = { id: subscriptionId, customer: customerId, status: 'canceled' };
     const event = fakeRefundEvent('customer.subscription.deleted', subscription);
     stubSignatureVerification(event);
     const { req, res, json, status } = mockWebhookReqRes(event);

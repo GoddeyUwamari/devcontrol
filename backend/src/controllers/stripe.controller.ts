@@ -11,15 +11,46 @@ import stripeService, {
   isCheckoutTier,
   isBillingInterval,
   isSupportedPlan,
+  isSalesLedTier,
+  isTerminalSubscriptionStatus,
   isRefundReason,
+  stripeIdOf,
   toStripeRefundReason,
   CHECKOUT_TIERS,
   BILLING_INTERVALS,
 } from '../services/stripe.service';
+import {
+  CHECKOUT_SESSION_LIFETIME_SECONDS,
+  attachCustomerIfAbsent,
+  checkoutPlanKey,
+  clearCheckoutReservation,
+  clearCheckoutReservationForSession,
+  readCheckoutState,
+  recordCheckoutSession,
+  replaceCheckoutReservation,
+  tryReserveCheckout,
+} from '../services/checkout-reservation.service';
 import { pool } from '../config/database';
 import { runWithOrgClient } from '../middleware/auth.middleware';
 import { claimWebhookEvent, resolveWebhookEvent } from '../services/stripe-webhook-ledger.service';
 import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents';
+
+// Approved customer-facing copy (billing safety PR A). Each answer also
+// carries a stable `code` for clients.
+export const CONTACT_SALES_MESSAGE = 'Revenue Protection is set up with our team. Contact sales to get started.';
+export const ALREADY_SUBSCRIBED_MESSAGE = 'This organization already has a subscription. Change plan from Billing settings.';
+export const CHECKOUT_IN_PROGRESS_MESSAGE =
+  'A checkout for this organization is already open. Finish it there, or try again in 30 minutes.';
+
+/** What the reservation step decided for one Checkout request. */
+type CheckoutReservationOutcome =
+  | { kind: 'reserved'; reservationId: string }
+  | { kind: 'existing_session'; sessionId: string; url: string }
+  | { kind: 'already_subscribed' }
+  | { kind: 'in_progress' };
+
+/** How many times a request re-tries the reservation after finding it just freed. */
+const MAX_RESERVATION_ATTEMPTS = 3;
 
 // The only fields POST /api/refunds accepts from the client. `paymentId` is
 // our own Payment.id, i.e. a Stripe invoice id -- never a payment_intent or
@@ -77,6 +108,69 @@ export class StripeController {
     return true;
   }
 
+  /** Revenue Protection is set up by sales: refused on every self-serve path. */
+  private refuseContactSales(res: Response): void {
+    res.status(400).json({ success: false, code: 'CONTACT_SALES', error: CONTACT_SALES_MESSAGE });
+  }
+
+  /**
+   * Decide one Checkout request against the organization's reservation
+   * (checkout-reservation.service for why each step is race-safe):
+   *  - reservation taken: this request creates the session;
+   *  - a billable subscription is recorded, or the open session has already
+   *    completed: already subscribed;
+   *  - the same plan is open: that session's URL;
+   *  - a different plan is open: expire that session in Stripe and, only
+   *    once Stripe has expired it, replace the reservation; if Stripe will
+   *    not expire it, a checkout is in progress;
+   *  - otherwise (a session still being created, or Stripe unreadable): a
+   *    checkout is in progress.
+   */
+  private async acquireCheckoutReservation(organizationId: string, plan: string): Promise<CheckoutReservationOutcome> {
+    for (let attempt = 0; attempt < MAX_RESERVATION_ATTEMPTS; attempt++) {
+      const reservationId = await tryReserveCheckout(organizationId, plan);
+      if (reservationId) return { kind: 'reserved', reservationId };
+
+      const state = await readCheckoutState(organizationId);
+      if (!state) return { kind: 'in_progress' };
+      if (state.hasBillableSubscription) return { kind: 'already_subscribed' };
+      // Released between the two statements: try again.
+      if (!state.reservationActive || !state.reservationId) continue;
+      // The holder is still creating its session.
+      if (!state.sessionId) return { kind: 'in_progress' };
+
+      if (state.reservationPlan === plan) {
+        let session: Stripe.Checkout.Session;
+        try {
+          session = await stripeService.retrieveCheckoutSession(state.sessionId);
+        } catch {
+          return { kind: 'in_progress' };
+        }
+        if (session.status === 'open' && session.url) {
+          return { kind: 'existing_session', sessionId: session.id, url: session.url };
+        }
+        if (session.status === 'complete') return { kind: 'already_subscribed' };
+        if (session.status === 'expired') {
+          await clearCheckoutReservation(organizationId, state.reservationId);
+          continue;
+        }
+        return { kind: 'in_progress' };
+      }
+
+      // A different plan: the open session must be expired first.
+      let expired: Stripe.Checkout.Session;
+      try {
+        expired = await stripeService.expireCheckoutSession(state.sessionId);
+      } catch {
+        return { kind: 'in_progress' };
+      }
+      if (expired.status !== 'expired') return { kind: 'in_progress' };
+      const replaced = await replaceCheckoutReservation(organizationId, state.reservationId, plan);
+      return replaced ? { kind: 'reserved', reservationId: replaced } : { kind: 'in_progress' };
+    }
+    return { kind: 'in_progress' };
+  }
+
   /**
    * POST /api/stripe/create-checkout-session
    * Create a Stripe Checkout session for subscription
@@ -127,6 +221,13 @@ export class StripeController {
         return;
       }
 
+      // Revenue Protection is sales-led: never started self-serve, at any
+      // cadence. Refused before any database or Stripe work.
+      if (isSalesLedTier(tier)) {
+        this.refuseContactSales(res);
+        return;
+      }
+
       if (!isSupportedPlan(tier, billingInterval)) {
         res.status(400).json({
           success: false,
@@ -145,7 +246,7 @@ export class StripeController {
 
       // Get organization details
       const orgResult = await pool.query(
-        'SELECT id, name, stripe_customer_id FROM organizations WHERE id = $1',
+        'SELECT id, name, subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
         [organizationId]
       );
 
@@ -158,16 +259,11 @@ export class StripeController {
       }
 
       const organization = orgResult.rows[0];
-      let customerId = organization.stripe_customer_id;
 
-      // Create Stripe customer if doesn't exist
-      if (!customerId) {
-        const customer = await stripeService.createCustomer(
-          req.user.email || `org-${organizationId}@devcontrol.com`,
-          organization.name,
-          organizationId
-        );
-        customerId = customer.id;
+      // An organization on Revenue Protection changes its plan through sales.
+      if (isSalesLedTier(organization.subscription_tier)) {
+        this.refuseContactSales(res);
+        return;
       }
 
       let priceId: string;
@@ -182,19 +278,70 @@ export class StripeController {
         return;
       }
 
-      // Fixed, server-controlled redirect targets -- never taken from the
-      // request body.
-      const successUrl = `${process.env.FRONTEND_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${process.env.FRONTEND_URL}/billing/cancel`;
+      // One open Checkout per organization (checkout-reservation.service).
+      const outcome = await this.acquireCheckoutReservation(organizationId, checkoutPlanKey(tier, billingInterval));
+      if (outcome.kind === 'already_subscribed') {
+        res.status(409).json({ success: false, code: 'ALREADY_SUBSCRIBED', error: ALREADY_SUBSCRIBED_MESSAGE });
+        return;
+      }
+      if (outcome.kind === 'in_progress') {
+        res.status(409).json({ success: false, code: 'CHECKOUT_IN_PROGRESS', error: CHECKOUT_IN_PROGRESS_MESSAGE });
+        return;
+      }
+      if (outcome.kind === 'existing_session') {
+        // The same plan is already open: hand back that session (a double
+        // click or a second tab lands on the same Checkout).
+        res.status(200).json({ success: true, data: { sessionId: outcome.sessionId, url: outcome.url } });
+        return;
+      }
+      const { reservationId } = outcome;
 
-      // Create checkout session
-      const session = await stripeService.createCheckoutSession(
-        customerId,
-        priceId,
-        organizationId,
-        successUrl,
-        cancelUrl
-      );
+      // From here this request holds the reservation. Any failure before the
+      // session is recorded releases it at once.
+      let session: Stripe.Checkout.Session;
+      let sessionExpiresAt: number;
+      try {
+        // Always the organization's existing customer; a customer is created
+        // only inside a held reservation, and only if the organization has none.
+        const state = await readCheckoutState(organizationId);
+        let customerId = state?.stripeCustomerId ?? null;
+        if (!customerId) {
+          const customer = await stripeService.createCustomer(
+            req.user.email || `org-${organizationId}@devcontrol.com`,
+            organization.name,
+            organizationId,
+            { idempotencyKey: `customer-${reservationId}` }
+          );
+          customerId = await attachCustomerIfAbsent(organizationId, customer.id);
+          if (customerId !== customer.id) {
+            console.error(`[Billing] A Stripe customer was created for organization ${organizationId}, which already had one; the existing customer is used.`);
+          }
+        }
+
+        // Fixed, server-controlled redirect targets -- never taken from the
+        // request body.
+        const successUrl = `${process.env.FRONTEND_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+        const cancelUrl = `${process.env.FRONTEND_URL}/billing/cancel`;
+
+        sessionExpiresAt = Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_LIFETIME_SECONDS;
+        session = await stripeService.createCheckoutSession(
+          customerId,
+          priceId,
+          organizationId,
+          successUrl,
+          cancelUrl,
+          { expiresAt: sessionExpiresAt, idempotencyKey: `checkout-${reservationId}` }
+        );
+      } catch (error) {
+        await clearCheckoutReservation(organizationId, reservationId).catch(clearError => {
+          console.error(`[Billing] Could not release the checkout reservation for organization ${organizationId}:`, clearError instanceof Error ? clearError.message : clearError);
+        });
+        throw error;
+      }
+
+      if (!(await recordCheckoutSession(organizationId, reservationId, session.id, sessionExpiresAt))) {
+        console.error(`[Billing] The checkout reservation for organization ${organizationId} changed before its session was recorded.`);
+      }
 
       // Funnel: fires only after Stripe actually creates the session --
       // never merely because the endpoint was requested (validation/price
@@ -513,7 +660,7 @@ export class StripeController {
         status: subscription.status,
         tier: immediate ? 'free' : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      }, { asOf: new Date() });
+      }, { asOf: new Date() }, { subscriptionId, match: 'canonical' });
 
       res.status(200).json({
         success: true,
@@ -581,6 +728,12 @@ export class StripeController {
         return;
       }
 
+      // Never a self-serve switch to Revenue Protection.
+      if (isSalesLedTier(tier)) {
+        this.refuseContactSales(res);
+        return;
+      }
+
       if (!isSupportedPlan(tier, billingInterval)) {
         res.status(400).json({
           success: false,
@@ -599,9 +752,16 @@ export class StripeController {
 
       // Get organization's existing subscription
       const orgResult = await pool.query(
-        'SELECT stripe_subscription_id FROM organizations WHERE id = $1',
+        'SELECT stripe_subscription_id, subscription_tier FROM organizations WHERE id = $1',
         [organizationId]
       );
+
+      // An organization on Revenue Protection never changes its plan itself:
+      // its subscription is left exactly as sales set it up.
+      if (orgResult.rows.length > 0 && isSalesLedTier(orgResult.rows[0].subscription_tier)) {
+        this.refuseContactSales(res);
+        return;
+      }
 
       if (orgResult.rows.length === 0 || !orgResult.rows[0].stripe_subscription_id) {
         res.status(400).json({
@@ -634,7 +794,7 @@ export class StripeController {
       await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         tier,
-      }, { asOf: new Date() });
+      }, { asOf: new Date() }, { subscriptionId, match: 'canonical' });
 
       res.status(200).json({
         success: true,
@@ -695,7 +855,7 @@ export class StripeController {
       await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         cancelAtPeriodEnd: false,
-      }, { asOf: new Date() });
+      }, { asOf: new Date() }, { subscriptionId, match: 'canonical' });
 
       res.status(200).json({
         success: true,
@@ -1810,6 +1970,29 @@ export class StripeController {
     }
   }
   // Webhook event handlers
+
+  /**
+   * Whether a Stripe subscription belongs to this organization: it is under
+   * the organization's own Stripe customer, and, when it carries the
+   * organizationId metadata our Checkout sets, that metadata names this
+   * organization. Checked before any subscription change; the subscription
+   * id itself is then the identity of the write
+   * (StripeService.updateOrganizationSubscription's `identity`).
+   */
+  private subscriptionBelongsTo(
+    organizationId: string,
+    organizationCustomerId: string | null,
+    subscription: any
+  ): boolean {
+    if (!organizationCustomerId) return false;
+    if (stripeIdOf(subscription?.customer) !== organizationCustomerId) return false;
+    const metadataOrganizationId = subscription?.metadata?.organizationId;
+    if (metadataOrganizationId !== undefined && metadataOrganizationId !== null && metadataOrganizationId !== organizationId) {
+      return false;
+    }
+    return true;
+  }
+
   private async handleCheckoutSessionCompleted(session: any): Promise<void> {
     try {
       const organizationId = session.metadata?.organizationId;
@@ -1820,52 +2003,91 @@ export class StripeController {
 
       console.log(`💳 Checkout completed for organization ${organizationId}`);
 
-      const customerId = session.customer;
-      const subscriptionId = session.subscription;
-
-      console.log(`👤 Customer ID: ${customerId}`);
-      console.log(`📋 Subscription ID: ${subscriptionId}`);
-
+      const subscriptionId = stripeIdOf(session.subscription);
       if (!subscriptionId) {
         console.warn('⚠️ No subscription ID in checkout session');
         return;
       }
 
+      const orgResult = await pool.query(
+        'SELECT stripe_customer_id, subscription_tier, subscription_status FROM organizations WHERE id = $1',
+        [organizationId]
+      );
+      if (orgResult.rows.length === 0) {
+        console.warn(`⚠️ checkout.session.completed names organization ${organizationId}, which does not exist -- not applied`);
+        return;
+      }
+      const organization = orgResult.rows[0];
+
       // Get full subscription details to extract price ID and tier
       const subscription = await stripeService.getSubscription(subscriptionId);
-      const priceId = subscription.items.data[0]?.price.id;
-      const tier = stripeService.getTierFromPriceId(priceId);
 
-      console.log(`💰 Price ID: ${priceId}`);
+      // The session and its subscription must both be under this
+      // organization's own customer; anything else is never applied.
+      if (
+        stripeIdOf(session.customer) !== organization.stripe_customer_id ||
+        !this.subscriptionBelongsTo(organizationId, organization.stripe_customer_id, subscription)
+      ) {
+        console.error(`[Billing] A completed checkout for organization ${organizationId} is not under its Stripe customer; it was not applied.`);
+        return;
+      }
+
+      // A terminal subscription (a late redelivery after cancellation) can
+      // never write a paid tier.
+      const tier = stripeService.tierForSubscription(subscription);
+      const terminal = isTerminalSubscriptionStatus(subscription.status);
+
       console.log(`🎯 Detected tier: ${tier}`);
 
       // Snapshot pre-update state so the funnel emit below can tell a
       // genuine free/non-paying -> paid transition apart from a redelivered
       // checkout.session.completed webhook for a checkout already applied
       // (which would find the org already sitting on this tier).
-      const preUpdateResult = await pool.query(
-        'SELECT subscription_tier, subscription_status FROM organizations WHERE id = $1',
-        [organizationId]
-      );
       const wasNonPaying =
-        preUpdateResult.rows.length === 0 ||
-        preUpdateResult.rows[0].subscription_tier === 'free' ||
-        preUpdateResult.rows[0].subscription_status === 'free';
+        organization.subscription_tier === 'free' ||
+        organization.subscription_status === 'free';
 
       // Update organization with subscription details. asOf: new Date() --
       // treated as a synchronous, first-write establishment of this org's
       // subscription state (same as cancelSubscription/changePlan/
       // resumeSubscription below), not threaded from the enclosing
       // checkout.session.completed event -- see StripeService.
-      // updateOrganizationSubscription's comment.
-      await stripeService.updateOrganizationSubscription(organizationId, {
+      // updateOrganizationSubscription's comment. Identity: this
+      // subscription becomes the organization's only if it records none, or
+      // only a terminal one; a billable recorded subscription is never
+      // overwritten.
+      const { applied } = await stripeService.updateOrganizationSubscription(organizationId, {
         subscriptionId: subscriptionId,
         status: subscription.status,
         tier,
         currentPeriodStart: (subscription as any).current_period_start ? new Date((subscription as any).current_period_start * 1000) : undefined,
         currentPeriodEnd: (subscription as any).current_period_end ? new Date((subscription as any).current_period_end * 1000) : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      }, { asOf: new Date() });
+      }, { asOf: new Date() }, {
+        subscriptionId,
+        match: terminal ? 'canonical' : 'adoptable',
+        customerId: organization.stripe_customer_id,
+      });
+
+      // The session is finished either way: its reservation is released.
+      if (typeof session.id === 'string') {
+        await clearCheckoutReservationForSession(organizationId, session.id);
+      }
+
+      if (!applied) {
+        const current = await pool.query(
+          'SELECT stripe_subscription_id, subscription_status FROM organizations WHERE id = $1',
+          [organizationId]
+        );
+        const row = current.rows[0];
+        if (row?.stripe_subscription_id && row.stripe_subscription_id !== subscriptionId && !isTerminalSubscriptionStatus(row.subscription_status)) {
+          // BS-Q2: never overwrite, never refund or cancel automatically.
+          console.error(`[Billing] A checkout completed for organization ${organizationId}, which already has a billable subscription. The new subscription was NOT recorded and needs manual review in Stripe (no automatic refund or cancellation).`);
+        } else {
+          console.log(`ℹ️ checkout.session.completed for organization ${organizationId} not applied (stale, or not this organization's subscription)`);
+        }
+        return;
+      }
 
       console.log(`✅ Organization ${organizationId} updated to ${tier} tier`);
 
@@ -1892,17 +2114,25 @@ export class StripeController {
 
   private async handleSubscriptionUpdated(subscription: any, eventCreatedAt: Date): Promise<void> {
     try {
-      const customerId = subscription.customer;
-      console.log(`👤 Looking up organization for customer ${customerId}`);
+      const customerId = stripeIdOf(subscription.customer);
+      if (!customerId) {
+        console.warn('⚠️ customer.subscription event has no customer -- not applied');
+        return;
+      }
 
       const organization = await stripeService.getOrganizationByCustomerId(customerId);
 
       if (!organization) {
-        console.error(`❌ Organization not found for customer ${customerId}`);
+        console.error('❌ Organization not found for a customer.subscription event\'s customer');
         return;
       }
 
       console.log(`🏢 Found organization: ${organization.id} (${organization.name})`);
+
+      if (!this.subscriptionBelongsTo(organization.id, organization.stripe_customer_id, subscription)) {
+        console.error(`[Billing] A customer.subscription event for organization ${organization.id} names another organization; it was not applied.`);
+        return;
+      }
 
       // Get tier from price ID -- EXCEPT when the subscription itself has
       // reached a terminal state. Stripe fires customer.subscription.updated
@@ -1927,11 +2157,9 @@ export class StripeController {
       // cancellation that has since happened elsewhere (the P1 this
       // eventCreatedAt ordering guard closes, below) -- content and
       // staleness are orthogonal checks, both needed.
-      const priceId = subscription.items.data[0]?.price.id;
-      const isTerminated = subscription.status === 'canceled' || subscription.status === 'incomplete_expired';
-      const tier = isTerminated ? 'free' : stripeService.getTierFromPriceId(priceId);
+      const tier = stripeService.tierForSubscription(subscription);
+      const terminal = isTerminalSubscriptionStatus(subscription.status);
 
-      console.log(`💰 Price ID: ${priceId}`);
       console.log(`🎯 Detected tier: ${tier}`);
       console.log(`📊 Subscription status: ${subscription.status}`);
 
@@ -1939,7 +2167,10 @@ export class StripeController {
       // this same event redelivered later can never re-win a tie against
       // whatever it (or something newer) already set. See
       // StripeService.updateOrganizationSubscription's comment for the full
-      // ordering contract.
+      // ordering contract. Identity: a terminal event only ever lands on the
+      // organization's own subscription; a live one may also adopt a new
+      // subscription when the organization records none or only a terminal
+      // one. A second subscription never overwrites a billable one.
       const { applied } = await stripeService.updateOrganizationSubscription(organization.id, {
         subscriptionId: subscription.id,
         status: subscription.status,
@@ -1947,10 +2178,13 @@ export class StripeController {
         currentPeriodStart: (subscription as any).current_period_start ? new Date((subscription as any).current_period_start * 1000) : undefined,
         currentPeriodEnd: (subscription as any).current_period_end ? new Date((subscription as any).current_period_end * 1000) : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      }, { asOf: eventCreatedAt });
+      }, { asOf: eventCreatedAt }, {
+        subscriptionId: subscription.id,
+        match: terminal ? 'canonical' : 'adoptable',
+      });
 
       if (!applied) {
-        console.log(`ℹ️ Stale customer.subscription.updated for organization ${organization.id} (event ${eventCreatedAt.toISOString()}) -- ignored, a newer subscription event already applied`);
+        console.log(`ℹ️ customer.subscription.updated for organization ${organization.id} (event ${eventCreatedAt.toISOString()}) not applied: stale, or not the organization's own subscription`);
         return;
       }
 
@@ -1962,11 +2196,16 @@ export class StripeController {
   }
 
   private async handleSubscriptionDeleted(subscription: any, eventCreatedAt: Date): Promise<void> {
-    const customerId = subscription.customer;
-    const organization = await stripeService.getOrganizationByCustomerId(customerId);
+    const customerId = stripeIdOf(subscription.customer);
+    const organization = customerId ? await stripeService.getOrganizationByCustomerId(customerId) : null;
 
     if (!organization) {
-      console.error(`Organization not found for customer ${customerId}`);
+      console.error('Organization not found for a customer.subscription.deleted event\'s customer');
+      return;
+    }
+
+    if (!this.subscriptionBelongsTo(organization.id, organization.stripe_customer_id, subscription)) {
+      console.error(`[Billing] A customer.subscription.deleted event for organization ${organization.id} names another organization; it was not applied.`);
       return;
     }
 
@@ -1978,15 +2217,18 @@ export class StripeController {
     // StripeService.updateOrganizationSubscription's comment). A truly
     // stale .deleted (older than an event already applied -- e.g. this
     // organization has since resubscribed) is still correctly rejected.
+    // Identity 'canonical': only the deletion of the organization's own
+    // recorded subscription downgrades it -- never a duplicate's or an old
+    // one's.
     const { applied } = await stripeService.updateOrganizationSubscription(organization.id, {
       subscriptionId: undefined,
       status: 'canceled',
       tier: 'free',
       cancelAtPeriodEnd: false,
-    }, { asOf: eventCreatedAt, allowTie: true });
+    }, { asOf: eventCreatedAt, allowTie: true }, { subscriptionId: subscription.id, match: 'canonical' });
 
     if (!applied) {
-      console.log(`ℹ️ Stale customer.subscription.deleted for organization ${organization.id} (event ${eventCreatedAt.toISOString()}) -- ignored, a newer subscription event already applied`);
+      console.log(`ℹ️ customer.subscription.deleted for organization ${organization.id} (event ${eventCreatedAt.toISOString()}) not applied: stale, or not the organization's own subscription`);
       return;
     }
 
@@ -2002,6 +2244,23 @@ export class StripeController {
     await stripeService.recordPaymentRecovery(organization.id);
 
     console.log(`Subscription deleted for organization ${organization.id}, downgraded to free`);
+  }
+
+  /**
+   * Whether an invoice event may change this organization's payment
+   * lifecycle: an invoice of a subscription that is not the organization's
+   * recorded one (a duplicate, or an old subscription) never starts or ends
+   * its grace period. An invoice with no subscription, or one for an
+   * organization that records none or only a terminal one, is accepted as
+   * before.
+   */
+  private invoiceBelongsToRecordedSubscription(organization: any, invoice: any): boolean {
+    const invoiceSubscriptionId =
+      stripeIdOf(invoice?.parent?.subscription_details?.subscription) ?? stripeIdOf(invoice?.subscription);
+    if (!invoiceSubscriptionId) return true;
+    if (!organization.stripe_subscription_id) return true;
+    if (organization.stripe_subscription_id === invoiceSubscriptionId) return true;
+    return isTerminalSubscriptionStatus(organization.subscription_status);
   }
 
   /**
@@ -2053,6 +2312,11 @@ export class StripeController {
       // Diagnostic context only -- never mutates any organization when the
       // invoice can't be safely mapped to one.
       console.warn(`invoice.paid ${invoice.id}: no organization found for customer ${customerId}`);
+      return;
+    }
+
+    if (!this.invoiceBelongsToRecordedSubscription(organization, invoice)) {
+      console.warn(`invoice.paid ${invoice.id} for organization ${organization.id} is for a subscription that is not its recorded one -- not applied`);
       return;
     }
 
@@ -2116,6 +2380,11 @@ export class StripeController {
     );
     if (!organization) {
       console.warn(`invoice.payment_failed ${invoice.id}: no organization found for customer ${customerId} -- not mutating any organization`);
+      return;
+    }
+
+    if (!this.invoiceBelongsToRecordedSubscription(organization, invoice)) {
+      console.warn(`invoice.payment_failed ${invoice.id} for organization ${organization.id} is for a subscription that is not its recorded one -- not applied`);
       return;
     }
 
