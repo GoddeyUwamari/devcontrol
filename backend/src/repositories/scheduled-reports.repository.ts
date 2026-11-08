@@ -378,6 +378,23 @@ export class ScheduledReportsRepository {
   /**
    * Update run status after execution
    */
+  /**
+   * Move a schedule to its next run without recording a run: no run status,
+   * error, run count or execution row. For a run skipped while the
+   * organization's billing is on hold (ScheduledReportsService.executeReport).
+   */
+  async advanceNextRun(
+    id: string,
+    organizationId: string,
+    nextRunAt: Date | null,
+    executor?: PoolClient
+  ): Promise<void> {
+    await (executor ?? this.pool).query(
+      'UPDATE scheduled_reports SET next_run_at = $1 WHERE id = $2 AND organization_id = $3',
+      [nextRunAt, id, organizationId]
+    );
+  }
+
   async updateRunStatus(
     id: string,
     status: 'success' | 'failed' | 'partial',

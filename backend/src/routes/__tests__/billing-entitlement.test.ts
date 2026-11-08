@@ -34,7 +34,6 @@ import { authenticateToken } from '../../middleware/auth.middleware';
 import { requireEnterprise } from '../../middleware/subscription.middleware';
 import { apiRateLimiter } from '../../middleware/rateLimiter';
 import { ScheduledReportsService } from '../../services/scheduled-reports.service';
-import { ScheduledReportsRepository } from '../../repositories/scheduled-reports.repository';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
 import { RoleGateOrg, createRoleGateHarness } from './role-gate-harness';
 
@@ -328,56 +327,91 @@ describe('BS-Q10: the usage controller (GET /api/usage/api-requests) reports the
   });
 });
 
-describe('BS-Q10: scheduled reports run only on an effective Revenue Protection plan', () => {
-  function report(organizationId: string) {
-    return {
-      id: '00000000-0000-4000-8000-00000000b4b4',
-      organization_id: organizationId,
-      name: 'Entitlement test report',
-      report_type: 'cost_summary',
-      format: 'csv',
-      filters: {},
-      columns: [],
-      delivery_email: false,
-      delivery_slack: false,
-      email_recipients: [],
-      slack_channels: [],
-    } as any;
+describe('BS-Q10 / B-1: scheduled reports follow the effective tier; a billing hold skips runs', () => {
+  // Real schedule rows. Report generation and delivery are stubbed (not under
+  // test); everything the schedule records is read back from Postgres.
+  let counterReports = 0;
+  async function insertSchedule(): Promise<any> {
+    const { rows } = await pool.query(
+      `INSERT INTO scheduled_reports (organization_id, name, report_type, schedule_type, schedule_time, timezone,
+                                      delivery_email, email_recipients, format, enabled, next_run_at)
+       VALUES ($1, $2, 'cost_summary', 'daily', '09:00:00', 'UTC', true, ARRAY['reports@example.com'], 'csv', true,
+               NOW() - interval '1 hour')
+       RETURNING *`,
+      [org.orgId, `Entitlement schedule ${Date.now()}-${++counterReports}`]
+    );
+    return rows[0];
   }
+  const scheduleRow = async (id: string) =>
+    (await pool.query(
+      `SELECT enabled, last_run_status, last_run_error, last_run_at, run_count, next_run_at,
+              (SELECT count(*)::int FROM scheduled_report_executions e WHERE e.scheduled_report_id = r.id) AS executions
+         FROM scheduled_reports r WHERE id = $1`,
+      [id]
+    )).rows[0];
 
-  async function run(state: OrgState) {
-    await setState(org.orgId, state);
-    const service = new ScheduledReportsService(appPool);
+  function stubGeneration(service: ScheduledReportsService) {
     const generate = jest.spyOn(service as any, 'generateReport').mockResolvedValue({ recordsProcessed: 0, fileSizeBytes: 0 });
-    jest.spyOn(service as any, 'deliverReport').mockResolvedValue({ emailSuccess: false, slackSuccess: false });
-    jest.spyOn(service as any, 'calculateNextRun').mockReturnValue(null);
-    jest.spyOn(ScheduledReportsRepository.prototype, 'logExecution').mockResolvedValue(undefined as never);
-    jest.spyOn(ScheduledReportsRepository.prototype, 'updateRunStatus').mockResolvedValue(undefined);
-    const update = jest.spyOn(ScheduledReportsRepository.prototype, 'update').mockResolvedValue(null);
-    await (service as any).executeReport(report(org.orgId));
-    return { generate, update };
+    jest.spyOn(service as any, 'deliverReport').mockResolvedValue({ emailSuccess: true, slackSuccess: false });
+    return generate;
   }
 
-  it('held Revenue Protection (unpaid, no grace): not generated, the schedule is disabled as for any non-Revenue-Protection plan', async () => {
-    const { generate, update } = await run(HELD_ENTERPRISE);
+  async function run(state: OrgState, report?: any) {
+    await setState(org.orgId, state);
+    const schedule = report ?? (await insertSchedule());
+    const service = new ScheduledReportsService(appPool);
+    const generate = stubGeneration(service);
+    const expectedNext: Date | null = service.calculateNextRun(schedule);
+    await (service as any).executeReport(schedule);
+    return { schedule, generate, expectedNext, row: await scheduleRow(schedule.id) };
+  }
+
+  it.each([
+    ['payment hold (unpaid, no grace)', HELD_ENTERPRISE, 'payment'],
+    ['inactive hold (paused)', { tier: 'enterprise', subscription: true, status: 'paused' } as OrgState, 'subscription_inactive'],
+  ])('%s: not generated, still enabled, no run recorded, next run advanced, skip logged with ids and the hold only', async (_label, state, hold) => {
+    const { schedule, generate, expectedNext, row } = await run(state);
     expect(generate).not.toHaveBeenCalled();
-    expect(update).toHaveBeenCalledWith(expect.any(String), org.orgId, { enabled: false }, expect.anything());
+    expect(row).toMatchObject({ enabled: true, last_run_status: null, last_run_error: null, last_run_at: null, run_count: 0, executions: 0 });
+    expect(expectedNext).not.toBeNull();
+    expect(new Date(row.next_run_at).getTime()).toBe(expectedNext!.getTime());
+    expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
+
+    const lines = (console.log as jest.Mock).mock.calls.map((c) => c.join(' ')).filter((l) => l.includes('Skipped report'));
+    expect(lines).toEqual([`[ScheduledReports] Skipped report ${schedule.id} for organization ${org.orgId}: billing hold ${hold}`]);
+    const subscriptionId = (await pool.query('SELECT stripe_subscription_id FROM organizations WHERE id = $1', [org.orgId])).rows[0].stripe_subscription_id;
+    expect(lines[0]).not.toContain(subscriptionId);
   });
 
-  it('Revenue Protection, paused: not generated', async () => {
-    const { generate } = await run({ tier: 'enterprise', subscription: true, status: 'paused' });
+  it('resumes by itself once the hold clears: the same schedule runs on its next due time', async () => {
+    const held = await run(HELD_ENTERPRISE);
+    expect(held.generate).not.toHaveBeenCalled();
+    expect(held.row.enabled).toBe(true);
+    // The hold clears; the schedule's next run comes due.
+    await pool.query(`UPDATE scheduled_reports SET next_run_at = NOW() - interval '1 minute' WHERE id = $1`, [held.schedule.id]);
+    const schedule = (await pool.query('SELECT * FROM scheduled_reports WHERE id = $1', [held.schedule.id])).rows[0];
+    const resumed = await run(ACTIVE_ENTERPRISE, schedule);
+    expect(resumed.generate).toHaveBeenCalledTimes(1);
+    expect(resumed.row).toMatchObject({ enabled: true, last_run_status: 'success', run_count: 1, executions: 1 });
+  });
+
+  it.each([
+    ['a real downgrade to Optimization Engine (active)', { tier: 'pro', subscription: true, status: 'active' } as OrgState],
+    ['a canceled Revenue Protection subscription (no hold: terminal)', { tier: 'enterprise', subscription: true, status: 'canceled' } as OrgState],
+    ['free', { tier: 'free', subscription: false, status: 'free' } as OrgState],
+  ])('%s: not generated and disabled, as before', async (_label, state) => {
+    const { generate, row } = await run(state);
     expect(generate).not.toHaveBeenCalled();
+    expect(row).toMatchObject({ enabled: false, run_count: 0, executions: 0 });
   });
 
-  it('active Revenue Protection: generated', async () => {
-    const { generate, update } = await run(ACTIVE_ENTERPRISE);
+  it.each([
+    ['active Revenue Protection', ACTIVE_ENTERPRISE],
+    ['hand-provisioned Revenue Protection (no subscription)', HAND_ENTERPRISE],
+  ])('%s: generated', async (_label, state) => {
+    const { generate, row } = await run(state);
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(update).not.toHaveBeenCalled();
-  });
-
-  it('hand-provisioned Revenue Protection (no subscription): generated', async () => {
-    const { generate } = await run(HAND_ENTERPRISE);
-    expect(generate).toHaveBeenCalledTimes(1);
+    expect(row).toMatchObject({ enabled: true, last_run_status: 'success' });
   });
 });
 
