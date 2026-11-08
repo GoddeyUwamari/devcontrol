@@ -106,7 +106,7 @@ describe('202611071200_add_checkout_reservation: applied schema', () => {
         /organizations_checkout_reservation_complete/, '23514');
       await client.query(
         `UPDATE organizations SET checkout_reservation_id = gen_random_uuid(), checkout_reservation_plan = 'starter:monthly',
-                checkout_reservation_expires_at = NOW() + interval '35 minutes', checkout_session_id = 'cs_x' WHERE id = $1`, [orgId]);
+                checkout_reservation_expires_at = NOW() + interval '36 minutes', checkout_session_id = 'cs_x' WHERE id = $1`, [orgId]);
     });
   });
 

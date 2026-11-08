@@ -280,7 +280,15 @@ describe('concurrent first checkouts: one reservation, one customer, one session
 });
 
 describe('reservation lifecycle', () => {
-  it('reuses the organization\'s existing customer; session expires in 30 min, reservation 5 min later; idempotency keys carry the reservation', async () => {
+  it('the approved copy, exactly', () => {
+    expect(CONTACT_SALES_MESSAGE).toBe('Revenue Protection is set up with our team. Contact sales to get started.');
+    expect(ALREADY_SUBSCRIBED_MESSAGE).toBe('This organization already has a subscription. Change plan from Billing settings.');
+    expect(CHECKOUT_IN_PROGRESS_MESSAGE).toBe(
+      'A checkout for this organization is already open. Finish it there, or try again in about 30 minutes.'
+    );
+  });
+
+  it('reuses the organization\'s existing customer; session expires in 31 min, reservation 5 min later (36); idempotency keys carry the reservation', async () => {
     const { orgId, customerId } = await insertOrg();
     const { customerSpy, sessionSpy } = stubCheckoutStripe();
     const before = Math.floor(Date.now() / 1000);
@@ -294,9 +302,11 @@ describe('reservation lifecycle', () => {
     expect(calledCustomer).toBe(customerId);
     expect(calledOrg).toBe(orgId);
     const row = await orgRow(orgId);
-    expect(options.expiresAt).toBeGreaterThanOrEqual(before + CHECKOUT_SESSION_LIFETIME_SECONDS);
-    expect(options.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_LIFETIME_SECONDS);
-    expect(Number(row.reservation_expires_epoch)).toBe(options.expiresAt + RESERVATION_MARGIN_SECONDS);
+    expect(CHECKOUT_SESSION_LIFETIME_SECONDS).toBe(31 * 60);
+    expect(RESERVATION_MARGIN_SECONDS).toBe(5 * 60);
+    expect(options.expiresAt).toBeGreaterThanOrEqual(before + 31 * 60);
+    expect(options.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 31 * 60);
+    expect(Number(row.reservation_expires_epoch)).toBe(options.expiresAt + 5 * 60);
     expect(options.idempotencyKey).toBe(`checkout-${row.checkout_reservation_id}`);
     expect(row.checkout_reservation_plan).toBe('starter:monthly');
   });

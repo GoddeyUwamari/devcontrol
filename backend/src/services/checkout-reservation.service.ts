@@ -34,8 +34,12 @@ import type { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { TERMINAL_SUBSCRIPTION_STATUSES } from './stripe.service';
 
-/** Stripe Checkout session lifetime: now + 30 minutes. */
-export const CHECKOUT_SESSION_LIFETIME_SECONDS = 30 * 60;
+/**
+ * Stripe Checkout session lifetime: now + 31 minutes (one minute above
+ * Stripe's 30-minute minimum, so request latency or clock skew never makes
+ * Stripe reject it). The reservation outlives it by 5 minutes: 36 in all.
+ */
+export const CHECKOUT_SESSION_LIFETIME_SECONDS = 31 * 60;
 /** A reservation outlives its session by 5 minutes. */
 export const RESERVATION_MARGIN_SECONDS = 5 * 60;
 

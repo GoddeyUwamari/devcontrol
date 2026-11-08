@@ -40,7 +40,7 @@ import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEve
 export const CONTACT_SALES_MESSAGE = 'Revenue Protection is set up with our team. Contact sales to get started.';
 export const ALREADY_SUBSCRIBED_MESSAGE = 'This organization already has a subscription. Change plan from Billing settings.';
 export const CHECKOUT_IN_PROGRESS_MESSAGE =
-  'A checkout for this organization is already open. Finish it there, or try again in 30 minutes.';
+  'A checkout for this organization is already open. Finish it there, or try again in about 30 minutes.';
 
 /** What the reservation step decided for one Checkout request. */
 type CheckoutReservationOutcome =
