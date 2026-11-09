@@ -90,8 +90,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202610191200_create_multi_region_scan_foundation.sql`**,
 **`202610281200_create_resource_telemetry_observations.sql`**,
 **`202611021200_extend_cost_analysis_runs.sql`**,
-**`202611031200_create_aws_org_external_ids.sql`**, and
-**`202611071200_add_checkout_reservation.sql`**.
+**`202611031200_create_aws_org_external_ids.sql`**,
+**`202611071200_add_checkout_reservation.sql`**, and
+**`202611091300_pin_onboarding_trigger_search_path.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -989,3 +990,38 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 
 Only open Checkout reservations are lost. It drops only objects that carry the
 migration's marker, so a customer index from `202608270610` is kept.
+
+## Classification -- `202611091300_pin_onboarding_trigger_search_path.sql`
+
+`initialize_onboarding_for_organization()` is the AFTER INSERT trigger on
+`organizations` that creates a new organization's `onboarding_progress` row
+(`009_create_onboarding_progress.sql`). Production runs it as a
+`postgres`-owned SECURITY DEFINER function, which is what lets registration
+write that row with no tenant tag set. This migration gives every environment
+that shape, plus the standard hardening for a SECURITY DEFINER function:
+
+- `SET search_path = pg_catalog, public, pg_temp` on the function;
+- every table and function reference schema-qualified;
+- the same body and effect otherwise (one row, `ON CONFLICT (organization_id)
+  DO NOTHING`), owner `postgres`.
+
+It also revokes `TEMPORARY` on the database from `PUBLIC` and `devcontrol`. No
+application, job, script or migration uses temporary tables, and superusers are
+unaffected.
+
+It is administrative because it replaces a `postgres`-owned function and
+changes a database privilege. It refuses to run unless the function's current
+body is 009's (whitespace aside), and it takes no lock on `organizations`: only
+the function itself is locked, for the length of the transaction.
+
+### Rollback
+
+`202611091300_pin_onboarding_trigger_search_path_rollback.sql`, manual only, as
+`postgres`, in one transaction. It restores the 009 body without a pinned
+`search_path` and grants `TEMPORARY` to `PUBLIC` again, so use it only if the
+migration itself breaks registration:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611091300_pin_onboarding_trigger_search_path_rollback.sql
+```

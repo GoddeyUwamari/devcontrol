@@ -501,35 +501,57 @@ describe('empty-string trap: onboarding_progress / analytics_events on a reset c
    * createOrganization) is the one app path that reaches onboarding_progress
    * with NO tenant tag: INSERT INTO organizations fires
    * initialize_onboarding_for_organization(), which inserts the new org's
-   * onboarding_progress row under the caller's RLS. As a non-superuser it is
-   * rejected in EVERY tag state -- untagged (NULL), stale other-org tag (what
-   * a pooled connection carried before this reset existed), and cleared ('')
-   * -- only the error code differs. Characterization of a pre-existing
-   * condition, so the reset is shown not to change the outcome; fixing it is
-   * a separate policy/trigger decision.
+   * onboarding_progress row. That function is a postgres-owned SECURITY
+   * DEFINER function with a pinned search_path (admin migration
+   * 202611091300_pin_onboarding_trigger_search_path.sql), as in production,
+   * so the row is written in EVERY tag state -- untagged (NULL), stale
+   * other-org tag (what a pooled connection carried before this reset
+   * existed), and cleared ('') -- and the reset does not change the outcome.
    */
-  it('registration trigger path: rejected as non-superuser before and after the reset (pre-existing, outcome unchanged)', async () => {
+  it('registration trigger path: succeeds as non-superuser before and after the reset, writing the onboarding row', async () => {
     const insertOrgSql = `INSERT INTO organizations (name, slug, display_name, subscription_tier, subscription_status)
-                          VALUES ('x', $1, 'x', 'free', 'free')`;
+                          VALUES ($1, $1, $1, 'free', 'free') RETURNING id`;
     const p = mockPools.app!;
+    const registered: string[] = [];
+    const register = async (client: PoolClient, label: string) => {
+      const id = (await client.query(insertOrgSql, [`reg-${label}-${suffix}`])).rows[0].id as string;
+      registered.push(id);
+      createdOrgIds.push(id);
+    };
 
     // NULL: brand-new connection, never tagged.
     const fresh = await p.connect();
-    expect((await stateOf(fresh)).tag).toBeNull();
-    await expect(fresh.query(insertOrgSql, [`reg-null-${suffix}`])).rejects.toMatchObject({ code: '42501' });
-    fresh.release();
+    try {
+      expect((await stateOf(fresh)).tag).toBeNull();
+      await register(fresh, 'null');
+    } finally {
+      fresh.release();
+    }
 
     // Stale other-org tag (pre-reset pool behavior).
     const stale = await p.connect();
-    await tag(stale, orgB);
-    await expect(stale.query(insertOrgSql, [`reg-stale-${suffix}`])).rejects.toMatchObject({ code: '42501' });
-    stale.release();
+    try {
+      await tag(stale, orgB);
+      await register(stale, 'stale');
+    } finally {
+      stale.release();
+    }
 
     // Cleared by the reset.
     const cleared = await p.connect();
-    expect((await stateOf(cleared)).tag).toBe('');
-    await expect(cleared.query(insertOrgSql, [`reg-cleared-${suffix}`])).rejects.toMatchObject({ code: '22P02' });
-    cleared.release();
+    try {
+      expect((await stateOf(cleared)).tag).toBe('');
+      await register(cleared, 'cleared');
+    } finally {
+      cleared.release();
+    }
+
+    const { rows } = await admin.query(
+      `SELECT organization_id::text AS id, current_stage FROM onboarding_progress WHERE organization_id = ANY($1)`,
+      [registered]
+    );
+    expect(rows.map((r) => r.id).sort()).toEqual([...registered].sort());
+    expect(rows.every((r) => r.current_stage === 'welcome')).toBe(true);
   });
 
   /**
