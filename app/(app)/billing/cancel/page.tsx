@@ -1,12 +1,23 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { XCircle, ArrowRight, ArrowLeft } from 'lucide-react';
+import { getSubscription } from '@/lib/services/stripe.service';
 
 export default function CheckoutCancelPage() {
   const router = useRouter();
+  // The trial lines appear only while the server offers this organization
+  // the free trial (the trial switch is on and it is eligible).
+  const [trialOffered, setTrialOffered] = useState(false);
+
+  useEffect(() => {
+    getSubscription()
+      .then(result => setTrialOffered(result.success && result.data?.trial?.eligible === true))
+      .catch(() => setTrialOffered(false));
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
@@ -37,28 +48,32 @@ export default function CheckoutCancelPage() {
               Still interested in upgrading?
             </h2>
             <ul className="space-y-3 max-w-md mx-auto">
-              <li className="flex items-start gap-3">
-                <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                  <div className="h-2 w-2 rounded-full bg-primary"></div>
-                </div>
-                <span className="text-sm">
-                  14-day free trial - no credit card required upfront
-                </span>
-              </li>
+              {trialOffered && (
+                <li className="flex items-start gap-3">
+                  <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="h-2 w-2 rounded-full bg-primary"></div>
+                  </div>
+                  <span className="text-sm">
+                    14-day free trial on Cost Control and Optimization Engine (card required)
+                  </span>
+                </li>
+              )}
               <li className="flex items-start gap-3">
                 <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
                   <div className="h-2 w-2 rounded-full bg-primary"></div>
                 </div>
                 <span className="text-sm">Cancel anytime, no long-term contracts</span>
               </li>
-              <li className="flex items-start gap-3">
-                <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                  <div className="h-2 w-2 rounded-full bg-primary"></div>
-                </div>
-                <span className="text-sm">
-                  Full access to all features during your trial
-                </span>
-              </li>
+              {trialOffered && (
+                <li className="flex items-start gap-3">
+                  <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="h-2 w-2 rounded-full bg-primary"></div>
+                  </div>
+                  <span className="text-sm">
+                    Full access to your plan&apos;s features during the trial
+                  </span>
+                </li>
+              )}
             </ul>
           </div>
 

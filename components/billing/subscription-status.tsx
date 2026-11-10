@@ -7,6 +7,32 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar, CreditCard, TrendingUp } from 'lucide-react';
 import { openCustomerPortal } from '@/lib/services/stripe.service';
 import { useIsBillingAdmin } from '@/lib/hooks/use-current-role';
+import { PLAN_DISPLAY_NAME, type PaidTier } from '@/lib/plan/plan-names';
+
+/** Unix seconds as "Month D, YYYY". */
+export function formatBillingDate(ts: number): string {
+  return new Date(ts * 1000).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+/** A Stripe amount (minor unit) as "$49" or "$40.83". */
+export function formatPriceAmount(amount: number, currency: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+    minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
+  }).format(amount / 100);
+}
+
+/** The customer-facing plan name; never the internal tier id. */
+export function planDisplayName(tier: string): string {
+  return Object.prototype.hasOwnProperty.call(PLAN_DISPLAY_NAME, tier)
+    ? PLAN_DISPLAY_NAME[tier as PaidTier]
+    : 'Free';
+}
 
 interface SubscriptionStatusProps {
   subscription: Subscription;
@@ -31,12 +57,17 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
     }
   };
 
-  const getTrialDaysRemaining = () => {
-    if (!subscription.currentPeriodEnd) return 0;
-    const msRemaining = subscription.currentPeriodEnd * 1000 - Date.now();
-    return Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
-  };
+  const plan = subscription.plan;
+  const managed = plan?.source === 'managed';
+  const trial = subscription.trial;
+  const price = subscription.subscription?.price ?? null;
+  const trialEndsAt = trial?.active && trial.endsAt ? formatBillingDate(trial.endsAt) : null;
+
   const getStatusBadge = () => {
+    if (managed) return <Badge variant="secondary">Managed</Badge>;
+    if (subscription.status === null && subscription.tier === 'free') {
+      return <Badge variant="secondary">Free</Badge>;
+    }
     switch (subscription.status) {
       case 'active':
         return <Badge className="bg-green-500">Active</Badge>;
@@ -53,27 +84,10 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
     }
   };
 
-  const getTierDisplay = () => {
-    return subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1);
-  };
-
-  const getPriceDisplay = () => {
-    const prices: Record<string, number> = {
-      free: 0,
-      starter: 49,
-      pro: 199,
-      enterprise: 999,
-    };
-    return prices[subscription.tier] || 0;
-  };
+  const getTierDisplay = () => planDisplayName(subscription.tier);
 
   const getNextBillingDate = () => {
-    const fmt = (ts: number) =>
-      new Date(ts * 1000).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
+    const fmt = formatBillingDate;
 
     if (subscription.cancelAtPeriodEnd) {
       return subscription.currentPeriodEnd
@@ -102,8 +116,11 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
   // mutually exclusive by construction (see subscription.middleware.ts's
   // isOrgRestricted), but checking isRestricted first here keeps that
   // invariant true even if the API response is ever inconsistent.
-  const isRestricted = subscription.isRestricted === true;
-  const inGracePeriod = !isRestricted && subscription.billingLifecycleState === 'grace_period';
+  // The payment hold comes from the server's decision (plan.entitlementHold)
+  // when the summary carries it; isRestricted is the older field.
+  const isRestricted = plan ? plan.entitlementHold === 'payment' : subscription.isRestricted === true;
+  const inGracePeriod = !isRestricted && subscription.isRestricted !== true && subscription.billingLifecycleState === 'grace_period';
+  const subscriptionInactive = plan?.entitlementHold === 'subscription_inactive';
 
   return (
     <>
@@ -196,7 +213,50 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
         </div>
       )}
 
-      {subscription.status === 'trialing' && (
+      {subscriptionInactive && (
+        <div
+          style={{
+            backgroundColor: 'rgba(220, 38, 38, 0.08)',
+            border: '1px solid #DC2626',
+            borderRadius: '0.75rem',
+            padding: '0.875rem 1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            marginBottom: '1rem',
+          }}
+        >
+          <p style={{ fontSize: '0.875rem', color: '#991b1b', margin: 0, lineHeight: 1.4 }}>
+            Your {getTierDisplay()} subscription isn&apos;t active, so paid features are paused. Complete or
+            resume it in Manage Billing.
+            {!canManageBilling && ' Ask an organization owner or admin to update billing.'}
+          </p>
+          {canManageBilling && (
+            <button
+              onClick={handleOpenPortal}
+              disabled={portalLoading}
+              style={{
+                flexShrink: 0,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#991b1b',
+                border: '1px solid #DC2626',
+                borderRadius: '0.5rem',
+                padding: '0.375rem 0.75rem',
+                background: 'transparent',
+                cursor: portalLoading ? 'not-allowed' : 'pointer',
+                opacity: portalLoading ? 0.6 : 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {portalLoading ? 'Loading…' : 'Manage Billing'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {trialEndsAt && (
         <div
           style={{
             backgroundColor: 'rgba(217, 119, 6, 0.10)',
@@ -207,33 +267,33 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '0.75rem',
+            marginBottom: '1rem',
           }}
         >
           <p style={{ fontSize: '0.875rem', color: '#92400e', margin: 0, lineHeight: 1.4 }}>
-            <strong>Your trial ends in {getTrialDaysRemaining()} days</strong>
-            {' '}— add a payment method to keep access.
-            {!canManageBilling && ' Ask an organization owner or admin to add one.'}
+            <strong>Trial ends on {trialEndsAt}.</strong>
+            {' '}Your card on file will be charged then unless you cancel.
           </p>
           {canManageBilling && (
-          <button
-            onClick={handleOpenPortal}
-            disabled={portalLoading}
-            style={{
-              flexShrink: 0,
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              color: '#92400e',
-              border: '1px solid #D97706',
-              borderRadius: '0.5rem',
-              padding: '0.375rem 0.75rem',
-              background: 'transparent',
-              cursor: portalLoading ? 'not-allowed' : 'pointer',
-              opacity: portalLoading ? 0.6 : 1,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {portalLoading ? 'Loading…' : 'Add payment method'}
-          </button>
+            <button
+              onClick={handleOpenPortal}
+              disabled={portalLoading}
+              style={{
+                flexShrink: 0,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#92400e',
+                border: '1px solid #D97706',
+                borderRadius: '0.5rem',
+                padding: '0.375rem 0.75rem',
+                background: 'transparent',
+                cursor: portalLoading ? 'not-allowed' : 'pointer',
+                opacity: portalLoading ? 0.6 : 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {portalLoading ? 'Loading…' : 'Manage Billing'}
+            </button>
           )}
         </div>
       )}
@@ -255,23 +315,41 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
             <span className="text-2xl font-bold">{getTierDisplay()}</span>
           </div>
 
-          <div className="flex justify-between items-center">
-            <span className="text-muted-foreground">Price:</span>
-            <span className="text-xl font-semibold">
-              ${getPriceDisplay()}
-              <span className="text-sm text-muted-foreground">/month</span>
-            </span>
-          </div>
+          {managed && (
+            <p className="text-sm text-muted-foreground">Managed by our team</p>
+          )}
 
-          {subscription.tier !== 'free' && (
+          {!managed && subscription.tier === 'free' && (
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Price:</span>
+              <span className="text-xl font-semibold">
+                $0
+                <span className="text-sm text-muted-foreground">/month</span>
+              </span>
+            </div>
+          )}
+
+          {!managed && subscription.tier !== 'free' && price && (
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Price:</span>
+              <span className="text-xl font-semibold">
+                {formatPriceAmount(price.amount, price.currency)}
+                <span className="text-sm text-muted-foreground">/{price.interval}</span>
+              </span>
+            </div>
+          )}
+
+          {!managed && subscription.tier !== 'free' && (
             <>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Billing Cycle:
-                </span>
-                <span className="font-medium">Monthly recurring</span>
-              </div>
+              {price && (
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    Billing Cycle:
+                  </span>
+                  <span className="font-medium">{price.interval === 'year' ? 'Annual' : 'Monthly'}</span>
+                </div>
+              )}
 
               {subscription.currentPeriodEnd && (
                 <div className="flex justify-between items-center">
@@ -291,7 +369,7 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
                 </div>
               )}
 
-              {subscription.status === 'trialing' && subscription.currentPeriodEnd && (
+              {trialEndsAt && (
                 <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
                   <div className="flex items-start gap-2">
                     <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
@@ -300,8 +378,9 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
                         Trial Period Active
                       </p>
                       <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
-                        Your free trial ends on {getNextBillingDate()}. You'll be charged
-                        ${getPriceDisplay()} after the trial period.
+                        {price
+                          ? `Trial ends on ${trialEndsAt}. After that you'll be charged ${formatPriceAmount(price.amount, price.currency)} per ${price.interval}.`
+                          : `Trial ends on ${trialEndsAt}.`}
                       </p>
                     </div>
                   </div>

@@ -18,6 +18,8 @@ import stripeService, {
   toStripeRefundReason,
   CHECKOUT_TIERS,
   BILLING_INTERVALS,
+  SELF_SERVE_TIERS,
+  TrialIntervalChangeError,
 } from '../services/stripe.service';
 import {
   CHECKOUT_SESSION_LIFETIME_SECONDS,
@@ -34,6 +36,14 @@ import { pool } from '../config/database';
 import { runWithOrgClient } from '../middleware/auth.middleware';
 import { claimWebhookEvent, resolveWebhookEvent } from '../services/stripe-webhook-ledger.service';
 import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEvents';
+import { isTrialEnabled } from '../config/trial';
+import { billingSummaryOf } from '../services/billing-summary.service';
+import {
+  forgetSubscription,
+  hasTrial,
+  rememberSubscription,
+  snapshotOf,
+} from '../services/subscription-snapshot.service';
 
 // Approved customer-facing copy (billing safety PR A). Each answer also
 // carries a stable `code` for clients.
@@ -41,10 +51,24 @@ export const CONTACT_SALES_MESSAGE = 'Revenue Protection is set up with our team
 export const ALREADY_SUBSCRIBED_MESSAGE = 'This organization already has a subscription. Change plan from Billing settings.';
 export const CHECKOUT_IN_PROGRESS_MESSAGE =
   'A checkout for this organization is already open. Finish it there, or try again in about 30 minutes.';
+// Approved (trial PR, S3c): an organization on a plan our team set up does not
+// start a self-serve subscription.
+export const MANAGED_PLAN_MESSAGE = 'Your plan is set up and billed by our team. Contact us to make changes.';
+// Existing change-plan text, reused for a billing-interval change during a trial.
+const PLAN_NOT_AVAILABLE_MESSAGE = 'That plan is not available right now';
+
+/** A subscription's billing period from its item (the API version in use has no top-level current_period_*). */
+function periodOf(subscription: any): { currentPeriodStart?: Date; currentPeriodEnd?: Date } {
+  const { currentPeriodStart, currentPeriodEnd } = snapshotOf(subscription);
+  return {
+    currentPeriodStart: currentPeriodStart !== null ? new Date(currentPeriodStart * 1000) : undefined,
+    currentPeriodEnd: currentPeriodEnd !== null ? new Date(currentPeriodEnd * 1000) : undefined,
+  };
+}
 
 /** What the reservation step decided for one Checkout request. */
 type CheckoutReservationOutcome =
-  | { kind: 'reserved'; reservationId: string }
+  | { kind: 'reserved'; reservationId: string; trialEligible: boolean }
   | { kind: 'existing_session'; sessionId: string; url: string }
   | { kind: 'already_subscribed' }
   | { kind: 'in_progress' };
@@ -128,8 +152,8 @@ export class StripeController {
    */
   private async acquireCheckoutReservation(organizationId: string, plan: string): Promise<CheckoutReservationOutcome> {
     for (let attempt = 0; attempt < MAX_RESERVATION_ATTEMPTS; attempt++) {
-      const reservationId = await tryReserveCheckout(organizationId, plan);
-      if (reservationId) return { kind: 'reserved', reservationId };
+      const reserved = await tryReserveCheckout(organizationId, plan);
+      if (reserved) return { kind: 'reserved', ...reserved };
 
       const state = await readCheckoutState(organizationId);
       if (!state) return { kind: 'in_progress' };
@@ -166,7 +190,7 @@ export class StripeController {
       }
       if (expired.status !== 'expired') return { kind: 'in_progress' };
       const replaced = await replaceCheckoutReservation(organizationId, state.reservationId, plan);
-      return replaced ? { kind: 'reserved', reservationId: replaced } : { kind: 'in_progress' };
+      return replaced ? { kind: 'reserved', ...replaced } : { kind: 'in_progress' };
     }
     return { kind: 'in_progress' };
   }
@@ -246,7 +270,7 @@ export class StripeController {
 
       // Get organization details
       const orgResult = await pool.query(
-        'SELECT id, name, subscription_tier FROM organizations WHERE id = $1 AND deleted_at IS NULL',
+        'SELECT id, name, subscription_tier, stripe_subscription_id FROM organizations WHERE id = $1 AND deleted_at IS NULL',
         [organizationId]
       );
 
@@ -263,6 +287,13 @@ export class StripeController {
       // An organization on Revenue Protection changes its plan through sales.
       if (isSalesLedTier(organization.subscription_tier)) {
         this.refuseContactSales(res);
+        return;
+      }
+
+      // A plan our team set up (no subscription recorded, a stored plan above
+      // free) is never replaced by a self-serve subscription.
+      if (!organization.stripe_subscription_id && (organization.subscription_tier || 'free') !== 'free') {
+        res.status(400).json({ success: false, code: 'MANAGED_PLAN', error: MANAGED_PLAN_MESSAGE });
         return;
       }
 
@@ -295,6 +326,13 @@ export class StripeController {
         return;
       }
       const { reservationId } = outcome;
+      // The free trial: the switch is on, the plan is self-serve, and the
+      // organization was eligible in the statement that took this
+      // reservation. Fixed for the reservation, so a retry with the same
+      // idempotency key sends the same parameters. Nothing is consumed here:
+      // the trial is claimed only once Stripe shows it on a subscription that
+      // is verified as this organization's own (claimTrialFor).
+      const trial = isTrialEnabled() && SELF_SERVE_TIERS.includes(tier) && outcome.trialEligible;
 
       // From here this request holds the reservation. Any failure before the
       // session is recorded releases it at once.
@@ -330,7 +368,7 @@ export class StripeController {
           organizationId,
           successUrl,
           cancelUrl,
-          { expiresAt: sessionExpiresAt, idempotencyKey: `checkout-${reservationId}` }
+          { expiresAt: sessionExpiresAt, idempotencyKey: `checkout-${reservationId}`, trial }
         );
       } catch (error) {
         await clearCheckoutReservation(organizationId, reservationId).catch(clearError => {
@@ -464,27 +502,13 @@ export class StripeController {
         return;
       }
 
-      const organizationId = req.user.organizationId;
-
-      // Get organization subscription details
-      const orgResult = await pool.query(
-        `SELECT
-          stripe_customer_id,
-          stripe_subscription_id,
-          subscription_status,
-          subscription_tier,
-          subscription_current_period_start,
-          subscription_current_period_end,
-          subscription_cancel_at_period_end,
-          billing_lifecycle_state,
-          payment_failed_at,
-          grace_period_ends_at
-         FROM organizations
-         WHERE id = $1`,
-        [organizationId]
-      );
-
-      if (orgResult.rows.length === 0) {
+      // The billing summary (billing-summary.service): every value decided
+      // on the server. The older top-level fields stay for the existing
+      // readers: `tier` is the stored plan (also for a plan our team set up,
+      // which used to read 'free'), `status` the recorded subscription's
+      // status (null without one; never a made-up 'active').
+      const summary = await billingSummaryOf(req.user.organizationId);
+      if (!summary) {
         res.status(404).json({
           success: false,
           error: 'Organization not found',
@@ -492,80 +516,27 @@ export class StripeController {
         return;
       }
 
-      const organization = orgResult.rows[0];
-
-      // Derived, read-only view of the payment-failure lifecycle (see
-      // subscription.middleware.ts for the actual enforcement -- this is
-      // display data only). `tier` elsewhere in this response always stays
-      // the organization's real paid tier, even while restricted --
-      // billing/tier information must never be silently hidden from the
-      // customer, only the underlying access.
-      const toEpochSeconds = (value: unknown): number | null =>
-        value ? Math.floor(new Date(value as string).getTime() / 1000) : null;
-      const gracePeriodEndsAt = organization.grace_period_ends_at as string | null;
-      const isRestricted = organization.billing_lifecycle_state === 'restricted' ||
-        (organization.billing_lifecycle_state === 'grace_period' &&
-          gracePeriodEndsAt !== null &&
-          new Date(gracePeriodEndsAt).getTime() < Date.now());
-      const billingLifecycle = {
-        billingLifecycleState: organization.billing_lifecycle_state,
-        paymentFailedAt: toEpochSeconds(organization.payment_failed_at),
-        graceEndsAt: toEpochSeconds(organization.grace_period_ends_at),
-        isRestricted,
-      };
-
-      // If no subscription, return free tier
-      if (!organization.stripe_subscription_id) {
-        res.status(200).json({
-          success: true,
-          data: {
-            tier: 'free',
-            status: 'active',
-            cancelAtPeriodEnd: false,
-            ...billingLifecycle,
-          },
-        });
-        return;
-      }
-
-      // Get full subscription details from Stripe
-      let subscription;
-      try {
-        subscription = await stripeService.getSubscription(
-          organization.stripe_subscription_id
-        );
-      } catch (stripeError: any) {
-        console.warn('Could not fetch subscription from Stripe:', stripeError.message);
-        res.status(200).json({
-          success: true,
-          data: {
-            tier: organization.subscription_tier || 'free',
-            status: 'active',
-            cancelAtPeriodEnd: false,
-            ...billingLifecycle,
-          },
-        });
-        return;
-      }
-
       res.status(200).json({
         success: true,
         data: {
-          id: subscription.id,
-          status: subscription.status,
-          tier: organization.subscription_tier,
-          currentPeriodStart: (subscription as any).current_period_start,
-          currentPeriodEnd: (subscription as any).current_period_end,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end,
-          cancelAt: subscription.cancel_at,
-          ...billingLifecycle,
+          tier: summary.plan.storedTier,
+          status: summary.subscription?.status ?? null,
+          currentPeriodEnd: summary.subscription?.currentPeriodEnd ?? null,
+          cancelAtPeriodEnd: summary.subscription?.cancelAtPeriodEnd ?? false,
+          cancelAt: summary.subscription?.cancelAt ?? null,
+          ...summary.lifecycle,
+          plan: summary.plan,
+          subscription: summary.subscription,
+          trial: summary.trial,
+          usage: summary.usage,
+          actions: summary.actions,
         },
       });
     } catch (error: any) {
-      console.error('Error getting subscription:', error);
+      console.error('Error getting subscription:', error instanceof Error ? error.name : 'error');
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to get subscription',
+        error: 'Failed to get subscription',
       });
     }
   }
@@ -663,11 +634,12 @@ export class StripeController {
       // about the same change, and it still advances the ordering mark so a
       // later stale customer.subscription.updated can't undo it (see
       // StripeService.updateOrganizationSubscription).
-      await stripeService.updateOrganizationSubscription(organizationId, {
+      const cancelWrite = await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         tier: immediate ? 'free' : undefined,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
       }, { asOf: new Date() }, { subscriptionId, match: 'canonical' });
+      if (cancelWrite.applied) rememberSubscription(subscription);
 
       res.status(200).json({
         success: true,
@@ -792,16 +764,28 @@ export class StripeController {
         return;
       }
 
-      const subscription = await stripeService.updateSubscription(subscriptionId, newPriceId);
+      let subscription: Stripe.Subscription;
+      try {
+        subscription = await stripeService.updateSubscription(subscriptionId, newPriceId, billingInterval);
+      } catch (error) {
+        if (error instanceof TrialIntervalChangeError) {
+          // The trial's end stays fixed: monthly <-> annual waits until the
+          // trial is over. A tier change within the same interval is allowed.
+          res.status(409).json({ success: false, code: 'TRIAL_INTERVAL_CHANGE', error: PLAN_NOT_AVAILABLE_MESSAGE });
+          return;
+        }
+        throw error;
+      }
 
       // Keep the DB in sync immediately rather than waiting for the
       // customer.subscription.updated webhook -- same pattern as
       // cancelSubscription/resumeSubscription below. asOf: new Date() -- see
       // cancelSubscription's identical comment above.
-      await stripeService.updateOrganizationSubscription(organizationId, {
+      const changeWrite = await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         tier,
       }, { asOf: new Date() }, { subscriptionId, match: 'canonical' });
+      if (changeWrite.applied) rememberSubscription(subscription);
 
       res.status(200).json({
         success: true,
@@ -859,10 +843,11 @@ export class StripeController {
 
       // Update database. asOf: new Date() -- see cancelSubscription's
       // identical comment above.
-      await stripeService.updateOrganizationSubscription(organizationId, {
+      const resumeWrite = await stripeService.updateOrganizationSubscription(organizationId, {
         status: subscription.status,
         cancelAtPeriodEnd: false,
       }, { asOf: new Date() }, { subscriptionId, match: 'canonical' });
+      if (resumeWrite.applied) rememberSubscription(subscription);
 
       res.status(200).json({
         success: true,
@@ -2000,6 +1985,75 @@ export class StripeController {
     return true;
   }
 
+  /**
+   * The free trial's consumption, for a subscription already verified as the
+   * organization's own (subscriptionBelongsTo). When Stripe shows a trial on
+   * it (trial_start), the organization's one trial is claimed
+   * (StripeService.claimTrial) -- whether or not this event's write is then
+   * applied, so a trial canceled before it was ever recorded still counts.
+   * Never consumed otherwise: a checkout that never produced a subscription
+   * leaves trial_used_at untouched.
+   *
+   * A second subscription with a trial, for an organization whose trial was
+   * already claimed by another subscription, is canceled at once while it is
+   * still trialing (nothing has been charged, so nothing is refunded) and
+   * logged with the organization id only; the caller then stops (returns
+   * 'duplicate_canceled'). One that is no longer trialing is left alone for
+   * manual review. `allowCancel` is false for a deletion event.
+   */
+  private async claimTrialFor(
+    organizationId: string,
+    customerId: string,
+    subscription: any,
+    tier: string,
+    allowCancel: boolean
+  ): Promise<'none' | 'claimed' | 'this_subscription' | 'duplicate_canceled' | 'duplicate_left'> {
+    if (!hasTrial(subscription) || typeof subscription?.id !== 'string') return 'none';
+    const outcome = await stripeService.claimTrial(organizationId, customerId, subscription.id);
+    if (outcome === 'claimed') {
+      await trackFunnelEventOnce({ organizationId, eventName: 'trial_started', properties: { tier } });
+      return 'claimed';
+    }
+    if (outcome === 'this_subscription') return 'this_subscription';
+    if (outcome === 'not_found') return 'none';
+
+    // Another subscription already used this organization's trial.
+    if (!allowCancel || isTerminalSubscriptionStatus(subscription.status)) return 'duplicate_left';
+    if (subscription.status !== 'trialing') {
+      console.error(`[Billing] Organization ${organizationId} had already used its free trial; another subscription with a trial is past its trial and needs manual review in Stripe (not canceled automatically).`);
+      return 'duplicate_left';
+    }
+    const canceled = await stripeService.cancelSubscription(subscription.id, {
+      idempotencyKey: `cancel-duplicate-trial-${subscription.id}`,
+    });
+    // If this duplicate had been recorded (only possible once the first
+    // trial subscription ended), the organization follows the cancellation
+    // now, not when the deletion event arrives.
+    await stripeService.updateOrganizationSubscription(organizationId, {
+      status: canceled.status,
+      tier: 'free',
+      cancelAtPeriodEnd: false,
+    }, { asOf: new Date() }, { subscriptionId: subscription.id, match: 'canonical' });
+    forgetSubscription(subscription.id);
+    console.error(`[Billing] Organization ${organizationId} had already used its free trial; a second trialing subscription was canceled automatically (nothing was charged).`);
+    return 'duplicate_canceled';
+  }
+
+  /**
+   * Funnel: a trial subscription that became 'active' converted. Both events
+   * are recorded once per organization (trackFunnelEventOnce), so webhook
+   * retries and every later renewal are no-ops. subscription_activated keeps
+   * meaning "became paying": for a trial it is recorded here, not at the
+   * trial's start.
+   */
+  private async trackTrialConversion(organizationId: string, subscription: any, tier: string): Promise<void> {
+    if (subscription?.status !== 'active' || !hasTrial(subscription) || tier === 'free') return;
+    const { rows } = await pool.query('SELECT trial_subscription_id FROM organizations WHERE id = $1', [organizationId]);
+    if (rows[0]?.trial_subscription_id !== subscription.id) return;
+    await trackFunnelEventOnce({ organizationId, eventName: 'trial_converted', properties: { tier } });
+    await trackFunnelEventOnce({ organizationId, eventName: 'subscription_activated', properties: { tier } });
+  }
+
   private async handleCheckoutSessionCompleted(session: any): Promise<void> {
     try {
       const organizationId = session.metadata?.organizationId;
@@ -2046,6 +2100,16 @@ export class StripeController {
 
       console.log(`🎯 Detected tier: ${tier}`);
 
+      // The free trial is consumed now that Stripe shows it on this
+      // organization's own subscription; a second trial is canceled.
+      const trialClaim = await this.claimTrialFor(organizationId, organization.stripe_customer_id, subscription, tier, true);
+      if (trialClaim === 'duplicate_canceled') {
+        if (typeof session.id === 'string') {
+          await clearCheckoutReservationForSession(organizationId, session.id);
+        }
+        return;
+      }
+
       // Snapshot pre-update state so the funnel emit below can tell a
       // genuine free/non-paying -> paid transition apart from a redelivered
       // checkout.session.completed webhook for a checkout already applied
@@ -2067,8 +2131,7 @@ export class StripeController {
         subscriptionId: subscriptionId,
         status: subscription.status,
         tier,
-        currentPeriodStart: (subscription as any).current_period_start ? new Date((subscription as any).current_period_start * 1000) : undefined,
-        currentPeriodEnd: (subscription as any).current_period_end ? new Date((subscription as any).current_period_end * 1000) : undefined,
+        ...periodOf(subscription),
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
       }, { asOf: new Date() }, {
         subscriptionId,
@@ -2097,6 +2160,7 @@ export class StripeController {
       }
 
       console.log(`✅ Organization ${organizationId} updated to ${tier} tier`);
+      rememberSubscription(subscription);
 
       // Funnel: only a genuine free/non-paying -> paid transition counts --
       // never a renewal (renewals never fire checkout.session.completed at
@@ -2106,13 +2170,16 @@ export class StripeController {
       // applied (caught by the pre-update snapshot above). Also guarded by
       // trackFunnelEventOnce as a second, independent safeguard against
       // webhook redelivery racing the snapshot check itself.
-      if (wasNonPaying && tier !== 'free') {
+      // A trialing subscription is not paying yet: its activation is
+      // recorded at conversion (trackTrialConversion).
+      if (wasNonPaying && tier !== 'free' && subscription.status !== 'trialing') {
         await trackFunnelEventOnce({
           organizationId,
           eventName: 'subscription_activated',
           properties: { tier },
         });
       }
+      await this.trackTrialConversion(organizationId, subscription, tier);
     } catch (error) {
       console.error('❌ Error handling checkout session completed:', error);
       throw error;
@@ -2170,6 +2237,10 @@ export class StripeController {
       console.log(`🎯 Detected tier: ${tier}`);
       console.log(`📊 Subscription status: ${subscription.status}`);
 
+      if ((await this.claimTrialFor(organization.id, organization.stripe_customer_id, subscription, tier, true)) === 'duplicate_canceled') {
+        return;
+      }
+
       // asOf: eventCreatedAt, strict (no allowTie) -- a stale delivery of
       // this same event redelivered later can never re-win a tie against
       // whatever it (or something newer) already set. See
@@ -2182,8 +2253,7 @@ export class StripeController {
         subscriptionId: subscription.id,
         status: subscription.status,
         tier,
-        currentPeriodStart: (subscription as any).current_period_start ? new Date((subscription as any).current_period_start * 1000) : undefined,
-        currentPeriodEnd: (subscription as any).current_period_end ? new Date((subscription as any).current_period_end * 1000) : undefined,
+        ...periodOf(subscription),
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
       }, { asOf: eventCreatedAt }, {
         subscriptionId: subscription.id,
@@ -2196,6 +2266,8 @@ export class StripeController {
       }
 
       console.log(`✅ Updated subscription for organization ${organization.id} to ${tier} tier`);
+      rememberSubscription(subscription);
+      await this.trackTrialConversion(organization.id, subscription, tier);
     } catch (error) {
       console.error('❌ Error handling subscription update:', error);
       throw error;
@@ -2215,6 +2287,10 @@ export class StripeController {
       console.error(`[Billing] A customer.subscription.deleted event for organization ${organization.id} names another organization; it was not applied.`);
       return;
     }
+
+    // A trial canceled before it was ever recorded still uses up the
+    // organization's trial.
+    await this.claimTrialFor(organization.id, organization.stripe_customer_id, subscription, 'free', false);
 
     // Downgrade to free tier. asOf: eventCreatedAt, allowTie: true --
     // deletion is authoritative/terminal and wins an equal-timestamp tie
@@ -2238,6 +2314,7 @@ export class StripeController {
       console.log(`ℹ️ customer.subscription.deleted for organization ${organization.id} (event ${eventCreatedAt.toISOString()}) not applied: stale, or not the organization's own subscription`);
       return;
     }
+    forgetSubscription(subscription.id);
 
     // Cancellation is authoritative over any in-flight payment-failure
     // episode: a canceled/deleted subscription has no grace period to
@@ -2392,6 +2469,19 @@ export class StripeController {
 
     if (!this.invoiceBelongsToRecordedSubscription(organization, invoice)) {
       console.warn(`invoice.payment_failed ${invoice.id} for organization ${organization.id} is for a subscription that is not its recorded one -- not applied`);
+      return;
+    }
+
+    // The first charge after a free trial has no grace period and no email of
+    // ours (Stripe's failed-payment email covers it): while the recorded
+    // subscription is still 'trialing', its failed invoice is that charge
+    // (StripeService.recordFirstChargeFailure). Otherwise the ordinary path
+    // below, unchanged; it can never open a grace period once this has ended
+    // access, because it starts one only from 'healthy'.
+    const invoiceSubscriptionId =
+      stripeIdOf(invoice?.parent?.subscription_details?.subscription) ?? stripeIdOf(invoice?.subscription);
+    if (invoiceSubscriptionId && await stripeService.recordFirstChargeFailure(organization.id, invoiceSubscriptionId, invoiceCreatedAt)) {
+      console.log(`The first charge after the free trial failed for organization ${organization.id}: paid access ended, no grace period`);
       return;
     }
 

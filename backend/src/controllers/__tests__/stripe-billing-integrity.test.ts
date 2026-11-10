@@ -249,7 +249,7 @@ describe('concurrent first checkouts: one reservation, one customer, one session
       await a.query('COMMIT');
       expect(await secondPending).toBeNull();
       const row = await orgRow(orgId);
-      expect(row.checkout_reservation_id).toBe(first);
+      expect(row.checkout_reservation_id).toBe(first!.reservationId);
       expect(row.checkout_reservation_plan).toBe('starter:monthly');
     } finally {
       await a.query('ROLLBACK').catch(() => undefined);

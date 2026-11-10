@@ -83,6 +83,11 @@ export default function UpgradePage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
   const [loadingTier, setLoadingTier] = useState<string | null>(null)
   const [currentTier, setCurrentTier] = useState<string | null>(null)
+  // From the server's billing summary: whether a plan change modifies the
+  // recorded subscription or starts Checkout, and whether the free trial is
+  // offered now. Never inferred from the tier here.
+  const [selfServe, setSelfServe] = useState<'checkout' | 'change_plan' | 'none'>('checkout')
+  const [trialEligible, setTrialEligible] = useState(false)
   const router = useRouter()
   // changePlan (modifying an *existing* subscription) is owner/admin-only
   // server-side (StripeController.requireBillingAdmin); createCheckoutSession
@@ -95,18 +100,18 @@ export default function UpgradePage() {
   useEffect(() => {
     getSubscription().then(result => {
       setCurrentTier(result.success && result.data ? result.data.tier : 'free')
+      if (result.success && result.data?.actions) setSelfServe(result.data.actions.selfServe)
+      setTrialEligible(result.success && result.data?.trial?.eligible === true)
     })
   }, [])
 
   const subscriptionLoaded = currentTier !== null
   const resolvedTier = currentTier ?? 'free'
   const canDowngrade = subscriptionLoaded && tierOrder[resolvedTier] > 1
-  // Anyone already on a paid tier has an existing Stripe subscription to
-  // modify in place (upgrade or downgrade) -- sending them through
-  // Checkout again would create a *second*, separate active subscription
-  // rather than changing the one they have. Only a free-tier org (no
-  // subscription yet) should go through Checkout.
-  const hasExistingSubscription = subscriptionLoaded && resolvedTier !== 'free'
+  // An organization with a billable subscription changes it in place
+  // (upgrade or downgrade); Checkout again would start a second one. The
+  // server decides which (actions.selfServe).
+  const hasExistingSubscription = subscriptionLoaded && selfServe === 'change_plan'
 
   const handlePlanChange = async (plan: typeof plans[0]) => {
     setLoadingTier(plan.tier)
@@ -304,6 +309,11 @@ export default function UpgradePage() {
                           'Upgrade Now'
                         )}
                       </button>
+                    )}
+                    {trialEligible && !hasExistingSubscription && (plan.tier === 'starter' || plan.tier === 'pro') && (
+                      <p className="text-xs text-muted-foreground mt-2 text-center">
+                        14-day free trial. Card required; you&apos;re charged when the trial ends unless you cancel.
+                      </p>
                     )}
                   </div>
                 </div>

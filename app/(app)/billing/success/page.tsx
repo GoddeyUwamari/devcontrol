@@ -60,8 +60,11 @@ function CheckoutSuccessContent() {
   }, [sessionId]);
 
   const getNextBillingDate = () => {
-    if (!subscription?.currentPeriodEnd) return null;
-    return new Date(subscription.currentPeriodEnd * 1000).toLocaleDateString('en-US', {
+    // While a trial runs, the first charge is at the trial's end (server
+    // summary trial.endsAt); otherwise the current period's end.
+    const ts = subscription?.trial?.active ? subscription.trial.endsAt : subscription?.currentPeriodEnd;
+    if (!ts) return null;
+    return new Date(ts * 1000).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
