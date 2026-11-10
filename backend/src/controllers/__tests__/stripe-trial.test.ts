@@ -552,6 +552,18 @@ describe('TR-Q3: a second trialing subscription is canceled automatically', () =
     expect(logLines()).toContain(`[Billing] Organization ${orgId} had already used its free trial; another subscription with a trial is past its trial and needs manual review in Stripe (not canceled automatically).`);
   });
 
+  it('M-1: a trialing subscription without this organization\'s checkout metadata (e.g. a Dashboard sales pilot) is logged, never canceled', async () => {
+    const { orgId, customerId, subscriptionId: first } = await trialingOrg('pro');
+    const pilot = `sub_test_${uniqueSuffix()}`;
+    const cancel = jest.spyOn(stripeService, 'cancelSubscription');
+    await deliver(fakeEvent('customer.subscription.updated',
+      subscriptionObject(pilot, customerId, 'trialing', 'STRIPE_PRICE_ENTERPRISE_MONTHLY', { trial: true })));
+    expect(cancel).not.toHaveBeenCalled();
+    expect(logLines()).toContain(`[Billing] Organization ${orgId} had already used its free trial; another subscription with a trial does not carry this organization's checkout metadata and needs manual review in Stripe (not canceled automatically).`);
+    expect(logLines()).not.toContain(pilot);
+    expect((await orgRow(orgId)).stripe_subscription_id).toBe(first);
+  });
+
   it('a Stripe failure while canceling the duplicate fails the event (Stripe redelivers), the duplicate is not recorded', async () => {
     const { orgId, customerId, subscriptionId: first } = await trialingOrg('pro');
     const second = `sub_test_${uniqueSuffix()}`;
@@ -712,6 +724,75 @@ describe('the first charge after the trial: no grace, in every order; later char
   });
 
   it.todo('F-1 (separate PR): a late attempt-1 failure delivered after attempt-2 was paid reopens the ordinary grace');
+});
+
+describe('H-1: a recovered first charge never leaves a paying organization restricted', () => {
+  // The first post-trial invoice is created at the trial's end, as Stripe does.
+  const firstInvoice = (customerId: string, subscriptionId: string) => invoiceOf(customerId, subscriptionId, TRIAL_END + 5);
+  const paidAndHealthy = async (orgId: string) => {
+    const row = await orgRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('healthy');
+    expect(row.payment_failed_at).toBeNull();
+    expect(await entitlement(orgId)).toEqual({ storedTier: 'pro', effectiveTier: 'pro', hold: null });
+  };
+
+  it('reviewer\'s order: failure -> retry paid -> delayed trialing->past_due -> active: paid throughout after the payment', async () => {
+    const { orgId, customerId, subscriptionId, priceEnv } = await trialingOrg('pro');
+    const pastDueCreated = nextCreated++;
+    const activeCreated = nextCreated++;
+    const invoice = firstInvoice(customerId, subscriptionId);
+    await deliver(fakeEvent('invoice.payment_failed', invoice));
+    expect((await orgRow(orgId)).billing_lifecycle_state).toBe('restricted');
+    await deliver(fakeEvent('invoice.paid', { ...invoice, id: invoice.id }));
+    await paidAndHealthy(orgId);
+    await deliver(updated(subscriptionId, customerId, 'past_due', priceEnv, orgId, pastDueCreated));
+    await paidAndHealthy(orgId);
+    await deliver(updated(subscriptionId, customerId, 'active', priceEnv, orgId, activeCreated));
+    await paidAndHealthy(orgId);
+    expect((await orgRow(orgId)).subscription_status).toBe('active');
+  });
+
+  it('no failure event seen first: paid -> delayed trialing->past_due -> active: never restricted', async () => {
+    const { orgId, customerId, subscriptionId, priceEnv } = await trialingOrg('pro');
+    const pastDueCreated = nextCreated++;
+    await deliver(fakeEvent('invoice.paid', firstInvoice(customerId, subscriptionId)));
+    await deliver(updated(subscriptionId, customerId, 'past_due', priceEnv, orgId, pastDueCreated));
+    await paidAndHealthy(orgId);
+    await deliver(updated(subscriptionId, customerId, 'active', priceEnv, orgId));
+    await paidAndHealthy(orgId);
+  });
+
+  it('reverse order: trialing->past_due restricts; active (before invoice.paid) clears it; the invoice, duplicates and replays change nothing', async () => {
+    const { orgId, customerId, subscriptionId, priceEnv } = await trialingOrg('pro');
+    const pastDue = updated(subscriptionId, customerId, 'past_due', priceEnv, orgId);
+    const olderPastDue = updated(subscriptionId, customerId, 'past_due', priceEnv, orgId, pastDue.created);
+    await deliver(pastDue);
+    expect((await orgRow(orgId)).billing_lifecycle_state).toBe('restricted');
+    const active = updated(subscriptionId, customerId, 'active', priceEnv, orgId);
+    await deliver(active);
+    await paidAndHealthy(orgId);
+    const paid = fakeEvent('invoice.paid', firstInvoice(customerId, subscriptionId));
+    await deliver(paid);
+    await paidAndHealthy(orgId);
+    // Exact redeliveries (ledger duplicates) and a different event as old as the past_due one.
+    expect(await deliver(pastDue)).toBe(200);
+    expect(await deliver(active)).toBe(200);
+    expect(await deliver(paid)).toBe(200);
+    await deliver({ ...olderPastDue, id: `evt_test_${uniqueSuffix()}` });
+    await paidAndHealthy(orgId);
+    expect((await orgRow(orgId)).subscription_status).toBe('active');
+  });
+
+  it('the clear touches only the first-charge restriction: an ordinary grace episode is not ended by an active update', async () => {
+    const subscriptionId = `sub_test_${uniqueSuffix()}`;
+    const { orgId, customerId } = await insertOrg({ tier: 'pro', status: 'active', subscriptionId });
+    await deliver(fakeEvent('invoice.payment_failed', invoiceOf(customerId, subscriptionId)));
+    const deadline = (await orgRow(orgId)).grace_period_ends_at;
+    await deliver(fakeEvent('customer.subscription.updated', subscriptionObject(subscriptionId, customerId, 'active', 'STRIPE_PRICE_PRO_MONTHLY')));
+    const row = await orgRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('grace_period');
+    expect(row.grace_period_ends_at.toISOString()).toBe(deadline.toISOString());
+  });
 });
 
 // ─── Hand-provisioned organizations ──────────────────────────────────────────

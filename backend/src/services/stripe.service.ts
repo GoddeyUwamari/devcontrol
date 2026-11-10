@@ -819,6 +819,11 @@ export class StripeService {
       currentPeriodStart?: Date;
       currentPeriodEnd?: Date;
       cancelAtPeriodEnd?: boolean;
+      /**
+       * Not a column: the subscription's trial end (Unix seconds) from the
+       * same payload, for the first-charge rule's stale-event guard.
+       */
+      trialEnd?: number | null;
     },
     ordering: { asOf: Date; allowTie?: boolean },
     identity?: SubscriptionIdentityGuard
@@ -853,17 +858,47 @@ export class StripeService {
       // marker of this episode, see recordPaymentRecovery). entitlementOf is
       // unchanged and reads it as free with a payment hold; the ordinary
       // payment-failure grace (recordPaymentFailure) never applies here.
+      //
+      // Stale-event guard (the invoice side of the same discipline PR B uses
+      // for subscription events): the transition ends access only while no
+      // invoice from the trial's end has been processed yet. Once one has
+      // (latest_processed_invoice_created_at at or after a day before the
+      // trial end; the only earlier invoice is the $0 one at the trial's
+      // start), its own event decided the first charge -- a failure already
+      // restricted (recordFirstChargeFailure), a payment already recovered
+      // (recordPaymentRecovery) -- so a late trialing -> past_due delivered
+      // after the payment can never restrict a paying organization again.
       if (
         data.subscriptionId !== undefined &&
         data.status !== undefined &&
+        typeof data.trialEnd === 'number' &&
         FIRST_CHARGE_FAILURE_STATUSES.includes(data.status)
       ) {
         const firstChargeSubscriptionParam = paramIndex++;
         values.push(data.subscriptionId);
-        const firstChargeFailed = `(subscription_status = 'trialing' AND stripe_subscription_id = $${firstChargeSubscriptionParam})`;
+        const trialEndParam = paramIndex++;
+        values.push(data.trialEnd);
+        const firstChargeFailed =
+          `(subscription_status = 'trialing' AND stripe_subscription_id = $${firstChargeSubscriptionParam}` +
+          ` AND (latest_processed_invoice_created_at IS NULL` +
+          ` OR latest_processed_invoice_created_at < to_timestamp($${trialEndParam}::bigint) - interval '1 day'))`;
         updates.push(`billing_lifecycle_state = CASE WHEN ${firstChargeFailed} THEN 'restricted' ELSE billing_lifecycle_state END`);
         updates.push(`payment_failed_at = CASE WHEN ${firstChargeFailed} THEN COALESCE(payment_failed_at, NOW()) ELSE payment_failed_at END`);
         updates.push(`grace_period_ends_at = CASE WHEN ${firstChargeFailed} THEN NULL ELSE grace_period_ends_at END`);
+      }
+
+      // A recovered first charge never leaves a paying organization
+      // restricted: an applied 'active' (Stripe sets it only once the invoice
+      // is paid; the ordering guard refuses an 'active' older than a later
+      // event) clears the first-charge restriction ('restricted' with no
+      // grace deadline, which only that path writes), whichever of this and
+      // the invoice.paid recovery arrives first. The ordinary grace episode
+      // (which always has a deadline) is untouched: only invoice.paid ends it.
+      if (data.status === 'active') {
+        const firstChargeRestricted = `(billing_lifecycle_state = 'restricted' AND grace_period_ends_at IS NULL)`;
+        updates.push(`billing_lifecycle_state = CASE WHEN ${firstChargeRestricted} THEN 'healthy' ELSE billing_lifecycle_state END`);
+        updates.push(`payment_failed_at = CASE WHEN ${firstChargeRestricted} THEN NULL ELSE payment_failed_at END`);
+        updates.push(`payment_failed_notification_sent_at = CASE WHEN ${firstChargeRestricted} THEN NULL ELSE payment_failed_notification_sent_at END`);
       }
 
       if (data.tier !== undefined) {

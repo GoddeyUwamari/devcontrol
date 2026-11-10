@@ -2019,6 +2019,15 @@ export class StripeController {
 
     // Another subscription already used this organization's trial.
     if (!allowCancel || isTerminalSubscriptionStatus(subscription.status)) return 'duplicate_left';
+    // Only a subscription verified as this organization's own is canceled:
+    // under its Stripe customer (checked by the caller, subscriptionBelongsTo)
+    // AND naming it in the organizationId metadata our Checkout sets. One
+    // without that metadata (e.g. created in the Stripe Dashboard for a sales
+    // pilot) is logged for review, never canceled.
+    if (subscription?.metadata?.organizationId !== organizationId) {
+      console.error(`[Billing] Organization ${organizationId} had already used its free trial; another subscription with a trial does not carry this organization's checkout metadata and needs manual review in Stripe (not canceled automatically).`);
+      return 'duplicate_left';
+    }
     if (subscription.status !== 'trialing') {
       console.error(`[Billing] Organization ${organizationId} had already used its free trial; another subscription with a trial is past its trial and needs manual review in Stripe (not canceled automatically).`);
       return 'duplicate_left';
@@ -2133,6 +2142,7 @@ export class StripeController {
         tier,
         ...periodOf(subscription),
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        trialEnd: snapshotOf(subscription).trialEnd,
       }, { asOf: new Date() }, {
         subscriptionId,
         match: terminal ? 'canonical' : 'adoptable',
@@ -2255,6 +2265,7 @@ export class StripeController {
         tier,
         ...periodOf(subscription),
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        trialEnd: snapshotOf(subscription).trialEnd,
       }, { asOf: eventCreatedAt }, {
         subscriptionId: subscription.id,
         match: terminal ? 'canonical' : 'adoptable',
