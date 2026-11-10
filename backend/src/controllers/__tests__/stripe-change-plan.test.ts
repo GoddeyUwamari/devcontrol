@@ -168,7 +168,7 @@ describe('upgrade/downgrade resolves the target plan and calls updateSubscriptio
     expect(status).not.toHaveBeenCalledWith(400);
     expect(status).not.toHaveBeenCalledWith(500);
     expect(updateSpy).toHaveBeenCalledTimes(1);
-    expect(updateSpy).toHaveBeenCalledWith(subscriptionId, stripeService.getPriceIdForPlan('pro', 'monthly'));
+    expect(updateSpy).toHaveBeenCalledWith(subscriptionId, stripeService.getPriceIdForPlan('pro', 'monthly'), 'monthly');
     expect(json).toHaveBeenCalledWith(expect.objectContaining({
       success: true,
       data: expect.objectContaining({ tier: 'pro', billingInterval: 'monthly' }),
@@ -184,7 +184,7 @@ describe('upgrade/downgrade resolves the target plan and calls updateSubscriptio
 
     await stripeController.changePlan(req, res);
 
-    expect(updateSpy).toHaveBeenCalledWith(subscriptionId, stripeService.getPriceIdForPlan('starter', 'annual'));
+    expect(updateSpy).toHaveBeenCalledWith(subscriptionId, stripeService.getPriceIdForPlan('starter', 'annual'), 'annual');
     expect(await fetchOrgTier(orgId)).toBe('starter');
   });
 });

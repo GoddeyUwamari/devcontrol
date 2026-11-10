@@ -92,6 +92,7 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202611021200_extend_cost_analysis_runs.sql`**,
 **`202611031200_create_aws_org_external_ids.sql`**,
 **`202611071200_add_checkout_reservation.sql`**,
+**`202611091200_add_trial_used_at.sql`**,
 **`202611091300_harden_database_ownership.sql`**, and
 **`202611101200_transfer_tenant_table_ownership.sql`**.
 
@@ -991,6 +992,37 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 
 Only open Checkout reservations are lost. It drops only objects that carry the
 migration's marker, so a customer index from `202608270610` is kept.
+
+## Classification -- `202611091200_add_trial_used_at.sql`
+
+Adds the one-free-trial-per-organization record to `organizations`: two
+nullable columns, `trial_used_at` (the only trial-eligibility marker, set once
+when Stripe first shows a trial on a subscription verified as the
+organization's own, never cleared) and `trial_subscription_id` (the
+subscription that used it; audit and reference only), and a CHECK that the
+second is set only with the first. It is administrative because it alters a
+`postgres`-owned table and is applied by hand **before** the code that uses it
+is merged.
+
+It is additive and safe under the release already running: that release never
+reads or writes the new columns (a `SELECT *` only returns two more NULLs), no
+row is rewritten, and every existing row satisfies the CHECK. It raises an
+exception, with nothing applied, if `202611071200_add_checkout_reservation.sql`
+is missing or a trial column already exists. No backfill.
+
+### Rollback
+
+`202611091200_add_trial_used_at_rollback.sql`, manual only, as `postgres`, in
+one transaction, **after** reverting the application:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611091200_add_trial_used_at_rollback.sql
+```
+
+It loses the record of which organizations already used their trial; export
+the used rows first if any exist. It drops only objects that carry the
+migration's marker, and its `schema_migrations` row.
 
 ## Classification -- `202611091300_harden_database_ownership.sql`
 

@@ -28,7 +28,9 @@ export type FunnelEventName =
   | 'first_insight_generated'
   | 'first_value_viewed'
   | 'checkout_started'
-  | 'subscription_activated';
+  | 'subscription_activated'
+  | 'trial_started'
+  | 'trial_converted';
 
 // Stable IDs, counts, and amounts only -- never free text, request bodies,
 // or secrets. Enforced at the type level so a call site can't accidentally

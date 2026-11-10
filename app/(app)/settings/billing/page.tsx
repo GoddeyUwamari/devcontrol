@@ -26,6 +26,7 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useIsBillingAdmin } from '@/lib/hooks/use-current-role';
 import { logError } from '@/lib/safe-log';
 
@@ -43,10 +44,9 @@ export default function BillingPage() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [resourceCount, setResourceCount] = useState(0);
-  const [resourceLimit, setResourceLimit] = useState<number | null>(20);
-  const [apiRequestsThisHour, setApiRequestsThisHour] = useState(0);
-  const [apiRequestLimit, setApiRequestLimit] = useState(500);
+  // API requests this hour, from its own endpoint. null: could not be read
+  // (shown as unavailable, never as a made-up number).
+  const [apiUsage, setApiUsage] = useState<{ used: number; limit: number } | null>(null);
   const router = useRouter();
 
   const fetchData = async () => {
@@ -77,16 +77,12 @@ export default function BillingPage() {
   const fetchUsage = async () => {
     setUsageLoading(true);
     try {
-      const [statsRes, apiUsageRes] = await Promise.all([
-        api.get('/api/aws-resources/stats'),
-        api.get('/api/usage/api-requests'),
-      ]);
-      setResourceCount(statsRes.data?.data?.total ?? 0);
-      setApiRequestsThisHour(apiUsageRes.data?.data?.requestsThisHour ?? 0);
-      setApiRequestLimit(apiUsageRes.data?.data?.limit ?? 500);
-      setResourceLimit(apiUsageRes.data?.data?.resourceLimit ?? 20);
+      const apiUsageRes = await api.get('/api/usage/api-requests');
+      const used = apiUsageRes.data?.data?.requestsThisHour;
+      const limit = apiUsageRes.data?.data?.limit;
+      setApiUsage(typeof used === 'number' && typeof limit === 'number' ? { used, limit } : null);
     } catch {
-      // fallback to 0 defaults
+      setApiUsage(null);
     } finally {
       setUsageLoading(false);
     }
@@ -142,24 +138,16 @@ export default function BillingPage() {
     }
   };
 
-  // Usage limits based on tier
-  const getLimits = () => {
-    const limits: Record<
-      string,
-      { resources: number | 'unlimited'; apiRequests: number }
-    > = {
-      free: { resources: 20, apiRequests: 500 },
-      starter: { resources: 60, apiRequests: 2000 },
-      pro: { resources: 500, apiRequests: 5000 },
-      enterprise: { resources: 'unlimited', apiRequests: 20000 },
-    };
-    return limits[subscription?.tier || 'free'];
-  };
-
-  const limits = getLimits();
+  // Everything below is the server's billing summary; nothing is derived
+  // from a Stripe status here.
+  const actions = subscription?.actions;
+  const showUpgrade = actions?.showUpgrade === true;
+  const managed = subscription?.plan?.source === 'managed';
+  const awsResources = subscription?.usage?.awsResources ?? null;
+  const resourceLimit = awsResources?.limit ?? null;
   const resourceUsagePercent =
-    resourceLimit === null ? 0 : (resourceCount / resourceLimit) * 100;
-  const apiUsagePercent = (apiRequestsThisHour / apiRequestLimit) * 100;
+    awsResources && resourceLimit !== null ? (awsResources.used / resourceLimit) * 100 : 0;
+  const apiUsagePercent = apiUsage ? (apiUsage.used / apiUsage.limit) * 100 : 0;
 
   if (loading) {
     return (
@@ -197,65 +185,69 @@ export default function BillingPage() {
               <CardTitle className="text-base">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {subscription?.tier === 'free' ? (
-                <Button
-                  className="w-full"
-                  onClick={() => router.push('/settings/billing/upgrade')}
-                >
-                  <ArrowUpCircle className="mr-2 h-4 w-4" />
-                  Upgrade Plan
-                </Button>
-              ) : (
-                <>
-                  {canManageBilling ? (
-                    <>
-                      {subscription?.cancelAtPeriodEnd ? (
-                        <Button
-                          className="w-full"
-                          onClick={handleResumeSubscription}
-                          disabled={resumeLoading}
-                        >
-                          <PlayCircle className="mr-2 h-4 w-4" />
-                          {resumeLoading ? 'Resuming...' : 'Resume Subscription'}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => setCancelDialogOpen(true)}
-                        >
-                          Cancel Subscription
-                        </Button>
-                      )}
+              {managed && (
+                <p className="text-sm text-muted-foreground">
+                  Your plan is set up and billed by our team.{' '}
+                  <Link href="/contact" target="_blank" className="text-primary hover:underline">
+                    Contact us
+                  </Link>{' '}
+                  to make changes.
+                </p>
+              )}
 
+              {actions?.manageSubscription && (
+                canManageBilling ? (
+                  <>
+                    {subscription?.cancelAtPeriodEnd ? (
+                      <Button
+                        className="w-full"
+                        onClick={handleResumeSubscription}
+                        disabled={resumeLoading}
+                      >
+                        <PlayCircle className="mr-2 h-4 w-4" />
+                        {resumeLoading ? 'Resuming...' : 'Resume Subscription'}
+                      </Button>
+                    ) : (
                       <Button
                         variant="outline"
                         className="w-full"
-                        onClick={handleOpenPortal}
-                        disabled={portalLoading}
+                        onClick={() => setCancelDialogOpen(true)}
                       >
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        {portalLoading ? 'Loading...' : 'Manage Billing'}
-                        <ExternalLink className="ml-2 h-4 w-4" />
+                        Cancel Subscription
                       </Button>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Only organization owners and admins can cancel, resume, or manage billing.
-                    </p>
-                  )}
+                    )}
 
-                  {subscription?.tier !== 'enterprise' && (
                     <Button
                       variant="outline"
                       className="w-full"
-                      onClick={() => router.push('/settings/billing/upgrade')}
+                      onClick={handleOpenPortal}
+                      disabled={portalLoading}
                     >
-                      <TrendingUp className="mr-2 h-4 w-4" />
-                      Upgrade Plan
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      {portalLoading ? 'Loading...' : 'Manage Billing'}
+                      <ExternalLink className="ml-2 h-4 w-4" />
                     </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Only organization owners and admins can cancel, resume, or manage billing.
+                  </p>
+                )
+              )}
+
+              {showUpgrade && (
+                <Button
+                  variant={actions?.manageSubscription ? 'outline' : 'default'}
+                  className="w-full"
+                  onClick={() => router.push('/settings/billing/upgrade')}
+                >
+                  {actions?.manageSubscription ? (
+                    <TrendingUp className="mr-2 h-4 w-4" />
+                  ) : (
+                    <ArrowUpCircle className="mr-2 h-4 w-4" />
                   )}
-                </>
+                  Upgrade Plan
+                </Button>
               )}
             </CardContent>
           </Card>
@@ -268,7 +260,7 @@ export default function BillingPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="h-5 w-5" />
-                Usage This Month
+                Usage
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -291,19 +283,22 @@ export default function BillingPage() {
                 </div>
               ) : (
                 <>
-                  {/* Resources Usage */}
+                  {/* Resources Usage: counted and limited exactly as the server enforces them */}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">AWS Resources Discovered</span>
                       <span className="font-medium">
-                        {resourceCount}{' '}
-                        {resourceLimit !== null && `/ ${resourceLimit}`}
+                        {awsResources === null
+                          ? 'Usage unavailable right now.'
+                          : resourceLimit === null
+                          ? `${awsResources.used} · Unlimited`
+                          : `${awsResources.used} / ${resourceLimit}`}
                       </span>
                     </div>
-                    {resourceLimit !== null && (
+                    {awsResources !== null && resourceLimit !== null && (
                       <Progress value={resourceUsagePercent} className="h-2" />
                     )}
-                    {resourceLimit !== null && resourceUsagePercent > 80 && (
+                    {awsResources !== null && resourceLimit !== null && resourceUsagePercent > 80 && showUpgrade && (
                       <p className="text-xs text-amber-600 dark:text-amber-500">
                         You&apos;re approaching your resource limit. Consider upgrading your plan.
                       </p>
@@ -315,11 +310,13 @@ export default function BillingPage() {
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">API Requests This Hour</span>
                       <span className="font-medium">
-                        {apiRequestsThisHour} / {apiRequestLimit}
+                        {apiUsage === null
+                          ? 'Usage unavailable right now.'
+                          : `${apiUsage.used} / ${apiUsage.limit}`}
                       </span>
                     </div>
-                    <Progress value={apiUsagePercent} className="h-2" />
-                    {apiUsagePercent > 80 && (
+                    {apiUsage !== null && <Progress value={apiUsagePercent} className="h-2" />}
+                    {apiUsage !== null && apiUsagePercent > 80 && (
                       <p className="text-xs text-amber-600 dark:text-amber-500">
                         You&apos;re approaching your API request limit.
                       </p>
@@ -328,7 +325,7 @@ export default function BillingPage() {
                 </>
               )}
 
-              {subscription?.tier === 'free' && (
+              {subscription?.plan?.storedTier === 'free' && showUpgrade && (
                 <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-lg">
                   <p className="text-sm">
                     <strong>Want more resources?</strong> Upgrade to unlock higher limits
@@ -352,12 +349,12 @@ export default function BillingPage() {
       </div>
 
       {/* Cancel Dialog */}
-      {subscription && (
+      {subscription && actions?.manageSubscription && (
         <CancelSubscriptionDialog
           open={cancelDialogOpen}
           onOpenChange={setCancelDialogOpen}
           onSuccess={fetchData}
-          currentPeriodEnd={subscription.currentPeriodEnd}
+          currentPeriodEnd={subscription.currentPeriodEnd ?? undefined}
         />
       )}
     </div>

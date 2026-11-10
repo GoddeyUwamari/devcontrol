@@ -35,6 +35,8 @@ export interface NavItem {
   badge?: string | number;
   description?: string;
   external?: boolean;
+  /** Shown only when the server offers this organization an upgrade. */
+  requiresUpgradeAvailable?: boolean;
 }
 
 export interface NavSection {
@@ -316,6 +318,9 @@ export const userNavSections: NavSection[] = [
         label: 'Upgrade Plan',
         href: '/settings/billing/upgrade',
         icon: DollarSign,
+        // Hidden unless the server offers an upgrade (organization.upgradeAvailable):
+        // never on the top plan or for a plan our team manages.
+        requiresUpgradeAvailable: true,
       },
     ],
   },

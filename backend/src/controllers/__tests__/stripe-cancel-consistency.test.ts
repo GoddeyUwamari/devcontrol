@@ -468,13 +468,20 @@ describe('resume behavior is unaffected', () => {
  * StripeService.updateOrganizationSubscription for the full design.
  */
 function subscriptionPayload(subscriptionId: string, customerId: string, overrides: Record<string, unknown> = {}) {
+  // The API version in use (2025-12-15.clover) carries the billing period on
+  // the subscription item, not the subscription; the handlers read it there.
+  const { current_period_start, current_period_end, ...rest } = overrides;
   return {
     id: subscriptionId,
     customer: customerId,
     status: 'active',
-    items: { data: [{ price: { id: 'price_pro' } }] },
+    items: { data: [{
+      price: { id: 'price_pro' },
+      ...(current_period_start !== undefined ? { current_period_start } : {}),
+      ...(current_period_end !== undefined ? { current_period_end } : {}),
+    }] },
     cancel_at_period_end: false,
-    ...overrides,
+    ...rest,
   };
 }
 
