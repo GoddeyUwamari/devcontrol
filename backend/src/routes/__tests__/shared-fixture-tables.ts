@@ -160,6 +160,9 @@ const SHARED_FIXTURE_TABLES = {
 
 export type SharedFixtureTable = keyof typeof SHARED_FIXTURE_TABLES;
 
+/** The tables this helper can create (T-OWN checks its test-fixture allowlist entries against it). */
+export const SHARED_FIXTURE_TABLE_NAMES = Object.keys(SHARED_FIXTURE_TABLES) as SharedFixtureTable[];
+
 /**
  * Creates the table if it is missing. Safe to call from several suites at
  * once: the advisory lock makes concurrent callers take turns, since

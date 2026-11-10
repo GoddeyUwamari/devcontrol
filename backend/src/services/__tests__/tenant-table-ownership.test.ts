@@ -16,6 +16,15 @@
  * Names absent from the repository schema (production-only tables) are
  * tolerated.
  *
+ * Test fixtures: suites create a few tables in the shared test database that
+ * no migration creates (routes/__tests__/shared-fixture-tables.ts; never
+ * dropped, so whether one exists when this suite runs depends on suite order).
+ * The ones production also has are on the allowlist under their production
+ * category. One production does not have is allowlisted as
+ * 'test-fixture-not-in-production', and only while the fixture helper
+ * defines it and no migration creates it: once a migration creates it, it is
+ * a real table and must be correct.
+ *
  * Also: devcontrol is NOSUPERUSER NOBYPASSRLS, owns nothing in public, has no
  * CREATE on the database or public and no TEMPORARY; every SECURITY DEFINER
  * function pins a search_path starting with pg_catalog, pg_temp last.
@@ -30,8 +39,11 @@
  * and every owner-only operation (ALTER, DISABLE TRIGGER USER, NO FORCE ROW
  * LEVEL SECURITY) and TRUNCATE fail with 42501.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { Client, Pool, PoolClient } from 'pg';
 import { installTenantTagReset } from '../../config/database';
+import { SHARED_FIXTURE_TABLE_NAMES } from '../../routes/__tests__/shared-fixture-tables';
 
 function dbConfig() {
   return {
@@ -43,7 +55,7 @@ function dbConfig() {
   };
 }
 
-type Category = 'superuser-owner-not-forced' | 'C-G2-tenant-rls-off' | 'rls-coverage-backlog';
+type Category = 'superuser-owner-not-forced' | 'C-G2-tenant-rls-off' | 'rls-coverage-backlog' | 'test-fixture-not-in-production';
 
 const REASONS: Record<Category, string> = {
   'superuser-owner-not-forced':
@@ -51,6 +63,8 @@ const REASONS: Record<Category, string> = {
   'C-G2-tenant-rls-off':
     'owned by devcontrol in production with row level security off; C-G2 (ownership, and policy design including pre-authentication paths such as SAML and invitations)',
   'rls-coverage-backlog': 'postgres-owned, row level security off; RLS coverage backlog',
+  'test-fixture-not-in-production':
+    'not in production (founder check 2026-11-05); created only by the test helper routes/__tests__/shared-fixture-tables.ts, and by no migration; must be postgres-owned with row level security forced and tenant policies before the API keys feature ships',
 };
 
 /** Reviewed allowlist (production pre-check §3, founder 2026-11-09). Names may be absent here. */
@@ -69,7 +83,26 @@ const ALLOWLIST: Record<string, Category> = Object.fromEntries([
     'generated_reports', 'organization_memberships', 'remediation_workflows', 'risk_score_history', 'scheduled_reports',
     'services_backup_20251228', 'sessions', 'sso_configurations', 'tenants', 'weekly_summaries',
   ].map((t) => [t, 'rls-coverage-backlog']),
+  ...['api_keys'].map((t) => [t, 'test-fixture-not-in-production']),
 ]) as Record<string, Category>;
+
+/** Every .sql file under database/migrations and database/migrations-admin, rollbacks included, comments removed. */
+function migrationSql(): { file: string; sql: string }[] {
+  const root = path.join(__dirname, '../../../../database');
+  return ['migrations', 'migrations-admin'].flatMap((dir) =>
+    fs
+      .readdirSync(path.join(root, dir))
+      .filter((f) => f.endsWith('.sql'))
+      .map((f) => ({
+        file: `${dir}/${f}`,
+        sql: fs.readFileSync(path.join(root, dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ''),
+      }))
+  );
+}
+
+/** CREATE [UNLOGGED] TABLE [IF NOT EXISTS] [public.]<table>, quoted or not. */
+const createsTable = (sql: string, table: string) =>
+  new RegExp(`\\bCREATE\\s+(?:UNLOGGED\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?:"?public"?\\s*\\.\\s*)?"?${table}"?(?![\\w$])`, 'i').test(sql);
 
 /** devcontrol-owned in production but not tenant tables; C-G2. Documented here; their ownership is a production fact. */
 const NON_TENANT_C_G2 = ['migration_tracking_baseline', 'platform_staff', 'schema_migrations', 'stripe_webhook_events'];
@@ -174,6 +207,34 @@ describe('T-OWN invariant: every tenant table is correct or on the reviewed allo
 
   it('no allowlist entry is stale: a listed table that is now correct must be moved out', () => {
     expect(Object.keys(ALLOWLIST).filter((t) => facts.has(t) && isCorrect(facts.get(t) as TableFacts))).toEqual([]);
+  });
+
+  it('test-fixture entries are defined by the shared fixture helper and created by no migration (a migration-created table must be correct)', () => {
+    const fixtureEntries = Object.entries(ALLOWLIST)
+      .filter(([, c]) => c === 'test-fixture-not-in-production')
+      .map(([t]) => t);
+    expect(fixtureEntries.length).toBeGreaterThan(0);
+    expect(fixtureEntries.filter((t) => !(SHARED_FIXTURE_TABLE_NAMES as string[]).includes(t))).toEqual([]);
+
+    const migrations = migrationSql();
+    expect(migrations.length).toBeGreaterThan(50);
+    // The scan reads the real files: 026 mentions api_keys (it only ALTERs it), yet creates nothing.
+    expect(migrations.some((m) => /\bapi_keys\b/.test(m.sql))).toBe(true);
+    expect(
+      fixtureEntries.flatMap((t) => migrations.filter((m) => createsTable(m.sql, t)).map((m) => `${t}: created by ${m.file}`))
+    ).toEqual([]);
+  });
+
+  it('the CREATE TABLE detector matches the forms a migration could use, and nothing else', () => {
+    for (const sql of [
+      'CREATE TABLE api_keys (id int);', 'create table if not exists api_keys(id int);', 'CREATE TABLE public.api_keys (id int);',
+      'CREATE TABLE "api_keys" (id int);', 'CREATE UNLOGGED TABLE IF NOT EXISTS "public"."api_keys" (id int);',
+    ]) {
+      expect(createsTable(sql, 'api_keys')).toBe(true);
+    }
+    for (const sql of ['ALTER TABLE api_keys ADD COLUMN x int;', 'CREATE TABLE api_keys_archive (id int);', 'DROP TABLE api_keys;', 'CREATE INDEX i ON api_keys (id);']) {
+      expect(createsTable(sql, 'api_keys')).toBe(false);
+    }
   });
 
   it('every listed name present in this schema is a tenant table; the non-tenant C-G2 tables have no organization column', async () => {
