@@ -185,34 +185,44 @@ export class NLQueryAnalyticsService {
   }
 
   /**
-   * Create analytics table if it doesn't exist
+   * Checks, from the catalog only, that nl_query_analytics and its two indexes
+   * exist. It never issues DDL: they are created by admin migration
+   * 202611091300_harden_database_ownership.sql, and the application role has
+   * no CREATE on schema public (PostgreSQL checks that privilege even for
+   * CREATE ... IF NOT EXISTS on an existing table). When something is missing
+   * it reports once per process and returns; logQuery() and getStats() then
+   * fail softly as they always have.
    */
   async initializeTable(): Promise<void> {
     try {
-      await this.pool.query(`
-        CREATE TABLE IF NOT EXISTS nl_query_analytics (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          organization_id UUID NOT NULL,
-          query TEXT NOT NULL,
-          target VARCHAR(50) NOT NULL,
-          action VARCHAR(50) NOT NULL,
-          filter_count INTEGER DEFAULT 0,
-          confidence VARCHAR(20) NOT NULL,
-          was_cached BOOLEAN DEFAULT false,
-          response_time INTEGER NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_nl_analytics_org_created
-        ON nl_query_analytics(organization_id, created_at DESC);
-
-        CREATE INDEX IF NOT EXISTS idx_nl_analytics_query
-        ON nl_query_analytics(query);
-      `);
-
-      console.log('[NL Analytics] Table initialized successfully');
+      const { rows } = await this.pool.query(
+        'SELECT name FROM unnest($1::text[]) AS name WHERE to_regclass(name) IS NULL',
+        [NL_ANALYTICS_RELATIONS]
+      );
+      if (rows.length === 0) return;
+      reportOnce(() =>
+        console.warn(
+          `[NL Analytics] ${rows.map((r: { name: string }) => r.name).join(', ')} missing; ` +
+            'Ask AI analytics are not recorded until the admin migration that creates them is applied'
+        )
+      );
     } catch (error: any) {
-      console.error('[NL Analytics] Failed to initialize table:', error.message);
+      reportOnce(() => console.error('[NL Analytics] Could not check the analytics table:', error.message));
     }
   }
+}
+
+/** What admin migration 202611091300_harden_database_ownership.sql creates for this service. */
+export const NL_ANALYTICS_RELATIONS = [
+  'public.nl_query_analytics',
+  'public.idx_nl_analytics_org_created',
+  'public.idx_nl_analytics_query',
+] as const;
+
+let reported = false;
+/** At most one report per process, however many services check the table. */
+function reportOnce(report: () => void): void {
+  if (reported) return;
+  reported = true;
+  report();
 }

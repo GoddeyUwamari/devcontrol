@@ -503,7 +503,7 @@ describe('empty-string trap: onboarding_progress / analytics_events on a reset c
    * initialize_onboarding_for_organization(), which inserts the new org's
    * onboarding_progress row. That function is a postgres-owned SECURITY
    * DEFINER function with a pinned search_path (admin migration
-   * 202611091300_pin_onboarding_trigger_search_path.sql), as in production,
+   * 202611091300_harden_database_ownership.sql), as in production,
    * so the row is written in EVERY tag state -- untagged (NULL), stale
    * other-org tag (what a pooled connection carried before this reset
    * existed), and cleared ('') -- and the reset does not change the outcome.

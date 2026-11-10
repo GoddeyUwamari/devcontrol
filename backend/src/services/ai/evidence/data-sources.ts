@@ -115,4 +115,6 @@ export const EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   services_backup_20251228: 'one-off migration backup',
   aws_org_external_ids: 'connection setup material, never evidence',
   aws_preserved_customer_decisions: 'decisions kept across a reconnect; they reach AI through S6 and S7 once restored',
+  nl_query_analytics: 'Ask AI usage analytics (the questions asked), never evidence',
+  admin_migration_prior_state: 'administrative migration bookkeeping',
 };

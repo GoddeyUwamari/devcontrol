@@ -92,7 +92,7 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202611021200_extend_cost_analysis_runs.sql`**,
 **`202611031200_create_aws_org_external_ids.sql`**,
 **`202611071200_add_checkout_reservation.sql`**, and
-**`202611091300_pin_onboarding_trigger_search_path.sql`**.
+**`202611091300_harden_database_ownership.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -991,37 +991,68 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 Only open Checkout reservations are lost. It drops only objects that carry the
 migration's marker, so a customer index from `202608270610` is kept.
 
-## Classification -- `202611091300_pin_onboarding_trigger_search_path.sql`
+## Classification -- `202611091300_harden_database_ownership.sql`
 
-`initialize_onboarding_for_organization()` is the AFTER INSERT trigger on
-`organizations` that creates a new organization's `onboarding_progress` row
-(`009_create_onboarding_progress.sql`). Production runs it as a
-`postgres`-owned SECURITY DEFINER function, which is what lets registration
-write that row with no tenant tag set. This migration gives every environment
-that shape, plus the standard hardening for a SECURITY DEFINER function:
+Ownership and privilege hardening for the application role `devcontrol`. One
+transaction, all or nothing:
 
-- `SET search_path = pg_catalog, public, pg_temp` on the function;
-- every table and function reference schema-qualified;
-- the same body and effect otherwise (one row, `ON CONFLICT (organization_id)
-  DO NOTHING`), owner `postgres`.
+- **`nl_query_analytics`** and its two indexes are created here when absent, so
+  no install depends on the application creating them at runtime. The
+  application now only checks that they exist
+  (`NLQueryAnalyticsService.initializeTable()`). Where they already exist they
+  are left as they are, and the table's columns must match.
+- **The database is owned by `postgres`.** `devcontrol` is then no longer a
+  member of `pg_database_owner`, the owner of schema `public` on PostgreSQL 15
+  and later.
+- **`CREATE` and `TEMPORARY` on the database** are revoked from `PUBLIC` and
+  `devcontrol`, and **`CREATE` on schema `public`** from `PUBLIC` and
+  `devcontrol`.
+  - `devcontrol` keeps `CONNECT` and `USAGE` on `public` (through `PUBLIC`)
+    and every table privilege and ownership it has today.
+  - New tables, indexes and other objects therefore come from this directory
+    only.
+- **`initialize_onboarding_for_organization()`**, the AFTER INSERT trigger on
+  `organizations` that creates a new organization's `onboarding_progress` row
+  (`009_create_onboarding_progress.sql`), becomes a `postgres`-owned SECURITY
+  DEFINER function with `SET search_path = pg_catalog, public, pg_temp` and
+  schema-qualified references. Its body and effect are otherwise unchanged.
 
-It also revokes `TEMPORARY` on the database from `PUBLIC` and `devcontrol`. No
-application, job, script or migration uses temporary tables, and superusers are
-unaffected.
+It refuses to run unless:
 
-It is administrative because it replaces a `postgres`-owned function and
-changes a database privilege. It refuses to run unless the function's current
-body is 009's (whitespace aside), and it takes no lock on `organizations`: only
-the function itself is locked, for the length of the transaction.
+- `devcontrol` is not a superuser, `BYPASSRLS`, `CREATEROLE` or a member of
+  `postgres`;
+- `devcontrol` owns no schema, extension, publication, subscription or event
+  trigger;
+- the database is owned by `devcontrol` or `postgres`, and `public` by
+  `pg_database_owner` or `postgres`;
+- the function's body is 009's (whitespace aside), and its trigger is in place.
+
+It records the prior state in `public.admin_migration_prior_state` (owned by
+`postgres`, no application access), and its read-back checks the end state.
+
+It takes no lock on the database or on `organizations`. It locks the function
+object, and `nl_query_analytics` only if it has to create one of its relations.
+The CI and local databases are already owned by `postgres`. CI runs
+PostgreSQL 14, where `public` is owned by `postgres` and `PUBLIC` had `CREATE`
+on it; production may differ in which role owns `public` (`pg_database_owner`
+or `postgres`). Both shapes end with no `CREATE` on `public` for `devcontrol`
+or `PUBLIC`.
 
 ### Rollback
 
-`202611091300_pin_onboarding_trigger_search_path_rollback.sql`, manual only, as
-`postgres`, in one transaction. It restores the 009 body without a pinned
-`search_path` and grants `TEMPORARY` to `PUBLIC` again, so use it only if the
-migration itself breaks registration:
+`202611091300_harden_database_ownership_rollback.sql`, manual only, as
+`postgres`, in one transaction. It restores exactly the recorded prior state:
+
+- the database owner and ACL;
+- `public`'s ACL;
+- the function as it was;
+- `nl_query_analytics` and its indexes are removed only if this migration
+  created them.
+
+It refuses unless the restored state equals the recorded one. This removes the
+hardening, so use it only if the migration itself breaks something:
 
 ```bash
 psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
-  -f 202611091300_pin_onboarding_trigger_search_path_rollback.sql
+  -f 202611091300_harden_database_ownership_rollback.sql
 ```
