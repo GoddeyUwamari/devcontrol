@@ -153,16 +153,16 @@ describe('organization isolation — soc2_evidence_observations / soc2_control_e
   // considered and removed -- this suite's DB connection authenticates as `postgres`
   // (see dbConfig()), which is this local database's table owner/superuser and
   // therefore bypasses RLS entirely by PostgreSQL's own design, regardless of policy
-  // correctness (RLS applies to non-owner, non-superuser roles unless a table is
-  // explicitly created with FORCE ROW LEVEL SECURITY, which no migration in this
-  // repository uses -- matching account_security_findings/security_hub_findings'
-  // same convention). That would not be testing this schema; it would only be
-  // re-proving that `postgres` is the table owner. The two tests above -- reading
+  // correctness (superusers bypass RLS even where it is forced, as it is on both
+  // soc2 tables since 202611101200_transfer_tenant_table_ownership.sql). That would
+  // not be testing this schema; it would only be re-proving that `postgres` is a
+  // superuser. tenant-table-ownership.test.ts (T-OWN) proves isolation as the real
+  // `devcontrol` role on raw connections. The two tests above -- reading
   // through Soc2EvidenceRepository's own set_config-scoped methods, exactly the
   // access pattern every real code path (HTTP requests via auth.middleware.ts,
   // services via their own withOrgClient) actually uses -- are what proves isolation
-  // for the real production role (`devcontrol`, non-superuser, not a table owner
-  // created this way), matching security-hub-findings-rls.test.ts's identical choice
+  // for the real production role (`devcontrol`, non-superuser, not the table owner),
+  // matching security-hub-findings-rls.test.ts's identical choice
   // to test isolation exclusively through repository methods, not a raw-connection
   // bypass.
 });

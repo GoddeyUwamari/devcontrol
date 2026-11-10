@@ -1,11 +1,13 @@
 /**
- * cost_analysis_runs is owned by the application role in production, so
- * row-level security does not apply to it (no FORCE, by decision). The explicit
- * organization_id predicate on every statement is the only tenant boundary.
+ * cost_analysis_runs is owned by postgres with row-level security forced
+ * (admin migration 202611101200_transfer_tenant_table_ownership.sql); the
+ * explicit organization_id predicate on every statement is defence in depth on
+ * top of it.
  *
  * The static half holds every SQL statement in backend/src naming the table to
- * that. The live half proves the predicates work: the test connection, like the
- * production owner, is not limited by RLS here, so a missing predicate shows.
+ * that. The live half proves the predicates work on their own: the test
+ * connection is a superuser, which row-level security never limits, so a
+ * missing predicate shows.
  */
 import { join } from 'node:path';
 import { Pool } from 'pg';

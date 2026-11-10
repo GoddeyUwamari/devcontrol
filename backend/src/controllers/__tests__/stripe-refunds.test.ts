@@ -691,7 +691,10 @@ describe('refund upsert never touches another organization\'s row', () => {
 
   it('precondition: the connecting role is not subject to RLS on refunds', async () => {
     const { rows } = await pool.query(
-      `SELECT (r.rolsuper OR r.rolbypassrls OR c.relowner = r.oid) AND NOT c.relforcerowsecurity AS rls_cannot_filter
+      // A superuser or BYPASSRLS role bypasses RLS even on a forced table (refunds is
+      // forced since 202611101200_transfer_tenant_table_ownership.sql); an owner only
+      // when it is not forced.
+      `SELECT r.rolsuper OR r.rolbypassrls OR (c.relowner = r.oid AND NOT c.relforcerowsecurity) AS rls_cannot_filter
        FROM pg_roles r, pg_class c
        WHERE r.rolname = current_user AND c.oid = 'public.refunds'::regclass`
     );

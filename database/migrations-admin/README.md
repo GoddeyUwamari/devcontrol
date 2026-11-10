@@ -91,8 +91,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202610281200_create_resource_telemetry_observations.sql`**,
 **`202611021200_extend_cost_analysis_runs.sql`**,
 **`202611031200_create_aws_org_external_ids.sql`**,
-**`202611071200_add_checkout_reservation.sql`**, and
-**`202611091300_harden_database_ownership.sql`**.
+**`202611071200_add_checkout_reservation.sql`**,
+**`202611091300_harden_database_ownership.sql`**, and
+**`202611101200_transfer_tenant_table_ownership.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -1055,4 +1056,60 @@ hardening, so use it only if the migration itself breaks something:
 ```bash
 psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
   -f 202611091300_harden_database_ownership_rollback.sql
+```
+
+## Classification -- `202611101200_transfer_tenant_table_ownership.sql`
+
+Nine tenant tables were created through the ordinary path, so production's
+application role `devcontrol` owned them:
+
+- `security_hub_findings`, `organization_security_hub_state`;
+- `soc2_evidence_observations`, `soc2_control_evaluations`;
+- `cost_analysis_runs`, `customer_evidence`;
+- `organization_optimization_rule_configs`, `refunds`, `slo_definitions`.
+
+Row level security is enabled on each, but a table's owner is exempt from it
+unless it is forced. This migration (one transaction, after
+`202611091300_harden_database_ownership.sql`) makes `postgres` the owner of
+each table and of its indexes, and forces row level security.
+
+It revokes everything from `PUBLIC` and `devcontrol`, then grants `devcontrol`
+exactly what the application uses:
+
+- `SELECT, INSERT, UPDATE` on all nine;
+- `DELETE` on `soc2_evidence_observations`,
+  `organization_optimization_rule_configs` and `slo_definitions` only.
+
+`refunds`' trigger function `update_refunds_updated_at()` becomes
+`postgres`-owned as well.
+
+It refuses to run unless:
+
+- each table has exactly its two tenant policies;
+- the only user trigger is `refunds_updated_at`, with the expected body;
+- there are no views, owned sequences or inbound foreign keys.
+
+It records the prior state in `public.admin_migration_prior_state`, and its
+read-back checks owners, `FORCE`, exact privileges, index owners and that no
+other relation changed.
+
+The tables' code runs on connections tagged for the row's organization, so
+row level security changes no result the application returns.
+
+Future DDL on these tables belongs here (see
+`backend/src/config/__tests__/migrations-ownership.static.test.ts`).
+`tenant-table-ownership.test.ts` (T-OWN) holds every tenant table to "correct
+or on the reviewed allowlist".
+
+### Rollback
+
+`202611101200_transfer_tenant_table_ownership_rollback.sql`, manual only, as
+`postgres`, in one transaction. Roll it back **before**
+`202611091300_harden_database_ownership.sql`. It restores exactly the recorded
+owners, `FORCE` settings, ACL entries and trigger function owner, and refuses
+unless the restored state equals the recorded one:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611101200_transfer_tenant_table_ownership_rollback.sql
 ```
