@@ -91,8 +91,10 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202610281200_create_resource_telemetry_observations.sql`**,
 **`202611021200_extend_cost_analysis_runs.sql`**,
 **`202611031200_create_aws_org_external_ids.sql`**,
-**`202611071200_add_checkout_reservation.sql`**, and
-**`202611091200_add_trial_used_at.sql`**.
+**`202611071200_add_checkout_reservation.sql`**,
+**`202611091200_add_trial_used_at.sql`**,
+**`202611091300_harden_database_ownership.sql`**, and
+**`202611101200_transfer_tenant_table_ownership.sql`**.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,
@@ -1021,3 +1023,125 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 It loses the record of which organizations already used their trial; export
 the used rows first if any exist. It drops only objects that carry the
 migration's marker, and its `schema_migrations` row.
+
+## Classification -- `202611091300_harden_database_ownership.sql`
+
+Ownership and privilege hardening for the application role `devcontrol`. One
+transaction, all or nothing:
+
+- **`nl_query_analytics`** and its two indexes are created here when absent, so
+  no install depends on the application creating them at runtime. The
+  application now only checks that they exist
+  (`NLQueryAnalyticsService.initializeTable()`). Where they already exist they
+  are left as they are, and the table's columns must match.
+- **The database is owned by `postgres`.** `devcontrol` is then no longer a
+  member of `pg_database_owner`, the owner of schema `public` on PostgreSQL 15
+  and later.
+- **`CREATE` and `TEMPORARY` on the database** are revoked from `PUBLIC` and
+  `devcontrol`, and **`CREATE` on schema `public`** from `PUBLIC` and
+  `devcontrol`.
+  - `devcontrol` keeps `CONNECT` and `USAGE` on `public` (through `PUBLIC`)
+    and every table privilege and ownership it has today.
+  - New tables, indexes and other objects therefore come from this directory
+    only.
+- **`initialize_onboarding_for_organization()`**, the AFTER INSERT trigger on
+  `organizations` that creates a new organization's `onboarding_progress` row
+  (`009_create_onboarding_progress.sql`), becomes a `postgres`-owned SECURITY
+  DEFINER function with `SET search_path = pg_catalog, public, pg_temp` and
+  schema-qualified references. Its body and effect are otherwise unchanged.
+
+It refuses to run unless:
+
+- `devcontrol` is not a superuser, `BYPASSRLS`, `CREATEROLE` or a member of
+  `postgres`;
+- `devcontrol` owns no schema, extension, publication, subscription or event
+  trigger;
+- the database is owned by `devcontrol` or `postgres`, and `public` by
+  `pg_database_owner` or `postgres`;
+- the function's body is 009's (whitespace aside), and its trigger is in place.
+
+It records the prior state in `public.admin_migration_prior_state` (owned by
+`postgres`, no application access), and its read-back checks the end state.
+
+It takes no lock on the database or on `organizations`. It locks the function
+object, and `nl_query_analytics` only if it has to create one of its relations.
+The CI and local databases are already owned by `postgres`. CI runs
+PostgreSQL 14, where `public` is owned by `postgres` and `PUBLIC` had `CREATE`
+on it; production may differ in which role owns `public` (`pg_database_owner`
+or `postgres`). Both shapes end with no `CREATE` on `public` for `devcontrol`
+or `PUBLIC`.
+
+### Rollback
+
+`202611091300_harden_database_ownership_rollback.sql`, manual only, as
+`postgres`, in one transaction. It restores exactly the recorded prior state:
+
+- the database owner and ACL;
+- `public`'s ACL;
+- the function as it was;
+- `nl_query_analytics` and its indexes are removed only if this migration
+  created them.
+
+It refuses unless the restored state equals the recorded one. This removes the
+hardening, so use it only if the migration itself breaks something:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611091300_harden_database_ownership_rollback.sql
+```
+
+## Classification -- `202611101200_transfer_tenant_table_ownership.sql`
+
+Nine tenant tables were created through the ordinary path, so production's
+application role `devcontrol` owned them:
+
+- `security_hub_findings`, `organization_security_hub_state`;
+- `soc2_evidence_observations`, `soc2_control_evaluations`;
+- `cost_analysis_runs`, `customer_evidence`;
+- `organization_optimization_rule_configs`, `refunds`, `slo_definitions`.
+
+Row level security is enabled on each, but a table's owner is exempt from it
+unless it is forced. This migration (one transaction, after
+`202611091300_harden_database_ownership.sql`) makes `postgres` the owner of
+each table and of its indexes, and forces row level security.
+
+It revokes everything from `PUBLIC` and `devcontrol`, then grants `devcontrol`
+exactly what the application uses:
+
+- `SELECT, INSERT, UPDATE` on all nine;
+- `DELETE` on `soc2_evidence_observations`,
+  `organization_optimization_rule_configs` and `slo_definitions` only.
+
+`refunds`' trigger function `update_refunds_updated_at()` becomes
+`postgres`-owned as well.
+
+It refuses to run unless:
+
+- each table has exactly its two tenant policies;
+- the only user trigger is `refunds_updated_at`, with the expected body;
+- there are no views, owned sequences or inbound foreign keys.
+
+It records the prior state in `public.admin_migration_prior_state`, and its
+read-back checks owners, `FORCE`, exact privileges, index owners and that no
+other relation changed.
+
+The tables' code runs on connections tagged for the row's organization, so
+row level security changes no result the application returns.
+
+Future DDL on these tables belongs here (see
+`backend/src/config/__tests__/migrations-ownership.static.test.ts`).
+`tenant-table-ownership.test.ts` (T-OWN) holds every tenant table to "correct
+or on the reviewed allowlist".
+
+### Rollback
+
+`202611101200_transfer_tenant_table_ownership_rollback.sql`, manual only, as
+`postgres`, in one transaction. Roll it back **before**
+`202611091300_harden_database_ownership.sql`. It restores exactly the recorded
+owners, `FORCE` settings, ACL entries and trigger function owner, and refuses
+unless the restored state equals the recorded one:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611101200_transfer_tenant_table_ownership_rollback.sql
+```

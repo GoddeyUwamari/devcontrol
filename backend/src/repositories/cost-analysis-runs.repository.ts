@@ -61,10 +61,12 @@ export const QUEUED_RUN_TIMEOUT_SECONDS = SCAN_WAIT_CAP_MS / 1000 + 5 * 60;
  * Persistence for every cost analysis: manual (POST
  * /api/cost-recommendations/analyze) and the cost step of a discovery scan.
  *
- * This table is owned by the application role in production, so row-level
- * security does not apply to it: EVERY statement here must carry an explicit
- * organization_id predicate (or column, for the INSERT). A static test
- * (cost-analysis-runs.tenant-scope.test.ts) holds every statement to that.
+ * Owned by postgres with row-level security forced since admin migration
+ * 202611101200_transfer_tenant_table_ownership.sql, so every statement runs on
+ * a connection tagged for its organization. EVERY statement here also carries
+ * an explicit organization_id predicate (or column, for the INSERT) as defence
+ * in depth; a static test (cost-analysis-runs.tenant-scope.test.ts) holds
+ * every statement to that.
  *
  * A finishing write only moves a row out of 'running', so a slow worker never
  * overwrites a row recovery has already closed.
