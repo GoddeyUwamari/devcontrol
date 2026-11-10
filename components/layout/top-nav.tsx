@@ -175,7 +175,7 @@ export const mobileSections = [
 export function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout, isLoading } = useAuth();
+  const { user, logout, isLoading, organization } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<string | null>(null);
@@ -307,6 +307,7 @@ export function TopNav() {
                 initials: getUserInitials(),
               }}
               onLogout={handleLogout}
+              upgradeAvailable={organization?.upgradeAvailable === true}
             />
           ) : (
             <Link href="/login" className="text-ui font-semibold text-violet-600" style={{ textDecoration: 'none' }}>Sign in</Link>
@@ -484,6 +485,7 @@ export function TopNav() {
                 initials: getUserInitials(),
               }}
               onLogout={handleLogout}
+              upgradeAvailable={organization?.upgradeAvailable === true}
             />
           ) : (
             <Button asChild variant="outline" size="sm">

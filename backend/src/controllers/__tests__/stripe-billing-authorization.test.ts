@@ -223,7 +223,7 @@ describe('changePlan authorization', () => {
     await stripeController.changePlan(req, res);
 
     expect(status).not.toHaveBeenCalledWith(403);
-    expect(spy).toHaveBeenCalledWith(subscriptionId, stripeService.getPriceIdForPlan('pro', 'monthly'));
+    expect(spy).toHaveBeenCalledWith(subscriptionId, stripeService.getPriceIdForPlan('pro', 'monthly'), 'monthly');
   });
 
   it.each(REJECTED_ROLES)('%s role is rejected 403, Stripe never called, DB unchanged', async (role) => {

@@ -4,6 +4,7 @@ import { TIER_LIMITS, SubscriptionTier } from '../middleware/subscription.middle
 import { TERMINAL_SUBSCRIPTION_STATUSES, isTerminalSubscriptionStatus } from '../config/subscription-status';
 import { safeErrorFields } from '../utils/safe-error-log';
 import { emailService } from './email.service';
+import { TRIAL_PERIOD_DAYS } from '../config/trial';
 
 export type BillingLifecycleState = 'healthy' | 'grace_period' | 'restricted';
 
@@ -91,6 +92,26 @@ export function isSalesLedTier(value: unknown): boolean {
 export function isSelfServePlan(tier: CheckoutTier, interval: BillingInterval): boolean {
   return SELF_SERVE_TIERS.includes(tier) && isSupportedPlan(tier, interval);
 }
+
+/**
+ * A change-plan request that would switch billing interval (monthly <->
+ * annual) while the subscription is in its free trial. Refused: the trial's
+ * end stays fixed, and an interval change would move the billing anchor.
+ */
+export class TrialIntervalChangeError extends Error {
+  constructor() {
+    super('Billing interval changes are not available during a trial');
+    this.name = 'TrialIntervalChangeError';
+  }
+}
+
+/** Stripe's recurring interval for a billing interval. */
+function stripeIntervalOf(interval: BillingInterval): 'month' | 'year' {
+  return interval === 'annual' ? 'year' : 'month';
+}
+
+/** Statuses a trialing subscription moves to when its first charge fails. */
+const FIRST_CHARGE_FAILURE_STATUSES: readonly string[] = ['past_due', 'unpaid'];
 
 // The terminal statuses (canceled, incomplete_expired) live with the other
 // status lists in config/subscription-status.ts, shared with the
@@ -297,11 +318,26 @@ export class StripeService {
     organizationId: string,
     successUrl: string,
     cancelUrl: string,
-    options: { expiresAt: number; idempotencyKey: string }
+    options: { expiresAt: number; idempotencyKey: string; trial?: boolean }
   ): Promise<Stripe.Checkout.Session> {
     try {
+      // The free trial (config/trial.ts): a fixed number of days, never a
+      // date, and a card always collected. Should the card be removed before
+      // the trial ends, the subscription is canceled rather than paused.
+      const trialParams = options.trial
+        ? {
+            payment_method_collection: 'always' as const,
+          }
+        : {};
+      const trialSubscriptionData = options.trial
+        ? {
+            trial_period_days: TRIAL_PERIOD_DAYS,
+            trial_settings: { end_behavior: { missing_payment_method: 'cancel' as const } },
+          }
+        : {};
       const session = await getStripeClient().checkout.sessions.create(
         {
+          ...trialParams,
           customer: customerId,
           mode: 'subscription',
           payment_method_types: ['card'],
@@ -321,6 +357,7 @@ export class StripeService {
             metadata: {
               organizationId,
             },
+            ...trialSubscriptionData,
           },
           allow_promotion_codes: true,
         },
@@ -387,9 +424,14 @@ export class StripeService {
   /**
    * Cancel a subscription
    */
-  async cancelSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
+  async cancelSubscription(
+    subscriptionId: string,
+    options?: { idempotencyKey: string }
+  ): Promise<Stripe.Subscription> {
     try {
-      const subscription = await getStripeClient().subscriptions.cancel(subscriptionId);
+      const subscription = options
+        ? await getStripeClient().subscriptions.cancel(subscriptionId, {}, { idempotencyKey: options.idempotencyKey })
+        : await getStripeClient().subscriptions.cancel(subscriptionId);
 
       console.log('Canceled a subscription');
       return subscription;
@@ -440,26 +482,43 @@ export class StripeService {
    */
   async updateSubscription(
     subscriptionId: string,
-    newPriceId: string
+    newPriceId: string,
+    requestedInterval?: BillingInterval
   ): Promise<Stripe.Subscription> {
     try {
       // Get current subscription
       const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);
+      const item = subscription.items.data[0];
+
+      // During the free trial: the trial end stays fixed (passed back
+      // unchanged), there is nothing to prorate, and the billing interval
+      // cannot change (that would move the billing anchor). A tier change
+      // within the same interval is allowed.
+      const trialing = subscription.status === 'trialing' && typeof subscription.trial_end === 'number';
+      if (trialing && requestedInterval !== undefined) {
+        const currentInterval = item?.price?.recurring?.interval;
+        if (currentInterval !== stripeIntervalOf(requestedInterval)) {
+          throw new TrialIntervalChangeError();
+        }
+      }
 
       // Update the subscription item with new price
       const updatedSubscription = await getStripeClient().subscriptions.update(subscriptionId, {
         items: [
           {
-            id: subscription.items.data[0].id,
+            id: item.id,
             price: newPriceId,
           },
         ],
-        proration_behavior: 'create_prorations',
+        ...(trialing
+          ? { proration_behavior: 'none' as const, trial_end: subscription.trial_end as number }
+          : { proration_behavior: 'create_prorations' as const }),
       });
 
       console.log('Updated a subscription to a new price');
       return updatedSubscription;
     } catch (error) {
+      if (error instanceof TrialIntervalChangeError) throw error;
       console.error('Error updating subscription:', stripeErrorKind(error));
       throw error;
     }
@@ -760,6 +819,11 @@ export class StripeService {
       currentPeriodStart?: Date;
       currentPeriodEnd?: Date;
       cancelAtPeriodEnd?: boolean;
+      /**
+       * Not a column: the subscription's trial end (Unix seconds) from the
+       * same payload, for the first-charge rule's stale-event guard.
+       */
+      trialEnd?: number | null;
     },
     ordering: { asOf: Date; allowTie?: boolean },
     identity?: SubscriptionIdentityGuard
@@ -780,6 +844,61 @@ export class StripeService {
       if (data.status !== undefined) {
         updates.push(`subscription_status = $${paramIndex++}`);
         values.push(data.status);
+      }
+
+      // The first charge after a free trial has no grace period. The one
+      // lifecycle state that tells it apart from every later charge is the
+      // recorded subscription still being 'trialing' when it fails: Stripe
+      // moves a trial to past_due/unpaid only when the invoice at the trial's
+      // end is not paid; later charges fail from 'active'. Inside this same
+      // UPDATE (so under its ordering and identity guard), a transition of the
+      // recorded subscription from 'trialing' (the OLD value: every column
+      // reference in SET reads the row before the update) to past_due/unpaid
+      // ends paid access at once: 'restricted', with no grace deadline (the
+      // marker of this episode, see recordPaymentRecovery). entitlementOf is
+      // unchanged and reads it as free with a payment hold; the ordinary
+      // payment-failure grace (recordPaymentFailure) never applies here.
+      //
+      // Stale-event guard (the invoice side of the same discipline PR B uses
+      // for subscription events): the transition ends access only while no
+      // invoice from the trial's end has been processed yet. Once one has
+      // (latest_processed_invoice_created_at at or after a day before the
+      // trial end; the only earlier invoice is the $0 one at the trial's
+      // start), its own event decided the first charge -- a failure already
+      // restricted (recordFirstChargeFailure), a payment already recovered
+      // (recordPaymentRecovery) -- so a late trialing -> past_due delivered
+      // after the payment can never restrict a paying organization again.
+      if (
+        data.subscriptionId !== undefined &&
+        data.status !== undefined &&
+        typeof data.trialEnd === 'number' &&
+        FIRST_CHARGE_FAILURE_STATUSES.includes(data.status)
+      ) {
+        const firstChargeSubscriptionParam = paramIndex++;
+        values.push(data.subscriptionId);
+        const trialEndParam = paramIndex++;
+        values.push(data.trialEnd);
+        const firstChargeFailed =
+          `(subscription_status = 'trialing' AND stripe_subscription_id = $${firstChargeSubscriptionParam}` +
+          ` AND (latest_processed_invoice_created_at IS NULL` +
+          ` OR latest_processed_invoice_created_at < to_timestamp($${trialEndParam}::bigint) - interval '1 day'))`;
+        updates.push(`billing_lifecycle_state = CASE WHEN ${firstChargeFailed} THEN 'restricted' ELSE billing_lifecycle_state END`);
+        updates.push(`payment_failed_at = CASE WHEN ${firstChargeFailed} THEN COALESCE(payment_failed_at, NOW()) ELSE payment_failed_at END`);
+        updates.push(`grace_period_ends_at = CASE WHEN ${firstChargeFailed} THEN NULL ELSE grace_period_ends_at END`);
+      }
+
+      // A recovered first charge never leaves a paying organization
+      // restricted: an applied 'active' (Stripe sets it only once the invoice
+      // is paid; the ordering guard refuses an 'active' older than a later
+      // event) clears the first-charge restriction ('restricted' with no
+      // grace deadline, which only that path writes), whichever of this and
+      // the invoice.paid recovery arrives first. The ordinary grace episode
+      // (which always has a deadline) is untouched: only invoice.paid ends it.
+      if (data.status === 'active') {
+        const firstChargeRestricted = `(billing_lifecycle_state = 'restricted' AND grace_period_ends_at IS NULL)`;
+        updates.push(`billing_lifecycle_state = CASE WHEN ${firstChargeRestricted} THEN 'healthy' ELSE billing_lifecycle_state END`);
+        updates.push(`payment_failed_at = CASE WHEN ${firstChargeRestricted} THEN NULL ELSE payment_failed_at END`);
+        updates.push(`payment_failed_notification_sent_at = CASE WHEN ${firstChargeRestricted} THEN NULL ELSE payment_failed_notification_sent_at END`);
       }
 
       if (data.tier !== undefined) {
@@ -910,6 +1029,73 @@ export class StripeService {
       console.error('❌ Error updating organization subscription:', stripeErrorKind(error));
       throw error;
     }
+  }
+
+  /**
+   * Claim the organization's one free trial for `subscriptionId`, a
+   * subscription already verified as the organization's own (under its
+   * customer, metadata naming it) on which Stripe shows a trial. One atomic
+   * statement: only the first claim lands, and trial_used_at is never
+   * cleared, so a canceled trial still uses up the organization's trial.
+   *  - 'claimed': this call consumed the trial;
+   *  - 'this_subscription': it was already consumed by this subscription
+   *    (a redelivery or a second event for it);
+   *  - 'other_subscription': it was consumed before, by another subscription;
+   *  - 'not_found': no such organization under that customer.
+   */
+  async claimTrial(
+    organizationId: string,
+    customerId: string,
+    subscriptionId: string
+  ): Promise<'claimed' | 'this_subscription' | 'other_subscription' | 'not_found'> {
+    const claimed = await pool.query(
+      `UPDATE organizations
+          SET trial_used_at = NOW(), trial_subscription_id = $3
+        WHERE id = $1 AND stripe_customer_id = $2 AND trial_used_at IS NULL
+        RETURNING id`,
+      [organizationId, customerId, subscriptionId]
+    );
+    if ((claimed.rowCount ?? 0) > 0) return 'claimed';
+    const { rows } = await pool.query(
+      'SELECT trial_subscription_id FROM organizations WHERE id = $1 AND stripe_customer_id = $2',
+      [organizationId, customerId]
+    );
+    if (rows.length === 0) return 'not_found';
+    return rows[0].trial_subscription_id === subscriptionId ? 'this_subscription' : 'other_subscription';
+  }
+
+  /**
+   * The invoice half of the first-charge rule (see updateOrganizationSubscription
+   * for the subscription half): an invoice of the organization's recorded
+   * subscription failed while that subscription is still recorded as
+   * 'trialing', so it is the first charge after the trial. Access ends at
+   * once ('restricted', no grace deadline); no payment-failure email of ours
+   * is sent (Stripe's own covers it). Strictly newer than the last processed
+   * invoice event only, so a late failure of an invoice that has since been
+   * paid can never end access here. Returns whether it applied; when it did
+   * not, the caller continues with the ordinary path (recordPaymentFailure).
+   */
+  async recordFirstChargeFailure(
+    organizationId: string,
+    subscriptionId: string,
+    invoiceCreatedAt: Date
+  ): Promise<boolean> {
+    const result = await pool.query(
+      `UPDATE organizations
+          SET billing_lifecycle_state = 'restricted',
+              payment_failed_at = NOW(),
+              grace_period_ends_at = NULL,
+              latest_processed_invoice_created_at = $3,
+              payment_failed_notification_sent_at = NULL
+        WHERE id = $1
+          AND stripe_subscription_id = $2
+          AND subscription_status = 'trialing'
+          AND billing_lifecycle_state = 'healthy'
+          AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at < $3)
+        RETURNING id`,
+      [organizationId, subscriptionId, invoiceCreatedAt]
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   /**
@@ -1169,6 +1355,14 @@ export class StripeService {
     invoiceCreatedAt?: Date
   ): Promise<{ wasRecovery: boolean; wasStale: boolean }> {
     if (!invoiceCreatedAt) {
+      // Except a first-charge failure after a trial ('restricted' with no
+      // grace deadline, which only that path writes): it stays, so a late
+      // invoice.payment_failed for that never-paid first invoice, delivered
+      // after the deletion, finds the organization not 'healthy' and can
+      // never open a grace period or send the grace email. Access is
+      // unaffected (a terminal recorded subscription is free with no hold,
+      // entitlementOf step 1), and a later paid invoice of a new subscription
+      // clears it (the invoice branch below).
       const result = await pool.query(
         `UPDATE organizations
          SET billing_lifecycle_state = 'healthy',
@@ -1176,6 +1370,7 @@ export class StripeService {
              grace_period_ends_at = NULL,
              payment_failed_notification_sent_at = NULL
          WHERE id = $1 AND billing_lifecycle_state != 'healthy'
+           AND NOT (billing_lifecycle_state = 'restricted' AND grace_period_ends_at IS NULL)
          RETURNING id`,
         [organizationId]
       );

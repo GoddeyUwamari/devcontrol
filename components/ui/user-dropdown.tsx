@@ -23,9 +23,15 @@ interface UserDropdownProps {
     initials: string;
   };
   onLogout: () => void;
+  /**
+   * Whether the server offers this organization an upgrade
+   * (organization.upgradeAvailable). Items marked requiresUpgradeAvailable
+   * ("Upgrade Plan") are hidden otherwise.
+   */
+  upgradeAvailable?: boolean;
 }
 
-export function UserDropdown({ user, onLogout }: UserDropdownProps) {
+export function UserDropdown({ user, onLogout, upgradeAvailable = true }: UserDropdownProps) {
   const pathname = usePathname();
 
   return (
@@ -56,7 +62,7 @@ export function UserDropdown({ user, onLogout }: UserDropdownProps) {
           <div key={sectionIdx}>
             {sectionIdx > 0 && <DropdownMenuSeparator className="my-1" />}
             <div className="py-1">
-              {section.items.map((item) => {
+              {section.items.filter((item) => upgradeAvailable || !item.requiresUpgradeAvailable).map((item) => {
                 const isActive =
                   pathname === item.href ||
                   pathname.startsWith(item.href + '/');

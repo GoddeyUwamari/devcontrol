@@ -22,6 +22,11 @@ export interface Organization {
    * there is none.
    */
   entitlementHold?: 'payment' | 'subscription_inactive' | null;
+  /**
+   * Whether the app offers "Upgrade Plan" (backend upgradeAvailableOf): false
+   * on the top plan and for a plan our team manages.
+   */
+  upgradeAvailable?: boolean;
   createdAt: string;
   updatedAt: string;
 }

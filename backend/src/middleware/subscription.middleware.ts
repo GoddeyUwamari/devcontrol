@@ -220,16 +220,44 @@ export function effectiveTierOf(row: EntitlementRow): SubscriptionTier {
 }
 
 /**
+ * Where an organization's plan comes from:
+ *  - 'subscription': it records a Stripe subscription (any status);
+ *  - 'managed': it records none, and its stored plan is above free -- a plan
+ *    our team set up and bills (hand-provisioned);
+ *  - 'none': it records none and is on free.
+ */
+export type PlanSource = 'subscription' | 'managed' | 'none';
+
+export function planSourceOf(row: Pick<EntitlementRow, 'subscription_tier' | 'stripe_subscription_id'>): PlanSource {
+  if (row.stripe_subscription_id !== null && row.stripe_subscription_id !== undefined) return 'subscription';
+  return (row.subscription_tier || 'free') === 'free' ? 'none' : 'managed';
+}
+
+/** The highest plan (Revenue Protection). */
+export const TOP_TIER: SubscriptionTier = TIER_HIERARCHY[TIER_HIERARCHY.length - 1];
+
+/**
+ * Whether the app offers "Upgrade Plan" to this organization: never on the
+ * top plan, and never for a plan our team manages.
+ */
+export function upgradeAvailableOf(row: Pick<EntitlementRow, 'subscription_tier' | 'stripe_subscription_id'>): boolean {
+  return planSourceOf(row) !== 'managed' && (row.subscription_tier || 'free') !== TOP_TIER;
+}
+
+/**
  * `effectiveTier` and `entitlementHold` for an organization response: the
  * tier the plan gates enforce and the billing hold that lowers it, both from
  * the one decision (entitlementOf), so the UI shows what the server decides.
+ * `upgradeAvailable` (upgradeAvailableOf) decides the user menu's
+ * "Upgrade Plan" item.
  */
 export function entitlementFields(row: EntitlementRow): {
   effectiveTier: SubscriptionTier;
   entitlementHold: EntitlementHold | null;
+  upgradeAvailable: boolean;
 } {
   const { effectiveTier, hold } = entitlementOf(row);
-  return { effectiveTier, entitlementHold: hold };
+  return { effectiveTier, entitlementHold: hold, upgradeAvailable: upgradeAvailableOf(row) };
 }
 
 /** The columns entitlementOf reads, for the organization lookups below. */

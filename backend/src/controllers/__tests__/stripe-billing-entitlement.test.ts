@@ -358,16 +358,16 @@ describe('PR A leftovers: Checkout', () => {
 describe('PR A leftovers: the reservation replace is compare-and-swap', () => {
   it('replaces only while the reservation is still the one the caller expired', async () => {
     const { orgId } = await insertOrg();
-    const first = await tryReserveCheckout(orgId, 'pro:monthly', pool);
-    expect(first).not.toBeNull();
+    const first = (await tryReserveCheckout(orgId, 'pro:monthly', pool))?.reservationId;
+    expect(first).toBeDefined();
     // Another request clears it and takes a new one.
     await pool.query(
       `UPDATE organizations SET checkout_reservation_id = NULL, checkout_reservation_plan = NULL,
               checkout_reservation_expires_at = NULL, checkout_session_id = NULL WHERE id = $1`,
       [orgId]
     );
-    const second = await tryReserveCheckout(orgId, 'pro:monthly', pool);
-    expect(second).not.toBeNull();
+    const second = (await tryReserveCheckout(orgId, 'pro:monthly', pool))?.reservationId;
+    expect(second).toBeDefined();
 
     expect(await replaceCheckoutReservation(orgId, first!, 'starter:monthly')).toBeNull();
     expect((await orgRow(orgId)).checkout_reservation_id).toBe(second);
@@ -375,9 +375,9 @@ describe('PR A leftovers: the reservation replace is compare-and-swap', () => {
 
   it('still replaces its own reservation', async () => {
     const { orgId } = await insertOrg();
-    const first = await tryReserveCheckout(orgId, 'pro:monthly', pool);
-    const replaced = await replaceCheckoutReservation(orgId, first!, 'starter:monthly');
-    expect(replaced).not.toBeNull();
+    const first = (await tryReserveCheckout(orgId, 'pro:monthly', pool))?.reservationId;
+    const replaced = (await replaceCheckoutReservation(orgId, first!, 'starter:monthly'))?.reservationId;
+    expect(replaced).toBeDefined();
     expect(replaced).not.toBe(first);
     expect((await orgRow(orgId)).checkout_reservation_id).toBe(replaced);
   });
@@ -401,7 +401,7 @@ describe('PR A leftovers: the reservation replace is compare-and-swap', () => {
                 checkout_reservation_expires_at = NULL, checkout_session_id = NULL WHERE id = $1`,
         [orgId]
       );
-      taken = (await tryReserveCheckout(orgId, 'pro:monthly', pool))!;
+      taken = (await tryReserveCheckout(orgId, 'pro:monthly', pool))!.reservationId;
       return { id, status: 'expired' } as any;
     });
 

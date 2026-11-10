@@ -49,6 +49,32 @@ type Executor = Pool | PoolClient;
 const BILLABLE_SUBSCRIPTION_SQL = (terminalParam: string) =>
   `(stripe_subscription_id IS NOT NULL AND COALESCE(subscription_status, '') <> ALL(${terminalParam}::text[]))`;
 
+/**
+ * Whether the organization may get the free trial (config/trial.ts), read in
+ * the same statement that takes the reservation, so the decision is atomic
+ * with it. Deny-only beyond the one marker: the organization has never used
+ * its trial (trial_used_at, the only eligibility marker), has never recorded
+ * a subscription, and is not on a plan our team set up (no subscription and
+ * a stored tier above free). The trial is claimed only later, once Stripe
+ * shows a trial on a subscription verified as the organization's own
+ * (StripeService.claimTrial), so an abandoned, expired or failed checkout
+ * never uses it up.
+ */
+export const TRIAL_ELIGIBLE_SQL =
+  `(trial_used_at IS NULL AND stripe_subscription_id IS NULL AND COALESCE(subscription_tier, 'free') = 'free')`;
+
+/** A reservation this request holds, and whether its session may carry the trial. */
+export interface CheckoutReservation {
+  reservationId: string;
+  /** The organization's trial eligibility when the reservation was taken (before the switch and plan checks). */
+  trialEligible: boolean;
+}
+
+function reservationOf(rows: any[]): CheckoutReservation | null {
+  if (rows.length === 0) return null;
+  return { reservationId: rows[0].checkout_reservation_id as string, trialEligible: rows[0].trial_eligible === true };
+}
+
 export interface CheckoutState {
   stripeCustomerId: string | null;
   subscriptionTier: string | null;
@@ -66,14 +92,15 @@ export function checkoutPlanKey(tier: string, billingInterval: string): string {
 
 /**
  * Take the organization's Checkout reservation for `plan`. Returns the new
- * reservation id, or null when the organization records a billable
- * subscription or another reservation is still active.
+ * reservation (with the organization's trial eligibility, read in the same
+ * statement), or null when the organization records a billable subscription
+ * or another reservation is still active.
  */
 export async function tryReserveCheckout(
   organizationId: string,
   plan: string,
   executor: Executor = pool
-): Promise<string | null> {
+): Promise<CheckoutReservation | null> {
   const reservationId = randomUUID();
   const { rows } = await executor.query(
     `UPDATE organizations
@@ -85,7 +112,7 @@ export async function tryReserveCheckout(
         AND deleted_at IS NULL
         AND NOT ${BILLABLE_SUBSCRIPTION_SQL('$5')}
         AND (checkout_reservation_id IS NULL OR checkout_reservation_expires_at <= NOW())
-      RETURNING checkout_reservation_id`,
+      RETURNING checkout_reservation_id, ${TRIAL_ELIGIBLE_SQL} AS trial_eligible`,
     [
       organizationId,
       reservationId,
@@ -94,7 +121,7 @@ export async function tryReserveCheckout(
       TERMINAL_SUBSCRIPTION_STATUSES,
     ]
   );
-  return rows.length > 0 ? (rows[0].checkout_reservation_id as string) : null;
+  return reservationOf(rows);
 }
 
 /**
@@ -106,7 +133,7 @@ export async function replaceCheckoutReservation(
   organizationId: string,
   currentReservationId: string,
   plan: string
-): Promise<string | null> {
+): Promise<CheckoutReservation | null> {
   const reservationId = randomUUID();
   const { rows } = await pool.query(
     `UPDATE organizations
@@ -117,7 +144,7 @@ export async function replaceCheckoutReservation(
       WHERE id = $1
         AND checkout_reservation_id = $2
         AND NOT ${BILLABLE_SUBSCRIPTION_SQL('$6')}
-      RETURNING checkout_reservation_id`,
+      RETURNING checkout_reservation_id, ${TRIAL_ELIGIBLE_SQL} AS trial_eligible`,
     [
       organizationId,
       currentReservationId,
@@ -127,7 +154,7 @@ export async function replaceCheckoutReservation(
       TERMINAL_SUBSCRIPTION_STATUSES,
     ]
   );
-  return rows.length > 0 ? (rows[0].checkout_reservation_id as string) : null;
+  return reservationOf(rows);
 }
 
 /**
