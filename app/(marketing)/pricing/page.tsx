@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle2, Clock, Shield, Sparkles, Zap } from 'lucide-react'
+import { CheckCircle2, Clock, Shield, Sparkles } from 'lucide-react'
 import { FeatureComparisonTable } from '@/components/billing/feature-comparison-table'
 import { PricingFAQ } from '@/components/billing/pricing-faq'
 import { TrialCta, TrialLine } from '@/components/billing/trial-line'
@@ -188,7 +188,9 @@ export default function PricingPage() {
             <TrialLine
               variant="chip"
               className="flex items-center gap-1.5"
-              render={text => <><Zap size={14} className="text-violet-700" />{text}</>}
+              icon="zap"
+              iconSize={14}
+              iconClassName="text-violet-700"
             />
             <div className="flex items-center gap-1.5">
               <CheckCircle2 size={14} className="text-violet-700" />SOC 2 Readiness Planned
@@ -334,7 +336,7 @@ export default function PricingPage() {
           </h2>
           <p className="text-base sm:text-lg text-white/85 max-w-md mx-auto mb-8 leading-relaxed">
             Connect your AWS account and see what DevControl finds on the free Visibility plan.
-            <TrialLine variant="sentence" render={text => <> {text}.</>} />
+            <TrialLine variant="sentence" prefix=" " suffix="." />
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 flex-wrap">
             <TrialCta className="w-full sm:w-auto text-center bg-white text-violet-700 px-8 py-3.5 rounded-xl font-bold text-base no-underline" />

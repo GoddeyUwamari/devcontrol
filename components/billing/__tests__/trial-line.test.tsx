@@ -136,3 +136,29 @@ describe('pricing FAQ trial questions come from the trial line (L-4)', () => {
     )
   })
 })
+
+describe('TrialLine plain-data props (server pages can pass them)', () => {
+  it('icon, text span, prefix and suffix', async () => {
+    serve(ON)
+    const { container } = render(
+      <div>
+        <p data-testid="chip"><TrialLine variant="chip" icon="check-circle" iconClassName="w-4 h-4" textSpan /></p>
+        <p data-testid="sentence">Lead.<TrialLine variant="sentence" prefix=" " suffix="." /></p>
+      </div>,
+    )
+    await settle(container, 'on')
+    const chip = screen.getByTestId('chip')
+    expect(chip.querySelector('svg.lucide')?.getAttribute('class')).toContain('w-4 h-4')
+    expect(chip.querySelector('span > span')?.textContent).toBe('14-day free trial (card required)')
+    expect(screen.getByTestId('sentence').textContent).toBe('Lead. 14-day free trial on Cost Control and Optimization Engine (card required).')
+  })
+
+  it('off: the icon goes with the line (nothing renders)', async () => {
+    serve(OFF)
+    const { container } = render(<p data-testid="chip"><TrialLine variant="chip" icon="zap" textSpan /></p>)
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(container.querySelector('svg')).toBeNull()
+    expect(container.textContent).toBe('')
+  })
+})

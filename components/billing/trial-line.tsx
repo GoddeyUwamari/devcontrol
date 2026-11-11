@@ -10,7 +10,8 @@
  * (the billing summary's trial.eligible, which applies the same switch) and
  * pass `eligible` instead; they make no public request.
  */
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties } from 'react'
+import { Check, CheckCircle2, Zap } from 'lucide-react'
 import limits from '@/lib/plan/plan-limits.json'
 import { PLAN_NAME, type Tier } from '@/lib/plan/plan-names'
 import { useBillingOffer } from '@/lib/hooks/use-billing-offer'
@@ -71,18 +72,37 @@ export function TrialCta({ className, style, plan }: TrialCtaProps) {
 
 type PublicVariant = 'trust' | 'chip' | 'sentence' | 'table'
 
+/** Icons a trial line can show before its text (chosen by name so server pages can pass it). */
+const ICONS = { zap: Zap, check: Check, 'check-circle': CheckCircle2 } as const
+export type TrialLineIcon = keyof typeof ICONS
+
+/**
+ * Props are plain data only (strings, numbers, style objects): server pages
+ * render this client component, and a function prop can't cross that boundary
+ * ("Functions cannot be passed directly to Client Components").
+ */
 interface TrialLineProps {
   variant: PublicVariant
   /** Trust row only: the items after the trial item, joined with " · ". */
   rest?: readonly string[]
   className?: string
   style?: CSSProperties
-  /** Wraps the text (e.g. an icon before a chip). */
-  render?: (text: string) => ReactNode
+  /** An icon before the text, e.g. on a chip. */
+  icon?: TrialLineIcon
+  iconSize?: number
+  iconClassName?: string
+  iconStyle?: CSSProperties
+  /** Put the text in its own <span> (next to an icon). */
+  textSpan?: boolean
+  /** Text around the trial wording, e.g. " " before and "." after a sentence. */
+  prefix?: string
+  suffix?: string
 }
 
 /** The trial line for public pages. Off: nothing, or "Free Visibility plan" in a trust row. */
-export function TrialLine({ variant, rest = [], className, style, render }: TrialLineProps) {
+export function TrialLine({
+  variant, rest = [], className, style, icon, iconSize, iconClassName, iconStyle, textSpan, prefix = '', suffix = '',
+}: TrialLineProps) {
   const offer = useBillingOffer()
   const plans = trialPlanNames(offer.plans)
   let text: string | null
@@ -97,10 +117,12 @@ export function TrialLine({ variant, rest = [], className, style, render }: Tria
   }
   const parts = variant === 'trust' ? [text, ...rest].filter((p): p is string => !!p) : text ? [text] : []
   if (parts.length === 0) return null
-  const joined = parts.join(' · ')
+  const joined = `${prefix}${parts.join(' · ')}${suffix}`
+  const Icon = icon ? ICONS[icon] : null
   return (
     <span className={className} style={style} data-trial={offer.trialOn ? 'on' : 'off'}>
-      {render ? render(joined) : joined}
+      {Icon && <Icon size={iconSize} className={iconClassName} style={iconStyle} />}
+      {textSpan ? <span>{joined}</span> : joined}
     </span>
   )
 }

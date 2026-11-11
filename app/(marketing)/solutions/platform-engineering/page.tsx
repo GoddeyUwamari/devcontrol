@@ -402,7 +402,9 @@ function FinalCTASection() {
           <TrialLine
             variant="chip"
             className="flex items-center gap-1.5"
-            render={(text) => <><CheckCircle2 className="w-4 h-4 text-purple-500" /><span>{text}</span></>}
+            icon="check-circle"
+            iconClassName="w-4 h-4 text-purple-500"
+            textSpan
           />
         </div>
       </div>

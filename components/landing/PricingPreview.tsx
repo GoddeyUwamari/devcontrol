@@ -86,7 +86,7 @@ export function PricingPreview() {
           </h2>
           <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
             Start on the free Visibility plan. Upgrade when you need more.
-            <TrialLine variant="table" render={(text) => <> {text}</>} />
+            <TrialLine variant="table" prefix=" " />
           </p>
         </div>
 
@@ -177,7 +177,10 @@ export function PricingPreview() {
           <TrialLine
             variant="chip"
             className="flex items-center gap-2"
-            render={(text) => <><Check className="h-4 w-4" style={{ color: '#16a34a' }} /><span>{text}</span></>}
+            icon="check"
+            iconClassName="h-4 w-4"
+            iconStyle={{ color: '#16a34a' }}
+            textSpan
           />
           {['Free Visibility plan', 'Cancel anytime', 'No hidden fees', 'SOC 2 Readiness Planned'].map((item) => (
             <div key={item} className="flex items-center gap-2">
