@@ -376,7 +376,7 @@ export default function MidMarketPage() {
         </div>
       </section>
 
-      {/* SOCIAL PROOF */}
+      {/* WHAT A FIRST SCAN LOOKS FOR (replaces an invented customer quote, catalog CAT-0) */}
       <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '40px 48px', background: '#fff' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
@@ -387,82 +387,27 @@ export default function MidMarketPage() {
             borderRadius: '20px',
             overflow: 'hidden',
           }}>
-            {/* Left — stat column */}
             <div style={{
               background: '#7c3aed',
               padding: isMobile ? '32px 24px' : '48px 40px',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'center',
-              gap: '32px',
             }}>
               <p style={{
                 fontSize: '0.72rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)',
                 textTransform: 'uppercase', letterSpacing: '0.12em', margin: 0,
               }}>
-                Customer Result
+                What a first scan looks for
               </p>
-              {[
-                { value: '$31K', label: 'Monthly savings found' },
-                { value: '3 teams', label: 'Onboarded in one day' },
-                { value: '90 days', label: 'To SOC 2 readiness baseline' },
-              ].map(({ value, label }) => (
-                <div key={label}>
-                  <p style={{ fontSize: isMobile ? '1.6rem' : '2rem', fontWeight: 800, color: '#fff', margin: '0 0 4px', lineHeight: 1 }}>{value}</p>
-                  <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.65)', margin: 0 }}>{label}</p>
-                </div>
-              ))}
             </div>
-            {/* Right — quote */}
             <div style={{ padding: isMobile ? '32px 24px' : '48px', background: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <p style={{
-                fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
-                textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '20px',
-              }}>
-                VP Engineering · B2B SaaS · 65 Engineers
-              </p>
-              <p style={{
                 fontSize: isMobile ? '1rem' : '1.2rem', fontWeight: 600, color: '#0f172a',
-                lineHeight: 1.65, marginBottom: '28px',
+                lineHeight: 1.65, margin: 0,
               }}>
-                {'\u201C'}We were flying blind across 3 AWS accounts and 4 teams. DevControl gave us full visibility in 15 minutes and found{' '}
-                <span style={{ color: '#7c3aed', fontWeight: 800 }}>$31,000/month in waste we had no idea existed</span>
-                {'. Our CFO now uses the cost dashboard in every board meeting.\u201D'}
+                Low-activity EC2 instances · Unattached EBS volumes · Open security groups
               </p>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                flexDirection: isMobile ? 'column' : 'row',
-              }}>
-                <div style={{
-                  width: '44px', height: '44px', borderRadius: '50%',
-                  background: '#EDE9FE', color: '#7C3AED',
-                  fontWeight: 700, fontSize: '13px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  DK
-                </div>
-                <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
-                  <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>David K.</p>
-                  <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>VP Engineering · B2B SaaS · 65 engineers</p>
-                </div>
-                <div style={{
-                  marginLeft: isMobile ? '0' : '8px',
-                  background: '#ECFDF5', color: '#059669',
-                  padding: '4px 12px', borderRadius: '999px',
-                  fontSize: '11px', fontWeight: 600,
-                }}>
-                  Saved $31K/month
-                </div>
-              </div>
-              <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #f1f5f9' }}>
-                <a href="/case-studies" style={{
-                  fontSize: '0.875rem', fontWeight: 700, color: '#7c3aed',
-                  textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px',
-                }}>
-                  {'Read more customer stories \u2192'}
-                </a>
-              </div>
             </div>
           </div>
         </div>

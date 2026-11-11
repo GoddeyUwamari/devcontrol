@@ -16,13 +16,6 @@ const personas = [
       'Make confident scaling decisions',
     ],
     image: '/landing/personas/eng-leaders.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'DevControl gives me the numbers I need for every board update without bugging my engineers or digging through AWS myself.',
-      name: 'Jordan Ellis',
-      title: 'VP Engineering, SaaS Co.',
-      initials: 'JE',
-    },
   },
   {
     id: 'eng-managers',
@@ -35,13 +28,6 @@ const personas = [
       'Weekly AI email summaries',
     ],
     image: '/landing/personas/eng-managers.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'I used to spend hours pulling AWS cost data. Now the numbers just show up every Monday, ready for leadership review.',
-      name: 'Sam Rivera',
-      title: ' Engineering Manager, Platform Team',
-      initials: 'SR',
-    },
   },
   {
     id: 'platform-engineers',
@@ -54,13 +40,6 @@ const personas = [
       'Slack and Jira integrations',
     ],
     image: '/landing/personas/platform-engineers.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: "The anomaly alerts caught a misconfigured Lambda we’d been paying for for three months and helped us shut it down fast.",
-      name: ' Alex Kim',
-      title: ' Senior Platform Engineer',
-      initials: 'AK',
-    },
   },
   {
     id: 'product-leaders',
@@ -73,13 +52,6 @@ const personas = [
       'Monthly exec reports without engineering asks',
     ],
     image: '/landing/personas/product-leaders.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'It finally connects infrastructure health to shipping velocity, so my PMs can see what’s slowing delivery down',
-      name: ' Taylor Morgan',
-      title: 'Head of Product, B2B SaaS',
-      initials: 'TM',
-    },
   },
   {
     id: 'finance-teams',
@@ -92,13 +64,6 @@ const personas = [
       'Executive AI Reports for forecasting',
     ],
     image: '/landing/personas/finance-teams.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'We cut our cloud cost reconciliation process from two days to thirty minutes.',
-      name: ' Dana Okafor',
-      title: ' Director of Finance, Tech Startup',
-      initials: 'DO',
-    },
   },
   {
     id: 'developers',
@@ -111,13 +76,6 @@ const personas = [
       'Slack-native, no context switching',
     ],
     image: '/landing/personas/developers.png',
-    // replace with real customer before launch
-    testimonial: {
-      quote: 'I can ask "what did my service cost last week?" in Slack and get a real answer in seconds.',
-      name: ' Chris Nakamura',
-      title: ' Senior Software Engineer',
-      initials: 'CN',
-    },
   },
 ]
 
@@ -197,23 +155,11 @@ export function PersonaSection() {
               />
             </div>
 
-            {/* PLACEHOLDER testimonial — replace with real customer before launch */}
-            <div className="rounded-2xl border-2 border-dashed border-violet-200 bg-white/60 p-5">
-              <div className="mb-3 flex items-center gap-3">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
-                  {active.testimonial.initials}
-                </div>
-                <div>
-                  {/* replace with real customer before launch */}
-                  <p className="text-sm font-semibold text-slate-800">{active.testimonial.name}</p>
-                  <p className="text-xs text-slate-500">{active.testimonial.title}</p>
-                </div>
-              </div>
-              <p className="text-sm italic leading-relaxed text-slate-600">
-                &ldquo;{active.testimonial.quote}&rdquo;
-              </p>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-violet-400">
-                {/* Placeholder — replace before launch */}
+            {/* The same real checks on every tab; no customer quotes (catalog CAT-0). */}
+            <div className="rounded-2xl border-2 border-dashed border-violet-200 bg-white/60 p-5" data-testid="persona-first-scan">
+              <p className="mb-2 text-sm font-semibold text-slate-800">What a first scan looks for</p>
+              <p className="text-sm leading-relaxed text-slate-600">
+                Low-activity EC2 instances · Unattached EBS volumes · Open security groups
               </p>
             </div>
           </div>

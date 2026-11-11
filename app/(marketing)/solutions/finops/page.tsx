@@ -20,7 +20,7 @@ export default function FinOpsPage() {
   const isTablet = width >= 640 && width < 1024
 
   const features = [
-    { icon: DollarSign, stat: '$800–$8K+', statSub: 'monthly waste identified', title: 'AI Cost Recommendations', desc: 'Machine learning identifies idle resources, right-sizing opportunities, and reserved instance gaps. Every recommendation comes with projected savings before you act.' },
+    { icon: DollarSign, title: 'AI Cost Recommendations', desc: 'Machine learning identifies idle resources, right-sizing opportunities, and reserved instance gaps. Every recommendation comes with projected savings before you act.' },
     { icon: BarChart3, stat: '30%', statSub: 'typical cost reduction', title: 'Real-Time Spend Tracking', desc: 'Live cost breakdown by service, team, environment, and tag. Allocate every dollar of AWS spend to the right cost center — automatically, without manual tagging.' },
     { icon: Bell, stat: '< 5min', statSub: 'time to anomaly alert', title: 'Anomaly Detection & Alerts', desc: 'Instant notifications when spend spikes beyond expected thresholds. Catch runaway Lambda costs, accidental data transfer, and forgotten dev environments before month end.' },
     { icon: TrendingDown, stat: '95%', statSub: 'forecast accuracy', title: 'Predictive Budget Forecasting', desc: 'Predict next month\'s AWS bill with 95% accuracy. Set budgets by team, product, or environment and get alerts before you breach them — not after.' },
@@ -145,7 +145,7 @@ export default function FinOpsPage() {
               </div>
 
               <p style={{ fontSize: '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
-                {'A FinOps team reduced their AWS bill by 38% in 30 days — recovering $18,200/month that had been invisible in their cost explorer.'}
+                {'What a first scan looks for: low-activity EC2 instances, unattached EBS volumes and open security groups.'}
               </p>
             </div>
 
@@ -272,15 +272,17 @@ export default function FinOpsPage() {
                   <Icon size={18} style={{ color: '#ffffff' }} />
                 </div>
 
-                {/* Embedded stat */}
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
-                    {stat}
+                {/* Embedded stat (a card may have none) */}
+                {stat && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#7c3aed', lineHeight: 1 }}>
+                      {stat}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 500, marginTop: '2px' }}>
+                      {statSub}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 500, marginTop: '2px' }}>
-                    {statSub}
-                  </div>
-                </div>
+                )}
 
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1e1b4b', marginBottom: '8px' }}>
                   {title}

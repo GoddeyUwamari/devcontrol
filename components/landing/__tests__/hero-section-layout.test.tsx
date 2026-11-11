@@ -77,9 +77,9 @@ describe('HeroSection copy', () => {
     render(<HeroSection />)
     const outcome = screen.getByTestId('hero-outcome-card')
     expect(Array.from(outcome.children).map(text)).toEqual([
-      'Recent client outcome',
-      '$8,000/mo',
-      'in unnecessary AWS spend identified in under 60 seconds, with no agent and no code changes.',
+      'What a first scan looks for',
+      '4 cost checks',
+      'Low-activity EC2 instances, unattached EBS volumes, unused Elastic IPs and gp2 volumes, with an estimated monthly saving for each.',
     ])
     expect(outcome.firstElementChild?.className).toContain('uppercase')
     const audit = screen.getByTestId('hero-audit-card')

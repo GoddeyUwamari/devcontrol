@@ -130,9 +130,6 @@ export default function DoraMetricsPage() {
               </span>
             ))}
           </div>
-          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
-            {"Sophia P., VP Engineering at an Enterprise SaaS company: DORA metrics used to take half a day to compile for board reviews — now it's real-time and automatic."}
-          </p>
         </div>
       </section>
 
@@ -261,72 +258,6 @@ export default function DoraMetricsPage() {
                 <p style={{ fontSize: '0.9rem', color: '#1f2937', lineHeight: 1.75 }}>
                   {desc}
                 </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* SOCIAL PROOF */}
-      <section style={{
-        padding: isMobile ? '40px 16px' : isTablet ? '48px 32px' : '64px 48px',
-        background: '#faf5ff', borderTop: '1px solid #ede9fe', borderBottom: '1px solid #ede9fe',
-      }}>
-        <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
-          <div style={{
-            fontSize: isMobile ? '1.1rem' : '1.5rem', fontWeight: 700, color: '#0f172a',
-            lineHeight: 1.6, marginBottom: '28px',
-          }}>
-            {'\u201C'}DORA metrics used to take us{' '}
-            <span style={{ color: '#7c3aed', fontWeight: 800 }}>half a day to compile for board reviews</span>
-            {'. Now it\'s real-time and automatic. Our CTO uses it directly in QBRs.\u201D'}
-          </div>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: isMobile ? '12px' : '16px',
-            marginBottom: '32px',
-          }}>
-            <div style={{
-              width: '48px', height: '48px', borderRadius: '50%',
-              background: '#EDE9FE', color: '#7C3AED',
-              fontWeight: 700, fontSize: '14px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              SP
-            </div>
-            <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
-              <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Sophia P.</p>
-              <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>VP Engineering · Enterprise SaaS</p>
-            </div>
-            <div style={{
-              marginLeft: isMobile ? '0' : '8px',
-              background: '#ECFDF5', color: '#059669',
-              padding: '4px 12px', borderRadius: '999px',
-              fontSize: '11px', fontWeight: 600,
-            }}>
-              Eliminated 4hrs manual reporting/week
-            </div>
-          </div>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            justifyContent: 'center',
-            gap: isMobile ? '16px' : '48px',
-            flexWrap: 'wrap',
-            alignItems: isMobile ? 'center' : undefined,
-          }}>
-            {[
-              { value: '4 metrics', label: 'Automated from day one' },
-              { value: '15 min', label: 'Setup to first DORA score' },
-              { value: 'Zero', label: 'Manual data collection' },
-            ].map(({ value, label }) => (
-              <div key={label} style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: isMobile ? '1.1rem' : '1.4rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
-                <p style={{ fontSize: '0.78rem', color: '#64748B', margin: 0 }}>{label}</p>
               </div>
             ))}
           </div>

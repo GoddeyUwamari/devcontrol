@@ -29,7 +29,6 @@ export default function StartupsPage() {
   ]
 
   const impacts = [
-    { value: '$800–$8K+', label: 'Monthly waste identified' },
     { value: '15min', label: 'Time to first insight' },
     { value: '2 weeks', label: 'To establish a SOC 2 readiness baseline' },
   ]
@@ -123,7 +122,7 @@ export default function StartupsPage() {
             ))}
           </div>
           <p style={{ fontSize: '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
-            {'A seed-stage startup cut their AWS bill by $1,800/month and closed their first enterprise deal within 6 weeks of connecting DevControl.'}
+            {'What a first scan looks for: low-activity EC2 instances, unattached EBS volumes and open security groups.'}
           </p>
         </div>
       </section>
@@ -132,7 +131,7 @@ export default function StartupsPage() {
       <section style={{ padding: isMobile ? '32px 20px' : isTablet ? '40px 32px' : '48px', background: '#fafafa', borderBottom: '1px solid #f3f4f6' }}>
         <div style={{
           maxWidth: '1400px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
           gap: isMobile ? '24px' : '32px', textAlign: 'center',
         }}>
           {impacts.map(({ value, label }) => (
@@ -273,16 +272,16 @@ export default function StartupsPage() {
               fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed',
               textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px',
             }}>
-              Real Startup Result
+              What a first scan looks for
             </p>
             <h2 style={{
               fontSize: isMobile ? '1.3rem' : 'clamp(1.5rem, 2.5vw, 2rem)', fontWeight: 700,
               color: '#1e1b4b', letterSpacing: '-0.02em', marginBottom: '8px',
             }}>
-              From Seed to Enterprise-Ready in 6 Weeks
+              Four checks on your first scan
             </h2>
             <p style={{ fontSize: '1.1rem', color: '#1f2937', maxWidth: '480px', margin: '0 auto' }}>
-              How a seed-stage fintech used DevControl to cut costs, close enterprise deals, and raise their Series A.
+              Each finding shows what DevControl checked and, for cost findings, an estimated monthly saving.
             </p>
           </div>
 
@@ -294,35 +293,35 @@ export default function StartupsPage() {
           }}>
             {[
               {
-                week: 'Week 1',
+                week: 'Cost',
                 color: '#7c3aed',
-                title: 'Connected AWS',
-                body: 'Setup took 8 minutes. Discovered $1,800/month in idle resources immediately.',
-                outcome: '$1,800/mo found',
+                title: 'Low-activity EC2 instances',
+                body: 'CPU and network stayed low every day for 30 days, and the instance isn\'t behind a load balancer or in an Auto Scaling group.',
+                outcome: 'Estimated monthly saving',
               },
               {
-                week: 'Week 2',
+                week: 'Cost',
                 color: '#7c3aed',
-                title: 'Fixed Cost Leaks',
-                body: 'Terminated unused EC2 instances and right-sized 3 RDS databases.',
-                outcome: '24% bill reduction',
+                title: 'Unattached EBS volumes',
+                body: 'Volumes you pay for that no instance is using.',
+                outcome: 'Estimated monthly saving',
               },
               {
-                week: 'Week 3',
+                week: 'Cost',
                 color: '#7c3aed',
-                title: 'SOC 2 Baseline',
-                body: 'Compliance dashboard surfaced 12 security findings. All resolved in 4 days.',
-                outcome: 'SOC 2 readiness improved',
+                title: 'Unused Elastic IPs',
+                body: 'Addresses that are allocated but not attached to a running instance.',
+                outcome: 'Estimated monthly saving',
               },
               {
-                week: 'Week 6',
+                week: 'Security',
                 color: '#059669',
-                title: 'Enterprise Deal Closed',
-                body: 'Used DevControl compliance dashboard to answer security questionnaire in 20 minutes.',
-                outcome: 'First enterprise logo',
+                title: 'Open security groups',
+                body: 'Rules that allow traffic from anywhere (0.0.0.0/0).',
+                outcome: 'Security finding',
               },
             ].map(({ week, color, title, body, outcome }, i) => (
-              <div key={week} style={{
+              <div key={title} style={{
                 padding: isMobile ? '20px' : '28px 24px',
                 background: '#fff',
                 border: '1px solid #E2E8F0',
