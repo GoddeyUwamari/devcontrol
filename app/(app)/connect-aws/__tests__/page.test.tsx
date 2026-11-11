@@ -9,7 +9,7 @@
  */
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ConnectAwsPage from '../page'
@@ -370,6 +370,54 @@ describe('Connect AWS page: checking and connected', () => {
     await screen.findByTestId('coverage-headline')
     expect(mockGetCoverage).toHaveBeenCalledTimes(3)
   })
+
+  // L-3: the query really uses coverageRefetchInterval (60 s while a scan runs or right after a connect).
+  describe('coverage refetch timing is wired', () => {
+    const RUNNING: ServicesCoverage = {
+      ...COVERAGE,
+      scan_in_progress: { since: new Date().toISOString() },
+      last_scan: { status: 'running', started_at: new Date().toISOString(), completed_at: null, warnings: [] },
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('re-reads coverage after 60 s while a scan is in progress', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
+      mockGetCoverage.mockResolvedValue(RUNNING)
+      renderPage()
+      await screen.findByTestId('coverage-headline')
+      expect(mockGetCoverage).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(mockGetCoverage).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1_500)
+      await waitFor(() => expect(mockGetCoverage).toHaveBeenCalledTimes(2))
+    })
+
+    it('right after a connect, re-reads coverage until the first scan has a job row', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      mockGetCoverage.mockResolvedValue({ ...COVERAGE, last_scan: null, last_successful_scan_at: null })
+      mockConnect.mockResolvedValue({ account: ACCOUNT, permissionCheck: { checks: ALL_VERIFIED } })
+      renderPage()
+      fireEvent.click(await fillValidRoleArnAndGetButton())
+      await screen.findByTestId('connected-view')
+      await waitFor(() => expect(mockGetCoverage).toHaveBeenCalled())
+      const before = mockGetCoverage.mock.calls.length
+      await vi.advanceTimersByTimeAsync(60_500)
+      await waitFor(() => expect(mockGetCoverage.mock.calls.length).toBeGreaterThan(before))
+    })
+
+    it('does not re-read when no scan is running and nothing was just connected', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
+      renderPage()
+      await screen.findByTestId('coverage-headline')
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(mockGetCoverage).toHaveBeenCalledTimes(1)
+    })
+  })
 })
 
 describe('Connect AWS page: cache invalidation', () => {
@@ -480,6 +528,18 @@ describe('Connect AWS page: errors by code (board 6)', () => {
     expectNoRemovedText()
   })
 
+  it('6e end to end: after the 409 the refetched state is connected, and the page switches to board 4', async () => {
+    mockGetAccountsAndConnection.mockResolvedValueOnce(NOT_CONNECTED).mockResolvedValue(CONNECTED)
+    mockConnect.mockRejectedValue({ response: { status: 409, data: { code: 'ALREADY_CONNECTED', message: 'x' } } })
+    renderPage()
+    fireEvent.click(await fillValidRoleArnAndGetButton())
+    await screen.findByTestId('connected-view')
+    expect(mockGetAccountsAndConnection).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('connected-account-id').textContent).toBe('123456789012')
+    expect(screen.queryByPlaceholderText(/arn:aws:iam/i)).toBeNull()
+    expect(mockConnect).toHaveBeenCalledTimes(1)
+  })
+
   it('a network failure (no response) is not blamed on the Role ARN', async () => {
     await failWith(new Error('Network Error'))
     expect((await screen.findByTestId('connect-error')).textContent).toBe("We couldn't reach DevControl. Check your connection and try again.")
@@ -522,6 +582,47 @@ describe('Connect AWS page: board 7 and the sidebar', () => {
     await screen.findByTestId('connected-view')
     expect(screen.queryByRole('link', { name: 'Set it up by hand →' })).toBeNull()
     expect(screen.getByRole('link', { name: "What DevControl can and can't do →" })).toBeInTheDocument()
+  })
+
+  // L-2 (PE-D2): every contact link is exactly the support address with the fixed subject, and never
+  // carries the account ID, the role ARN or the External ID, in the setup, connected and 409 states.
+  describe('every contact link is exactly the support mailto, with no account data', () => {
+    const EXPECTED_MAILTO = 'mailto:support@getdevcontrol.com?subject=AWS%20connection'
+
+    function expectContactLinks(minimum: number) {
+      const links = [...document.querySelectorAll('a[href^="mailto:"]')].map((a) => a.getAttribute('href') ?? '')
+      expect(links.length).toBeGreaterThanOrEqual(minimum)
+      for (const href of links) {
+        expect(href).toBe(EXPECTED_MAILTO)
+        const decoded = decodeURIComponent(href)
+        for (const secret of ['123456789012', 'arn:aws', 'DevControlRole', 'ext-123', PLATFORM]) expect(decoded).not.toContain(secret)
+      }
+    }
+
+    it('the constant is the literal', () => {
+      expect(SUPPORT_MAILTO).toBe(EXPECTED_MAILTO)
+    })
+
+    it('setup: Need help?, board 7 data and disconnect links', async () => {
+      renderPage()
+      await screen.findByTestId('external-id-field')
+      expectContactLinks(3)
+    })
+
+    it('connected: board 4 and board 7 links', async () => {
+      mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
+      renderPage()
+      await screen.findByTestId('coverage-headline')
+      expectContactLinks(4)
+    })
+
+    it('after a 409 ALREADY_CONNECTED, with the ARN typed in', async () => {
+      mockConnect.mockRejectedValue({ response: { status: 409, data: { code: 'ALREADY_CONNECTED', message: 'x' } } })
+      renderPage()
+      fireEvent.click(await fillValidRoleArnAndGetButton())
+      await screen.findByTestId('connect-error')
+      expectContactLinks(4)
+    })
   })
 })
 

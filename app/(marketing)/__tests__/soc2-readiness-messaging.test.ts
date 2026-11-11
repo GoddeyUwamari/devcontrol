@@ -123,7 +123,10 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
   // SOC 2 readiness stays in the product and on pricing. The Connect page's files make no SOC 2 statement
   // at all, and the prohibited-claim scan above still covers each of them.
   it('the connect-aws page makes no SOC 2 statement (the readiness line moved off the Connect page)', () => {
-    for (const file of CORRECTED_FILES.filter((f) => f.startsWith('app/(app)/connect-aws/'))) {
+    const connectFiles = CORRECTED_FILES.filter((f) => f.startsWith('app/(app)/connect-aws/'))
+    // Never vacuous: the page and its five component/copy files are all scanned.
+    expect(connectFiles).toHaveLength(6)
+    for (const file of connectFiles) {
       expect(readCode(file), file).not.toMatch(/SOC\s*2/i)
     }
   })
