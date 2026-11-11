@@ -78,7 +78,7 @@ function AlertsContent() {
     if (updates.severity !== undefined) { if (updates.severity === 'all') params.delete('severity'); else params.set('severity', updates.severity); }
     if (updates.status !== undefined) { if (updates.status === 'all') params.delete('status'); else params.set('status', updates.status); }
     const queryString = params.toString();
-    router.push(`/admin/alerts${queryString ? `?${queryString}` : ''}`);
+    router.push(`/observability/alerts${queryString ? `?${queryString}` : ''}`);
   };
 
   const filters: AlertFiltersType & { page: number; limit: number } = { dateRange, page, limit: 50, ...(selectedSeverity !== 'all' && { severity: selectedSeverity as any }), ...(selectedStatus !== 'all' && { status: selectedStatus as any }) };

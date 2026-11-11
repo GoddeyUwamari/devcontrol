@@ -16,9 +16,12 @@ import {
 
 interface InvoiceListProps {
   invoices: Invoice[];
+  /** The plan is set up and billed by our team (subscription.plan.source === 'managed'):
+   *  its invoices are not self-serve Stripe invoices and never appear here. */
+  managed?: boolean;
 }
 
-export function InvoiceList({ invoices }: InvoiceListProps) {
+export function InvoiceList({ invoices, managed = false }: InvoiceListProps) {
   const getStatusBadge = (status: Invoice['status']) => {
     switch (status) {
       case 'paid':
@@ -63,10 +66,22 @@ export function InvoiceList({ invoices }: InvoiceListProps) {
         <CardContent>
           <div className="text-center py-8">
             <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No invoices yet</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Your invoices will appear here after your first billing cycle
-            </p>
+            {managed ? (
+              <>
+                <p className="text-muted-foreground">No invoices on this page</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Your plan is billed by our team, so invoices come by email, not through this page. For a copy, email{' '}
+                  <a href="mailto:support@getdevcontrol.com" className="text-primary hover:underline">support@getdevcontrol.com</a>.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-muted-foreground">No invoices yet</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Your invoices will appear here after your first billing cycle
+                </p>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

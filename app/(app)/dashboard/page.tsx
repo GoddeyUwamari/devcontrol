@@ -168,7 +168,7 @@ export default function DashboardPage() {
 
   // Same authoritative cost_recommendations boundary /costs and /cost-optimization
   // already consume, via costRecommendationsService -- no independent fetch/transform.
-  const { data: costRecsRaw = [], isLoading: costRecsLoading, isError: costRecsFailed } = useQuery<CostRecommendation[]>({
+  const { data: costRecsRaw = [], isLoading: costRecsLoading, isError: costRecsFailed, refetch: refetchCostRecs } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations', organization?.id],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
     staleTime: 60_000, refetchInterval: 300_000,
@@ -178,7 +178,7 @@ export default function DashboardPage() {
 
   // Server-computed aggregate (same SUM /costs and /costs/efficiency use via
   // getStats()) rather than a client-side reduce over costRecsRaw.
-  const { data: costRecStats, isError: costRecStatsFailed } = useQuery({
+  const { data: costRecStats, isLoading: costRecStatsLoading, isError: costRecStatsFailed, refetch: refetchCostRecStats } = useQuery({
     queryKey: ['cost-recommendations-stats', organization?.id],
     queryFn: costRecommendationsService.getStats,
     staleTime: 60_000, refetchInterval: 300_000,
@@ -190,14 +190,14 @@ export default function DashboardPage() {
   // scheduled discovery job (resource_discovery_jobs.cost_analysis_completed).
   // Both histories feed pickLatestAnalysis() + deriveAnalysisStatus() below --
   // the same evaluation state /costs and /cost-optimization show.
-  const { data: analysisRuns, isLoading: analysisRunsLoading, isError: analysisRunsFailed } = useQuery({
+  const { data: analysisRuns, isLoading: analysisRunsLoading, isError: analysisRunsFailed, refetch: refetchAnalysisRuns } = useQuery({
     queryKey: ['cost-analysis-runs', organization?.id],
     queryFn: () => costRecommendationsService.getAnalysisRuns(5),
     staleTime: 60_000, refetchInterval: 300_000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && !!organization?.id,
   })
-  const { data: discoveryJobs, isLoading: discoveryJobsLoading, isError: discoveryJobsFailed } = useQuery({
+  const { data: discoveryJobs, isLoading: discoveryJobsLoading, isError: discoveryJobsFailed, refetch: refetchDiscoveryJobs } = useQuery({
     queryKey: ['discovery-jobs', organization?.id],
     queryFn: () => awsResourcesService.getDiscoveryJobs(5),
     staleTime: 60_000, refetchInterval: 300_000,
@@ -794,6 +794,12 @@ export default function DashboardPage() {
                   monthlySavingsLabel={monthlySavings > 0 ? formatSavingsCents(monthlySavings) : null}
                   annualSavingsLabel={monthlySavings > 0 ? formatSavingsCents(annualSavings) : null}
                   isDemoActive={isDemoActive}
+                  evaluationState={opportunityEvaluationState}
+                  activeCount={activeOpportunityCount}
+                  ceilingLabel={!isDemoActive && (costRecStats?.potentialSavingsCeiling ?? 0) > 0 ? formatSavingsCents(roundCents(costRecStats!.potentialSavingsCeiling)) : null}
+                  statsLoading={!isDemoActive && costRecStatsLoading}
+                  statsFailed={!isDemoActive && costRecStatsFailed && !costRecStats}
+                  onRetry={() => { void refetchCostRecStats(); void refetchCostRecs(); void refetchAnalysisRuns(); void refetchDiscoveryJobs() }}
                 />
               </div>
             </div>

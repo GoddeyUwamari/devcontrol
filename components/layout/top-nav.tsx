@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { UserDropdown } from '@/components/ui/user-dropdown';
 import { cn } from '@/lib/utils';
+import { COMING_SOON } from '@/lib/features/coming-soon';
 import { anomalyService } from '@/lib/services/anomaly.service';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { quickActions } from '@/lib/navigation-config';
@@ -59,14 +60,14 @@ export const navItems: NavItem[] = [
     label: 'Costs',
     icon: DollarSign,
     children: [
-      { label: 'Cost Overview', href: '/costs', icon: DollarSign, desc: 'Real-time spend tracking' },
-      { label: 'Optimization', href: '/cost-optimization', icon: TrendingDown, desc: 'AI savings recommendations' },
+      { label: 'Cost Overview', href: '/costs', icon: DollarSign, desc: 'Spend from AWS Cost Explorer' },
+      { label: 'Optimization', href: '/cost-optimization', icon: TrendingDown, desc: 'Savings recommendations' },
       { label: 'Optimization Controls', href: '/cost-optimization/controls', icon: SlidersHorizontal, desc: 'Tune detection thresholds', badge: 'Enterprise' },
-      { label: 'Forecast', href: '/forecast', icon: BarChart3, desc: 'Predictive budget forecasting' },
+      { label: 'Forecast', href: '/forecast', icon: BarChart3, desc: 'Forecast future AWS spend' },
       { label: 'Invoices', href: '/invoices', icon: FileText, desc: 'Billing history' },
       { label: 'AI Reports', href: '/ai-reports', icon: Sparkles, desc: 'AI-generated cost reports' },
       { label: 'Efficiency', href: '/costs/efficiency', icon: Activity, desc: 'Resource efficiency analysis' },
-      { label: 'By Team', href: '/costs/by-team', icon: Users, desc: 'Cost attribution by team' },
+      { label: 'By Team', href: '/costs/by-team', icon: Users, desc: 'Cost attribution by team', badge: COMING_SOON },
     ],
   },
   {
@@ -74,8 +75,8 @@ export const navItems: NavItem[] = [
     icon: Shield,
     children: [
       { label: 'Security Overview', href: '/security', icon: Shield, desc: 'Security posture and score' },
-      { label: 'Anomalies', href: '/anomalies', icon: AlertTriangle, desc: 'Detected threats and issues' },
-      { label: 'Anomaly Rules', href: '/anomalies/rules', icon: SlidersHorizontal, desc: 'Custom detection thresholds' },
+      { label: 'Anomalies', href: '/anomalies', icon: AlertTriangle, desc: 'Cost and usage anomaly detection', badge: COMING_SOON },
+      { label: 'Anomaly Rules', href: '/anomalies/rules', icon: SlidersHorizontal, desc: 'Custom detection thresholds', badge: COMING_SOON },
       { label: 'Compliance', href: '/compliance/frameworks', icon: CheckSquare, desc: 'Security Hub-backed CIS and PCI frameworks' },
       { label: 'Audit Logs', href: '/audit-logs', icon: ClipboardList, desc: 'Full activity audit trail' },
     ],
@@ -99,13 +100,15 @@ export const navItems: NavItem[] = [
       { label: 'Teams', href: '/teams', icon: Users, desc: 'Team management and access' },
       { label: 'Enterprise', href: '/enterprise', icon: Building2, desc: 'Enterprise controls' },
       { label: 'Auto-Remediation', href: '/remediation', icon: Wrench, desc: 'Approval-based infrastructure fixes', badge: 'Enterprise' },
-      { label: 'Developers', href: '/developers', icon: Code, desc: 'API keys and integrations' },
+      { label: 'Developers', href: '/developers', icon: Code, desc: 'API keys and integrations', badge: COMING_SOON },
     ],
   },
 ];
 
+type MobileNavItem = { label: string; href: string; badge?: string };
+
 // Mobile drawer sections (excludes Add Service / Add Resource)
-export const mobileSections = [
+export const mobileSections: { key: string; label: string; items: MobileNavItem[] }[] = [
   {
     key: 'services',
     label: 'Services',
@@ -134,7 +137,7 @@ export const mobileSections = [
       { label: 'Invoices', href: '/invoices' },
       { label: 'AI Reports', href: '/ai-reports' },
       { label: 'Efficiency', href: '/costs/efficiency' },
-      { label: 'By Team', href: '/costs/by-team' },
+      { label: 'By Team', href: '/costs/by-team', badge: COMING_SOON },
     ],
   },
   {
@@ -142,8 +145,8 @@ export const mobileSections = [
     label: 'Security',
     items: [
       { label: 'Security Overview', href: '/security' },
-      { label: 'Anomalies', href: '/anomalies' },
-      { label: 'Anomaly Rules', href: '/anomalies/rules' },
+      { label: 'Anomalies', href: '/anomalies', badge: COMING_SOON },
+      { label: 'Anomaly Rules', href: '/anomalies/rules', badge: COMING_SOON },
       { label: 'Compliance', href: '/compliance/frameworks' },
       { label: 'Audit Logs', href: '/audit-logs' },
     ],
@@ -167,7 +170,7 @@ export const mobileSections = [
       { label: 'Teams', href: '/teams' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Auto-Remediation', href: '/remediation' },
-      { label: 'Developers', href: '/developers' },
+      { label: 'Developers', href: '/developers', badge: COMING_SOON },
     ],
   },
 ];
@@ -566,6 +569,11 @@ export function TopNav() {
                             }}
                           >
                             {item.label}
+                            {item.badge && (
+                              <span className="text-label font-semibold text-white" style={{ background: '#7c3aed', borderRadius: '4px', padding: '1px 6px', marginLeft: '8px' }}>
+                                {item.badge}
+                              </span>
+                            )}
                           </Link>
                         );
                       })}

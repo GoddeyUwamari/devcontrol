@@ -4,13 +4,18 @@ import crypto from 'crypto'
 import { authenticateToken } from '../middleware/auth.middleware'
 import { requireAdmin } from '../middleware/rbac.middleware'
 import { assertDestination } from '../utils/safe-outbound'
+import { requireFeatureTable, featureTablePresent, sendFeatureNotAvailable } from '../middleware/require-feature-table'
 
 const router = Router()
 
 router.use(authenticateToken)
 
+// 501 until the webhook_endpoints table exists (absent in production); after any role check.
+const WEBHOOKS_COMING_SOON = 'Webhooks are coming soon.'
+const webhooksAvailable = requireFeatureTable('webhook_endpoints', WEBHOOKS_COMING_SOON)
+
 // GET /api/webhooks — list the caller's org's webhook endpoints
-router.get('/', async (req, res) => {
+router.get('/', webhooksAvailable, async (req, res) => {
   const organizationId = (req as any).user?.organizationId
   try {
     const result = await pool.query(
@@ -38,6 +43,8 @@ router.post('/', requireAdmin, async (req, res) => {
   } catch {
     return res.status(400).json({ success: false, message: 'A valid public HTTPS URL is required' })
   }
+  // After the destination check, so a bad destination is refused whether or not the table exists.
+  if ((await featureTablePresent('webhook_endpoints')) === false) return sendFeatureNotAvailable(res, WEBHOOKS_COMING_SOON)
 
   const secret = 'whsec_' + crypto.randomBytes(24).toString('hex')
   const endpointEvents = events ?? ['alert.triggered']
@@ -61,7 +68,7 @@ router.post('/', requireAdmin, async (req, res) => {
 })
 
 // DELETE /api/webhooks/:id — delete an endpoint belonging to the caller's org (owner/admin)
-router.delete('/:id', requireAdmin, async (req, res) => {
+router.delete('/:id', requireAdmin, webhooksAvailable, async (req, res) => {
   const { id } = req.params
   const organizationId = (req as any).user?.organizationId
   try {

@@ -30,7 +30,7 @@ const ROWS: Row[] = [
   { name: 'example-orders-db', type: 'rds', region: HOME_REGION, environment: 'production', owner: 'owner-y1@example.com', team: 'payments', ownership: 'owned', status: 'critical',
     attention: { severity: 'critical', cause: 'status', reason: 'Resource in a failed or terminated state' } },
   { name: 'example-api-legacy', type: 'ec2', region: HOME_REGION, environment: 'production', team: 'platform', ownership: 'owned',
-    attention: { severity: 'high', cause: 'cost_recommendation', reason: 'Idle Instance' } },
+    attention: { severity: 'high', cause: 'cost_recommendation', reason: 'Low-activity instance' } },
   { name: 'example-data-volume', type: 'ebs', region: HOME_REGION, environment: 'staging', ownership: 'unowned',
     attention: { severity: 'high', cause: 'cost_recommendation', reason: 'Unattached EBS Volume' } },
   { name: 'example-batch-runner', type: 'ec2', region: HOME_REGION, environment: 'staging', owner: 'owner-d2@example.com', team: 'data', ownership: 'owned', status: 'warning',

@@ -115,6 +115,24 @@ describe('Deployments page', () => {
     expect(screen.queryByText('Running')).not.toBeInTheDocument()
   })
 
+  // CAT-3: there is no /deployments/:id/logs or /rollback page. Logs open the
+  // deployment's detail page; Rollback stays visible, disabled, "Coming soon".
+  it('a failed deployment: Logs open its detail page, Rollback is disabled and says Coming soon', async () => {
+    const { container } = renderPage()
+    await screen.findAllByText('service-bad')
+
+    for (const name of ['Logs', 'View Logs']) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe('/deployments/bad')
+    }
+    const rollbacks = screen.getAllByRole('button', { name: 'Rollback · Coming soon' })
+    expect(rollbacks).toHaveLength(2)
+    for (const button of rollbacks) {
+      expect(button).toBeDisabled()
+      expect(button.closest('a')).toBeNull()
+    }
+    expect(container.querySelector('a[href$="/logs"], a[href$="/rollback"]')).toBeNull()
+  })
+
   it('takes its totals, rate and last deployment from the windowed stats, not from the listed rows', async () => {
     renderPage()
 

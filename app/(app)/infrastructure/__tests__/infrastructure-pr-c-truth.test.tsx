@@ -149,7 +149,7 @@ describe('Top Actions -- no risk label', () => {
   it('T1.3 demo actions carry no risk badge either', async () => {
     enableDemo()
     renderPage()
-    await screen.findByText('Downsize RDS cluster', { selector: 'p' })
+    await screen.findByText('Remove unattached Elastic IPs', { selector: 'p' })
     expect(bodyText()).not.toMatch(/zero risk|review impact/i)
   })
 })
@@ -183,7 +183,7 @@ describe('Top Actions -- no urgency or impact badge', () => {
   it('T2.3 no urgency or impact badge in demo mode', async () => {
     enableDemo()
     renderPage()
-    await screen.findByText('Downsize RDS cluster', { selector: 'p' })
+    await screen.findByText('Remove unattached Elastic IPs', { selector: 'p' })
     expect(urgencyBadges()).toEqual([null, null, null, null])
   })
 })

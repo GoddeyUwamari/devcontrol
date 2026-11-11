@@ -11,6 +11,7 @@ import { subscriptionsService } from '@/lib/services/subscriptions.service'
 import { invoicesService } from '@/lib/services/invoices.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { usePlan } from '@/lib/hooks/use-plan'
+import { PLAN_DISPLAY_NAME } from '@/lib/plan/plan-names'
 
 const DEMO_SUBSCRIPTION = { id: 'sub-demo-1', plan: 'Enterprise', status: 'active' as const, billingCycle: 'yearly' as const, currentPrice: 1498800, currency: 'USD', currentPeriodStart: '2024-01-01T00:00:00Z', currentPeriodEnd: '2025-01-01T00:00:00Z', nextBillingDate: '2025-01-01T00:00:00Z', autoRenew: true, isTrial: false }
 
@@ -276,15 +277,21 @@ export default function EnterprisePage() {
         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-5">Invoices &amp; Billing</p>
         {displayInvoices.length === 0 ? (
           <div>
-            {isEnterprise || isPro ? (
-              <p className="text-sm text-slate-900 mb-3">Your plan: <strong>{tier.charAt(0).toUpperCase() + tier.slice(1)}</strong></p>
+            {/* Any paid plan, Cost Control included (it used to be told "Free plan").
+                /api/billing/invoices has no backend route, so this card never lists
+                real invoices: it says where they are instead. */}
+            {tier !== 'free' ? (
+              <>
+                <p className="text-sm text-slate-900 mb-1">Your plan: <strong>{PLAN_DISPLAY_NAME[tier]}</strong></p>
+                <p className="text-xs text-slate-500 mb-3">Self-serve plans: your invoices are under Manage Billing on the Billing page. Plans billed by our team: invoices come from us by email.</p>
+              </>
             ) : (
               <>
-                <p className="text-sm text-slate-900 mb-1">Your next invoice: <strong>$0</strong> · Free plan</p>
-                <p className="text-xs text-slate-500 mb-3">Upgrade to Pro to unlock billing history and downloadable invoices.</p>
+                <p className="text-sm text-slate-900 mb-1">You&apos;re on the free plan, so there are no invoices.</p>
+                <p className="text-xs text-slate-500 mb-3">Invoices appear on the Billing page after your first payment on a paid plan.</p>
               </>
             )}
-            <button onClick={() => router.push('/billing')} className="text-xs text-violet-700 bg-transparent border-none cursor-pointer p-0 hover:text-violet-900 transition-colors">View billing details →</button>
+            <button onClick={() => router.push('/settings/billing')} className="text-xs text-violet-700 bg-transparent border-none cursor-pointer p-0 hover:text-violet-900 transition-colors">View billing details →</button>
           </div>
         ) : (
           <>

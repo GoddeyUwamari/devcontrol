@@ -539,8 +539,9 @@ function DeploymentsContent() {
                         <span className="text-meta text-red-800 font-medium">Deployment failed · Check logs</span>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
-                        <a href={`/deployments/${d.id}/logs`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Logs</a>
-                        <a href={`/deployments/${d.id}/rollback`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Rollback</a>
+                        {/* No /logs or /rollback page exists: logs go to the deployment's detail page; rollback isn't built. */}
+                        <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Logs</a>
+                        <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2 py-1 rounded cursor-not-allowed">Rollback · Coming soon</button>
                       </div>
                     </div>
                   )}
@@ -577,8 +578,8 @@ function DeploymentsContent() {
                       <span className="text-meta text-red-800 font-medium">Deployment failed · Check logs and consider rolling back to previous version</span>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      <a href={`/deployments/${d.id}/logs`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">View Logs</a>
-                      <a href={`/deployments/${d.id}/rollback`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">Rollback</a>
+                      <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">View Logs</a>
+                      <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2.5 py-1 rounded-lg cursor-not-allowed">Rollback · Coming soon</button>
                     </div>
                   </div>
                 )}

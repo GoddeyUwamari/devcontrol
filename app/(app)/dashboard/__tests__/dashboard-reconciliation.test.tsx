@@ -1,6 +1,6 @@
 /**
  * Dashboard reconciliation, through the real DashboardPage: Recommended Action,
- * Cost-Saving Opportunities and Executive ROI read the same canonical sources
+ * Cost-Saving Opportunities and Estimated savings (formerly Executive ROI) read the same canonical sources
  * (cost-recommendations stats, and the shared pickLatestAnalysis() +
  * deriveAnalysisStatus() over scheduled and manual analyses), so they can't
  * contradict each other; a failed request is never a count, a zero, or "not
@@ -99,7 +99,7 @@ const renderDashboard = () => render(<QueryClientProvider client={client}><Dashb
 const opportunities = () => screen.getByText('Cost-Saving Opportunities').closest('div.rounded-2xl') as HTMLElement
 const ec2Card = () => within(opportunities()).getByText('Review EC2 instances').parentElement as HTMLElement
 const recommendedAction = () => screen.getByText(/optimization opportunit(y|ies) identified/).closest('div.rounded-2xl') as HTMLElement
-const roi = () => screen.getByText('Executive ROI Summary').closest('div.rounded-2xl') as HTMLElement
+const roi = () => screen.getByRole('heading', { name: 'Estimated savings' }).closest('div.rounded-2xl') as HTMLElement
 
 describe('Recommended Action, Cost-Saving Opportunities and ROI agree', () => {
   it('scheduled-only analysis (the local repro): the active EC2 recommendation is counted everywhere and never "Not currently evaluated"', async () => {
@@ -163,7 +163,9 @@ describe('Recommended Action, Cost-Saving Opportunities and ROI agree', () => {
     await waitFor(() => expect(within(opportunities()).getByText('View all →')).toBeInTheDocument())
     expect(screen.queryByText(/optimization opportunit(y|ies) identified/)).toBeNull()
     expect(screen.queryByText(/Review \d+ recommendation/)).toBeNull()
-    expect(within(roi()).getByText('—')).toBeInTheDocument()
+    // The card says the figure couldn't be loaded, never shows one (CAT-3 R6).
+    expect(within(roi()).getByText('Savings couldn\u2019t be loaded.')).toBeInTheDocument()
+    expect(roi().textContent).not.toMatch(/\$\d/)
   })
 
   it('a failed recommendations-list request: cards say "Could not be retrieved", never "0 detected"', async () => {

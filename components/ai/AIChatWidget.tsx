@@ -93,11 +93,11 @@ export function AIChatWidget() {
 
   const quickPrompts = [
     'What is my biggest cost driver this month?',
-    'Which EC2 instances can I rightsize today?',
-    'Are there any idle or unused resources I should delete?',
+    'Which EC2 instances have the lowest activity?',
+    'Which low-activity or unused resources should I review?',
     'What security risks need immediate attention?',
     'How does my spend compare to last month?',
-    'Which services have anomalous cost spikes?',
+    'Which services cost the most this month?',
   ];
 
   // Floating button when closed

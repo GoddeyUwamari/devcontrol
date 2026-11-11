@@ -2,11 +2,11 @@
  * No detector evaluates measured AWS data (backend AnomalyDetectionService and
  * CustomAnomalyRulesService return nothing), so /anomalies must not claim
  * active monitoring or a healthy result -- it must say plainly that anomaly
- * detection on measured data isn't active, and show the scan message
- * neutrally.
+ * detection on measured data isn't active (CAT-3: "coming soon"), and offer
+ * no scan while there is nothing to run.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 
 const SCAN_MESSAGE = 'No anomalies recorded. Anomaly detection on measured data is not currently active.'
 
@@ -58,7 +58,9 @@ describe('/anomalies makes no active-monitoring or healthy claim', () => {
 
     expect(text).toContain('Anomaly detection on measured data isn')
     expect(text).toContain('Anomaly detection not active')
-    expect(text).toContain('Not assessed')
+    // CAT-3: tiles say "Not active" instead of a number or "Not assessed"; the header says "coming soon".
+    expect(text).toContain('Not active')
+    expect(text).toContain('Anomaly detection on measured AWS data is coming soon.')
     expect(text).toContain('Custom rules aren')
     expect(text).not.toMatch(/No active issues detected|only default AI detection/i)
   })
@@ -74,15 +76,16 @@ describe('/anomalies makes no active-monitoring or healthy claim', () => {
     expectNoForbiddenCopy(container.textContent ?? '')
   })
 
-  it('shows the scan message neutrally, not styled as a green success', async () => {
+  // CAT-3 (CAT-D13): the scan is a no-op while detection is inactive, so there
+  // is no Run Scan button and no scan message to style.
+  it('offers no Run Scan while detection is inactive, and never starts a scan', async () => {
+    const { anomalyService } = await import('@/lib/services/anomaly.service')
     const { container } = render(<AnomaliesPage />)
     await screen.findByText('No anomalies recorded')
 
-    fireEvent.click(screen.getByRole('button', { name: /Run Scan/i }))
-    const message = await screen.findByText(SCAN_MESSAGE)
-
-    expect(message.className).not.toMatch(/green/)
-    expect(message.className).toMatch(/slate/)
-    await waitFor(() => expectNoForbiddenCopy(container.textContent ?? ''))
+    expect(screen.queryByRole('button', { name: /Run Scan/i })).toBeNull()
+    expect(screen.queryByText(SCAN_MESSAGE)).toBeNull()
+    expect(anomalyService.triggerScan).not.toHaveBeenCalled()
+    expectNoForbiddenCopy(container.textContent ?? '')
   })
 })

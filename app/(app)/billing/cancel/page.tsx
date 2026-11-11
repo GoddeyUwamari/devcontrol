@@ -100,17 +100,17 @@ export default function CheckoutCancelPage() {
             </p>
             <div className="flex justify-center gap-4 text-sm">
               <a
-                href="/docs/pricing"
+                href="/pricing"
                 className="text-primary hover:underline"
               >
-                View pricing FAQ
+                View plans and FAQ
               </a>
               <span className="text-muted-foreground">•</span>
               <a
-                href="/support"
+                href="mailto:support@getdevcontrol.com"
                 className="text-primary hover:underline"
               >
-                Contact sales
+                Email support
               </a>
             </div>
           </div>

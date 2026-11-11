@@ -7,6 +7,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { toast } from 'sonner'
 import developersService from '@/lib/services/developers.service'
+import { API_KEYS_AVAILABLE, WEBHOOKS_AVAILABLE, COMING_SOON } from '@/lib/features/coming-soon'
 
 interface ApiKey { id: string; name: string; prefix: string; scopes: string[]; createdAt: string; lastUsedAt: string | null; status: 'active' | 'revoked' }
 interface WebhookEndpoint { id: string; url: string; events: string[]; status: 'active' | 'failing' | 'disabled'; lastTriggeredAt: string | null; createdAt: string }
@@ -31,20 +32,34 @@ const integrationMeta: Record<string, { desc: string; recommended: boolean }> = 
   aws:        { desc: 'Connect your AWS account for cost, security, and infrastructure visibility', recommended: true  },
   kubernetes: { desc: 'Monitor cluster health, resource efficiency, and container costs',           recommended: false },
   terraform:  { desc: 'Track infrastructure-as-code changes and detect configuration drift',        recommended: false },
-  cloudwatch: { desc: 'Monitor AWS resources and stream metrics, logs, and alarms into DevControl', recommended: false },
+  cloudwatch: { desc: 'Metrics are read through your AWS connection.',                              recommended: false },
   datadog:    { desc: 'Sync metrics, traces, and alerts from your Datadog account',                 recommended: true  },
   grafana:    { desc: 'Sync dashboards, alerts, and performance data from your Grafana instance',   recommended: false },
   prometheus: { desc: 'Scrape metrics and monitor service health across your infrastructure',        recommended: false },
   newrelic:   { desc: 'Stream APM, error tracking, and infrastructure data from New Relic',         recommended: false },
-  slack:      { desc: 'Send real-time alerts and reports to your Slack channels',                   recommended: true  },
+  slack:      { desc: 'Test messages only. Alert delivery is coming soon.',                         recommended: true  },
   pagerduty:  { desc: 'Route critical alerts to on-call engineers instantly',                        recommended: false },
   opsgenie:   { desc: 'Route critical alerts to on-call teams with escalation policies',             recommended: false },
-  email:      { desc: 'Send alert notifications directly to your team via SMTP',                     recommended: false },
+  email:      { desc: 'Test messages only. Alert delivery is coming soon.',                         recommended: false },
   github:     { desc: 'Pull deployment events and PR data from your repositories',                   recommended: false },
   jira:       { desc: 'Create and link incidents to Jira issues automatically',                      recommended: false },
   gitlab:     { desc: 'Pull merge request events and CI/CD pipeline data from GitLab',              recommended: false },
   linear:     { desc: 'Create and link issues in Linear automatically from alerts',                  recommended: false },
 }
+
+/**
+ * What each tile can really do. Only AWS is a working connection; CloudWatch
+ * metrics come through it; Slack and email have configuration and a test
+ * message in /settings/alerts but no alert delivery; nothing else exists yet.
+ * Every tile stays listed.
+ */
+const TILE_KIND: Record<string, 'connect' | 'included' | 'test-only' | 'coming-soon'> = {
+  aws: 'connect',
+  cloudwatch: 'included',
+  slack: 'test-only',
+  email: 'test-only',
+}
+const tileKind = (id: string) => TILE_KIND[id] ?? 'coming-soon'
 
 const integrationGroups = [
   { label: 'Core infrastructure', items: ['aws', 'kubernetes', 'terraform', 'cloudwatch'] },
@@ -62,11 +77,11 @@ const INITIAL_INTEGRATIONS = (demoMode: boolean): Integration[] => [
   { id: 'grafana',    name: 'Grafana',     description: '', status: 'disconnected', connectedAt: null, icon: <BarChart2 size={18} /> },
   { id: 'prometheus', name: 'Prometheus',  description: '', status: 'disconnected', connectedAt: null, icon: <Server size={18} /> },
   { id: 'newrelic',   name: 'New Relic',   description: '', status: 'disconnected', connectedAt: null, icon: <BarChart2 size={18} /> },
-  { id: 'slack',      name: 'Slack',       description: '', status: demoMode ? 'connected' : 'disconnected', connectedAt: demoMode ? '2024-01-20T00:00:00Z' : null, icon: <Slack size={18} /> },
-  { id: 'pagerduty',  name: 'PagerDuty',   description: '', status: demoMode ? 'connected' : 'disconnected', connectedAt: demoMode ? '2024-02-01T00:00:00Z' : null, icon: <Bell size={18} /> },
+  { id: 'slack',      name: 'Slack',       description: '', status: 'disconnected', connectedAt: null, icon: <Slack size={18} /> },
+  { id: 'pagerduty',  name: 'PagerDuty',   description: '', status: 'disconnected', connectedAt: null, icon: <Bell size={18} /> },
   { id: 'opsgenie',   name: 'OpsGenie',    description: '', status: 'disconnected', connectedAt: null, icon: <Bell size={18} /> },
   { id: 'email',      name: 'Email',       description: '', status: 'disconnected', connectedAt: null, icon: <Mail size={18} /> },
-  { id: 'github',     name: 'GitHub',      description: '', status: demoMode ? 'connected' : 'disconnected', connectedAt: demoMode ? '2024-01-15T00:00:00Z' : null, icon: <Github size={18} /> },
+  { id: 'github',     name: 'GitHub',      description: '', status: 'disconnected', connectedAt: null, icon: <Github size={18} /> },
   { id: 'jira',       name: 'Jira',        description: '', status: 'disconnected', connectedAt: null, icon: <Trello size={18} /> },
   { id: 'gitlab',     name: 'GitLab',      description: '', status: 'disconnected', connectedAt: null, icon: <Github size={18} /> },
   { id: 'linear',     name: 'Linear',      description: '', status: 'disconnected', connectedAt: null, icon: <Trello size={18} /> },
@@ -96,8 +111,10 @@ export default function DevelopersPage() {
 
   useEffect(() => {
     if (demoMode) return
-    developersService.getKeys().then(d => setApiKeys(d as any)).catch(() => {})
-    developersService.getWebhooks().then(d => setWebhooks(d as any)).catch(() => {})
+    // No request while a feature is "Coming soon": both tables are absent in
+    // production and the routes answer 501 FEATURE_NOT_AVAILABLE.
+    if (API_KEYS_AVAILABLE) developersService.getKeys().then(d => setApiKeys(d as any)).catch(() => {})
+    if (WEBHOOKS_AVAILABLE) developersService.getWebhooks().then(d => setWebhooks(d as any)).catch(() => {})
   }, [demoMode])
 
   const handleGenerateKey = async () => {
@@ -133,13 +150,12 @@ export default function DevelopersPage() {
   }
 
   const handleToggleIntegration = (id: string) => setIntegrations(list => list.map(i => i.id === id ? { ...i, status: i.status === 'connected' ? 'disconnected' : 'connected', connectedAt: i.status === 'connected' ? null : new Date().toISOString() } : i))
-  const handleConnect = (id: string) => { if (id === 'aws') { router.push('/connect-aws'); return }; handleToggleIntegration(id) }
   const isAwsConnected = integrations.find(i => i.id === 'aws')?.status === 'connected'
 
   const setupSteps = [
     { number: 1, title: 'Connect AWS',           description: 'Unlock cost, security, and infrastructure insights', status: isAwsConnected ? 'connected' : 'pending', cta: isAwsConnected ? 'Connected ✓' : 'Connect AWS →',    onClick: () => router.push('/connect-aws') },
-    { number: 2, title: 'Connect Observability', description: 'Sync metrics, traces, and performance data',         status: 'pending' as const,                       cta: 'Connect Datadog →', onClick: () => handleConnect('datadog') },
-    { number: 3, title: 'Set up Alerts',         description: 'Send real-time alerts to your team',                 status: 'pending' as const,                       cta: 'Connect Slack →',   onClick: () => handleConnect('slack') },
+    { number: 2, title: 'Observability tools',   description: 'Datadog, Grafana and others are coming soon.',       status: 'coming-soon' as const,                   cta: COMING_SOON,            onClick: undefined },
+    { number: 3, title: 'Alert channels',        description: 'Set up email and Slack and send a test message. Alert delivery is coming soon.', status: 'pending' as const, cta: 'Open alert settings →', onClick: () => router.push('/settings/alerts') },
   ]
 
   const closeKeyModal = () => { setShowNewKey(false); setNewKeyError(''); setNewKeyName(''); setGeneratedKey(null) }
@@ -151,7 +167,7 @@ export default function DevelopersPage() {
       {/* Page header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight mb-1.5">Integrations &amp; API</h1>
-        <p className="text-xs text-slate-500 font-medium leading-relaxed">Connect your stack, ingest real-time data, and power insights across your infrastructure.</p>
+        <p className="text-xs text-slate-500 font-medium leading-relaxed">Connect AWS today. API keys, webhooks and more integrations are coming soon.</p>
       </div>
 
       {/* Get started */}
@@ -165,17 +181,21 @@ export default function DevelopersPage() {
                 <p className="text-sm font-semibold text-slate-900">{step.title}</p>
               </div>
               <p className="text-xs text-slate-500 mb-3 leading-relaxed">{step.description}</p>
+              {step.onClick ? (
               <button onClick={step.onClick} disabled={step.status === 'connected'}
                 className={`w-full text-xs rounded-lg py-1.5 border transition-colors ${step.status === 'connected' ? 'text-green-600 border-green-500 bg-transparent cursor-default' : 'text-white bg-violet-700 hover:bg-violet-800 border-violet-700 cursor-pointer'}`}>
                 {step.cta}
               </button>
+              ) : (
+                <span className="block w-full text-center text-xs rounded-lg py-1.5 border border-slate-200 bg-slate-50 text-slate-500">{step.cta}</span>
+              )}
             </div>
           ))}
         </div>
       </div>
 
-      {/* API Usage bar */}
-      {demoMode && (
+      {/* API Usage bar (no API exists yet, so no usage either) */}
+      {demoMode && API_KEYS_AVAILABLE && (
         <div className="bg-white border border-slate-200 rounded-2xl px-5 sm:px-7 py-4 mb-5 flex flex-col sm:flex-row sm:items-center gap-3">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">API Usage</p>
           <div className="flex-1">
@@ -190,6 +210,15 @@ export default function DevelopersPage() {
       )}
 
       {/* API Keys */}
+      {!API_KEYS_AVAILABLE ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5" data-testid="api-keys-coming-soon">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">API keys</p>
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0 whitespace-nowrap">{COMING_SOON}</span>
+          </div>
+          <p className="text-xs text-slate-500 leading-relaxed">Programmatic read access to DevControl is being built. It will be on the Optimization Engine plan.</p>
+        </div>
+      ) : (
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
@@ -260,8 +289,18 @@ export default function DevelopersPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Webhooks */}
+      {!WEBHOOKS_AVAILABLE ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5" data-testid="webhooks-coming-soon">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Webhooks</p>
+            <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0 whitespace-nowrap">{COMING_SOON}</span>
+          </div>
+          <p className="text-xs text-slate-500 leading-relaxed">Send DevControl events to your own systems. Up to 5 endpoints on Optimization Engine.</p>
+        </div>
+      ) : (
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
           <div>
@@ -328,6 +367,7 @@ export default function DevelopersPage() {
           </>
         )}
       </div>
+      )}
 
       {/* Integrations */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7">
@@ -341,7 +381,8 @@ export default function DevelopersPage() {
                   const intg = integrations.find(i => i.id === id)
                   if (!intg) return null
                   const meta = integrationMeta[id]
-                  const isConnected = intg.status === 'connected'
+                  const kind = tileKind(id)
+                  const isConnected = kind === 'connect' && intg.status === 'connected'
                   return (
                     <div key={id} className={`bg-white border rounded-xl p-4 flex flex-col gap-2 ${isConnected ? 'border-green-500' : 'border-slate-200'}`}>
                       <div className="flex items-start justify-between gap-2">
@@ -349,14 +390,21 @@ export default function DevelopersPage() {
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isConnected ? 'bg-green-50 text-green-600' : 'bg-slate-50 text-slate-400'}`}>{intg.icon}</div>
                           <p className="text-sm font-semibold text-slate-900">{intg.name}</p>
                         </div>
-                        {meta?.recommended && !isConnected && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 shrink-0 whitespace-nowrap">Recommended</span>}
+                        {kind === 'connect' && meta?.recommended && !isConnected && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 shrink-0 whitespace-nowrap">Recommended</span>}
                         {isConnected && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-green-50 text-green-700 shrink-0">Connected</span>}
+                        {kind === 'included' && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0 whitespace-nowrap">Included with AWS</span>}
+                        {(kind === 'coming-soon' || kind === 'test-only') && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0 whitespace-nowrap">{COMING_SOON}</span>}
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed flex-1">{meta?.desc ?? intg.description}</p>
+                      {kind === 'connect' && (
                       <button onClick={() => { if (id === 'aws' && !isConnected) { router.push('/connect-aws'); return }; handleToggleIntegration(id) }}
                         className={`text-xs rounded px-3 py-1.5 cursor-pointer self-start transition-colors border ${isConnected ? 'text-green-600 border-green-500 bg-transparent hover:bg-green-50' : 'text-violet-700 bg-violet-50 border-transparent hover:bg-violet-100'}`}>
                         {isConnected ? 'Manage →' : 'Connect →'}
                       </button>
+                      )}
+                      {kind === 'test-only' && (
+                        <a href="/settings/alerts" className="text-xs text-violet-700 no-underline self-start hover:text-violet-900">Alert settings →</a>
+                      )}
                     </div>
                   )
                 })}

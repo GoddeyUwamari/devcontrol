@@ -57,23 +57,23 @@ export default function AuthLayout({
             </p>
             <nav className="flex items-center gap-4 text-sm">
               <Link
-                href="/privacy"
+                href="/legal/privacy"
                 className="text-muted-foreground transition-colors hover:text-foreground"
               >
                 Privacy
               </Link>
               <Link
-                href="/terms"
+                href="/legal/terms"
                 className="text-muted-foreground transition-colors hover:text-foreground"
               >
                 Terms
               </Link>
-              <Link
-                href="/support"
+              <a
+                href="mailto:support@getdevcontrol.com"
                 className="text-muted-foreground transition-colors hover:text-foreground"
               >
                 Support
-              </Link>
+              </a>
             </nav>
           </div>
         </footer>

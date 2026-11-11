@@ -180,7 +180,7 @@ function CheckoutSuccessContent() {
                   documentation
                 </a>{' '}
                 or{' '}
-                <a href="/support" className="text-primary hover:underline">
+                <a href="mailto:support@getdevcontrol.com" className="text-primary hover:underline">
                   contact support
                 </a>
                 .

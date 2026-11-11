@@ -4,10 +4,14 @@ import crypto from 'crypto'
 import { authenticateToken } from '../middleware/auth.middleware'
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
+import { requireFeatureTable } from '../middleware/require-feature-table'
 
 const router = Router()
 
 router.use(authenticateToken)
+
+// 501 until the api_keys table exists (absent in production); after any role check.
+const apiKeysAvailable = requireFeatureTable('api_keys', 'API keys are coming soon.')
 
 /**
  * Creating or revoking an organization's API keys is limited to owners and
@@ -33,7 +37,7 @@ async function requireCurrentAdminOrOwner(req: Request, res: Response, next: Nex
 }
 
 // GET /api/keys — list the caller's org's active keys (never return the hash)
-router.get('/', async (req, res) => {
+router.get('/', apiKeysAvailable, async (req, res) => {
   const organizationId = (req as any).user?.organizationId
   try {
     const result = await pool.query(
@@ -51,7 +55,7 @@ router.get('/', async (req, res) => {
 })
 
 // POST /api/keys — generate a new key scoped to the caller's org
-router.post('/', requireCurrentAdminOrOwner, async (req, res) => {
+router.post('/', requireCurrentAdminOrOwner, apiKeysAvailable, async (req, res) => {
   const organizationId = (req as any).user?.organizationId
   const { name, scopes } = req.body
   if (!name?.trim()) {
@@ -94,7 +98,7 @@ router.post('/', requireCurrentAdminOrOwner, async (req, res) => {
 })
 
 // DELETE /api/keys/:id — revoke a key belonging to the caller's org
-router.delete('/:id', requireCurrentAdminOrOwner, async (req, res) => {
+router.delete('/:id', requireCurrentAdminOrOwner, apiKeysAvailable, async (req, res) => {
   const { id } = req.params
   const organizationId = (req as any).user?.organizationId
   try {
