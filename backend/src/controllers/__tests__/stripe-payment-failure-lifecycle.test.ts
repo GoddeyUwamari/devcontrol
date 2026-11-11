@@ -21,7 +21,7 @@ import { Pool } from 'pg';
 import { stripeController } from '../stripe.controller';
 import stripeService from '../../services/stripe.service';
 import { emailService } from '../../services/email.service';
-import { requireTier, requirePro, requireStarter } from '../../middleware/subscription.middleware';
+import { requireTier, requirePro, requireStarter, getOrganizationEntitlement } from '../../middleware/subscription.middleware';
 
 function dbConfig() {
   return {
@@ -883,5 +883,336 @@ describe('regression: existing entitlement-sync behavior on a healthy org is una
     const row = await fetchBillingRow(orgId);
     expect(row.subscription_tier).toBe('starter');
     expect(row.billing_lifecycle_state).toBe('healthy');
+  });
+});
+
+/**
+ * F-1: a late failure of an invoice that has since been paid never reopens a
+ * grace period.
+ *
+ * Stripe retries a failed invoice on the SAME invoice: every attempt's event
+ * carries the same invoice id and the same Invoice.created, under a new event
+ * id. So these tests reuse one invoice object across events (the suites above
+ * mostly make a new invoice per attempt, which hides this case). A paid
+ * invoice is final, so a failure of it delivered after its invoice.paid is a
+ * late earlier attempt: no grace, no email, paid access kept.
+ */
+describe('F-1: a late failure of an invoice already paid never reopens grace', () => {
+  const entitlement = (orgId: string) => getOrganizationEntitlement(orgId, pool);
+
+  /** One renewal invoice, as every attempt on it carries it. */
+  function renewalInvoice(customerId: string, subscriptionId: string, created = unixSeconds(daysAgo(1))) {
+    return {
+      id: `in_test_${uniqueSuffix()}`,
+      customer: customerId,
+      created,
+      parent: { subscription_details: { subscription: subscriptionId } },
+    };
+  }
+
+  function subscriptionEvent(subscriptionId: string, customerId: string, status: string, createdAt: number) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    return fakeEvent('customer.subscription.updated', {
+      id: subscriptionId,
+      customer: customerId,
+      status,
+      items: { data: [{ price: { id: 'irrelevant' } }] },
+      current_period_start: nowSec,
+      current_period_end: nowSec + 30 * 24 * 60 * 60,
+      cancel_at_period_end: false,
+    }, createdAt);
+  }
+
+  async function expectPaidAndHealthy(orgId: string, tier = 'pro') {
+    const row = await fetchBillingRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('healthy');
+    expect(row.payment_failed_at).toBeNull();
+    expect(row.grace_period_ends_at).toBeNull();
+    expect(await entitlement(orgId)).toEqual({ storedTier: tier, effectiveTier: tier, hold: null });
+  }
+
+  let emailSpy: jest.SpyInstance;
+  beforeEach(() => {
+    emailSpy = jest.spyOn(stripeService, 'sendPaymentFailedEmail').mockResolvedValue(true);
+    jest.spyOn(stripeService, 'getTierFromPriceId').mockReturnValue('pro');
+  });
+
+  it('attempt 2 paid, then attempt 1\'s failure arrives late: stays healthy and paid, no email, nothing for the grace job to restrict', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    const invoice = renewalInvoice(customerId, subscriptionId);
+    const attempt1Failed = fakeEvent('invoice.payment_failed', invoice);
+
+    await deliverWebhook(fakeEvent('invoice.paid', invoice));
+    await deliverWebhook(attempt1Failed);
+
+    await expectPaidAndHealthy(orgId);
+    expect(emailSpy).not.toHaveBeenCalled();
+
+    const { GracePeriodEnforcementJob } = await import('../../jobs/grace-period-enforcement.job');
+    await new GracePeriodEnforcementJob(pool as any).enforceExpiredGracePeriods();
+    expect((await fetchBillingRow(orgId)).billing_lifecycle_state).toBe('healthy');
+
+    const { req, res, next } = mockMiddlewareReqRes(orgId);
+    await requirePro(req, res, next);
+    expect(next).toHaveBeenCalled();
+  });
+
+  // Real time: E1 (attempt 1 fails) < Sp (past_due) <= E2 (attempt 2 paid) <= Sa (active).
+  // Delivery: every one of the 24 orders.
+  const EVENTS = ['E1', 'Sp', 'E2', 'Sa'] as const;
+  type EventName = typeof EVENTS[number];
+  function permutations<T>(items: readonly T[]): T[][] {
+    if (items.length <= 1) return [items.slice()];
+    return items.flatMap((item, i) =>
+      permutations([...items.slice(0, i), ...items.slice(i + 1)]).map(rest => [item, ...rest]));
+  }
+  const ORDERS = permutations(EVENTS);
+
+  it('there are 24 delivery orders', () => {
+    expect(ORDERS).toHaveLength(24);
+    expect(new Set(ORDERS.map(o => o.join(','))).size).toBe(24);
+  });
+
+  it.each(ORDERS.map(order => [order.join(' -> '), order] as const))(
+    'delivery order %s ends healthy, active and paid; the grace email only when the failure is processed before the payment',
+    async (_label, order) => {
+      const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+      const invoice = renewalInvoice(customerId, subscriptionId);
+      const base = Math.floor(Date.now() / 1000) + 10;
+      const events: Record<EventName, any> = {
+        E1: fakeEvent('invoice.payment_failed', invoice, base),
+        Sp: subscriptionEvent(subscriptionId, customerId, 'past_due', base + 1),
+        E2: fakeEvent('invoice.paid', invoice, base + 2),
+        Sa: subscriptionEvent(subscriptionId, customerId, 'active', base + 3),
+      };
+      for (const name of order) {
+        await deliverWebhook(events[name]);
+      }
+
+      await expectPaidAndHealthy(orgId);
+      expect((await fetchBillingRow(orgId)).subscription_status).toBe('active');
+      // Known residual (F-1b, f1-step1.md §1.2): a failure processed BEFORE
+      // the payment opens the grace and sends the email; the payment then ends
+      // it. A failure processed after the payment never does.
+      const failureFirst = order.indexOf('E1') < order.indexOf('E2');
+      expect(emailSpy).toHaveBeenCalledTimes(failureFirst ? 1 : 0);
+    }
+  );
+
+  it('ledger re-run: the failure\'s first delivery fails, the payment is processed, then Stripe redelivers the same failure event: refused', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    const invoice = renewalInvoice(customerId, subscriptionId);
+    const attempt1Failed = fakeEvent('invoice.payment_failed', invoice);
+
+    jest.spyOn(stripeService, 'getOrganizationByCustomerId').mockRejectedValueOnce(new Error('transient database error'));
+    const first = await deliverWebhook(attempt1Failed);
+    expect(first.status).toHaveBeenCalledWith(400);
+    const failedRow = await pool.query('SELECT status FROM stripe_webhook_events WHERE stripe_event_id = $1', [attempt1Failed.id]);
+    expect(failedRow.rows[0].status).toBe('failed');
+
+    await deliverWebhook(fakeEvent('invoice.paid', invoice));
+    const redelivered = await deliverWebhook(attempt1Failed);
+    expect(redelivered.status).not.toHaveBeenCalled();
+    expect(redelivered.json).toHaveBeenCalledWith({ success: true, received: true });
+
+    const ledger = await pool.query('SELECT status, attempts FROM stripe_webhook_events WHERE stripe_event_id = $1', [attempt1Failed.id]);
+    expect(ledger.rows[0]).toEqual({ status: 'processed', attempts: 2 });
+    await expectPaidAndHealthy(orgId);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('duplicates: the refused failure redelivered (same event id) is a ledger duplicate; another attempt\'s event (new id) is refused too', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    const invoice = renewalInvoice(customerId, subscriptionId);
+    await deliverWebhook(fakeEvent('invoice.paid', invoice));
+    const attempt1Failed = fakeEvent('invoice.payment_failed', invoice);
+    await deliverWebhook(attempt1Failed);
+    const before = await fetchBillingRow(orgId);
+
+    const duplicate = await deliverWebhook(attempt1Failed);
+    expect(duplicate.json).toHaveBeenCalledWith({ success: true, received: true, duplicate: true });
+    expect((await fetchBillingRow(orgId)).xmin).toBe(before.xmin);
+
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice));
+    expect((await fetchBillingRow(orgId)).xmin).toBe(before.xmin);
+    await expectPaidAndHealthy(orgId);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('same-invoice recovery is unchanged: the invoice fails (grace, email), then the same invoice is paid: healthy; a late earlier attempt then changes nothing', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    const invoice = renewalInvoice(customerId, subscriptionId);
+    const lateAttempt = fakeEvent('invoice.payment_failed', invoice);
+
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice));
+    expect((await fetchBillingRow(orgId)).billing_lifecycle_state).toBe('grace_period');
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    await deliverWebhook(fakeEvent('invoice.paid', invoice));
+    await expectPaidAndHealthy(orgId);
+
+    await deliverWebhook(lateAttempt);
+    await expectPaidAndHealthy(orgId);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('in-grace attempts of the same invoice are unchanged: the deadline never moves, an unsent email is retried once, then never again', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    await insertOwner(orgId);
+    emailSpy.mockResolvedValueOnce(false).mockResolvedValue(true);
+    const invoice = renewalInvoice(customerId, subscriptionId);
+
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice));
+    const afterFirst = await fetchBillingRow(orgId);
+    expect(afterFirst.billing_lifecycle_state).toBe('grace_period');
+    expect(afterFirst.payment_failed_notification_sent_at).toBeNull();
+
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice)); // attempt 2, same invoice
+    const afterSecond = await fetchBillingRow(orgId);
+    expect(afterSecond.grace_period_ends_at).toEqual(afterFirst.grace_period_ends_at);
+    expect(afterSecond.payment_failed_notification_sent_at).not.toBeNull();
+
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice)); // attempt 3
+    expect((await fetchBillingRow(orgId)).grace_period_ends_at).toEqual(afterFirst.grace_period_ends_at);
+    expect(emailSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a new episode is unchanged: last month\'s invoice paid, this month\'s invoice fails: 7-day grace and one email', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    await deliverWebhook(fakeEvent('invoice.paid', renewalInvoice(customerId, subscriptionId, unixSeconds(daysAgo(31)))));
+    await deliverWebhook(fakeEvent('invoice.payment_failed', renewalInvoice(customerId, subscriptionId, unixSeconds(daysAgo(1)))));
+
+    const row = await fetchBillingRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('grace_period');
+    const graceDays = (new Date(row.grace_period_ends_at).getTime() - Date.now()) / 86400000;
+    expect(graceDays).toBeGreaterThan(6.9);
+    expect(graceDays).toBeLessThanOrEqual(7);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscription deleted during the grace, then a late attempt of the same invoice: no new grace, no second email', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    const invoice = renewalInvoice(customerId, subscriptionId);
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice));
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    await deliverWebhook(fakeEvent('customer.subscription.deleted', { id: subscriptionId, customer: customerId, status: 'canceled' }));
+    expect((await fetchBillingRow(orgId)).billing_lifecycle_state).toBe('healthy');
+
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice));
+    const row = await fetchBillingRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('healthy');
+    expect(row.grace_period_ends_at).toBeNull();
+    expect(row.subscription_tier).toBe('free');
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('known residual: a DIFFERENT invoice created in the same second as one already paid is refused while healthy (f1-step1.md §4 residual ii)', async () => {
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    const created = unixSeconds(daysAgo(1));
+    await deliverWebhook(fakeEvent('invoice.paid', renewalInvoice(customerId, subscriptionId, created)));
+    await deliverWebhook(fakeEvent('invoice.payment_failed', renewalInvoice(customerId, subscriptionId, created)));
+    await expectPaidAndHealthy(orgId);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('a hand-provisioned organization billed by one-off invoices (no subscription): paid, then a late failure of that invoice: plan kept, no grace', async () => {
+    const { orgId, customerId } = await insertOrg({ tier: 'pro' });
+    await pool.query(
+      `UPDATE organizations SET stripe_subscription_id = NULL, subscription_status = 'free' WHERE id = $1`,
+      [orgId]
+    );
+    const oneOff = { id: `in_test_${uniqueSuffix()}`, customer: customerId, created: unixSeconds(daysAgo(1)) };
+    await deliverWebhook(fakeEvent('invoice.paid', oneOff));
+    await deliverWebhook(fakeEvent('invoice.payment_failed', oneOff));
+    await expectPaidAndHealthy(orgId);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('cross-organization: the refused late failure for organization A never touches organization B', async () => {
+    const orgA = await insertOrg({ tier: 'pro' });
+    const orgB = await insertOrg({
+      tier: 'pro',
+      billingLifecycleState: 'grace_period',
+      paymentFailedAt: daysAgo(1),
+      gracePeriodEndsAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+      latestProcessedInvoiceCreatedAt: daysAgo(1),
+    });
+    const beforeB = await fetchBillingRow(orgB.orgId);
+
+    const invoiceA = renewalInvoice(orgA.customerId, orgA.subscriptionId, unixSeconds(daysAgo(1)));
+    await deliverWebhook(fakeEvent('invoice.paid', invoiceA));
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoiceA));
+
+    await expectPaidAndHealthy(orgA.orgId);
+    expect(await fetchBillingRow(orgB.orgId)).toEqual(beforeB);
+  });
+
+  describe('StripeService.recordPaymentFailure on an invoice as old as the mark', () => {
+    it('while healthy: stale, nothing written', async () => {
+      const created = daysAgo(1);
+      const { orgId } = await insertOrg({ tier: 'pro', latestProcessedInvoiceCreatedAt: created });
+      const before = await fetchBillingRow(orgId);
+
+      const result = await stripeService.recordPaymentFailure(orgId, created);
+
+      expect(result).toMatchObject({ wasNewFailure: false, wasStale: true, notificationPending: false });
+      expect(result.row.billingLifecycleState).toBe('healthy');
+      expect((await fetchBillingRow(orgId)).xmin).toBe(before.xmin);
+    });
+
+    it('while in a grace period: not stale (the next attempt of the open episode), the notification still pending', async () => {
+      const created = daysAgo(1);
+      const { orgId } = await insertOrg({
+        tier: 'pro',
+        billingLifecycleState: 'grace_period',
+        paymentFailedAt: created,
+        gracePeriodEndsAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+        latestProcessedInvoiceCreatedAt: created,
+      });
+
+      const result = await stripeService.recordPaymentFailure(orgId, created);
+
+      expect(result).toMatchObject({ wasNewFailure: false, wasStale: false, notificationPending: true });
+    });
+  });
+
+  it('the invoice handlers never log a Stripe invoice or customer id', async () => {
+    const lines: string[] = [];
+    for (const level of ['log', 'warn', 'error'] as const) {
+      jest.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+        lines.push(args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
+      });
+    }
+    emailSpy.mockResolvedValueOnce(false);
+    const { orgId, customerId, subscriptionId } = await insertOrg({ tier: 'pro' });
+    await insertOwner(orgId);
+    const invoice = renewalInvoice(customerId, subscriptionId);
+    const older = renewalInvoice(customerId, subscriptionId, unixSeconds(daysAgo(40)));
+    const otherSubscription = renewalInvoice(customerId, `sub_test_other_${uniqueSuffix()}`);
+    const unknownCustomer = renewalInvoice(`cus_test_unknown_${uniqueSuffix()}`, subscriptionId);
+    const noCustomer = { id: `in_test_${uniqueSuffix()}`, created: invoice.created };
+    const noCreated = { id: `in_test_${uniqueSuffix()}`, customer: customerId };
+
+    for (const type of ['invoice.paid', 'invoice.payment_failed']) {
+      await deliverWebhook(fakeEvent(type, noCustomer));
+      await deliverWebhook(fakeEvent(type, noCreated));
+      await deliverWebhook(fakeEvent(type, unknownCustomer));
+      await deliverWebhook(fakeEvent(type, otherSubscription));
+    }
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice)); // grace, email not confirmed
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice)); // retried, sent
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice)); // already notified
+    await deliverWebhook(fakeEvent('invoice.paid', older)); // stale
+    await deliverWebhook(fakeEvent('invoice.payment_failed', older)); // stale
+    await deliverWebhook(fakeEvent('invoice.paid', invoice)); // recovered
+    await deliverWebhook(fakeEvent('invoice.payment_failed', invoice)); // late attempt, refused
+
+    const output = lines.join('\n');
+    expect(output).toContain(`organization ${orgId}`);
+    for (const id of [invoice.id, older.id, otherSubscription.id, unknownCustomer.id, noCustomer.id, noCreated.id,
+      customerId, unknownCustomer.customer]) {
+      expect(output).not.toContain(id);
+    }
   });
 });

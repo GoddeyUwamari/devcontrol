@@ -1218,6 +1218,21 @@ export class StripeService {
    * that predates a genuine recovery could incorrectly reopen a grace
    * period for an organization that has already paid.
    *
+   * Starting an episode needs a STRICTLY newer invoice (`<`). Every payment
+   * attempt on one invoice carries that invoice's same `created`, so once
+   * any event of the invoice has been processed, a failure of the same
+   * invoice arriving later compares equal. While the organization is
+   * 'healthy' that equal failure is stale: either the invoice's own
+   * invoice.paid has already been processed (a paid invoice is final, so
+   * this is a late earlier attempt), or the episode already ended another
+   * way (the subscription was deleted, or the first-charge restriction was
+   * cleared by an 'active' update, which Stripe sets only once paid). It
+   * never opens a grace period and is reported `wasStale`. An equal
+   * failure while NOT healthy is not stale: it is Stripe's next attempt on
+   * the invoice of the open episode, and may still owe the notification.
+   * (recordPaymentRecovery keeps `<=`: an invoice paid after its own
+   * failure must end that failure's episode.)
+   *
    * The primary UPDATE below only fires for the actual first failure of a
    * new episode (billing_lifecycle_state currently 'healthy') AND a
    * non-stale invoice -- a single conditional UPDATE, not a read-then-write,
@@ -1258,7 +1273,7 @@ export class StripeService {
            payment_failed_notification_sent_at = NULL
        WHERE id = $1
          AND billing_lifecycle_state = 'healthy'
-         AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at <= $3)
+         AND (latest_processed_invoice_created_at IS NULL OR latest_processed_invoice_created_at < $3)
        RETURNING billing_lifecycle_state, payment_failed_at, grace_period_ends_at, payment_failed_notification_sent_at`,
       [organizationId, graceEndsAt, invoiceCreatedAt]
     );
@@ -1298,7 +1313,12 @@ export class StripeService {
     );
     const row = existing.rows[0];
     const currentMark: Date | null = row?.latest_processed_invoice_created_at ?? null;
-    const wasStale = currentMark !== null && invoiceCreatedAt.getTime() < new Date(currentMark).getTime();
+    const markTime = currentMark === null ? null : new Date(currentMark).getTime();
+    // Older than the mark, or equal to it while healthy (see above).
+    const wasStale =
+      markTime !== null &&
+      (invoiceCreatedAt.getTime() < markTime ||
+        (invoiceCreatedAt.getTime() === markTime && row.billing_lifecycle_state === 'healthy'));
 
     // Pending exactly when this organization is still in an unresolved
     // grace-period episode AND no notification has been confirmed sent for

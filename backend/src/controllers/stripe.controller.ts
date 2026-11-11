@@ -2390,13 +2390,13 @@ export class StripeController {
   private async handleInvoicePaid(invoice: any): Promise<void> {
     const customerId = invoice.customer;
     if (!customerId) {
-      console.warn(`invoice.paid ${invoice.id} has no customer -- skipping`);
+      console.warn('invoice.paid has no customer -- skipping');
       return;
     }
 
     const invoiceCreatedAt = this.extractInvoiceCreatedAt(invoice);
     if (!invoiceCreatedAt) {
-      console.warn(`invoice.paid ${invoice.id} has no usable created timestamp -- skipping`);
+      console.warn('invoice.paid has no usable created timestamp -- skipping');
       return;
     }
 
@@ -2406,22 +2406,22 @@ export class StripeController {
     if (!organization) {
       // Diagnostic context only -- never mutates any organization when the
       // invoice can't be safely mapped to one.
-      console.warn(`invoice.paid ${invoice.id}: no organization found for customer ${customerId}`);
+      console.warn('invoice.paid: no organization found for its customer');
       return;
     }
 
     if (!this.invoiceBelongsToRecordedSubscription(organization, invoice)) {
-      console.warn(`invoice.paid ${invoice.id} for organization ${organization.id} is for a subscription that is not its recorded one -- not applied`);
+      console.warn(`invoice.paid for organization ${organization.id} is for a subscription that is not its recorded one -- not applied`);
       return;
     }
 
     const { wasRecovery, wasStale } = await stripeService.recordPaymentRecovery(organization.id, invoiceCreatedAt);
     if (wasStale) {
-      console.log(`invoice.paid ${invoice.id} for organization ${organization.id} predates a payment event already processed -- ignoring (out-of-order delivery)`);
+      console.log(`invoice.paid for organization ${organization.id} predates a payment event already processed -- ignoring (out-of-order delivery)`);
       return;
     }
     if (wasRecovery) {
-      console.log(`Payment recovered for organization ${organization.id} (invoice ${invoice.id}) -- grace period cleared`);
+      console.log(`Payment recovered for organization ${organization.id} -- grace period cleared`);
     }
   }
 
@@ -2460,13 +2460,13 @@ export class StripeController {
   private async handleInvoicePaymentFailed(invoice: any): Promise<void> {
     const customerId = invoice.customer;
     if (!customerId) {
-      console.warn(`invoice.payment_failed ${invoice.id} has no customer -- skipping`);
+      console.warn('invoice.payment_failed has no customer -- skipping');
       return;
     }
 
     const invoiceCreatedAt = this.extractInvoiceCreatedAt(invoice);
     if (!invoiceCreatedAt) {
-      console.warn(`invoice.payment_failed ${invoice.id} has no usable created timestamp -- skipping`);
+      console.warn('invoice.payment_failed has no usable created timestamp -- skipping');
       return;
     }
 
@@ -2474,12 +2474,12 @@ export class StripeController {
       typeof customerId === 'string' ? customerId : customerId.id
     );
     if (!organization) {
-      console.warn(`invoice.payment_failed ${invoice.id}: no organization found for customer ${customerId} -- not mutating any organization`);
+      console.warn('invoice.payment_failed: no organization found for its customer -- not mutating any organization');
       return;
     }
 
     if (!this.invoiceBelongsToRecordedSubscription(organization, invoice)) {
-      console.warn(`invoice.payment_failed ${invoice.id} for organization ${organization.id} is for a subscription that is not its recorded one -- not applied`);
+      console.warn(`invoice.payment_failed for organization ${organization.id} is for a subscription that is not its recorded one -- not applied`);
       return;
     }
 
@@ -2498,29 +2498,29 @@ export class StripeController {
 
     const { wasStale, row, notificationPending } = await stripeService.recordPaymentFailure(organization.id, invoiceCreatedAt);
     if (wasStale) {
-      console.log(`invoice.payment_failed ${invoice.id} for organization ${organization.id} predates a payment event already processed -- ignoring (out-of-order delivery)`);
+      console.log(`invoice.payment_failed for organization ${organization.id} is not newer than a payment event already processed -- ignoring (out-of-order delivery, or a late attempt of an invoice already paid)`);
       return;
     }
     if (!row.gracePeriodEndsAt) {
       // Defensive: billing_lifecycle_state isn't 'grace_period' at all
       // (e.g. it was already recovered by a race with invoice.paid) --
       // nothing to notify about.
-      console.log(`Payment failure recorded for organization ${organization.id} (invoice ${invoice.id}) but no grace deadline is set -- skipping notification`);
+      console.log(`Payment failure recorded for organization ${organization.id} but no grace deadline is set -- skipping notification`);
       return;
     }
     if (!notificationPending) {
       // Either this exact episode was already confirmed-notified, or (the
       // defensive branch above already excluded "no episode at all").
-      console.log(`Payment failure already recorded and notified for organization ${organization.id} (invoice ${invoice.id}) -- no change`);
+      console.log(`Payment failure already recorded and notified for organization ${organization.id} -- no change`);
       return;
     }
 
-    console.log(`Payment failed for organization ${organization.id} (invoice ${invoice.id}) -- grace period ends ${row.gracePeriodEndsAt.toISOString()}; attempting notification`);
+    console.log(`Payment failed for organization ${organization.id} -- grace period ends ${row.gracePeriodEndsAt.toISOString()}; attempting notification`);
     const sent = await stripeService.sendPaymentFailedEmail(organization.id, row.gracePeriodEndsAt);
     if (sent) {
       await stripeService.markPaymentFailedNotificationSent(organization.id);
     } else {
-      console.warn(`Payment-failure notification for organization ${organization.id} (invoice ${invoice.id}) did not confirm delivery -- will retry on the next invoice.payment_failed delivery for this episode`);
+      console.warn(`Payment-failure notification for organization ${organization.id} did not confirm delivery -- will retry on the next invoice.payment_failed delivery for this episode`);
     }
   }
 }
