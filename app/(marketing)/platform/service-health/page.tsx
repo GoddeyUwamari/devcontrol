@@ -154,10 +154,6 @@ export default function ServiceHealthPage() {
               </span>
             ))}
           </div>
-
-          <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
-            {'A DevOps team reduced their MTTR by 60% in the first month — from 4 hours to under 45 minutes.'}
-          </p>
         </div>
       </section>
 
@@ -251,81 +247,6 @@ export default function ServiceHealthPage() {
                 </p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* SOCIAL PROOF */}
-      <section style={{
-        padding: isMobile ? '0 16px 48px' : isTablet ? '0 32px 64px' : '0 48px 80px',
-        background: '#fff',
-      }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)',
-            borderRadius: '20px',
-            padding: isMobile ? '28px 20px' : '48px 56px',
-            border: '1px solid rgba(124,58,237,0.15)',
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
-            gap: isMobile ? '24px' : '48px',
-            alignItems: 'center',
-          }}>
-            <div>
-              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
-                DevOps Team Result
-              </p>
-              <p style={{ fontSize: isMobile ? '1rem' : '1.2rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.65, marginBottom: '24px', maxWidth: '560px' }}>
-                {'\u201C'}Our on-call engineers were spending 4 hours per incident just figuring out what broke and why. DevControl shows us the{' '}
-                <span style={{ color: '#7c3aed', fontWeight: 800 }}>blast radius and root cause in under 2 minutes</span>
-                {'. MTTR dropped by 60% in the first month.\u201D'}
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                  width: '44px', height: '44px', borderRadius: '50%',
-                  background: '#EDE9FE', color: '#7C3AED',
-                  fontWeight: 700, fontSize: '13px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  AT
-                </div>
-                <div>
-                  <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Alex T.</p>
-                  <p style={{ fontSize: '12px', color: '#64748B', margin: 0 }}>Lead DevOps Engineer · Series B SaaS</p>
-                </div>
-                <div style={{
-                  marginLeft: '12px',
-                  background: '#ECFDF5', color: '#059669',
-                  padding: '4px 12px', borderRadius: '999px',
-                  fontSize: '11px', fontWeight: 600,
-                }}>
-                  60% MTTR reduction
-                </div>
-              </div>
-            </div>
-            <div style={{
-              display: 'flex',
-              flexDirection: isMobile ? 'row' : 'column',
-              gap: isMobile ? '8px' : '16px',
-              minWidth: isMobile ? undefined : '160px',
-            }}>
-              {[
-                { value: '4hrs', label: 'Avg incident time before' },
-                { value: '45min', label: 'Avg incident time after' },
-                { value: '60%', label: 'MTTR reduction' },
-              ].map(({ value, label }) => (
-                <div key={label} style={{
-                  textAlign: 'center',
-                  padding: isMobile ? '12px 8px' : '16px',
-                  background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0',
-                  flex: isMobile ? '1' : undefined,
-                }}>
-                  <p style={{ fontSize: isMobile ? '1rem' : '1.3rem', fontWeight: 800, color: '#7c3aed', margin: '0 0 4px' }}>{value}</p>
-                  <p style={{ fontSize: '0.72rem', color: '#64748B', margin: 0 }}>{label}</p>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>

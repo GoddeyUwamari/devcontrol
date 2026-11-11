@@ -40,7 +40,6 @@ export default function ScaleupsPage() {
   ]
 
   const impacts = [
-    { value: '$800–$8K+', label: 'Monthly waste identified' },
     { value: '10+', label: 'Accounts unified' },
     { value: 'Elite', label: 'DORA tier achieved' },
     { value: '2 weeks', label: 'To establish compliance baseline' },
@@ -144,7 +143,7 @@ export default function ScaleupsPage() {
               </a>
             </div>
             <p style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', marginTop: '24px', fontStyle: 'italic' }}>
-              {'Axiom Labs unified 3 AWS accounts and found $8,200/month in idle resources within the first week.'}
+              {'What a first scan looks for: low-activity EC2 instances, unattached EBS volumes and open security groups.'}
             </p>
           </div>
 
@@ -294,71 +293,20 @@ export default function ScaleupsPage() {
         </div>
       </section>
 
-      {/* SOCIAL PROOF */}
+      {/* WHAT A FIRST SCAN LOOKS FOR (replaces an invented customer quote, catalog CAT-0) */}
       <section style={{ padding: isMobile ? '0 20px 48px' : isTablet ? '0 32px 64px' : '0 48px 80px', width: '100%' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={{
             background: '#0f172a',
             borderRadius: '20px',
             padding: isMobile ? '28px 20px' : '48px',
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
-            gap: isMobile ? '32px' : '48px',
-            alignItems: 'center',
           }}>
-            <div>
-              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
-                Scale-up Result
-              </p>
-              <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 600, color: '#e2e8f0', lineHeight: 1.65, marginBottom: '24px', maxWidth: '560px' }}>
-                {'\u201C'}We had 3 AWS accounts, 4 teams, and no idea what anything cost. DevControl gave us full visibility in 15 minutes and found{' '}
-                <span style={{ color: '#a78bfa', fontWeight: 800 }}>$8,200/month in idle resources</span>
-                {' '}we had completely forgotten about.{'\u201D'}
-              </p>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                flexDirection: isMobile ? 'column' : 'row',
-              }}>
-                <div style={{
-                  width: '40px', height: '40px', borderRadius: '50%',
-                  background: 'rgba(124,58,237,0.3)', color: '#a78bfa',
-                  fontWeight: 700, fontSize: '13px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  MC
-                </div>
-                <div style={{ textAlign: isMobile ? 'center' : 'left' }}>
-                  <p style={{ fontSize: '14px', fontWeight: 600, color: '#fff', margin: 0 }}>Marcus Chen</p>
-                  <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>VP Engineering · Axiom Labs · Series B</p>
-                </div>
-                <div style={{
-                  marginLeft: isMobile ? '0' : '12px',
-                  background: 'rgba(124,58,237,0.2)', color: '#a78bfa',
-                  padding: '3px 12px', borderRadius: '999px',
-                  fontSize: '11px', fontWeight: 600,
-                }}>
-                  Saved $8,200/month
-                </div>
-              </div>
-            </div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : '1fr',
-              gap: '16px',
-              minWidth: isMobile ? undefined : '180px',
-            }}>
-              {[
-                { value: '3', label: 'Accounts unified' },
-                { value: '$8,200', label: 'Monthly savings' },
-                { value: '15 min', label: 'Time to insight' },
-              ].map(({ value, label }) => (
-                <div key={label} style={{ textAlign: 'center', padding: isMobile ? '12px 8px' : '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <p style={{ fontSize: isMobile ? '1.1rem' : '1.5rem', fontWeight: 800, color: '#a78bfa', margin: '0 0 4px' }}>{value}</p>
-                  <p style={{ fontSize: '0.72rem', color: '#64748b', margin: 0 }}>{label}</p>
-                </div>
-              ))}
-            </div>
+            <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
+              What a first scan looks for
+            </p>
+            <p style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 600, color: '#e2e8f0', lineHeight: 1.65, margin: 0, maxWidth: '560px' }}>
+              Low-activity EC2 instances · Unattached EBS volumes · Open security groups
+            </p>
           </div>
         </div>
       </section>

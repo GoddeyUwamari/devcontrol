@@ -164,10 +164,10 @@ export function HeroSection() {
 
         <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="hero-cards">
           <div className="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-outcome-card">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">Recent client outcome</p>
-            <p className="m-0 mt-2 text-4xl font-bold tracking-tight text-[#7c3aed]">$8,000/mo</p>
+            <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">What a first scan looks for</p>
+            <p className="m-0 mt-2 text-4xl font-bold tracking-tight text-[#7c3aed]">4 cost checks</p>
             <p className="m-0 mt-3 text-base leading-relaxed text-slate-700">
-              in unnecessary AWS spend identified in under 60 seconds, with no agent and no code changes.
+              Low-activity EC2 instances, unattached EBS volumes, unused Elastic IPs and gp2 volumes, with an estimated monthly saving for each.
             </p>
           </div>
 

@@ -134,7 +134,7 @@ export default function EnterprisePage() {
             ))}
           </div>
           <p style={{ fontSize: '0.9rem', color: '#94a3b8', marginTop: '24px', fontStyle: 'italic' }}>
-            {'A global SaaS company managing 120+ AWS services identified $1.2M in annual savings within 30 days of deploying DevControl Enterprise.'}
+            {'What a first scan looks for: low-activity EC2 instances, unattached EBS volumes and open security groups.'}
           </p>
         </div>
       </section>

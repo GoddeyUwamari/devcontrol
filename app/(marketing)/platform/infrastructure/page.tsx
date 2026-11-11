@@ -135,7 +135,7 @@ export default function InfrastructureManagementPage() {
             ))}
           </div>
           <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
-            {'A Series B fintech discovered $18,200/month in AWS waste within 48 hours of connecting DevControl.'}
+            {'What a first scan looks for: low-activity EC2 instances, unattached EBS volumes and open security groups.'}
           </p>
         </div>
       </section>

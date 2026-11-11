@@ -72,7 +72,7 @@ export default function CostOptimizationPage() {
             margin: '0 auto 36px',
           }}>
             AI-powered cost intelligence that finds waste, forecasts spend, and recommends
-            savings automatically. Teams typically uncover $800–$8,000+/month in waste in the first week.
+            savings automatically.
           </p>
 
           <div style={{
@@ -124,7 +124,7 @@ export default function CostOptimizationPage() {
             ))}
           </div>
           <p style={{ fontSize: isMobile ? '0.82rem' : '0.9rem', color: '#1f2937', marginTop: '24px', fontStyle: 'italic' }}>
-            {'A fintech team cut their AWS bill by $3,100 in the first month after connecting DevControl.'}
+            {'What a first scan looks for: low-activity EC2 instances, unattached EBS volumes and open security groups.'}
           </p>
         </div>
       </section>

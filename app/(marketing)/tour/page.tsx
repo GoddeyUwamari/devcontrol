@@ -72,7 +72,6 @@ function CostsMock() {
   const metrics = [
     { label: 'AWS Spend', value: '$1,247', sub: 'this month', color: '#0f172a' },
     { label: 'Projected', value: '$1,890', sub: 'end of month', color: '#f59e0b' },
-    { label: 'Waste Identified', value: '$800–$8K+', sub: 'per month', color: '#16a34a' },
     { label: 'Services', value: '23', sub: 'monitored', color: '#7c3aed' },
   ]
   const bars = [60, 80, 55, 90, 70, 85, 45]
@@ -326,7 +325,6 @@ const steps = [
       'Real-time cost breakdown by service',
       'Month-over-month trend analysis',
       'Idle and unused resource detection',
-      'Teams identify $800–$8,000+/month in waste',
     ],
     mockType: 'costs',
     navLabel: 'Cost Overview',
