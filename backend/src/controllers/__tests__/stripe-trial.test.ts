@@ -663,8 +663,12 @@ describe('the first charge after the trial: no grace, in every order; later char
     const firstInvoiceCreated = nextCreated++;
     await deliver(fakeEvent('invoice.paid', invoiceOf(customerId, subscriptionId, firstInvoiceCreated)));
     await deliver(fakeEvent('invoice.payment_failed', invoiceOf(customerId, subscriptionId, firstInvoiceCreated)));
-    expect((await orgRow(orgId)).billing_lifecycle_state).not.toBe('restricted');
+    const row = await orgRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('healthy');
+    expect(row.payment_failed_at).toBeNull();
+    expect(row.grace_period_ends_at).toBeNull();
     expect(await entitlement(orgId)).toEqual({ storedTier: 'pro', effectiveTier: 'pro', hold: null });
+    expect(emailSpy).not.toHaveBeenCalled();
   });
 
   it('the subscription ends after the failed first charge: free; a late failure of that invoice opens no grace and sends no email', async () => {
@@ -723,7 +727,21 @@ describe('the first charge after the trial: no grace, in every order; later char
     expect(emailSpy).toHaveBeenCalledTimes(1);
   });
 
-  it.todo('F-1 (separate PR): a late attempt-1 failure delivered after attempt-2 was paid reopens the ordinary grace');
+  it('F-1: attempt 2 paid the first post-trial invoice, then attempt 1\'s failure arrives late: no grace, no email, paid', async () => {
+    const { orgId, customerId, subscriptionId, priceEnv } = await trialingOrg('pro');
+    // One invoice for every attempt (same id, same created: the trial's end).
+    const firstInvoice = invoiceOf(customerId, subscriptionId, TRIAL_END + 5);
+    const attempt1Failed = fakeEvent('invoice.payment_failed', firstInvoice);
+    await deliver(fakeEvent('invoice.paid', firstInvoice));
+    await deliver(updated(subscriptionId, customerId, 'active', priceEnv, orgId));
+    await deliver(attempt1Failed);
+    const row = await orgRow(orgId);
+    expect(row.billing_lifecycle_state).toBe('healthy');
+    expect(row.payment_failed_at).toBeNull();
+    expect(row.grace_period_ends_at).toBeNull();
+    expect(await entitlement(orgId)).toEqual({ storedTier: 'pro', effectiveTier: 'pro', hold: null });
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('H-1: a recovered first charge never leaves a paying organization restricted', () => {
@@ -781,6 +799,37 @@ describe('H-1: a recovered first charge never leaves a paying organization restr
     await deliver({ ...olderPastDue, id: `evt_test_${uniqueSuffix()}` });
     await paidAndHealthy(orgId);
     expect((await orgRow(orgId)).subscription_status).toBe('active');
+  });
+
+  it('F-1 after the clear: the first charge failed (restricted), active cleared it, then a late attempt of the same invoice: stays paid, no email', async () => {
+    const { orgId, customerId, subscriptionId, priceEnv } = await trialingOrg('pro');
+    const invoice = firstInvoice(customerId, subscriptionId);
+    const lateAttempt = fakeEvent('invoice.payment_failed', invoice);
+    await deliver(fakeEvent('invoice.payment_failed', invoice));
+    expect((await orgRow(orgId)).billing_lifecycle_state).toBe('restricted');
+    await deliver(updated(subscriptionId, customerId, 'active', priceEnv, orgId));
+    await paidAndHealthy(orgId);
+    await deliver(lateAttempt);
+    await paidAndHealthy(orgId);
+    expect((await orgRow(orgId)).grace_period_ends_at).toBeNull();
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('known residual (F-1b): past_due, active, then the failure BEFORE its invoice.paid: a short grace and one email, then paid and healthy', async () => {
+    const { orgId, customerId, subscriptionId, priceEnv } = await trialingOrg('pro');
+    const invoice = firstInvoice(customerId, subscriptionId);
+    await deliver(updated(subscriptionId, customerId, 'past_due', priceEnv, orgId));
+    expect((await orgRow(orgId)).billing_lifecycle_state).toBe('restricted');
+    await deliver(updated(subscriptionId, customerId, 'active', priceEnv, orgId));
+    await paidAndHealthy(orgId);
+    await deliver(fakeEvent('invoice.payment_failed', invoice));
+    // Nothing yet says this invoice was paid (f1-step1.md §1.2): the ordinary
+    // grace opens, and access is kept throughout.
+    expect((await orgRow(orgId)).billing_lifecycle_state).toBe('grace_period');
+    expect(await entitlement(orgId)).toEqual({ storedTier: 'pro', effectiveTier: 'pro', hold: null });
+    await deliver(fakeEvent('invoice.paid', invoice));
+    await paidAndHealthy(orgId);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
   });
 
   it('the clear touches only the first-charge restriction: an ordinary grace episode is not ended by an active update', async () => {
