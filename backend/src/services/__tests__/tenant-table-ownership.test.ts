@@ -43,7 +43,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Client, Pool, PoolClient } from 'pg';
 import { installTenantTagReset } from '../../config/database';
-import { SHARED_FIXTURE_TABLE_NAMES } from '../../routes/__tests__/shared-fixture-tables';
+import { SHARED_FIXTURE_TABLE_NAMES, ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
 function dbConfig() {
   return {
@@ -116,6 +116,8 @@ const EXPECTED_CORRECT = [
   // C-G:
   'security_hub_findings', 'organization_security_hub_state', 'soc2_evidence_observations', 'soc2_control_evaluations',
   'cost_analysis_runs', 'customer_evidence', 'organization_optimization_rule_configs', 'refunds', 'slo_definitions',
+  // AWS connect PR D1a (admin migration 202611111200):
+  'aws_connection_checks',
 ];
 
 /** The nine tables of C-G and devcontrol's exact privileges on each, derived from the application's statements. */
@@ -130,6 +132,15 @@ const C_G_PRIVILEGES: Record<string, string[]> = {
   refunds: ['INSERT', 'SELECT', 'UPDATE'],
   slo_definitions: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
 };
+/**
+ * Tables created postgres-owned by an admin migration after C-G, with devcontrol's exact privileges.
+ * aws_connection_checks (D1a): no DELETE; the disconnect cleanup (C-b) must add DELETE in its own migration.
+ */
+const CREATED_CORRECT_PRIVILEGES: Record<string, string[]> = {
+  aws_connection_checks: ['INSERT', 'SELECT', 'UPDATE'],
+};
+/** Every table the behaviour block runs as devcontrol. */
+const TOWN_PRIVILEGES: Record<string, string[]> = { ...C_G_PRIVILEGES, ...CREATED_CORRECT_PRIVILEGES };
 const TABLE_PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'];
 
 type TableFacts = {
@@ -309,8 +320,15 @@ const ROW: Record<string, (org: string, label: string) => [string, unknown[]]> =
   slo_definitions: (org, label) => [
     `INSERT INTO slo_definitions (organization_id, name, resource_type, resource_id, sli, target_value)
      VALUES ($1, $2, 'ec2', 'i-1234567890abcdef0', 'ec2_availability', 99)`, [org, `town-${label}`]],
+  // One row per connection: the organization's own aws_accounts row (the composite foreign key, when present,
+  // refuses any other); the upsert mirrors the repository's lazy INSERT.
+  aws_connection_checks: (org) => [
+    `INSERT INTO aws_connection_checks (aws_account_id, organization_id) VALUES ($1, $2)
+     ON CONFLICT (aws_account_id) DO UPDATE SET updated_at = now()`, [connectionRowOf[org], org]],
 };
-const NINE = Object.keys(C_G_PRIVILEGES);
+const TOWN_TABLES = Object.keys(TOWN_PRIVILEGES);
+/** Each probe organization's aws_accounts row id (aws_connection_checks rows reference it). */
+const connectionRowOf: Record<string, string> = {};
 
 const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const SET_TENANT_TAG_SQL = "SELECT set_config('app.current_organization_id', $1, false)";
@@ -338,7 +356,7 @@ async function rolledBack<T>(c: PoolClient, fn: () => Promise<T>): Promise<T> {
   }
 }
 
-describe('T-OWN behaviour: the nine C-G tables as devcontrol', () => {
+describe('T-OWN behaviour: the nine C-G tables and the D1a table as devcontrol', () => {
   beforeAll(async () => {
     appPool = installTenantTagReset(new Pool({ ...dbConfig(), max: 2, options: '-c role=devcontrol' }));
     const { rows } = await admin.query(
@@ -348,7 +366,20 @@ describe('T-OWN behaviour: the nine C-G tables as devcontrol', () => {
     );
     orgA = rows.find((r) => r.name === `town-a-${suffix}`).id;
     orgB = rows.find((r) => r.name === `town-b-${suffix}`).id;
-    for (const t of NINE) {
+    const fixturePool = new Pool({ ...dbConfig(), max: 1 });
+    try {
+      await ensureSharedFixtureTable(fixturePool, 'aws_accounts');
+    } finally {
+      await fixturePool.end();
+    }
+    for (const [org, n] of [[orgA, 'a'], [orgB, 'b']] as const) {
+      connectionRowOf[org] = (await admin.query(
+        `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, status)
+         VALUES ($1, 'arn:aws:iam::123456789012:role/DevControlRole', $2, 'placeholder-external-id', 'us-east-1', 'active') RETURNING id::text AS id`,
+        [org, `town-${n}-${suffix}`.slice(0, 32)]
+      )).rows[0].id;
+    }
+    for (const t of TOWN_TABLES) {
       for (const [org, l] of [[orgA, 'a'], [orgB, 'b']] as const) {
         const [sql, params] = ROW[t](org, `${l}-${suffix}`);
         await admin.query(sql, params);
@@ -359,6 +390,7 @@ describe('T-OWN behaviour: the nine C-G tables as devcontrol', () => {
   afterAll(async () => {
     await appPool.end();
     await admin.query('DELETE FROM organizations WHERE id = ANY($1)', [[orgA, orgB].filter(Boolean)]);
+    await admin.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [[orgA, orgB].filter(Boolean)]);
   });
 
   it('connects as devcontrol, which is no superuser and cannot bypass row level security', async () => {
@@ -368,17 +400,17 @@ describe('T-OWN behaviour: the nine C-G tables as devcontrol', () => {
     expect(who).toEqual({ u: 'devcontrol', rolsuper: false, rolbypassrls: false });
   });
 
-  it.each(NINE)('%s: postgres-owned, forced, and devcontrol has exactly the privileges the application uses', async (t) => {
+  it.each(TOWN_TABLES)('%s: postgres-owned, forced, and devcontrol has exactly the privileges the application uses', async (t) => {
     const { rows } = await admin.query(
       `SELECT pg_get_userbyid(c.relowner) AS owner, c.relforcerowsecurity AS force,
               ARRAY(SELECT p FROM unnest($2::text[]) p WHERE has_table_privilege('devcontrol', c.oid, p) ORDER BY p) AS privileges
          FROM pg_class c WHERE c.oid = ('public.' || $1)::regclass`,
       [t, TABLE_PRIVILEGES]
     );
-    expect(rows[0]).toEqual({ owner: 'postgres', force: true, privileges: C_G_PRIVILEGES[t] });
+    expect(rows[0]).toEqual({ owner: 'postgres', force: true, privileges: TOWN_PRIVILEGES[t] });
   });
 
-  it.each(NINE)('%s: tagged for A, only A is visible; untagged and cleared connections see nothing', async (t) => {
+  it.each(TOWN_TABLES)('%s: tagged for A, only A is visible; untagged and cleared connections see nothing', async (t) => {
     const tagged = await asDevcontrol(orgA, async (c) => (await c.query(
       `SELECT organization_id::text AS org, count(*)::int AS n FROM ${t} GROUP BY 1 ORDER BY 1`
     )).rows);
@@ -394,7 +426,7 @@ describe('T-OWN behaviour: the nine C-G tables as devcontrol', () => {
     expect(cleared.n).toBe(0);
   });
 
-  it.each(NINE)('%s: cross-organization INSERT, UPDATE and DELETE change nothing or fail; same-org writes work', async (t) => {
+  it.each(TOWN_TABLES)('%s: cross-organization INSERT, UPDATE and DELETE change nothing or fail; same-org writes work', async (t) => {
     const before = (await admin.query(`SELECT count(*)::int AS n FROM ${t} WHERE organization_id = $1`, [orgB])).rows[0].n;
     await asDevcontrol(orgA, async (c) => {
       const [insertB, paramsB] = ROW[t](orgB, `x-${suffix}`);
@@ -407,7 +439,7 @@ describe('T-OWN behaviour: the nine C-G tables as devcontrol', () => {
       await rolledBack(c, async () =>
         expect(c.query(`UPDATE ${t} SET organization_id = $1 WHERE organization_id = $2`, [orgB, orgA])).rejects.toMatchObject({ code: '42501' }));
 
-      if (C_G_PRIVILEGES[t].includes('DELETE')) {
+      if (TOWN_PRIVILEGES[t].includes('DELETE')) {
         const deleted = await rolledBack(c, async () => (await c.query(`DELETE FROM ${t} WHERE organization_id = $1`, [orgB])).rowCount);
         expect(deleted).toBe(0);
       } else {
@@ -423,7 +455,7 @@ describe('T-OWN behaviour: the nine C-G tables as devcontrol', () => {
     expect(after).toBe(before);
   });
 
-  it.each(NINE)('%s: owner-only operations and TRUNCATE fail with 42501', async (t) => {
+  it.each(TOWN_TABLES)('%s: owner-only operations and TRUNCATE fail with 42501', async (t) => {
     await asDevcontrol(orgA, async (c) => {
       for (const statement of [
         `ALTER TABLE ${t} ADD COLUMN town_probe int`,

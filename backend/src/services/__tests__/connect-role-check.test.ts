@@ -107,6 +107,7 @@ describe('checkConnectRole', () => {
       ok: true,
       attempts: 1,
       credentials: { accessKeyId: 'ASIAEXAMPLE', secretAccessKey: 'secret-example', sessionToken: 'token-example' },
+      roleUniqueId: null, // okOutput has no AssumedRoleUser (AWS connect PR D1a reads the role ID from it)
     });
     expect(assume).toHaveBeenCalledWith(
       { RoleArn: ROLE_ARN, RoleSessionName: 'devcontrol-validation', ExternalId: EXTERNAL_ID, DurationSeconds: 900 },
@@ -116,7 +117,7 @@ describe('checkConnectRole', () => {
 
   it('a success without Credentials (a mocked STS) is ok with credentials null', async () => {
     const result = await run(jest.fn().mockResolvedValue({}));
-    expect(result).toEqual({ ok: true, attempts: 1, credentials: null });
+    expect(result).toEqual({ ok: true, attempts: 1, credentials: null, roleUniqueId: null });
   });
 
   it('IAM propagation: AccessDenied twice, then success, is ok after backoff', async () => {

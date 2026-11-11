@@ -36,6 +36,7 @@
  */
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable } from './platform-sts';
 import { isThrottlingError } from '../utils/awsCallPolicy';
+import { roleUniqueIdOf } from './connection-health';
 
 /** The AssumeRole request and response, as platform-sts.ts (the one STS module) types them. */
 type AssumeRoleCommandInput = Parameters<typeof assumeRoleAsPlatform>[1];
@@ -64,7 +65,13 @@ export interface TemporaryRoleCredentials {
 }
 
 export type RoleCheckResult =
-  | { ok: true; attempts: number; credentials: TemporaryRoleCredentials | null }
+  | {
+      ok: true;
+      attempts: number;
+      credentials: TemporaryRoleCredentials | null;
+      /** The role's unique ID from AssumedRoleUser.AssumedRoleId, or null (AWS connect PR D1, CP-D15). */
+      roleUniqueId: string | null;
+    }
   | { ok: false; failure: RoleCheckFailure; attempts: number };
 
 export interface RoleCheckPolicy {
@@ -193,13 +200,15 @@ export async function checkConnectRole(params: {
   signal?: AbortSignal;
   policy?: RoleCheckPolicy;
   assume?: AssumeFn;
+  /** The STS session name; the connect check's 'devcontrol-validation' unless given (Check again: 'devcontrol-check'). */
+  sessionName?: string;
 }): Promise<RoleCheckResult> {
   const policy = params.policy ?? DEFAULT_ROLE_CHECK_POLICY;
   const assume: AssumeFn = params.assume
     ?? ((input, abortSignal) => assumeRoleAsPlatform(params.region, input, params.context, { abortSignal }));
   const input: AssumeRoleCommandInput = {
     RoleArn: params.roleArn,
-    RoleSessionName: 'devcontrol-validation',
+    RoleSessionName: params.sessionName ?? 'devcontrol-validation',
     ExternalId: params.externalId,
     DurationSeconds: 900,
   };
@@ -213,7 +222,7 @@ export async function checkConnectRole(params: {
       const credentials = c?.AccessKeyId && c.SecretAccessKey && c.SessionToken
         ? { accessKeyId: c.AccessKeyId, secretAccessKey: c.SecretAccessKey, sessionToken: c.SessionToken }
         : null;
-      return { ok: true, attempts: attempt, credentials };
+      return { ok: true, attempts: attempt, credentials, roleUniqueId: roleUniqueIdOf(output?.AssumedRoleUser?.AssumedRoleId) };
     } catch (error: unknown) {
       if (params.signal?.aborted) return { ok: false, failure: 'cancelled', attempts: attempt };
       const kind = classifyAssumeRoleError(error);

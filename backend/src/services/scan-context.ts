@@ -20,9 +20,14 @@
  *
  * Only the home region is scanned until multi-region scanning (M7):
  * clientsFor() refuses any other region.
+ *
+ * Every AssumeRole made here (the first and each refresh) is recorded as the
+ * connection's health (AWS connect PR D1, connection-health-recorder.ts),
+ * fail-soft: a failed record never fails or changes the scan.
  */
 import { awsConnectionIdentity } from '../repositories/aws-accounts.repository';
 import { AWSClientFactory, AWSClients, AssumedRoleSource, assumedRoleSourceOf, parseAccountIdFromArn } from './aws-client-factory.service';
+import * as healthRecorder from './connection-health-recorder';
 
 /** Credentials are refreshed when less than this remains before they expire. */
 export const CREDENTIAL_REFRESH_WINDOW_MS = 10 * 60 * 1000;
@@ -53,6 +58,8 @@ export class ScanContext {
    * and every cache entry the scan fills is keyed by it.
    */
   readonly connectionIdentity: string;
+  /** The role ARN of that row (the policy compare, AWS connect PR D1). */
+  readonly roleArn: string;
   private readonly home: AWSClients;
   private refreshing: Promise<void> | undefined;
   private refreshFailure: unknown;
@@ -66,13 +73,29 @@ export class ScanContext {
     this.awsAccountRowId = source.account.id;
     this.awsAccountId = awsAccountId;
     this.connectionIdentity = awsConnectionIdentity(source.account);
+    this.roleArn = source.account.role_arn;
     this.home = this.withRefresh(clients);
   }
 
   /** The context of the organization's one eligible account. */
   static async forOrg(organizationId: string): Promise<ScanContext> {
-    const clients = await AWSClientFactory.createClients(organizationId);
+    let clients: AWSClients;
+    try {
+      clients = await AWSClientFactory.createClients(organizationId);
+    } catch (error: unknown) {
+      await healthRecorder.recordScanAssumeFailure(organizationId, error);
+      throw error;
+    }
     const source = assumedRoleSourceOf(clients);
+    if (source) {
+      await healthRecorder.recordScanAssumeSuccess({
+        organizationId,
+        account: source.account,
+        attemptedAt: source.attemptedAt,
+        roleUniqueId: source.roleUniqueId ?? null,
+        iam: clients.iam,
+      });
+    }
     const unavailable = (reason: string) =>
       new Error(`${SCAN_CONTEXT_UNAVAILABLE}: org ${organizationId} ${reason}; the scan was not started`);
 
@@ -106,7 +129,19 @@ export class ScanContext {
     if (!this.refreshing) {
       this.refreshing = (async () => {
         try {
-          const fresh = await AWSClientFactory.assumeAccountRole(source.organizationId, source.account, source.region);
+          let fresh: Awaited<ReturnType<typeof AWSClientFactory.assumeAccountRole>>;
+          try {
+            fresh = await AWSClientFactory.assumeAccountRole(source.organizationId, source.account, source.region);
+          } catch (error: unknown) {
+            await healthRecorder.recordScanAssumeFailure(source.organizationId, error);
+            throw error;
+          }
+          await healthRecorder.recordScanAssumeSuccess({
+            organizationId: source.organizationId,
+            account: source.account,
+            attemptedAt: fresh.attemptedAt,
+            roleUniqueId: fresh.roleUniqueId,
+          });
           if (!fresh.expiration) {
             throw new Error(`${SCAN_CONTEXT_UNAVAILABLE}: org ${source.organizationId} refreshed credentials have no expiry`);
           }

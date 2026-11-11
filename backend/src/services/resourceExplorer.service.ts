@@ -13,6 +13,7 @@
  * failed" — that distinction is what the conservative reconciliation state
  * machine (resourceReconciliation.service.ts) depends on.
  */
+import { failedSourceStatus, type SourceStatus } from './source-outcome';
 import { ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { ResourceType, TagsState } from '../types/aws-resources.types';
 import { listAllPages } from '../utils/awsCallPolicy';
@@ -124,7 +125,7 @@ export const SEARCH_RESULT_LIMIT = 1000;
  */
 export type SearchResult =
   | { success: true; resources: REResource[]; complete: boolean }
-  | { success: false; error: string };
+  | { success: false; error: string; /** The AWS error, classified as a scan source outcome (source-outcome.ts); AWS connect PR D1. */ status: SourceStatus };
 
 export interface NormalizedSearchResult {
   /** Every ARN Resource Explorer returned, deep-monitored and generic alike — the presence
@@ -162,7 +163,7 @@ export class ResourceExplorerService {
       return { success: true, resources, complete };
     } catch (error: any) {
       console.error(`[ResourceExplorer] Search failed for region ${region}:`, error.message);
-      return { success: false, error: error.message || 'Unknown Resource Explorer error' };
+      return { success: false, error: error.message || 'Unknown Resource Explorer error', status: failedSourceStatus(error) };
     }
   }
 

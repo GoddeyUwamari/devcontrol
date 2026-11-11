@@ -91,6 +91,10 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-iam:ListMFADevicesCommand': read('iam:ListMFADevices'),
   'client-iam:GetLoginProfileCommand': read('iam:GetLoginProfile'),
   'client-iam:ListAccessKeysCommand': read('iam:ListAccessKeys'),
+  // The policy-set compare (AWS connect PR D1, connect-policy-compare.ts): the role's own policies.
+  'client-iam:ListAttachedRolePoliciesCommand': read('iam:ListAttachedRolePolicies'),
+  'client-iam:ListRolePoliciesCommand': read('iam:ListRolePolicies'),
+  'client-iam:GetRolePolicyCommand': read('iam:GetRolePolicy'),
   'client-cost-explorer:GetCostAndUsageCommand': read('ce:GetCostAndUsage'),
   'client-resource-explorer-2:SearchCommand': read('resource-explorer-2:Search'),
   'client-securityhub:GetEnabledStandardsCommand': read('securityhub:GetEnabledStandards'),

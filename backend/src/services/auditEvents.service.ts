@@ -30,6 +30,7 @@ export type AuditEventAction =
   | 'api_key.created'
   | 'api_key.revoked'
   | 'aws_account.connected'
+  | 'aws_account.checked'
   | 'cost_recommendation.resolved'
   | 'cost_recommendation.dismissed'
   | 'cost_recommendation.reopened'
