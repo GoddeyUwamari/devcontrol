@@ -58,10 +58,23 @@ describe('built lines sit at their server gate', () => {
     expect(feature(id).tier).toBe(tier)
   })
 
-  it('Pricing Mock placements: team cost attribution on Optimization Engine, scheduled AI reports on Revenue Protection', () => {
-    expect(feature('team-attribution').tier).toBe('pro')
+  it('team cost attribution is listed on Cost Control, matching the live /costs/by-team gate (founder M-2)', () => {
+    expect(feature('team-attribution').tier).toBe('starter')
+    expect(feature('team-attribution').badge).toBe('Coming soon')
+    expect(PLANS.find((p) => p.tier === 'starter')!.card).toContain('team-attribution')
+    expect(PLANS.find((p) => p.tier === 'pro')!.card).not.toContain('team-attribution')
+  })
+
+  it('Pricing Mock placements: scheduled AI reports and custom DORA benchmarks on Revenue Protection', () => {
     expect(feature('scheduled-ai-reports').tier).toBe('enterprise')
     expect(feature('dora-benchmarks').tier).toBe('enterprise')
+  })
+
+  it('NIST 800-53 readiness is named, on the plan its entitlement is on (founder M-1)', () => {
+    expect(feature('pci-cis').label).toBe('PCI DSS, CIS & NIST 800-53 Compliance Readiness (requires AWS Security Hub)')
+    for (const key of ['securityHubCis', 'securityHubPci', 'securityHubNist'] as const) {
+      expect(PLAN_ENTITLEMENTS[key], key).toBe(feature('pci-cis').tier)
+    }
   })
 })
 

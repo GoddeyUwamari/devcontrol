@@ -66,7 +66,7 @@ const UPGRADE_CTA: Record<SubscriptionTier, { message: string; upgradeUrl: strin
     nextTier: 'pro',
   },
   pro: {
-    message: 'Upgrade to Revenue Protection for unlimited resources, SAML/SSO and a dedicated account manager.',
+    message: 'Upgrade to Revenue Protection for unlimited resources, SAML/SSO and a named support contact.',
     upgradeUrl: '/settings/billing?upgrade=enterprise',
     nextTier: 'enterprise',
   },

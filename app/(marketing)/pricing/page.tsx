@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { CheckCircle2, Clock, Shield, Sparkles, Zap } from 'lucide-react'
 import { FeatureComparisonTable } from '@/components/billing/feature-comparison-table'
 import { PricingFAQ } from '@/components/billing/pricing-faq'
@@ -8,10 +8,10 @@ import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 import { FeatureText } from '@/components/billing/feature-line'
 import {
   PLANS, cardFeatures, includesPrevious, priceLabel, annualBillingLine, annualToggleLabel, plan,
-  FOUNDING_OFFER_VISIBLE, FOUNDING_SPOTS,
+  FOUNDING_OFFER_VISIBLE,
 } from '@/lib/plan/plan-catalog'
 import type { Tier } from '@/lib/plan/plan-names'
-import { parseFoundingCount } from '@/lib/billing/founding'
+import { FoundingBanner } from '@/components/billing/founding-banner'
 
 /** Card buttons that are not a sign-up (the trial-aware button covers the paid self-serve plans). */
 const CARD_CTA: Partial<Record<Tier, { label: string; href: string }>> = {
@@ -152,50 +152,6 @@ function ROICalculator() {
         </div>
       </div>
     </section>
-  )
-}
-
-/** The founding-member banner. Rendered only while FOUNDING_OFFER_VISIBLE is on (C1-D9). */
-function FoundingBanner() {
-  const [foundingCount, setFoundingCount] = useState<number | null>(null)
-
-  useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/organizations/founding-count`)
-      .then(res => (res.ok ? res.json() : null))
-      .then(data => setFoundingCount(parseFoundingCount(data)))
-      .catch(() => setFoundingCount(null))
-  }, [])
-
-  if (foundingCount !== null && foundingCount >= FOUNDING_SPOTS) return null
-  const filled = foundingCount === null ? 0 : Math.round((foundingCount / FOUNDING_SPOTS) * 10)
-
-  return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-violet-50 border border-violet-200 rounded-2xl px-4 py-4 sm:px-6 max-w-2xl mx-auto">
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-violet-700 flex items-center justify-center shrink-0">
-          <Sparkles size={14} className="text-white" />
-        </div>
-        <div className="text-left">
-          <p className="text-sm font-bold text-slate-900">Founding Member Pricing — your rate is locked in forever</p>
-          <p className="text-xs text-violet-700 mt-0.5">Price increases after the first {FOUNDING_SPOTS} customers. Founding members never pay more.</p>
-        </div>
-      </div>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-        {foundingCount !== null && (
-          <div>
-            <div className="flex gap-1 items-center">
-              {[...Array(10)].map((_, i) => (
-                <div key={i} className="w-2 h-2 rounded-full" style={{ background: i < filled ? '#7c3aed' : 'rgba(124,58,237,0.2)' }} />
-              ))}
-            </div>
-            <p className="text-[10px] text-violet-700 font-semibold mt-1 text-center">{foundingCount} of {FOUNDING_SPOTS} spots claimed</p>
-          </div>
-        )}
-        <a href="/register" className="bg-violet-700 text-white px-4 py-2 rounded-lg font-bold text-xs no-underline whitespace-nowrap">
-          Claim founding rate
-        </a>
-      </div>
-    </div>
   )
 }
 

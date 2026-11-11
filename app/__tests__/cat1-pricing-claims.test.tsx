@@ -68,6 +68,7 @@ const PLAN_FILES = [
   'components/billing/upgrade-modal.tsx',
   'components/billing/feature-line.tsx',
   'components/billing/trial-line.tsx',
+  'components/billing/founding-banner.tsx',
   'lib/plan/plan-catalog.ts',
   'lib/plan/plan-names.ts',
   'app/(app)/forecast/page.tsx',
@@ -130,6 +131,8 @@ const TRIAL_BANNED: (string | RegExp)[] = [
   'Start Free 14-Day Trial',
   /free for 14 days/i,
   /14-day free trial/i,
+  /free trial/i, // L-4: every trial string lives in trial-line.tsx
+  /-day (free )?trial/, // also catches `${days}-day free trial` templates
   /money-back/i,
 ]
 
@@ -167,13 +170,13 @@ const PLAN_BANNED: (string | RegExp)[] = [
   /50% off/,
   /NET-30/,
   /happy to extend/i,
-  /locked in forever/i, // allowed only inside the hidden founding banner (see ALLOWED)
+  /locked in forever/i,
+  /never pay more/i,
+  /dedicated account manager/i, // L-5: "a named support contact"
 ]
 
 /** Exact allowed occurrences, each with its reason. */
 const ALLOWED: Record<string, (string | RegExp)[]> = {
-  // The founding banner stays in code, hidden behind FOUNDING_OFFER_VISIBLE (C1-D9).
-  'app/(marketing)/pricing/page.tsx': [/locked in forever/i],
   // The customer's own tenant tiers (Tenants feature), not DevControl plans.
   'app/(app)/tenants/page.tsx': [],
 }
@@ -245,13 +248,13 @@ describe('rendered scan', () => {
   it.each(SURFACES)('%s, trial OFF: no removed claim and no trial wording at all', async (_name, make, ready) => {
     serveOffer(false)
     const text = await renderedText(make, false, ready)
-    expect(hits(text, [...PLAN_BANNED.filter((b) => String(b) !== String(/locked in forever/i)), ...TRIAL_BANNED, /free trial/i, /Start \d+-day trial/])).toEqual([])
+    expect(hits(text, [...PLAN_BANNED, ...TRIAL_BANNED, /free trial/i, /Start \d+-day trial/])).toEqual([])
   })
 
   it.each(SURFACES)('%s, trial ON: still no removed claim and never "no credit card"', async (_name, make, ready) => {
     serveOffer(true)
     const text = await renderedText(make, true, ready)
-    expect(hits(text, [...PLAN_BANNED.filter((b) => String(b) !== String(/locked in forever/i)), /no credit card/i, /no card required/i, /money-back/i, 'Start Free Trial'])).toEqual([])
+    expect(hits(text, [...PLAN_BANNED, /no credit card/i, /no card required/i, /money-back/i, 'Start Free Trial'])).toEqual([])
   })
 
   it('pricing page with the trial ON shows the trial line and the trial button', async () => {

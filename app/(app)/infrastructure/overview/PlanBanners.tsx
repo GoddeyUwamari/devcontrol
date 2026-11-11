@@ -39,7 +39,7 @@ export function PlanBanners({ limitReached, isFree, isStarter, isPro }: { limitR
             Cost Control shows all 16 supported resource types.
           </p>
           <Link href="/settings/billing/upgrade" className="ml-4 shrink-0 rounded-lg bg-blue-600 px-4 py-1 text-label text-white no-underline">
-            Upgrade →
+            See plans
           </Link>
         </div>
       )}

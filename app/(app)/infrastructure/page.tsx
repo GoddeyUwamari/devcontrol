@@ -592,7 +592,7 @@ function InfrastructureContent() {
             Cost Control shows all 16 supported resource types.
           </p>
           <Link href="/settings/billing/upgrade" className="text-xs font-semibold text-white bg-blue-600 px-4 py-1.5 rounded-lg no-underline shrink-0 ml-4">
-            Upgrade →
+            See plans
           </Link>
         </div>
       )}

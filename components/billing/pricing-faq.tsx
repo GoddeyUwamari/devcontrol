@@ -15,7 +15,7 @@ import {
   CalendarDays,
   Headphones,
 } from 'lucide-react';
-import { useTrialOn } from '@/components/billing/trial-line';
+import { TRIAL_COPY, useTrialOn } from '@/components/billing/trial-line';
 import { annual, formatUsd, plan } from '@/lib/plan/plan-catalog';
 import { PLAN_NAME } from '@/lib/plan/plan-names';
 
@@ -36,7 +36,7 @@ function annualAnswer(): string {
 }
 
 /** The pricing FAQ. Trial questions appear only while the trial is on (GET /api/billing/offer). */
-export function pricingFaqs(trial: { on: boolean; days: number; plans: string }): FAQItem[] {
+export function pricingFaqs(trial: { on: boolean; days: number; plansOr: string }): FAQItem[] {
   const items: (FAQItem | null)[] = [
     {
       icon: RefreshCw,
@@ -46,9 +46,8 @@ export function pricingFaqs(trial: { on: boolean; days: number; plans: string })
     },
     trial.on ? {
       icon: Clock,
-      question: 'What happens after my free trial?',
-      answer:
-        `When the ${trial.days}-day trial ends, your plan continues and your card is charged, unless you cancel before then. Cancel before the trial ends and you aren't charged.`,
+      question: TRIAL_COPY.faqAfterQuestion,
+      answer: TRIAL_COPY.faqAfterAnswer(trial.days),
     } : null,
     {
       icon: RotateCcw,
@@ -70,9 +69,8 @@ export function pricingFaqs(trial: { on: boolean; days: number; plans: string })
     },
     trial.on ? {
       icon: FileText,
-      question: `What's included in the ${trial.days}-day free trial?`,
-      answer:
-        `Everything in the plan you choose, for ${trial.days} days, on ${trial.plans.replace(' and ', ' or ')}. A card is required; you're charged when the trial ends unless you cancel.`,
+      question: TRIAL_COPY.faqIncludedQuestion(trial.days),
+      answer: TRIAL_COPY.faqIncludedAnswer(trial.days, trial.plansOr),
     } : null,
     {
       icon: CalendarDays,

@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { TrialCta, TrialLine, InAppTrialLine, TRIAL_COPY, TRIAL_SIGN_UP_HREF, SIGN_UP_HREF } from '../trial-line'
 import { resetBillingOfferForTests } from '@/lib/billing/offer'
+import { PricingFAQ } from '../pricing-faq'
 
 const ON = { trial: { enabled: true, days: 14, plans: ['starter', 'pro'], cardRequired: true } }
 const OFF = { trial: { enabled: false } }
@@ -109,5 +110,29 @@ describe('InAppTrialLine', () => {
     rerender(<InAppTrialLine eligible />)
     expect(container.textContent).toBe("14-day free trial. Card required; you're charged when the trial ends unless you cancel.")
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('pricing FAQ trial questions come from the trial line (L-4)', () => {
+  it('off: neither trial question is shown', async () => {
+    serve(OFF)
+    const { container } = render(<PricingFAQ />)
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(container.textContent).not.toContain(TRIAL_COPY.faqAfterQuestion)
+    expect(container.textContent).not.toMatch(/free trial/i)
+  })
+
+  it('on: both questions and answers, exactly the TRIAL_COPY strings', async () => {
+    serve(ON)
+    const { container } = render(<PricingFAQ />)
+    await waitFor(() => expect(container.textContent).toContain(TRIAL_COPY.faqAfterQuestion))
+    const text = container.textContent ?? ''
+    expect(text).toContain(TRIAL_COPY.faqAfterAnswer(14))
+    expect(text).toContain(TRIAL_COPY.faqIncludedQuestion(14))
+    expect(text).toContain(TRIAL_COPY.faqIncludedAnswer(14, 'Cost Control or Optimization Engine'))
+    expect(TRIAL_COPY.faqIncludedAnswer(14, 'Cost Control or Optimization Engine')).toBe(
+      "Everything in the plan you choose, for 14 days, on Cost Control or Optimization Engine. A card is required; you're charged when the trial ends unless you cancel.",
+    )
   })
 })

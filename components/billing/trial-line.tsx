@@ -19,11 +19,11 @@ export const DEFAULT_DAYS = limits.trial.days
 /** The self-serve plans with a trial, as named everywhere ("Cost Control and Optimization Engine"). */
 export const TRIAL_PLAN_NAMES = trialPlanNames(limits.trial.plans)
 
-function trialPlanNames(plans: readonly string[]): string {
+function trialPlanNames(plans: readonly string[], conjunction: 'and' | 'or' = 'and'): string {
   const names = plans
     .filter((p): p is Tier => Object.prototype.hasOwnProperty.call(PLAN_NAME, p))
     .map((p) => PLAN_NAME[p])
-  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join('')
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} ${conjunction} ${names[names.length - 1]}` : names.join('')
 }
 
 /** Every trial string, exactly as approved (catalog-step1.md, CAT-1 §3.2). */
@@ -37,6 +37,13 @@ export const TRIAL_COPY = {
   /** Checkout success, while this organization's trial runs. */
   started: (days: number) => `Your ${days}-day free trial has started!`,
   noTrial: 'Free Visibility plan',
+  /** Pricing FAQ, shown only while the trial is on. */
+  faqAfterQuestion: 'What happens after my free trial?',
+  faqAfterAnswer: (days: number) =>
+    `When the ${days}-day trial ends, your plan continues and your card is charged, unless you cancel before then. Cancel before the trial ends and you aren't charged.`,
+  faqIncludedQuestion: (days: number) => `What's included in the ${days}-day free trial?`,
+  faqIncludedAnswer: (days: number, plansOr: string) =>
+    `Everything in the plan you choose, for ${days} days, on ${plansOr}. A card is required; you're charged when the trial ends unless you cancel.`,
 } as const
 
 export const SIGN_UP_HREF = '/register'
@@ -105,7 +112,7 @@ export function InAppTrialLine({ eligible, className }: { eligible: boolean; cla
 }
 
 /** Public FAQ entries about the trial appear only while it is on. */
-export function useTrialOn(): { on: boolean; days: number; plans: string } {
+export function useTrialOn(): { on: boolean; days: number; plans: string; plansOr: string } {
   const offer = useBillingOffer()
-  return { on: offer.trialOn, days: offer.days, plans: trialPlanNames(offer.plans) }
+  return { on: offer.trialOn, days: offer.days, plans: trialPlanNames(offer.plans), plansOr: trialPlanNames(offer.plans, 'or') }
 }

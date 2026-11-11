@@ -481,6 +481,10 @@ describe('PB-1 plan banners and the limit prompt: the same text and links as the
     m.plan = { isFree: false, isStarter: true, isPro: false, tier: 'starter', lacksEntitlement: () => false }
     const { off, on } = await both(/Cost Control shows all 16 supported resource types\./)
     expect(on).toEqual(off)
+    // Founder L-5: the button stays, relabelled "See plans", to the in-app upgrade page.
+    expect(on.text).toContain('See plans')
+    expect(on.text).not.toContain('Upgrade')
+    expect(on.hrefs).toEqual(['/settings/billing/upgrade'])
   })
   it('the resource-limit prompt (402)', async () => {
     m.responses['GET /api/infrastructure'] = fail(402)

@@ -46,6 +46,18 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+describe('upgrade.cta names the next plan with the customer-facing names', () => {
+  it.each([
+    ['free', 'enterprise', 'Upgrade to Cost Control for more resources and team members.'],
+    ['starter', 'enterprise', 'Upgrade to Optimization Engine for AI features, forecasting and DORA metrics.'],
+    ['pro', 'enterprise', 'Upgrade to Revenue Protection for unlimited resources, SAML/SSO and a named support contact.'],
+  ] as const)('%s org below %s: %s', async (current, minimum, cta) => {
+    const { body } = await gate({ subscription_tier: current }, minimum);
+    expect(body.upgrade.cta).toBe(cta);
+    expect(body.upgrade.cta).not.toMatch(/dedicated account manager|SLA|API access|\b(Starter|Pro|Enterprise)\b/);
+  });
+});
+
 describe('upgrade.url names the required plan', () => {
   it.each([
     ['free', 'starter', 'starter'],

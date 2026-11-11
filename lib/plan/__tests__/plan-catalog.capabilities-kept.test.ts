@@ -11,11 +11,14 @@
  * still be in the catalog and on a rendered surface.
  */
 import { describe, it, expect } from 'vitest'
-import { FEATURES, RETIRED, VALUE_ROWS, PLANS } from '../plan-catalog'
+import { FEATURES, RETIRED, VALUE_ROWS, PLANS, feature } from '../plan-catalog'
+import { pricingFaqs } from '@/components/billing/pricing-faq'
 
 type Target = string | readonly string[]
 const R = (id: string) => `RETIRED:${id}`
 const D = (decision: string) => `DROPPED:${decision}`
+/** A capability the FAQ itself keeps saying (not a plan line): the FAQ must still contain this text. */
+const FAQ = (text: string) => `FAQ:${text}`
 
 const LEGACY: Record<string, ReadonlyArray<readonly [string, Target]>> = {
   M: [
@@ -224,7 +227,7 @@ const LEGACY: Record<string, ReadonlyArray<readonly [string, Target]>> = {
     ['Up to 100 AWS resources', 'limits-pro'],
     ['Advanced analytics & reports', 'ai-reports'],
     ['Cost optimization insights', 'savings-list'],
-    ['Compliance scanning (CIS, PCI-DSS, NIST 800-53) + SOC 2 readiness', ['pci-cis', 'soc2-evidence']],
+    ['Compliance scanning (CIS, PCI-DSS, NIST 800-53) + SOC 2 readiness', ['pci-cis', 'soc2-evidence']], // NIST named in pci-cis (M-1)
     ['Unlimited AWS resources', 'limits-enterprise'],
     ['Priority support & SLA', 'support-enterprise'],
     ['SSO & advanced security', 'sso'],
@@ -232,6 +235,17 @@ const LEGACY: Record<string, ReadonlyArray<readonly [string, Target]>> = {
     ['Up to 20 AWS resources', 'limits-starter'],
     ['Cost analytics & alerts', ['savings-list', 'notifications']],
     ['Email support', 'support-starter'],
+  ],
+  // The pricing FAQ's capability mentions before CAT-1 (catalog-step1 §4.1: export, API, limit emails, support tiers).
+  F: [
+    ['export all your data anytime in CSV or JSON format', 'inventory-export'],
+    ['Starter plans and above include export functionality', 'inventory-export'],
+    ['You can also access your data via API on Enterprise plans', 'api-keys'],
+    ["We'll send you email notifications as you approach your limit", FAQ('Email warnings as you approach the limit are coming soon.')],
+    ['Free tier gets community support', 'support-free'],
+    ['Starter includes email support (24hr response)', 'support-starter'],
+    ['Pro gets priority support (4hr response) plus Slack integration', ['support-pro', 'notifications']],
+    ['Enterprise includes a dedicated account manager and 24/7 priority support', 'support-enterprise'],
   ],
 }
 
@@ -255,6 +269,8 @@ const onACard = new Set(PLANS.flatMap((p) => p.card))
 const retiredIds = new Set(RETIRED.map((r) => r.id))
 
 const targets = (t: Target) => (typeof t === 'string' ? [t] : [...t])
+const faqText = [false, true].flatMap((on) => pricingFaqs({ on, days: 14, plansOr: 'Cost Control or Optimization Engine' }))
+  .map((q) => `${q.question} ${q.answer}`).join('\n')
 const allTargets = Object.values(LEGACY).flatMap((lines) => lines.flatMap(([, t]) => targets(t)))
 
 describe('no listed capability disappears', () => {
@@ -263,6 +279,10 @@ describe('no listed capability disappears', () => {
     (_surface, _old, target) => {
       for (const id of targets(target)) {
         if (id.startsWith('DROPPED:')) continue
+        if (id.startsWith('FAQ:')) {
+          expect(faqText, 'the FAQ dropped a capability it listed').toContain(id.slice('FAQ:'.length))
+          continue
+        }
         if (id.startsWith('RETIRED:')) {
           expect(retiredIds.has(id.slice('RETIRED:'.length)), `${id} is not a recorded retirement`).toBe(true)
           continue
@@ -281,6 +301,12 @@ describe('no listed capability disappears', () => {
     for (const id of PINNED_IDS) {
       expect(featureIds.has(id), `${id} was removed: a capability must stay listed as Coming soon`).toBe(true)
     }
+  })
+
+  it('a capability named inside an old line is named in its new line (NIST 800-53, founder M-1)', () => {
+    expect(feature('pci-cis').label).toContain('NIST 800-53')
+    expect(feature('pci-cis').label).toContain('PCI DSS')
+    expect(feature('pci-cis').label).toContain('CIS')
   })
 
   it('only the two Pricing Mock retirements have left', () => {
