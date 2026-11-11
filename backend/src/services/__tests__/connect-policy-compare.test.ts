@@ -178,14 +178,15 @@ describe('compareRolePolicies', () => {
     expect(iam.calls).toEqual([]);
   });
 
-  it('the policy document is never in the result or the logs', async () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  it('the policy document is never in the result or the logs (every console method)', async () => {
+    const consoles = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) => jest.spyOn(console, m).mockImplementation(() => {}));
     const doc = contract();
     doc.Statement.push({ Sid: 'MarkerStatementXyz', Effect: 'Allow', Action: 'sts:GetCallerIdentity', Resource: '*' });
     const result = await compare(fakeIam({ attached: [SECURITY_AUDIT_ARN], inline: ['DevControlReadExtras'], document: encode(doc) }));
     expect(result).toMatchObject({ readExtras: 'differs' });
     expect(JSON.stringify(result)).not.toMatch(/MarkerStatementXyz|Statement|ce:GetCostAndUsage/);
-    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/MarkerStatementXyz/);
+    const logged = JSON.stringify(consoles.map((spy) => spy.mock.calls));
+    expect(logged).not.toMatch(/MarkerStatementXyz|DevControlDenyContentAdjacentReads|ce:GetCostAndUsage|Statement/);
   });
 });
 

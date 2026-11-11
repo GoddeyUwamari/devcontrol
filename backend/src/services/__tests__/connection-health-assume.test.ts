@@ -19,12 +19,16 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { Console } from 'console';
+import { Writable } from 'stream';
+import { inspect } from 'util';
 
 jest.mock('../../config/database', () => ({ pool: { query: jest.fn(), connect: jest.fn() } }));
 
 import * as platformSts from '../platform-sts';
 import { PlatformAwsCredentialsUnavailableError } from '../platform-sts';
-import { AWSClientFactory, AwsAssumeRoleFailedError, isAwsAssumeRoleFailed } from '../aws-client-factory.service';
+import { AWSClientFactory, AwsAssumeRoleFailedError, assumeFailureTargetOf, isAwsAssumeRoleFailed } from '../aws-client-factory.service';
+import * as accountsRepository from '../../repositories/aws-accounts.repository';
 import { classifyAssumeRoleError, checkConnectRole } from '../connect-role-check';
 import { ASSUME_RESULT_FOR_KIND } from '../connection-health';
 import * as checksRepository from '../../repositories/aws-connection-checks.repository';
@@ -112,11 +116,16 @@ describe('AWSClientFactory.assumeAccountRole', () => {
     ['NoSuchEntity', 'not_found'],
     ['Throttling', 'transient'],
     ['ValidationError', 'permanent'],
-  ])('%s throws AwsAssumeRoleFailedError(%s) with the account it tried and when', async (name, kind) => {
+  ])('%s throws AwsAssumeRoleFailedError(%s) with when it started; the account it tried only beside it', async (name, kind) => {
     jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockRejectedValue(awsError(name, { $metadata: { httpStatusCode: 400 } }));
     const err = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1').catch((e) => e);
     expect(isAwsAssumeRoleFailed(err)).toBe(true);
-    expect(err).toMatchObject({ kind, account: ACCOUNT, message: OLD_MESSAGE(ORG) });
+    expect(err).toMatchObject({ kind, message: OLD_MESSAGE(ORG) });
+    // The connection it was made for is beside the error, never on it (review H-1).
+    expect(assumeFailureTargetOf(err)).toEqual({
+      rowId: ACCOUNT.id, organizationId: ORG, identity: JSON.stringify([ACCOUNT.id, ACCOUNT.account_id, ACCOUNT.role_arn, 'us-east-1']),
+    });
+    expect((err as any).account).toBeUndefined();
     expect(err.attemptedAt).toBeInstanceOf(Date);
   });
 
@@ -206,7 +215,68 @@ describe('connection-health-recorder', () => {
     const { pool } = jest.requireMock('../../config/database');
     pool.connect.mockRejectedValue(Object.assign(new Error('relation does not exist'), { code: '42P01' }));
     await expect(recordScanAssumeFailure(ORG, new AwsAssumeRoleFailedError(ORG, 'trust_denied', new Date(), ACCOUNT))).resolves.toBeUndefined();
-    await expect(recordScanAssumeSuccess({ organizationId: ORG, account: ACCOUNT, attemptedAt: new Date(), roleUniqueId: null })).resolves.toBeUndefined();
+    await expect(recordScanAssumeSuccess({ organizationId: ORG, account: ACCOUNT, attemptedAt: new Date(), roleUniqueId: null })).resolves.toEqual({ roleReplacedNow: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H-1 (D1a review): logging the error never prints the External ID or role ARN
+// ---------------------------------------------------------------------------
+
+/** Everything a real Console writes for `write(console)`, through util.format/inspect as Node does. */
+function captured(write: (c: Console) => void): string {
+  const chunks: string[] = [];
+  const stream = new Writable({ write(chunk, _encoding, done) { chunks.push(String(chunk)); done(); } });
+  const c = new Console({ stdout: stream, stderr: stream, colorMode: false });
+  write(c);
+  return chunks.join('');
+}
+const SECRETS = [ACCOUNT.external_id, ACCOUNT.role_arn, 'DevControlRole', ACCOUNT.account_id];
+
+describe('H-1: AwsAssumeRoleFailedError carries and prints no External ID, role ARN or AWS account ID', () => {
+  /** The error as production builds it: from the full aws_accounts row (ACCOUNT_COLUMNS include external_id). */
+  async function fromCreateClients(): Promise<AwsAssumeRoleFailedError> {
+    jest.spyOn(accountsRepository, 'requireEligibleAwsAccount').mockResolvedValue({
+      ...ACCOUNT, nickname: 'placeholder-nickname', status: 'active', connected_at: new Date(),
+    } as any);
+    jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockRejectedValue(awsError('AccessDenied', { $metadata: { httpStatusCode: 403 } }));
+    const err = await AWSClientFactory.createClients(ORG).catch((e) => e);
+    expect(isAwsAssumeRoleFailed(err)).toBe(true);
+    return err;
+  }
+
+  it('the production call sites and every console method print the message, kind and time only', async () => {
+    const err = await fromCreateClients();
+    const out = captured((c) => {
+      c.error('[CloudWatch] Failed to create AWS clients:', err);         // cloudwatch.service.ts:1898
+      c.error('[CloudWatch] SLO: failed to create AWS clients:', err);    // cloudwatch.service.ts:2539
+      c.error('[Services/discover]', err);                                // routes/services.routes.ts:796
+      c.log(err); c.info(err); c.warn(err); c.error(err); c.debug(err);
+      c.error('%o', err); c.error('%O', err); c.log({ wrapped: err }); c.log([err]); c.dir(err, { depth: 10, showHidden: true });
+    });
+    expect(out).toContain(OLD_MESSAGE(ORG));
+    expect(out).toContain("kind: 'trust_denied'");
+    for (const secret of SECRETS) expect(out).not.toContain(secret);
+  });
+
+  it('util.inspect (showHidden too), JSON, String and its own keys show none of them', async () => {
+    const err = await fromCreateClients();
+    const views = [
+      inspect(err), inspect(err, { showHidden: true, depth: Infinity }), inspect({ cause: err }, { depth: Infinity }),
+      JSON.stringify(err), JSON.stringify({ error: err }), String(err), String(err.stack),
+      JSON.stringify(Object.getOwnPropertyNames(err).map((k) => [k, (err as any)[k]])),
+    ];
+    for (const view of views) for (const secret of SECRETS) expect(view).not.toContain(secret);
+    expect(JSON.parse(JSON.stringify(err))).toEqual({ name: 'Error', message: OLD_MESSAGE(ORG), kind: 'trust_denied', attemptedAt: expect.any(String) });
+    expect(Object.keys(err).sort()).toEqual(['attemptedAt', 'kind', 'name']);
+    expect(err.message).toBe(OLD_MESSAGE(ORG));
+  });
+
+  it('the health recorder still gets the connection it was made for', async () => {
+    const err = await fromCreateClients();
+    const spy = jest.spyOn(checksRepository, 'recordAssumeOutcomeSoft').mockResolvedValue({ written: true, roleReplacedNow: false });
+    await recordScanAssumeFailure(ORG, err);
+    expect(spy.mock.calls[0].slice(0, 3)).toEqual([ORG, JSON.stringify([ACCOUNT.id, ACCOUNT.account_id, ACCOUNT.role_arn, 'us-east-1']), ACCOUNT.id]);
   });
 });
 

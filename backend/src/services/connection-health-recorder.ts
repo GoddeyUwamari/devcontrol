@@ -23,7 +23,8 @@ import {
 } from '../repositories/aws-connection-checks.repository';
 import { ASSUME_RESULT_FOR_KIND, type AssumeResult } from './connection-health';
 import { compareRolePolicies, type IamSender } from './connect-policy-compare';
-import { isAwsAssumeRoleFailed } from './aws-client-factory.service';
+import { parseAccountIdFromArn } from '../utils/awsAccountId';
+import { assumeFailureTargetOf, isAwsAssumeRoleFailed } from './aws-client-factory.service';
 
 type AccountRef = Partial<AwsAccountRow>;
 
@@ -36,7 +37,13 @@ function identityOf(account: AccountRef): { identity: string; rowId: string; org
   };
 }
 
-/** A successful scan AssumeRole. `iam` is the scan's IAM client, used only if the role was replaced. */
+/**
+ * A successful scan AssumeRole. With `iam` (the scan's IAM client), a role
+ * replacement this write detects is compared at once; without it the caller
+ * compares later with compareAfterRoleReplacement (the mid-scan refresh does,
+ * once its fresh credentials are in place). Either way at most once per
+ * replacement: roleReplacedNow is true only for the write that first records it.
+ */
 export async function recordScanAssumeSuccess(params: {
   organizationId: string;
   account: AccountRef;
@@ -44,20 +51,30 @@ export async function recordScanAssumeSuccess(params: {
   attemptedAt: Date | undefined;
   roleUniqueId: string | null;
   iam?: IamSender;
-}): Promise<void> {
+}): Promise<{ roleReplacedNow: boolean }> {
   const ref = identityOf(params.account);
-  if (!ref || ref.organizationId !== params.organizationId || !(params.attemptedAt instanceof Date)) return;
+  if (!ref || ref.organizationId !== params.organizationId || !(params.attemptedAt instanceof Date)) return { roleReplacedNow: false };
   const written = await recordAssumeOutcomeSoft(params.organizationId, ref.identity, ref.rowId, {
     attempt: { at: params.attemptedAt, result: 'ok' },
     roleUniqueId: params.roleUniqueId,
     source: 'scan',
   });
-  if (!written.roleReplacedNow || !params.iam) return;
+  if (written.roleReplacedNow && params.iam) {
+    await compareAfterRoleReplacement({ organizationId: params.organizationId, account: params.account, iam: params.iam });
+  }
+  return { roleReplacedNow: written.roleReplacedNow };
+}
+
+/** The D1-D7 policy compare after a role replacement, saved as `role_replaced`. Never throws. */
+export async function compareAfterRoleReplacement(params: { organizationId: string; account: AccountRef; iam: IamSender }): Promise<void> {
+  const ref = identityOf(params.account);
+  if (!ref || ref.organizationId !== params.organizationId) return;
   try {
     const result = await compareRolePolicies({
       iam: params.iam,
       roleArn: params.account.role_arn!,
-      accountId: params.account.account_id ?? '',
+      // The role's own account (the <ACCOUNT_ID> of the contract), as ScanContext.awsAccountId is.
+      accountId: parseAccountIdFromArn(params.account.role_arn!) ?? '',
       context: `Scan org ${params.organizationId}`,
     });
     await savePolicyResult(params.organizationId, ref.identity, ref.rowId, { result, at: new Date(), trigger: 'role_replaced' });
@@ -69,8 +86,8 @@ export async function recordScanAssumeSuccess(params: {
 /** A failed scan AssumeRole: recorded when it is the role's (AwsAssumeRoleFailedError), ignored otherwise. */
 export async function recordScanAssumeFailure(organizationId: string, error: unknown): Promise<void> {
   if (!isAwsAssumeRoleFailed(error)) return;
-  const ref = identityOf(error.account);
-  if (!ref || ref.organizationId !== organizationId || !(error.attemptedAt instanceof Date)) return;
+  const target = assumeFailureTargetOf(error);
+  if (!target || target.organizationId !== organizationId || !(error.attemptedAt instanceof Date)) return;
   const result: AssumeResult = ASSUME_RESULT_FOR_KIND[error.kind];
-  await recordAssumeOutcomeSoft(organizationId, ref.identity, ref.rowId, { attempt: { at: error.attemptedAt, result }, source: 'scan' });
+  await recordAssumeOutcomeSoft(organizationId, target.identity, target.rowId, { attempt: { at: error.attemptedAt, result }, source: 'scan' });
 }

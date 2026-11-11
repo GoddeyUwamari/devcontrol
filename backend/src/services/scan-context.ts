@@ -136,7 +136,7 @@ export class ScanContext {
             await healthRecorder.recordScanAssumeFailure(source.organizationId, error);
             throw error;
           }
-          await healthRecorder.recordScanAssumeSuccess({
+          const recorded = await healthRecorder.recordScanAssumeSuccess({
             organizationId: source.organizationId,
             account: source.account,
             attemptedAt: fresh.attemptedAt,
@@ -147,6 +147,13 @@ export class ScanContext {
           }
           Object.assign(source.credentials, fresh.credentials);
           source.expiration = fresh.expiration;
+          // A role replaced since the last recorded AssumeRole (D1-D7, review L-2): compared once,
+          // like a replacement seen by forOrg. Only now, with the fresh credentials and expiry in
+          // place, so the IAM call's own credential check passes instead of re-entering this refresh
+          // (skipped, never awaited into a cycle, if AWS granted less than the refresh window).
+          if (recorded.roleReplacedNow && fresh.expiration.getTime() - Date.now() > CREDENTIAL_REFRESH_WINDOW_MS) {
+            await healthRecorder.compareAfterRoleReplacement({ organizationId: source.organizationId, account: source.account, iam: this.home.iam });
+          }
         } catch (err: unknown) {
           this.refreshFailure = err;
           throw err;

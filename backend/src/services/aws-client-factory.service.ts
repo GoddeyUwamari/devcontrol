@@ -40,7 +40,8 @@ import { pool } from '../config/database';
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable } from './platform-sts';
 import { classifyAssumeRoleError, type AssumeRoleErrorKind } from './connect-role-check';
 import { roleUniqueIdOf } from './connection-health';
-import { homeRegionOf, requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
+import { inspect } from 'util';
+import { awsConnectionIdentity, homeRegionOf, requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
 import { parseAccountIdFromArn } from '../utils/awsAccountId';
 
 export interface AWSClients {
@@ -149,26 +150,65 @@ export interface AssumedRoleSource {
   roleUniqueId?: string | null;
 }
 
+/** The connection an AssumeRole was made for, as the health recorder fences on it (never the row itself). */
+export interface AssumeFailureTarget {
+  /** aws_accounts.id */
+  rowId: string;
+  /** aws_accounts.org_id */
+  organizationId: string;
+  /** awsConnectionIdentity() of that row: the fence compares it with the current connection. */
+  identity: string;
+}
+
+/**
+ * Held beside the error, never on it (AWS connect D1a review H-1): callers log
+ * these errors raw (cloudwatch.service.ts, services.routes.ts), and util.inspect
+ * prints an Error's own properties. The fence identity embeds the role ARN, so it
+ * lives in this module-private map, which no logger or serializer can reach.
+ */
+const assumeFailureTargets = new WeakMap<AwsAssumeRoleFailedError, AssumeFailureTarget>();
+
 /**
  * An AssumeRole into the organization's role that AWS refused or that failed
  * (AWS connect PR D1). Its message is exactly the AWS_NOT_CONNECTED text this
  * failure has always had, because callers match on that prefix
  * (stats.controller.ts, services.routes.ts, weekly-summary.repository.ts,
- * ai-chat-context.repository.ts, cost-recommendations.controller.ts); it also
- * carries the classified kind, when the attempt started and the account row it
- * was made for, so a scan can record the connection's health. Never an AWS
- * message, credential or External ID.
+ * ai-chat-context.repository.ts, cost-recommendations.controller.ts). It carries
+ * only the classified kind and when the attempt started; the connection it was
+ * made for is reachable through assumeFailureTargetOf() alone. Logged, inspected
+ * or serialized, it shows the message, kind and time: never an External ID, a
+ * role ARN, an AWS account ID, an AWS message or a credential.
  */
 export class AwsAssumeRoleFailedError extends Error {
   constructor(
     organizationId: string,
     readonly kind: AssumeRoleErrorKind,
     readonly attemptedAt: Date,
-    readonly account: Partial<AwsAccountRow>
+    account: Partial<Pick<AwsAccountRow, 'id' | 'org_id' | 'account_id' | 'role_arn' | 'region'>>
   ) {
     super(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`);
     this.name = 'Error';
+    if (account.id && account.org_id && account.role_arn) {
+      assumeFailureTargets.set(this, {
+        rowId: account.id,
+        organizationId: account.org_id,
+        identity: awsConnectionIdentity({ id: account.id, account_id: account.account_id ?? null, role_arn: account.role_arn, region: account.region ?? null }),
+      });
+    }
   }
+
+  toJSON(): { name: string; message: string; kind: AssumeRoleErrorKind; attemptedAt: string } {
+    return { name: this.name, message: this.message, kind: this.kind, attemptedAt: this.attemptedAt.toISOString() };
+  }
+
+  [inspect.custom](): string {
+    return `${this.stack ?? `${this.name}: ${this.message}`} { kind: '${this.kind}', attemptedAt: ${this.attemptedAt.toISOString()} }`;
+  }
+}
+
+/** The connection a failed AssumeRole was made for (the health recorder's fence), or undefined. */
+export function assumeFailureTargetOf(err: AwsAssumeRoleFailedError): AssumeFailureTarget | undefined {
+  return assumeFailureTargets.get(err);
 }
 
 export function isAwsAssumeRoleFailed(err: unknown): err is AwsAssumeRoleFailedError {

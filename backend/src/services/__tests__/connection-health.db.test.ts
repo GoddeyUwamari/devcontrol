@@ -38,6 +38,7 @@ import { ScanContext } from '../scan-context';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { ResourceExplorerService } from '../resourceExplorer.service';
 import * as permissionCheck from '../connect-permission-check';
+import * as policyCompare from '../connect-policy-compare';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 import { pool as appPool } from '../../config/database';
 
@@ -207,12 +208,12 @@ describe('repository: fenced, monotonic health writes', () => {
 });
 
 /** STS answers for the scan: a success with a role ID, or a thrown error. */
-function stsAnswer(result: 'ok' | Error, expiresInMs = 3600e3) {
+function stsAnswer(result: 'ok' | Error, expiresInMs = 3600e3, roleId = ROLE_ID) {
   return jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockImplementation(async () => {
     if (result instanceof Error) throw result;
     return {
       Credentials: { AccessKeyId: 'ASIAEXAMPLE', SecretAccessKey: 'secret-example', SessionToken: 'token-example', Expiration: new Date(Date.now() + expiresInMs) },
-      AssumedRoleUser: { AssumedRoleId: `${ROLE_ID}:devcontrol-scan`, Arn: 'arn:aws:sts::123456789012:assumed-role/DevControlRole/devcontrol-scan' },
+      AssumedRoleUser: { AssumedRoleId: `${roleId}:devcontrol-scan`, Arn: 'arn:aws:sts::123456789012:assumed-role/DevControlRole/devcontrol-scan' },
     } as any;
   });
 }
@@ -248,6 +249,25 @@ describe('ScanContext records the scan AssumeRole as health', () => {
     stsAnswer(denied());
     await expect(ctx.ensureFreshCredentials()).rejects.toThrow('AWS_NOT_CONNECTED');
     expect(await row(a)).toMatchObject({ health_state: 'failing', last_attempt_result: 'role_refused' });
+  });
+
+  it('a role replaced and first seen on the mid-scan refresh: compared once (D1-D7, review L-2) with the scan IAM client, saved as role_replaced', async () => {
+    const a = await orgWithConnection();
+    const compare = jest.spyOn(policyCompare, 'compareRolePolicies').mockResolvedValue({ unreadable: true, contractVersion: 1 });
+    stsAnswer('ok', 60e3); // baseline ROLE_ID, inside the refresh window
+    const ctx = await ScanContext.forOrg(a.org_id);
+    expect(compare).not.toHaveBeenCalled();
+    stsAnswer('ok', 3600e3, OTHER_ROLE_ID); // the refresh sees another role at this ARN (a normal 1 h session)
+    await ctx.ensureFreshCredentials();
+    expect(compare).toHaveBeenCalledTimes(1);
+    expect(compare.mock.calls[0][0]).toMatchObject({ iam: ctx.clientsFor(ctx.region).iam, roleArn: a.role_arn, accountId: '123456789012' });
+    const saved = (await row(a))!;
+    expect(saved).toMatchObject({ role_unique_id: ROLE_ID, policy_trigger: 'role_replaced' });
+    expect(saved.role_replaced_at).not.toBeNull();
+    // Once per replacement: a later scan seeing the same replaced role compares no more.
+    const later = await ScanContext.forOrg(a.org_id);
+    expect(later.awsAccountRowId).toBe(a.id);
+    expect(compare).toHaveBeenCalledTimes(1);
   });
 
   it('a health write that fails (table missing) never changes the scan: the context is still returned', async () => {
