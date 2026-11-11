@@ -54,7 +54,7 @@ describe('Optimization Controls page — Enterprise gate is real, not a client-s
 
     render(<OptimizationControlsPage />)
 
-    expect(await screen.findByText('Enterprise Feature')).toBeInTheDocument()
+    expect(await screen.findByText('Revenue Protection feature')).toBeInTheDocument()
     expect(screen.queryByText('Idle EC2 instances')).not.toBeInTheDocument()
     expect(mockGetConfig).not.toHaveBeenCalled()
   })

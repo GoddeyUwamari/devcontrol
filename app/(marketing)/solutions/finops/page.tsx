@@ -2,6 +2,7 @@
 
 import { DollarSign, TrendingDown, BarChart3, Bell, PieChart, Zap, FileText, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -137,7 +138,7 @@ export default function FinOpsPage() {
                 flexDirection: isMobile ? 'column' : 'row',
                 fontSize: '0.875rem', fontWeight: 500, color: '#1f2937',
               }}>
-                {['No credit card required', 'ROI in first week', '15-minute setup'].map(t => (
+                {['Free Visibility plan', 'ROI in first week', '15-minute setup'].map(t => (
                   <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ color: '#16a34a' }}>✓</span> {t}
                   </span>
@@ -468,15 +469,13 @@ export default function FinOpsPage() {
             alignItems: isMobile ? 'center' : undefined,
             flexWrap: 'wrap',
           }}>
-            <a href="/register" style={{
+            <TrialCta style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               width: isMobile ? '100%' : undefined,
               boxSizing: 'border-box', textAlign: 'center',
-            }}>
-              Start Free Trial
-            </a>
+            }} />
             <a href="/pricing" style={{
               background: 'transparent', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
@@ -488,9 +487,7 @@ export default function FinOpsPage() {
               View Pricing
             </a>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
-            No credit card required · Read-only AWS access · Cancel anytime
-          </div>
+          <TrialLine variant="trust" rest={['Read-only AWS access', 'Cancel anytime']} style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }} />
         </div>
       </section>
 

@@ -314,7 +314,7 @@ export default function DevelopersPage() {
             <button
               onClick={() => !atWebhookLimit && setShowNewWebhook(true)}
               disabled={atWebhookLimit}
-              title={atWebhookLimit ? 'Upgrade to Enterprise for unlimited webhooks' : 'Add webhook endpoint'}
+              title={atWebhookLimit ? "You've reached the 5-endpoint limit" : 'Add webhook endpoint'}
               className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold border-none transition-colors whitespace-nowrap self-start sm:self-auto ${
                 atWebhookLimit
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed'

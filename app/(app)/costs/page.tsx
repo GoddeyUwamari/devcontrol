@@ -520,10 +520,10 @@ export default function CostsPage() {
           <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-3">
             <Lock size={18} className="text-violet-600" />
           </div>
-          <p className="text-ui font-semibold text-slate-900 mb-1.5">Pro Plan Required</p>
-          <p className="text-meta text-ink-muted mb-4">This feature is available on the Pro plan and above.</p>
+          <p className="text-ui font-semibold text-slate-900 mb-1.5">On the Optimization Engine plan</p>
+          <p className="text-meta text-ink-muted mb-4">This feature is on the Optimization Engine plan.</p>
           <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-lg text-label font-semibold no-underline transition-colors">
-            Upgrade to Pro
+            See plans
           </a>
         </div>
       ) : (
@@ -532,10 +532,10 @@ export default function CostsPage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-amber-50 border border-amber-400 rounded-xl px-5 py-3.5 mb-4 gap-3">
               <div className="flex items-center gap-2.5">
                 <span className="text-section">⚠️</span>
-                <span className="text-ui font-medium text-amber-900">This feature requires the Pro plan.</span>
+                <span className="text-ui font-medium text-amber-900">This feature is on the Optimization Engine plan.</span>
               </div>
               <a href="/settings/billing/upgrade" className="shrink-0 text-label font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap">
-                Upgrade to Pro
+                See plans
               </a>
             </div>
           )}

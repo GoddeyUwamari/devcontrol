@@ -26,5 +26,5 @@ describePlanStates('/costs/by-team', {
   reset: () => { getDashboardStats.mockClear(); getAccounts.mockClear() },
   paidCalls: () => getDashboardStats.mock.calls.length + getAccounts.mock.calls.length,
   content: 'Cost attribution by team and service is not available yet',
-  gate: 'Upgrade to Starter',
+  gate: 'On the Cost Control plan',
 })

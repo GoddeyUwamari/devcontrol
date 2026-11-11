@@ -11,6 +11,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/marketing-ui/button';
+import { TrialCta } from '@/components/billing/trial-line';
 import { cn } from '@/lib/utils';
 
 interface FooterLink {
@@ -250,7 +251,7 @@ export function Footer() {
                   size="sm"
                   className="flex-1 sm:flex-initial"
                 >
-                  <Link href="/register">Start Free Trial</Link>
+                  <TrialCta />
                 </Button>
               </div>
             </div>

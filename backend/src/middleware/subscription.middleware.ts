@@ -8,6 +8,7 @@ import { Pool, PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { PLAN_ENTITLEMENTS, type PlanEntitlement } from '../config/plan-entitlements';
 import { isTerminalSubscriptionStatus } from '../config/subscription-status';
+import { PLAN_NAME } from '../config/plan-names';
 
 export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'enterprise';
 
@@ -55,17 +56,17 @@ export const TIER_LIMITS: Record<SubscriptionTier, {
 // Upgrade CTAs by tier
 const UPGRADE_CTA: Record<SubscriptionTier, { message: string; upgradeUrl: string; nextTier: SubscriptionTier | null }> = {
   free: {
-    message: 'Upgrade to Starter to unlock this feature and get more services, users, and deployments.',
+    message: 'Upgrade to Cost Control for more resources and team members.',
     upgradeUrl: '/settings/billing?upgrade=starter',
     nextTier: 'starter',
   },
   starter: {
-    message: 'Upgrade to Pro to unlock advanced analytics, API access, and custom integrations.',
+    message: 'Upgrade to Optimization Engine for AI features, forecasting and DORA metrics.',
     upgradeUrl: '/settings/billing?upgrade=pro',
     nextTier: 'pro',
   },
   pro: {
-    message: 'Upgrade to Enterprise for unlimited resources, SSO, dedicated support, and SLA guarantees.',
+    message: 'Upgrade to Revenue Protection for unlimited resources, SAML/SSO and a named support contact.',
     upgradeUrl: '/settings/billing?upgrade=enterprise',
     nextTier: 'enterprise',
   },
@@ -347,7 +348,7 @@ export const requireTier = (minimumTier: SubscriptionTier) => {
           details: {
             currentTier,
             requiredTier: minimumTier,
-            message: `This feature requires a ${minimumTier} subscription or higher.`,
+            message: `This feature is on the ${PLAN_NAME[minimumTier]} plan.`,
             ...(reason ? { reason } : {}),
           },
           upgrade: {

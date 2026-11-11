@@ -1,5 +1,7 @@
 'use client';
 
+import { TRIAL_COPY, DEFAULT_DAYS, TRIAL_PLAN_NAMES } from '@/components/billing/trial-line'
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -54,7 +56,7 @@ export default function CheckoutCancelPage() {
                     <div className="h-2 w-2 rounded-full bg-primary"></div>
                   </div>
                   <span className="text-sm">
-                    14-day free trial on Cost Control and Optimization Engine (card required)
+                    {TRIAL_COPY.sentence(DEFAULT_DAYS, TRIAL_PLAN_NAMES)}
                   </span>
                 </li>
               )}

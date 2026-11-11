@@ -39,7 +39,7 @@ describePlanStates('/tenants', {
   reset: stubTenantsApi,
   paidCalls: () => tenantCalls.filter((u) => String(u).startsWith('/api/tenants')).length,
   content: 'Add Your First Tenant',
-  gate: 'Upgrade to Enterprise',
+  gate: 'Revenue Protection feature',
 })
 
 describe('/tenants: unmounting while the plan loads', () => {

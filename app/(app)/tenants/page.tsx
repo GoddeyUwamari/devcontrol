@@ -184,12 +184,12 @@ export default function TenantsPage() {
             </>
           ) : (
             <>
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Revenue Protection feature</h2>
               <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-                Tenant Intelligence is available on the Enterprise plan. Track tenant health, churn risk, and expansion signals across your tenants.
+                Tenant Intelligence is on the Revenue Protection plan. Track tenant health, churn risk, and expansion signals across your tenants.
               </p>
               <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
-                Upgrade to Enterprise
+                See plans
               </Link>
             </>
           )}

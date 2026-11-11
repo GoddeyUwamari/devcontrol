@@ -26,5 +26,5 @@ describePlanStates('/ai-reports', {
   reset: () => getReportHistory.mockClear(),
   paidCalls: () => getReportHistory.mock.calls.length,
   content: /Uncover Cost Savings, Risks, and Insights/,
-  gate: 'Pro Plan Required',
+  gate: 'On the Optimization Engine plan',
 })

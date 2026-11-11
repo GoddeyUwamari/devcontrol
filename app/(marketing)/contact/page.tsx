@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { Calendar, Mail, MessageCircle, Building2, User, Phone, CheckCircle, Clock, Users, Zap } from 'lucide-react'
+import { TrialCta } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -415,7 +416,7 @@ export default function ContactPage() {
             fontSize: isMobile ? '0.95rem' : '1rem', color: 'rgba(255,255,255,0.85)',
             maxWidth: '400px', margin: '0 auto 24px', lineHeight: 1.7,
           }}>
-            Start free and explore DevControl on your own. No credit card, no commitment.
+            Start free and explore DevControl on your own on the free Visibility plan.
           </p>
           <div style={{
             display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap',
@@ -423,15 +424,13 @@ export default function ContactPage() {
             alignItems: isMobile ? 'stretch' : 'center',
             maxWidth: isMobile ? '320px' : undefined, margin: isMobile ? '0 auto' : undefined,
           }}>
-            <a href="/register" style={{
+            <TrialCta style={{
               background: '#fff', color: '#7c3aed',
               padding: '12px 28px', borderRadius: '10px',
               fontWeight: 700, fontSize: '0.95rem', textDecoration: 'none',
               width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
               textAlign: 'center', display: 'inline-block',
-            }}>
-              Start Free Trial
-            </a>
+            }} />
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',
               padding: '12px 28px', borderRadius: '10px',

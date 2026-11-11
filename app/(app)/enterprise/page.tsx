@@ -11,9 +11,11 @@ import { subscriptionsService } from '@/lib/services/subscriptions.service'
 import { invoicesService } from '@/lib/services/invoices.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { usePlan } from '@/lib/hooks/use-plan'
-import { PLAN_DISPLAY_NAME } from '@/lib/plan/plan-names'
+import { PLAN_DISPLAY_NAME, PLAN_NAME, planName } from '@/lib/plan/plan-names'
+import { ENTERPRISE_PAGE, lines, plan as catalogPlan } from '@/lib/plan/plan-catalog'
+import { FeatureText } from '@/components/billing/feature-line'
 
-const DEMO_SUBSCRIPTION = { id: 'sub-demo-1', plan: 'Enterprise', status: 'active' as const, billingCycle: 'yearly' as const, currentPrice: 1498800, currency: 'USD', currentPeriodStart: '2024-01-01T00:00:00Z', currentPeriodEnd: '2025-01-01T00:00:00Z', nextBillingDate: '2025-01-01T00:00:00Z', autoRenew: true, isTrial: false }
+const DEMO_SUBSCRIPTION = { id: 'sub-demo-1', plan: PLAN_NAME.enterprise, status: 'active' as const, billingCycle: 'yearly' as const, currentPrice: 1498800, currency: 'USD', currentPeriodStart: '2024-01-01T00:00:00Z', currentPeriodEnd: '2025-01-01T00:00:00Z', nextBillingDate: '2025-01-01T00:00:00Z', autoRenew: true, isTrial: false }
 
 const DEMO_MEMBERS: OrganizationMember[] = [
   { id: 'm1', organizationId: 'org-demo', role: 'owner', joinedAt: '2024-01-01T00:00:00Z', email: 'cto@wayup.com', fullName: 'Alex Morgan' },
@@ -107,7 +109,7 @@ export default function EnterprisePage() {
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-11 h-11 bg-violet-50 rounded-xl flex items-center justify-center shrink-0"><Crown size={18} className="text-violet-600" /></div>
                 <div>
-                  <div className="text-xl font-bold text-slate-900 tracking-tight">{subscription.plan ?? 'Enterprise'}</div>
+                  <div className="text-xl font-bold text-slate-900 tracking-tight">{demoMode ? DEMO_SUBSCRIPTION.plan : planName(tier)}</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${subscription.status === 'active' ? 'bg-green-500' : 'bg-amber-500'}`} />
                     <span className="text-xs text-slate-500 capitalize">{subscription.status} · {subscription.billingCycle}</span>
@@ -128,42 +130,46 @@ export default function EnterprisePage() {
                 ))}
               </div>
               <div className="flex gap-2.5">
-                <button className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 border-none rounded-lg text-xs font-semibold text-white cursor-pointer transition-colors">Manage Plan</button>
-                <button className="flex-1 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 transition-colors">View Invoices ↓</button>
+                <button onClick={() => router.push('/settings/billing')} className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 border-none rounded-lg text-xs font-semibold text-white cursor-pointer transition-colors">Manage Plan</button>
+                <button onClick={() => router.push('/settings/billing')} className="flex-1 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100 transition-colors">View Invoices ↓</button>
               </div>
             </>
           ) : (
             <div className="flex flex-col gap-3">
               {tier === 'free' && (
                 <div className="bg-slate-50 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-slate-900 mb-1">Free</p>
-                  <p className="text-xs text-slate-500 mb-3">1 AWS account · 5 AI reports/month · Community support</p>
+                  <p className="text-sm font-semibold text-slate-900 mb-1">{PLAN_NAME.free}</p>
+                  <p className="text-xs text-slate-500 mb-3">{['1 AWS account per organization', ...lines(ENTERPRISE_PAGE.free).map(f => f.label)].join(' · ')}</p>
                   <span className="text-xs font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700">Current plan</span>
                 </div>
               )}
               <div className="border-2 border-violet-600 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <p className="text-sm font-semibold text-slate-900 mb-0.5">Pro</p>
-                    <p className="text-xs text-slate-500">Ideal for scaling teams with advanced compliance features</p>
+                    <p className="text-sm font-semibold text-slate-900 mb-0.5">{PLAN_NAME.pro}</p>
+                    <p className="text-xs text-slate-500">{catalogPlan('pro').tagline}</p>
                   </div>
                   {!isEnterprise && <span className="text-xs font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">{isPro ? 'Current plan' : 'Most popular'}</span>}
                 </div>
                 <div className="flex flex-col gap-1 my-3">
-                  {['Unlimited AWS accounts', 'SOC 2 readiness tools', 'Unlimited AI reports', 'Priority support'].map(f => (
-                    <div key={f} className="text-xs text-slate-500 flex items-center gap-1.5"><span className="text-green-600">✓</span> {f}</div>
+                  {lines(ENTERPRISE_PAGE.pro).map(f => (
+                    <div key={f.id} className="text-xs text-slate-500 flex items-center gap-1.5"><span className="text-green-600">✓</span> <FeatureText feature={f} aiChip={false} /></div>
                   ))}
                 </div>
-                {!(isPro || isEnterprise) && <button className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to Pro →</button>}
+                {!(isPro || isEnterprise) && <button onClick={() => router.push('/settings/billing/upgrade')} className="w-full bg-violet-700 hover:bg-violet-800 text-white border-none rounded-lg py-2 text-xs font-medium cursor-pointer transition-colors">Upgrade to {PLAN_NAME.pro} →</button>}
               </div>
               {!subscription && isEnterprise && <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Current Plan</p>}
               <div className="border border-slate-200 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-1">
-                  <p className="text-sm font-semibold text-slate-900">Enterprise</p>
+                  <p className="text-sm font-semibold text-slate-900">{PLAN_NAME.enterprise}</p>
                   {isEnterprise && <span className="text-xs font-medium px-2 py-0.5 rounded bg-violet-50 text-violet-700 shrink-0 ml-2">Current plan</span>}
                 </div>
-                <p className="text-xs text-slate-500 mb-3">SSO, priority support, tailored security, and custom contracts</p>
-                {!isEnterprise && <button className="w-full bg-transparent border border-slate-200 rounded-lg py-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors">Contact Sales →</button>}
+                <div className="flex flex-col gap-1 mb-3">
+                  {lines(ENTERPRISE_PAGE.enterprise).map(f => (
+                    <div key={f.id} className="text-xs text-slate-500 flex items-center gap-1.5"><span className="text-green-600">✓</span> <FeatureText feature={f} aiChip={false} /></div>
+                  ))}
+                </div>
+                {!isEnterprise && <button onClick={() => router.push('/contact')} className="w-full bg-transparent border border-slate-200 rounded-lg py-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors">Contact Sales →</button>}
               </div>
             </div>
           )}

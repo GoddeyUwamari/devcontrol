@@ -31,7 +31,7 @@ export function formatPriceAmount(amount: number, currency: string): string {
 export function planDisplayName(tier: string): string {
   return Object.prototype.hasOwnProperty.call(PLAN_DISPLAY_NAME, tier)
     ? PLAN_DISPLAY_NAME[tier as PaidTier]
-    : 'Free';
+    : 'Visibility';
 }
 
 interface SubscriptionStatusProps {
@@ -364,7 +364,7 @@ export function SubscriptionStatus({ subscription }: SubscriptionStatusProps) {
                 <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
                   <p className="text-sm text-amber-800 dark:text-amber-300">
                     Your subscription will be cancelled on {getNextBillingDate()}. You'll
-                    be downgraded to the Free plan.
+                    be moved to the free Visibility plan.
                   </p>
                 </div>
               )}

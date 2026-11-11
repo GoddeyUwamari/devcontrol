@@ -38,6 +38,7 @@ import userPreferencesRoutes from './user-preferences.routes';
 import tenantsRoutes from './tenants.routes';
 import usageRoutes from './usage.routes';
 import newsletterRoutes from './newsletter.routes';
+import billingOfferRoutes from './billing-offer.routes';
 import activationFunnelRoutes from './activation-funnel.routes';
 
 const router = Router();
@@ -92,6 +93,8 @@ router.use('/user/preferences', userPreferencesRoutes);
 router.use('/tenants', tenantsRoutes);
 router.use('/usage', usageRoutes);
 router.use('/newsletter', newsletterRoutes);
+// Public: whether the trial offer is on (config/public-routes.ts). Its only route is GET /offer.
+router.use('/billing', billingOfferRoutes);
 router.use('/admin/activation-funnel', activationFunnelRoutes);
 router.use('/', logsRoutes);
 

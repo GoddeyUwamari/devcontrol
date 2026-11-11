@@ -82,7 +82,7 @@ describe('SLO Dashboard page — Enterprise gate is real, not a client-side demo
 
     render(<SLODashboardPage />)
 
-    expect(await screen.findByText('Enterprise Feature')).toBeInTheDocument()
+    expect(await screen.findByText('Revenue Protection feature')).toBeInTheDocument()
     expect(screen.queryByText('SLOs Defined')).not.toBeInTheDocument()
     expect(mockEvaluateAll).not.toHaveBeenCalled()
   })

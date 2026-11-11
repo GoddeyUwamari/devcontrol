@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/marketing-ui/button'
 import { ArrowRight } from 'lucide-react'
+import { TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -61,9 +62,7 @@ export function CTASection() {
             </Button>
           </div>
 
-          <p style={{ fontSize: isMobile ? '12px' : '13px', color: '#c4b5fd', marginTop: '24px' }}>
-            No credit card required · 14-day free trial · Cancel anytime
-          </p>
+          <TrialLine variant="trust" rest={['Cancel anytime']} style={{ display: 'block', fontSize: isMobile ? '12px' : '13px', color: '#c4b5fd', marginTop: '24px' }} />
         </div>
       </div>
     </section>

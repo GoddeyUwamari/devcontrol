@@ -114,11 +114,11 @@ describe('/tenants gate copy (client gate, known non-Enterprise plan)', () => {
     stubGet(() => Promise.resolve({ data: { success: true, data: [] } }))
     await renderWithKnownPlan(<TenantsPage />, 'pro')
     expect(await screen.findByRole('heading', { level: 1, name: 'Tenant Intelligence' })).toBeTruthy()
-    expect(screen.getByText('Enterprise Feature')).toBeTruthy()
+    expect(screen.getByText('Revenue Protection feature')).toBeTruthy()
     expect(screen.getByText(
-      'Tenant Intelligence is available on the Enterprise plan. Track tenant health, churn risk, and expansion signals across your tenants.'
+      'Tenant Intelligence is on the Revenue Protection plan. Track tenant health, churn risk, and expansion signals across your tenants.'
     )).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Upgrade to Enterprise' }).getAttribute('href')).toBe('/settings/billing/upgrade')
+    expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe('/settings/billing/upgrade')
     expect(screen.queryByText(/Multi-Account Monitoring/i)).toBeNull()
     expect(screen.queryByText(/accounts/i)).toBeNull()
     expect(getCalls).toBe(0)

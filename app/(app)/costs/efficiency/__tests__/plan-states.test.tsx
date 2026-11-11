@@ -33,7 +33,7 @@ import EfficiencyPage from '../page'
 let trendCalls = 0
 const CONTENT = 'Efficiency score by service'
 const NOT_AVAILABLE = 'Cost anomaly detection is not currently available.'
-const BANNER = 'Full Efficiency Analysis — Pro Plan'
+const BANNER = 'Full Efficiency Analysis — Optimization Engine plan'
 
 const freeReads = () =>
   getCostSummary.mock.calls.length + getAllResources.mock.calls.length + getStats.mock.calls.length + trendCalls
@@ -144,7 +144,7 @@ describe('/costs/efficiency: the Pro banner', () => {
     if (shown) {
       expect(screen.getByText(BANNER)).toBeTruthy()
       expect(screen.getByText('Upgrade to unlock detailed resource efficiency scoring and quadrant drill-down.')).toBeTruthy()
-      expect(screen.getByRole('link', { name: 'Upgrade to Pro' }).getAttribute('href')).toBe('/settings/billing/upgrade')
+      expect(screen.getByRole('link', { name: 'See plans' }).getAttribute('href')).toBe('/settings/billing/upgrade')
     } else {
       expect(screen.queryByText(BANNER)).toBeNull()
     }

@@ -355,7 +355,7 @@ describe('tiles', () => {
   })
   it('score: never 0 when not available', () => {
     expect(t({ score: ready({ ...SCORE, isPreliminary: true }) }).score).toEqual({ value: null, caption: 'The first scan is still running.', retry: false })
-    expect(t({ score: PLAN }).score).toEqual({ value: null, caption: 'The score is on the Pro plan.', retry: false })
+    expect(t({ score: PLAN }).score).toEqual({ value: null, caption: 'The score is on the Optimization Engine plan.', retry: false })
     expect(t({ score: ERROR }).score).toEqual({ value: null, caption: "Couldn't load the score.", retry: true })
     expect(t({ score: ready({ ...SCORE, score: NaN }) }).score.value).toBeNull()
     expect(t({ score: LOADING }).score.value).toBeNull()
@@ -527,7 +527,7 @@ describe('trend', () => {
     expect(tr({ trend: ready({ ...trend([['2026-10-23', 70], ['2026-10-01', 80]]), trendPercentage: 5 }) })?.delta).toBe('-10 pts')
   })
   it('plan and error notes', () => {
-    expect(tr({ trend: PLAN })?.note).toBe('Score history is on the Pro plan')
+    expect(tr({ trend: PLAN })?.note).toBe('Score history is on the Optimization Engine plan')
     expect(tr({ trend: ERROR })?.note).toBe("Couldn't load score history.")
     expect(tr({ trend: LOADING })).toBeNull()
   })

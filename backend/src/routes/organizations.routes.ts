@@ -44,7 +44,8 @@ router.get('/founding-count', async (req, res) => {
     );
     res.json({ count: result.rows[0].count });
   } catch {
-    res.json({ count: 5 });
+    // No invented number: the pricing page hides the counter without a real count.
+    res.status(503).json({ count: null });
   }
 });
 

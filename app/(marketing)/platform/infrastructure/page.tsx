@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import {
   Search, Layers, RefreshCw, GitBranch, Activity, Shield
 } from 'lucide-react'
+import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -388,16 +389,14 @@ export default function InfrastructureManagementPage() {
             flexWrap: 'wrap',
             alignItems: 'center',
           }}>
-            <a href="/register" style={{
+            <TrialCta style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               width: isMobile ? '100%' : undefined,
               textAlign: 'center',
               boxSizing: 'border-box',
-            }}>
-              Start Free Trial
-            </a>
+            }} />
             <a href="/tour" style={{
               background: 'transparent', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
@@ -410,9 +409,7 @@ export default function InfrastructureManagementPage() {
               Take a Product Tour
             </a>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
-            No credit card required · Read-only AWS access · Cancel anytime
-          </div>
+          <TrialLine variant="trust" rest={['Read-only AWS access', 'Cancel anytime']} style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }} />
         </div>
       </section>
 

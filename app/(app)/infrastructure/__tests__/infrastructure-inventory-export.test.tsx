@@ -17,7 +17,7 @@
  * switch and the organization each test sets. The real usePlan reads it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import InfrastructurePage from '../page'
 
@@ -128,7 +128,7 @@ describe('/infrastructure resource inventory export', () => {
 
     const notice = screen.getByTestId('inventory-export-plan-required')
     expect(notice).toHaveTextContent('This feature is on the Cost Control plan.')
-    expect(screen.getByText('See plans').closest('a')).toHaveAttribute('href', '/settings/billing/upgrade')
+    expect(within(notice).getByText('See plans').closest('a')).toHaveAttribute('href', '/settings/billing/upgrade')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(post).not.toHaveBeenCalled()
   })

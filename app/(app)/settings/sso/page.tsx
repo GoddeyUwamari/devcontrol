@@ -176,12 +176,12 @@ export default function SSOSettingsPage() {
             </>
           ) : (
             <>
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Revenue Protection feature</h2>
               <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-                SAML SSO is available on the Enterprise plan. Upgrade to enable single sign-on for your entire team.
+                SAML SSO is on the Revenue Protection plan. Upgrade to enable single sign-on for your entire team.
               </p>
               <a href="/settings/billing?upgrade=enterprise" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
-                Upgrade to Enterprise
+                See plans
               </a>
             </>
           )}

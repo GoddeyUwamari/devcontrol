@@ -295,7 +295,7 @@ export const samlService = {
     if (!config.is_active) throw new SSOAuthenticationError('SSO is not active for this organization');
     const tier = await getOrganizationTier(organizationId);
     if (tier !== 'enterprise') {
-      throw new SSOAuthenticationError('Organization is not on the Enterprise plan');
+      throw new SSOAuthenticationError('SSO is on the Revenue Protection plan.');
     }
     return config;
   },

@@ -67,7 +67,7 @@ function CostHero() {
             </div>
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <span>No credit card required</span>
+              <span>Free Visibility plan</span>
             </div>
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-green-500" />
@@ -415,7 +415,7 @@ function FinalCTASection() {
           </div>
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <span>No credit card required</span>
+            <span>Free Visibility plan</span>
           </div>
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-green-500" />

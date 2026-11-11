@@ -301,7 +301,7 @@ export default function CommunityPage() {
             Join the Community
           </a>
           <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
-            No credit card · No commitment · Just engineers helping engineers
+            Free · No commitment · Just engineers helping engineers
           </p>
         </div>
       </section>

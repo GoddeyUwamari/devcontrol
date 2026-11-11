@@ -28,6 +28,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { AuthProvider } from '@/lib/contexts/auth-context'
 import { rejectEveryApiRequest } from '@/lib/__tests__/support/console-sentinels'
+import { resetBillingOfferForTests } from '@/lib/billing/offer'
 import MarketingLayout from '../layout'
 import HomePage from '../page'
 import PricingPage from '../pricing/page'
@@ -62,9 +63,14 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: NOW })
   restoreApi = rejectEveryApiRequest()
   vi.spyOn(console, 'log').mockImplementation(() => {})
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
-    new Response(JSON.stringify({ count: FOUNDING_COUNT }), { headers: { 'Content-Type': 'application/json' } })
-  )
+  resetBillingOfferForTests()
+  // Routed by URL: the fixtures pin the trial OFF on purpose (GET /api/billing/offer), and the
+  // founding count answers a real number if anything asks (the banner is hidden, C1-D9).
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input)
+    const body = url.endsWith('/api/billing/offer') ? { trial: { enabled: false } } : { count: FOUNDING_COUNT }
+    return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
+  })
 })
 
 afterEach(() => {
@@ -135,8 +141,10 @@ const PAGES: Page[] = [
       expect(text(root.querySelector('h1')!)).toContain('Simple Pricing. Serious Savings.')
       expect(root.querySelectorAll('h2').length).toBeGreaterThan(0)
       expect(root.querySelector('table')).not.toBeNull()
-      // The stubbed founding-count response has arrived (the page's default is 5).
-      expect(text(root)).toContain(`${FOUNDING_COUNT} of 50 spots claimed`)
+      // The founding-member offer is hidden until prices and billing rules are final (C1-D9),
+      // and the trial is off: no trial wording, no "no credit card".
+      expect(text(root)).not.toContain('spots claimed')
+      expect(text(root)).not.toMatch(/free trial|no credit card/i)
     },
   },
   {

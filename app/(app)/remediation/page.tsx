@@ -472,12 +472,12 @@ export default function RemediationPage() {
             </>
           ) : (
             <>
-              <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 10 }}>Enterprise Feature</h2>
+              <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', marginBottom: 10 }}>Revenue Protection feature</h2>
               <p style={{ color: '#6B7280', fontSize: '0.9rem', maxWidth: 460, margin: '0 auto 28px', lineHeight: 1.7 }}>
                 Auto-Remediation Workflows let your team create, review, approve, and execute infrastructure fixes — with full audit trails and rollback support.
               </p>
-              <a href="/settings/billing?upgrade=enterprise" style={{ display: 'inline-block', background: '#7C3AED', color: '#fff', padding: '10px 28px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
-                Upgrade to Enterprise
+              <a href="/settings/billing/upgrade" style={{ display: 'inline-block', background: '#7C3AED', color: '#fff', padding: '10px 28px', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}>
+                See plans
               </a>
             </>
           )}

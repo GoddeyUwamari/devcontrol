@@ -51,7 +51,7 @@ export function CancelSubscriptionDialog({
       const result = await cancelSubscription(false);
       if (result.success) {
         toast.success('Subscription Cancelled', {
-          description: `You'll keep access until ${getEndDate()}, then move to the Free plan.`,
+          description: `You'll keep access until ${getEndDate()}, then move to the free Visibility plan.`,
         });
         onSuccess();
         handleClose();
@@ -137,11 +137,11 @@ export function CancelSubscriptionDialog({
               <ArrowDownCircle className="h-5 w-5 text-primary mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold mb-0.5">
-                  {loading ? 'Processing…' : 'Switch to Free'}
+                  {loading ? 'Processing…' : 'Switch to Visibility'}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Keep full access until <span className="font-medium text-foreground">{getEndDate()}</span>, then
-                  move to the Free plan. No further charges.
+                  move to the free Visibility plan. No further charges.
                 </p>
               </div>
             </div>

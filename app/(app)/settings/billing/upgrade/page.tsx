@@ -8,74 +8,18 @@ import { trackLeadQualified } from '@/lib/gtag'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useIsBillingAdmin } from '@/lib/hooks/use-current-role'
+import { PLANS, cardFeatures, includesPrevious, priceLabel, annualBillingLine, annualToggleLabel } from '@/lib/plan/plan-catalog'
+import { FeatureText } from '@/components/billing/feature-line'
+import { InAppTrialLine } from '@/components/billing/trial-line'
 
-const plans = [
-  {
-    name: 'Cost Control',
-    tier: 'starter',
-    price: 49,
-    annualPrice: 41,
-    description: 'Identify and eliminate the most common sources of AWS waste.',
-    features: [
-      'Up to 60 AWS resources',
-      '15 resource types',
-      'Idle & orphaned resource detection',
-      'Cost attribution by team',
-      'Actionable savings recommendations',
-      'Infrastructure monitoring',
-      'Active alerts & alert history',
-      'Export reports (CSV/PDF)',
-      'Up to 5 team members',
-      'Email support',
-    ],
-  },
-  {
-    name: 'Optimization Engine',
-    tier: 'pro',
-    price: 199,
-    annualPrice: 166,
-    popular: true,
-    description: 'Turn your AWS into a predictable, optimized system.',
-    features: [
-      '✨ AI Chat Assistant (unlimited queries)',
-      '✨ Anomaly Detection (4 detection types)',
-      '✨ Natural Language Search',
-      '✨ AI Cost Optimization (8 types)',
-      '✨ On-Demand AI Reports',
-      '✨ Smart AI Recommendations',
-      'Up to 500 AWS resources',
-      'Risk score & trends',
-      'SLO Dashboard',
-      'DORA metrics & engineering performance',
-      'Slack & Jira integrations',
-      'Webhook integrations (5 endpoints)',
-      'Up to 10 team members',
-      'Priority support',
-    ],
-  },
-  {
-    name: 'Revenue Protection',
-    tier: 'enterprise',
-    price: 999,
-    description: 'Protect revenue at scale and eliminate high-impact risk.',
-    features: [
-      '✨ Everything in Optimization Engine',
-      '✨ Scheduled AI Reports (weekly/monthly)',
-      '✨ Weekly AI Email Summaries',
-      '✨ Custom Anomaly Detection Rules',
-      '✨ Executive AI Reports (auto-delivered monthly to leadership)',
-      'Unlimited AWS resources',
-      'Custom compliance frameworks',
-      'SOC 2 readiness support (in development — technical evidence, not certification)',
-      'Auto-remediation workflows',
-      'Advanced SLO management',
-      'Multi-account monitoring',
-      'SSO/SAML authentication',
-      'Dedicated account manager',
-      '24/7 priority support',
-    ],
-  },
-]
+// The paid plans, exactly as the pricing page lists them (lib/plan/plan-catalog.ts).
+const plans = PLANS.filter(p => p.tier !== 'free').map(p => ({
+  name: p.name,
+  tier: p.tier,
+  popular: !!p.popular,
+  description: p.tagline,
+  features: cardFeatures(p.tier),
+}))
 
 const tierOrder: Record<string, number> = { free: 0, starter: 1, pro: 2, enterprise: 3 }
 
@@ -171,7 +115,7 @@ export default function UpgradePage() {
             >
               {period === 'monthly' ? 'Monthly' : 'Annual'}
               {period === 'annual' && (
-                <span className="ml-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Save 20%</span>
+                <span className="ml-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">{annualToggleLabel()}</span>
               )}
             </button>
           ))}
@@ -197,7 +141,8 @@ export default function UpgradePage() {
           : plans.map(plan => {
               const isCurrent  = plan.tier === resolvedTier
               const isDowngrade = tierOrder[plan.tier] < tierOrder[resolvedTier]
-              const price = billing === 'annual' && plan.annualPrice ? plan.annualPrice : plan.price
+              const billingLine = billing === 'annual' ? annualBillingLine(plan.tier) : null
+              const previous = includesPrevious(plan.tier)
               const isLoading = loadingTier === plan.tier
               const showBanner = isCurrent || (!isDowngrade && plan.popular)
               // Only a plan CHANGE (an org already on a paid tier) hits
@@ -230,16 +175,16 @@ export default function UpgradePage() {
                       <h3 className="text-lg font-bold mb-1">{plan.name}</h3>
                       <p className="text-sm text-muted-foreground mb-4">{plan.description}</p>
                       {plan.tier === 'enterprise' ? (
-                        <div className="text-3xl font-bold">Custom</div>
+                        <div className="text-3xl font-bold">{priceLabel(plan.tier, billing)}</div>
                       ) : (
                         <div>
                           <div className="flex items-end gap-1">
-                            <span className="text-3xl font-bold">${price}</span>
+                            <span className="text-3xl font-bold">{priceLabel(plan.tier, billing)}</span>
                             <span className="text-muted-foreground mb-1">/month</span>
                           </div>
-                          {billing === 'annual' && plan.annualPrice && (
+                          {billingLine && (
                             <p className="text-xs text-green-600 font-medium mt-1">
-                              Save ${(plan.price - plan.annualPrice) * 12}/year
+                              {billingLine}
                             </p>
                           )}
                         </div>
@@ -248,20 +193,20 @@ export default function UpgradePage() {
 
                     {/* Features */}
                     <div className="flex flex-col gap-2 flex-1 mb-6">
+                      {previous && (
+                        <p className="text-xs text-muted-foreground font-semibold">Everything in {previous}, plus:</p>
+                      )}
                       {plan.features.map(feature => {
-                        const isAI = feature.startsWith('✨')
-                        const text = feature.replace('✨ ', '')
+                        const isAI = !!feature.ai
+                        const muted = isCurrent || isDowngrade
                         return (
-                          <div key={feature} className="flex items-start gap-2">
+                          <div key={feature.id} className="flex items-start gap-2">
                             <CheckCircle2
                               className="h-4 w-4 mt-0.5 shrink-0"
-                              style={{ color: isCurrent || isDowngrade ? '#94a3b8' : isAI ? '#7c3aed' : '#16a34a' }}
+                              style={{ color: muted || feature.badge === 'Coming soon' ? '#94a3b8' : isAI ? '#7c3aed' : '#16a34a' }}
                             />
-                            <span className={`text-sm ${isCurrent || isDowngrade ? 'text-muted-foreground' : isAI ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
-                              {isAI && !isCurrent && !isDowngrade && (
-                                <span className="bg-violet-50 text-violet-700 rounded px-1 py-0.5 text-[10px] font-bold mr-1">AI</span>
-                              )}
-                              {text}
+                            <span className={`text-sm ${muted ? 'text-muted-foreground' : isAI ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
+                              <FeatureText feature={feature} aiChip={!muted} />
                             </span>
                           </div>
                         )
@@ -310,11 +255,10 @@ export default function UpgradePage() {
                         )}
                       </button>
                     )}
-                    {trialEligible && !hasExistingSubscription && (plan.tier === 'starter' || plan.tier === 'pro') && (
-                      <p className="text-xs text-muted-foreground mt-2 text-center">
-                        14-day free trial. Card required; you&apos;re charged when the trial ends unless you cancel.
-                      </p>
-                    )}
+                    <InAppTrialLine
+                      eligible={trialEligible && !hasExistingSubscription && (plan.tier === 'starter' || plan.tier === 'pro')}
+                      className="text-xs text-muted-foreground mt-2 text-center"
+                    />
                   </div>
                 </div>
               )
@@ -330,7 +274,7 @@ export default function UpgradePage() {
 
       {/* Trust signals */}
       <div className="flex flex-wrap justify-center gap-6 text-sm text-muted-foreground">
-        {['14-day money-back guarantee', 'Cancel anytime', 'No hidden fees', 'Instant access'].map(item => (
+        {['Refund review within 14 days of a charge', 'Cancel anytime', 'No hidden fees', 'Instant access'].map(item => (
           <div key={item} className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             {item}

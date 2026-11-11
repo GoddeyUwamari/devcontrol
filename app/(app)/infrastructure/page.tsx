@@ -578,8 +578,8 @@ function InfrastructureContent() {
       {isFree && !isDemoActive && (
         <div className="mb-5 flex items-center justify-between bg-violet-50 border border-violet-200 rounded-xl px-5 py-3">
           <p className="text-sm text-violet-800 font-medium">
-            Free plan shows EC2, RDS, and S3 only.
-            <span className="text-slate-500 font-normal ml-1">Upgrade to Starter to unlock 15 resource types.</span>
+            Visibility shows EC2, EBS, RDS and S3.
+            <span className="text-slate-500 font-normal ml-1">Cost Control adds 12 more types (16 in total).</span>
           </p>
           <Link href="/settings/billing/upgrade" className="text-xs font-semibold text-white bg-violet-700 px-4 py-1.5 rounded-lg no-underline shrink-0 ml-4">
             Upgrade →
@@ -589,11 +589,10 @@ function InfrastructureContent() {
       {isStarter && !isPro && !isDemoActive && (
         <div className="mb-5 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-5 py-3">
           <p className="text-sm text-blue-800 font-medium">
-            Starter plan shows 15 resource types.
-            <span className="text-slate-500 font-normal ml-1">Upgrade to Pro to unlock all 15+ resource types in your inventory.</span>
+            Cost Control shows all 16 supported resource types.
           </p>
           <Link href="/settings/billing/upgrade" className="text-xs font-semibold text-white bg-blue-600 px-4 py-1.5 rounded-lg no-underline shrink-0 ml-4">
-            Upgrade →
+            See plans
           </Link>
         </div>
       )}

@@ -33,7 +33,7 @@ describePlanStates('/remediation', {
   reset: () => { list.mockClear(); get.mockClear() },
   paidCalls: () => list.mock.calls.length + get.mock.calls.length,
   content: /Approval-based infrastructure remediation/,
-  gate: 'Upgrade to Enterprise',
+  gate: 'Revenue Protection feature',
 })
 
 const POLL_MS = 10_000

@@ -168,7 +168,7 @@ export default function ScheduledReportsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Enterprise Feature</p>
+                  <p className="text-sm text-gray-600">Revenue Protection</p>
                   <p className="text-lg font-semibold text-purple-600">Automated Delivery</p>
                 </div>
                 <Clock className="h-10 w-10 text-purple-600 opacity-20" />
