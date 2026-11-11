@@ -17,6 +17,12 @@ export interface ConnectInitData {
   externalId: string
   platformAccountId: string
   trustPolicy: object
+  /**
+   * The CloudFormation quick-create link and template version, sent only once the template is
+   * hosted and its server switch is on (AWS connect PR D2). No server sends it before then, so
+   * the Connect AWS page's CloudFormation card stays hidden.
+   */
+  launchStack?: { url: string; templateVersion: string }
 }
 
 export interface ConnectAwsPayload {
