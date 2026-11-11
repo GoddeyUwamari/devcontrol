@@ -212,6 +212,13 @@ function EfficiencyInfoBadge() {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
+// Sums resources observed stopped or pending (idle.ts), each at its inventory
+// estimate, which for EC2 and RDS is the running rate whatever the state
+// (backend awsResourceDiscovery estimateEC2Cost/estimateRDSCost). So it is
+// neither "idle" nor what AWS bills for a stopped instance.
+const NOT_RUNNING_LABEL = 'Stopped or Starting Resources'
+const NOT_RUNNING_CAVEAT = 'Estimated at running rates; AWS charges less while instances are stopped.'
+
 function KPICard({
   label, value, delta, prefix = '', suffix = '', accent = false, note,
 }: {
@@ -221,7 +228,7 @@ function KPICard({
   note?: string
 }) {
   const isPositiveDelta = (delta ?? 0) > 0
-  const deltaColor = label === 'Idle Resource Cost'
+  const deltaColor = label === NOT_RUNNING_LABEL
     ? isPositiveDelta ? 'text-ink-danger' : 'text-ink-success'
     : isPositiveDelta ? 'text-ink-success' : 'text-ink-danger'
 
@@ -371,7 +378,7 @@ export default function EfficiencyPage() {
       value: resourcesLoading || resourcesError || resources.length === 0 ? '—' : formatUsd(realCostPerRes),
       note: !resourcesLoading && !resourcesError && resources.length === 0 ? 'No discovered resources' : inventoryNote,
     },
-    idleCost: { value: resourcesLoading || resourcesError ? '—' : formatUsd(realIdleCost), note: inventoryNote },
+    idleCost: { value: resourcesLoading || resourcesError ? '—' : formatUsd(realIdleCost), note: resourcesLoading || resourcesError ? inventoryNote : NOT_RUNNING_CAVEAT },
     savings: {
       value: savingsLoading || savingsError || !savingsStats ? '—' : formatSavingsCurrency(savingsStats.totalPotentialSavings),
       note: savingsLoading ? 'Loading…' : savingsError || !savingsStats ? 'Could not be retrieved' : 'Estimated monthly savings from recommendations',
@@ -526,14 +533,14 @@ export default function EfficiencyPage() {
           <>
             <KPICard label="Total Spend"        value={DEMO_KPIS.totalSpend}                   delta={DEMO_KPIS.totalSpendDelta} prefix="$" accent />
             <KPICard label="Cost Per Resource"  value={DEMO_KPIS.costPerResource.toFixed(2)}   delta={DEMO_KPIS.costPerDelta}    prefix="$" />
-            <KPICard label="Idle Resource Cost" value={DEMO_KPIS.idleCost}                     delta={DEMO_KPIS.idleDelta}       prefix="$" />
+            <KPICard label={NOT_RUNNING_LABEL} value={DEMO_KPIS.idleCost}                     delta={DEMO_KPIS.idleDelta}       prefix="$" note={NOT_RUNNING_CAVEAT} />
             <KPICard label="Est. Savings Opportunity" value={DEMO_KPIS.savingsRealized} delta={DEMO_KPIS.savingsDelta} prefix="$" />
           </>
         ) : (
           <>
             <KPICard label={realKpis.totalSpend.label} value={realKpis.totalSpend.value} note={realKpis.totalSpend.note} accent />
             <KPICard label="Cost Per Resource"  value={realKpis.costPerResource.value} note={realKpis.costPerResource.note} />
-            <KPICard label="Idle Resource Cost" value={realKpis.idleCost.value}        note={realKpis.idleCost.note} />
+            <KPICard label={NOT_RUNNING_LABEL} value={realKpis.idleCost.value}        note={realKpis.idleCost.note} />
             <KPICard label="Est. Savings Opportunity" value={realKpis.savings.value}   note={realKpis.savings.note} />
           </>
         )}

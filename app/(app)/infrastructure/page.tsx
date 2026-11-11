@@ -468,10 +468,10 @@ function InfrastructureContent() {
   const scoreChip        = (score: number) => ({ color: score >= 80 ? '#065F46' : '#92400E', bg: score >= 80 ? '#D1FAE5' : '#FEF3C7' })
 
   const DEMO_TOP_ACTIONS: { id: string; rank: string; type: 'cost' | 'reliability'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; defaultPrice?: boolean; sub: string }[] = [
-    { id: 'demo-1', rank: '01', type: 'cost'        as const, title: 'Downsize RDS cluster',                     savings: 740,  sub: 'production-postgres-primary · us-east-1 · cost leakage active'      },
+    { id: 'demo-1', rank: '01', type: 'cost'        as const, title: 'Remove unattached Elastic IPs',            savings: 11,   sub: '3 unattached addresses · us-east-1'                                 },
     { id: 'demo-2', rank: '02', type: 'reliability' as const, title: 'Investigate CloudFront latency warnings',   savings: null, sub: 'production-cdn · potential downtime risk · degraded user experience' },
     { id: 'demo-3', rank: '03', type: 'cost'        as const, title: 'Remove unused EBS volumes',                 savings: 320,  sub: '6 unattached volumes · us-east-1 · no impact to workloads'          },
-    { id: 'demo-4', rank: '04', type: 'cost'        as const, title: 'Rightsize idle EC2 instances',              savings: 580,  sub: 'analytics-warehouse · us-east-1 · avg 12% CPU utilization'          },
+    { id: 'demo-4', rank: '04', type: 'cost'        as const, title: 'Review low-activity EC2 instances',         savings: 580,  sub: 'analytics-warehouse · us-east-1 · low CPU and network for 30 days'   },
   ]
 
   const displayTopActions = isDemoActive
@@ -902,14 +902,14 @@ function InfrastructureContent() {
             </div>
             <p className="text-sm font-semibold text-slate-900 mb-1.5">No infrastructure data yet</p>
             <p className="text-sm text-slate-500 mb-5 leading-relaxed max-w-md mx-auto">
-              Connect your AWS account to uncover cost leaks, security risks, and idle resources — first insights in under 2 minutes.
+              Connect your AWS account to find cost leaks, security risks and low-activity resources after your first scan.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-sm mx-auto mb-6 text-left">
-              {['💸 Idle EC2 instances draining budget', '🗄️ Underutilized RDS databases', '🔒 Misconfigured security groups', '📦 Unused S3 storage accumulating'].map(item => (
+              {['💸 Low-activity EC2 instances', '💾 Unattached EBS volumes', '🔒 Open security groups', '📦 S3 buckets without lifecycle rules'].map(item => (
                 <div key={item} className="text-[13px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">{item}</div>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mb-4">Read-only access · No changes to infrastructure · Cancel anytime</p>
+            <p className="text-xs text-gray-500 mb-4">Read-only access · No changes to your infrastructure</p>
             <button onClick={handleSyncAWS} className="bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold border-none cursor-pointer inline-flex items-center gap-2">
               <RefreshCw size={14} /> Scan My AWS for Cost &amp; Risk
             </button>

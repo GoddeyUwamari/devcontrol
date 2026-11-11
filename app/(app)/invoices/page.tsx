@@ -226,15 +226,14 @@ export default function InvoicesPage() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 flex items-start gap-3">
           <span className="text-base shrink-0 mt-0.5">⚠️</span>
           <div className="flex-1">
-            <p className="text-label text-amber-900 mb-1">Having trouble fetching billing data</p>
-            <p className="text-meta text-amber-700 leading-relaxed mb-3">This is usually temporary. Check your AWS connection or try again.</p>
-            <div className="flex gap-2">
+            {/* /api/billing/invoices has no backend route yet, so this request always
+                fails: say where invoices really are instead of a "temporary" error. */}
+            <p className="text-label text-amber-900 mb-1">Invoices aren&apos;t shown on this page yet</p>
+            <p className="text-meta text-amber-700 leading-relaxed mb-3">Self-serve plans: your invoices are under Manage Billing on the Billing page. Plans billed by our team: invoices come from us by email.</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <a href="/settings/billing" className="text-label font-medium text-amber-900 underline">Go to Billing →</a>
               <button onClick={() => refetch()} className="bg-transparent border border-amber-300 text-amber-900 text-label font-medium rounded-lg px-3.5 py-1.5 cursor-pointer hover:bg-amber-100 transition-colors">↺ Retry</button>
             </div>
-            <p className="text-meta text-amber-700 leading-relaxed mt-3">
-              <strong className="font-semibold text-amber-900">Missing billing permissions?</strong>{' '}
-              DevControl needs <code className="bg-amber-100 px-1 rounded font-mono text-meta">ce:GetCostAndUsage</code> access to fetch your AWS invoices. Add this permission to your DevControl IAM role in the AWS Console, then click Retry.
-            </p>
           </div>
         </div>
 

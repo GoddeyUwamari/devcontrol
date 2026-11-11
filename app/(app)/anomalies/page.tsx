@@ -16,7 +16,7 @@ import {
 import { toast } from 'sonner';
 import customAnomalyRulesService, { CustomAnomalyRule, CreateRulePayload } from '@/lib/services/custom-anomaly-rules.service';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
-import { cn } from '@/lib/utils';
+import { ANOMALY_DETECTION_ACTIVE, COMING_SOON } from '@/lib/features/coming-soon';
 
 const severityConfig: Record<string, { color: string; bg: string; border: string; label: string }> = {
   critical: { color: '#DC2626', bg: '#FEF2F2', border: '#FEE2E2', label: 'Critical' },
@@ -163,11 +163,23 @@ export default function AnomaliesPage() {
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">
         <div>
-          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Anomaly Detection</h1>
+          <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+            <h1 className={PAGE_TITLE_CLASS}>Anomaly Detection</h1>
+            {!ANOMALY_DETECTION_ACTIVE && (
+              <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">{COMING_SOON}</span>
+            )}
+          </div>
           {/* No detector evaluates measured AWS data (backend AnomalyDetectionService /
               CustomAnomalyRulesService return nothing), so the page must not claim monitoring. */}
-          <p className={PAGE_SUBTITLE_CLASS}>Anomaly detection on measured data isn&apos;t currently active. An empty list here doesn&apos;t mean no issues exist.</p>
+          <p className={PAGE_SUBTITLE_CLASS}>
+            {ANOMALY_DETECTION_ACTIVE
+              ? <>Anomaly detection on measured data isn&apos;t currently active. An empty list here doesn&apos;t mean no issues exist.</>
+              : 'Anomaly detection on measured AWS data is coming soon. Nothing is being monitored here yet.'}
+          </p>
         </div>
+        {/* The scan is a no-op while detection is inactive (backend anomalies.routes.ts
+            POST /scan), so the button is hidden until it does something. */}
+        {ANOMALY_DETECTION_ACTIVE && (
         <div className="flex flex-wrap items-center gap-2">
           {lastScanResult && <span className="text-meta text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">{lastScanResult}</span>}
           <button onClick={triggerScan} disabled={isScanning}
@@ -175,6 +187,7 @@ export default function AnomaliesPage() {
             <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} /> {isScanning ? 'Scanning...' : 'Run Scan'}
           </button>
         </div>
+        )}
       </div>
 
       {/* Executive insight banner */}
@@ -207,8 +220,18 @@ export default function AnomaliesPage() {
         <span className="text-meta text-ink-muted">No detector evaluates measured AWS data yet</span>
       </div>
 
-      {/* 4 KPI cards */}
+      {/* 4 KPI cards. While detection is inactive a zero would read as "nothing wrong",
+          so every tile says "Not active" instead of showing a number. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        {!ANOMALY_DETECTION_ACTIVE ? (
+          ['Active Issues', 'Critical Issues', 'Systems Impacted', 'Estimated Impact'].map(label => (
+            <div key={label} className="bg-white rounded-xl border border-slate-200 p-5" data-testid="anomaly-kpi">
+              <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-2.5">{label}</p>
+              <div className="text-kpi tabular-nums text-ink-muted leading-none mb-1.5">—</div>
+              <p className="text-meta text-ink-muted leading-relaxed">Not active</p>
+            </div>
+          ))
+        ) : (<>
         {[
           { label: 'Active Issues', value: activeCount, dot: '#D97706', sub: 'Requiring immediate attention' },
           { label: 'Critical Issues', value: criticalCount, dot: '#DC2626', sub: 'Highest severity · action needed' },
@@ -230,6 +253,7 @@ export default function AnomaliesPage() {
           </div>
           <p className="text-meta text-ink-muted leading-relaxed">{activeCount === 0 ? 'Anomaly detection on measured data isn’t active' : criticalCount > 0 ? `${criticalCount} user-facing service${criticalCount > 1 ? 's' : ''} — act now` : 'No critical issues active'}</p>
         </div>
+        </>)}
       </div>
 
       {/* Filter row */}
@@ -443,7 +467,11 @@ export default function AnomaliesPage() {
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="text-ui font-semibold text-ink-muted">Custom Detection Rules</h2>
             <span className="text-label px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 uppercase tracking-[0.04em]">Enterprise</span>
-            <span className="text-meta text-ink-muted">{rules.length} rules active</span>
+            {!ANOMALY_DETECTION_ACTIVE && (
+              <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">{COMING_SOON}</span>
+            )}
+            {/* Rules are stored, never evaluated. */}
+            <span className="text-meta text-ink-muted">{rules.length} rules saved · not running yet</span>
           </div>
           <button onClick={() => setShowCreateRule(true)} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-label border-none cursor-pointer transition-colors">
             <Plus size={11} /> New Rule

@@ -820,7 +820,9 @@ describe('R: saving a destination', () => {
     it('a webhook endpoint, whose secret is still returned once', async () => {
       const res = await sendAs('admin', 'POST', '/webhooks', { url: '  https://hooks.example/endpoint  ', events: ['alert.triggered'] });
       if (!hasWebhookTable) {
-        expect(res.status).toBe(500);
+        // Past the destination check, the missing table answers 501 (require-feature-table.ts).
+        expect(res.status).toBe(501);
+        expect(res.body).toMatchObject({ code: 'FEATURE_NOT_AVAILABLE' });
         return;
       }
       expect(res.status).toBe(201);

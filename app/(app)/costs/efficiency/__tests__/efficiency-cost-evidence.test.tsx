@@ -165,9 +165,11 @@ describe('other KPI cards', () => {
     const perResource = await kpi('Cost Per Resource')
     await waitFor(() => expect(perResource.textContent).toContain('$5.25'))
     expect(perResource.textContent).toMatch(/Estimate from resource inventory/)
-    const idle = await kpi('Idle Resource Cost')
+    // CAT-3 (C3-D8): stopped and pending resources at their running-rate estimate, with the caveat.
+    const idle = await kpi('Stopped or Starting Resources')
     expect(idle.textContent).toContain('$0.50')
-    expect(idle.textContent).toMatch(/Estimate from resource inventory/)
+    expect(idle.textContent).toContain('Estimated at running rates; AWS charges less while instances are stopped.')
+    expect(idle.textContent).not.toMatch(/idle/i)
   })
 
   it('failed resource and savings requests read "—" and "Could not be retrieved", never $0', async () => {
@@ -175,7 +177,7 @@ describe('other KPI cards', () => {
     mockGetStats.mockRejectedValue(new Error('HTTP 500'))
     renderPage()
 
-    for (const label of ['Cost Per Resource', 'Idle Resource Cost', 'Est. Savings Opportunity']) {
+    for (const label of ['Cost Per Resource', 'Stopped or Starting Resources', 'Est. Savings Opportunity']) {
       const card = await kpi(label)
       await waitFor(() => expect(card.textContent).toMatch(/Could not be retrieved/))
       expect(card.textContent).not.toMatch(/\$0/)

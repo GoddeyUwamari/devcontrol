@@ -88,7 +88,7 @@ export function WelcomeModal() {
         <div className="space-y-4 py-4">
           <p className="text-body text-ink-muted dark:text-gray-400">
             DevControl reads your AWS account through a read-only IAM role and lists what it finds.
-            Cost findings (idle EC2 instances, unattached EBS volumes, unused Elastic IPs, and EBS and S3
+            Cost findings (low-activity EC2 instances, unattached EBS volumes, unused Elastic IPs, and EBS and S3
             storage settings that cost more than needed) show estimated monthly savings. Security findings
             appear on the Security page.
           </p>

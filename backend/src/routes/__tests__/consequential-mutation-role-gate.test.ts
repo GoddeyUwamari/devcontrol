@@ -151,14 +151,15 @@ let server: http.Server;
 let baseUrl: string;
 let org: Org;
 /**
- * webhook_endpoints is not part of every schema. Where it is missing the
- * handler has always answered 500 after logging its failed statement, and that
- * log line is then the evidence that the handler ran.
+ * webhook_endpoints is not part of every schema. Where it is missing, the
+ * route answers 501 FEATURE_NOT_AVAILABLE once the caller is past the role
+ * gate (middleware/require-feature-table.ts); that answer is then the
+ * evidence the request got past the gate.
  */
 let hasWebhookTable: boolean;
-const webhookHandlerRan = (tag: string) => errorSpy.mock.calls.some((call) => call[0] === tag);
+let lastFeatureCode: string | null = null;
+const featureGuardAnswered = () => lastFeatureCode === 'FEATURE_NOT_AVAILABLE';
 
-let errorSpy: jest.SpyInstance;
 let factorySpy: jest.SpyInstance;
 let analyzeSpy: jest.SpyInstance;
 let createFencedSpy: jest.SpyInstance;
@@ -202,7 +203,8 @@ beforeEach(() => {
   // Destinations saved below are checked by DNS; no real lookup or connection is made.
   guard = guardNetwork();
   stubDns({ 'hooks.slack.com': [PUBLIC_V4], 'example.com': [PUBLIC_V4] });
-  errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  // Handlers log their failures; keep the test output quiet.
+  jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
 
   factorySpy = jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new Error('AWS must not be reached'));
@@ -288,7 +290,7 @@ afterAll(async () => {
  * defaults to 'owner', so every refusal below is proven to come from the
  * caller's current membership rather than the claim.
  */
-function sendAs(orgId: string, userId: string, method: string, route: string, body?: unknown, jwtRole = 'owner') {
+async function sendAs(orgId: string, userId: string, method: string, route: string, body?: unknown, jwtRole = 'owner') {
   jest.spyOn(authService, 'verifyToken').mockReturnValue({
     userId,
     email: 'role-gate-caller@example.com',
@@ -296,11 +298,13 @@ function sendAs(orgId: string, userId: string, method: string, route: string, bo
     role: jwtRole,
     type: 'access',
   } as unknown as ReturnType<typeof authService.verifyToken>);
-  return fetch(`${baseUrl}${route}`, {
+  const response = await fetch(`${baseUrl}${route}`, {
     method,
     headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  lastFeatureCode = response.status === 501 ? ((await response.clone().json()) as { code?: string }).code ?? null : null;
+  return response;
 }
 
 interface Mutation {
@@ -408,20 +412,20 @@ const mutations: Mutation[] = [
     route: () => '/webhooks',
     body: { url: 'https://example.com/role-gate-new' },
     prepare: async (orgId) => (hasWebhookTable ? String(await count('webhook_endpoints', orgId)) : ''),
-    allowed: () => (hasWebhookTable ? 201 : 500),
+    allowed: () => (hasWebhookTable ? 201 : 501),
     happened: async (orgId, before) =>
-      hasWebhookTable ? (await count('webhook_endpoints', orgId)) !== Number(before) : webhookHandlerRan('[webhooks POST]'),
+      hasWebhookTable ? (await count('webhook_endpoints', orgId)) !== Number(before) : featureGuardAnswered(),
   },
   {
     name: 'DELETE /api/webhooks/:id',
     method: 'DELETE',
     route: (id) => `/webhooks/${id}`,
     prepare: insertWebhook,
-    allowed: () => (hasWebhookTable ? 200 : 500),
+    allowed: () => (hasWebhookTable ? 200 : 501),
     happened: async (_orgId, id) =>
       hasWebhookTable
         ? (await pool.query('SELECT 1 FROM webhook_endpoints WHERE id = $1', [id])).rows.length === 0
-        : webhookHandlerRan('[webhooks DELETE]'),
+        : featureGuardAnswered(),
   },
   {
     name: 'PUT /api/alert-config/config',
@@ -572,7 +576,7 @@ describe('routes this change leaves alone', () => {
     expect(data.slack).toMatchObject({ channel: '#alerts', webhookUrlSet: true });
     expect(data.webhook).toMatchObject({ urlSet: true, headersSet: ['X-Auth'] });
     expect(data.jira).toMatchObject({ baseUrl: 'https://example.atlassian.net', projectKey: 'OPS', apiTokenSet: true });
-    expect((await sendAs(org.orgId, org[role], 'GET', '/webhooks')).status).toBe(hasWebhookTable ? 200 : 500);
+    expect((await sendAs(org.orgId, org[role], 'GET', '/webhooks')).status).toBe(hasWebhookTable ? 200 : 501);
     expect((await sendAs(org.orgId, org[role], 'GET', '/anomalies')).status).toBe(200);
     expect((await sendAs(org.orgId, org[role], 'GET', '/anomalies/stats')).status).toBe(200);
   });

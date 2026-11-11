@@ -344,7 +344,7 @@ export default function BillingPage() {
           </Card>
 
           {/* Invoices */}
-          <InvoiceList invoices={invoices} />
+          <InvoiceList invoices={invoices} managed={managed} />
         </div>
       </div>
 
