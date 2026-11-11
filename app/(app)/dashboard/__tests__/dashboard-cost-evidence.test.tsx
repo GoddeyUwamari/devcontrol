@@ -78,6 +78,8 @@ let trendResponse: { ok: boolean; data: unknown[] }
 let awsAccounts: unknown[]
 /** HTTP status of /api/aws/accounts, or 'pending' for a request that never settles. */
 let awsAccountsStatus: number | 'pending'
+/** `connection.health` (AWS connect PR D1); undefined: a server from before D1 sends none. */
+let awsHealth: { state: string; since: string | null } | undefined
 
 /** The role claim of the stored access token, which is where the page reads the caller's role. */
 function signInAs(role: string | null) {
@@ -113,6 +115,7 @@ beforeEach(() => {
   // aws-accounts and cost-trend call fetch() directly: a connected account unless a test says otherwise.
   awsAccounts = CONNECTED_ACCOUNTS
   awsAccountsStatus = 200
+  awsHealth = undefined
   vi.stubGlobal('fetch', vi.fn((url: string) => {
     if (!String(url).includes('/api/aws/accounts')) {
       return Promise.resolve({ ok: trendResponse.ok, json: async () => (trendResponse.ok ? { success: true, data: trendResponse.data } : { success: false }) })
@@ -121,7 +124,8 @@ beforeEach(() => {
     const ok = awsAccountsStatus === 200
     // A failed response carries an error body, as the backend's do -- not a list.
     // The server's connection state (AWS connect PR B) follows the rows' own status, as the backend decides it.
-    const connection = { state: awsAccounts.filter((a) => (a as { status?: string }).status === 'active').length === 1 ? 'connected' : 'not_connected' }
+    const state = awsAccounts.filter((a) => (a as { status?: string }).status === 'active').length === 1 ? 'connected' : 'not_connected'
+    const connection = awsHealth ? { state, health: awsHealth } : { state }
     return Promise.resolve({ ok, status: awsAccountsStatus, json: async () => (ok ? { success: true, data: awsAccounts, connection } : { success: false, error: 'fixture' }) })
   }))
 })
@@ -668,6 +672,25 @@ describe('a connected organization is unchanged', () => {
     expect(document.body.textContent).not.toMatch(/Connect your AWS account|to get started|Setup takes|AWS not connected/i)
     expectNoNavigation()
     await waitFor(() => expect(aiSummaryService.getSummary).toHaveBeenCalled())
+  })
+})
+
+describe('the AWS pill follows connection.health (AWS connect PR D1)', () => {
+  it.each([
+    ['ok', 'connected', null],
+    ['failing', 'failing', '/connect-aws'],
+    ['lost', 'lost', '/connect-aws'],
+    ['not_checked_recently', 'not-checked', '/connect-aws'],
+    ['not_checked_yet', 'not-checked', '/connect-aws'],
+  ])('health %s: the pill is %s', async (health, dataState, href) => {
+    signInAs('member')
+    awsHealth = { state: health, since: '2026-11-11T10:00:00.000Z' }
+    setup(LEGACY_STATS.zero, { spend: actual(3), monthOverMonth: noMom('unavailable') })
+    renderDashboard()
+    await spendCardText('$3.00')
+    const pill = await screen.findByTestId('provider-pill-aws')
+    expect(pill).toHaveAttribute('data-state', dataState)
+    expect(pill.getAttribute('href')).toBe(href)
   })
 })
 

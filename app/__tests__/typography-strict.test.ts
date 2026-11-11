@@ -160,6 +160,8 @@ const STRICT = [
   'app/(app)/connect-aws/ConnectedView.tsx',
   'app/(app)/connect-aws/SecurityExplanation.tsx',
   'app/(app)/connect-aws/connectAwsParts.tsx',
+  // PR D1b: health, saved checks and Check again.
+  'app/(app)/connect-aws/ConnectionChecksParts.tsx',
   'components/dashboard/dashboard-unconnected-preview.tsx',
   'components/ui/typography.tsx',
   // T2b: the shared components.

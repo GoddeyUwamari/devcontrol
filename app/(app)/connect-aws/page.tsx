@@ -10,7 +10,9 @@ import { PageHeader } from '@/components/ui/typography'
 import {
   ACCOUNTS_ERROR,
   AMBIGUOUS_TEXT,
+  CONNECTED_PAGE_SUBTITLE,
   CONNECTED_TOAST,
+  CONNECTION_PAGE_TITLE,
   MANUAL_SETUP_ID,
   PAGE_SUBTITLE,
   PAGE_TITLE,
@@ -30,6 +32,16 @@ import { DisconnectSentence } from './connectAwsParts'
 import { SecurityExplanation } from './SecurityExplanation'
 
 type PageView = 'loading' | 'connected' | 'ambiguous' | 'setup'
+
+/**
+ * The page title and subtitle by view (AWS connect PR D1, T1-T3): the setup keeps "Connect your
+ * AWS account"; a page that shows (or is about to show) an existing connection is "AWS connection",
+ * with a subtitle only when connected.
+ */
+function pageHeading(view: PageView): { title: string; subtitle: string | undefined } {
+  if (view === 'setup') return { title: PAGE_TITLE, subtitle: PAGE_SUBTITLE }
+  return { title: CONNECTION_PAGE_TITLE, subtitle: view === 'connected' ? CONNECTED_PAGE_SUBTITLE : undefined }
+}
 
 /** The organization's active connection row, which the connected view describes. */
 function activeAccount(accounts: AwsAccount[] | undefined): AwsAccount | null {
@@ -98,6 +110,7 @@ export default function ConnectAwsPage() {
   }
 
   const account = justConnected?.account ?? activeAccount(accountsQuery.data?.accounts)
+  const heading = pageHeading(view)
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 overflow-x-hidden">
@@ -106,7 +119,7 @@ export default function ConnectAwsPage() {
 
           {/* LEFT */}
           <div>
-            <PageHeader className="mb-8" title={PAGE_TITLE} subtitle={PAGE_SUBTITLE} />
+            <PageHeader className="mb-8" title={heading.title} subtitle={heading.subtitle} />
 
             {view === 'connected' && (
               <ConnectedView

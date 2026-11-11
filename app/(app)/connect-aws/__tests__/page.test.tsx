@@ -44,6 +44,7 @@ import {
 import { HOME_REGION_ONLY_NOTE, describeCoverage } from '../../services/coverage'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
 import { toast } from 'sonner'
+import { REMOVED_STRINGS, expectNoRemovedText } from './removedText'
 
 const mockPush = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -65,11 +66,14 @@ vi.mock('@/lib/contexts/auth-context', () => ({
 const mockConnectInit = vi.fn()
 const mockConnect = vi.fn()
 const mockGetAccountsAndConnection = vi.fn()
+const mockGetConnectionChecks = vi.fn()
 vi.mock('@/lib/services/aws-accounts.service', () => ({
   default: {
     connectInit: (...args: unknown[]) => mockConnectInit(...args),
     connect: (...args: unknown[]) => mockConnect(...args),
     getAccountsAndConnection: (...args: unknown[]) => mockGetAccountsAndConnection(...args),
+    // PR D1 (connection-health.test.tsx covers it): null here is a server from before D1.
+    getConnectionChecks: (...args: unknown[]) => mockGetConnectionChecks(...args),
   },
 }))
 
@@ -111,23 +115,8 @@ const COVERAGE: ServicesCoverage = {
   total: 10,
 }
 
-/** Shown before and removed by PR E (founder decisions): never rendered again, in any state. */
-const REMOVED_STRINGS = [
-  '✅ Connection verified — redirecting to your dashboard...',
-  'Verifying connection...',
-  'Our setup guide walks through the exact IAM role configuration step by step.',
-  'Cost and usage reports',
-  'or other stored data',
-  'Disconnect it first',
-  'Read-only by default',
-  'AES-256 encrypted at rest',
-  'SOC 2 readiness planning underway',
-  'If you leave before that, nothing is saved.',
-  'Set up a read-only IAM role so DevControl can analyse',
-]
-
 describe('the removed-strings check itself', () => {
-  it('covers every string PR E removed (so emptying the list fails)', () => {
+  it('covers every string PR E and PR D1 removed (so emptying the list fails)', () => {
     expect(REMOVED_STRINGS).toEqual(expect.arrayContaining([
       '✅ Connection verified — redirecting to your dashboard...',
       'Verifying connection...',
@@ -138,17 +127,21 @@ describe('the removed-strings check itself', () => {
       'Read-only by default',
       'AES-256 encrypted at rest',
       'SOC 2 readiness planning underway',
+      'in Settings',
+      'Connected and working',
     ]))
   })
-})
 
-function expectNoRemovedText() {
-  const text = document.body.textContent ?? ''
-  for (const removed of REMOVED_STRINGS) expect(text, removed).not.toContain(removed)
-  // A substring check: textContent runs adjacent elements together, so a word boundary can't be relied on.
-  expect(text).not.toMatch(/verified/i)
-  expect(text).not.toContain('✅')
-}
+  it('fails on any "verified" or ✅ in the page text', () => {
+    document.body.innerHTML = '<p>All checks verified</p>'
+    expect(() => expectNoRemovedText()).toThrow()
+    document.body.innerHTML = '<p>✅ Done</p>'
+    expect(() => expectNoRemovedText()).toThrow()
+    document.body.innerHTML = '<p>Connected and working</p>'
+    expect(() => expectNoRemovedText()).toThrow()
+    document.body.innerHTML = ''
+  })
+})
 
 const queryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
@@ -176,6 +169,7 @@ beforeEach(() => {
   mockGetAccountsAndConnection.mockResolvedValue(NOT_CONNECTED)
   mockConnectInit.mockResolvedValue(CONNECT_INIT_DATA)
   mockGetCoverage.mockResolvedValue(COVERAGE)
+  mockGetConnectionChecks.mockResolvedValue(null)
 })
 
 describe('Connect AWS page: which view opens', () => {
@@ -188,9 +182,20 @@ describe('Connect AWS page: which view opens', () => {
     expect(screen.queryByRole('button', { name: 'Connect account' })).toBeNull()
     expect(mockConnectInit).not.toHaveBeenCalled()
     expect(mockConnect).not.toHaveBeenCalled()
-    // No Permission checks fact after a reload (not saved before PR D1), and no Health fact before PR D1.
+    expectNoRemovedText()
+  })
+
+  it('T1 on a server from before PR D1 (no saved checks): nothing new, no Permission checks fact after a reload, no Health', async () => {
+    // PR E expected the permission results to vanish on remount. Since PR D1 they are saved and come
+    // back (connection-health.test.tsx); only a server without GET /accounts/checks still loses them.
+    mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
+    renderPage()
+    await screen.findByTestId('connected-view')
+    await waitFor(() => expect(mockGetConnectionChecks).toHaveBeenCalled())
     expect(screen.queryByTestId('fact-permissions')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/Health/)
+    expect(screen.queryByTestId('fact-health')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Health|Check again|Your role's policies/)
+    expect(screen.queryByRole('alert')).toBeNull()
     expectNoRemovedText()
   })
 

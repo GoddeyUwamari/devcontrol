@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { AwsAccount, PermissionCheckReport } from '@/lib/services/aws-accounts.service'
+import awsAccountsService, { type AwsAccount, type ConnectionChecks, type PermissionCheckReport } from '@/lib/services/aws-accounts.service'
 import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { HOME_REGION_ONLY_NOTE, describeCoverage, formatScanTime } from '../services/coverage'
 import { useNowEachLocalDay } from '../services/useNowEachLocalDay'
@@ -16,6 +16,7 @@ import {
   COVERAGE_LOADING,
   FACT_CONNECTION,
   FACT_DISCOVERY,
+  FACT_HEALTH,
   FACT_PERMISSIONS,
   FOUND_TITLE,
   GO_TO_DASHBOARD,
@@ -25,7 +26,10 @@ import {
   LABEL_HOME_REGION,
   LABEL_ROLE,
   PERMISSIONS_NOTE,
+  PERMISSIONS_NOT_SAVED,
+  PERMISSIONS_NOT_SAVED_OWNER,
   PERMISSION_CHECK_LABELS,
+  ROLE_REPLACED,
   ROW_CLOUDFRONT,
   ROW_S3_OTHER_REGIONS,
   ROW_TOTAL,
@@ -43,6 +47,7 @@ import {
   rowHome,
 } from './connectAwsCopy'
 import { CopyButton, DisconnectSentence, INLINE_POLICY_JSON, PolicyJson } from './connectAwsParts'
+import { CONNECTION_CHECKS_KEY, CheckAgain, RefusedSources, RolePolicies, healthView } from './ConnectionChecksParts'
 
 /** How often coverage is re-read while a scan runs: the same interval the Services, Security and Infrastructure pages use. */
 export const SCAN_RUNNING_REFETCH_MS = 60_000
@@ -60,7 +65,10 @@ export function coverageRefetchInterval(coverage: ServicesCoverage | undefined, 
 
 export interface JustConnected {
   account: AwsAccount
-  /** The connect response's permission check; null from a server without it. Never saved: gone on reload until PR D1. */
+  /**
+   * The connect response's permission check; null from a server without it. Shown until the saved
+   * checks (GET /accounts/checks, PR D1) have one, and on a server from before D1.
+   */
   permissionCheck: PermissionCheckReport | null
   /** When the connect response arrived. */
   receivedAt: string
@@ -82,7 +90,11 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
   )
 }
 
-/** Boards 4 and 5: the connected account, its facts, what discovery found, and (right after a connect) the permission check. */
+/**
+ * Boards 4 and 5: the connected account, its facts (with Health, PR D1), what discovery found and
+ * what a scan was refused, the saved permission check and the role's policies (after a reload too),
+ * and, for the owner, Check again.
+ */
 export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }: Props) {
   const coverageQuery = useQuery<ServicesCoverage>({
     queryKey: ['services-coverage', orgId],
@@ -97,7 +109,26 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
   const view = coverage ? describeCoverage(coverage, now) : null
   const home = coverage?.account.connected ? coverage.scope.home_region : null
 
-  const checks = justConnected?.permissionCheck?.checks ?? null
+  // The saved checks (PR D1). null: a server from before D1, or not loaded or failed (then nothing new
+  // shows, never an error). NO_CONNECTION_CHECKS for a 409 NOT_CONNECTED.
+  const checksQuery = useQuery<ConnectionChecks | null>({
+    queryKey: [CONNECTION_CHECKS_KEY, orgId],
+    queryFn: () => awsAccountsService.getConnectionChecks(),
+    enabled: !!orgId,
+    refetchOnWindowFocus: false,
+  })
+  const saved = checksQuery.data ?? null
+  // GET /checks sends `checkAgain` to the owner only.
+  const isOwner = saved?.checkAgain !== undefined
+  const health = saved ? healthView(saved.health, now) : null
+
+  // The saved permission check after a reload; the connect response's until the saved one exists.
+  const permission = saved?.permissionCheck
+    ? { checks: saved.permissionCheck.checks, at: saved.permissionCheck.checkedAt }
+    : justConnected?.permissionCheck
+      ? { checks: justConnected.permissionCheck.checks, at: justConnected.receivedAt }
+      : null
+  const checks = permission?.checks ?? null
   const attention = (checks ?? []).filter((check) => check.status !== 'verified')
   const passed = (checks ?? []).filter((check) => check.status === 'verified')
   const showInlinePolicy = attention.some((check) => INLINE_POLICY_ACTIONS.includes(check.action))
@@ -134,20 +165,36 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
             <dd className="text-ink">{account.region}</dd>
           </dl>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {account && (
             <Fact label={FACT_CONNECTION} testId="fact-connection">
               {connectionValue(formatScanTime(account.connected_at, now))}
             </Fact>
           )}
-          {justConnected && checks && (
+          {permission && checks ? (
             <Fact label={FACT_PERMISSIONS} testId="fact-permissions">
-              {permissionsValue(passed.length, checks.length, formatScanTime(justConnected.receivedAt, now))}
+              {permissionsValue(passed.length, checks.length, formatScanTime(permission.at, now))}
               {attention.length === 0 && <p className="mt-1 text-meta text-ink-muted font-normal">{PERMISSIONS_NOTE}</p>}
+            </Fact>
+          ) : saved && (
+            <Fact label={FACT_PERMISSIONS} testId="fact-permissions">
+              <span className="font-normal">{isOwner ? PERMISSIONS_NOT_SAVED_OWNER : PERMISSIONS_NOT_SAVED}</span>
             </Fact>
           )}
           <Fact label={FACT_DISCOVERY} testId="fact-discovery">{discovery}</Fact>
+          {health && (
+            <Fact label={FACT_HEALTH} testId="fact-health">
+              <span className={health.warning ? 'text-ink-warning' : undefined} data-testid="health-value">{health.value}</span>
+              {health.help && <p className="mt-1 text-meta text-ink-muted font-normal" data-testid="health-help">{health.help}</p>}
+            </Fact>
+          )}
         </div>
+
+        {saved?.roleReplacedAt && (
+          <div role="status" data-testid="role-replaced" className="mt-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-ui text-ink">
+            {ROLE_REPLACED}
+          </div>
+        )}
 
         {attention.length > 0 && (
           <div role="status" data-testid="permission-warnings" className="mt-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
@@ -193,6 +240,9 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
             </button>
           </div>
         )}
+
+        {saved && <RolePolicies policy={saved.policyCheck} isOwner={isOwner} now={now} />}
+        {saved?.checkAgain && <CheckAgain serverAvailableAt={saved.checkAgain.availableAt} externalId={account?.external_id} />}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-9">
@@ -215,6 +265,7 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
             </tbody>
           </table>
         )}
+        <RefusedSources refused={saved?.refusedSources ?? null} now={now} />
         {home && (
           <div role="note" className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-ui text-blue-950 mb-4">
             <strong>{HOME_REGION_ONLY_NOTE.title} </strong>{HOME_REGION_ONLY_NOTE.body}
