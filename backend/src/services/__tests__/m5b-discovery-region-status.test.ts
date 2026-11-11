@@ -238,7 +238,8 @@ describe('a scan records its home region\'s status from its listings', () => {
     ['RDS timed out', { rds: { DescribeDBInstancesCommand: throwing(new AwsCallTimeoutError(15_000)) } }, 'timed_out', null],
     ['RDS failed', { rds: { DescribeDBInstancesCommand: throwing(Object.assign(new Error('boom'), { name: 'InternalError' })) } }, 'failed', null],
     ['the Resource Explorer search failed', { resourceExplorer: () => { throw Object.assign(new Error('no index'), { name: 'ResourceNotFoundException' }); } }, 'failed', null],
-    ['the Resource Explorer search denied (recorded failed, Q-F)', { resourceExplorer: () => { throw denied(); } }, 'failed', null],
+    // Q-F recorded every unsuccessful search as failed; since AWS connect PR D1a an AccessDenied is denied, as for EC2.
+    ['the Resource Explorer search denied (denied since D1a)', { resourceExplorer: () => { throw denied(); } }, 'denied', null],
     ['the Resource Explorer search cut off', { resourceExplorer: () => ({ Resources: [], Count: { TotalResources: 1000, Complete: false } }) }, 'partial', DISCOVERY_WARNING_TRUNCATED_INDEX],
     ['the EBS listing at its page limit', { ec2: { DescribeVolumesCommand: () => ({ Volumes: [], NextToken: 'more' }) } }, 'partial', DISCOVERY_WARNING_LISTING_TRUNCATED],
     [
@@ -452,17 +453,18 @@ describe('Q-E: Resource Explorer results that failed to store', () => {
     expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'failed', last_error_code: null, last_success_at: null });
   }, 30_000);
 
-  it('static: the status-only Resource Explorer outcome is referenced exactly 3 times (declared, Q-E, the status write\'s input)', () => {
+  it('static: the status-only Resource Explorer outcome is referenced exactly 4 times (declared, Q-E, the status write\'s and the saved scan sources\' input)', () => {
     const discovery = fs
       .readFileSync(path.join(__dirname, '..', 'awsResourceDiscovery.ts'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
     const lines = discovery.split('\n').filter((line) => /\bresourceExplorerOutcome\b/.test(line)).map((line) => line.trim());
-    expect(discovery.match(/\bresourceExplorerOutcome\b/g)).toHaveLength(3);
+    expect(discovery.match(/\bresourceExplorerOutcome\b/g)).toHaveLength(4);
     expect(lines).toEqual([
       'const resourceExplorerOutcome: SourceOutcome = {',
       "resourceExplorerOutcome.status = 'failed';",
       'await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, [...ownOutcomes, resourceExplorerOutcome]);',
+      'await this.recordScanSources(client, scan, jobId, scanContext, awsClients, organizationId, [...ownOutcomes, resourceExplorerOutcome]);',
     ]);
   });
 });

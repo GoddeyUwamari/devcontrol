@@ -38,7 +38,10 @@ import { BackupClient } from '@aws-sdk/client-backup';
 import { SecurityHubClient } from '@aws-sdk/client-securityhub';
 import { pool } from '../config/database';
 import { assumeRoleAsPlatform, isPlatformAwsCredentialsUnavailable } from './platform-sts';
-import { homeRegionOf, requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
+import { classifyAssumeRoleError, type AssumeRoleErrorKind } from './connect-role-check';
+import { roleUniqueIdOf } from './connection-health';
+import { inspect } from 'util';
+import { awsConnectionIdentity, homeRegionOf, requireEligibleAwsAccount, type AwsAccountRow } from '../repositories/aws-accounts.repository';
 import { parseAccountIdFromArn } from '../utils/awsAccountId';
 
 export interface AWSClients {
@@ -138,6 +141,78 @@ export interface AssumedRoleSource {
   region: string;
   credentials: TemporaryCredentials;
   expiration: Date | undefined;
+  /**
+   * When the AssumeRole behind these clients was started (AWS connect PR D1: health).
+   * createClients always sets it; a source without it (a test stub) is never recorded.
+   */
+  attemptedAt?: Date;
+  /** The role's unique ID from that AssumeRole's response, or null (connection-health.ts roleUniqueIdOf). */
+  roleUniqueId?: string | null;
+}
+
+/** The connection an AssumeRole was made for, as the health recorder fences on it (never the row itself). */
+export interface AssumeFailureTarget {
+  /** aws_accounts.id */
+  rowId: string;
+  /** aws_accounts.org_id */
+  organizationId: string;
+  /** awsConnectionIdentity() of that row: the fence compares it with the current connection. */
+  identity: string;
+}
+
+/**
+ * Held beside the error, never on it (AWS connect D1a review H-1): callers log
+ * these errors raw (cloudwatch.service.ts, services.routes.ts), and util.inspect
+ * prints an Error's own properties. The fence identity embeds the role ARN, so it
+ * lives in this module-private map, which no logger or serializer can reach.
+ */
+const assumeFailureTargets = new WeakMap<AwsAssumeRoleFailedError, AssumeFailureTarget>();
+
+/**
+ * An AssumeRole into the organization's role that AWS refused or that failed
+ * (AWS connect PR D1). Its message is exactly the AWS_NOT_CONNECTED text this
+ * failure has always had, because callers match on that prefix
+ * (stats.controller.ts, services.routes.ts, weekly-summary.repository.ts,
+ * ai-chat-context.repository.ts, cost-recommendations.controller.ts). It carries
+ * only the classified kind and when the attempt started; the connection it was
+ * made for is reachable through assumeFailureTargetOf() alone. Logged, inspected
+ * or serialized, it shows the message, kind and time: never an External ID, a
+ * role ARN, an AWS account ID, an AWS message or a credential.
+ */
+export class AwsAssumeRoleFailedError extends Error {
+  constructor(
+    organizationId: string,
+    readonly kind: AssumeRoleErrorKind,
+    readonly attemptedAt: Date,
+    account: Partial<Pick<AwsAccountRow, 'id' | 'org_id' | 'account_id' | 'role_arn' | 'region'>>
+  ) {
+    super(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`);
+    this.name = 'Error';
+    if (account.id && account.org_id && account.role_arn) {
+      assumeFailureTargets.set(this, {
+        rowId: account.id,
+        organizationId: account.org_id,
+        identity: awsConnectionIdentity({ id: account.id, account_id: account.account_id ?? null, role_arn: account.role_arn, region: account.region ?? null }),
+      });
+    }
+  }
+
+  toJSON(): { name: string; message: string; kind: AssumeRoleErrorKind; attemptedAt: string } {
+    return { name: this.name, message: this.message, kind: this.kind, attemptedAt: this.attemptedAt.toISOString() };
+  }
+
+  [inspect.custom](): string {
+    return `${this.stack ?? `${this.name}: ${this.message}`} { kind: '${this.kind}', attemptedAt: ${this.attemptedAt.toISOString()} }`;
+  }
+}
+
+/** The connection a failed AssumeRole was made for (the health recorder's fence), or undefined. */
+export function assumeFailureTargetOf(err: AwsAssumeRoleFailedError): AssumeFailureTarget | undefined {
+  return assumeFailureTargets.get(err);
+}
+
+export function isAwsAssumeRoleFailed(err: unknown): err is AwsAssumeRoleFailedError {
+  return err instanceof AwsAssumeRoleFailedError;
 }
 
 const assumedRoleSources = new WeakMap<AWSClients, AssumedRoleSource>();
@@ -160,7 +235,7 @@ export class AWSClientFactory {
     }
 
     const awsRegion = homeRegionOf(account);
-    const { credentials: tempCredentials, expiration } = await this.assumeAccountRole(organizationId, account, awsRegion);
+    const { credentials: tempCredentials, expiration, attemptedAt, roleUniqueId } = await this.assumeAccountRole(organizationId, account, awsRegion);
 
     const config = {
       region: awsRegion,
@@ -201,7 +276,7 @@ export class AWSClientFactory {
       getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: tempCredentials }),
       getS3ClientForRegion: (region: string) => new S3Client({ region, credentials: tempCredentials }),
     };
-    assumedRoleSources.set(clients, { organizationId, account, region: awsRegion, credentials: tempCredentials, expiration });
+    assumedRoleSources.set(clients, { organizationId, account, region: awsRegion, credentials: tempCredentials, expiration, attemptedAt, roleUniqueId });
     return clients;
   }
 
@@ -213,9 +288,10 @@ export class AWSClientFactory {
    */
   static async assumeAccountRole(
     organizationId: string,
-    account: Pick<AwsAccountRow, 'role_arn' | 'external_id'>,
+    account: Pick<AwsAccountRow, 'role_arn' | 'external_id'> & Partial<AwsAccountRow>,
     region: string
-  ): Promise<{ credentials: TemporaryCredentials; expiration: Date | undefined }> {
+  ): Promise<{ credentials: TemporaryCredentials; expiration: Date | undefined; attemptedAt: Date; roleUniqueId: string | null }> {
+    const attemptedAt = new Date();
     try {
       const assumed = await assumeRoleAsPlatform(region, {
         RoleArn: account.role_arn,
@@ -232,6 +308,8 @@ export class AWSClientFactory {
           sessionToken: creds.SessionToken!,
         },
         expiration: creds.Expiration,
+        attemptedAt,
+        roleUniqueId: roleUniqueIdOf(assumed.AssumedRoleUser?.AssumedRoleId),
       };
     } catch (err: unknown) {
       // The platform's own identity is unavailable: not the organization's
@@ -239,7 +317,7 @@ export class AWSClientFactory {
       if (isPlatformAwsCredentialsUnavailable(err)) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[AWSClientFactory] AssumeRole failed for org ${organizationId}:`, msg);
-      throw new Error(`AWS_NOT_CONNECTED: org ${organizationId} has not connected an AWS account`);
+      throw new AwsAssumeRoleFailedError(organizationId, classifyAssumeRoleError(err), attemptedAt, account);
     }
   }
 

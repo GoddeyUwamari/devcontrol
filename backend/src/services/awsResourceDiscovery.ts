@@ -84,6 +84,15 @@ import { describeAccountRegions } from './region-list';
 import { recordHomeRegionScanStatus, recordRegionList } from '../repositories/multi-region-foundation.repository';
 import { RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
 import {
+  SAVED_SCAN_SOURCES,
+  logChecksWriteFailure,
+  readConnectionChecksOrNull,
+  savePolicyResult,
+  saveScanSources,
+  scanCompareDue,
+} from '../repositories/aws-connection-checks.repository';
+import { compareRolePolicies } from './connect-policy-compare';
+import {
   DISCOVERY_INTERRUPTED_MESSAGE,
   DISCOVERY_LEASE_LOST_MESSAGE,
   LeaseSession,
@@ -976,7 +985,8 @@ export class AWSResourceDiscoveryService {
       // below reads it: the reconcile still follows searchResult.
       const resourceExplorerOutcome: SourceOutcome = {
         source: RESOURCE_EXPLORER_SOURCE,
-        status: !searchResult.success ? 'failed' : searchResult.complete ? 'complete' : 'truncated',
+        // An AccessDenied is 'denied' (AWS connect PR D1, refused sources); any other failure 'failed'.
+        status: !searchResult.success ? searchResult.status ?? 'failed' : searchResult.complete ? 'complete' : 'truncated',
       };
 
       if (searchResult.success) {
@@ -1492,6 +1502,9 @@ export class AWSResourceDiscoveryService {
 
       // Every home-region listing has finished: its scan status (M5b, F18).
       await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, [...ownOutcomes, resourceExplorerOutcome]);
+      // The same listings, saved per source for the connection, and the policy compare
+      // when one was refused (AWS connect PR D1, CP-D11, D1-D9). Fail-soft.
+      await this.recordScanSources(client, scan, jobId, scanContext, awsClients, organizationId, [...ownOutcomes, resourceExplorerOutcome]);
 
       // The job's final status, in one fenced transaction (AWS connect PR B): a worker
       // whose lease or AWS connection is no longer current never marks its job
@@ -1670,6 +1683,54 @@ export class AWSResourceDiscoveryService {
       return;
     }
     console.log(`🗺️  [Discovery] Home region scan status recorded (${result.status}${result.errorCode ? `, ${result.errorCode}` : ''})`);
+  }
+
+  /**
+   * Saves how each of the 8 listing sources fared (AWS connect PR D1, CP-D11) in one
+   * fenced write under the scan lease, then, when any of them was refused
+   * (AccessDenied), compares the role's policies once with the scan's own IAM
+   * client, unless the last compare is under an hour old (D1-D9). Never the
+   * probes: they run only at connect and on Check again. Fail-soft: a failure is
+   * logged by name and the scan goes on; a lost lease still stops it.
+   */
+  private async recordScanSources(
+    client: PoolClient,
+    scan: LeaseSession,
+    jobId: string,
+    scanContext: ScanContext,
+    awsClients: AWSClients,
+    organizationId: string,
+    outcomes: readonly SourceOutcome[]
+  ): Promise<void> {
+    try {
+      scan.checkpoint();
+      await scan.fenced(client, () =>
+        saveScanSources(client, organizationId, scanContext.awsAccountRowId, { outcomes, jobId, at: new Date() })
+      );
+    } catch (error: unknown) {
+      abortIfLeaseLost(error);
+      logChecksWriteFailure('scan sources', organizationId, error);
+    }
+    if (!outcomes.some((o) => o.source in SAVED_SCAN_SOURCES && o.status === 'denied')) return;
+    try {
+      const row = await readConnectionChecksOrNull(client, organizationId, scanContext.awsAccountRowId);
+      if (!scanCompareDue(row, new Date()) || !awsClients.iam) return;
+      const result = await compareRolePolicies({
+        iam: awsClients.iam,
+        roleArn: scanContext.roleArn,
+        accountId: scanContext.awsAccountId,
+        context: `Scan org ${organizationId}`,
+      });
+      scan.checkpoint();
+      await savePolicyResult(organizationId, scanContext.connectionIdentity, scanContext.awsAccountRowId, {
+        result,
+        at: new Date(),
+        trigger: 'scan_access_denied',
+      });
+    } catch (error: unknown) {
+      abortIfLeaseLost(error);
+      logChecksWriteFailure('policy compare after a refused listing', organizationId, error);
+    }
   }
 
   /**

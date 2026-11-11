@@ -93,8 +93,21 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202611031200_create_aws_org_external_ids.sql`**,
 **`202611071200_add_checkout_reservation.sql`**,
 **`202611091200_add_trial_used_at.sql`**,
-**`202611091300_harden_database_ownership.sql`**, and
-**`202611101200_transfer_tenant_table_ownership.sql`**.
+**`202611091300_harden_database_ownership.sql`**,
+**`202611101200_transfer_tenant_table_ownership.sql`**, and
+**`202611111200_create_aws_connection_checks.sql`**.
+
+`202611111200_create_aws_connection_checks.sql` (AWS connect PR D1a) creates
+the tenant table `aws_connection_checks`, one row per AWS connection: health
+from AssumeRole outcomes, the role's unique ID, the saved permission probes,
+the policy-set compare, per-source scan outcomes and the Check again
+cooldown. It is postgres-owned with row level security enabled and forced,
+one tenant policy, and `SELECT, INSERT, UPDATE` for `devcontrol` (no DELETE:
+the disconnect cleanup adds its own). When `aws_accounts` exists (production;
+no migration here creates it), it also adds the unique index
+`aws_accounts_id_org_uidx (id, org_id)` and a composite foreign key from the
+new table to it, both owner-only DDL. Its paired rollback drops only the
+objects carrying the migration's marker comment, and its ledger row.
 
 `202610191200_create_multi_region_scan_foundation.sql` creates four new
 tenant tables (`aws_account_regions`, `aws_scan_leases`, `job_leases`,

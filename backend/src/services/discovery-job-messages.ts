@@ -13,8 +13,17 @@ import { DISCOVERY_INTERRUPTED_MESSAGE, DISCOVERY_LEASE_LOST_MESSAGE } from './s
  * still raw text.
  */
 
-/** What a fatally failed discovery job stores in error_message, for the organization to read. */
-export const DISCOVERY_FAILED_MESSAGE = 'Discovery could not complete. Check the AWS connection in Settings, then try again.';
+/** What a fatally failed discovery job stores in error_message, for the organization to read (B2, approved copy, AWS connect PR D1). */
+export const DISCOVERY_FAILED_MESSAGE = 'Discovery could not complete. Check the AWS connection on the Connect AWS page, then try again.';
+
+/**
+ * Texts earlier releases stored, shown as today's text when read (CP-D12 note):
+ * rows already in resource_discovery_jobs keep their text, and no data migration
+ * rewrites them. Exact match only, like every approved message.
+ */
+export const LEGACY_DISCOVERY_MESSAGES: Readonly<Record<string, string>> = {
+  'Discovery could not complete. Check the AWS connection in Settings, then try again.': DISCOVERY_FAILED_MESSAGE,
+};
 
 /** The job's error text when no cost detector completed (approved, PR 1 #5). */
 export const COST_NO_CHECK_COMPLETED = 'none of the checks completed.';
@@ -48,7 +57,7 @@ export function approvedDiscoveryMessages(): readonly string[] {
  */
 export function publicDiscoveryErrorMessage(errorMessage: string | null | undefined): string | null {
   if (errorMessage === null || errorMessage === undefined || errorMessage === '') return null;
-  const approved = approvedDiscoveryMessages();
+  const approved = [...approvedDiscoveryMessages(), ...Object.keys(LEGACY_DISCOVERY_MESSAGES)];
   const out: string[] = [];
   const add = (shown: string) => {
     if (!out.includes(shown)) out.push(shown);
@@ -57,7 +66,7 @@ export function publicDiscoveryErrorMessage(errorMessage: string | null | undefi
   while (rest.length > 0) {
     const whole = approved.find((message) => rest === message || rest.startsWith(message + SEPARATOR));
     if (whole) {
-      add(whole);
+      add(LEGACY_DISCOVERY_MESSAGES[whole] ?? whole);
       rest = rest.slice(whole.length + SEPARATOR.length);
       continue;
     }

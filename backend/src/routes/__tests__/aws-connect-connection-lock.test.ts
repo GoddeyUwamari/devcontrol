@@ -262,7 +262,8 @@ describe('GET /api/aws/accounts `connection`: the server connection state only',
     );
     const body = (await getAccounts()).body;
     // Exactly the state: no credential, External ID, role ARN or row id in it.
-    expect(body.connection).toEqual({ state: 'connected' });
+    // AWS connect PR D1a adds the health summary (no checks row yet: not checked yet).
+    expect(body.connection).toEqual({ state: 'connected', health: { state: 'not_checked_yet', since: null } });
     expect(JSON.stringify(body.connection)).not.toMatch(/ext-placeholder|arn:|role/i);
   });
 

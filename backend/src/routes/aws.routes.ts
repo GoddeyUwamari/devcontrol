@@ -2,7 +2,28 @@ import { Router, Request, Response, NextFunction } from 'express'
 import awsCostService from '../services/aws-cost.service'
 import { pool } from '../config/database'
 import { withConnectionChange } from '../services/aws-connection-fence'
-import { findEligibleAwsAccount, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository'
+import {
+  AWS_ACCOUNT_AMBIGUOUS_MESSAGE,
+  awsConnectionIdentity,
+  findEligibleAwsAccount,
+  isAwsAccountAmbiguous,
+  type AwsAccountRow,
+} from '../repositories/aws-accounts.repository'
+import {
+  CHECK_AGAIN_COOLDOWN_MS,
+  applyAssumeOutcome,
+  claimCheckAgain,
+  connectionChecksView,
+  isChecksTableMissing,
+  logChecksWriteFailure,
+  readConnectionChecksOrNull,
+  saveCheckResults,
+} from '../repositories/aws-connection-checks.repository'
+import { isConnectionChanged } from '../services/aws-connection-fence'
+import { AWS_NOT_CONNECTED_CODE, AWS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages'
+import type { AssumeResult } from '../services/connection-health'
+import { compareRolePolicies, type IamSender, type PolicyCompareResult } from '../services/connect-policy-compare'
+import { IAMClient } from '@aws-sdk/client-iam'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
 import { isScanAlreadyRunning } from '../services/scan-session'
@@ -30,23 +51,31 @@ router.use(authenticate)
  * route to undo it -- so it is owner-only, checked against the caller's
  * CURRENT membership (not their JWT role claim).
  */
-async function requireCurrentOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    if (!req.user) {
-      res.status(401).json({ success: false, message: 'Authentication required' })
-      return
+function requireCurrentOwnerWith(forbiddenMessage: string) {
+  return async function requireOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' })
+        return
+      }
+      await requireCurrentRole(pool, req.user.organizationId, req.user.userId, ['owner'])
+      next()
+    } catch (err: unknown) {
+      if (err instanceof OrganizationAccessError && err.statusCode === 403) {
+        res.status(403).json({ success: false, message: forbiddenMessage })
+        return
+      }
+      console.error('[aws] owner check error:', err)
+      res.status(500).json({ success: false, message: 'Failed to verify permissions' })
     }
-    await requireCurrentRole(pool, req.user.organizationId, req.user.userId, ['owner'])
-    next()
-  } catch (err: unknown) {
-    if (err instanceof OrganizationAccessError && err.statusCode === 403) {
-      res.status(403).json({ success: false, message: 'Only an organization owner can connect an AWS account' })
-      return
-    }
-    console.error('[aws] owner check error:', err)
-    res.status(500).json({ success: false, message: 'Failed to verify permissions' })
   }
 }
+
+const requireCurrentOwner = requireCurrentOwnerWith('Only an organization owner can connect an AWS account')
+
+/** Check again is owner-only too (B4, approved copy). */
+export const CHECK_AGAIN_FORBIDDEN_MESSAGE = 'Only an organization owner can check the AWS connection again.'
+const requireCurrentOwnerForCheck = requireCurrentOwnerWith(CHECK_AGAIN_FORBIDDEN_MESSAGE)
 
 /**
  * The platform's AWS account ID: the principal in the trust policy every
@@ -136,11 +165,41 @@ export const CONNECT_STATE_UNAVAILABLE_MESSAGE = "We couldn't start the connecti
  * Test seams for the connect flow's AWS calls. Production uses the defaults;
  * a suite sets them and restores them with resetConnectTestHooks().
  */
-export const connectTestHooks: { roleCheckPolicy?: RoleCheckPolicy; probeClients?: ProbeClients; slots?: ConnectCheckSlots } = {}
+export const connectTestHooks: { roleCheckPolicy?: RoleCheckPolicy; probeClients?: ProbeClients; slots?: ConnectCheckSlots; iam?: IamSender } = {}
 export function resetConnectTestHooks(): void {
   delete connectTestHooks.roleCheckPolicy
   delete connectTestHooks.probeClients
   delete connectTestHooks.slots
+  delete connectTestHooks.iam
+}
+
+/** What the owner is told when the organization already has a connection (B1, approved copy). */
+export const ALREADY_CONNECTED_MESSAGE = 'This organization already has a connected AWS account. To disconnect or change accounts, contact us.'
+
+/** Check again (AWS connect PR D1), approved copy B5-B8. */
+export const CHECK_AGAIN_MESSAGES = {
+  cooldown: (time: string) => `DevControl checked this connection a few minutes ago. Try again after ${time}.`,
+  connectionChanged: 'Your AWS connection changed while DevControl was checking it. Nothing was saved. Refresh the page.',
+  roleRefused: "DevControl couldn't assume your role. Its health on this page now shows the failure.",
+  awsUnavailable: "AWS didn't respond while we checked your role. Nothing was changed. Please try again in a minute.",
+} as const
+
+/** The IAM client the policy compare uses on a check's temporary credentials (IAM is global). */
+function iamClientFor(credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string } | null): IamSender | null {
+  if (connectTestHooks.iam) return connectTestHooks.iam
+  if (!credentials) return null
+  return new IAMClient({ region: 'us-east-1', credentials, maxAttempts: 1 })
+}
+
+/** The policy compare with a check's credentials; `unreadable` without them. Never throws. */
+async function comparePoliciesWith(
+  credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string } | null,
+  account: { role_arn: string; account_id: string | null },
+  context: string
+): Promise<PolicyCompareResult> {
+  const iam = iamClientFor(credentials)
+  if (!iam) return { unreadable: true, contractVersion: 1 }
+  return compareRolePolicies({ iam, roleArn: account.role_arn, accountId: account.account_id ?? '', context })
 }
 
 // GET /api/aws/costs/monthly
@@ -268,6 +327,20 @@ router.post('/accounts', requireCurrentOwner, async (req: Request, res: Response
  * and returns it at once (releaseRequestConnection, request-lifecycle.ts).
  */
 async function connectAdmitted(req: Request, res: Response, orgId: string, decodedRoleArn: string, accountId: string, nickname: unknown) {
+  // Already connected: refused before any AWS call (AWS connect PR D1, D1-D14).
+  // "Any row" mirrors what the INSERT below conflicts on, the full UNIQUE(org_id)
+  // (backend/migrations/020_add_org_id_and_connect_sessions.sql); C-2 must change
+  // the two together. The INSERT's ON CONFLICT stays as the race backstop.
+  try {
+    const existing = await pool.query(`SELECT 1 FROM aws_accounts WHERE org_id = $1 LIMIT 1`, [orgId])
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ success: false, code: 'ALREADY_CONNECTED', message: ALREADY_CONNECTED_MESSAGE })
+    }
+  } catch (dbError: unknown) {
+    console.error(`[Connect AWS] Could not read the connection state for org ${orgId}:`, dbError instanceof Error ? dbError.message : String(dbError))
+    return res.status(500).json({ success: false, code: 'CONNECT_STATE_UNAVAILABLE', message: CONNECT_STATE_UNAVAILABLE_MESSAGE })
+  }
+
   // The organization's one External ID: what connect-init showed and what the
   // role's trust policy must name. A database failure here is answered, never
   // left as an unhandled rejection.
@@ -289,6 +362,7 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
   res.on('close', onClose)
 
   let roleCheck: Awaited<ReturnType<typeof checkConnectRole>>
+  const roleCheckStartedAt = new Date()
   try {
     roleCheck = await checkConnectRole({
       region: process.env.AWS_REGION ?? 'us-east-1',
@@ -314,22 +388,36 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
   // new connection. A lock wait past its limit fails like any save error (500,
   // SAVE_FAILED) and saves nothing.
   try {
-    const result = await withConnectionChange(pool, orgId, (client) =>
-      client.query(
+    const result = await withConnectionChange(pool, orgId, async (client) => {
+      const inserted = await client.query(
         `INSERT INTO aws_accounts (org_id, role_arn, account_id, nickname, external_id, region, connected_at, status)
          VALUES ($1, $2, $3, $4, $5, 'us-east-1', NOW(), 'active')
          ON CONFLICT (org_id) DO NOTHING
          RETURNING id, org_id, account_id, role_arn, nickname, external_id, region, connected_at, status`,
         [orgId, decodedRoleArn, accountId, nickname ?? null, externalId]
       )
-    )
+      // The connection's first health (ok) and its role ID baseline, in the same
+      // transaction (AWS connect PR D1). Behind a savepoint: if it cannot be written
+      // (the table not there yet, D1-D13), the connection is still saved.
+      if (inserted.rows.length > 0) {
+        await client.query('SAVEPOINT connection_checks')
+        try {
+          await applyAssumeOutcome(client, orgId, inserted.rows[0].id, {
+            attempt: { at: roleCheckStartedAt, result: 'ok' },
+            roleUniqueId: roleCheck.ok ? roleCheck.roleUniqueId : null,
+            source: 'connect',
+          })
+          await client.query('RELEASE SAVEPOINT connection_checks')
+        } catch (checksError: unknown) {
+          await client.query('ROLLBACK TO SAVEPOINT connection_checks')
+          logChecksWriteFailure('connect health', orgId, checksError)
+        }
+      }
+      return inserted
+    })
 
     if (result.rows.length === 0) {
-      return res.status(409).json({
-        success: false,
-        code: 'ALREADY_CONNECTED',
-        message: 'This organisation already has a connected AWS account. Disconnect it first.',
-      })
+      return res.status(409).json({ success: false, code: 'ALREADY_CONNECTED', message: ALREADY_CONNECTED_MESSAGE })
     }
 
     // Funnel: this INSERT's own ON CONFLICT (org_id) DO NOTHING + non-empty
@@ -383,17 +471,35 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
     })
 
     // A warning for the owner, never a block: the connection is already saved.
-    const permissionCheck = await runPermissionCheck({
-      credentials: roleCheck.credentials,
-      region: result.rows[0].region ?? 'us-east-1',
-      context: `Connect AWS org ${orgId}`,
-      clients: connectTestHooks.probeClients,
-    })
+    // The six probes and the policy compare run on the connect check's own
+    // credentials, then are saved for the connection (CP-D3, CP-D4), fail-soft.
+    const connected = result.rows[0]
+    const checkedAt = new Date()
+    const [permissionCheck, policyResult] = await Promise.all([
+      runPermissionCheck({
+        credentials: roleCheck.credentials,
+        region: connected.region ?? 'us-east-1',
+        context: `Connect AWS org ${orgId}`,
+        clients: connectTestHooks.probeClients,
+      }),
+      comparePoliciesWith(roleCheck.credentials, connected, `Connect AWS org ${orgId}`),
+    ])
+    let checks = null
+    try {
+      await saveCheckResults(orgId, awsConnectionIdentity(connected), connected.id, {
+        permission: { checks: permissionCheck.checks, at: checkedAt, trigger: 'connect' },
+        policy: { result: policyResult, at: checkedAt, trigger: 'connect' },
+      })
+      checks = connectionChecksView(await readConnectionChecksOrNull(pool, orgId, connected.id), new Date())
+    } catch (checksError: unknown) {
+      logChecksWriteFailure('connect checks', orgId, checksError)
+    }
 
     return res.status(201).json({
       success: true,
-      data: result.rows[0],
+      data: connected,
       permissionCheck,
+      checks,
       message: 'AWS account connected successfully',
     })
   } catch (dbError: any) {
@@ -435,13 +541,228 @@ async function isCurrentOwner(req: Request): Promise<boolean> {
  */
 export type AwsConnectionState = 'connected' | 'not_connected' | 'ambiguous'
 
-async function readConnectionState(organizationId: string): Promise<{ state: AwsConnectionState }> {
+async function readConnectionState(organizationId: string): Promise<{ state: AwsConnectionState; account: AwsAccountRow | null }> {
   try {
-    return { state: (await findEligibleAwsAccount(pool, organizationId)) ? 'connected' : 'not_connected' }
+    const account = await findEligibleAwsAccount(pool, organizationId)
+    return { state: account ? 'connected' : 'not_connected', account }
   } catch (err: unknown) {
-    if (isAwsAccountAmbiguous(err)) return { state: 'ambiguous' }
+    if (isAwsAccountAmbiguous(err)) return { state: 'ambiguous', account: null }
     throw err
   }
+}
+
+/**
+ * The connected account's health summary for GET /accounts (`connection.health`):
+ * the display state and the date it is "since" (failing/lost: failing since; ok and
+ * stale: last checked). Absent when it cannot be read; it never fails the request.
+ */
+async function readHealthSummary(organizationId: string, account: AwsAccountRow): Promise<{ state: string; since: string | null } | undefined> {
+  try {
+    const health = connectionChecksView(await readConnectionChecksOrNull(pool, organizationId, account.id), new Date()).health
+    const since = health.state === 'failing' || health.state === 'lost' ? health.failingSince : health.checkedAt
+    return { state: health.state, since }
+  } catch (err: unknown) {
+    console.error('[aws/accounts GET] health not read:', err instanceof Error ? err.name : 'unknown error')
+    return undefined
+  }
+}
+
+/**
+ * The organization's one eligible connection, or the response that ends the
+ * request: 409 NOT_CONNECTED (none) or 409 AWS_ACCOUNT_AMBIGUOUS (more than one).
+ */
+async function eligibleAccountOrRespond(res: Response, organizationId: string): Promise<AwsAccountRow | null> {
+  try {
+    const account = await findEligibleAwsAccount(pool, organizationId)
+    if (!account) {
+      res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, message: AWS_NOT_CONNECTED_MESSAGE })
+      return null
+    }
+    return account
+  } catch (err: unknown) {
+    if (isAwsAccountAmbiguous(err)) {
+      res.status(409).json({ success: false, code: 'AWS_ACCOUNT_AMBIGUOUS', message: AWS_ACCOUNT_AMBIGUOUS_MESSAGE })
+      return null
+    }
+    throw err
+  }
+}
+
+/** When the owner may start Check again next; null when now. */
+function checkAgainAvailableAt(startedAt: Date | string | null | undefined, now: Date): string | null {
+  if (!startedAt) return null
+  const at = new Date(new Date(startedAt).getTime() + CHECK_AGAIN_COOLDOWN_MS)
+  return at.getTime() > now.getTime() ? at.toISOString() : null
+}
+
+// GET /api/aws/accounts/checks (AWS connect PR D1)
+// The connection's health, saved permission probes, policy compare, refused scan
+// sources and role-replaced date, for any member. Fixed verdicts and dates only:
+// never the role ID, a policy document, inline policy names or customer-managed
+// ARNs. The owner also gets when Check again is next available.
+router.get('/accounts/checks', async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
+  const orgId = req.user!.organizationId
+  try {
+    const account = await eligibleAccountOrRespond(res, orgId)
+    if (!account) return
+    const row = await readConnectionChecksOrNull(pool, orgId, account.id)
+    const now = new Date()
+    const view = connectionChecksView(row, now)
+    const owner = await isCurrentOwner(req)
+    return res.json({
+      success: true,
+      data: owner ? { ...view, checkAgain: { availableAt: checkAgainAvailableAt(row?.check_again_started_at, now) } } : view,
+    })
+  } catch (err: unknown) {
+    console.error('[aws/accounts/checks GET]', err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, message: 'Failed to retrieve the AWS connection checks.' })
+  }
+})
+
+/** The recorded result of a Check again AssumeRole that failed; null when nothing is recorded (platform, cancelled). */
+const CHECK_AGAIN_RESULT: Record<RoleCheckFailure, AssumeResult | null> = {
+  role_not_assumable: 'role_refused',
+  role_not_found: 'role_not_found',
+  role_check_failed: 'role_error',
+  aws_unavailable: 'aws_unavailable',
+  platform_unavailable: null,
+  cancelled: null,
+}
+
+// POST /api/aws/accounts/check-again (AWS connect PR D1)
+// Owner only. Re-runs, for the stored connection, the AssumeRole (recorded as
+// health), the six probes (one is a Cost Explorer call AWS bills to the
+// customer, USD 0.01) and the policy compare, then saves them in one fenced
+// transaction. At most one start per connection every 5 minutes across every
+// process (claimed in the database before any AWS call), and one check per
+// organization at a time in this process (shared with connect).
+router.post('/accounts/check-again', requireCurrentOwnerForCheck, async (req: Request, res: Response) => {
+  const orgId = req.user!.organizationId
+  const admission = (connectTestHooks.slots ?? connectCheckSlots).tryAcquire(orgId)
+  if (!admission.ok) {
+    const response = CONNECT_SLOT_RESPONSES[admission.reason]
+    return res.status(response.status).json({ success: false, code: response.code, message: response.message })
+  }
+  try {
+    return await checkAgainAdmitted(req, res, orgId)
+  } finally {
+    admission.slot.release()
+  }
+})
+
+async function checkAgainAdmitted(req: Request, res: Response, orgId: string) {
+  let account: AwsAccountRow | null
+  let identity: string
+  try {
+    account = await eligibleAccountOrRespond(res, orgId)
+    if (!account) return
+    identity = awsConnectionIdentity(account)
+    const claim = await claimCheckAgain(orgId, identity, account.id)
+    if (!claim.ok) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil((claim.availableAt.getTime() - Date.now()) / 1000))))
+      return res.status(429).json({
+        success: false,
+        code: 'CHECK_COOLDOWN',
+        message: CHECK_AGAIN_MESSAGES.cooldown(claim.availableAt.toISOString().slice(11, 16) + ' UTC'),
+        availableAt: claim.availableAt.toISOString(),
+      })
+    }
+  } catch (err: unknown) {
+    if (isConnectionChanged(err)) {
+      return res.status(409).json({ success: false, code: 'CONNECTION_CHANGED', message: CHECK_AGAIN_MESSAGES.connectionChanged })
+    }
+    console.error(`[Check again] Could not start for org ${orgId}:`, isChecksTableMissing(err) ? 'table_missing' : err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'CONNECT_STATE_UNAVAILABLE', message: CONNECT_STATE_UNAVAILABLE_MESSAGE })
+  }
+  if (!account.external_id) {
+    return res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, message: AWS_NOT_CONNECTED_MESSAGE })
+  }
+
+  // No pooled connection is held while AWS is called.
+  releaseRequestConnection(res)
+  const cancel = new AbortController()
+  const onClose = () => { if (!res.writableEnded) cancel.abort() }
+  res.on('close', onClose)
+
+  const startedAt = new Date()
+  let roleCheck: Awaited<ReturnType<typeof checkConnectRole>>
+  try {
+    roleCheck = await checkConnectRole({
+      region: process.env.AWS_REGION ?? 'us-east-1',
+      roleArn: account.role_arn,
+      externalId: account.external_id,
+      context: `Check again org ${orgId}`,
+      signal: cancel.signal,
+      policy: connectTestHooks.roleCheckPolicy,
+      sessionName: 'devcontrol-check',
+    })
+  } finally {
+    res.off('close', onClose)
+  }
+
+  const fenceFailure = (err: unknown) => {
+    if (isConnectionChanged(err)) {
+      return res.status(409).json({ success: false, code: 'CONNECTION_CHANGED', message: CHECK_AGAIN_MESSAGES.connectionChanged })
+    }
+    logChecksWriteFailure('check again', orgId, err)
+    return res.status(500).json({ success: false, code: 'CONNECT_STATE_UNAVAILABLE', message: CONNECT_STATE_UNAVAILABLE_MESSAGE })
+  }
+
+  if (!roleCheck.ok) {
+    const result = CHECK_AGAIN_RESULT[roleCheck.failure]
+    if (result) {
+      try {
+        await saveCheckResults(orgId, identity, account.id, { outcome: { attempt: { at: startedAt, result }, source: 'check_again' } })
+      } catch (err: unknown) {
+        return fenceFailure(err)
+      }
+    }
+    const base = ROLE_CHECK_RESPONSES[roleCheck.failure]
+    const message =
+      roleCheck.failure === 'aws_unavailable' ? CHECK_AGAIN_MESSAGES.awsUnavailable
+        : result && result !== 'aws_unavailable' ? CHECK_AGAIN_MESSAGES.roleRefused
+          : base.message
+    return res.status(base.status).json({ success: false, code: base.code, message })
+  }
+
+  const checkedAt = new Date()
+  const [permissionCheck, policyResult] = await Promise.all([
+    runPermissionCheck({
+      credentials: roleCheck.credentials,
+      region: account.region ?? 'us-east-1',
+      context: `Check again org ${orgId}`,
+      clients: connectTestHooks.probeClients,
+    }),
+    comparePoliciesWith(roleCheck.credentials, account, `Check again org ${orgId}`),
+  ])
+  try {
+    await saveCheckResults(orgId, identity, account.id, {
+      outcome: { attempt: { at: startedAt, result: 'ok' }, roleUniqueId: roleCheck.roleUniqueId, source: 'check_again' },
+      permission: { checks: permissionCheck.checks, at: checkedAt, trigger: 'check_again' },
+      policy: { result: policyResult, at: checkedAt, trigger: 'check_again' },
+    })
+  } catch (err: unknown) {
+    return fenceFailure(err)
+  }
+
+  // Never the role ARN, the External ID or any AWS value.
+  await auditEvents.record({
+    organizationId: orgId,
+    actorId: req.user!.userId,
+    action: 'aws_account.checked',
+    resourceType: 'aws_account',
+    resourceId: null,
+    metadata: { awsAccountId: account.account_id },
+    request: auditRequestContext(req),
+  })
+
+  const now = new Date()
+  const row = await readConnectionChecksOrNull(pool, orgId, account.id)
+  return res.json({
+    success: true,
+    data: { ...connectionChecksView(row, now), checkAgain: { availableAt: checkAgainAvailableAt(row?.check_again_started_at, now) } },
+  })
 }
 
 // GET /api/aws/accounts
@@ -464,7 +785,9 @@ router.get('/accounts', async (req: Request, res: Response) => {
     const data = owner
       ? result.rows
       : result.rows.map(({ external_id: _externalId, ...account }) => account)
-    const connection = await readConnectionState(req.user!.organizationId)
+    const { state, account } = await readConnectionState(req.user!.organizationId)
+    const health = state === 'connected' && account ? await readHealthSummary(req.user!.organizationId, account) : undefined
+    const connection = health ? { state, health } : { state }
     return res.json({ success: true, data, connection })
   } catch (err: any) {
     console.error('[aws/accounts GET]', err)
