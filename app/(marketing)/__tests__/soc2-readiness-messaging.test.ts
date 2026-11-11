@@ -29,6 +29,11 @@ const CORRECTED_FILES = [
   'app/(app)/settings/billing/upgrade/page.tsx',
   'app/(app)/settings/alerts/page.tsx',
   'app/(app)/connect-aws/page.tsx',
+  'app/(app)/connect-aws/connectAwsCopy.ts',
+  'app/(app)/connect-aws/ConnectSetup.tsx',
+  'app/(app)/connect-aws/ConnectedView.tsx',
+  'app/(app)/connect-aws/SecurityExplanation.tsx',
+  'app/(app)/connect-aws/connectAwsParts.tsx',
   'app/(app)/enterprise/page.tsx',
   'app/(app)/security/page.tsx',
   'app/(app)/dashboard/page.tsx',
@@ -114,9 +119,13 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
     expect(code).toMatch(/Readiness planning underway/i)
   })
 
-  it('the connect-aws security panel describes SOC 2 readiness planning, not an audit underway', () => {
-    const code = readCode('app/(app)/connect-aws/page.tsx')
-    expect(code).toMatch(/SOC 2 readiness planning underway/i)
+  // The readiness line was removed from the Connect page only (founder decision PE-D4, AWS connect PR E):
+  // SOC 2 readiness stays in the product and on pricing. The Connect page's files make no SOC 2 statement
+  // at all, and the prohibited-claim scan above still covers each of them.
+  it('the connect-aws page makes no SOC 2 statement (the readiness line moved off the Connect page)', () => {
+    for (const file of CORRECTED_FILES.filter((f) => f.startsWith('app/(app)/connect-aws/'))) {
+      expect(readCode(file), file).not.toMatch(/SOC\s*2/i)
+    }
   })
 
   it('dashboard demo compliance text names only Security Hub-backed frameworks (CIS, PCI-DSS, NIST 800-53), never SOC2 or GDPR, and claims no more frameworks than it names', () => {

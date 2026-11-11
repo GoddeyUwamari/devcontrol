@@ -155,6 +155,11 @@ const EXEMPT = [...SECURITY_LEGACY, ...G1_LEGACY, ...DEVOPS_UNIMPORTED]
 
 const STRICT = [
   'app/(app)/connect-aws/page.tsx',
+  // PR E: the Connect AWS page's components.
+  'app/(app)/connect-aws/ConnectSetup.tsx',
+  'app/(app)/connect-aws/ConnectedView.tsx',
+  'app/(app)/connect-aws/SecurityExplanation.tsx',
+  'app/(app)/connect-aws/connectAwsParts.tsx',
   'components/dashboard/dashboard-unconnected-preview.tsx',
   'components/ui/typography.tsx',
   // T2b: the shared components.
@@ -268,11 +273,11 @@ const isAppColourVar = (inlineStyle: string) => {
  */
 const ALLOWED: { file: string; match: string; variant?: string; rule: string; count: number; reason: string }[] = [
   {
-    file: 'app/(app)/connect-aws/page.tsx',
+    file: 'app/(app)/connect-aws/connectAwsParts.tsx',
     match: 'text-slate-200',
     rule: 'text colour below AA on light surfaces',
-    count: 2,
-    reason: 'Light text on the dark code blocks: the trust policy and the inline policy sit on bg-slate-900, well above 4.5:1.',
+    count: 1,
+    reason: 'Light text on the dark code block (PolicyJson): the trust policy and the inline policy sit on bg-slate-900, well above 4.5:1.',
   },
   {
     file: 'components/dashboard/dashboard-unconnected-preview.tsx',
