@@ -32,7 +32,7 @@ export const PAGE_COPY = {
 
   monitorTitle: 'What we monitor',
   planNote:
-    "On the Free plan, discovery covers EC2, EBS, RDS and S3 only. Lambda, load balancers, ECS, EKS, DynamoDB, CloudFront and Aurora aren't discovered.",
+    "On the Visibility plan, discovery covers EC2, EBS, RDS and S3 only. Lambda, load balancers, ECS, EKS, DynamoDB, CloudFront and Aurora aren't discovered.",
   setUpSlos: 'Set up SLOs →',
 
   sloReport: 'SLO report →',

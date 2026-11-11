@@ -177,12 +177,12 @@ export default function ForecastPage() {
             </>
           ) : (
             <>
-              <h2 className="text-ui font-semibold text-gray-900 mb-2">Pro Plan Required</h2>
+              <h2 className="text-ui font-semibold text-gray-900 mb-2">On the Optimization Engine plan</h2>
               <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
-                AI-powered forecasting is available on the Pro plan and above.
+                AI-powered forecasting is on the Optimization Engine plan.
               </p>
               <a href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
-                Upgrade to Pro
+                See plans
               </a>
             </>
           )}

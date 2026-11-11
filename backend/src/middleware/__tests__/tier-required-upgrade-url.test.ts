@@ -14,6 +14,7 @@ const query = jest.fn();
 jest.mock('../../config/database', () => ({ pool: { query: (...args: unknown[]) => query(...args) } }));
 
 import { requireTier, SubscriptionTier } from '../subscription.middleware';
+import { PLAN_NAME } from '../../config/plan-names';
 
 const ORG = '00000000-0000-4000-8000-00000000000a';
 const HOUR = 60 * 60 * 1000;
@@ -65,7 +66,7 @@ describe('upgrade.url names the required plan', () => {
       details: {
         currentTier: current,
         requiredTier: minimum,
-        message: `This feature requires a ${minimum} subscription or higher.`,
+        message: `This feature is on the ${PLAN_NAME[minimum as keyof typeof PLAN_NAME]} plan.`,
       },
       upgrade: {
         cta: expect.any(String),

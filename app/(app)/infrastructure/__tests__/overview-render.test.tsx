@@ -473,13 +473,13 @@ describe('PB-1 plan banners and the limit prompt: the same text and links as the
   }
   it('Free plan', async () => {
     m.plan = { isFree: true, isStarter: false, isPro: false, tier: 'free', lacksEntitlement: () => false }
-    const { off, on } = await both(/Free plan shows EC2, RDS, and S3 only\./)
+    const { off, on } = await both(/Visibility shows EC2, EBS, RDS and S3\./)
     expect(on).toEqual(off)
     expect(on.hrefs).toEqual(['/settings/billing/upgrade'])
   })
   it('Starter plan', async () => {
     m.plan = { isFree: false, isStarter: true, isPro: false, tier: 'starter', lacksEntitlement: () => false }
-    const { off, on } = await both(/Starter plan shows 15 resource types\./)
+    const { off, on } = await both(/Cost Control shows all 16 supported resource types\./)
     expect(on).toEqual(off)
   })
   it('the resource-limit prompt (402)', async () => {

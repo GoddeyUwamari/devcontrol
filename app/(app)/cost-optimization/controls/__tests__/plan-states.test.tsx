@@ -33,5 +33,5 @@ describePlanStates('/cost-optimization/controls', {
   reset: () => getConfig.mockClear(),
   paidCalls: () => getConfig.mock.calls.length,
   content: 'Low-usage Lambda functions',
-  gate: 'Upgrade to Enterprise',
+  gate: 'Revenue Protection feature',
 })

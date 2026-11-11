@@ -30,5 +30,5 @@ describePlanStates('/anomalies/rules', {
   paidCalls: () => getRules.mock.calls.length,
   // A loaded rule: proves the rules were fetched after the late plan, not just the header.
   content: 'Nightly spend',
-  gate: 'Upgrade to Enterprise',
+  gate: 'Revenue Protection feature',
 })

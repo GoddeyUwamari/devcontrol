@@ -1,5 +1,8 @@
 'use client';
 
+import { TRIAL_COPY, DEFAULT_DAYS } from '@/components/billing/trial-line'
+import { planName } from '@/lib/plan/plan-names'
+
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -99,7 +102,7 @@ function CheckoutSuccessContent() {
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Plan:</span>
                   <span className="font-semibold text-lg capitalize">
-                    {subscription?.tier || 'Pro'}
+                    {subscription?.tier ? planName(subscription.tier) : '—'}
                   </span>
                 </div>
 
@@ -122,7 +125,7 @@ function CheckoutSuccessContent() {
                 {subscription?.status === 'trialing' && (
                   <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
                     <p className="text-sm text-blue-800 dark:text-blue-300">
-                      Your 14-day free trial has started! You won&apos;t be charged until{' '}
+                      {TRIAL_COPY.started(DEFAULT_DAYS)} You won&apos;t be charged until{' '}
                       {getNextBillingDate()}.
                     </p>
                   </div>

@@ -130,12 +130,12 @@ export default function CostsByTeamPage() {
           <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-violet-600" />
           </div>
-          <h2 className="text-ui font-semibold text-gray-900 mb-2">Starter Plan Required</h2>
+          <h2 className="text-ui font-semibold text-gray-900 mb-2">On the Cost Control plan</h2>
           <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
-            Cost attribution by team is available on the Starter plan and above.
+            Team cost attribution is on the Cost Control plan.
           </p>
           <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
-            Upgrade to Starter
+            See plans
           </Link>
         </div>
       </div>

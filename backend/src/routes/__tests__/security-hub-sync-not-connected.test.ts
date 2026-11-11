@@ -110,7 +110,7 @@ describe('POST /api/security-hub/sync', () => {
       success: false,
       error: 'Subscription tier insufficient',
       code: 'TIER_REQUIRED',
-      details: { currentTier: tier, requiredTier: 'pro', message: 'This feature requires a pro subscription or higher.' },
+      details: { currentTier: tier, requiredTier: 'pro', message: 'This feature is on the Optimization Engine plan.' },
       upgrade: { cta: expect.any(String), url: '/settings/billing?upgrade=pro', nextTier: expect.anything() },
     });
     expect(mockRequireAdmin).not.toHaveBeenCalled();

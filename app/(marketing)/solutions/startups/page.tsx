@@ -94,7 +94,7 @@ export default function StartupsPage() {
               width: isMobile ? '100%' : undefined,
               boxSizing: 'border-box', textAlign: 'center',
             }}>
-              Start Free — No Credit Card
+              Start free
             </a>
             <a href="/tour" style={{
               background: 'transparent', color: '#7c3aed',
@@ -484,7 +484,7 @@ export default function StartupsPage() {
             </a>
           </div>
           <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
-            Free plan available · No credit card required · Upgrade anytime
+            Free Visibility plan · Upgrade anytime
           </div>
         </div>
       </section>

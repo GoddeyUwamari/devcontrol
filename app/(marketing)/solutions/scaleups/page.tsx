@@ -2,6 +2,7 @@
 
 import { TrendingUp, Users, Shield, BarChart3, Zap, GitBranch, DollarSign, Globe } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -459,16 +460,14 @@ export default function ScaleupsPage() {
             alignItems: isMobile ? 'center' : undefined,
             flexWrap: 'wrap',
           }}>
-            <a href="/register" style={{
+            <TrialCta style={{
               background: '#7c3aed', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               boxShadow: '0 4px 20px rgba(124,58,237,0.4)',
               width: isMobile ? '100%' : undefined,
               boxSizing: 'border-box', textAlign: 'center',
-            }}>
-              Start Free Trial
-            </a>
+            }} />
             <a href="/case-studies" style={{
               background: 'transparent', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
@@ -480,9 +479,7 @@ export default function ScaleupsPage() {
               Read Case Studies
             </a>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.35)', marginTop: '16px' }}>
-            14-day free trial · No credit card required · Cancel anytime
-          </div>
+          <TrialLine variant="trust" rest={['Cancel anytime']} style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.35)', marginTop: '16px' }} />
         </div>
       </section>
 

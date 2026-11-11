@@ -822,10 +822,10 @@ export default function EfficiencyPage() {
       {/* ── PRO GATE ── */}
       {!isDemoActive && !plan.isPro && (
         <div style={{ background: '#f9fafb', border: '1.5px solid #e5e7eb', borderRadius: '12px', padding: '32px', textAlign: 'center', marginTop: '8px' }}>
-          <p className="text-ui font-semibold text-ink" style={{ marginBottom: '8px' }}>Full Efficiency Analysis — Pro Plan</p>
+          <p className="text-ui font-semibold text-ink" style={{ marginBottom: '8px' }}>Full Efficiency Analysis — Optimization Engine plan</p>
           <p className="text-meta text-ink-muted" style={{ marginBottom: '16px' }}>Upgrade to unlock detailed resource efficiency scoring and quadrant drill-down.</p>
           <Link href="/settings/billing/upgrade" className="text-ui font-semibold text-white" style={{ background: '#7C3AED', padding: '10px 24px', borderRadius: '8px', textDecoration: 'none' }}>
-            Upgrade to Pro
+            See plans
           </Link>
         </div>
       )}

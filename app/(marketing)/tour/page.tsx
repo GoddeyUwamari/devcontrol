@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Check, Lock, Shield, DollarSign, BarChart2, Activity, Search, Zap } from 'lucide-react'
+import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -615,14 +616,12 @@ export default function TourPage() {
           Connect your AWS account and find your own savings opportunities in minutes.
         </p>
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '16px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
-          <Link href="/register" style={{
+          <TrialCta style={{
             background: '#fff', color: '#7c3aed',
             padding: '14px 32px', borderRadius: '10px',
             fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
             width: isMobile ? '100%' : 'auto', textAlign: 'center',
-          }}>
-            Start Free Trial
-          </Link>
+          }} />
           <Link href="/contact" style={{
             background: 'transparent', color: '#fff',
             padding: '14px 32px', borderRadius: '10px',
@@ -633,9 +632,7 @@ export default function TourPage() {
             Talk to Sales
           </Link>
         </div>
-        <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
-          No credit card required · 14-day free trial · Read-only AWS access
-        </div>
+        <TrialLine variant="trust" rest={['Read-only AWS access']} style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }} />
       </section>
 
     </div>

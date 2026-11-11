@@ -146,9 +146,9 @@ export default function AnomaliesPage() {
             </>
           ) : (
             <>
-              <h2 className="text-ui font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
-              <p className="text-ui text-ink-muted leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
-              <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">Upgrade to Pro</a>
+              <h2 className="text-ui font-semibold text-slate-900 mb-2.5">On the Optimization Engine plan</h2>
+              <p className="text-ui text-ink-muted leading-relaxed mb-6">This feature is on the Optimization Engine plan.</p>
+              <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">See plans</a>
             </>
           )}
         </div>
@@ -466,7 +466,7 @@ export default function AnomaliesPage() {
         <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-white border border-slate-200 rounded-t-xl border-b-0">
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="text-ui font-semibold text-ink-muted">Custom Detection Rules</h2>
-            <span className="text-label px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 uppercase tracking-[0.04em]">Enterprise</span>
+            <span className="text-label px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 uppercase tracking-[0.04em]">Revenue Protection</span>
             {!ANOMALY_DETECTION_ACTIVE && (
               <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">{COMING_SOON}</span>
             )}

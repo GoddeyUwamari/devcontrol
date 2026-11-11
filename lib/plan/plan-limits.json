@@ -1,0 +1,11 @@
+{
+  "$comment": "Plan numbers the server also enforces. backend/src/config/__tests__/plan-catalog-parity.test.ts reads this file and compares it with TIER_LIMITS, TIER_RESOURCE_TYPES, TRIAL_PERIOD_DAYS and SELF_SERVE_TIERS. null = unlimited.",
+  "resources": { "free": 20, "starter": 60, "pro": 500, "enterprise": null },
+  "teamMembers": { "free": 1, "starter": 5, "pro": 10, "enterprise": null },
+  "resourceTypes": { "free": 4, "starter": 16, "pro": 16, "enterprise": 16 },
+  "trial": { "days": 14, "plans": ["starter", "pro"] },
+  "prices": {
+    "starter": { "monthly": 49, "annual": 490 },
+    "pro": { "monthly": 199, "annual": 1990 }
+  }
+}

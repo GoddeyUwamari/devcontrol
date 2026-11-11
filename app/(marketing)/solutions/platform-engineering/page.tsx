@@ -19,6 +19,7 @@ import {
   Compass,
 } from 'lucide-react';
 import Link from 'next/link';
+import { TrialCta, TrialLine } from '@/components/billing/trial-line';
 import { platformMetrics } from './data/platformMetrics';
 import { platformFeatures } from './data/platformFeatures';
 
@@ -380,10 +381,7 @@ function FinalCTASection() {
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mb-6">
           <Button asChild size="lg" className="gap-2 px-6 h-11 bg-purple-600 hover:bg-purple-700">
-            <Link href="/dashboard">
-              Start Free Trial
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+            <TrialCta />
           </Button>
           <Button asChild variant="outline" size="lg" className="gap-2 px-6 h-11">
             <Link href="/pricing">
@@ -399,12 +397,13 @@ function FinalCTASection() {
           </div>
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-purple-500" />
-            <span>No credit card required</span>
+            <span>Free Visibility plan</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-purple-500" />
-            <span>14-day free trial</span>
-          </div>
+          <TrialLine
+            variant="chip"
+            className="flex items-center gap-1.5"
+            render={(text) => <><CheckCircle2 className="w-4 h-4 text-purple-500" /><span>{text}</span></>}
+          />
         </div>
       </div>
     </section>

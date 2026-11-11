@@ -261,7 +261,7 @@ const PREVIEW_CARDS: Array<[string, string, string, string[], string | null]> = 
   ['Urgent', 'Top Risk', 'The one problem to address first.', ['Your most serious security finding, front and center', 'A direct link to the exact finding, so you can act on it'], null],
   ['Posture', 'Infrastructure Posture', 'One honest score for your connected account.', ['A single score that combines cost, security and alert coverage', 'See which area is pulling your score down', 'Clear notes wherever the data is only partial'], null],
   ['Uptime', 'Resource checks', 'Catch trouble before your customers do.', ['See which servers are failing their AWS status checks', 'Know when a resource crosses a CloudWatch alarm threshold'], null],
-  ['Ask', 'AI assistant', 'Ask questions about your spend and security.', ['Ask in plain English, no dashboards to learn', 'Answers come from your own account data', 'It tells you plainly when the data is not available'], 'Pro'],
+  ['Ask', 'AI assistant', 'Ask questions about your spend and security.', ['Ask in plain English, no dashboards to learn', 'Answers come from your own account data', 'It tells you plainly when the data is not available'], 'Optimization Engine'],
   ['Weekly', 'Weekly summary', 'Your AWS week in one email.', ['Spend compared with the previous week', 'New security findings and deployments at a glance', 'Sent to your workspace owner every week'], null],
 ]
 const STEPS = [
@@ -366,9 +366,9 @@ function expectPreviewAndSteps() {
     }
   }
 
-  // "Pro" appears once in the whole preview: the badge on the AI assistant card.
+  // A plan name appears once in the whole preview: the badge on the AI assistant card.
   const labels = within(preview).getAllByTestId('preview-plan-label')
-  expect(labels.map((label) => label.textContent)).toEqual(['Pro'])
+  expect(labels.map((label) => label.textContent)).toEqual(['Optimization Engine'])
   expect(labels[0].closest('[data-testid="preview-card"]')).toBe(cards[6])
   // No plan is named anywhere else in the preview: not in a tag, a title, a subtitle or a checklist line.
   for (const node of preview.querySelectorAll('[data-testid="preview-tag"], [data-testid="preview-title"], [data-testid="preview-subtitle"], [data-testid="preview-shows"], h1, h2, p')) {

@@ -30,5 +30,5 @@ describePlanStates('/monitoring/slos', {
   reset: () => { evaluateAll.mockClear(); getResources.mockClear() },
   paidCalls: () => evaluateAll.mock.calls.length + getResources.mock.calls.length,
   content: 'No SLOs configured',
-  gate: 'Upgrade to Enterprise',
+  gate: 'Revenue Protection feature',
 })

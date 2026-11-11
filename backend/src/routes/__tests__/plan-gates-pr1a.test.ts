@@ -39,6 +39,7 @@ import { ComplianceFrameworksRepository } from '../../repositories/compliance-fr
 import { Soc2CustomerEvidenceService } from '../../services/soc2-customer-evidence.service';
 import { ADMIN_REFUSAL, MEMBER_REFUSAL, Role, RoleGateOrg, createRoleGateHarness } from './role-gate-harness';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
+import { PLAN_NAME } from '../../config/plan-names';
 
 jest.mock('../../services/onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
 
@@ -279,7 +280,7 @@ describe.each(Object.entries(STATES))('plan: %s', (_label, state) => {
         details: {
           currentTier: state.effective,
           requiredTier: rc.minimum,
-          message: `This feature requires a ${rc.minimum} subscription or higher.`,
+          message: `This feature is on the ${PLAN_NAME[rc.minimum as keyof typeof PLAN_NAME]} plan.`,
           ...(state.reason ? { reason: state.reason } : {}),
         },
         upgrade: {

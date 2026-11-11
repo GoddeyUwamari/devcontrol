@@ -108,7 +108,10 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
   it('the billing upgrade page no longer sells "SOC 2 & HIPAA named-control audit reports"', () => {
     const code = readCode('app/(app)/settings/billing/upgrade/page.tsx')
     expect(code).not.toMatch(/named-control audit reports/i)
-    expect(code).toMatch(/SOC 2 readiness support/i)
+    // Since CAT-1 the upgrade page renders the plan catalog's lines.
+    const catalog = readCode('lib/plan/plan-catalog.ts')
+    expect(catalog).not.toMatch(/named-control audit reports/i)
+    expect(catalog).toMatch(/SOC 2 readiness evidence: technical checks plus your own evidence \(not a certification\)/)
   })
 
   it('the Enterprise page no longer claims a HIPAA BAA or GDPR compliance, and reframes SOC 2 as readiness planning', () => {

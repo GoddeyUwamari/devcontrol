@@ -48,7 +48,7 @@ describePlanStates('/forecast', {
   reset: resetForecast,
   paidCalls: () => getForecast.mock.calls.length,
   content: 'Cost Forecasting',
-  gate: 'Upgrade to Pro',
+  gate: 'On the Optimization Engine plan',
 })
 
 describe('/forecast: unmounting while the plan loads', () => {

@@ -29,5 +29,5 @@ describePlanStates('/settings/sso', {
   reset: stubFetch,
   paidCalls: () => samlCalls,
   content: /Your IdP will authenticate users/,
-  gate: 'Upgrade to Enterprise',
+  gate: 'Revenue Protection feature',
 })

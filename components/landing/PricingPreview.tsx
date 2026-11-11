@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Check } from 'lucide-react'
+import { PLANS, TEASER, lines, priceLabel } from '@/lib/plan/plan-catalog'
+import type { Tier } from '@/lib/plan/plan-names'
+import { FeatureText } from '@/components/billing/feature-line'
+import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -15,73 +19,34 @@ function useWindowWidth() {
   return width
 }
 
-const tiers = [
-  {
-    name: 'Free',
-    price: '$0',
-    period: 'forever',
-    highlight: 'For personal projects',
-    highlighted: false,
-    features: [
-      '20 AWS resources',
-      'Basic cost dashboard',
-      '7-day data history',
-      'Email alerts',
-    ],
-    cta: 'Start Free Forever',
-    ctaHref: '/register',
-  },
-  {
-    name: 'Starter',
-    price: '$49',
-    period: '/month',
-    highlight: 'For small teams',
-    highlighted: false,
-    features: [
-      '60 AWS resources',
-      'AI cost insights',
-      '30-day history',
-      'Slack alerts',
-      '3 team members',
-    ],
-    cta: 'Start Free Trial',
-    ctaHref: '/register',
-  },
-  {
-    name: 'Pro',
-    price: '$199',
-    period: '/month',
-    highlight: 'Most Popular',
-    highlighted: true,
-    features: [
-      '500 AWS resources',
-      'All 8 AI features',
-      '90-day history',
-      'DORA metrics',
-      'Up to 10 members',
-      'Priority support',
-    ],
-    cta: 'Start Free Trial',
-    ctaHref: '/register',
-  },
-  {
-    name: 'Enterprise',
-    price: 'Custom',
-    period: '',
-    highlight: 'For large orgs',
-    highlighted: false,
-    features: [
-      'Unlimited resources',
-      'Custom integrations',
-      'Unlimited history',
-      'SSO / SAML',
-      'Dedicated CSM',
-      'SLA guarantee',
-    ],
-    cta: 'Talk to Sales',
-    ctaHref: '/contact',
-  },
-]
+/** Teaser copy per plan; the plan name, price and feature lines come from the catalog. */
+const TEASER_META: Record<Tier, { period: string; highlight: string; cta?: { label: string; href: string } }> = {
+  free: { period: 'forever', highlight: 'For personal projects', cta: { label: 'Start Free Forever', href: '/register' } },
+  starter: { period: '/month', highlight: 'For small teams' },
+  pro: { period: '/month', highlight: 'Most Popular' },
+  enterprise: { period: '', highlight: 'For large orgs', cta: { label: 'Talk to Sales', href: '/contact' } },
+}
+
+function ctaStyle(highlighted: boolean): CSSProperties {
+  return {
+    padding: '12px 16px',
+    fontSize: '14px',
+    textDecoration: 'none',
+    transition: 'all 0.15s ease',
+    ...(highlighted
+      ? { backgroundColor: '#7c3aed', color: '#fff' }
+      : { backgroundColor: '#f3f4f6', color: '#1f2937' }),
+  }
+}
+
+const tiers = PLANS.map((p) => ({
+  tier: p.tier,
+  name: p.name,
+  price: priceLabel(p.tier, 'monthly'),
+  highlighted: !!p.popular,
+  features: lines(TEASER[p.tier]),
+  ...TEASER_META[p.tier],
+}))
 
 const inner: React.CSSProperties = {
   maxWidth: '1400px',
@@ -120,7 +85,8 @@ export function PricingPreview() {
             Start free. Scale as you grow.
           </h2>
           <p style={{ fontSize: isMobile ? '1.1rem' : '1.2rem', color: '#1f2937', lineHeight: 1.75 }}>
-            Starter and Pro include a 14-day free trial. Free plan available forever. No credit card required.
+            Start on the free Visibility plan. Upgrade when you need more.
+            <TrialLine variant="table" render={(text) => <> {text}</>} />
           </p>
         </div>
 
@@ -156,36 +122,32 @@ export function PricingPreview() {
 
               <ul style={{ marginBottom: '24px', flex: 1 }} className="space-y-3">
                 {tier.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2" style={{ fontSize: '14px', color: '#1f2937' }}>
-                    <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#7c3aed' }} />
-                    {feature}
+                  <li key={feature.id} className="flex items-center gap-2" style={{ fontSize: '14px', color: '#1f2937' }}>
+                    <Check className="h-4 w-4 flex-shrink-0" style={{ color: feature.badge === 'Coming soon' ? '#9ca3af' : '#7c3aed' }} />
+                    <FeatureText feature={feature} aiChip={false} />
                   </li>
                 ))}
               </ul>
 
-              <Link
-                href={tier.ctaHref}
-                className="block text-center rounded-xl font-semibold"
-                style={{
-                  padding: '12px 16px',
-                  fontSize: '14px',
-                  textDecoration: 'none',
-                  transition: 'all 0.15s ease',
-                  ...(tier.highlighted
-                    ? { backgroundColor: '#7c3aed', color: '#fff' }
-                    : { backgroundColor: '#f3f4f6', color: '#1f2937' }),
-                }}
-                onMouseEnter={(e) => {
-                  const el = e.currentTarget as HTMLAnchorElement
-                  el.style.opacity = '0.85'
-                }}
-                onMouseLeave={(e) => {
-                  const el = e.currentTarget as HTMLAnchorElement
-                  el.style.opacity = '1'
-                }}
-              >
-                {tier.cta}
-              </Link>
+              {tier.cta ? (
+                <Link
+                  href={tier.cta.href}
+                  className="block text-center rounded-xl font-semibold"
+                  style={{ ...ctaStyle(tier.highlighted) }}
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget as HTMLAnchorElement
+                    el.style.opacity = '0.85'
+                  }}
+                  onMouseLeave={(e) => {
+                    const el = e.currentTarget as HTMLAnchorElement
+                    el.style.opacity = '1'
+                  }}
+                >
+                  {tier.cta.label}
+                </Link>
+              ) : (
+                <TrialCta plan={tier.tier} className="block text-center rounded-xl font-semibold" style={ctaStyle(tier.highlighted)} />
+              )}
             </div>
           ))}
         </div>
@@ -212,7 +174,12 @@ export function PricingPreview() {
         </div>
 
         <div className="flex flex-wrap items-center justify-center" style={{ gap: isMobile ? '12px' : '24px', fontSize: isMobile ? '13px' : '14px', color: '#6b7280' }}>
-          {['14-day free trial', 'No credit card required', 'Cancel anytime', 'No hidden fees', 'SOC 2 Readiness Planned'].map((item) => (
+          <TrialLine
+            variant="chip"
+            className="flex items-center gap-2"
+            render={(text) => <><Check className="h-4 w-4" style={{ color: '#16a34a' }} /><span>{text}</span></>}
+          />
+          {['Free Visibility plan', 'Cancel anytime', 'No hidden fees', 'SOC 2 Readiness Planned'].map((item) => (
             <div key={item} className="flex items-center gap-2">
               <Check className="h-4 w-4" style={{ color: '#16a34a' }} />
               <span>{item}</span>

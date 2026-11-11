@@ -1,10 +1,12 @@
+import { planName } from '../plan-names'
+
 /** The body backend requireTier sends with its 402 (subscription.middleware.ts). Not a test file itself. */
 export function tierRequiredBody(requiredTier: string, url = '/settings/billing?upgrade=enterprise') {
   return {
     success: false,
     error: 'Subscription tier insufficient',
     code: 'TIER_REQUIRED',
-    details: { currentTier: 'pro', requiredTier, message: `This feature requires a ${requiredTier} subscription or higher.` },
+    details: { currentTier: 'pro', requiredTier, message: `This feature is on the ${planName(requiredTier)} plan.` },
     upgrade: { cta: 'Upgrade', url, nextTier: 'enterprise' },
   }
 }

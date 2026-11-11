@@ -168,13 +168,13 @@ export default function OptimizationControlsPage() {
             </>
           ) : (
             <>
-              <h2 className="text-ui font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+              <h2 className="text-ui font-semibold text-gray-900 mb-2">Revenue Protection feature</h2>
               <p className="text-ink-muted text-ui max-w-md mx-auto mb-6">
-                Optimization Controls are available on the Enterprise plan — tune the invocation threshold for
+                Optimization Controls are on the Revenue Protection plan — tune the invocation threshold for
                 low-usage Lambda detection.
               </p>
               <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline">
-                Upgrade to Enterprise
+                See plans
               </Link>
             </>
           )}

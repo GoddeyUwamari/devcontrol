@@ -82,7 +82,7 @@ const CARDS: PreviewItem[] = [
   },
   {
     tag: 'Ask',
-    planLabel: 'Pro',
+    planLabel: 'Optimization Engine',
     title: 'AI assistant',
     subtitle: 'Ask questions about your spend and security.',
     shows: [

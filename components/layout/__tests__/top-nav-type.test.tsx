@@ -50,7 +50,7 @@ describe('top nav: desktop', () => {
     const label = within(link).getByText('Optimization Controls')
     expect(classes(label)).toEqual(expect.arrayContaining(['text-ui', 'font-semibold', 'text-ink']))
     expect(classes(within(link).getByText('Tune detection thresholds'))).toEqual(expect.arrayContaining(['text-meta', 'text-ink-muted']))
-    const badge = within(link).getByText('Enterprise')
+    const badge = within(link).getByText('Revenue Protection')
     expect(classes(badge)).toEqual(expect.arrayContaining(['text-label', 'font-semibold', 'text-white']))
     // No inline type left on the menu items (the badge keeps only its fill).
     for (const el of [label, badge, within(link).getByText('Tune detection thresholds')]) {

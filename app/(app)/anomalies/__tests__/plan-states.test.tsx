@@ -36,7 +36,7 @@ describePlanStates('/anomalies', {
   reset,
   paidCalls: () => getAnomalies.mock.calls.length + getLastScan.mock.calls.length + getRules.mock.calls.length,
   content: /Anomaly detection on measured data isn/,
-  gate: 'Pro Plan Required',
+  gate: 'On the Optimization Engine plan',
 })
 
 describe('/anomalies: custom rules are Enterprise-only', () => {

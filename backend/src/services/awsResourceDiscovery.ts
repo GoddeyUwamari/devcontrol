@@ -174,7 +174,7 @@ import {
 /**
  * Resource types allowed by subscription tier
  */
-const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
+export const TIER_RESOURCE_TYPES: Record<SubscriptionTier, ResourceType[]> = {
   free: ['ec2', 'ebs', 'rds', 's3'], // 4 types - Core compute (+ its attached storage), database, storage
   starter: [
     'ec2',           // Compute instances

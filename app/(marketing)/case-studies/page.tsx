@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -81,17 +82,13 @@ export default function CaseStudiesPage() {
           flexDirection: isMobile ? 'column' : 'row',
           alignItems: isMobile ? 'stretch' : undefined,
         }}>
-          <a
-            href="/register"
+          <TrialCta
             style={{
               background: '#fff', color: '#7c3aed', padding: '14px 32px',
               borderRadius: '10px', fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               width: isMobile ? '100%' : undefined, boxSizing: 'border-box',
               textAlign: 'center', display: 'inline-block',
-            }}
-          >
-            Start Free Trial
-          </a>
+            }} />
           <a
             href="/tour"
             style={{
@@ -105,9 +102,7 @@ export default function CaseStudiesPage() {
             Take a Product Tour
           </a>
         </div>
-        <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
-          No credit card required · 14-day free trial · Read-only AWS access
-        </div>
+        <TrialLine variant="trust" rest={['Read-only AWS access']} style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }} />
         </div>
       </section>
 

@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import { DollarSign, Users, Shield, Network } from 'lucide-react'
 import { midMarketQuickWins } from './data/midMarketQuickWins'
 import { midMarketValueCards } from './data/midMarketValueCards'
+import { MID_MARKET, feature, lines, plan, priceLabel } from '@/lib/plan/plan-catalog'
+import { FeatureText } from '@/components/billing/feature-line'
+import { TrialCta, TrialLine } from '@/components/billing/trial-line'
 
 function useWindowWidth() {
   const [width, setWidth] = useState(0)
@@ -66,19 +69,9 @@ const timeline = [
   },
 ]
 
-const pricingFeatures = [
-  'Up to 500 AWS resources',
-  'Unlimited team members',
-  'Multi-team RBAC',
-  'Cost attribution & budgets',
-  'SOC 2 readiness / PCI-DSS scanning',
-  'SAML SSO integration',
-  'DORA metrics dashboard',
-  'Auto-remediation workflows',
-  'Audit logs & reporting',
-  'Slack & PagerDuty integration',
-  'Priority support (4hr SLA)',
-]
+// The Optimization Engine plan as the pricing page lists it (lib/plan/plan-catalog.ts).
+const proPlan = plan('pro')
+const pricingFeatures = lines(MID_MARKET)
 
 function FeatureCard({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {
   const [hovered, setHovered] = useState(false)
@@ -173,15 +166,13 @@ export default function MidMarketPage() {
                 alignItems: isMobile ? 'stretch' : undefined,
                 flexWrap: 'wrap', marginBottom: '32px',
               }}>
-                <a href="/register" style={{
+                <TrialCta style={{
                   background: '#7c3aed', color: '#fff',
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
                   textAlign: 'center', boxSizing: 'border-box',
-                }}>
-                  Start Free Trial
-                </a>
+                }} />
                 <a href="/contact" style={{
                   background: 'transparent', color: '#e2e8f0',
                   padding: '14px 32px', borderRadius: '10px',
@@ -198,7 +189,7 @@ export default function MidMarketPage() {
                 flexDirection: isMobile ? 'column' : 'row',
                 fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8',
               }}>
-                {['No credit card required', 'Setup in 15 minutes', 'SOC 2 Readiness Planned'].map(t => (
+                {['Free Visibility plan', 'Setup in 15 minutes', 'SOC 2 Readiness Planned'].map(t => (
                   <span key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ color: '#a78bfa' }}>✓</span> {t}
                   </span>
@@ -512,14 +503,14 @@ export default function MidMarketPage() {
                   fontSize: '0.75rem', fontWeight: 700, color: '#7c3aed',
                   textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px',
                 }}>
-                  Growth Plan
+                  {proPlan.name}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '2.8rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>$199</span>
+                  <span style={{ fontSize: '2.8rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>{priceLabel('pro', 'monthly')}</span>
                   <span style={{ fontSize: '1rem', color: '#94a3b8' }}>/month</span>
                 </div>
                 <p style={{ fontSize: '0.9rem', color: '#1f2937', marginTop: '8px' }}>
-                  Up to 500 AWS resources · Unlimited team members
+                  {feature('limits-pro').label} · {feature('members-pro').label}
                 </p>
               </div>
 
@@ -528,10 +519,10 @@ export default function MidMarketPage() {
                 gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
                 gap: '12px', marginBottom: '32px',
               }}>
-                {pricingFeatures.map(feature => (
-                  <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#059669', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>✓</span>
-                    <span style={{ fontSize: '0.875rem', color: '#1f2937' }}>{feature}</span>
+                {pricingFeatures.map(f => (
+                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: f.badge === 'Coming soon' ? '#94a3b8' : '#059669', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>✓</span>
+                    <span style={{ fontSize: '0.875rem', color: '#1f2937' }}><FeatureText feature={f} aiChip={false} /></span>
                   </div>
                 ))}
               </div>
@@ -542,16 +533,14 @@ export default function MidMarketPage() {
                 alignItems: isMobile ? 'center' : undefined,
                 flexWrap: 'wrap', marginBottom: '16px',
               }}>
-                <a href="/register" style={{
+                <TrialCta plan="pro" style={{
                   background: '#7c3aed', color: '#fff',
                   padding: '14px 32px', borderRadius: '10px',
                   fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
                   boxShadow: '0 4px 24px rgba(124,58,237,0.3)',
                   width: isMobile ? '100%' : undefined,
                   boxSizing: 'border-box', textAlign: 'center',
-                }}>
-                  Start Free Trial
-                </a>
+                }} />
                 <a href="/pricing" style={{
                   background: 'transparent', color: '#7c3aed',
                   padding: '14px 32px', borderRadius: '10px',
@@ -564,9 +553,7 @@ export default function MidMarketPage() {
                 </a>
               </div>
 
-              <p style={{ textAlign: 'center', fontSize: '0.8rem', color: '#94a3b8' }}>
-                14-day free trial · No credit card required · Cancel anytime
-              </p>
+              <TrialLine variant="trust" rest={['Cancel anytime']} style={{ display: 'block', textAlign: 'center', fontSize: '0.8rem', color: '#94a3b8' }} />
             </div>
           </div>
         </div>
@@ -598,15 +585,13 @@ export default function MidMarketPage() {
             alignItems: isMobile ? 'center' : undefined,
             flexWrap: 'wrap',
           }}>
-            <a href="/register" style={{
+            <TrialCta style={{
               background: '#fff', color: '#7c3aed',
               padding: '14px 32px', borderRadius: '10px',
               fontWeight: 700, fontSize: '1rem', textDecoration: 'none',
               width: isMobile ? '100%' : undefined,
               boxSizing: 'border-box', textAlign: 'center',
-            }}>
-              Start Free Trial
-            </a>
+            }} />
             <a href="/contact" style={{
               background: 'transparent', color: '#fff',
               padding: '14px 32px', borderRadius: '10px',
@@ -618,9 +603,7 @@ export default function MidMarketPage() {
               Schedule a Demo
             </a>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }}>
-            No credit card required · Read-only AWS access · Cancel anytime
-          </div>
+          <TrialLine variant="trust" rest={['Read-only AWS access', 'Cancel anytime']} style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: '16px' }} />
         </div>
       </section>
 

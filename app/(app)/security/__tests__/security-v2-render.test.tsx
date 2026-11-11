@@ -241,10 +241,10 @@ describe('tiles: unavailable is never 0', () => {
     fireEvent.click(within(tile).getByRole('button', { name: 'Retry' }))
     await waitFor(() => expect(h.log.filter((l) => l === 'GET /api/risk-score/current')).toHaveLength(2))
   })
-  it('score below Pro: "The score is on the Pro plan.", no number', async () => {
+  it('score below Pro: "The score is on the Optimization Engine plan.", no number', async () => {
     await show({ 'GET /api/risk-score/current': fail(402) })
     const tile = screen.getByTestId('security-tile-score')
-    expect(tile).toHaveTextContent('The score is on the Pro plan.')
+    expect(tile).toHaveTextContent('The score is on the Optimization Engine plan.')
     expect(tile.textContent).not.toMatch(/\d/)
   })
   it('anomalies error: "Couldn\'t load anomalies." + Retry, no count', async () => {

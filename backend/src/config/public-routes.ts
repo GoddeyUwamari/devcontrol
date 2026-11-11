@@ -85,4 +85,6 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     reason: 'Pricing-page counter; a single aggregate number, no organization details.' },
   { method: 'POST', path: '/api/newsletter/subscribe', type: 'public', category: 'marketing',
     reason: 'Blog and changelog newsletter signup.' },
+  { method: 'GET', path: '/api/billing/offer', type: 'public', category: 'marketing',
+    reason: 'Whether the public trial offer is on; constants only, no organization or user data.' },
 ];

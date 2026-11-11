@@ -23,15 +23,27 @@ const FROZEN: Record<string, string> = {
 const NON_APP_UI_ALLOWED = ['components/ui/accordion.tsx']
 
 // Files both surfaces reach (reviewed): none renders markup except site-analytics, which renders
-// only the analytics script. A new shared component would let an app change reach marketing.
+// only the analytics script, and the two CAT-1 plan components below. A new shared component
+// would let an app change reach marketing.
+// CAT-1 (one plan catalog): the pricing page and the in-app upgrade page must list the same plan
+// lines and the same trial wording, so they share the catalog, the plan names, the feature line
+// (label + "Coming soon"/"Beta" chip) and the trial line (one source for every trial string).
+// types/billing.ts left the list: the pricing page no longer reads PricingTier.
 const SHARED_REVIEWED = [
   'components/analytics/site-analytics.tsx',
+  'components/billing/feature-line.tsx',
+  'components/billing/trial-line.tsx',
   'lib/api.ts',
+  'lib/billing/offer.ts',
   'lib/contexts/auth-context.tsx',
   'lib/gtag.ts',
+  'lib/hooks/use-billing-offer.ts',
   'lib/login-redirect.ts',
   'lib/org-scoped-cache.ts',
   'lib/pending-invitation.ts',
+  'lib/plan/entitlements.ts',
+  'lib/plan/plan-catalog.ts',
+  'lib/plan/plan-names.ts',
   'lib/query-client.ts',
   'lib/safe-log.ts',
   'lib/safe-return-path.ts',
@@ -39,7 +51,6 @@ const SHARED_REVIEWED = [
   'lib/services/organizations.service.ts',
   'lib/types.ts',
   'lib/utils.ts',
-  'types/billing.ts',
 ]
 
 const sha256 = (file: string) => createHash('sha256').update(readFileSync(join(ROOT, file))).digest('hex')

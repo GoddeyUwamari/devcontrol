@@ -62,7 +62,7 @@ export const navItems: NavItem[] = [
     children: [
       { label: 'Cost Overview', href: '/costs', icon: DollarSign, desc: 'Spend from AWS Cost Explorer' },
       { label: 'Optimization', href: '/cost-optimization', icon: TrendingDown, desc: 'Savings recommendations' },
-      { label: 'Optimization Controls', href: '/cost-optimization/controls', icon: SlidersHorizontal, desc: 'Tune detection thresholds', badge: 'Enterprise' },
+      { label: 'Optimization Controls', href: '/cost-optimization/controls', icon: SlidersHorizontal, desc: 'Tune detection thresholds', badge: 'Revenue Protection' },
       { label: 'Forecast', href: '/forecast', icon: BarChart3, desc: 'Forecast future AWS spend' },
       { label: 'Invoices', href: '/invoices', icon: FileText, desc: 'Billing history' },
       { label: 'AI Reports', href: '/ai-reports', icon: Sparkles, desc: 'AI-generated cost reports' },
@@ -99,7 +99,7 @@ export const navItems: NavItem[] = [
       { label: 'DORA Metrics', href: '/app/dora-metrics', icon: BarChart3, desc: 'Deployment frequency and MTTR' },
       { label: 'Teams', href: '/teams', icon: Users, desc: 'Team management and access' },
       { label: 'Enterprise', href: '/enterprise', icon: Building2, desc: 'Enterprise controls' },
-      { label: 'Auto-Remediation', href: '/remediation', icon: Wrench, desc: 'Approval-based infrastructure fixes', badge: 'Enterprise' },
+      { label: 'Auto-Remediation', href: '/remediation', icon: Wrench, desc: 'Approval-based infrastructure fixes', badge: 'Revenue Protection' },
       { label: 'Developers', href: '/developers', icon: Code, desc: 'API keys and integrations', badge: COMING_SOON },
     ],
   },

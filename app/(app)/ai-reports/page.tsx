@@ -214,9 +214,9 @@ export default function AIReportsPage() {
             </>
           ) : (
             <>
-              <h2 className="text-ui font-semibold text-slate-900 mb-2.5">Pro Plan Required</h2>
-              <p className="text-ui text-ink-muted leading-relaxed mb-6">This feature is available on the Pro plan and above.</p>
-              <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">Upgrade to Pro</a>
+              <h2 className="text-ui font-semibold text-slate-900 mb-2.5">On the Optimization Engine plan</h2>
+              <p className="text-ui text-ink-muted leading-relaxed mb-6">This feature is on the Optimization Engine plan.</p>
+              <a href="/settings/billing/upgrade" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors">See plans</a>
             </>
           )}
         </div>

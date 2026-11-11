@@ -25,8 +25,8 @@ export function PlanBanners({ limitReached, isFree, isStarter, isPro }: { limitR
       {isFree && (
         <div data-testid="infra-free-banner" className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
           <p className="text-ui font-medium text-violet-800">
-            Free plan shows EC2, RDS, and S3 only.
-            <span className="ml-1 font-normal text-ink-muted">Upgrade to Starter to unlock 15 resource types.</span>
+            Visibility shows EC2, EBS, RDS and S3.
+            <span className="ml-1 font-normal text-ink-muted">Cost Control adds 12 more types (16 in total).</span>
           </p>
           <Link href="/settings/billing/upgrade" className="ml-4 shrink-0 rounded-lg bg-violet-700 px-4 py-1 text-label text-white no-underline">
             Upgrade →
@@ -36,8 +36,7 @@ export function PlanBanners({ limitReached, isFree, isStarter, isPro }: { limitR
       {isStarter && !isPro && (
         <div data-testid="infra-starter-banner" className="flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
           <p className="text-ui font-medium text-blue-800">
-            Starter plan shows 15 resource types.
-            <span className="ml-1 font-normal text-ink-muted">Upgrade to Pro to unlock all 15+ resource types in your inventory.</span>
+            Cost Control shows all 16 supported resource types.
           </p>
           <Link href="/settings/billing/upgrade" className="ml-4 shrink-0 rounded-lg bg-blue-600 px-4 py-1 text-label text-white no-underline">
             Upgrade →

@@ -77,7 +77,7 @@ describe('/anomalies while detection is inactive', () => {
 
     expect(rulesHeader().textContent).toContain('2 rules saved · not running yet')
     expect(rulesHeader().textContent).toContain('Coming soon')
-    expect(rulesHeader().textContent).toContain('Enterprise')
+    expect(rulesHeader().textContent).toContain('Revenue Protection')
     expect(document.body.textContent).not.toMatch(/rules active/)
   })
 
@@ -85,7 +85,7 @@ describe('/anomalies while detection is inactive', () => {
     render(<AnomaliesPage />)
     await screen.findByText('No anomalies recorded')
 
-    expect(rulesHeader().textContent).toContain('Enterprise')
+    expect(rulesHeader().textContent).toContain('Revenue Protection')
     expect(rulesHeader().textContent).toContain('Coming soon')
     expect(rulesHeader().textContent).toContain('0 rules saved · not running yet')
     expect(within(rulesHeader().parentElement!.parentElement!).getByRole('button', { name: /New Rule/ })).toBeInTheDocument()

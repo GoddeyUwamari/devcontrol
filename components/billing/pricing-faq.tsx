@@ -8,7 +8,6 @@ import {
   XCircle,
   FileText,
   AlertCircle,
-  Tag,
   Clock,
   Shield,
   RotateCcw,
@@ -16,6 +15,9 @@ import {
   CalendarDays,
   Headphones,
 } from 'lucide-react';
+import { useTrialOn } from '@/components/billing/trial-line';
+import { annual, formatUsd, plan } from '@/lib/plan/plan-catalog';
+import { PLAN_NAME } from '@/lib/plan/plan-names';
 
 interface FAQItem {
   icon: React.ElementType;
@@ -23,83 +25,92 @@ interface FAQItem {
   answer: string;
 }
 
-const faqs: FAQItem[] = [
-  {
-    icon: RefreshCw,
-    question: 'Can I change plans anytime?',
-    answer:
-      'Yes, upgrade or downgrade anytime from your account settings. Changes take effect immediately. Upgrades are prorated for the remainder of your billing cycle, and downgrades apply at the end of your current billing period. No penalties or fees.',
-  },
-  {
-    icon: Clock,
-    question: 'What happens after my free trial?',
-    answer:
-      "After your 14-day free trial, your account automatically converts to your chosen paid plan. You'll receive email reminders before the trial ends. If you don't want to continue, simply cancel before the trial ends - no charge.",
-  },
-  {
-    icon: RotateCcw,
-    question: 'Do you offer refunds?',
-    answer:
-      "Yes! We offer a 14-day money-back guarantee on all paid plans, no questions asked. If you're not satisfied within the first 14 days of your subscription, contact support for a full refund.",
-  },
-  {
-    icon: CreditCard,
-    question: 'What payment methods do you accept?',
-    answer:
-      'We accept all major credit cards (Visa, MasterCard, American Express, Discover) through Stripe. For Enterprise plans, we also offer ACH bank transfers and invoicing with NET-30 terms.',
-  },
-  {
-    icon: Headphones,
-    question: 'Is support included?',
-    answer:
-      'Yes! All plans include support. Free tier gets community support. Starter includes email support (24hr response). Pro gets priority support (4hr response) plus Slack integration. Enterprise includes a dedicated account manager and 24/7 priority support.',
-  },
-  {
-    icon: FileText,
-    question: "What's included in the 14-day free trial?",
-    answer:
-      "Full access to all features of your chosen plan for 14 days. No credit card required to start. Connect your AWS account, explore all features, and see real cost savings opportunities. If you need more time, just ask - we're happy to extend.",
-  },
-  {
-    icon: CalendarDays,
-    question: 'How does annual billing work?',
-    answer:
-      "Pay annually and save 20% compared to monthly billing. You'll receive a single invoice for the full year. Annual subscriptions can be cancelled anytime, with a prorated refund for unused months.",
-  },
-  {
-    icon: Download,
-    question: 'Can I export my data?',
-    answer:
-      'Yes, export all your data anytime in CSV or JSON format. We believe in data portability. Starter plans and above include export functionality. You can also access your data via API on Enterprise plans.',
-  },
-  {
-    icon: XCircle,
-    question: 'Can I cancel anytime?',
-    answer:
-      'Absolutely. Cancel your subscription at any time from your account settings. No cancellation fees, no penalties. Your access continues until the end of your billing period. You can reactivate anytime.',
-  },
-  {
-    icon: AlertCircle,
-    question: 'What happens if I exceed my resource limit?',
-    answer:
-      "We'll send you email notifications as you approach your limit. You can either upgrade or remove resources - we never charge surprise overage fees. You have full control over when to upgrade.",
-  },
-  {
-    icon: Tag,
-    question: 'Do you offer discounts for startups or nonprofits?',
-    answer:
-      'Yes! Early-stage startups (< 2 years, < $1M funding) and registered nonprofits get up to 50% off for the first year. Contact sales@devcontrol.app with your details.',
-  },
-  {
-    icon: Shield,
-    question: 'How secure is my AWS data?',
-    answer:
-      "DevControl uses read-only IAM roles - we never store your AWS credentials. All data is encrypted at rest (AES-256) and in transit (TLS 1.3). We have initiated SOC 2 readiness planning (not an independent audit or certification). Your infrastructure data never leaves our secure environment.",
-  },
-];
+/** Annual figures, computed from the catalog prices (never typed). */
+function annualAnswer(): string {
+  const starter = annual('starter');
+  const pro = annual('pro');
+  if (!starter || !pro) throw new Error('Annual prices missing from the plan catalog');
+  const percent = Math.round((starter.savingPerYear / ((plan('starter').monthly ?? 0) * 12)) * 100);
+  const months = 12 - starter.monthsFree;
+  return `Annual billing costs the same as ${months} months: ${formatUsd(starter.total)} a year for ${PLAN_NAME.starter} and ${formatUsd(pro.total)} for ${PLAN_NAME.pro}, about ${percent}% less than monthly. You get one invoice for the year. If you cancel, your plan stays active until the end of the paid year; unused months aren't refunded automatically.`;
+}
+
+/** The pricing FAQ. Trial questions appear only while the trial is on (GET /api/billing/offer). */
+export function pricingFaqs(trial: { on: boolean; days: number; plans: string }): FAQItem[] {
+  const items: (FAQItem | null)[] = [
+    {
+      icon: RefreshCw,
+      question: 'Can I change plans anytime?',
+      answer:
+        'Yes. An organization owner or admin can change plans from Billing settings. Changes take effect immediately: an upgrade adds a prorated charge and a downgrade a prorated credit to your next invoice. No penalties or fees.',
+    },
+    trial.on ? {
+      icon: Clock,
+      question: 'What happens after my free trial?',
+      answer:
+        `When the ${trial.days}-day trial ends, your plan continues and your card is charged, unless you cancel before then. Cancel before the trial ends and you aren't charged.`,
+    } : null,
+    {
+      icon: RotateCcw,
+      question: 'Do you offer refunds?',
+      answer:
+        "If a charge looks wrong, email support@getdevcontrol.com within 14 days of it and we'll review it. Unused time in a billing period isn't refunded automatically.",
+    },
+    {
+      icon: CreditCard,
+      question: 'What payment methods do you accept?',
+      answer:
+        `We accept all major credit cards (Visa, MasterCard, American Express, Discover) through Stripe. For ${PLAN_NAME.enterprise}, we can also invoice you; talk to us.`,
+    },
+    {
+      icon: Headphones,
+      question: 'Is support included?',
+      answer:
+        `Yes. ${PLAN_NAME.free} includes community support (Slack). ${PLAN_NAME.starter} adds email support. ${PLAN_NAME.pro} adds priority email support. ${PLAN_NAME.enterprise} adds a named support contact; talk to us about an SLA.`,
+    },
+    trial.on ? {
+      icon: FileText,
+      question: `What's included in the ${trial.days}-day free trial?`,
+      answer:
+        `Everything in the plan you choose, for ${trial.days} days, on ${trial.plans.replace(' and ', ' or ')}. A card is required; you're charged when the trial ends unless you cancel.`,
+    } : null,
+    {
+      icon: CalendarDays,
+      question: 'How does annual billing work?',
+      answer: annualAnswer(),
+    },
+    {
+      icon: Download,
+      question: 'Can I export my data?',
+      answer:
+        `${PLAN_NAME.starter} and above can export the resource inventory, with each resource's estimated monthly cost, as CSV or PDF. API access is coming soon.`,
+    },
+    {
+      icon: XCircle,
+      question: 'Can I cancel anytime?',
+      answer:
+        'Absolutely. Cancel your subscription at any time from your account settings. No cancellation fees, no penalties. Your access continues until the end of your billing period. You can reactivate anytime.',
+    },
+    {
+      icon: AlertCircle,
+      question: 'What happens if I exceed my resource limit?',
+      answer:
+        "You're never charged automatically for going over. Once you're over your plan's resource limit, the inventory asks you to upgrade, and DevControl keeps discovering every resource. Email warnings as you approach the limit are coming soon.",
+    },
+    {
+      icon: Shield,
+      question: 'How secure is my AWS data?',
+      answer:
+        'DevControl uses a read-only IAM role, so it never stores AWS access keys. Data is encrypted in transit, and stored credentials and SSO certificates are encrypted at rest (AES-256-GCM). AI features send the relevant data to our AI provider to answer you. We have initiated SOC 2 readiness planning (not an independent audit or certification).',
+    },
+  ];
+  return items.filter((item): item is FAQItem => item !== null);
+}
+
 
 export function PricingFAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const faqs = pricingFaqs(useTrialOn());
 
   const toggleFAQ = (index: number) => {
     setOpenIndex(openIndex === index ? null : index);

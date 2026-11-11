@@ -176,12 +176,12 @@ export default function SLODashboardPage() {
             </>
           ) : (
             <>
-              <h2 className="text-sm font-semibold text-gray-900 mb-2">Enterprise Feature</h2>
+              <h2 className="text-sm font-semibold text-gray-900 mb-2">Revenue Protection feature</h2>
               <p className="text-gray-500 text-sm max-w-md mx-auto mb-6">
-                SLO Dashboard &amp; Management is available on the Enterprise plan — define reliability targets for EC2, ALB, and Lambda and track them against real CloudWatch telemetry.
+                SLO Dashboard &amp; Management is on the Revenue Protection plan — define reliability targets for EC2, ALB, and Lambda and track them against real CloudWatch telemetry.
               </p>
               <Link href="/settings/billing/upgrade" className="inline-block bg-violet-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold no-underline">
-                Upgrade to Enterprise
+                See plans
               </Link>
             </>
           )}
