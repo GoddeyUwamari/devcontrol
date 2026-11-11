@@ -34,6 +34,7 @@ const CORRECTED_FILES = [
   'app/(app)/connect-aws/ConnectedView.tsx',
   'app/(app)/connect-aws/SecurityExplanation.tsx',
   'app/(app)/connect-aws/connectAwsParts.tsx',
+  'app/(app)/connect-aws/ConnectionChecksParts.tsx',
   'app/(app)/enterprise/page.tsx',
   'app/(app)/security/page.tsx',
   'app/(app)/dashboard/page.tsx',
@@ -124,8 +125,8 @@ describe('SOC 2 Readiness messaging — corrected customer-facing surfaces', () 
   // at all, and the prohibited-claim scan above still covers each of them.
   it('the connect-aws page makes no SOC 2 statement (the readiness line moved off the Connect page)', () => {
     const connectFiles = CORRECTED_FILES.filter((f) => f.startsWith('app/(app)/connect-aws/'))
-    // Never vacuous: the page and its five component/copy files are all scanned.
-    expect(connectFiles).toHaveLength(6)
+    // Never vacuous: the page and its six component/copy files are all scanned (PR D1b adds ConnectionChecksParts).
+    expect(connectFiles).toHaveLength(7)
     for (const file of connectFiles) {
       expect(readCode(file), file).not.toMatch(/SOC\s*2/i)
     }

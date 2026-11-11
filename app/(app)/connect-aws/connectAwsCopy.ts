@@ -20,6 +20,10 @@ export const PERMISSION_CHECK_LABELS: Record<string, string> = {
 
 export const PAGE_TITLE = 'Connect your AWS account'
 export const PAGE_SUBTITLE = 'DevControl reads your AWS account through an IAM role you create in it. You control the role and can delete it at any time.'
+/** T1: the title when the page shows an existing connection (connected, ambiguous or loading). */
+export const CONNECTION_PAGE_TITLE = 'AWS connection'
+/** T2: the subtitle when connected; ambiguous and loading have none (T3). */
+export const CONNECTED_PAGE_SUBTITLE = 'DevControl reads this AWS account through the IAM role you created in it. You control the role and can delete it at any time.'
 
 // Board 1: the CloudFormation card (rendered only when connect-init returns launchStack).
 export const CF_RECOMMENDED = 'Recommended'
@@ -86,6 +90,70 @@ export const FACT_PERMISSIONS = 'Permission checks'
 export const permissionsValue = (passed: number, total: number, date: string) => `${passed} of ${total} passed · checked ${date}`
 export const PERMISSIONS_NOTE = 'Six of the permissions DevControl uses. Not a full review of your role.'
 export const FACT_DISCOVERY = 'Discovery'
+
+// Board 4: health and saved checks (AWS connect PR D1, §6.3). {date} is formatScanTime.
+export const FACT_HEALTH = 'Health'
+export const healthOk = (date: string) => `OK · checked ${date}`
+export const healthFailing = (date: string) => `Failing since ${date}`
+export const healthLost = (date: string) => `Lost · failing since ${date}`
+const LAST_RESULT_LABELS = { ok: 'OK', failing: 'Failing', lost: 'Lost' } as const
+export const healthStale = (lastResult: keyof typeof LAST_RESULT_LABELS, date: string) =>
+  `Not checked recently · last result ${LAST_RESULT_LABELS[lastResult]} on ${date}`
+export const HEALTH_NOT_CHECKED_YET = 'Not checked yet. DevControl checks at each scan.'
+export const HEALTH_FAILING_HELP = "DevControl couldn't assume your role during its scans. If the role, its trust policy or its External ID changed in AWS, fix it there, then use Check again. DevControl keeps this connection until you ask us to remove it."
+export const HEALTH_STALE_HELP = "DevControl hasn't been able to finish a check for a while. This isn't necessarily a problem with your role."
+export const PERMISSIONS_NOT_SAVED = 'Not saved for this connection yet.'
+export const PERMISSIONS_NOT_SAVED_OWNER = 'Not saved for this connection yet. Use Check again to run them.'
+export const ROLE_REPLACED = 'The role at this ARN was replaced in AWS after it was connected: it has a new role ID. DevControl can assume it. Use Check again to review its permissions.'
+
+// Check again (§6.4, B7). Only the owner sees the button.
+export const CHECK_AGAIN = 'Check again'
+export const CHECK_AGAIN_NOTE = 'Runs the six checks and the policy comparison again. One check is a Cost Explorer request, which AWS bills to your account at USD 0.01.'
+export const availableAgainAt = (time: string) => `Available again at ${time}`
+export const CHECK_AGAIN_ROLE_REFUSED = "DevControl couldn't assume your role. Its health on this page now shows the failure."
+export const CHECK_AGAIN_CAUSES_TITLE = "AWS didn't allow DevControl to assume the role. Possible causes include:"
+export const CHECK_AGAIN_CAUSE_DELETED = 'The role was deleted or renamed in IAM.'
+export const CHECK_AGAIN_CAUSE_TRUST = "Its trust policy no longer allows DevControl's AWS account."
+/** Owner only: the External ID is in GET /accounts for the owner alone. */
+export const checkAgainCauseExternalId = (externalId: string) => `Its External ID condition isn't exactly ${externalId} anymore.`
+export const CHECK_AGAIN_CAUSES_FOOT = "AWS gives DevControl the same answer for each of these, so DevControl can't tell which one applies. Your connection stays as it is."
+
+// Board 5: the role's policies (§6.5).
+export const POLICIES_TITLE = "Your role's policies"
+export const policiesTitleChecked = (date: string) => `${POLICIES_TITLE} · checked ${date}`
+export const POLICY_SECURITY_AUDIT_ATTACHED = 'SecurityAudit attached'
+export const POLICY_SECURITY_AUDIT_MISSING = 'SecurityAudit not attached'
+export const POLICY_VIEW_ONLY_ATTACHED = 'ViewOnlyAccess attached'
+export const POLICY_VIEW_ONLY_MISSING = 'ViewOnlyAccess not attached'
+export const POLICY_READ_EXTRAS_MATCHES = 'DevControlReadExtras matches the current version'
+export const POLICY_READ_EXTRAS_DIFFERS = 'DevControlReadExtras differs from the current version'
+export const POLICY_READ_EXTRAS_MISSING = 'No inline policy named DevControlReadExtras'
+export const POLICY_READ_EXTRAS_UNREADABLE = "DevControlReadExtras couldn't be read. Reading it needs SecurityAudit."
+export const POLICY_READ_ONLY_ACCESS = 'ReadOnlyAccess attached: it works, but allows more than DevControl needs. To narrow it, attach the three policies above, then detach ReadOnlyAccess.'
+/** P9, with the founder's natural forms for a count without names and for one policy (2026-11-11). */
+export function policiesAlsoAttached(names: readonly string[], otherCount: number): string {
+  const others = otherCount === 1 ? '1 other policy' : `${otherCount} other policies`
+  if (names.length === 0) return `Also attached: ${others}`
+  return `Also attached: ${names.join(', ')}${otherCount > 0 ? `, and ${others}` : ''}`
+}
+export const POLICIES_UNREADABLE = "DevControl couldn't read this role's policies. AWS refused the IAM calls SecurityAudit and ViewOnlyAccess allow, so they may not be attached."
+export const POLICIES_NOT_COMPARED = 'Not compared yet.'
+export const POLICIES_NOT_COMPARED_OWNER = 'Not compared yet. Use Check again.'
+
+// Refused sources (§6.6): the 8 listings a scan saves.
+export const refusedTitle = (date: string) => `Refused during the scan on ${date}`
+export const REFUSED_SOURCE_LABELS: Readonly<Record<string, string>> = {
+  ec2: 'EC2 instances',
+  ebs: 'EBS volumes',
+  rds: 'RDS databases',
+  s3: 'S3 buckets',
+  lambda: 'Lambda functions',
+  'load-balancer': 'Load balancers',
+  cloudfront: 'CloudFront distributions',
+  'resource-explorer': 'Resource Explorer search',
+}
+export const refusedLine = (label: string, action: string) =>
+  `${label} (${action}): AWS refused this listing, so DevControl couldn't read these resources.`
 export const FOUND_TITLE = 'What DevControl found'
 export const TABLE_SCOPE = 'Scope'
 export const TABLE_RESOURCES = 'Resources'
@@ -176,7 +244,7 @@ export const SEC_CREDENTIALS_LEAD = 'Short-lived credentials.'
 export const SEC_CREDENTIALS = "DevControl doesn't ask for access keys. It uses short-lived credentials from your role, with a configured maximum of one hour."
 export const SEC_REMOVE_LEAD = 'Remove access.'
 export const SEC_REMOVE = 'Delete the role in IAM. DevControl can then no longer assume it. Credentials it already holds stop working when they expire, with a configured maximum of one hour.'
-export const SEC_ROLE_DELETED = "Deleting the role in AWS doesn't remove your connection in DevControl."
+export const SEC_ROLE_DELETED = "Deleting the role in AWS doesn't remove your connection in DevControl. This page then shows its health as failing, then lost."
 export const SEC_DATA_BEFORE = 'DevControl keeps the data it already collected. '
 export const SEC_DATA_LINK = 'Contact us'
 export const SEC_DATA_AFTER = " and we'll delete it."

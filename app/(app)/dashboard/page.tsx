@@ -29,7 +29,7 @@ import { monitoringService } from '@/lib/services/monitoring.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
 import { computeAwsConnectionState } from './dashboardAwsConnection'
-import { parseAwsConnection, type AwsAccountsAndConnection } from '@/lib/services/aws-accounts.service'
+import { parseAwsConnection, parseConnectionHealth, type AwsAccountsAndConnection } from '@/lib/services/aws-accounts.service'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
 import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLine, resourceIssueCount, SECURITY_STATUS_BADGE, securityKpiCaption, securityScopeCaption } from './securityHealthKpi'
 import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
@@ -275,7 +275,8 @@ export default function DashboardPage() {
       const json = await res.json()
       if (!Array.isArray(json?.data)) throw new Error('The AWS accounts response was not a list')
       // The server's own connection state (parseAwsConnection), never the row count.
-      return { accounts: json.data, connection: parseAwsConnection(json.connection, json.data) }
+      // `connection.health` (AWS connect PR D1) for the pill; null from a server without it.
+      return { accounts: json.data, connection: parseAwsConnection(json.connection, json.data), health: parseConnectionHealth(json.connection) }
     },
     // One retry, so a single transient failure is not reported as "couldn't check".
     staleTime: 30000, retry: 1,
@@ -590,6 +591,7 @@ export default function DashboardPage() {
         <DashboardHero
           awsConnection={awsConnection}
           canConnectAws={isOwner}
+          awsHealth={isDemoActive ? null : awsAccounts?.health?.state ?? null}
           orgName={orgName}
           lastSynced={isDemoActive ? DEMO_LAST_SYNCED : null}
         />
