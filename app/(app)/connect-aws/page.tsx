@@ -26,6 +26,7 @@ import {
   SIDE_SECURITY_TITLE,
   SUPPORT_MAILTO,
 } from './connectAwsCopy'
+import { CONNECTION_CHECKS_KEY } from './ConnectionChecksParts'
 import { ConnectSetup } from './ConnectSetup'
 import { ConnectedView, type JustConnected } from './ConnectedView'
 import { DisconnectSentence } from './connectAwsParts'
@@ -106,6 +107,8 @@ export default function ConnectAwsPage() {
     // pre-connection (empty) stats for up to 4 hours.
     queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] })
     queryClient.invalidateQueries({ queryKey: ['services-coverage'] })
+    // The saved checks of this new connection, never a cached "no checks yet" (review L-2).
+    queryClient.invalidateQueries({ queryKey: [CONNECTION_CHECKS_KEY] })
     toast.success(CONNECTED_TOAST)
   }
 

@@ -15,6 +15,7 @@ import { formatScanTime } from '../../services/coverage'
 import { formatAvailableTime } from '../ConnectionChecksParts'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
 import { expectNoRemovedText } from './removedText'
+import { queryClient as appQueryClient } from '@/lib/query-client'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/gtag', () => ({ trackLeadQualified: vi.fn() }))
@@ -224,6 +225,36 @@ describe('saved permission checks', () => {
     expect(screen.queryByTestId('permission-warnings')).toBeNull()
   })
 
+  it.each([
+    ['an empty list', []],
+    ['only statuses the page does not know (dropped by the parser)', [{ action: 'ec2:DescribeRegions', status: 'pending' }]],
+  ] as const)('saved with %s: F10, never "0 of 0" (review L-7)', async (_name, list) => {
+    serveChecks({ ...checks({ permissionCheck: { checks: list, checkedAt: ago(HOUR), trigger: 'scan' } }), ...OWNER })
+    renderPage()
+    expect((await screen.findByTestId('fact-permissions')).textContent).toBe('Permission checksNot saved for this connection yet. Use Check again to run them.')
+    expect(document.body.textContent).not.toMatch(/0 of 0/)
+    expect(screen.queryByTestId('permission-warnings')).toBeNull()
+  })
+
+  it('a connect response with an empty list: no "0 of 0" while the saved checks load, then F10', async () => {
+    accountsBody = { success: true, data: [], connection: { state: 'not_connected' } }
+    let release: (value: unknown) => void = () => {}
+    checksAnswer = () => new Promise((resolve) => { release = resolve })
+    mockPost.mockResolvedValue({ data: { success: true, data: ACCOUNT, permissionCheck: { checks: [] }, message: 'AWS account connected successfully' } })
+    renderPage()
+    await screen.findAllByTestId('external-id-field')
+    fireEvent.change(screen.getByPlaceholderText(/arn:aws:iam::YOUR_ACCOUNT_ID/i), { target: { value: 'arn:aws:iam::123456789012:role/DevControlRole' } })
+    const button = screen.getByRole('button', { name: 'Connect account' })
+    await waitFor(() => expect(button).not.toBeDisabled())
+    fireEvent.click(button)
+    await screen.findByTestId('connected-view')
+    expect(screen.queryByTestId('fact-permissions')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/0 of 0/)
+    release({ data: { success: true, data: { ...checks({ permissionCheck: null }), ...OWNER } } })
+    await waitFor(() => expect(screen.getByTestId('fact-permissions').textContent).toBe('Permission checksNot saved for this connection yet. Use Check again to run them.'))
+    expect(document.body.textContent).not.toMatch(/0 of 0/)
+  })
+
   it('right after a connect: the connect result until the saved checks arrive, then the saved one', async () => {
     // Made before the page mounts: its relative time is read once, at mount.
     const savedAt = ago(1 * MIN)
@@ -244,6 +275,48 @@ describe('saved permission checks', () => {
     release({ data: { success: true, data: { ...checks({ permissionCheck: { checks: CE_DENIED, checkedAt: savedAt, trigger: 'connect' } }), ...OWNER } } })
     await waitFor(() => expect(screen.getByTestId('fact-permissions').textContent).toBe(`Permission checks5 of 6 passed · checked ${at(savedAt)}`))
     expect(await healthFact()).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Freshness of the cached checks (review L-2)
+// ---------------------------------------------------------------------------
+
+/** A client with the app's real query defaults (lib/query-client.ts: staleTime 5 min), retries off. */
+const appClient = () => new QueryClient({ defaultOptions: { queries: { ...appQueryClient.getDefaultOptions().queries, retry: false } } })
+
+describe('the saved checks are never served stale from the cache (review L-2)', () => {
+  it('the app default really is a 5-minute staleTime (so the next test is not vacuous)', () => {
+    expect(appQueryClient.getDefaultOptions().queries?.staleTime).toBe(5 * 60 * 1000)
+  })
+
+  it('a revisit within 5 minutes refetches: the Health fact shows the new state, not the cached one', async () => {
+    const client = appClient()
+    const first = renderPage(client)
+    expect((await screen.findByTestId('health-value')).textContent).toMatch(/^OK · checked /)
+    first.unmount()
+
+    const failingSince = ago(26 * HOUR)
+    serveChecks({ ...checks({ health: { state: 'failing', lastResult: 'failing', checkedAt: ago(MIN), failingSince, lostAt: null } }), ...OWNER })
+    renderPage(client)
+    await waitFor(() => expect(screen.getByTestId('health-value').textContent).toBe(`Failing since ${at(failingSince)}`))
+    expect(mockGet.mock.calls.filter(([url]) => url === '/api/aws/accounts/checks')).toHaveLength(2)
+  })
+
+  it('a successful connect invalidates the saved checks', async () => {
+    const client = appClient()
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    accountsBody = { success: true, data: [], connection: { state: 'not_connected' } }
+    mockPost.mockResolvedValue({ data: { success: true, data: ACCOUNT, permissionCheck: { checks: ALL_VERIFIED }, message: 'AWS account connected successfully' } })
+    renderPage(client)
+    await screen.findAllByTestId('external-id-field')
+    fireEvent.change(screen.getByPlaceholderText(/arn:aws:iam::YOUR_ACCOUNT_ID/i), { target: { value: 'arn:aws:iam::123456789012:role/DevControlRole' } })
+    const button = screen.getByRole('button', { name: 'Connect account' })
+    await waitFor(() => expect(button).not.toBeDisabled())
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['aws-connection-checks'] })
+    fireEvent.click(button)
+    await screen.findByTestId('connected-view')
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['aws-connection-checks'] })
   })
 })
 

@@ -426,15 +426,15 @@ describe('Connect AWS page: checking and connected', () => {
 })
 
 describe('Connect AWS page: cache invalidation', () => {
-  it('T14 success invalidates aws-accounts, platform-dashboard-stats and services-coverage, and nothing else', async () => {
+  it('T14 success invalidates aws-accounts, platform-dashboard-stats, services-coverage and the saved checks (PR D1, review L-2), and nothing else', async () => {
     mockConnect.mockResolvedValue({ account: ACCOUNT, permissionCheck: { checks: ALL_VERIFIED } })
     const client = queryClient()
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries')
     renderPage(client)
     fireEvent.click(await fillValidRoleArnAndGetButton())
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(4))
     const keys = invalidateSpy.mock.calls.map((call) => (call[0] as { queryKey: unknown[] }).queryKey)
-    expect(keys).toEqual([['aws-accounts'], ['platform-dashboard-stats'], ['services-coverage']])
+    expect(keys).toEqual([['aws-accounts'], ['platform-dashboard-stats'], ['services-coverage'], ['aws-connection-checks']])
   })
 
   it('T14 a failed connect invalidates nothing', async () => {

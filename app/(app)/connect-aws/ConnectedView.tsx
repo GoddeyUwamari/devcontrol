@@ -115,6 +115,9 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
     queryKey: [CONNECTION_CHECKS_KEY, orgId],
     queryFn: () => awsAccountsService.getConnectionChecks(),
     enabled: !!orgId,
+    // Not the app's 5-minute default: the server computes staleness at each read, so every mount
+    // refetches and the Health fact is never older than the page (review L-2).
+    staleTime: 0,
     refetchOnWindowFocus: false,
   })
   const saved = checksQuery.data ?? null
@@ -123,9 +126,10 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
   const health = saved ? healthView(saved.health, now) : null
 
   // The saved permission check after a reload; the connect response's until the saved one exists.
-  const permission = saved?.permissionCheck
+  // An empty list counts as no result (F10), so "0 of 0 passed" is never shown (review L-7).
+  const permission = saved?.permissionCheck?.checks.length
     ? { checks: saved.permissionCheck.checks, at: saved.permissionCheck.checkedAt }
-    : justConnected?.permissionCheck
+    : justConnected?.permissionCheck?.checks.length
       ? { checks: justConnected.permissionCheck.checks, at: justConnected.receivedAt }
       : null
   const checks = permission?.checks ?? null
