@@ -66,13 +66,13 @@ export const parentPaths: Record<string, { label: string; href?: string }[]> = {
   '/recommendations':  [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/tenants':          [{ label: 'Infrastructure', href: '/infrastructure' }],
   '/infrastructure/new':             [],
-  '/status':           [{ label: 'Observability',  href: '/observability'  }],
-  '/app/dora-metrics': [{ label: 'DevOps',         href: '/devops'         }],
-  '/dora-metrics':     [{ label: 'DevOps',         href: '/devops'         }],
+  '/status':           [{ label: 'Observability' }], // no standalone /observability page — non-clickable
+  '/app/dora-metrics': [{ label: 'DevOps' }], // no standalone /devops page — non-clickable
+  '/dora-metrics':     [{ label: 'DevOps' }],
   '/connect-aws':      [],
-  '/teams':            [{ label: 'DevOps', href: '/devops' }],
-  '/enterprise':       [{ label: 'DevOps', href: '/devops' }],
-  '/developers':       [{ label: 'DevOps', href: '/devops' }],
+  '/teams':            [{ label: 'DevOps' }],
+  '/enterprise':       [{ label: 'DevOps' }],
+  '/developers':       [{ label: 'DevOps' }],
   '/remediation':      [{ label: 'DevOps' }], // no standalone /devops page — non-clickable
   '/cost-optimization': [{ label: 'Costs', href: '/costs' }],
   '/forecast':          [{ label: 'Costs', href: '/costs' }],

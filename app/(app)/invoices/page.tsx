@@ -162,7 +162,7 @@ export default function InvoicesPage() {
         <div className="flex items-center gap-2 text-meta text-ink-muted py-2.5 border-b border-slate-100 mb-5">
           <span className={`w-2 h-2 rounded-full shrink-0 ${displayError ? 'bg-amber-400' : 'bg-green-500'}`} />
           {displayError
-            ? 'Billing data sync issue · Last successful sync: unavailable · Next retry in ~5 minutes'
+            ? 'Invoices aren\'t shown on this page yet'
             : `Billing data synced · Last updated: ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
         </div>
       )}

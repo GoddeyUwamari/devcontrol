@@ -4,7 +4,8 @@
  * public/. mailto:, tel:, http(s) and #anchors are not checked.
  *
  * Found by this scan (CAT-3): /support, /privacy, /terms, /billing,
- * /docs/pricing and /admin/alerts, all fixed. KNOWN_DEAD holds the dead links
+ * /docs/pricing, /admin/alerts, the /devops and /observability breadcrumbs
+ * and the failed-deployment /logs and /rollback links, all fixed. KNOWN_DEAD holds the dead links
  * owned by other work, each with its owner; it may only shrink.
  */
 import { describe, it, expect } from 'vitest'
@@ -24,16 +25,6 @@ const KNOWN_DEAD: Record<string, { link: string; owner: string }> = {
   'components/deployments/DeploymentIntegrations.tsx:116': { link: '/settings/integrations', owner: 'unrendered file, CAT-2 / CAT-D10' },
   'components/deployments/DeploymentIntegrations.tsx:132': { link: '/settings/integrations', owner: 'unrendered file, CAT-2 / CAT-D10' },
   'components/deployments/DeploymentSetupChecklist.tsx:46': { link: '/settings/integrations', owner: 'unrendered file, CAT-2 / CAT-D10' },
-  'app/(app)/deployments/page.tsx:542': { link: '/deployments/__DYN__/logs', owner: 'found in the CAT-3 build; awaiting founder decision' },
-  'app/(app)/deployments/page.tsx:543': { link: '/deployments/__DYN__/rollback', owner: 'found in the CAT-3 build; awaiting founder decision' },
-  'app/(app)/deployments/page.tsx:580': { link: '/deployments/__DYN__/logs', owner: 'found in the CAT-3 build; awaiting founder decision' },
-  'app/(app)/deployments/page.tsx:581': { link: '/deployments/__DYN__/rollback', owner: 'found in the CAT-3 build; awaiting founder decision' },
-  'lib/hooks/useBreadcrumbs.ts:69': { link: '/observability', owner: 'breadcrumb; found in the CAT-3 build; awaiting founder decision' },
-  'lib/hooks/useBreadcrumbs.ts:70': { link: '/devops', owner: 'breadcrumb; found in the CAT-3 build; awaiting founder decision' },
-  'lib/hooks/useBreadcrumbs.ts:71': { link: '/devops', owner: 'breadcrumb; found in the CAT-3 build; awaiting founder decision' },
-  'lib/hooks/useBreadcrumbs.ts:73': { link: '/devops', owner: 'breadcrumb; found in the CAT-3 build; awaiting founder decision' },
-  'lib/hooks/useBreadcrumbs.ts:74': { link: '/devops', owner: 'breadcrumb; found in the CAT-3 build; awaiting founder decision' },
-  'lib/hooks/useBreadcrumbs.ts:75': { link: '/devops', owner: 'breadcrumb; found in the CAT-3 build; awaiting founder decision' },
 }
 
 function walk(dir: string, keep: (f: string) => boolean, out: string[] = []): string[] {
