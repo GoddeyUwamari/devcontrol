@@ -34,13 +34,13 @@
         "Estimated savings: $5.17/month across 1 open finding. This is a DevControl estimate, not realized savings."
       ],
       [
-        "2 more open findings have no dollar estimate yet."
-      ],
-      [
         "Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above)."
       ],
       [
         "Plus up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)."
+      ],
+      [
+        "2 more open findings have no dollar estimate yet."
       ],
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."

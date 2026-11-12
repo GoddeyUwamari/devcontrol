@@ -37,15 +37,15 @@ const SOURCE = OVERVIEW_COPY.savingsSource
 describe('savings: estimate > 0', () => {
   const base = { totalRecommendations: 5, activeRecommendations: 5, totalPotentialSavings: 5.17, potentialSavingsByResourceType: { EBS: 5.17 } }
 
-  it('with the API counts: "across N", "K more … no dollar estimate yet", then the upper bounds; green', () => {
+  it('with the API counts: "across N", then the upper bounds, then "K more … no dollar estimate yet" (the weekly email\'s order); green', () => {
     const s = savingsOf({ ...base, potentialSavingsCeilingByResourceType: { S3: 0.01, DynamoDB: 0.02 }, estimatedFindings: 1, unestimatedFindings: 2 })
     expect(s.value).toBe('$5.17/month')
     expect(s.tone).toBe('success')
     expect(lines(s.captions)).toEqual([
       'Estimated savings: $5.17/month across 1 open finding. This is a DevControl estimate, not realized savings.',
-      '2 more open findings have no dollar estimate yet.',
       'Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above).',
       'Plus up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above).',
+      '2 more open findings have no dollar estimate yet.',
       SOURCE,
     ])
   })

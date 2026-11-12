@@ -527,12 +527,13 @@ export function describeOpenSavings(
     const amount = `${formatUsd(total)}/month`
     const across = typeof estimatedFindings === 'number' && estimatedFindings > 0 ? ` across ${findings(estimatedFindings)}` : ''
     captions.push([`Estimated savings: ${amount}${across}. This is a DevControl estimate, not realized savings.`])
+    // The weekly email's order: the estimate, its upper bounds, then the findings with no figure.
+    for (const line of describeCeilings(ceilings, formatUsd, 'month')) captions.push([`${line}.`])
     if (typeof unestimatedFindings === 'number' && unestimatedFindings > 0) {
       captions.push([unestimatedFindings === 1
         ? '1 more open finding has no dollar estimate yet.'
         : `${unestimatedFindings} more open findings have no dollar estimate yet.`])
     }
-    for (const line of describeCeilings(ceilings, formatUsd, 'month')) captions.push([`${line}.`])
     captions.push([OVERVIEW_COPY.savingsSource])
     return { value: amount, tone: 'success', captions }
   }
