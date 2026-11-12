@@ -403,6 +403,39 @@ describe('SAML callback -- valid SSO + active membership', () => {
     expect(result.succeeded).toBe(true);
     expect(result.token?.userId).toBe(org.member.id);
   });
+
+  it('records the sign-in like password login: previous_login_at takes the old last_login_at (DB-D8)', async () => {
+    const org = await ssoOrg();
+    const signIn = async () => {
+      const requestId = await initiate(org.orgId);
+      const result = await postCallback(org.orgId, buildResponse(org.orgId, { email: org.member.email, inResponseTo: requestId }));
+      expect(result.succeeded).toBe(true);
+    };
+    const logins = async () => (await pool.query(
+      `SELECT last_login_at::text AS last, previous_login_at::text AS previous, last_login_at > previous_login_at AS ordered
+         FROM users WHERE id = $1`,
+      [org.member.id]
+    )).rows[0];
+
+    expect(await logins()).toEqual({ last: null, previous: null, ordered: null });
+    await signIn(); // first-ever sign-in
+    const first = await logins();
+    expect(first.last).not.toBeNull();
+    expect(first.previous).toBeNull();
+
+    await signIn(); // second sign-in
+    const second = await logins();
+    expect(second.previous).toBe(first.last);
+    expect(second.ordered).toBe(true);
+
+    // A rejected callback (replayed response) changes neither column.
+    const requestId = await initiate(org.orgId);
+    const response = buildResponse(org.orgId, { email: org.member.email, inResponseTo: requestId });
+    expect((await postCallback(org.orgId, response)).succeeded).toBe(true);
+    const third = await logins();
+    expectRejected(await postCallback(org.orgId, response));
+    expect(await logins()).toEqual(third);
+  });
 });
 
 // ─── Protocol: replay, InResponseTo, addressing, signature, audience, time ─
