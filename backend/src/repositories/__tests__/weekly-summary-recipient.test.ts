@@ -1,7 +1,8 @@
 /**
- * Weekly Summary recipient eligibility (R), against real Postgres.
+ * Weekly Summary recipient eligibility (R) and organization paging (WE-3a),
+ * against real Postgres.
  *
- * getUserInfo() and getActiveOrganizations() run their actual SQL on one
+ * getRecipients() and getActiveOrganizationsPage() run their actual SQL on one
  * dedicated connection whose session-local TEMP tables (users,
  * organizations, organization_memberships) shadow the real ones -- pg_temp
  * is searched first for unqualified names. That keeps the fixture to the
@@ -16,7 +17,7 @@
  */
 import { Pool, PoolClient } from 'pg';
 import { pool as appPool } from '../../config/database';
-import { WeeklySummaryRepository } from '../weekly-summary.repository';
+import { WeeklySummaryRepository, WEEKLY_SUMMARY_ORG_PAGE_SIZE } from '../weekly-summary.repository';
 
 let client: PoolClient;
 let repository: WeeklySummaryRepository;
@@ -44,6 +45,9 @@ const ACCEPTED_OWNER = 'b0000000-0000-4000-8000-000000000006';
 const INACTIVE_OWNER = 'b0000000-0000-4000-8000-000000000007';
 const DELETED_ORG_OWNER = 'b0000000-0000-4000-8000-000000000008';
 const DELETED_USER = 'b0000000-0000-4000-8000-000000000009';
+/** Opted in and verified, but an admin and a member of ORG_ELIGIBLE: never recipients (WE-D7). */
+const ELIGIBLE_ORG_ADMIN = 'b0000000-0000-4000-8000-00000000000a';
+const ELIGIBLE_ORG_MEMBER = 'b0000000-0000-4000-8000-00000000000b';
 
 beforeAll(async () => {
   client = await appPool.connect();
@@ -79,9 +83,12 @@ beforeAll(async () => {
        ($8, 'accepted@example.test', 'Accepted Owner', true, true, NULL),
        ($9, 'inactive@example.test', 'Inactive Owner', true, true, NULL),
        ($10, 'deleted-org-owner@example.test', 'Deleted Org Owner', true, true, NULL),
-       ($11, 'deleted-user@example.test', 'Deleted User', true, true, '2026-09-01')`,
+       ($11, 'deleted-user@example.test', 'Deleted User', true, true, '2026-09-01'),
+       ($12, 'admin@example.test', 'Eligible Admin', true, true, NULL),
+       ($13, 'member2@example.test', 'Eligible Member', true, true, NULL)`,
     [OWNER_EARLY, OWNER_LATE, OWNER_OPTED_OUT_EARLIEST, OWNER_OPTED_OUT, OWNER_UNVERIFIED, ELIGIBLE_MEMBER,
-     PENDING_INVITEE, ACCEPTED_OWNER, INACTIVE_OWNER, DELETED_ORG_OWNER, DELETED_USER]
+     PENDING_INVITEE, ACCEPTED_OWNER, INACTIVE_OWNER, DELETED_ORG_OWNER, DELETED_USER,
+     ELIGIBLE_ORG_ADMIN, ELIGIBLE_ORG_MEMBER]
   );
   await client.query(
     `INSERT INTO organization_memberships
@@ -90,6 +97,8 @@ beforeAll(async () => {
        ($1, $2, 'owner', '2026-01-01', '2026-01-01', true, NULL),
        ($1, $3, 'owner', '2026-02-01', '2026-02-01', true, NULL),
        ($1, $4, 'owner', '2025-12-01', '2025-12-01', true, NULL),
+       ($1, $21, 'admin', '2025-11-01', '2025-11-01', true, NULL),
+       ($1, $22, 'member', '2025-11-02', '2025-11-02', true, NULL),
        ($5, $6, 'owner', '2026-01-01', '2026-01-01', true, NULL),
        ($7, $8, 'owner', '2026-01-01', '2026-01-01', true, NULL),
        ($9, $10, 'member', '2026-01-01', '2026-01-01', true, NULL),
@@ -114,9 +123,10 @@ beforeAll(async () => {
       ORG_INACTIVE, INACTIVE_OWNER,
       ORG_DELETED, DELETED_ORG_OWNER,
       ORG_DELETED_USER, DELETED_USER,
+      ELIGIBLE_ORG_ADMIN, ELIGIBLE_ORG_MEMBER,
     ]
   );
-  // getActiveOrganizations() queries this.pool: route it to the same session.
+  // getActiveOrganizationsPage() queries this.pool: route it to the same session.
   repository = new WeeklySummaryRepository({ query: (...args: any[]) => (client.query as any)(...args) } as unknown as Pool);
 });
 
@@ -125,58 +135,144 @@ afterAll(async () => {
   await appPool.end();
 });
 
+const EARLY = { userId: OWNER_EARLY, email: 'early@example.test', fullName: 'Early Owner' };
+const LATE = { userId: OWNER_LATE, email: 'late@example.test', fullName: 'Late Owner' };
+
+/** Every eligible organization, read the way the scheduled run reads them: page after page until a short one. */
+async function allPages(pageSize?: number): Promise<{ ids: string[]; pages: string[][] }> {
+  const pages: string[][] = [];
+  let afterId: string | null = null;
+  for (;;) {
+    const page = await repository.getActiveOrganizationsPage(afterId, pageSize);
+    pages.push(page);
+    if (pages.length > 100) throw new Error('paging did not end');
+    if (page.length < (pageSize ?? WEEKLY_SUMMARY_ORG_PAGE_SIZE)) break;
+    afterId = page[page.length - 1];
+  }
+  return { ids: pages.flat(), pages };
+}
+
 describe('WeeklySummaryRepository recipient eligibility', () => {
-  it('R: selects the earliest-membership opted-in, verified, accepted owner -- deterministically', async () => {
+  it('WE-D7: every opted-in, verified, accepted owner receives it, earliest membership first -- deterministically', async () => {
     for (let i = 0; i < 5; i++) {
-      const info = await repository.getUserInfo(ORG_ELIGIBLE, client);
-      expect(info).toEqual({ userId: OWNER_EARLY, email: 'early@example.test', fullName: 'Early Owner' });
+      expect(await repository.getRecipients(ORG_ELIGIBLE, client)).toEqual([EARLY, LATE]);
     }
   });
 
-  it('R: never selects an owner who opted out, even when they are the earliest owner', async () => {
-    const info = await repository.getUserInfo(ORG_ELIGIBLE, client);
-    expect(info?.userId).not.toBe(OWNER_OPTED_OUT_EARLIEST);
-    expect(await repository.getUserInfo(ORG_OPTED_OUT, client)).toBeNull();
+  it('WE-D7: an owner who opted out is never a recipient, even as the earliest owner; the others still are', async () => {
+    const ids = (await repository.getRecipients(ORG_ELIGIBLE, client)).map(r => r.userId);
+    expect(ids).not.toContain(OWNER_OPTED_OUT_EARLIEST);
+    expect(ids).toEqual([OWNER_EARLY, OWNER_LATE]);
+    expect(await repository.getRecipients(ORG_OPTED_OUT, client)).toEqual([]);
+  });
+
+  it('WE-D7: admins and members are never recipients, even opted in and verified', async () => {
+    const ids = (await repository.getRecipients(ORG_ELIGIBLE, client)).map(r => r.userId);
+    expect(ids).not.toContain(ELIGIBLE_ORG_ADMIN);
+    expect(ids).not.toContain(ELIGIBLE_ORG_MEMBER);
+    expect(await repository.getRecipients(ORG_MEMBER_ONLY, client)).toEqual([]);
   });
 
   it('R: never selects an unverified owner', async () => {
-    expect(await repository.getUserInfo(ORG_UNVERIFIED, client)).toBeNull();
-  });
-
-  it('R: never selects a non-owner member', async () => {
-    expect(await repository.getUserInfo(ORG_MEMBER_ONLY, client)).toBeNull();
+    expect(await repository.getRecipients(ORG_UNVERIFIED, client)).toEqual([]);
   });
 
   it('B2: never selects a pending-invite owner, even when the invitation predates the accepted owner', async () => {
-    const info = await repository.getUserInfo(ORG_PENDING_AND_ACCEPTED, client);
-    expect(info).toEqual({ userId: ACCEPTED_OWNER, email: 'accepted@example.test', fullName: 'Accepted Owner' });
+    expect(await repository.getRecipients(ORG_PENDING_AND_ACCEPTED, client)).toEqual([
+      { userId: ACCEPTED_OWNER, email: 'accepted@example.test', fullName: 'Accepted Owner' },
+    ]);
   });
 
-  it('B2: an org whose only owner is a pending invitation is skipped', async () => {
-    expect(await repository.getUserInfo(ORG_ONLY_PENDING, client)).toBeNull();
+  it('B2: an org whose only owner is a pending invitation has no recipient', async () => {
+    expect(await repository.getRecipients(ORG_ONLY_PENDING, client)).toEqual([]);
   });
 
   it('B2: never selects an owner whose membership is inactive', async () => {
-    expect(await repository.getUserInfo(ORG_INACTIVE, client)).toBeNull();
+    expect(await repository.getRecipients(ORG_INACTIVE, client)).toEqual([]);
   });
 
-  it('B2: a soft-deleted organization is skipped, even with an eligible owner', async () => {
-    expect(await repository.getUserInfo(ORG_DELETED, client)).toBeNull();
+  it('B2: a soft-deleted organization has no recipient, even with an eligible owner', async () => {
+    expect(await repository.getRecipients(ORG_DELETED, client)).toEqual([]);
   });
 
   it('B2: never selects a soft-deleted user', async () => {
-    expect(await repository.getUserInfo(ORG_DELETED_USER, client)).toBeNull();
+    expect(await repository.getRecipients(ORG_DELETED_USER, client)).toEqual([]);
   });
 
-  it('R/B2: getActiveOrganizations applies the same predicates, so every scheduled org has an eligible recipient', async () => {
-    const orgs = await repository.getActiveOrganizations();
-    // ORDER BY o.created_at DESC; every ineligible org above is absent.
-    expect(orgs).toEqual([ORG_PENDING_AND_ACCEPTED, ORG_ELIGIBLE]);
-    for (const org of orgs) expect(await repository.getUserInfo(org, client)).not.toBeNull();
+  it('R/B2: the organization pages apply the same predicates, so every scheduled org has an eligible recipient', async () => {
+    const { ids } = await allPages();
+    // Id order; every ineligible org above is absent.
+    expect(ids).toEqual([ORG_ELIGIBLE, ORG_PENDING_AND_ACCEPTED]);
+    for (const org of ids) expect((await repository.getRecipients(org, client)).length).toBeGreaterThan(0);
   });
 
   it('P: only the requested organization is considered', async () => {
     // The eligible owners of other orgs are never returned for this one.
-    expect(await repository.getUserInfo(ORG_MEMBER_ONLY, client)).toBeNull();
+    expect(await repository.getRecipients(ORG_MEMBER_ONLY, client)).toEqual([]);
+    for (const r of await repository.getRecipients(ORG_PENDING_AND_ACCEPTED, client)) {
+      expect([OWNER_EARLY, OWNER_LATE]).not.toContain(r.userId);
+    }
+  });
+});
+
+describe('WeeklySummaryRepository organization paging (WE-3a)', () => {
+  /** Synthetic bulk organization ids, built at run time. */
+  const bulkId = (prefix: string, n: number) => `${prefix}0000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+  const BULK = 230;
+  const eligibleBulk = Array.from({ length: BULK }, (_, i) => bulkId('e', i + 1));
+  /** Interleaved ineligible bulk orgs: an opted-out owner each. */
+  const ineligibleBulk = Array.from({ length: 40 }, (_, i) => bulkId('d', i + 1));
+  const BULK_OWNER = 'b0000000-0000-4000-8000-0000000000bb';
+  const BULK_OPTED_OUT = 'b0000000-0000-4000-8000-0000000000bc';
+
+  beforeAll(async () => {
+    // Created newest-first by id, so creation order and id order disagree:
+    // the old LIMIT 100 by created_at DESC would have reached only the newest 100.
+    const all = [...eligibleBulk, ...ineligibleBulk];
+    await client.query(
+      `INSERT INTO organizations (id, created_at, deleted_at)
+       SELECT id::uuid, '2026-06-01'::timestamptz - (ord * interval '1 minute'), NULL
+       FROM unnest($1::text[]) WITH ORDINALITY AS t(id, ord)`,
+      [all]
+    );
+    await client.query(
+      `INSERT INTO users (id, email, full_name, email_weekly_summary, is_email_verified, deleted_at) VALUES
+         ($1, 'bulk-owner@example.test', 'Bulk Owner', true, true, NULL),
+         ($2, 'bulk-optedout@example.test', 'Bulk Opted Out', false, true, NULL)`,
+      [BULK_OWNER, BULK_OPTED_OUT]
+    );
+    await client.query(
+      `INSERT INTO organization_memberships (organization_id, user_id, role, created_at, joined_at, is_active, invitation_token)
+       SELECT id::uuid, $2::uuid, 'owner', '2026-06-01', '2026-06-01', true, NULL FROM unnest($1::text[]) AS t(id)`,
+      [eligibleBulk, BULK_OWNER]
+    );
+    await client.query(
+      `INSERT INTO organization_memberships (organization_id, user_id, role, created_at, joined_at, is_active, invitation_token)
+       SELECT id::uuid, $2::uuid, 'owner', '2026-06-01', '2026-06-01', true, NULL FROM unnest($1::text[]) AS t(id)`,
+      [ineligibleBulk, BULK_OPTED_OUT]
+    );
+  });
+
+  it(`more than ${WEEKLY_SUMMARY_ORG_PAGE_SIZE} eligible orgs: every one is visited exactly once, across pages, in id order`, async () => {
+    const { ids, pages } = await allPages();
+    const expected = [ORG_ELIGIBLE, ORG_PENDING_AND_ACCEPTED, ...eligibleBulk].sort();
+    expect(expected.length).toBeGreaterThan(2 * WEEKLY_SUMMARY_ORG_PAGE_SIZE);
+    expect(ids).toEqual(expected);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(pages.map(p => p.length)).toEqual([100, 100, expected.length - 200]);
+    for (const id of ineligibleBulk) expect(ids).not.toContain(id);
+  });
+
+  it('a smaller page size visits the same orgs; the page size is bounded', async () => {
+    const { ids, pages } = await allPages(7);
+    expect(ids).toEqual((await allPages()).ids);
+    expect(pages.every(p => p.length <= 7)).toBe(true);
+    expect(await repository.getActiveOrganizationsPage(null, 1_000_000)).toHaveLength(232);
+    expect((await repository.getActiveOrganizationsPage(null, 0)).length).toBe(1);
+  });
+
+  it('a page after the last id is empty', async () => {
+    const { ids } = await allPages();
+    expect(await repository.getActiveOrganizationsPage(ids[ids.length - 1])).toEqual([]);
   });
 });

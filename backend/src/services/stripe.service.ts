@@ -1445,7 +1445,7 @@ export class StripeService {
    * Send the payment-failure notification email to the organization's
    * owner, reusing the existing Resend-backed EmailService and the same
    * "org owner" recipient-resolution query already established by
-   * weekly-summary.repository.ts's getUserInfo. Never throws (matches
+   * weekly-summary.repository.ts's getRecipients. Never throws (matches
    * EmailService.send's own contract) and never includes any payment
    * credential/card detail -- only the grace deadline and a link to the
    * existing Stripe Customer Portal.

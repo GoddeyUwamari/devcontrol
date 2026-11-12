@@ -120,6 +120,11 @@ export type WeeklyAwsConnection = 'connected' | 'not_connected' | 'unknown';
 export const SECURITY_PRELIMINARY_REASON = 'the security posture score is still preliminary';
 const NOT_CONNECTED_REASON = 'no AWS account is connected';
 
+/** Organizations read per page by the scheduled run (getActiveOrganizationsPage). */
+export const WEEKLY_SUMMARY_ORG_PAGE_SIZE = 100;
+/** The largest page getActiveOrganizationsPage() reads, whatever is asked. */
+export const WEEKLY_SUMMARY_MAX_PAGE_SIZE = 500;
+
 /**
  * Deployment metrics for the delivery window, with the same definitions as
  * the Deployments and DORA pages: frequency counts successful deployments
@@ -282,7 +287,7 @@ export function weeklySummaryPeriod(now: Date): WeeklySummaryPeriod {
 /**
  * Who may receive an organization's weekly summary (aliases: u = users,
  * om = organization_memberships, o = organizations). Shared verbatim by
- * getActiveOrganizations() and getUserInfo() so the two can never diverge.
+ * getActiveOrganizationsPage() and getRecipients() so the two can never diverge.
  *
  * "Accepted membership" is om.joined_at IS NOT NULL: every path that creates
  * or accepts a membership sets it (org creator, signup, invitation accept,
@@ -600,14 +605,14 @@ export class WeeklySummaryRepository {
       : await collectSection<InventoryEstimateEvidence>(
           { source: ESTIMATE_SOURCE, provenance: 'estimated', period: { kind: 'point_in_time' } },
           async () => {
-            const result = await (client ?? this.pool).query(
+            const result = await this.onOrgClient(organizationId, client, db => db.query(
               `SELECT COUNT(*) AS total_resources,
                       COUNT(estimated_monthly_cost) AS priced_resources,
                       COALESCE(SUM(estimated_monthly_cost), 0) AS total_cost
                FROM aws_resources
                WHERE organization_id = $1 AND status != 'terminated'`,
               [organizationId]
-            );
+            ));
             const row = result.rows[0] ?? {};
             const totalResources = parseInt(row.total_resources ?? '0', 10);
             const pricedResources = parseInt(row.priced_resources ?? '0', 10);
@@ -624,33 +629,6 @@ export class WeeklySummaryRepository {
         );
 
     return { currentWeekSpend, previousWeekSpend, weekOverWeek, inventoryEstimate };
-  }
-
-  /**
-   * Current cost breakdown by resource type/region from the aws_resources
-   * snapshot (estimated monthly list-price, not billed spend). Only used by
-   * the preview route; the email itself does not list these.
-   */
-  async getWeeklyCostData(query: WeeklyDataQuery, client?: PoolClient) {
-    try {
-      const result = await (client ?? this.pool).query(
-        `SELECT
-          COALESCE(SUM(estimated_monthly_cost), 0) as total_cost,
-          resource_type,
-          region
-         FROM aws_resources
-         WHERE organization_id = $1 AND status != 'terminated'
-         GROUP BY resource_type, region
-         ORDER BY total_cost DESC
-         LIMIT 10`,
-        [query.organizationId]
-      );
-
-      return result.rows;
-    } catch (error) {
-      console.warn('[Weekly Summary] Cost data query failed, returning empty:', error);
-      return [];
-    }
   }
 
   /**
@@ -711,17 +689,18 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * The organization owner who receives the weekly summary. Same eligibility
-   * as getActiveOrganizations() (WEEKLY_SUMMARY_RECIPIENT_PREDICATES), so an
-   * owner who opted out, is unverified, was deactivated or soft-deleted, or
-   * has only a pending (unaccepted) invitation is never selected -- on the
-   * scheduled path or the manual trigger -- and a soft-deleted organization
-   * gets no summary. Deterministic when an org has several eligible owners:
-   * earliest membership first, then user id. Returns null when no owner is
-   * eligible (the org is skipped, never sent to a fallback); a query failure
-   * throws.
+   * Every organization owner who receives the weekly summary (WE-D7): each
+   * active, joined, opted-in owner with a verified email, by the same
+   * predicates as getActiveOrganizationsPage() (WEEKLY_SUMMARY_RECIPIENT_PREDICATES).
+   * An owner who opted out, is unverified, was deactivated or soft-deleted,
+   * or has only a pending (unaccepted) invitation is never included -- on
+   * the scheduled path or the manual trigger -- and admins and members never
+   * are. A soft-deleted organization has none. Ordered by membership (the
+   * earliest first, then user id), so a run is deterministic. Empty when no
+   * owner is eligible (the org is skipped, never sent to a fallback); a
+   * query failure throws.
    */
-  async getUserInfo(organizationId: string, client?: PoolClient): Promise<UserInfo | null> {
+  async getRecipients(organizationId: string, client?: PoolClient): Promise<UserInfo[]> {
     const result = await (client ?? this.pool).query(
       `SELECT u.id, u.email, u.full_name
        FROM users u
@@ -729,20 +708,11 @@ export class WeeklySummaryRepository {
        JOIN organizations o ON o.id = om.organization_id
        WHERE om.organization_id = $1
          AND ${WEEKLY_SUMMARY_RECIPIENT_PREDICATES}
-       ORDER BY om.created_at ASC NULLS LAST, u.id ASC
-       LIMIT 1`,
+       ORDER BY om.created_at ASC NULLS LAST, u.id ASC`,
       [organizationId]
     );
 
-    if (result.rows.length === 0) {
-      return null;
-    }
-
-    return {
-      userId: result.rows[0].id,
-      email: result.rows[0].email,
-      fullName: result.rows[0].full_name
-    };
+    return result.rows.map(row => ({ userId: row.id, email: row.email, fullName: row.full_name }));
   }
 
   /**
@@ -763,23 +733,49 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * Organizations with at least one eligible weekly-summary recipient --
-   * the same predicates getUserInfo() applies (WEEKLY_SUMMARY_RECIPIENT_PREDICATES).
+   * One page of the organizations with at least one eligible weekly-summary
+   * recipient (the predicates getRecipients() applies), in id order after
+   * `afterId` (null for the first page). Keyset paging on the primary key is
+   * a stable order: an organization is visited once per run, and one that
+   * joins or leaves mid-run never shifts another across a page boundary.
+   * A page shorter than `pageSize` is the last. The page size is clamped to
+   * 1..WEEKLY_SUMMARY_MAX_PAGE_SIZE.
    */
-  async getActiveOrganizations(): Promise<string[]> {
+  async getActiveOrganizationsPage(afterId: string | null, pageSize: number = WEEKLY_SUMMARY_ORG_PAGE_SIZE): Promise<string[]> {
+    const limit = Math.min(Math.max(Math.trunc(pageSize) || 1, 1), WEEKLY_SUMMARY_MAX_PAGE_SIZE);
     const result = await this.pool.query(
-      `SELECT DISTINCT o.id, o.created_at
+      `SELECT DISTINCT o.id
        FROM organizations o
        JOIN organization_memberships om ON o.id = om.organization_id
        JOIN users u ON om.user_id = u.id
        WHERE ${WEEKLY_SUMMARY_RECIPIENT_PREDICATES}
-       ORDER BY o.created_at DESC
-       LIMIT 100`
+         AND ($1::uuid IS NULL OR o.id > $1::uuid)
+       ORDER BY o.id ASC
+       LIMIT $2`,
+      [afterId, limit]
     );
 
-    console.log(`[Weekly Summary] Found ${result.rows.length} organizations with email preferences enabled`);
+    return result.rows.map(r => String(r.id));
+  }
 
-    return result.rows.map(r => r.id);
+  /**
+   * Runs `work` on one connection tagged for this organization
+   * (session-scoped, so every statement on it carries the tag), then
+   * releases it; the pool clears the tag on release (installTenantTagReset).
+   * The scheduled send and the preview both read through this, so the two
+   * see the same rows under row level security.
+   */
+  async withOrganizationClient<T>(organizationId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        "SELECT set_config('app.current_organization_id', $1, false)",
+        [organizationId]
+      );
+      return await work(client);
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -795,7 +791,7 @@ export class WeeklySummaryRepository {
    * section) instead of returning placeholder values.
    */
   async getWeeklyDORAMetrics(query: WeeklyDataQuery, client?: PoolClient): Promise<WeeklyDORAMetrics> {
-    const countResult = await (client ?? this.pool).query(
+    const countResult = await this.onOrgClient(query.organizationId, client, db => db.query(
       `SELECT
         COUNT(*) as total,
         COUNT(*) FILTER (WHERE status = 'success') as success,
@@ -804,7 +800,7 @@ export class WeeklySummaryRepository {
        WHERE organization_id = $1
          AND deployed_at BETWEEN $2 AND $3`,
       [query.organizationId, query.startDate, query.endDate]
-    );
+    ));
 
     const total = parseInt(countResult.rows[0]?.total || '0');
     const success = parseInt(countResult.rows[0]?.success || '0');
