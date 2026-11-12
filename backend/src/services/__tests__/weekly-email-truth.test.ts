@@ -156,6 +156,8 @@ async function we2States(): Promise<Array<{ name: string; e: WeeklyEvidence }>> 
     { name: 'analysis interrupted, older completed', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('16T06:44'), startedAt: T('16T06:14') }, T('08T06:20'))) } },
     { name: 'analysis interrupted, first', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('16T06:44'), startedAt: T('16T06:14') }, null)) } },
     { name: 'analysis did not finish, older partial', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('16T06:15'), startedAt: T('16T06:14') }, T('08T06:20'), true)) } },
+    // WE-2 re-review RR-L2: a newer run in progress after a partial one.
+    { name: 'analysis in progress, older partial', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'in_progress', at: T('16T06:14') }, T('08T06:20'), true)) } },
     { name: 'deployments never recorded, connected', e: { ...b, delivery: await available<WeeklyDORAMetrics>(DELIVERY, { deploymentCount: 0, successfulDeployments: 0, failedDeployments: 0 }), deploymentHistory: await historyOf(false) } },
     { name: 'deployment history read error', e: { ...b, delivery: await available<WeeklyDORAMetrics>(DELIVERY, { deploymentCount: 0, successfulDeployments: 0, failedDeployments: 0 }), deploymentHistory: await failed(HISTORY) } },
     { name: 'every WE-2 read failed', e: { ...b, connectionHealth: await failed<HealthDisplay>(HEALTH), scan: await failed<WeeklyRunEvidence>(SCAN), costAnalysis: await failed<WeeklyRunEvidence>(ANALYSIS), deploymentHistory: await failed(HISTORY) } },
@@ -785,6 +787,19 @@ describe('WE-2 savings: cost analysis state (WE-D3 and mock v1)', () => {
     ]);
     expect(older.all).toContain('Some cost checks didn&#x27;t complete, so these results may be incomplete. The latest analysis didn&#x27;t finish.');
     for (const { lines } of [thisWeek, older]) expect(lines.join('\n').match(/didn't finish/g)).toHaveLength(1);
+  });
+
+  it('RR-L1/RR-L2: a run in progress after a partial one: dated by the partial run, the partial sentence, then the in-progress sentence (HTML and text)', async () => {
+    const e = (await states()).find(s => s.name === 'analysis in progress, older partial')!.e;
+    const line = `From the last completed cost analysis, Nov 8, 2026. ${ANALYSIS_PARTIAL_NOTE} A new analysis is in progress.`;
+    const withFindings = await savingsBoth(e);
+    expect(withFindings.lines).toEqual([C2_HEADLINE, line]);
+    const none = await savingsBoth(e, NONE);
+    expect(none.lines).toEqual(['No open savings findings.', line]);
+    for (const { all } of [withFindings, none]) {
+      expect(all).toContain('From the last completed cost analysis, Nov 8, 2026. Some cost checks didn&#x27;t complete, so these results may be incomplete. A new analysis is in progress.');
+      expect(all).not.toContain('A new analysis is in progress. Some cost checks');
+    }
   });
 
   it('the partial sentence appears only with figures dated by a partial run', async () => {

@@ -402,11 +402,10 @@ function analysisLine(a: AnalysisState, hasFindings: boolean): string | null {
         ? 'A new analysis is in progress.'
         : a.thisWeek ? "This week's analysis didn't finish." : "The latest analysis didn't finish.";
       if (!a.lastPartial) return `${lead} ${latest}`;
-      // After a partial run, a newer run that didn't finish is stated after the
-      // partial sentence, so "didn't finish" can't be read as the partial run's.
-      return a.latest === 'in_progress'
-        ? `${lead} ${latest} ${ANALYSIS_PARTIAL_NOTE}`
-        : `${lead} ${ANALYSIS_PARTIAL_NOTE} ${latest}`;
+      // The partial sentence always follows the date it describes; the newer run
+      // (in progress or didn't finish) is stated after it, so neither can be read
+      // as the other's (WE-2 re-review RR-L1).
+      return `${lead} ${ANALYSIS_PARTIAL_NOTE} ${latest}`;
     }
     case 'did_not_finish':
       return "The last cost analysis didn't finish.";
