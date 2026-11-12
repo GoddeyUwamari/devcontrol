@@ -20,7 +20,7 @@ import * as path from 'path';
 import { Pool } from 'pg';
 import { composeWeeklySummary } from '../../services/weekly-summary-content';
 import { WeeklyAISummaryJob } from '../weekly-ai-summary.job';
-import { FIXTURE_IDS, FIXTURE_ORG_NAME, FIXTURE_URLS, fixtureEvidence, type FixtureId } from './weekly-email-fixtures';
+import { FIXTURE_IDS, FIXTURE_ORG_NAME, FIXTURE_URLS, FIXTURES, fixtureEvidence, type FixtureId } from './weekly-email-fixtures';
 
 const DIR = path.join(__dirname, '__fixtures__', 'weekly-email');
 const WRITE = process.env.WEEKLY_EMAIL_FIXTURES === 'write';
@@ -44,7 +44,7 @@ async function renderFixture(id: FixtureId): Promise<{ html: string; text: strin
   const e = await fixtureEvidence(id);
   const data = job.buildTemplateData({
     userName: 'Alex',
-    content: composeWeeklySummary(e, { organizationName: FIXTURE_ORG_NAME }),
+    content: composeWeeklySummary(e, { organizationName: FIXTURE_ORG_NAME, planName: FIXTURES[id].plan }),
     ...FIXTURE_URLS,
   });
   data.year = 2026;
@@ -52,6 +52,15 @@ async function renderFixture(id: FixtureId): Promise<{ html: string; text: strin
 }
 
 describe('weekly summary email fixtures C1-C5', () => {
+  // The subject has no file of its own: every fixture covers the same cost window.
+  it.each(FIXTURE_IDS)('%s: the subject carries the cost window (WE-D12)', async (id) => {
+    expect(job.buildTemplateData({
+      userName: 'Alex',
+      content: composeWeeklySummary(await fixtureEvidence(id), { organizationName: FIXTURE_ORG_NAME, planName: FIXTURES[id].plan }),
+      ...FIXTURE_URLS,
+    }).subject).toBe('Your DevControl weekly summary · Nov 9 – 15, 2026');
+  });
+
   it.each(FIXTURE_IDS)('%s renders exactly as pinned', async (id) => {
     const { html, text } = await renderFixture(id);
     for (const [ext, body] of [['html', html], ['txt', text]] as const) {

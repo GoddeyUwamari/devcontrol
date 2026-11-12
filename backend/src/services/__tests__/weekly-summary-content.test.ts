@@ -30,7 +30,8 @@ import {
   type WeeklySecurityEvidence,
 } from '../../repositories/weekly-summary.repository';
 import { buildRecommendationPrompt, checkRecommendationText, composeWeeklySummary } from '../weekly-summary-content';
-import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../../jobs/weekly-ai-summary.job';
+import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT_PREFIX } from '../../jobs/weekly-ai-summary.job';
+import { ANALYSIS_COMPLETED, HEALTH_OK, SCAN_COMPLETED } from '../../jobs/__tests__/weekly-email-fixtures';
 
 
 const fetchCostTrend = awsCostService.fetchCostTrend as jest.Mock;
@@ -106,6 +107,10 @@ async function evidence(o: Overrides = {}): Promise<WeeklyEvidence> {
   return {
     period,
     awsConnection: o.awsConnection ?? 'connected',
+    connectionHealth: await available('DevControl AWS connection health', HEALTH_OK),
+    scan: await available('DevControl discovery scans', SCAN_COMPLETED),
+    costAnalysis: await available('DevControl cost analysis runs', ANALYSIS_COMPLETED),
+    deploymentHistory: await available('DevControl deployment records (all time)', { anyRecorded: true }),
     ...spend,
     alerts: await repository.getWeeklyAlerts(ORG, period),
     delivery: o.delivery ?? await available<WeeklyDORAMetrics>('DevControl deployment records', DELIVERY),
@@ -197,9 +202,9 @@ describe('Weekly Summary email wording', () => {
       inventory: { total_resources: '10', priced_resources: '8', total_cost: '412.5' },
     }));
     expect(out).toContain("AWS Cost Explorer spend for Sep 21 – Sep 27, 2026 couldn't be retrieved.");
-    expect(out).toContain('Estimated monthly run-rate for currently discovered resources: approximately $412.50/month');
-    expect(out).toContain('a DevControl list-price estimate, not billed AWS spend');
-    expect(out).toContain('Only 8 of 10 discovered resources have a cost estimate.');
+    expect(out).toContain('From the last completed scan (Nov 16, 2026): estimated run-rate of about $412.50/month for 8 of 10 discovered resources.');
+    expect(out).toContain('This is a DevControl list-price estimate, not billed AWS spend.');
+    expect(out).not.toContain('currently discovered');
     expect(out).toContain('No week-over-week comparison is available.');
     expect(out).not.toMatch(UNSUPPORTED.monthlySpend);
   });
@@ -234,7 +239,7 @@ describe('Weekly Summary email wording', () => {
     }) });
     const out = render(e);
     expect(out).toContain('ESTIMATED SAVINGS');
-    expect(out).toContain('No open savings findings.');
+    expect(out).toContain('No open savings findings in the last analysis.');
     expect(out).not.toMatch(/\$0\/month|opportunit/i);
   });
 
@@ -272,7 +277,7 @@ describe('Weekly Summary email wording', () => {
     const out = render(await evidence({
       security: await available<WeeklySecurityEvidence>('DevControl security posture score and configuration checks', { score: 100, accountLevelFindings: 0, resourceComplianceIssues: 0 }),
     }));
-    expect(out).toContain("DevControl's configuration checks currently report no active findings.");
+    expect(out).toContain('Latest scan (Nov 16, 2026, 06:14 UTC): no active findings.');
     expect(out).toContain('Security posture score: 100/100.');
     expect(out).not.toMatch(UNSUPPORTED.noSecurityRisks);
   });
@@ -361,9 +366,11 @@ describe('Weekly Summary model-written recommendation (removed, PR #136 review B
     }
   });
 
-  it('B1: the subject makes no AI claim', () => {
-    expect(WEEKLY_SUMMARY_SUBJECT).toBe('Your DevControl Weekly Summary');
-    expect(WEEKLY_SUMMARY_SUBJECT).not.toMatch(/\bAI\b/);
+  it('B1: the subject makes no AI claim', async () => {
+    const data = templateData(await evidence());
+    expect(WEEKLY_SUMMARY_SUBJECT_PREFIX).toBe('Your DevControl weekly summary');
+    expect(data.subject).toBe(`${WEEKLY_SUMMARY_SUBJECT_PREFIX} · Sep 21 – 27, 2026`);
+    expect(data.subject).not.toMatch(/\bAI\b/);
   });
 
   // checkRecommendationText()/buildRecommendationPrompt() are kept, unused, pending a

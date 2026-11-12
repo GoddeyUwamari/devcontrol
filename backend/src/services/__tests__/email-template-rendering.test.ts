@@ -33,8 +33,9 @@ const PINNED_SHA256: Record<string, { filled: string; empty: string }> = {
     empty: '9ed8470341e602ea82507dbf362b322bd1f1518a2bc52b7ce418fc2710cf77a0',
   },
   'weekly-summary-email.html': {
-    filled: '9c166e2a2c9f749980c959149b32f4a1fad3dedfc63b5cb682ca8e6b2b26c7a3',
-    empty: 'b0c3c49310a633c0779e5b66ea6be8b228f829df4a3af35b760b45f370c5ba46',
+    // WE-2: the header line is {{header}} (organization · plan · dates), replacing the static subtitle.
+    filled: '2096f49ef29b094938213eb0aba70351d6fc5f3833cb5d6576847a250790f70d',
+    empty: '2caf26d7ff876e75ae7f47abfe7d66df8bc474a73800a38e25a3a8fd39182904',
   },
 };
 

@@ -1,9 +1,12 @@
 Your DevControl Weekly Summary
-Cost, security, and delivery summary
+Example Org (synthetic) · Visibility plan · Nov 9 – Nov 15, 2026 (UTC)
 
 Hi Alex,
 
-Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.
+Here's what DevControl measured for Example Org (synthetic). Spend covers the 7 full UTC days before this email. Findings and savings come from the latest scan.
+
+AWS connection: OK · checked Nov 16, 2026, 06:02 UTC
+Latest scan: completed Nov 16, 2026, 06:14 UTC
 
 COSTS
 AWS Cost Explorer spend, Nov 9 – Nov 15, 2026 (UTC): $1,234.56.
@@ -12,7 +15,7 @@ Unblended cost by service, after any credits and refunds AWS applied. If credits
 See costs: https://app.example.test/costs
 
 SECURITY
-DevControl's configuration checks currently report 2 account-level findings (security groups, IAM) and 5 resource compliance issues (encryption, backups, tagging, and other infrastructure checks).
+Latest scan (Nov 16, 2026, 06:14 UTC): 2 account-level findings (security groups, IAM) and 5 resource compliance issues (encryption, backups, tagging, and other infrastructure checks).
 This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
 See security findings: https://app.example.test/security
 Security posture score and its trend are included in Optimization Engine. Compare plans: https://app.example.test/settings/billing
@@ -20,6 +23,7 @@ Security posture score and its trend are included in Optimization Engine. Compar
 ESTIMATED SAVINGS
 3 open findings; none has a dollar estimate yet.
 Up to $310/month if S3 data qualifies for Standard-IA (upper bound).
+From the cost analysis completed Nov 16, 2026, 06:20 UTC.
 See Cost Optimization: https://app.example.test/cost-optimization
 
 ALERTS

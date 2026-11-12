@@ -69,10 +69,11 @@ router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Organization context required' });
     }
 
-    const [recipient, evidence, organizationName] = await Promise.all([
+    const [recipient, evidence, organizationName, planName] = await Promise.all([
       repository.getUserInfo(organizationId),
       repository.gatherWeeklyEvidence(organizationId, new Date()),
       repository.getOrganizationName(organizationId),
+      repository.getPlanName(organizationId),
     ]);
 
     res.json({
@@ -80,7 +81,7 @@ router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
       organizationId,
       userInfo: recipient ? { email: recipient.email, fullName: recipient.fullName } : null,
       evidence,
-      content: composeWeeklySummary(evidence, { organizationName }),
+      content: composeWeeklySummary(evidence, { organizationName, planName }),
       message: 'This is the evidence and wording the weekly email would use'
     });
   } catch (error: any) {

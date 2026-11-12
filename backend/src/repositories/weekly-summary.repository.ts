@@ -24,9 +24,13 @@ import { alertHistoryProvider } from '../services/ai/evidence/providers/not-buil
 import { changeFailureRate } from '../services/deployment-status';
 import { RiskTrackingService } from '../services/risk-tracking.service';
 import { CostRecommendationsRepository, type ActiveSavingsBreakdown } from './cost-recommendations.repository';
-import { hasEligibleAwsAccount } from './aws-accounts.repository';
+import { findEligibleAwsAccount, hasEligibleAwsAccount } from './aws-accounts.repository';
 import { AccountSecurityFindingsRepository } from './account-security-findings.repository';
-import { organizationHasEntitlement } from '../middleware/subscription.middleware';
+import { connectionChecksView, readConnectionChecksOrNull } from './aws-connection-checks.repository';
+import { latestAnalysisRuns } from './cost-analysis-runs.repository';
+import type { HealthDisplay } from '../services/connection-health';
+import { getOrganizationEntitlement, organizationHasEntitlement } from '../middleware/subscription.middleware';
+import { PLAN_NAME } from '../config/plan-names';
 
 export interface WeeklyDataQuery {
   organizationId: string;
@@ -139,9 +143,59 @@ export interface WeeklyDORAMetrics {
   changeFailureRate?: number | null;
 }
 
+/** How a scan or a cost analysis ended, as the email states it. */
+export type WeeklyRunState = 'completed' | 'in_progress' | 'did_not_finish';
+
+/**
+ * How a cost analysis ended. 'partial' is a run that reached its end with at
+ * least one cost check failed (completed with gaps, WE-2 review H-1): it set
+ * completed_at and reconciled the open findings, so it dates them, and the
+ * email adds the Cost Optimization page's partial sentence. A 'partial' row
+ * with no completion time didn't finish.
+ */
+export type WeeklyAnalysisRunState = WeeklyRunState | 'partial';
+
+/**
+ * The latest discovery scan (or cost analysis) and the last one that
+ * completed, as ISO timestamps. `latest.at` is when it ended, or when it
+ * started while it is still running; `latest.startedAt` is when it started.
+ */
+export interface WeeklyRunEvidence<S extends WeeklyAnalysisRunState = WeeklyRunState> {
+  /** Null when there has been none. */
+  latest: { state: S; at: string; startedAt: string } | null;
+  /**
+   * Null when none has completed. For a cost analysis, a partial run with a
+   * completion time counts as completed, with `partial: true`.
+   */
+  lastCompleted: { at: string; partial?: true } | null;
+}
+
+/** The latest cost analysis run and the last completed one (completed, or partial with gaps). */
+export type WeeklyAnalysisEvidence = WeeklyRunEvidence<WeeklyAnalysisRunState>;
+
+/** Whether any deployment was ever recorded for the organization, whatever the window. */
+export interface WeeklyDeploymentHistoryEvidence {
+  anyRecorded: boolean;
+}
+
 export interface WeeklyEvidence {
   period: WeeklySummaryPeriod;
   awsConnection: WeeklyAwsConnection;
+  /**
+   * The connection's health as the Connect AWS page shows it (displayHealth
+   * over aws_connection_checks, D1a). Null when no AWS account is connected.
+   */
+  connectionHealth: ContextSection<HealthDisplay> | null;
+  /**
+   * The latest discovery scan, and the last one that completed (status
+   * 'completed' with its compliance scan completed): the scan the security
+   * counts, the posture score and the inventory estimate come from. Null when
+   * no AWS account is connected.
+   */
+  scan: ContextSection<WeeklyRunEvidence> | null;
+  /** The latest cost analysis run (cost_analysis_runs, any source) and the last completed one. Null when not connected. */
+  costAnalysis: ContextSection<WeeklyAnalysisEvidence> | null;
+  deploymentHistory: ContextSection<WeeklyDeploymentHistoryEvidence>;
   currentWeekSpend: ContextSection<WeeklySpendEvidence>;
   previousWeekSpend: ContextSection<WeeklySpendEvidence>;
   weekOverWeek: ContextSection<WeekOverWeekEvidence>;
@@ -158,6 +212,10 @@ const COMPARISON_SOURCE = 'DevControl week-over-week comparison';
 const ESTIMATE_SOURCE = 'DevControl inventory cost estimate';
 const SECURITY_SOURCE = 'DevControl security posture score and configuration checks';
 const RECOMMENDATIONS_SOURCE = 'DevControl cost recommendations';
+const HEALTH_SOURCE = 'DevControl AWS connection health';
+const SCAN_SOURCE = 'DevControl discovery scans';
+const ANALYSIS_SOURCE = 'DevControl cost analysis runs';
+const DEPLOYMENT_HISTORY_SOURCE = 'DevControl deployment records (all time)';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 
@@ -183,6 +241,32 @@ function daysOf(window: DayWindow): string[] {
 
 function roundCents(amount: number): number {
   return Math.round(amount * 100) / 100;
+}
+
+type RunTimes = { started_at?: unknown; completed_at?: unknown; created_at?: unknown; status?: unknown };
+
+function isoOf(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** A latest run (job or analysis) and the last completed one as WeeklyRunEvidence; times fall back to the row's creation. */
+function runEvidence<S extends WeeklyAnalysisRunState>(
+  latest: RunTimes | undefined | null,
+  state: S | null,
+  lastCompleted: RunTimes | undefined | null
+): WeeklyRunEvidence<S> {
+  const created = (row: RunTimes) => isoOf(row.created_at);
+  const startedAt = latest ? isoOf(latest.started_at) ?? created(latest) : null;
+  const at = latest && state
+    ? state === 'in_progress' ? startedAt : isoOf(latest.completed_at) ?? startedAt
+    : null;
+  const lastAt = lastCompleted ? isoOf(lastCompleted.completed_at) ?? created(lastCompleted) : null;
+  return {
+    latest: latest && state && at && startedAt ? { state, at, startedAt } : null,
+    lastCompleted: lastAt ? { at: lastAt, ...(lastCompleted?.status === 'partial' ? { partial: true as const } : {}) } : null,
+  };
 }
 
 export function weeklySummaryPeriod(now: Date): WeeklySummaryPeriod {
@@ -245,7 +329,8 @@ export class WeeklySummaryRepository {
     const notConnectedSection = <T>(source: string) =>
       notConnected<T>({ source }, NOT_CONNECTED_REASON);
 
-    const [spend, delivery, security, recommendations] = await Promise.all([
+    const notConnectedOrg = awsConnection === 'not_connected';
+    const [spend, delivery, security, recommendations, connectionHealth, scan, costAnalysis, deploymentHistory] = await Promise.all([
       this.getWeeklySpendSections(organizationId, period, client),
       collectSection<WeeklyDORAMetrics>(
         {
@@ -265,10 +350,155 @@ export class WeeklySummaryRepository {
             { source: RECOMMENDATIONS_SOURCE, provenance: 'estimated' },
             async () => ({ state: 'available', data: await this.costRecommendationsRepository.getActiveSavingsBreakdown(organizationId) })
           ),
+      notConnectedOrg ? Promise.resolve(null) : this.getConnectionHealthSection(organizationId, now, client),
+      notConnectedOrg ? Promise.resolve(null) : this.getScanSection(organizationId, client),
+      notConnectedOrg ? Promise.resolve(null) : this.getCostAnalysisSection(organizationId, client),
+      this.getDeploymentHistorySection(organizationId, client),
     ]);
 
     const alerts = await this.getWeeklyAlerts(organizationId, period);
-    return { period, awsConnection, ...spend, alerts, delivery, security, recommendations };
+    return {
+      period, awsConnection, connectionHealth, scan, costAnalysis, deploymentHistory,
+      ...spend, alerts, delivery, security, recommendations,
+    };
+  }
+
+  /**
+   * Runs `read` on the caller's org-tagged client; without one (the preview
+   * route), on a pooled connection tagged for this organization inside its
+   * own read transaction (set_config LOCAL, so the tag never outlives it).
+   */
+  private async onOrgClient<T>(
+    organizationId: string,
+    client: PoolClient | undefined,
+    read: (db: Pick<PoolClient, 'query'>) => Promise<T>
+  ): Promise<T> {
+    if (client) return read(client);
+    const own = await this.pool.connect();
+    try {
+      await own.query('BEGIN READ ONLY');
+      await own.query("SELECT set_config('app.current_organization_id', $1, true)", [organizationId]);
+      const result = await read(own);
+      await own.query('COMMIT');
+      return result;
+    } catch (error) {
+      await own.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      own.release();
+    }
+  }
+
+  /**
+   * The connection's health, read as GET /api/aws/accounts reads it: the one
+   * eligible account, its aws_connection_checks row (none, or no table yet:
+   * not checked yet) through connectionChecksView/displayHealth at `now`.
+   * A failed read (including more than one eligible account) is an error
+   * section, never a health state.
+   */
+  getConnectionHealthSection(organizationId: string, now: Date, client?: PoolClient): Promise<ContextSection<HealthDisplay>> {
+    return collectSection<HealthDisplay>(
+      { source: HEALTH_SOURCE, provenance: 'derived', period: { kind: 'point_in_time' } },
+      () => this.onOrgClient(organizationId, client, async (db) => {
+        const account = await findEligibleAwsAccount(db, organizationId);
+        if (!account) return { state: 'unavailable', reason: NOT_CONNECTED_REASON };
+        const row = await readConnectionChecksOrNull(db, organizationId, account.id);
+        return { state: 'available', data: connectionChecksView(row, now).health };
+      })
+    );
+  }
+
+  /**
+   * The latest discovery job and the last completed one (status 'completed'
+   * and compliance_scan_completed): the scan the findings, the posture score
+   * and the inventory estimate are dated with. A job still pending or running
+   * is in progress; any other job that is not completed didn't finish.
+   */
+  getScanSection(organizationId: string, client?: PoolClient): Promise<ContextSection<WeeklyRunEvidence>> {
+    return collectSection<WeeklyRunEvidence>(
+      { source: SCAN_SOURCE, provenance: 'derived', period: { kind: 'point_in_time' } },
+      () => this.onOrgClient(organizationId, client, async (db) => {
+        const latest = await db.query(
+          `SELECT status, compliance_scan_completed, started_at, completed_at, created_at
+           FROM resource_discovery_jobs
+           WHERE organization_id = $1
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [organizationId]
+        );
+        const completed = await db.query(
+          `SELECT completed_at, created_at
+           FROM resource_discovery_jobs
+           WHERE organization_id = $1 AND status = 'completed' AND compliance_scan_completed = true
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [organizationId]
+        );
+        const job = latest.rows[0];
+        const state: WeeklyRunState | null = !job
+          ? null
+          : job.status === 'pending' || job.status === 'running'
+            ? 'in_progress'
+            : job.status === 'completed' && job.compliance_scan_completed === true ? 'completed' : 'did_not_finish';
+        return { state: 'available', data: runEvidence(job, state, completed.rows[0]) };
+      })
+    );
+  }
+
+  /**
+   * The latest cost analysis run (any source) and the last completed one, as
+   * the Cost Optimization page reads them (latestAnalysisRuns: run_state, so a
+   * dead worker's run is interrupted). Running is in progress; partial with a
+   * completion time is completed with gaps ("Analysis partly complete" on the
+   * Cost Optimization page); failed, interrupted, and partial with no
+   * completion time didn't finish.
+   */
+  getCostAnalysisSection(organizationId: string, client?: PoolClient): Promise<ContextSection<WeeklyAnalysisEvidence>> {
+    return collectSection<WeeklyAnalysisEvidence>(
+      { source: ANALYSIS_SOURCE, provenance: 'derived', period: { kind: 'point_in_time' } },
+      () => this.onOrgClient(organizationId, client, async (db) => {
+        const runs = await latestAnalysisRuns(db, organizationId);
+        const run = runs.latest;
+        const state: WeeklyAnalysisRunState | null = !run
+          ? null
+          : run.run_state === 'running'
+            ? 'in_progress'
+            : run.run_state === 'completed'
+              ? 'completed'
+              : run.run_state === 'partial' && isoOf(run.completed_at) ? 'partial' : 'did_not_finish';
+        return { state: 'available', data: runEvidence(run, state, runs.lastCompleted) };
+      })
+    );
+  }
+
+  /** Whether the organization has ever recorded a deployment. */
+  getDeploymentHistorySection(organizationId: string, client?: PoolClient): Promise<ContextSection<WeeklyDeploymentHistoryEvidence>> {
+    return collectSection<WeeklyDeploymentHistoryEvidence>(
+      { source: DEPLOYMENT_HISTORY_SOURCE, provenance: 'derived', period: { kind: 'point_in_time' } },
+      () => this.onOrgClient(organizationId, client, async (db) => {
+        const result = await db.query(
+          `SELECT EXISTS (SELECT 1 FROM deployments WHERE organization_id = $1) AS any_recorded`,
+          [organizationId]
+        );
+        return { state: 'available', data: { anyRecorded: result.rows[0]?.any_recorded === true } };
+      })
+    );
+  }
+
+  /**
+   * The organization's plan name on its effective tier, resolved as for every
+   * request (a restricted or lapsed organization is on Visibility), from the
+   * server's PLAN_NAME mirror -- never a tier id. Null when it can't be read:
+   * the email then names no plan.
+   */
+  async getPlanName(organizationId: string, client?: PoolClient): Promise<string | null> {
+    try {
+      const entitlement = await getOrganizationEntitlement(organizationId, client ?? this.pool);
+      return entitlement ? PLAN_NAME[entitlement.effectiveTier] : null;
+    } catch {
+      console.error('[Weekly Summary] plan lookup failed');
+      return null;
+    }
   }
 
   /** One eligible AWS account or none; 'unknown' when the read fails (logged without detail). */

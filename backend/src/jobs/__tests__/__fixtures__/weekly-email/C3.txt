@@ -1,5 +1,5 @@
 Your DevControl Weekly Summary
-Cost, security, and delivery summary
+Example Org (synthetic) · Visibility plan · Nov 9 – Nov 15, 2026 (UTC)
 
 Hi Alex,
 
@@ -23,8 +23,8 @@ Alert history (Coming soon)
 Active CloudWatch alarms appear on Operational Health once AWS is connected.
 
 DELIVERY
-No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.
-See deployments: https://app.example.test/deployments
+No deployments have been recorded in DevControl yet.
+Record a deployment on the Deployments page: https://app.example.test/deployments
 
 View Full Dashboard: https://app.example.test/dashboard
 

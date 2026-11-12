@@ -147,6 +147,7 @@ describe('weekly email savings from database rows (WE-1 review H-1)', () => {
     const { html, text, savings } = await renderFromDatabase(orgId);
     expect(savings).toEqual([
       '1 open finding; none has a dollar estimate yet.',
+      'From the cost analysis completed Nov 16, 2026, 06:20 UTC.',
       'See Cost Optimization: https://app.example.test/cost-optimization',
     ]);
     for (const out of [html, text]) {
@@ -174,6 +175,7 @@ describe('weekly email savings from database rows (WE-1 review H-1)', () => {
     expect(savings).toEqual([
       'Estimated savings: $845/month across 1 open finding. This is a DevControl estimate, not realized savings.',
       '2 more open findings have no dollar estimate yet.',
+      'From the cost analysis completed Nov 16, 2026, 06:20 UTC.',
       'See Cost Optimization: https://app.example.test/cost-optimization',
     ]);
     expect(html).toContain('Estimated savings: <strong>$845/month</strong> across 1 open finding.');

@@ -12,8 +12,15 @@
  *       an older scan completed (24 resources, 18 priced)
  *   C5  connected, AWS credits cover usage: every Cost Explorer day nets to $0
  *
- * C1, C4 and C5 are on Visibility, so the posture score and the DORA
+ * C1, C3, C4 and C5 are on Visibility, so the posture score and the DORA
  * figures are left out, as the repository does below Optimization Engine.
+ *
+ * WE-2 reads (mock v1's dates): C1, C2 and C5 have an OK health check (Nov 16,
+ * 06:02 UTC), a completed latest scan (06:14) and a completed cost analysis
+ * (06:20). C4's connection is failing since Nov 14; its latest scan and cost
+ * analysis didn't finish on Nov 16, and the last completed ones are from Nov 8.
+ * C3 has none of these (not connected) and has never recorded a deployment;
+ * C1, C2, C4 and C5 have.
  */
 import { Pool } from 'pg';
 import awsCostService from '../../services/aws-cost.service';
@@ -25,8 +32,10 @@ import {
   type WeeklyDORAMetrics,
   type WeeklyEvidence,
   type WeeklyRecommendationEvidence,
+  type WeeklyRunEvidence,
   type WeeklySecurityEvidence,
 } from '../../repositories/weekly-summary.repository';
+import type { HealthDisplay } from '../../services/connection-health';
 
 export const FIXTURE_NOW = new Date('2026-11-16T09:00:00.000Z');
 export const FIXTURE_ORG = '0f000000-0000-4000-8000-0000000000c1';
@@ -64,7 +73,12 @@ const NOT_CONNECTED: Trend = async () => { throw new Error('AWS_NOT_CONNECTED: s
 const REFUSED: Trend = async () => { throw new Error('AccessDenied: synthetic refusal'); };
 
 interface FixtureSpec {
+  plan: string;
   awsConnection: WeeklyAwsConnection;
+  health: HealthDisplay | null;
+  scan: WeeklyRunEvidence | null;
+  analysis: WeeklyRunEvidence | null;
+  deploymentsEverRecorded: boolean;
   trend: Trend;
   inventory: { total_resources: string; priced_resources: string; total_cost: string };
   security: { state: 'available'; data: WeeklySecurityEvidence } | { state: 'unavailable'; reason: string };
@@ -79,8 +93,34 @@ const NO_INVENTORY = { total_resources: '0', priced_resources: '0', total_cost: 
 const NO_DEPLOYMENTS: WeeklyDORAMetrics = { deploymentCount: 0, successfulDeployments: 0, failedDeployments: 0 };
 const SIX_DEPLOYMENTS: WeeklyDORAMetrics = { deploymentCount: 6, successfulDeployments: 4, failedDeployments: 2 };
 
+export const HEALTH_OK: HealthDisplay = {
+  state: 'ok', lastResult: 'ok', checkedAt: '2026-11-16T06:02:00.000Z', failingSince: null, lostAt: null,
+};
+export const HEALTH_FAILING: HealthDisplay = {
+  state: 'failing', lastResult: 'failing', checkedAt: '2026-11-16T06:02:00.000Z', failingSince: '2026-11-14T06:01:00.000Z', lostAt: null,
+};
+export const SCAN_COMPLETED: WeeklyRunEvidence = {
+  latest: { state: 'completed', at: '2026-11-16T06:14:00.000Z', startedAt: '2026-11-16T06:00:00.000Z' },
+  lastCompleted: { at: '2026-11-16T06:14:00.000Z' },
+};
+export const SCAN_DID_NOT_FINISH: WeeklyRunEvidence = {
+  latest: { state: 'did_not_finish', at: '2026-11-16T06:14:00.000Z', startedAt: '2026-11-16T06:00:00.000Z' },
+  lastCompleted: { at: '2026-11-08T06:10:00.000Z' },
+};
+export const ANALYSIS_COMPLETED: WeeklyRunEvidence = {
+  latest: { state: 'completed', at: '2026-11-16T06:20:00.000Z', startedAt: '2026-11-16T06:14:00.000Z' },
+  lastCompleted: { at: '2026-11-16T06:20:00.000Z' },
+};
+export const ANALYSIS_DID_NOT_FINISH: WeeklyRunEvidence = {
+  latest: { state: 'did_not_finish', at: '2026-11-16T06:15:00.000Z', startedAt: '2026-11-16T06:14:00.000Z' },
+  lastCompleted: { at: '2026-11-08T06:20:00.000Z' },
+};
+const CONNECTED_WEEK = { health: HEALTH_OK, scan: SCAN_COMPLETED, analysis: ANALYSIS_COMPLETED, deploymentsEverRecorded: true };
+
 export const FIXTURES: Record<FixtureId, FixtureSpec> = {
   C1: {
+    plan: 'Visibility',
+    ...CONNECTED_WEEK,
     awsConnection: 'connected',
     trend: NORMAL_WEEK,
     inventory: NO_INVENTORY,
@@ -89,6 +129,8 @@ export const FIXTURES: Record<FixtureId, FixtureSpec> = {
     recommendations: { active: 3, estimatedMonthlySavings: 0, estimatedFindings: 0, ceilingByResourceType: { S3: 310 }, unestimatedFindings: 1 },
   },
   C2: {
+    plan: 'Optimization Engine',
+    ...CONNECTED_WEEK,
     awsConnection: 'connected',
     trend: NORMAL_WEEK,
     inventory: NO_INVENTORY,
@@ -97,6 +139,11 @@ export const FIXTURES: Record<FixtureId, FixtureSpec> = {
     recommendations: { active: 3, estimatedMonthlySavings: 845, estimatedFindings: 3, ceilingByResourceType: {}, unestimatedFindings: 0 },
   },
   C3: {
+    plan: 'Visibility',
+    health: null,
+    scan: null,
+    analysis: null,
+    deploymentsEverRecorded: false,
     awsConnection: 'not_connected',
     trend: NOT_CONNECTED,
     inventory: NO_INVENTORY,
@@ -105,6 +152,11 @@ export const FIXTURES: Record<FixtureId, FixtureSpec> = {
     recommendations: NONE_OPEN,
   },
   C4: {
+    plan: 'Visibility',
+    health: HEALTH_FAILING,
+    scan: SCAN_DID_NOT_FINISH,
+    analysis: ANALYSIS_DID_NOT_FINISH,
+    deploymentsEverRecorded: true,
     awsConnection: 'connected',
     trend: REFUSED,
     inventory: { total_resources: '24', priced_resources: '18', total_cost: '412.5' },
@@ -113,6 +165,8 @@ export const FIXTURES: Record<FixtureId, FixtureSpec> = {
     recommendations: { active: 2, estimatedMonthlySavings: 120, estimatedFindings: 2, ceilingByResourceType: {}, unestimatedFindings: 0 },
   },
   C5: {
+    plan: 'Visibility',
+    ...CONNECTED_WEEK,
     awsConnection: 'connected',
     trend: CREDITS_COVER_USAGE,
     inventory: NO_INVENTORY,
@@ -140,9 +194,17 @@ export async function fixtureEvidence(id: FixtureId): Promise<WeeklyEvidence> {
   const off = spec.awsConnection === 'not_connected';
   const SECURITY = 'DevControl security posture score and configuration checks';
   const RECOMMENDATIONS = 'DevControl cost recommendations';
+  const read = <T>(source: string, data: T | null) =>
+    data === null ? Promise.resolve(null) : collectSection<T>({ source }, async () => ({ state: 'available', data }));
   return {
     period,
     awsConnection: spec.awsConnection,
+    connectionHealth: await read<HealthDisplay>('DevControl AWS connection health', spec.health),
+    scan: await read<WeeklyRunEvidence>('DevControl discovery scans', spec.scan),
+    costAnalysis: await read<WeeklyRunEvidence>('DevControl cost analysis runs', spec.analysis),
+    deploymentHistory: await collectSection({ source: 'DevControl deployment records (all time)' }, async () => ({
+      state: 'available', data: { anyRecorded: spec.deploymentsEverRecorded },
+    })),
     ...spend,
     alerts: await repository.getWeeklyAlerts(FIXTURE_ORG, period),
     delivery: await collectSection<WeeklyDORAMetrics>({ source: 'DevControl deployment records' }, async () => ({ state: 'available', data: spec.delivery })),
