@@ -26,6 +26,7 @@ import { accountSecurityFindingsService } from '@/lib/services/account-security-
 import { awsResourcesService } from '@/lib/services/aws-resources.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
+import { authService } from '@/lib/services/auth.service'
 import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
@@ -177,6 +178,19 @@ export default function DashboardPage() {
     enabled: !isDemoActive && !!organization?.id,
     retry: false, refetchOnWindowFocus: false,
   })
+  // "Last login": the previous sign-in from a /me response made for this
+  // Dashboard view, never the user cached at sign-in or held in the auth store
+  // (refreshed only on a full page load), so a sign-in on another device shows
+  // up. Nothing is kept once the page unmounts (gcTime 0); an earlier answer
+  // or a failed request is never shown.
+  const { data: freshMe, isFetchedAfterMount: meFetchedAfterMount, isError: meFailed } = useQuery({
+    queryKey: ['dashboard-me', user?.id],
+    queryFn: () => authService.getCurrentUser(),
+    enabled: !isDemoActive && !!user?.id,
+    staleTime: 0, gcTime: 0, refetchOnMount: 'always',
+    refetchOnWindowFocus: false, retry: false,
+  })
+  const freshPreviousLoginAt = meFetchedAfterMount && !meFailed ? freshMe?.previousLoginAt : undefined
   // Resource checks' CloudWatch capture time, once that section has loaded (DB-D9).
   const [cloudwatchCapturedAt, setCloudwatchCapturedAt] = useState<number | null>(null)
   // The viewer's "today", for "today, 6:02 PM" / "yesterday, …" (re-read at local midnight).
@@ -592,7 +606,7 @@ export default function DashboardPage() {
 
   // "Last scan: <time> · Last login: <time>": Security's scan line and the
   // previous sign-in (never the current one); each part omitted without a source.
-  const headerLine = isDemoActive ? null : headerStatusLine({ coverage, previousLoginAt: user?.previousLoginAt, now })
+  const headerLine = isDemoActive ? null : headerStatusLine({ coverage, previousLoginAt: freshPreviousLoginAt, now })
   const freshness = isDemoActive ? [] : dataFreshnessSegments({
     costSummary, costSummaryError, coverage, cloudwatchCapturedAt, serviceCheckedAt: systemHealth?.lastUpdate, now,
   })

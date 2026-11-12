@@ -44,6 +44,7 @@ import { systemIntelligenceService } from '@/lib/services/system-intelligence.se
 import { activityFeedService } from '@/lib/services/activity-feed.service'
 import { soc2Service } from '@/lib/services/soc2.service'
 import { complianceFrameworksService } from '@/lib/services/compliance-frameworks.service'
+import { authService } from '@/lib/services/auth.service'
 
 const NOW = Date.parse('2026-11-13T01:37:00Z')
 const SCAN_DONE = '2026-11-12T23:02:00Z' // today, 6:02 PM
@@ -290,8 +291,11 @@ const stats = (total: number, active: number, byType: Record<string, number>, ce
 })
 
 let client: QueryClient
-function setup(o: { recs?: unknown[]; stats?: unknown; spend?: Spend; coverage?: ServicesCoverage; connected?: boolean; user?: Record<string, unknown> } = {}) {
+function setup(o: { recs?: unknown[]; stats?: unknown; spend?: Spend; coverage?: ServicesCoverage; connected?: boolean; user?: Record<string, unknown>; me?: Record<string, unknown> | 'fail' } = {}) {
   authState.user = o.user ?? { id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: PREVIOUS_LOGIN }
+  // The Dashboard's own /me request; by default it answers with the same user as the auth store.
+  if (o.me === 'fail') vi.spyOn(authService, 'getCurrentUser').mockRejectedValue(new Error('HTTP 503'))
+  else vi.spyOn(authService, 'getCurrentUser').mockResolvedValue((o.me ?? authState.user) as never)
   vi.spyOn(platformStatsService, 'getDashboardStats').mockResolvedValue({ totalServices: 3, servicesChange: 0, activeDeployments: 1, deploymentsChange: 0, monthlyAwsCost: 123.45, costChange: 0, totalTeams: 1, teamsChange: 0, costSource: 'actual' } as never)
   vi.spyOn(platformStatsService, 'getCostSummary').mockResolvedValue(summary(o.spend ?? SPEND.billed) as never)
   vi.spyOn(costRecommendationsService, 'getAll').mockResolvedValue((o.recs ?? [rec('ebs1', 'EBS', 5.17, 'estimated:x')]) as never)
@@ -393,6 +397,61 @@ describe('page: header', () => {
     expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
     expect(document.body.textContent).not.toContain('Last login')
     expect(document.body.textContent).not.toContain('8:30 PM')
+  })
+})
+
+describe('page: "Last login" comes from a fresh /me on each Dashboard load, never the auth store', () => {
+  const OTHER_DEVICE = '2026-11-12T22:41:00Z' // today, 5:41 PM: a sign-in on another device after this session's
+
+  it('the auth store holds an older previousLoginAt; the header shows the one /me returns now', async () => {
+    setup({ me: { id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: OTHER_DEVICE } })
+    health.ok()
+    renderDashboard()
+    await settled()
+    await waitFor(() => expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM · Last login: today, 5:41 PM'))
+    expect(document.body.textContent).not.toContain('yesterday, 9:14 AM')
+    expect(authService.getCurrentUser).toHaveBeenCalledTimes(1)
+  })
+
+  it('/me fails: no "Last login" at all, never the auth store\'s copy', async () => {
+    setup({ me: 'fail' })
+    health.ok()
+    renderDashboard()
+    await settled()
+    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
+    expect(document.body.textContent).not.toContain('Last login')
+  })
+
+  it('/me answers null or without the field (PR-UI-a not applied): no "Last login", even though the store has one', async () => {
+    for (const me of [{ id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: null }, { id: 'u', lastLoginAt: CURRENT_LOGIN }]) {
+      setup({ me })
+      health.ok()
+      const { unmount } = renderDashboard()
+      await settled()
+      expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
+      unmount()
+      vi.restoreAllMocks()
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+    }
+  })
+
+  it('leaving and returning to the Dashboard (same client, no page reload) asks /me again and shows the new value, never the earlier answer', async () => {
+    setup({ me: { id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: PREVIOUS_LOGIN } })
+    health.ok()
+    const first = renderDashboard()
+    await settled()
+    await waitFor(() => expect(screen.getByTestId('dashboard-header-status').textContent).toContain('Last login: yesterday, 9:14 AM'))
+    first.unmount()
+
+    // Another device signs in; the second /me is held so the earlier answer would show if it were reused.
+    let answer: (value: unknown) => void = () => {}
+    vi.mocked(authService.getCurrentUser).mockImplementation(() => new Promise((resolve) => { answer = resolve }) as never)
+    renderDashboard()
+    await settled()
+    expect(authService.getCurrentUser).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
+    await act(async () => { answer({ id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: OTHER_DEVICE }) })
+    await waitFor(() => expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM · Last login: today, 5:41 PM'))
   })
 })
 

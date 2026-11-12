@@ -43,6 +43,7 @@ import { systemIntelligenceService } from '@/lib/services/system-intelligence.se
 import { activityFeedService } from '@/lib/services/activity-feed.service'
 import { soc2Service } from '@/lib/services/soc2.service'
 import { complianceFrameworksService } from '@/lib/services/compliance-frameworks.service'
+import { authService } from '@/lib/services/auth.service'
 
 const DIR = path.join(__dirname, '__fixtures__', 'dashboard-ui')
 const WRITE = process.env.DASHBOARD_UI_FIXTURES === 'write'
@@ -177,6 +178,8 @@ function setup(opts: {
   user?: Record<string, unknown>
 } = {}) {
   authState.user = opts.user ?? { id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: PREVIOUS_LOGIN }
+  // The Dashboard reads "Last login" from its own /me request; here it answers with the same user.
+  vi.spyOn(authService, 'getCurrentUser').mockResolvedValue(authState.user as never)
   const savings = opts.savings ?? SAVINGS.estimateWithCeilings
   vi.spyOn(platformStatsService, 'getDashboardStats').mockResolvedValue({
     totalServices: 3, servicesChange: 0, activeDeployments: 1, deploymentsChange: 0, monthlyAwsCost: 123.45, costChange: 0, totalTeams: 1, teamsChange: 0, costSource: 'actual',
