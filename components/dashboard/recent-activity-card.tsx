@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { Clock, CheckCircle2, TrendingUp, ShieldAlert, Gauge, Activity as ActivityIcon } from 'lucide-react'
+import { Clock, TrendingUp, Gauge, Activity as ActivityIcon } from 'lucide-react'
+import { StatusIcon, type StatusKind } from '@/components/ui/status-icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ActivityEventType, ActivityEvent } from '@/lib/services/activity-feed.service'
 
@@ -11,11 +12,14 @@ interface RecentActivityCardProps {
   isError: boolean
 }
 
-const EVENT_CONFIG: Record<ActivityEventType, { icon: typeof CheckCircle2; color: string; background: string }> = {
-  sync: { icon: CheckCircle2, color: 'var(--text-success)', background: 'var(--bg-success)' },
+// Status events use the filled status icons (dashboard-step1 §D); the others keep their outline icons.
+// Every row's text (message, then the event type) says what the icon shows, so the icon is aria-hidden.
+type EventIcon = { status: Exclude<StatusKind, 'error'>; background: string } | { icon: typeof Gauge; color: string; background: string }
+const EVENT_CONFIG: Record<ActivityEventType, EventIcon> = {
+  sync: { status: 'success', background: 'var(--bg-success)' },
   optimization: { icon: TrendingUp, color: 'var(--text-warning)', background: 'var(--bg-warning)' },
-  security: { icon: ShieldAlert, color: 'var(--text-danger)', background: 'var(--bg-danger)' },
-  anomaly: { icon: ShieldAlert, color: 'var(--text-danger)', background: 'var(--bg-danger)' },
+  security: { status: 'security', background: 'var(--bg-accent)' },
+  anomaly: { status: 'security', background: 'var(--bg-accent)' },
   score: { icon: Gauge, color: '#1D4ED8', background: '#EFF6FF' },
 }
 
@@ -67,11 +71,12 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
         <div>
           {visibleActivities.map((event, i) => {
             const conf = EVENT_CONFIG[event.type] ?? EVENT_CONFIG.score
-            const Icon = conf.icon
             return (
               <div key={`${event.type}-${event.timestamp}-${i}`} className="flex items-start gap-3 py-3 border-b border-border last:border-b-0">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: conf.background }}>
-                  <Icon size={14} style={{ color: conf.color }} />
+                  {'status' in conf
+                    ? <StatusIcon kind={conf.status} size={14} data-testid="activity-status-icon" />
+                    : <conf.icon size={14} aria-hidden="true" style={{ color: conf.color }} />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-meta font-semibold text-ink leading-snug line-clamp-1" title={event.message}>{event.message}</p>

@@ -419,3 +419,62 @@ describe('pure helpers', () => {
     expect(resourceChecksView({ status: 'ok', data: { services: [] } })).toEqual({ kind: 'line', line: 'Could not be retrieved' })
   })
 })
+
+describe('status icons (PR-ICONS-a): filled status glyphs, decorative next to the unchanged text', () => {
+  const summaryIcon = () => {
+    const icons = summaryCard().querySelectorAll('svg[data-testid^="resource-checks-icon-"]')
+    expect(icons).toHaveLength(1)
+    return icons[0]
+  }
+
+  it('all pass → filled success check, aria-hidden; the text is unchanged', async () => {
+    respond({ success: true, data: metrics() })
+    renderSection()
+    await loaded()
+    const icon = summaryIcon()
+    expect(icon).toBe(screen.getByTestId('resource-checks-icon-pass'))
+    expect(icon.getAttribute('data-status-kind')).toBe('success')
+    expect(icon.getAttribute('data-glyph')).toBe('circle-check')
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByTestId('resource-checks-value')).toHaveTextContent(/^3 of 3$/)
+    expect(screen.getByTestId('resource-checks-chip')).toHaveTextContent(/^No issues detected$/)
+  })
+
+  it('issues with only degraded results → filled warning triangle; the text is unchanged', async () => {
+    respond({ success: true, data: metrics({ healthSummary: summary({ total: 4, healthy: 3, degraded: 1, monitored: 4 }) }) })
+    renderSection()
+    await loaded()
+    const icon = summaryIcon()
+    expect(icon).toBe(screen.getByTestId('resource-checks-icon-issue'))
+    expect(icon.getAttribute('data-status-kind')).toBe('warning')
+    expect(icon.getAttribute('data-glyph')).toBe('alert-triangle')
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByTestId('resource-checks-chip')).toHaveTextContent(/^1 with issues detected$/)
+  })
+
+  it('issues including a critical or down result → filled error circle, as red as before; the text is unchanged', async () => {
+    respond({ success: true, data: metrics({ healthSummary: summary({ total: 4, healthy: 2, degraded: 1, down: 1, monitored: 4 }) }) })
+    renderSection()
+    await loaded()
+    const icon = summaryIcon()
+    expect(icon).toBe(screen.getByTestId('resource-checks-icon-issue'))
+    expect(icon.getAttribute('data-status-kind')).toBe('error')
+    expect(icon.getAttribute('data-glyph')).toBe('alert-circle')
+    expect(icon.getAttribute('style')).toContain('var(--fill-danger)')
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByTestId('resource-checks-chip')).toHaveTextContent(/^2 with issues detected$/)
+  })
+
+  it('undetermined (no issues, not all pass) stays the neutral outline dashed circle, not a status icon', async () => {
+    respond({ success: true, data: metrics({ healthSummary: summary({ total: 3, healthy: 2, monitored: 3 }) }) })
+    renderSection()
+    await loaded()
+    const icon = summaryIcon()
+    expect(icon).toBe(screen.getByTestId('resource-checks-icon-neutral'))
+    expect(icon).not.toHaveAttribute('data-status-kind')
+    expect(icon.getAttribute('class')).toContain('lucide-circle-dashed')
+    expect(icon.getAttribute('style')).toContain('var(--text-secondary)')
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByTestId('resource-checks-undetermined')).toHaveTextContent(/^1 undetermined$/)
+  })
+})

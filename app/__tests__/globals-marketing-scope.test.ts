@@ -10,6 +10,7 @@ import { isAppScopedSelector } from './surface-scope'
 // else -- including the custom purple @theme at the top -- must stay byte-identical to
 // __fixtures__/globals.baseline.css (app/globals.css before that work). Updating the baseline
 // needs founder sign-off in the PR.
+// Baseline changes with sign-off: the unused Tabler webfont import removed (DB-D18, founder decision Nov 12).
 const css = readFileSync(join(process.cwd(), 'app/globals.css'), 'utf8')
 const baseline = readFileSync(join(process.cwd(), 'app/__tests__/__fixtures__/globals.baseline.css'), 'utf8')
 

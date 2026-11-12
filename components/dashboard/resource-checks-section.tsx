@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { AlertTriangle, CheckCircle2, CircleDashed, ExternalLink, ListChecks, Server } from 'lucide-react'
+import { CircleDashed, ExternalLink, ListChecks, Server } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { Num } from '@/components/ui/typography'
+import { StatusIcon } from '@/components/ui/status-icon'
 import { checkResultLabel, resourceTypeLabel } from '@/components/monitoring/ServiceHealthTable'
 import { useInViewOnce, useResourceChecks, type ResourceChecksState } from '@/lib/hooks/useResourceChecks'
 import { checkCountsFrom, mapServiceRow, type CloudWatchMetricsData, type HealthSummary, type PaginationMeta, type ServiceHealth } from '@/lib/resource-checks'
@@ -175,13 +176,15 @@ function SummaryCard({ view }: { view: ResourceChecksView }) {
   const allPass = noIssues && view.kind === 'results' && view.undetermined === 0
   const issueColor = view.kind === 'results' && view.issueTone ? TONE_COLOR[view.issueTone] : NEUTRAL_COLOR
   const hasIssues = view.kind === 'results' && view.withIssues > 0
-  const StatusIcon = allPass ? CheckCircle2 : hasIssues ? AlertTriangle : CircleDashed
-  const iconColor = allPass ? TONE_COLOR.success : hasIssues ? issueColor : NEUTRAL_COLOR
 
   return (
     <div className="min-w-0 self-start rounded-xl border border-border bg-[var(--surface-2)] p-5 flex items-start gap-4" data-testid="resource-checks-summary">
       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-[var(--surface-1)] border border-border">
-        <StatusIcon size={20} aria-hidden="true" style={{ color: iconColor }} data-testid={`resource-checks-icon-${allPass ? 'pass' : hasIssues ? 'issue' : 'neutral'}`} />
+        {/* Decorative: the "N of M" value and the chips next to it say the status. Undetermined is not a
+            status, so it keeps the neutral outline dashed circle. */}
+        {allPass ? <StatusIcon kind="success" size={20} data-testid="resource-checks-icon-pass" />
+          : hasIssues ? <StatusIcon kind={view.kind === 'results' && view.issueTone === 'danger' ? 'error' : 'warning'} size={20} data-testid="resource-checks-icon-issue" />
+          : <CircleDashed size={20} aria-hidden="true" style={{ color: 'var(--text-secondary)' }} data-testid="resource-checks-icon-neutral" />}
       </div>
       <div className="min-w-0 flex-1 self-center">
         {view.kind === 'line' ? (
