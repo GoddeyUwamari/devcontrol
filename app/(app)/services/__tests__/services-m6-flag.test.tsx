@@ -6,7 +6,13 @@
  * byte for byte. The flag does nothing while NEXT_PUBLIC_SERVICES_V2 is off.
  *
  * `__snapshots__/m6-flag-off.*.html` were written by the code before M6
- * (origin/main 4c006a1) for the same fixtures and are compared byte for byte.
+ * (origin/main 4c006a1) for the same fixtures and are compared byte for byte;
+ * re-written once for the Services copy PR (scan time moved from the strip
+ * to the header, PHASE 2 → Coming soon, the Needs attention caption).
+ *
+ * The header's "Last scan" line is Security's and the Dashboard's (scanLine):
+ * it reads scan_in_progress whatever the flag, so it is taken out of the
+ * byte-for-byte comparison and pinned on its own below.
  *
  * The rendered times are local times, so the zone is pinned to UTC for this
  * file (set before anything formats a date): the snapshots are then the same
@@ -71,12 +77,18 @@ const FIXTURES: Record<string, () => ServicesCoverage> = {
   failed: () => prodCoverage(NOW, { status: 'denied' }, { last_scan: { status: 'failed', started_at: hoursAgo(1.2), completed_at: hoursAgo(1), warnings: [] } }),
 }
 
+/** The header scan line of the last html() render, taken out of its markup. */
+let lastScanLine: string | null = null
+
 async function html(coverage: ServicesCoverage): Promise<string> {
   mockGetCoverage.mockResolvedValue(coverage)
   const { container, unmount } = renderPage()
   await screen.findByRole('region', { name: 'Account and scan coverage' })
   await waitFor(() => expect(screen.queryByText(/Loading scan coverage…|Loading resources…/)).toBeNull())
   await screen.findByText(/What we didn.t check/)
+  const line = container.querySelector('[data-testid="services-scan-line"]')
+  lastScanLine = line?.textContent ?? null
+  line?.remove()
   const out = normalizeIds(container.innerHTML)
   unmount()
   return out
@@ -101,6 +113,20 @@ describe('flag off: the page before M6, byte for byte', () => {
     expect(full).toBe(phase1)
     expect(full).not.toMatch(/Region coverage|enabled regions checked|Scan running/)
     await expect(full).toMatchFileSnapshot(`./__snapshots__/m6-flag-off.${name}.html`)
+  })
+
+  it.each([
+    // [fixture, with the M5c keys, without them (a backend before M5c)]
+    ['today', 'Last scan: today, 1:00 PM', 'Last scan: today, 1:00 PM'],
+    ['running', 'Scan running…', 'Last scan: today, 1:00 PM'],
+    ['abandoned', 'Last scan: today, 1:00 PM', 'Last scan: today, 1:00 PM'],
+    ['failed', 'Last scan failed: today, 2:00 PM', 'Last scan failed: today, 2:00 PM'],
+  ])('%s: the header scan line, with and without the M5c keys', async (name, withKeys, withoutKeys) => {
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'false')
+    await html(FIXTURES[name]())
+    expect(lastScanLine).toBe(withKeys)
+    await html(withoutM5c(FIXTURES[name]()))
+    expect(lastScanLine).toBe(withoutKeys)
   })
 
   it('unset is the same as false', async () => {

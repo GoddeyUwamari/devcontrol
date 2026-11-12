@@ -1,7 +1,7 @@
 'use client'
 
 import type { AWSServicesStats } from '@/lib/services/aws-services.service'
-import { PhaseTwoTag } from './PhaseTwoTag'
+import { ComingSoonTag } from './ComingSoonTag'
 
 /**
  * Unowned resources (Q19): how many resources have neither an Owner nor a
@@ -60,7 +60,7 @@ export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter }: {
         <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-label text-slate-700 opacity-60 cursor-not-allowed">
           Assign owner
         </button>
-        <PhaseTwoTag />
+        <ComingSoonTag />
       </div>
     </section>
   )

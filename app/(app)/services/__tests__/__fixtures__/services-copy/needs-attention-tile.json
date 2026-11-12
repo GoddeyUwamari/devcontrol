@@ -3,18 +3,18 @@
     "Needs attention",
     "2",
     "2 High",
-    "No flagged issues: 7"
+    "7 resources with no flagged issues"
   ],
   "healthy 1": [
     "Needs attention",
     "2",
     "2 High",
-    "No flagged issues: 1"
+    "1 resource with no flagged issues"
   ],
   "healthy 0": [
     "Needs attention",
     "2",
     "2 High",
-    "No flagged issues: 0"
+    "0 resources with no flagged issues"
   ]
 }

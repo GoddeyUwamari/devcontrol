@@ -26,7 +26,7 @@ import type { AWSService, AWSServicesPage, AWSServicesStats, ServicesCoverage } 
 import type { AccountSecurityFinding, ComplianceSeverity } from '@/lib/services/account-security-findings.service'
 import type { CostSummary, RecommendationStats } from '@/lib/types'
 import type { SeverityLevel } from '@/lib/utils/severity-colors'
-import { describeCeilings } from '@/lib/savings-basis'
+import { describeCeilings, describeCeilingsWithoutEstimate, NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
 import { formatUsd, noChargesReportedYet, noChargesYetNote } from '../../costs/cost-display'
 import { describeServicesSpend, SPEND_UNAVAILABLE_TEXT } from '../../services/SummaryTiles'
 import { SEVERITY_LABEL, STATUS_LABEL, typeLabel } from '../../services/AttentionTable'
@@ -172,6 +172,27 @@ function regionLabel(region: string | null | undefined): string {
 }
 
 const ACCOUNT_KIND: Record<string, string> = { networking: 'Security group', iam: 'IAM user' }
+
+const SG_ID = /^sg-[0-9a-z]+$/i
+const SG_IN_ARN = /:security-group\/(sg-[0-9a-z]+)$/i
+
+/**
+ * How a security-group finding's resource reads: "<group name> (sg-…)", or the
+ * sg- ID alone when the name is not known. The ID is the stored identifier's
+ * (its ARN or bare sg- ID), else the evidence's; the name is the evidence's
+ * security_group_name, used only when the evidence is about that same group.
+ * With no sg- ID at all the stored identifier is shown as it is. Display only:
+ * resource_identifier, sorting and links are unchanged.
+ */
+export function securityGroupLabel(f: Pick<AccountSecurityFinding, 'resource_identifier' | 'evidence'>): string {
+  const evidence = f.evidence && 'security_group_id' in f.evidence ? f.evidence : null
+  const evidenceId = typeof evidence?.security_group_id === 'string' && SG_ID.test(evidence.security_group_id) ? evidence.security_group_id : null
+  const identifier = f.resource_identifier ?? ''
+  const id = identifier.match(SG_IN_ARN)?.[1] ?? (SG_ID.test(identifier) ? identifier : null) ?? evidenceId
+  if (!id) return identifier
+  const name = evidenceId === id && typeof evidence?.security_group_name === 'string' ? evidence.security_group_name.trim() : ''
+  return name && name !== id ? `${name} (${id})` : id
+}
 const NAME_COLLATOR = new Intl.Collator('en')
 
 interface Ranked { rank: number; cost: number | null; name: string; id: string; row: AttentionRow }
@@ -221,7 +242,7 @@ export function rankAttention(resources: AWSService[], accountFindings: AccountS
         cause: 'finding',
         severity: accountSeverity(f),
         issue: f.title,
-        resource: f.resource_identifier,
+        resource: f.category === 'networking' ? securityGroupLabel(f) : f.resource_identifier,
         resourceKind: kind,
         region: f.region ?? 'Global (IAM)',
         found: `${f.title} (${kind === 'Account' ? 'account-level' : kind.toLowerCase()})`,
@@ -280,6 +301,8 @@ export interface Tile {
   key: 'spend' | 'findings' | 'savings' | 'ownership'
   label: string
   value: string
+  /** 'success': the value is shown green (the savings tile, only for an estimate above $0). */
+  tone?: 'success'
   captions: Rich[]
   link?: { text: string; href: string }
 }
@@ -471,10 +494,52 @@ function savingsTile(i: OverviewInputs): Tile {
   if (i.savings.status === 'error') return { ...base, value: '—', captions: [[OVERVIEW_COPY.savingsError]] }
   const s = i.savings.data
   const total = Number.isFinite(s.totalPotentialSavings) ? s.totalPotentialSavings : 0
-  const captions: Rich[] = [[OVERVIEW_COPY.savingsSource]]
-  for (const line of describeCeilings(s.potentialSavingsCeilingByResourceType ?? {}, formatUsd)) captions.push([line])
-  if ((s.activeRecommendations ?? 0) === 0) captions.push([OVERVIEW_COPY.savingsNone])
-  return { ...base, value: `${formatUsd(total)}/mo est.`, captions }
+  const ceilings = s.potentialSavingsCeilingByResourceType ?? {}
+  const active = s.activeRecommendations ?? 0
+  if (active === 0) {
+    // No open findings: unchanged.
+    const captions: Rich[] = [[OVERVIEW_COPY.savingsSource]]
+    for (const line of describeCeilings(ceilings, formatUsd)) captions.push([line])
+    captions.push([OVERVIEW_COPY.savingsNone])
+    return { ...base, value: `${formatUsd(total)}/mo est.`, captions }
+  }
+  return { ...base, ...describeOpenSavings(total, active, ceilings, s.estimatedFindings, s.unestimatedFindings) }
+}
+
+const findings = (n: number) => `${n} open finding${n === 1 ? '' : 's'}`
+
+/**
+ * The savings tile with open findings, in the weekly email's sentences
+ * (weekly-summary-content.ts savingsLines). Green only for an estimate above
+ * $0; a total of $0 is never shown as a measured "$0". The counts are the
+ * stats API's own (estimated_findings / unestimated_findings): without them
+ * the sentence leaves the count out, and nothing is computed here.
+ */
+export function describeOpenSavings(
+  total: number,
+  active: number,
+  ceilings: Record<string, number>,
+  estimatedFindings: number | null | undefined,
+  unestimatedFindings: number | null | undefined,
+): Pick<Tile, 'value' | 'tone' | 'captions'> {
+  const captions: Rich[] = []
+  if (total > 0) {
+    const amount = `${formatUsd(total)}/month`
+    const across = typeof estimatedFindings === 'number' && estimatedFindings > 0 ? ` across ${findings(estimatedFindings)}` : ''
+    captions.push([`Estimated savings: ${amount}${across}. This is a DevControl estimate, not realized savings.`])
+    if (typeof unestimatedFindings === 'number' && unestimatedFindings > 0) {
+      captions.push([unestimatedFindings === 1
+        ? '1 more open finding has no dollar estimate yet.'
+        : `${unestimatedFindings} more open findings have no dollar estimate yet.`])
+    }
+    for (const line of describeCeilings(ceilings, formatUsd, 'month')) captions.push([`${line}.`])
+    captions.push([OVERVIEW_COPY.savingsSource])
+    return { value: amount, tone: 'success', captions }
+  }
+  captions.push([`${findings(active)}; none has a dollar estimate yet.`])
+  for (const line of describeCeilingsWithoutEstimate(ceilings, formatUsd, 'month')) captions.push([`${line}.`])
+  captions.push([OVERVIEW_COPY.savingsSource])
+  return { value: NO_DOLLAR_ESTIMATE, captions }
 }
 
 function ownershipTile(i: OverviewInputs, coverage: ServicesCoverage | null): Tile {

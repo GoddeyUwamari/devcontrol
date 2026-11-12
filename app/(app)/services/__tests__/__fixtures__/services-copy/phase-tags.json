@@ -1,32 +1,32 @@
 [
   {
-    "tag": "Phase 2",
-    "uppercase": true,
-    "context": "registered · resources not mapped to services yet Phase 2"
+    "tag": "Coming soon",
+    "uppercase": false,
+    "context": "registered · resources not mapped to services yet Coming soon"
   },
   {
-    "tag": "Phase 2",
-    "uppercase": true,
-    "context": "whole account · billed, from Cost Explorer · billed through Oct 21 · per service Phase 2"
+    "tag": "Coming soon",
+    "uppercase": false,
+    "context": "whole account · billed, from Cost Explorer · billed through Oct 21 · per service Coming soon"
   },
   {
-    "tag": "Phase 2",
-    "uppercase": true,
-    "context": "Resources · findings · cost · deploys Phase 2"
+    "tag": "Coming soon",
+    "uppercase": false,
+    "context": "Resources · findings · cost · deploys Coming soon"
   },
   {
-    "tag": "Phase 2",
-    "uppercase": true,
-    "context": "None of the 9 resources are mapped to a service yet. Mapping by tag or by hand fills in resources, findings, cost and deploys per service.Map resources to servicesPhase 2"
+    "tag": "Coming soon",
+    "uppercase": false,
+    "context": "None of the 9 resources are mapped to a service yet. Mapping by tag or by hand fills in resources, findings, cost and deploys per service.Map resources to servicesComing soon"
   },
   {
-    "tag": "Phase 2",
-    "uppercase": true,
-    "context": "Show the 3Assign ownerPhase 2"
+    "tag": "Coming soon",
+    "uppercase": false,
+    "context": "Show the 3Assign ownerComing soon"
   },
   {
-    "tag": "Phase 2",
-    "uppercase": true,
-    "context": "Group byResourceServicePhase 2"
+    "tag": "Coming soon",
+    "uppercase": false,
+    "context": "Group byResourceServiceComing soon"
   }
 ]

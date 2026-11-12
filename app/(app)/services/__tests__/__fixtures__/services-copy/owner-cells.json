@@ -1,7 +1,7 @@
 [
   {
     "service": "svc-webhook",
-    "owner": "github-actions@webhook"
+    "owner": "No owner set"
   },
   {
     "service": "svc-person",

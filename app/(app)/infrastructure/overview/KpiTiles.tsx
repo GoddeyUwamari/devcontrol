@@ -16,7 +16,7 @@ function TileCard({ tile, now }: { tile: Tile; now: number }) {
   return (
     <div data-testid={`infra-tile-${tile.key}`} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
       <h3 className="m-0 text-label uppercase tracking-[0.04em] text-slate-700">{tile.label}</h3>
-      <p className="m-0 text-kpi tabular-nums text-slate-900">{tile.value}</p>
+      <p className={`m-0 text-kpi tabular-nums ${tile.tone === 'success' ? 'text-ink-success' : 'text-slate-900'}`}>{tile.value}</p>
       <Captions captions={tile.captions} now={now} />
       {tile.link && <Link href={tile.link.href} className="mt-auto text-ui font-semibold text-violet-700 hover:underline">{tile.link.text}</Link>}
     </div>

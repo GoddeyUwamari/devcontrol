@@ -3,21 +3,21 @@
     [
       "Critical",
       "SSH open to the world",
-      "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef0 Security group",
+      "launch-wizard-1 (sg-0123456789abcdef0) Security group",
       "us-east-1",
       "Review"
     ],
     [
       "High",
       "RDP open to the world",
-      "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef1 Security group",
+      "sg-0123456789abcdef1 Security group",
       "us-east-1",
       "Review"
     ],
     [
       "High",
       "All ports open",
-      "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef2 Security group",
+      "sg-0123456789abcdef2 Security group",
       "us-east-1",
       "Review"
     ],
@@ -39,15 +39,15 @@
   "phone": [
     [
       "SSH open to the world",
-      "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef0 · Security group · us-east-1"
+      "launch-wizard-1 (sg-0123456789abcdef0) · Security group · us-east-1"
     ],
     [
       "RDP open to the world",
-      "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef1 · Security group · us-east-1"
+      "sg-0123456789abcdef1 · Security group · us-east-1"
     ],
     [
       "All ports open",
-      "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef2 · Security group · us-east-1"
+      "sg-0123456789abcdef2 · Security group · us-east-1"
     ],
     [
       "Console user without MFA",
@@ -59,9 +59,9 @@
     ]
   ],
   "reviewButtons": [
-    "Review arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef0",
-    "Review arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef1",
-    "Review arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef2",
+    "Review launch-wizard-1 (sg-0123456789abcdef0)",
+    "Review sg-0123456789abcdef1",
+    "Review sg-0123456789abcdef2",
     "Review arn:aws:iam::123456789012:user/example-user",
     "Review sg-0123456789abcdef3"
   ],

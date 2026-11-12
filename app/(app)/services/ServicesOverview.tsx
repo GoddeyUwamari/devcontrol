@@ -7,6 +7,7 @@ import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
 import type { CostSummary } from '@/lib/types'
 import { ServicesHeader } from './ServicesHeader'
+import { scanLine } from '../security/overview/securityModel'
 import { CoverageStrip, type CoverageState } from './CoverageStrip'
 import { SummaryTiles, type StatsState } from './SummaryTiles'
 import { AttentionTable, ATTENTION_ROWS, type AttentionState } from './AttentionTable'
@@ -174,6 +175,10 @@ export function ServicesOverview({
     ? describeRegionCoverage(coverageState.coverage, now, discovery.warnings)
     : null
   const scanRunning = regionView?.scanRunning ?? false
+  // The header's "Last scan" line (Security's and the Dashboard's wording), for a connected account only.
+  const scan = coverageState.status === 'ready' && coverageState.coverage.account.connected
+    ? scanLine({ status: 'ready', data: coverageState.coverage }, now)
+    : null
 
   const statsData = stats.stats
   // With no resources at all, the list below says why (no account, nothing
@@ -193,6 +198,7 @@ export function ServicesOverview({
         discoveryMsg={discovery.discoveryMsg}
         onAutoDiscover={discovery.onAutoDiscover}
         scanRunning={scanRunning}
+        scan={scan}
       />
       {banners}
       {(pageError || listFailed) && <LoadErrorBanner />}

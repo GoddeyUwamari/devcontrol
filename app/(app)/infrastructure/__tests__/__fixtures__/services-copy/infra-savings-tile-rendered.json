@@ -2,48 +2,55 @@
   "estimate > 0, S3 ceiling, no counts": {
     "lines": [
       "Possible savings",
-      "$123.45/mo est.",
+      "$123.45/month",
+      "Estimated savings: $123.45/month. This is a DevControl estimate, not realized savings.",
+      "Plus up to $41.27/month if S3 data qualifies for Standard-IA (upper bound, not included above).",
       "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
-      "Plus up to $41.27/mo if S3 data qualifies for Standard-IA (upper bound, not included above)",
       "Review recommendations →"
     ],
-    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+    "valueClass": "m-0 text-kpi tabular-nums text-ink-success"
   },
   "estimate > 0, S3 + DynamoDB ceilings, counts 1 and 2": {
     "lines": [
       "Possible savings",
-      "$5.17/mo est.",
+      "$5.17/month",
+      "Estimated savings: $5.17/month across 1 open finding. This is a DevControl estimate, not realized savings.",
+      "2 more open findings have no dollar estimate yet.",
+      "Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above).",
+      "Plus up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above).",
       "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
-      "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)",
-      "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)",
       "Review recommendations →"
     ],
-    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+    "valueClass": "m-0 text-kpi tabular-nums text-ink-success"
   },
   "estimate > 0, no ceiling, counts 3 and 1": {
     "lines": [
       "Possible savings",
-      "$1,200.00/mo est.",
+      "$1,200.00/month",
+      "Estimated savings: $1,200.00/month across 3 open findings. This is a DevControl estimate, not realized savings.",
+      "1 more open finding has no dollar estimate yet.",
       "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
       "Review recommendations →"
     ],
-    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+    "valueClass": "m-0 text-kpi tabular-nums text-ink-success"
   },
   "estimate > 0, counts 2 and 0": {
     "lines": [
       "Possible savings",
-      "$10.00/mo est.",
+      "$10.00/month",
+      "Estimated savings: $10.00/month across 2 open findings. This is a DevControl estimate, not realized savings.",
       "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
       "Review recommendations →"
     ],
-    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+    "valueClass": "m-0 text-kpi tabular-nums text-ink-success"
   },
   "no estimate, S3 ceiling, 2 open": {
     "lines": [
       "Possible savings",
-      "$0.00/mo est.",
+      "No dollar estimate",
+      "2 open findings; none has a dollar estimate yet.",
+      "Up to $0.01/month if S3 data qualifies for Standard-IA (upper bound).",
       "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
-      "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)",
       "Review recommendations →"
     ],
     "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
@@ -51,9 +58,10 @@
   "no estimate, DynamoDB ceiling only, 1 open": {
     "lines": [
       "Possible savings",
-      "$0.00/mo est.",
+      "No dollar estimate",
+      "1 open finding; none has a dollar estimate yet.",
+      "Up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound).",
       "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
-      "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)",
       "Review recommendations →"
     ],
     "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
@@ -61,7 +69,8 @@
   "no estimate, no ceiling, 3 open": {
     "lines": [
       "Possible savings",
-      "$0.00/mo est.",
+      "No dollar estimate",
+      "3 open findings; none has a dollar estimate yet.",
       "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
       "Review recommendations →"
     ],

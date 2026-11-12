@@ -2,7 +2,7 @@
   "rows": [
     {
       "key": "account-f-named",
-      "resource": "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef0",
+      "resource": "launch-wizard-1 (sg-0123456789abcdef0)",
       "resourceKind": "Security group",
       "issue": "SSH open to the world",
       "found": "SSH open to the world (security group)",
@@ -12,7 +12,7 @@
     },
     {
       "key": "account-f-no-evidence",
-      "resource": "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef1",
+      "resource": "sg-0123456789abcdef1",
       "resourceKind": "Security group",
       "issue": "RDP open to the world",
       "found": "RDP open to the world (security group)",
@@ -22,7 +22,7 @@
     },
     {
       "key": "account-f-blank-name",
-      "resource": "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef2",
+      "resource": "sg-0123456789abcdef2",
       "resourceKind": "Security group",
       "issue": "All ports open",
       "found": "All ports open (security group)",

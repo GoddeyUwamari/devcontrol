@@ -43,7 +43,7 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><ServicesPage /></QueryClientProvider>)
 }
 
-const REDESIGN_TEXT = /Services & Ownership|need attention\b|previous connection|No owner set|Show all \d|What we found, what needs attention|Account and scan coverage|What needs attention|Your services|No flagged issues: |SAMPLE DATA|Only admins can add services|AWS spend, month to date|resources are unowned|Phase 2/
+const REDESIGN_TEXT = /Services & Ownership|need attention\b|previous connection|No owner set|Show all \d|What we found, what needs attention|Account and scan coverage|What needs attention|Your services|No flagged issues: |SAMPLE DATA|Only admins can add services|AWS spend, month to date|resources are unowned|Phase 2|Coming soon/
 
 beforeEach(() => {
   vi.clearAllMocks()

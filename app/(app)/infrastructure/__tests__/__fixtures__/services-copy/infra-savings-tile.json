@@ -6,13 +6,17 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$123.45/mo est.",
+    "value": "$123.45/month",
+    "tone": "success",
     "captions": [
       [
-        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+        "Estimated savings: $123.45/month. This is a DevControl estimate, not realized savings."
       ],
       [
-        "Plus up to $41.27/mo if S3 data qualifies for Standard-IA (upper bound, not included above)"
+        "Plus up to $41.27/month if S3 data qualifies for Standard-IA (upper bound, not included above)."
+      ],
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
     ]
   },
@@ -23,16 +27,23 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$5.17/mo est.",
+    "value": "$5.17/month",
+    "tone": "success",
     "captions": [
       [
+        "Estimated savings: $5.17/month across 1 open finding. This is a DevControl estimate, not realized savings."
+      ],
+      [
+        "2 more open findings have no dollar estimate yet."
+      ],
+      [
+        "Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above)."
+      ],
+      [
+        "Plus up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)."
+      ],
+      [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
-      ],
-      [
-        "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)"
-      ],
-      [
-        "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)"
       ]
     ]
   },
@@ -43,8 +54,15 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$1,200.00/mo est.",
+    "value": "$1,200.00/month",
+    "tone": "success",
     "captions": [
+      [
+        "Estimated savings: $1,200.00/month across 3 open findings. This is a DevControl estimate, not realized savings."
+      ],
+      [
+        "1 more open finding has no dollar estimate yet."
+      ],
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
@@ -57,8 +75,12 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$10.00/mo est.",
+    "value": "$10.00/month",
+    "tone": "success",
     "captions": [
+      [
+        "Estimated savings: $10.00/month across 2 open findings. This is a DevControl estimate, not realized savings."
+      ],
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
@@ -71,13 +93,16 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$0.00/mo est.",
+    "value": "No dollar estimate",
     "captions": [
       [
-        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+        "2 open findings; none has a dollar estimate yet."
       ],
       [
-        "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)"
+        "Up to $0.01/month if S3 data qualifies for Standard-IA (upper bound)."
+      ],
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
     ]
   },
@@ -88,13 +113,16 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$0.00/mo est.",
+    "value": "No dollar estimate",
     "captions": [
       [
-        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+        "1 open finding; none has a dollar estimate yet."
       ],
       [
-        "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)"
+        "Up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound)."
+      ],
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
     ]
   },
@@ -105,8 +133,11 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$0.00/mo est.",
+    "value": "No dollar estimate",
     "captions": [
+      [
+        "3 open findings; none has a dollar estimate yet."
+      ],
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]

@@ -131,6 +131,8 @@ function renderPage() {
 }
 
 const strip = () => screen.getByRole('region', { name: 'Account and scan coverage' })
+/** The header's "Last scan" line (scanLine, as on Security and the Dashboard). */
+const scanHeader = () => screen.getByTestId('services-scan-line')
 // Each chip as "region | note".
 const chipTexts = () => within(strip()).getAllByRole('listitem').map((li) => [...li.querySelectorAll('span')].slice(1).map((s) => s.textContent).join(' | '))
 const tiles = () => screen.getByRole('region', { name: 'Summary' })
@@ -253,7 +255,9 @@ describe('coverage strip (M6)', () => {
     const s = strip()
     expect(s).toHaveTextContent('AWS account connected')
     expect(s).toHaveTextContent('eu-central-1 scanned, plus S3 buckets in every region and CloudFront (global) · other regions not scanned yet')
-    expect(s).toHaveTextContent(/Last successful scan .*\(48 min ago\)/)
+    // The scan time is in the header (Security's and the Dashboard's line); the status line keeps connection and region only.
+    expect(s).not.toHaveTextContent(/Last successful scan|\(48 min ago\)/)
+    expect(scanHeader()).toHaveTextContent(/^Last scan: (today|yesterday), \d/)
     expect(s).toHaveTextContent('Resource status: 3 of 10 need attention')
     expect(document.body.textContent).not.toMatch(/of 10 at risk/)
     expect(s).not.toHaveTextContent(/IAM|Region coverage|\d+ (other )?(enabled )?regions|this account's scan|Limited/)
@@ -279,24 +283,27 @@ describe('coverage strip (M6)', () => {
     mockGetCoverage.mockResolvedValue(coverage({ last_scan: { status: 'running', started_at: minutesAgo(60 * 24 * 12), completed_at: null, warnings: [] } }))
     renderPage()
     await settled()
-    // The chips and the scan line, not the legend (which names every state).
-    const chipsAndLine = within(strip()).getByRole('list', { name: 'Scanned regions' }).textContent + within(strip()).getByText(/^Last scan failed · /).textContent
-    expect(chipsAndLine).not.toMatch(/in progress|Scanning\.\.\.|Scanning…|complete/i)
+    // The chips and the header scan line, not the legend (which names every state).
+    const chipsAndLine = within(strip()).getByRole('list', { name: 'Scanned regions' }).textContent + scanHeader().textContent
+    expect(chipsAndLine).not.toMatch(/in progress|Scanning\.\.\.|Scanning…|complete|running/i)
     expect(screen.getByRole('button', { name: /Auto Discover/ })).not.toHaveTextContent(/Scanning/)
     expect(chipTexts()[0]).toBe('eu-central-1 | 8 · home · last scan failed')
     expect(within(strip()).getAllByRole('listitem')[0].className).toMatch(/red/)
-    const line = within(strip()).getByText(/^Last scan failed · Last successful scan .*\(48 min ago\)$/)
-    expect(line.className).toMatch(/text-red-700/)
+    // Security's rule: an abandoned job has no failure time, so the header shows the last finished scan.
+    expect(scanHeader()).toHaveTextContent(/^Last scan: (today|yesterday), \d/)
+    expect(strip()).not.toHaveTextContent(/Last scan failed · /)
     expect(within(strip()).getByRole('list', { name: 'Scanned regions' })).not.toHaveTextContent(/complete/i)
     expect(screen.queryByText('Failed to load resources.')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Auto Discover/ })).toBeEnabled()
   })
 
   it('a running job started minutes ago is in progress', async () => {
-    mockGetCoverage.mockResolvedValue(coverage({ last_scan: { status: 'running', started_at: minutesAgo(3), completed_at: null, warnings: [] } }))
+    mockGetCoverage.mockResolvedValue(coverage({ scan_in_progress: { since: minutesAgo(3) }, last_scan: { status: 'running', started_at: minutesAgo(3), completed_at: null, warnings: [] } }))
     renderPage()
     await settled()
-    expect(strip()).toHaveTextContent(/Scan in progress, started .*\(3 min ago\)/)
+    expect(scanHeader()).toHaveTextContent(/^Scan running…$/)
+    expect(scanHeader()).toHaveAttribute('data-state', 'running')
+    expect(strip()).not.toHaveTextContent(/Scan in progress, started/)
     expect(chipTexts()[0]).toBe('eu-central-1 | 8 · home · scan in progress')
     expect(strip()).not.toHaveTextContent(/partial/)
   })
@@ -326,7 +333,8 @@ describe('coverage strip (M6)', () => {
     mockGetCoverage.mockResolvedValue(coverage({ last_successful_scan_at: null, last_scan: { status: 'failed', started_at: minutesAgo(10), completed_at: minutesAgo(9), warnings: [] } }))
     renderPage()
     expect(await within(strip()).findByText('eu-central-1: last scan failed')).toBeInTheDocument()
-    expect(strip()).toHaveTextContent(/Last scan failed .*\(9 min ago\) · No successful scan yet/)
+    expect(scanHeader()).toHaveTextContent(/^Last scan failed: (today|yesterday), \d/)
+    expect(strip()).not.toHaveTextContent(/\(9 min ago\)|No successful scan yet/)
     expect(strip()).not.toHaveTextContent(/eu-central-1 scanned/)
   })
 
@@ -337,8 +345,10 @@ describe('coverage strip (M6)', () => {
     expect(chipTexts()[0]).toBe('eu-central-1 | 8 · home · last scan failed')
     const chip = within(strip()).getAllByRole('listitem')[0]
     expect(chip.className).toMatch(/red/)
-    const line = within(strip()).getByText(/^Last scan failed .*\(19 min ago\)/)
-    expect(line.className).toMatch(/text-red-700/)
+    expect(scanHeader()).toHaveTextContent(/^Last scan failed: (today|yesterday), \d/)
+    expect(scanHeader()).toHaveAttribute('data-state', 'failed')
+    expect(scanHeader().querySelector('[aria-hidden="true"]')!.className).toMatch(/bg-red-600/)
+    expect(strip()).not.toHaveTextContent(/\(19 min ago\)/)
     expect(within(strip()).getAllByRole('listitem').map((li) => li.textContent).join()).not.toMatch(/partial/)
     // The persisted warning still shows the existing E4 copy on load.
     expect(within(strip()).getByText(DELETION_DETECTION_PAUSED_TEXT)).toBeInTheDocument()
@@ -383,7 +393,8 @@ describe('coverage strip (M6)', () => {
     mockGetStats.mockResolvedValue({ ...STATS, total: 0, healthy: 0, needs_attention: 0 })
     renderPage()
     expect(await within(strip()).findByText('eu-central-1: not scanned yet')).toBeInTheDocument()
-    expect(strip()).toHaveTextContent('No successful scan yet')
+    expect(scanHeader()).toHaveTextContent(/^No scan has finished yet\.$/)
+    expect(strip()).not.toHaveTextContent('No successful scan yet')
     expect(chipTexts()[0]).toBe('eu-central-1 | home · not scanned')
   })
 
@@ -400,15 +411,15 @@ describe('coverage strip (M6)', () => {
 })
 
 describe('tiles', () => {
-  it('show /stats numbers, severity split and "No flagged issues: N"', async () => {
+  it('show /stats numbers, severity split and "N resources with no flagged issues"', async () => {
     renderPage()
     await settled()
-    expect(tile('Needs attention')).toHaveTextContent('31 Critical1 High1 MediumNo flagged issues: 7')
+    expect(tile('Needs attention')).toHaveTextContent('31 Critical1 High1 Medium7 resources with no flagged issues')
     expect(tile('Unowned')).toHaveTextContent('2')
     // 2 of the 8 resources whose tags were read (owned 6 + unowned 2); unknown is not in it.
     expect(tile('Unowned')).toHaveTextContent('25% of resources whose tags we could read have neither an Owner nor a Team tag')
     expect(tile('Resources')).toHaveTextContent('10in eu-central-1, plus S3 in every region and CloudFront')
-    expect(tile('Services')).toHaveTextContent('2registered · resources not mapped to services yet Phase 2')
+    expect(tile('Services')).toHaveTextContent('2registered · resources not mapped to services yet Coming soon')
   })
 
   it('"…" while loading and "—" when /stats failed, never 0', async () => {
@@ -416,12 +427,12 @@ describe('tiles', () => {
     mockGetStats.mockReturnValue(new Promise((_, rej) => { fail = rej }))
     renderPage()
     expect(within(tile('Needs attention')).getByText('…')).toBeInTheDocument()
-    expect(tile('Needs attention')).toHaveTextContent('No flagged issues: …')
+    expect(tile('Needs attention')).toHaveTextContent('… resources with no flagged issues')
     expect(within(tile('Unowned')).getByText('…')).toBeInTheDocument()
     expect(within(tile('Resources')).getByText('…')).toBeInTheDocument()
     fail(new Error('500'))
     await waitFor(() => expect(within(tile('Needs attention')).getByText('—')).toBeInTheDocument())
-    expect(tile('Needs attention')).toHaveTextContent('No flagged issues: —')
+    expect(tile('Needs attention')).toHaveTextContent('— resources with no flagged issues')
     expect(within(tile('Unowned')).getByText('—')).toBeInTheDocument()
     expect(within(tile('Resources')).getByText('—')).toBeInTheDocument()
     for (const label of ['Needs attention', 'Unowned', 'Resources']) expect(within(tile(label)).queryByText('0')).not.toBeInTheDocument()
@@ -445,7 +456,7 @@ describe('tiles', () => {
     await settled()
     const t = tile('AWS spend, month to date')
     await waitFor(() => expect(t).toHaveTextContent('$4,321.50'))
-    expect(t).toHaveTextContent('whole account · billed, from Cost Explorer · billed through Oct 18 · per service Phase 2')
+    expect(t).toHaveTextContent('whole account · billed, from Cost Explorer · billed through Oct 18 · per service Coming soon')
   })
 
   it('spend: without finishedThrough the "billed through" part is left out, never guessed', async () => {
@@ -492,7 +503,7 @@ describe('tiles with nothing scanned (no account, or never scanned)', () => {
       expect(within(tile(label)).getByText('—')).toBeInTheDocument()
       expect(within(tile(label)).queryByText('0')).not.toBeInTheDocument()
     }
-    expect(tile('Needs attention')).toHaveTextContent('No flagged issues: —')
+    expect(tile('Needs attention')).toHaveTextContent('— resources with no flagged issues')
     expect(tile('Needs attention').className).not.toMatch(/red/)
     expect(within(tiles()).queryByRole('list', { name: 'Needs attention by severity' })).not.toBeInTheDocument()
     expect(tile('Needs attention').querySelector('[class*="text-red"]')).toBeNull()
@@ -554,7 +565,7 @@ describe('tiles with nothing scanned (no account, or never scanned)', () => {
     expect(tile('Needs attention').className).not.toMatch(/red/)
     expect(tile('Needs attention').querySelector('[class*="text-red"]')).toBeNull()
     expect(within(tiles()).queryByRole('list', { name: 'Needs attention by severity' })).not.toBeInTheDocument()
-    expect(tile('Needs attention')).toHaveTextContent('No flagged issues: 10')
+    expect(tile('Needs attention')).toHaveTextContent('10 resources with no flagged issues')
   })
 
   it('something flagged keeps the red tile and severity chips', async () => {
@@ -695,7 +706,8 @@ describe('What needs attention', () => {
     await waitFor(() => expect(mockGetServices).toHaveBeenLastCalledWith({ sort: 'attention', page: 1, limit: 50, needs_attention: true }))
     expect(within(screen.getByRole('region', { name: 'All resources' })).getByLabelText('Show')).toHaveValue('needs_attention')
     await waitFor(() => expect(screen.getByRole('region', { name: 'All resources' })).toHaveTextContent('3 resources matching current filters'))
-    expect(screen.queryByText(/resources? with no flagged issues/)).not.toBeInTheDocument()
+    // The list's own no-flagged-issues section (the Needs attention tile's caption uses the same words).
+    expect(within(screen.getByRole('region', { name: 'All resources' })).queryByText(/resources? with no flagged issues/)).not.toBeInTheDocument()
   })
 
   it('nothing flagged: the positive empty state', async () => {
@@ -727,7 +739,7 @@ describe('Your services', () => {
     const card = yourServices()
     expect(card).toHaveTextContent('2 registered')
     const headers = within(card).getAllByRole('columnheader').map((h) => h.textContent)
-    expect(headers).toEqual(['Service', 'Owner', 'Team', 'Repository', 'Registered', 'Resources · findings · cost · deploys Phase 2'])
+    expect(headers).toEqual(['Service', 'Owner', 'Team', 'Repository', 'Registered', 'Resources · findings · cost · deploys Coming soon'])
     expect(card).toHaveTextContent('No team set')
     expect(card).toHaveTextContent('No repository set')
     expect(within(card).getByRole('link', { name: 'github.com/example-org/checkout-api' })).toHaveAttribute('href', 'https://github.com/example-org/checkout-api')
@@ -761,14 +773,14 @@ describe('Your services', () => {
 })
 
 describe('Unowned card', () => {
-  it('shows the unowned count beside the top 3 teams; Assign owner is Phase 2', async () => {
+  it('shows the unowned count beside the top 3 teams; Assign owner is Coming soon', async () => {
     renderPage()
     await settled()
     const card = screen.getByRole('region', { name: '2 resources are unowned' })
     const bars = within(card).getByRole('list', { name: 'Resources per team' })
     expect(within(bars).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['platform5', 'data2', 'payments1', 'Unowned2'])
     expect(within(card).getByRole('button', { name: 'Assign owner' })).toBeDisabled()
-    expect(card).toHaveTextContent('Phase 2')
+    expect(card).toHaveTextContent('Coming soon')
   })
 })
 
@@ -781,7 +793,7 @@ describe('demo mode (Q6)', () => {
     // Numbers from the fixture rows: 12 resources, 5 need attention.
     expect(within(tile('Resources')).getByText('12')).toBeInTheDocument()
     expect(within(tile('Needs attention')).getByText('5')).toBeInTheDocument()
-    expect(tile('Needs attention')).toHaveTextContent('No flagged issues: 7')
+    expect(tile('Needs attention')).toHaveTextContent('7 resources with no flagged issues')
     expect(within(attention()).getAllByRole('row')).toHaveLength(6) // header + 5
     expect(within(tile('Services')).getByText('3')).toBeInTheDocument()
     expect(tile('AWS spend, month to date')).toHaveTextContent('$1,234.56')

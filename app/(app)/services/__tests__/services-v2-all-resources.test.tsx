@@ -287,13 +287,14 @@ describe('table', () => {
     expect(envValue(attention)).toHaveTextContent(/^—$/)
   })
 
-  it('Group by: Resource active, Service disabled with the Phase 2 tag', async () => {
+  it('Group by: Resource active, Service disabled with the Coming soon tag', async () => {
     renderPage()
     await settled()
     const group = within(list()).getByRole('group', { name: 'Group by' })
     expect(within(group).getByRole('button', { name: 'Resource' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(group).getByRole('button', { name: 'Service' })).toBeDisabled()
-    expect(group).toHaveTextContent('Phase 2')
+    expect(group).toHaveTextContent('Coming soon')
+    expect(group).not.toHaveTextContent(/Phase 2/i)
   })
 })
 
