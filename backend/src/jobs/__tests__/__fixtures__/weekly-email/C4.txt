@@ -1,23 +1,29 @@
 Your DevControl Weekly Summary
-Cost, security, and delivery summary
+Example Org (synthetic) · Visibility plan · Nov 9 – Nov 15, 2026 (UTC)
 
 Hi Alex,
 
-Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.
+DevControl couldn't finish this week's scan, so some figures below come from the last completed scan and say so.
+
+AWS connection: failing since Nov 14, 2026.
+DevControl couldn't assume your role during its scans. If the role, its trust policy or its External ID changed in AWS, fix it there, then use Check again. DevControl keeps this connection until you ask us to remove it.
+Latest scan: didn't finish (Nov 16, 2026, 06:14 UTC). Last completed scan: Nov 8, 2026, 06:10 UTC.
+Open Connect AWS: https://app.example.test/connect-aws
 
 COSTS
 AWS Cost Explorer spend for Nov 9 – Nov 15, 2026 couldn't be retrieved.
-Estimated monthly run-rate for currently discovered resources: approximately $412.50/month — a DevControl list-price estimate, not billed AWS spend. Only 18 of 24 discovered resources have a cost estimate.
+From the last completed scan (Nov 8, 2026): estimated run-rate of about $412.50/month for 18 of 24 discovered resources. This is a DevControl list-price estimate, not billed AWS spend.
 No week-over-week comparison is available.
 
 SECURITY
-DevControl's configuration checks currently report 1 account-level finding (security groups, IAM) and 4 resource compliance issues (encryption, backups, tagging, and other infrastructure checks).
+From the last completed scan (Nov 8, 2026, 06:10 UTC): 1 account-level finding (security groups, IAM) and 4 resource compliance issues (encryption, backups, tagging, and other infrastructure checks).
 This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
 See security findings: https://app.example.test/security
 Security posture score and its trend are included in Optimization Engine. Compare plans: https://app.example.test/settings/billing
 
 ESTIMATED SAVINGS
 Estimated savings: $120/month across 2 open findings. This is a DevControl estimate, not realized savings.
+From the last completed cost analysis, Nov 8, 2026. This week's analysis didn't finish.
 See Cost Optimization: https://app.example.test/cost-optimization
 
 ALERTS

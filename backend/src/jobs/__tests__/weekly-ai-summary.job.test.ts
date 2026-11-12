@@ -4,7 +4,10 @@
  * no database, no Cost Explorer, no model call, and no email leaves the process.
  */
 import { Pool } from 'pg';
-import { WeeklyAISummaryJob, WEEKLY_SUMMARY_REPLY_TO, WEEKLY_SUMMARY_SUBJECT } from '../weekly-ai-summary.job';
+import { WeeklyAISummaryJob, WEEKLY_SUMMARY_REPLY_TO, WEEKLY_SUMMARY_SUBJECT_PREFIX } from '../weekly-ai-summary.job';
+
+/** WE-D12: "Your DevControl weekly summary · Nov 9 – 15, 2026" for the 7 UTC days before the send. */
+const SUBJECT = new RegExp(`^${WEEKLY_SUMMARY_SUBJECT_PREFIX} · [A-Z][a-z]{2} \\d{1,2}(, \\d{4})? – ([A-Z][a-z]{2} )?\\d{1,2}, \\d{4}$`);
 import { setModelClientForTests } from '../../services/ai/model-client';
 import { verifyUnsubscribeToken } from '../../services/unsubscribe-token';
 import { FAKE_RESEND_KEY, guardFetch, startFakeResendApi } from '../../__tests__/helpers/fake-resend-api';
@@ -93,6 +96,10 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     return jest.spyOn(repository, 'gatherWeeklyEvidence').mockImplementation(async (...args: any[]) => ({
       period: weeklySummaryPeriod(args[1]),
       awsConnection: 'connected',
+      connectionHealth: missing('DevControl AWS connection health'),
+      scan: missing('DevControl discovery scans'),
+      costAnalysis: missing('DevControl cost analysis runs'),
+      deploymentHistory: missing('DevControl deployment records (all time)'),
       currentWeekSpend: missing('AWS Cost Explorer daily trend'),
       previousWeekSpend: missing('AWS Cost Explorer daily trend'),
       weekOverWeek: missing('DevControl week-over-week comparison'),
@@ -140,7 +147,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
 
     // B1: no model call; nothing model-written or "AI"-claimed reaches the email.
     expect(modelCall).not.toHaveBeenCalled();
-    expect(payload.subject).toBe(WEEKLY_SUMMARY_SUBJECT);
+    expect(payload.subject).toMatch(SUBJECT);
     expect(payload.subject).not.toMatch(/\bAI\b/);
     for (const body of [payload.html, payload.text]) {
       expect(body).not.toMatch(/AI recommendation|AI-Powered/i);
@@ -216,7 +223,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       expect(Object.keys(body).sort()).toEqual(['from', 'headers', 'html', 'reply_to', 'subject', 'text', 'to']);
       expect(body.reply_to).toBe('support@getdevcontrol.com');
       expect(body.to).toBe(`owner@${ORG_B}.test`);
-      expect(body.subject).toBe(WEEKLY_SUMMARY_SUBJECT);
+      expect(body.subject).toMatch(SUBJECT);
       expect(body.text).toContain('Cloud spend data was unavailable for this period');
       expect(Object.keys(body.headers).sort()).toEqual(['List-Unsubscribe', 'List-Unsubscribe-Post', 'X-Entity-Ref-ID']);
       expect(body.headers['List-Unsubscribe']).toMatch(/^<.+\/api\/user\/preferences\/unsubscribe\?token=v1\.[^>]+>$/);

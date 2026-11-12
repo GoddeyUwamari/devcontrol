@@ -27,8 +27,11 @@ import {
 import { signUnsubscribeToken } from '../services/unsubscribe-token';
 import { RELEASE_SHA } from '../version';
 
-/** No "AI" claim: the email contains no model-written content. */
-export const WEEKLY_SUMMARY_SUBJECT = 'Your DevControl Weekly Summary';
+/**
+ * The subject is content.subject: "Your DevControl weekly summary · Nov 9 – 15, 2026"
+ * (WE-D12), with no "AI" claim -- the email contains no model-written content.
+ */
+export { WEEKLY_SUMMARY_SUBJECT_PREFIX } from '../services/weekly-summary-content';
 
 /** Replies go to the support mailbox, whatever EMAIL_FROM is (WE-D11). */
 export const WEEKLY_SUMMARY_REPLY_TO = SUPPORT_EMAIL;
@@ -47,6 +50,9 @@ export interface TemplateLine {
 }
 
 export interface WeeklyEmailTemplateData {
+  subject: string;
+  /** The line under the title: organization · plan · cost window (UTC). */
+  header: string;
   userName: string;
   organizationName: string;
   intro: string;
@@ -252,11 +258,12 @@ export class WeeklyAISummaryJob {
         return 'skipped';
       }
 
-      const [evidence, organizationName] = await Promise.all([
+      const [evidence, organizationName, planName] = await Promise.all([
         this.repository.gatherWeeklyEvidence(organizationId, new Date(), client),
         this.repository.getOrganizationName(organizationId, client),
+        this.repository.getPlanName(organizationId, client),
       ]);
-      const content = composeWeeklySummary(evidence, { organizationName });
+      const content = composeWeeklySummary(evidence, { organizationName, planName });
 
       const userName = recipient.fullName?.split(' ')[0] || recipient.email.split('@')[0];
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
@@ -285,7 +292,7 @@ export class WeeklyAISummaryJob {
           from: process.env.EMAIL_FROM || 'DevControl <noreply@devcontrol.app>',
           to: recipient.email,
           replyTo: WEEKLY_SUMMARY_REPLY_TO,
-          subject: WEEKLY_SUMMARY_SUBJECT,
+          subject: templateData.subject,
           html,
           text: textContent,
           headers: {
@@ -338,6 +345,8 @@ export class WeeklyAISummaryJob {
       };
     };
     return {
+      subject: content.subject,
+      header: content.header,
       userName: input.userName,
       // Named in the footer only; when the name couldn't be read, no name is invented.
       organizationName: content.organizationNameKnown ? content.organizationName : 'your organization',
@@ -378,7 +387,7 @@ export class WeeklyAISummaryJob {
     };
     const parts: string[] = [
       'Your DevControl Weekly Summary',
-      'Cost, security, and delivery summary',
+      data.header,
       '',
       `Hi ${data.userName},`,
       '',

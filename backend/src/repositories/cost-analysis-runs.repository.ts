@@ -315,6 +315,50 @@ export async function latestLeasedRun(client: PoolClient, organizationId: string
   return result.rows[0] ?? null;
 }
 
+/** The organization's latest analysis run (any source) as a reader sees it, and its last completed one. */
+export interface LatestAnalysisRuns {
+  latest: Pick<CostAnalysisRun, 'run_state' | 'started_at' | 'completed_at' | 'created_at'> | null;
+  lastCompleted: Pick<CostAnalysisRun, 'completed_at' | 'created_at'> | null;
+}
+
+/**
+ * The organization's latest cost analysis run, any source, with run_state read
+ * exactly as getLatest() reads it (a dead worker's 'running' row is
+ * 'interrupted'), and its latest run whose status is 'completed'. On the
+ * caller's org-tagged client (the weekly summary's held client). Nothing is
+ * written.
+ */
+export async function latestAnalysisRuns(client: Pick<PoolClient, 'query'>, organizationId: string): Promise<LatestAnalysisRuns> {
+  const latest = await client.query(
+    `SELECT r.started_at, r.completed_at, r.created_at,
+            CASE
+              WHEN r.status <> 'running' THEN r.status
+              WHEN r.lease_acquired_at IS NULL
+                THEN CASE WHEN r.created_at < NOW() - make_interval(secs => $2) THEN 'interrupted' ELSE 'running' END
+              WHEN EXISTS (
+                SELECT 1 FROM aws_scan_leases l
+                WHERE l.organization_id = $1 AND l.scan_kind = $3
+                  AND l.released_at IS NULL AND l.expires_at > clock_timestamp()
+              ) THEN 'running'
+              ELSE 'interrupted'
+            END AS run_state
+     FROM cost_analysis_runs r
+     WHERE r.organization_id = $1
+     ORDER BY r.created_at DESC
+     LIMIT 1`,
+    [organizationId, QUEUED_RUN_TIMEOUT_SECONDS, SCAN_KIND_DISCOVERY]
+  );
+  const completed = await client.query(
+    `SELECT r.completed_at, r.created_at
+     FROM cost_analysis_runs r
+     WHERE r.organization_id = $1 AND r.status = 'completed'
+     ORDER BY r.created_at DESC
+     LIMIT 1`,
+    [organizationId]
+  );
+  return { latest: latest.rows[0] ?? null, lastCompleted: completed.rows[0] ?? null };
+}
+
 const DETAIL_COLUMNS = [
   'failed_detector_count',
   'unknown_resource_count',

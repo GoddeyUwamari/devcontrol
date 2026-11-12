@@ -26,7 +26,12 @@ import { describeCeilings, describeCeilingsWithoutEstimate } from './estimated-s
 import { PLAN_NAME } from '../config/plan-names';
 import { PLAN_ENTITLEMENTS } from '../config/plan-entitlements';
 import { SUPPORT_EMAIL, WEEKLY_EMAIL_PATHS } from '../config/weekly-email-paths';
-import { SECURITY_PRELIMINARY_REASON, type DayWindow, type WeeklyEvidence } from '../repositories/weekly-summary.repository';
+import { CONNECTION_FAILING_HELP } from '../config/weekly-email-copy';
+import {
+  SECURITY_PRELIMINARY_REASON,
+  type DayWindow,
+  type WeeklyEvidence,
+} from '../repositories/weekly-summary.repository';
 
 /** A link inside the email: a path on the frontend, or a mailto: address. */
 export interface EmailLink {
@@ -57,6 +62,10 @@ export interface EmailSection {
 }
 
 export interface WeeklySummaryContent {
+  /** "Your DevControl weekly summary · Nov 9 – 15, 2026": the cost window's dates (WE-D12). */
+  subject: string;
+  /** "<org> · <plan> plan · Nov 9 – Nov 15, 2026 (UTC)"; the org and the plan are left out when they couldn't be read. */
+  header: string;
   organizationName: string;
   /** False when the organization's name couldn't be read; the footer then says "your organization". */
   organizationNameKnown: boolean;
@@ -113,6 +122,29 @@ export function formatCompactWindow(window: DayWindow): string {
     : formatDayWindow(window);
 }
 
+/** "Nov 9 – 15, 2026"; "Oct 26 – Nov 1, 2026" across two months; both years across two years. */
+export function formatSubjectWindow(window: DayWindow): string {
+  const last = lastDayOf(window);
+  if (window.start.slice(0, 4) !== last.slice(0, 4)) return formatDayWindow(window);
+  if (window.start.slice(5, 7) !== last.slice(5, 7)) return formatCompactWindow(window);
+  return `${formatDay(window.start, false)} – ${Number(last.slice(8, 10))}, ${last.slice(0, 4)}`;
+}
+
+export const WEEKLY_SUMMARY_SUBJECT_PREFIX = 'Your DevControl weekly summary';
+
+/** "Nov 16, 2026, 06:02 UTC" */
+export function formatInstant(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${formatDay(d.toISOString().slice(0, 10))}, ${hh}:${mm} UTC`;
+}
+
+/** "Nov 14, 2026" (the UTC day) */
+export function formatInstantDay(iso: string): string {
+  return formatDay(new Date(iso).toISOString().slice(0, 10));
+}
+
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
@@ -133,6 +165,29 @@ const COST_BASIS_NOTE =
   'that category counts as $0. Recent days may still be updating.';
 const COST_ZERO_NOTE = 'Cost Explorer reported $0.00 for these days. If AWS credits cover your usage, it shows $0 here.';
 const SECURITY_COVERAGE = "This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.";
+/** The undated security and estimate lines' companion when the scan dates couldn't be read. */
+const SCAN_UNDATED_NOTE = "The date of the scan these come from couldn't be retrieved.";
+
+/**
+ * The last completed scan, when the scan read worked and one has completed;
+ * `isLatest` when it is also the latest scan. Null otherwise: lines are then
+ * undated, never dated with a guess.
+ */
+function completedScan(e: WeeklyEvidence): { at: string; isLatest: boolean } | null {
+  const scan = e.scan;
+  if (!scan || !hasEvidence(scan) || !scan.data.lastCompleted) return null;
+  return { at: scan.data.lastCompleted.at, isLatest: scan.data.latest?.state === 'completed' };
+}
+
+/** True when the scan section could not be read (so undated lines say why). */
+function scanUnreadable(e: WeeklyEvidence): boolean {
+  return e.scan != null && !hasEvidence(e.scan);
+}
+
+/** Whether a run started inside the 7 days before this summary ("this week's"). */
+function startedThisWeek(e: WeeklyEvidence, startedAt: string): boolean {
+  return Date.parse(startedAt) >= Date.parse(e.period.delivery.start);
+}
 
 function costLines(e: WeeklyEvidence): EmailLine[] {
   const current = e.currentWeekSpend;
@@ -179,20 +234,26 @@ function costLines(e: WeeklyEvidence): EmailLine[] {
   const estimateLines = (): EmailLine[] => {
     if (!estimate || !hasEvidence(estimate)) return [];
     const d = estimate.data;
-    const coverage = estimate.state === 'partial'
-      ? ` Only ${d.pricedResources} of ${d.totalResources} discovered resources have a cost estimate.`
-      : '';
+    const scan = completedScan(e);
+    const figure =
+      `estimated run-rate of about ${money(d.monthlyRunRate)}/month for ${d.pricedResources} of ` +
+      `${plural(d.totalResources, 'discovered resource')}. This is a DevControl list-price estimate, not billed AWS spend.`;
     return [
-      body(
-        `Estimated monthly run-rate for currently discovered resources: approximately ${money(d.monthlyRunRate)}/month ` +
-        `— a DevControl list-price estimate, not billed AWS spend.${coverage}`
-      ),
+      scan
+        ? body(`From the last completed scan (${formatInstantDay(scan.at)}): ${figure}`)
+        : body(`${figure.charAt(0).toUpperCase()}${figure.slice(1)}`),
+      ...(!scan && scanUnreadable(e) ? [body(SCAN_UNDATED_NOTE)] : []),
       note('No week-over-week comparison is available.'),
     ];
   };
 
   if (current.state === 'error') {
-    return [body(`AWS Cost Explorer spend for ${compact} couldn't be retrieved.`), ...estimateLines()];
+    // Only a fresh OK health check says the connection itself works.
+    const connectionOk = e.connectionHealth != null && hasEvidence(e.connectionHealth) && e.connectionHealth.data.state === 'ok';
+    return [
+      body(`AWS Cost Explorer spend for ${compact} couldn't be retrieved.${connectionOk ? ' Other sections are unaffected.' : ''}`),
+      ...estimateLines(),
+    ];
   }
   if (estimate && hasEvidence(estimate)) {
     return [body(`Billed AWS spend for ${formatDayWindow(e.period.cost)} was unavailable (${reasonOf(current)}).`), ...estimateLines()];
@@ -212,16 +273,30 @@ function securityLines(e: WeeklyEvidence): EmailLine[] {
     return [body(`Security findings were unavailable for this period (${reasonOf(s)}).`)];
   }
   const d = s.data;
+  // Dated with the scan the counts come from: "Latest scan (…)" when the
+  // latest scan completed, "From the last completed scan (…)" when a later one
+  // didn't (mock v1 (a)/(c)). Undated, never "currently", when no date is known.
+  const scan = completedScan(e);
+  const lead = !scan
+    ? "DevControl's configuration checks report"
+    : scan.isLatest
+      ? `Latest scan (${formatInstant(scan.at)}):`
+      : `From the last completed scan (${formatInstant(scan.at)}):`;
   const lines: EmailLine[] = [
     d.accountLevelFindings === 0 && d.resourceComplianceIssues === 0
-      ? body("DevControl's configuration checks currently report no active findings.")
+      ? body(`${lead} no active findings.`)
       : body(
-          `DevControl's configuration checks currently report ${plural(d.accountLevelFindings, 'account-level finding')} ` +
+          `${lead} ${plural(d.accountLevelFindings, 'account-level finding')} ` +
           `(security groups, IAM) and ${plural(d.resourceComplianceIssues, 'resource compliance issue')} ` +
           '(encryption, backups, tagging, and other infrastructure checks).'
         ),
   ];
-  if (d.score !== undefined) lines.push(body(`Security posture score: ${d.score}/100.`));
+  if (!scan && scanUnreadable(e)) lines.push(body(SCAN_UNDATED_NOTE));
+  if (d.score !== undefined) {
+    lines.push(body(scan && !scan.isLatest
+      ? `Security posture score: ${d.score}/100 (as of ${formatInstantDay(scan.at)}).`
+      : `Security posture score: ${d.score}/100.`));
+  }
   lines.push(note(SECURITY_COVERAGE));
   lines.push(linkLine('See security findings →', WEEKLY_EMAIL_PATHS.security));
   if (d.score === undefined) {
@@ -240,9 +315,13 @@ function savingsLines(e: WeeklyEvidence): EmailLine[] {
   }
   const d = r.data;
   const perMonth = (amount: number) => formatSavingsCurrency(amount);
+  const analysis = analysisState(e);
   const lines: EmailLine[] = [];
   if (d.active === 0) {
-    lines.push(body('No open savings findings.'));
+    // "No open savings findings" is a measurement only once an analysis has
+    // completed; before that the analysis line alone states the state.
+    if (analysis.kind === 'completed') lines.push(body('No open savings findings in the last analysis.'));
+    else if (analysis.kind === 'from_last_completed' || analysis.kind === 'unreadable') lines.push(body('No open savings findings.'));
   } else if (d.estimatedMonthlySavings > 0 && d.estimatedFindings > 0) {
     // Only a total above $0 is a headline: an estimate row stored at 0 is not
     // a measured $0 saving (same rule as the dashboard's savings card).
@@ -261,8 +340,51 @@ function savingsLines(e: WeeklyEvidence): EmailLine[] {
     lines.push(body(`${plural(d.active, 'open finding')}; none has a dollar estimate yet.`));
     for (const ceiling of describeCeilingsWithoutEstimate(d.ceilingByResourceType, perMonth, 'month')) lines.push(body(`${ceiling}.`));
   }
+  const dated = analysisLine(analysis, d.active > 0);
+  if (dated) lines.push(body(dated));
   lines.push(linkLine('See Cost Optimization →', WEEKLY_EMAIL_PATHS.costOptimization));
   return lines;
+}
+
+type AnalysisState =
+  | { kind: 'completed'; at: string }
+  | { kind: 'from_last_completed'; lastAt: string; latest: 'did_not_finish' | 'in_progress'; thisWeek: boolean }
+  | { kind: 'did_not_finish' }
+  | { kind: 'in_progress' }
+  | { kind: 'never' }
+  | { kind: 'unreadable' };
+
+/** The latest cost analysis as the savings section states it (cost_analysis_runs, WE-2). */
+function analysisState(e: WeeklyEvidence): AnalysisState {
+  const a = e.costAnalysis;
+  if (!a || !hasEvidence(a)) return { kind: 'unreadable' };
+  const { latest, lastCompleted } = a.data;
+  if (!latest) return { kind: 'never' };
+  if (latest.state === 'completed') return { kind: 'completed', at: latest.at };
+  if (lastCompleted) {
+    return { kind: 'from_last_completed', lastAt: lastCompleted.at, latest: latest.state, thisWeek: startedThisWeek(e, latest.startedAt) };
+  }
+  return { kind: latest.state };
+}
+
+/** The line dating the savings figures, or null (nothing to add next to figures with no analysis record). */
+function analysisLine(a: AnalysisState, hasFindings: boolean): string | null {
+  switch (a.kind) {
+    case 'completed':
+      return `From the cost analysis completed ${formatInstant(a.at)}.`;
+    case 'from_last_completed':
+      return `From the last completed cost analysis, ${formatInstantDay(a.lastAt)}. ` + (a.latest === 'in_progress'
+        ? 'A new analysis is in progress.'
+        : a.thisWeek ? "This week's analysis didn't finish." : "The latest analysis didn't finish.");
+    case 'did_not_finish':
+      return "The last cost analysis didn't finish.";
+    case 'in_progress':
+      return hasFindings ? 'A cost analysis is in progress.' : 'Cost analysis in progress. Savings appear when it finishes.';
+    case 'never':
+      return hasFindings ? null : 'Shown after your first cost analysis finishes.';
+    case 'unreadable':
+      return "The date of the last cost analysis couldn't be retrieved.";
+  }
 }
 
 function alertLines(e: WeeklyEvidence): EmailLine[] {
@@ -291,6 +413,13 @@ function deliveryLines(e: WeeklyEvidence): EmailLine[] {
   const d = s.data;
   const link = linkLine('See deployments →', WEEKLY_EMAIL_PATHS.deployments);
   if (d.deploymentCount === 0) {
+    const history = e.deploymentHistory;
+    if (history && hasEvidence(history) && !history.data.anyRecorded) {
+      return [
+        body('No deployments have been recorded in DevControl yet.'),
+        linkLine('Record a deployment on the Deployments page →', WEEKLY_EMAIL_PATHS.deployments),
+      ];
+    }
     return [body('No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.'), link];
   }
   const finished = d.successfulDeployments + d.failedDeployments;
@@ -326,22 +455,93 @@ const LINES_OF: Record<EmailSectionId, (e: WeeklyEvidence) => EmailLine[]> = {
   delivery: deliveryLines,
 };
 
-export function composeWeeklySummary(e: WeeklyEvidence, options: { organizationName?: string | null } = {}): WeeklySummaryContent {
+const HEALTH_LAST_RESULT: Record<'ok' | 'failing' | 'lost', string> = { ok: 'OK', failing: 'failing', lost: 'lost' };
+
+/** The connection box for a connected organization: health, then the latest scan (mock v1 (a)/(c)). */
+function connectedStatus(e: WeeklyEvidence): NonNullable<WeeklySummaryContent['status']> {
+  const lines: EmailLine[] = [];
+  let action: EmailLink | null = null;
+  const h = e.connectionHealth;
+  if (!h || !hasEvidence(h)) {
+    lines.push(body("AWS connection health couldn't be retrieved for this summary."));
+  } else {
+    const d = h.data;
+    const day = (iso: string | null) => (iso ? formatInstantDay(iso) : null);
+    if (d.state === 'ok' && d.checkedAt) {
+      lines.push(body(`AWS connection: OK · checked ${formatInstant(d.checkedAt)}`));
+    } else if ((d.state === 'failing' || d.state === 'lost') && d.failingSince) {
+      lines.push(body(d.state === 'failing'
+        ? `AWS connection: failing since ${day(d.failingSince)}.`
+        : `AWS connection: lost, failing since ${day(d.failingSince)}.`));
+      lines.push(body(CONNECTION_FAILING_HELP));
+      action = { label: 'Open Connect AWS →', path: WEEKLY_EMAIL_PATHS.connectAws };
+    } else if (d.state === 'not_checked_recently' && d.checkedAt) {
+      lines.push(body(`AWS connection: not checked recently (last result ${HEALTH_LAST_RESULT[d.lastResult ?? 'ok']}, ${day(d.checkedAt)}).`));
+    } else if (d.state === 'not_checked_yet') {
+      lines.push(body('AWS connection: not checked yet. DevControl checks at each scan.'));
+    } else {
+      lines.push(body("AWS connection health couldn't be retrieved for this summary."));
+    }
+  }
+
+  const scan = e.scan;
+  if (!scan || !hasEvidence(scan)) {
+    lines.push(body("Scan dates couldn't be retrieved for this summary."));
+  } else {
+    const { latest, lastCompleted } = scan.data;
+    const last = lastCompleted ? `Last completed scan: ${formatInstant(lastCompleted.at)}.` : 'No scan has completed yet.';
+    if (!latest) lines.push(body('Latest scan: none yet.'));
+    else if (latest.state === 'completed') lines.push(body(`Latest scan: completed ${formatInstant(latest.at)}`));
+    else if (latest.state === 'did_not_finish') lines.push(body(`Latest scan: didn't finish (${formatInstant(latest.at)}). ${last}`));
+    else lines.push(body(`Latest scan: in progress (started ${formatInstant(latest.startedAt)}). ${last}`));
+  }
+  return { lines, action };
+}
+
+/** The connected intro: mock (a) only after a completed latest scan, mock (c) after this week's unfinished one. */
+function connectedIntro(e: WeeklyEvidence, organizationLabel: string): string {
+  const scan = e.scan && hasEvidence(e.scan) ? e.scan.data : null;
+  if (scan?.latest?.state === 'completed') {
+    return `Here's what DevControl measured for ${organizationLabel}. Spend covers the 7 full UTC days before this email. ` +
+      'Findings and savings come from the latest scan.';
+  }
+  if (scan?.latest?.state === 'did_not_finish' && scan.lastCompleted && startedThisWeek(e, scan.latest.startedAt)) {
+    return "DevControl couldn't finish this week's scan, so some figures below come from the last completed scan and say so.";
+  }
+  // No completed latest scan to point at: the approved WE-1 intro, which claims no scan.
+  return 'Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.';
+}
+
+const KNOWN_PLAN_NAMES: ReadonlySet<string> = new Set(Object.values(PLAN_NAME));
+
+export function composeWeeklySummary(
+  e: WeeklyEvidence,
+  options: { organizationName?: string | null; planName?: string | null } = {}
+): WeeklySummaryContent {
   const organizationNameKnown = Boolean(options.organizationName);
   const organizationName = options.organizationName || 'Your Organization';
+  const organizationLabel = organizationNameKnown ? organizationName : 'your organization';
+  // Only a name from the PLAN_NAME mirror, never a tier id or an unknown string.
+  const planName = options.planName && KNOWN_PLAN_NAMES.has(options.planName) ? options.planName : null;
   const notConnected = e.awsConnection === 'not_connected';
   return {
+    subject: `${WEEKLY_SUMMARY_SUBJECT_PREFIX} · ${formatSubjectWindow(e.period.cost)}`,
+    header: [
+      organizationNameKnown ? organizationName : null,
+      planName ? `${planName} plan` : null,
+      `${formatCompactWindow(e.period.cost)} (UTC)`,
+    ].filter(Boolean).join(' · '),
     organizationName,
     organizationNameKnown,
     intro: notConnected
-      ? `No AWS account is connected to ${organizationNameKnown ? organizationName : 'your organization'} yet, so this week has no spend, security or savings data.`
-      : 'Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.',
+      ? `No AWS account is connected to ${organizationLabel} yet, so this week has no spend, security or savings data.`
+      : connectedIntro(e, organizationLabel),
     status: notConnected
       ? {
           lines: [body('AWS connection: not connected.'), body('DevControl connects with a read-only role in your AWS account.')],
           action: { label: 'Connect AWS →', path: WEEKLY_EMAIL_PATHS.connectAws },
         }
-      : null,
+      : connectedStatus(e),
     sections: SECTION_ORDER.map(id => ({ id, title: WEEKLY_SECTION_TITLES[id], lines: LINES_OF[id](e) })),
     cta: { link: { label: 'View Full Dashboard →', path: WEEKLY_EMAIL_PATHS.dashboard }, style: notConnected ? 'link' : 'button' },
   };

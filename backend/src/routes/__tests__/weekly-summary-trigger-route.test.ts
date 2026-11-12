@@ -37,6 +37,7 @@ const mockRepo = {
   getUserInfo: jest.fn(),
   gatherWeeklyEvidence: jest.fn(),
   getOrganizationName: jest.fn(),
+  getPlanName: jest.fn(),
 };
 const mockRepoConstructed = jest.fn();
 jest.mock('../../repositories/weekly-summary.repository', () => ({
@@ -157,6 +158,7 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     mockRepo.getUserInfo.mockReset().mockResolvedValue({ userId: 'u', email: 'owner@example.test', fullName: 'Pat Owner' });
     mockRepo.gatherWeeklyEvidence.mockReset().mockImplementation(async () => evidence());
     mockRepo.getOrganizationName.mockReset().mockResolvedValue('Example Org (synthetic)');
+    mockRepo.getPlanName.mockReset().mockResolvedValue('Visibility');
   });
 
   it.each(['member', 'admin', 'viewer'])('a %s cannot preview (403; no evidence gathered, no owner details returned)', async role => {
@@ -175,6 +177,8 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     expect(mockRepo.gatherWeeklyEvidence).toHaveBeenCalledWith('org-preview-2', expect.any(Date));
     expect(body.content.sections.map((s: any) => s.title)).toEqual(['COSTS', 'SECURITY', 'ESTIMATED SAVINGS', 'ALERTS', 'DELIVERY']);
     expect(body.content.organizationName).toBe('Example Org (synthetic)');
+    expect(body.content.header).toMatch(/^Example Org \(synthetic\) · Visibility plan · .+ \(UTC\)$/);
+    expect(body.content.subject).toMatch(/^Your DevControl weekly summary · /);
     expect(body.message).not.toMatch(/\bAI\b/);
   });
 
@@ -186,7 +190,7 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     const body = (await res.json()) as any;
     expect(res.status).toBe(200);
     expect(body.organizationId).toBe('org-preview-4');
-    for (const read of [mockRepo.getUserInfo, mockRepo.gatherWeeklyEvidence, mockRepo.getOrganizationName]) {
+    for (const read of [mockRepo.getUserInfo, mockRepo.gatherWeeklyEvidence, mockRepo.getOrganizationName, mockRepo.getPlanName]) {
       expect(read).toHaveBeenCalledTimes(1);
       expect(read.mock.calls[0][0]).toBe('org-preview-4');
     }

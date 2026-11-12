@@ -261,8 +261,10 @@ const SCORE_PLAN_LINE = 'Security posture score and its trend are included in Op
 const securityOf = (content: any): string[] =>
   content.sections.find((s: any) => s.id === 'security').lines.map((l: any) => l.text).filter((t: string) => t !== '');
 /** Every section but delivery, with the posture score's line (or its plan line) left out of security. */
+// The header names the plan (WE-2, WE-D12), so it differs by plan by design; asserted on its own.
 const withoutPlanGated = (content: any) => ({
   ...content,
+  header: undefined,
   sections: content.sections
     .filter((s: any) => s.id !== 'delivery')
     .map((s: any) => (s.id === 'security'
@@ -316,6 +318,8 @@ describe('A2: the weekly email leaves the DORA metrics out below Pro', () => {
     await setPlan(STATES.free);
     const freeContent = (await sendWeeklyEmail()).content;
     expect(withoutPlanGated(freeContent)).toEqual(withoutPlanGated(proContent));
+    expect(proContent.header).toMatch(/ · Optimization Engine plan · /);
+    expect(freeContent.header).toMatch(/ · Visibility plan · /);
     expect(deliveryOf(proContent)[0]).toBe(deliveryOf(freeContent)[0]);
     // The security section differs only by the posture score's plan gate.
     expect(securityOf(proContent)).toContain(SCORE_LINE);
@@ -330,6 +334,8 @@ describe('A2: the weekly email leaves the DORA metrics out below Pro', () => {
     const { content, text } = await sendWeeklyEmail();
     expect(deliveryOf(content)).toEqual([COUNTS_LINE, DORA_PLAN_LINE]);
     expect(text).not.toMatch(DORA_TEXT);
+    // WE-2: an unreadable plan is not named in the header (no guessed plan, no tier id).
+    expect(content.header).not.toMatch(/ plan · /);
   });
 });
 
@@ -367,6 +373,8 @@ describe('A2: the weekly summary preview applies the same rule', () => {
       return { evidence, content };
     };
     expect(strip(restricted)).toEqual(strip(pro));
+    expect(pro.content.header).toMatch(/ · Optimization Engine plan · /);
+    expect(restricted.content.header).toMatch(/ · Visibility plan · /);
   });
 
   // WE-1 review L-3: the score is left out of the preview JSON below the plan, even with a completed scan.
