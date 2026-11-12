@@ -32,6 +32,7 @@ import { GracePeriodEnforcementJob } from './jobs/grace-period-enforcement.job';
 import { CustomComplianceService } from './services/custom-compliance.service';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
+import { launchStackStateLine } from './services/launch-stack';
 import { loadEnv } from './config/load-env';
 import {
   isLocalStack,
@@ -63,6 +64,8 @@ loadEnv();
 
 // Validate environment variables before starting
 validateEnv();
+// One line saying whether the Connect page's Launch stack link is on (variable names only).
+console.log(launchStackStateLine());
 
 const app = express();
 app.set('trust proxy', 1); // Trust Nginx reverse proxy for correct client IP in rate limiting

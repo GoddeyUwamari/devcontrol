@@ -126,3 +126,70 @@ describe('R1: connect-init without D2 configuration is unchanged', () => {
     expect('launchStack' in response.body.data).toBe(false);
   });
 });
+
+const TEMPLATE_URL = 'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json';
+function enableLaunchStack(): void {
+  process.env.CONNECT_LAUNCH_STACK_ENABLED = 'true';
+  process.env.CONNECT_TEMPLATE_URL = TEMPLATE_URL;
+  process.env.CONNECT_TEMPLATE_VERSION = '1';
+}
+
+describe('R2: with the switch on and a valid template, each org gets its own link', () => {
+  it('adds launchStack with the org\'s own External ID and leaves every other field as in R1', async () => {
+    enableLaunchStack();
+    await insertOwner();
+    const response = await connectInit();
+    const externalId = response.body.data.externalId;
+    const { launchStack, ...rest } = response.body.data;
+    expect(launchStack).toEqual({
+      url: expect.stringMatching(/^https:\/\/us-east-1\.console\.aws\.amazon\.com\/cloudformation\/home\?region=us-east-1#\/stacks\/create\/review\?/),
+      templateVersion: '1',
+      templateUrl: TEMPLATE_URL,
+    });
+    const params = new URLSearchParams(launchStack.url.slice(launchStack.url.indexOf('#') + 1).split('?')[1]);
+    expect(params.get('param_ExternalId')).toBe(externalId);
+    expect(params.get('templateURL')).toBe(TEMPLATE_URL);
+    const baseline = JSON.parse(fs.readFileSync(R1_BASELINE, 'utf8'));
+    expect(normalized({ ...response, body: { ...response.body, data: rest } }, externalId)).toStrictEqual(baseline);
+  });
+
+  it('two organizations get two different links', async () => {
+    enableLaunchStack();
+    await insertOwner();
+    const first = (await connectInit()).body.data;
+    await insertOwner();
+    const second = (await connectInit()).body.data;
+    expect(first.externalId).not.toBe(second.externalId);
+    expect(first.launchStack.url).toContain(`param_ExternalId=${encodeURIComponent(first.externalId)}`);
+    expect(second.launchStack.url).toContain(`param_ExternalId=${encodeURIComponent(second.externalId)}`);
+    expect(first.launchStack.url).not.toBe(second.launchStack.url);
+  });
+
+  it('an invalid template configuration leaves the response exactly as in R1', async () => {
+    enableLaunchStack();
+    process.env.CONNECT_TEMPLATE_URL = `${TEMPLATE_URL}?X-Amz-Signature=x`;
+    await insertOwner();
+    const response = await connectInit();
+    const baseline = JSON.parse(fs.readFileSync(R1_BASELINE, 'utf8'));
+    expect(normalized(response, response.body.data.externalId)).toStrictEqual(baseline);
+  });
+});
+
+describe('R3: access and caching are unchanged', () => {
+  it('stays private, no-store with the link', async () => {
+    enableLaunchStack();
+    await insertOwner();
+    const response = await connectInit();
+    expect(response.status).toBe(200);
+    expect(response.cacheControl).toBe('private, no-store');
+  });
+
+  it('a member is refused before any link is built', async () => {
+    enableLaunchStack();
+    await insertOwner('member');
+    const response = await connectInit();
+    expect(response.status).toBe(403);
+    expect(JSON.stringify(response.body)).not.toContain('launchStack');
+    expect(JSON.stringify(response.body)).not.toContain('console.aws.amazon.com');
+  });
+});
