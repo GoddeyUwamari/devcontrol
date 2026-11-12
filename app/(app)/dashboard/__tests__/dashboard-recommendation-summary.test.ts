@@ -29,8 +29,9 @@ describe('Dashboard recommendation-list duplication removal', () => {
     expect(pageSource).toMatch(/<RecommendedActionCard\b/)
   })
 
-  it('retains the "Executive ROI" section', () => {
-    expect(pageSource).toMatch(/<ExecutiveRoiCard\b/)
+  it('retains the estimated savings (formerly "Executive ROI"), now the Cost-Saving Opportunities header (DB-D12 S1)', () => {
+    expect(pageSource).not.toMatch(/<ExecutiveRoiCard\b/)
+    expect(pageSource).toMatch(/<SavingsOpportunities[\s\S]*?summary=\{\s*<EstimatedSavingsSummary\b/)
   })
 
   it('retains CTAs to the canonical /cost-optimization action surface', () => {

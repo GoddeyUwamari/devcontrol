@@ -15,7 +15,6 @@ describe('D2: every panel heading is the section role (18 px)', () => {
     ['resource-checks-section.tsx', '<h3 className="text-section text-ink m-0">{RESOURCE_CHECKS_TITLE}</h3>'],
     ['security-compliance-summary.tsx', '<h3 className="text-section text-ink">Security Key Findings</h3>'],
     ['savings-opportunities.tsx', '<h3 className="text-section text-ink">Cost-Saving Opportunities</h3>'],
-    ['executive-roi-card.tsx', '<h3 className="text-section text-ink">Estimated savings</h3>'],
     ['engineering-health-card.tsx', '<h3 className="text-section text-ink">Engineering Health</h3>'],
     ['recent-activity-card.tsx', '<h3 className="text-section text-ink">Recent Activity</h3>'],
     ['cost-trend-chart.tsx', '<CardTitle className="text-section">AWS Cost Trends</CardTitle>'],
@@ -25,9 +24,15 @@ describe('D2: every panel heading is the section role (18 px)', () => {
   })
 })
 
+describe('D2: Estimated savings has no panel heading of its own (DB-D12 S1)', () => {
+  it('executive-roi-card.tsx renders no heading: it is the Cost-Saving Opportunities header', () => {
+    expect(src('executive-roi-card.tsx')).not.toMatch(/<h[1-6]\b/)
+  })
+})
+
 describe('D3: figures', () => {
   it('the 18-24 px figures are the section role with tabular figures (Num)', () => {
-    expect(src('savings-opportunities.tsx')).toMatch(/<div className="text-section [^"]*" style=\{\{[^}]*\}\}>\s*<Num>\{savingsLabel\}<\/Num>/)
+    expect(src('savings-opportunities.tsx')).toMatch(/<div className="text-section [^"]*" data-testid=\{`opportunity-savings-\$\{type\}`\}>[\s\S]*?<Num>\{figure\.text\}<\/Num>/)
     expect(src('engineering-health-card.tsx').match(/<div className="text-section text-ink leading-none mb-1\.5"><Num>\{value\}<\/Num><\/div>/g)).toHaveLength(2)
     expect(src('resource-checks-section.tsx')).toMatch(/className="text-section [^"]*" data-testid="resource-checks-value">\s*<Num>\{view\.passing\}<\/Num> .*<Num>\{view\.reporting\}<\/Num>/)
     expect(src('system-intelligence-card.tsx')).toMatch(/`text-section [^`]*`\} data-testid=\{`posture-score-\$\{componentKey\}`\}>\s*<Num>\{d\.scoreText\}<\/Num>/)

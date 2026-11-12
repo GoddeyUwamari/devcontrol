@@ -99,7 +99,8 @@ const renderDashboard = () => render(<QueryClientProvider client={client}><Dashb
 const opportunities = () => screen.getByText('Cost-Saving Opportunities').closest('div.rounded-2xl') as HTMLElement
 const ec2Card = () => within(opportunities()).getByText('Review EC2 instances').parentElement as HTMLElement
 const recommendedAction = () => screen.getByText(/optimization opportunit(y|ies) identified/).closest('div.rounded-2xl') as HTMLElement
-const roi = () => screen.getByRole('heading', { name: 'Estimated savings' }).closest('div.rounded-2xl') as HTMLElement
+// Estimated savings is the Cost-Saving Opportunities header since PR-UI-b (DB-D12 S1).
+const roi = () => within(opportunities()).getByTestId('savings-summary')
 
 describe('Recommended Action, Cost-Saving Opportunities and ROI agree', () => {
   it('scheduled-only analysis (the local repro): the active EC2 recommendation is counted everywhere and never "Not currently evaluated"', async () => {
@@ -201,7 +202,7 @@ describe('Cost-Saving Opportunities: savings basis and retired categories', () =
     getStats.mockResolvedValue({ ...stats(8.5, 2), potentialSavingsCeiling: 41.27, potentialSavingsCeilingByResourceType: { S3: 41.27 } })
     renderDashboard()
 
-    await waitFor(() => expect(within(s3Card()).getByText('Up to $41.27/mo')).toBeInTheDocument())
+    await waitFor(() => expect(within(s3Card()).getByText('Up to $41.27/mo · upper bound')).toBeInTheDocument())
     expect(within(ec2Card()).getByText('$8.50/mo')).toBeInTheDocument()
     expect(recommendedAction()).toHaveTextContent('Estimated potential savings: $8.50/month')
     expect(recommendedAction().textContent).not.toMatch(/49\.77/)

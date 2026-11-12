@@ -133,14 +133,17 @@ describe('Infrastructure Intelligence: Overall Health / Cloud Spend duplication 
     expect(infrastructureIntelligenceSource).not.toMatch(/cloudSpend:/)
   })
 
-  it('keeps Top Risk and System Status', () => {
+  it('keeps Top Risk and the DevControl service status card (PR-UI-b title)', () => {
     expect(infrastructureIntelligenceSource).toMatch(/>Top Risk</)
-    expect(infrastructureIntelligenceSource).toMatch(/>DevControl System Health</)
+    expect(infrastructureIntelligenceSource).toMatch(/export const SERVICE_STATUS_TITLE = 'DevControl service status'/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/DevControl System Health/)
   })
 
-  it('System Status routes to /status (DevControl\'s own /health page) through the card\'s arrow button (next/link), independent of any other card\'s data', () => {
-    expect(infrastructureIntelligenceSource).toMatch(/const SYSTEM_STATUS_HREF = '\/status'/)
-    expect(infrastructureIntelligenceSource).toMatch(/<CardArrowLink href=\{SYSTEM_STATUS_HREF\} label="Open DevControl status" \/>/)
+  it('the service status card no longer links to /status (PR-UI-b, §F row 7); Top Risk keeps its own arrow', () => {
+    expect(infrastructureIntelligenceSource).not.toMatch(/SYSTEM_STATUS_HREF/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/['"`]\/status['"`]/)
+    expect(infrastructureIntelligenceSource).not.toMatch(/Open DevControl status/)
+    expect(infrastructureIntelligenceSource.match(/<CardArrowLink\b/g)).toHaveLength(1)
     expect(infrastructureIntelligenceSource).not.toMatch(/<a\b/)
   })
 

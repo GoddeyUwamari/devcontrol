@@ -5,7 +5,7 @@
  * panels (accessible buttons, Escape, focus return, desktop anchoring), and
  * the content rules -- partial never becomes available, a missing score is
  * "—" never 0, an estimate stays labeled as one, a still-billing comparison
- * is neutral, Top Risk severity is the finding's own, and System Health says
+ * is neutral, Top Risk severity is the finding's own, and the DevControl service status card says
  * it is not the customer's AWS. All figures are fixtures, not production data.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -133,7 +133,7 @@ describe('1. section order', () => {
     const riskRow = screen.getByTestId('risk-status-row')
     expect(riskRow.children).toHaveLength(2)
     expect(within(riskRow.children[0] as HTMLElement).getByText('Top Risk')).toBeInTheDocument()
-    expect(within(riskRow.children[1] as HTMLElement).getByText('DevControl System Health')).toBeInTheDocument()
+    expect(within(riskRow.children[1] as HTMLElement).getByText('DevControl service status')).toBeInTheDocument()
     expect(riskRow.className).toContain('lg:grid-cols-2')
 
     const section = screen.getByTestId('posture-section')
@@ -222,11 +222,12 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent('compliance scan pending'))
     expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent(/^Oct 1–14 \(UTC\) · Actual · AWS Cost Explorer · today still billing$/)
     expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings · compliance scan pending$/)
-    expect(within(kpi('/infrastructure')).getByTestId('kpi-caption')).toHaveTextContent(/^Composite · Cost 97 · Security 57 · Alert coverage 0$/)
+    // DB-D11 P1: no component caption on the posture KPI; the scores are the tiles below.
+    expect(within(kpi('/infrastructure')).queryByTestId('kpi-caption')).toBeNull()
     expect(screen.getByTestId('posture-tile-caption-cost')).toHaveTextContent(/^Monthly run-rate estimate · anomaly checks not yet active$/)
     expect(screen.getByTestId('posture-tile-caption-security')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings$/)
     expect(screen.queryByTestId('posture-tile-caption-observability')).toBeNull()
-    await waitFor(() => expect(screen.getByTestId('system-health-caption')).toHaveTextContent(/^API and database responding · not your AWS resources$/))
+    await waitFor(() => expect(screen.getByTestId('system-health-caption')).toHaveTextContent(/^DevControl's API and database are responding\. This is our service, not your AWS resources\.$/))
   })
 
   it('every card and tile has at most one caption line, and no long evidence on its face', async () => {
@@ -287,7 +288,7 @@ describe('4. info buttons', () => {
     ['About Security Posture', () => kpi('/security'), 'Security Posture'],
     ['About Infrastructure Posture', () => kpi('/infrastructure'), 'Infrastructure Posture'],
     ['About the Infrastructure Posture section', () => screen.getByTestId('posture-section'), 'Infrastructure Posture'],
-    ['About DevControl System Health', () => screen.getByTestId('system-health-card'), 'DevControl System Health'],
+    ['About DevControl service status', () => screen.getByTestId('system-health-card'), 'DevControl service status'],
   ]
 
   it.each(BUTTONS)('%s: a native button with aria-label / aria-expanded / aria-controls; click opens, Escape closes, focus returns', async (name, container, subject) => {
@@ -529,23 +530,23 @@ describe('11. Top Risk', () => {
   })
 })
 
-describe('12. DevControl System Health', () => {
-  it('operational: one caption, "API and database responding · not your AWS resources"', async () => {
+describe('12. DevControl service status', () => {
+  it('operational: one caption, "DevControl\'s API and database are responding. This is our service, not your AWS resources."', async () => {
     renderDashboard()
     await settled()
     const card = screen.getByTestId('system-health-card')
     await waitFor(() => expect(card).toHaveTextContent('Operational'))
-    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent('API and database responding · not your AWS resources')
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent("DevControl's API and database are responding. This is our service, not your AWS resources.")
     expect(card.textContent).not.toMatch(/Live|Platform API/)
   })
 
-  it('degraded: the existing wording, no "responding" claim', async () => {
+  it('degraded: its own wording, no "responding" claim', async () => {
     vi.spyOn(monitoringService, 'getSystemHealth').mockResolvedValue({ status: 'degraded' } as never)
     renderDashboard()
     await settled()
     const card = screen.getByTestId('system-health-card')
     await waitFor(() => expect(card).toHaveTextContent('Degraded'))
-    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent("DevControl's own services are degraded. Not a status of your AWS resources.")
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent('Some DevControl services are slow or failing. Figures on this page may be delayed.')
     expect(card.textContent).not.toMatch(/responding/)
   })
 })
@@ -592,7 +593,6 @@ describe('UI polish: card arrows, info buttons, both security scopes', () => {
       [kpi('/security'), 'Security Posture', '/security', 'Open security findings'],
       [kpi('/infrastructure'), 'Infrastructure Posture', '/infrastructure', 'Open infrastructure'],
       [screen.getByTestId('top-risk-card'), 'Top Risk', '/security#findings', 'Open top risk'],
-      [screen.getByTestId('system-health-card'), 'DevControl System Health', '/status', 'Open DevControl status'],
     ]
     for (const [card, title, href, label] of cards) {
       const links = within(card).getAllByRole('link')
@@ -606,6 +606,8 @@ describe('UI polish: card arrows, info buttons, both security scopes', () => {
     for (const key of ['cost', 'security', 'observability']) {
       expect(within(screen.getByTestId(`posture-tile-${key}`)).queryAllByRole('link')).toHaveLength(0)
     }
+    // The DevControl service status card has no link at all (PR-UI-b, §F row 7: /status removed).
+    expect(within(screen.getByTestId('system-health-card')).queryAllByRole('link')).toHaveLength(0)
     expect(within(screen.getByTestId('posture-section')).getByText('View details →').closest('a')).toHaveAttribute('href', '/infrastructure')
   })
 
@@ -617,7 +619,7 @@ describe('UI polish: card arrows, info buttons, both security scopes', () => {
     expect(new Set(labels).size).toBe(labels.length)
     expect(labels).toEqual(expect.arrayContaining([
       'About Month-to-Date Spend', 'About Security Posture', 'About Infrastructure Posture',
-      'About DevControl System Health', 'About the Infrastructure Posture section',
+      'About DevControl service status', 'About the Infrastructure Posture section',
     ]))
     for (const b of buttons) {
       expect(b.getAttribute('aria-label')).toMatch(/^About /)
@@ -644,14 +646,25 @@ describe('UI polish: card arrows, info buttons, both security scopes', () => {
   })
 })
 
-describe('6. the data refresh note', () => {
-  it('says only that each data source refreshes on its own schedule, in the meta role and muted ink, with no connection status', async () => {
+describe('6. the data freshness row (replaces "Each data source refreshes on its own schedule.")', () => {
+  it('only sources with a time, in the meta role and muted ink, with no connection status', async () => {
+    vi.spyOn(monitoringService, 'getSystemHealth').mockResolvedValue({ status: 'operational', lastUpdate: '2026-10-14T12:00:00.000Z' } as never)
     renderDashboard()
     await settled()
-    const note = screen.getByTestId('data-refresh-note')
-    expect(note.textContent).toBe('Each data source refreshes on its own schedule.')
-    expect(note.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-meta', 'text-ink-muted']))
-    expect(note.querySelector('svg')).toBeNull()
+    const row = await screen.findByTestId('data-freshness')
+    expect(document.body.textContent).not.toContain('Each data source refreshes on its own schedule.')
+    // This fixture has no Cost Explorer time, no coverage and no Resource checks result: only the service check.
+    expect(within(row).getAllByRole('listitem').map((li) => li.getAttribute('data-testid'))).toEqual(['freshness-service'])
+    expect(within(row).getByTestId('freshness-service').textContent).toMatch(/^DevControl service: checked /)
+    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-meta', 'text-ink-muted']))
+    expect(row.querySelector('svg')).toBeNull()
     expect(document.body.textContent).not.toMatch(/Live update channel|reconnecting/i)
+  })
+
+  it('no source with a time: no row at all', async () => {
+    renderDashboard()
+    await settled()
+    expect(screen.queryByTestId('data-freshness')).toBeNull()
+    expect(screen.queryByTestId('data-refresh-note')).toBeNull()
   })
 })

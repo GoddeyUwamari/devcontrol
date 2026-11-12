@@ -32,6 +32,7 @@ import { describeServicesSpend, SPEND_UNAVAILABLE_TEXT } from '../../services/Su
 import { SEVERITY_LABEL, STATUS_LABEL, typeLabel } from '../../services/AttentionTable'
 import { footerText, hasRegionCoverage, latestAttempt, regionCounts, type Rich } from '../../services/regionCoverage'
 import { inventoryGap, scopeIsCompleted, warningNotes } from '../../services/coverage'
+import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { NOT_CHECKED_COPY, unknownTagsText } from '../../services/notChecked'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T }
@@ -309,10 +310,6 @@ export interface OverviewView {
   costByService: CostByServiceView | null
   ownership: { lines: string[]; note: string | null } | null
   footer: { total: number | null } | null
-}
-
-function lastCompletedIso(c: ServicesCoverage): string | null {
-  return c.last_completed_scan?.completed_at ?? c.last_successful_scan_at ?? null
 }
 
 /** Account strip: no Account ID (D1) and no "of M listed" (D2) in this phase. */

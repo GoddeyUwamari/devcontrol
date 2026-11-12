@@ -21,6 +21,11 @@ interface DashboardHeroProps {
   orgName: string
   /** Only ever a genuinely authoritative sync timestamp (e.g. the fixed demo timestamp) — never a page-load Date. */
   lastSynced: Date | null
+  /**
+   * "Last scan: <time> · Last login: <time>" (dashboardFreshness.ts headerStatusLine),
+   * under the organization name; null or absent renders no line.
+   */
+  statusLine?: string | null
 }
 
 const PILL = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-label font-semibold whitespace-nowrap'
@@ -115,11 +120,12 @@ export function ProviderPills({ awsConnection, canConnectAws, awsHealth = null }
 /**
  * Page hero: title, truthful supporting copy, and the provider pills (right
  * of the title on desktop, one row below it on narrow screens). The sub-copy
- * is the organization's name in every state; AWS is the pills' business. No
+ * is the organization's name in every state, then the last scan and the
+ * previous sign-in when the page has them; AWS is the pills' business. No
  * "real-time" claim: the dashboard's sources refresh on their own schedules
  * (see the dashboard page's data-provenance comments).
  */
-export function DashboardHero({ awsConnection, canConnectAws, awsHealth = null, orgName, lastSynced }: DashboardHeroProps) {
+export function DashboardHero({ awsConnection, canConnectAws, awsHealth = null, orgName, lastSynced, statusLine = null }: DashboardHeroProps) {
   return (
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between mb-6">
       <div>
@@ -132,6 +138,9 @@ export function DashboardHero({ awsConnection, canConnectAws, awsHealth = null, 
         <p className="text-meta text-ink-muted font-medium mt-2">
           {`${orgName}${awsConnection === 'connected' && lastSynced ? ` · Last synced ${formatDistanceToNow(lastSynced, { addSuffix: true })}` : ''}`}
         </p>
+        {statusLine && (
+          <p className="text-meta text-ink-muted mt-1 mb-0" data-testid="dashboard-header-status">{statusLine}</p>
+        )}
       </div>
       <div className="shrink-0">
         <ProviderPills awsConnection={awsConnection} canConnectAws={canConnectAws} awsHealth={awsHealth} />

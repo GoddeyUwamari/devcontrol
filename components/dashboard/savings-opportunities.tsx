@@ -18,8 +18,16 @@ export interface OpportunityCategoryItem {
   description: string
   count: number
   savingsLabel: string
+  /**
+   * The same figures as savingsLabel, each with its tone: 'success' (green)
+   * only for an estimate above $0; an upper bound, "No dollar estimate" and
+   * anything else are neutral (DB-D13). Absent: savingsLabel, neutral.
+   */
+  savingsFigures?: SavingsFigure[]
   priorityBadge?: { label: string; color: string; background: string }
 }
+
+export interface SavingsFigure { text: string; tone: 'success' | 'neutral' }
 
 interface SavingsOpportunitiesProps {
   items: OpportunityCategoryItem[]
@@ -32,6 +40,8 @@ interface SavingsOpportunitiesProps {
    *  real recommendation can exist for a type this UI doesn't have a card
    *  for yet. null when the stats request failed: no count is shown. */
   totalActiveCount: number | null
+  /** The estimated savings summary under the header (DB-D12 S1): monthly estimate, ceilings, annual figure. */
+  summary?: React.ReactNode
   detailsHref?: string
 }
 
@@ -68,7 +78,7 @@ const GRID_COLS_BY_COUNT: Record<number, string> = {
  * (scheduled or manual) has completed, never merely because a type's count
  * is zero; "Could not be retrieved" when a request failed.
  */
-export function SavingsOpportunities({ items, evaluationState, totalActiveCount, detailsHref = '/cost-optimization' }: SavingsOpportunitiesProps) {
+export function SavingsOpportunities({ items, evaluationState, totalActiveCount, summary, detailsHref = '/cost-optimization' }: SavingsOpportunitiesProps) {
   // A completed scan with nothing active shows no conclusion -- a completed
   // run does not record whether each check succeeded or had enough data, so
   // "no opportunities" would be unsupported. not_evaluated/in_progress keep
@@ -87,6 +97,7 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
           {totalActiveCount === null ? 'View all →' : `View all (${totalActiveCount}) →`}
         </a>
       </div>
+      {summary && <div className="mb-4">{summary}</div>}
       {showEmptyState ? (
         <div className="text-center py-8 flex flex-col items-center gap-2">
           <div className="w-10 h-10 rounded-xl bg-[var(--surface-1)] flex items-center justify-center mb-1">
@@ -96,13 +107,24 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
         </div>
       ) : (
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${gridColsClass} gap-4`}>
-        {items.map(({ type, title, description, count, savingsLabel, priorityBadge }) => (
+        {items.map(({ type, title, description, count, savingsLabel, savingsFigures, priorityBadge }) => (
           <div key={type} className="bg-[var(--surface-1)] rounded-xl border border-border p-4">
             <p className="text-label font-medium text-ink-muted mb-2">{title}</p>
             {evaluationState === 'evaluated' || count > 0 ? (
               <>
-                <div className="text-section tracking-tight leading-none mb-1" style={{ color: count > 0 ? 'var(--text-success)' : 'var(--text-secondary)' }}>
-                  <Num>{savingsLabel}</Num>
+                <div className="text-section tracking-tight leading-none mb-1" data-testid={`opportunity-savings-${type}`}>
+                  {(savingsFigures ?? [{ text: savingsLabel, tone: 'neutral' as const }]).map((figure, i) => (
+                    <span key={i}>
+                      {i > 0 && <span className="text-ink-muted"> + </span>}
+                      <span
+                        className={figure.tone === 'neutral' && count > 0 ? 'text-ink' : undefined}
+                        style={figure.tone === 'success' ? { color: 'var(--text-success)' } : count > 0 ? undefined : { color: 'var(--text-secondary)' }}
+                        data-tone={figure.tone}
+                      >
+                        <Num>{figure.text}</Num>
+                      </span>
+                    </span>
+                  ))}
                 </div>
                 <p className="text-meta text-ink-muted mb-2">{countPhrase(count)}</p>
               </>

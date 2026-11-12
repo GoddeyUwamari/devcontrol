@@ -1,0 +1,42 @@
+{
+  "200 ok": [
+    "[icon]",
+    "DevControl service status {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    "Operational {color=var(--text-success) class=text-label}",
+    "DevControl's API and database are responding. This is our service, not your AWS resources. · Checked today, 8:37 PM {class=text-meta text-ink-muted}"
+  ],
+  "500 database disconnected": [
+    "[icon]",
+    "DevControl service status {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    "Degraded {color=var(--text-warning) class=text-label}",
+    "Some DevControl services are slow or failing. Figures on this page may be delayed. {class=text-meta text-ink-muted}"
+  ],
+  "500 without a database field": [
+    "[icon]",
+    "DevControl service status {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    "Unavailable {color=var(--text-danger) class=text-label}",
+    "Can't reach DevControl's API right now. Figures on this page may be out of date. {class=text-meta text-ink-muted}"
+  ],
+  "timeout / network": [
+    "[icon]",
+    "DevControl service status {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    "Unavailable {color=var(--text-danger) class=text-label}",
+    "Can't reach DevControl's API right now. Figures on this page may be out of date. {class=text-meta text-ink-muted}"
+  ],
+  "still checking": [
+    "[icon]",
+    "DevControl service status {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    "Checking… {color=var(--text-secondary) class=text-label}",
+    "Checking DevControl's own service status. {class=text-meta text-ink-muted}"
+  ]
+}

@@ -14,7 +14,7 @@ import { SystemIntelligenceCard } from '@/components/dashboard/system-intelligen
 import { SecurityComplianceSummary } from '@/components/dashboard/security-compliance-summary'
 import { CostTrendsCard } from '@/components/dashboard/cost-trends-card'
 import { SavingsOpportunities } from '@/components/dashboard/savings-opportunities'
-import { ExecutiveRoiCard } from '@/components/dashboard/executive-roi-card'
+import { EstimatedSavingsSummary } from '@/components/dashboard/executive-roi-card'
 import { EngineeringHealthCard } from '@/components/dashboard/engineering-health-card'
 import { RecentActivityCard } from '@/components/dashboard/recent-activity-card'
 import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness'
@@ -26,13 +26,17 @@ import { accountSecurityFindingsService } from '@/lib/services/account-security-
 import { awsResourcesService } from '@/lib/services/aws-resources.service'
 import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { monitoringService } from '@/lib/services/monitoring.service'
+import { authService } from '@/lib/services/auth.service'
+import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { computeDashboardAwsGates } from './dashboardAwsGates'
 import { computeAwsConnectionState } from './dashboardAwsConnection'
 import { parseAwsConnection, parseConnectionHealth, type AwsAccountsAndConnection } from '@/lib/services/aws-accounts.service'
 import { computeDashboardSpendCard } from './dashboardSpendCard'
+import { dataFreshnessSegments, headerStatusLine, serviceStatusView } from './dashboardFreshness'
+import { useNowEachLocalDay } from '../services/useNowEachLocalDay'
 import { computeSecurityEvidence, computeSecurityHealthKpi, resourceComplianceLine, resourceIssueCount, SECURITY_STATUS_BADGE, securityKpiCaption, securityScopeCaption } from './securityHealthKpi'
-import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureCompositionCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
+import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureStatusLabel } from '@/lib/infrastructure-posture'
 import { EvidenceSection } from '@/components/dashboard/evidence-info'
 import { PostureEvidence } from '@/components/dashboard/posture-evidence'
 import { ResourceChecksSection } from '@/components/dashboard/resource-checks-section'
@@ -44,7 +48,7 @@ import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
 import { NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
 import { deriveAnalysisStatus, pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { roundCents } from '../costs/cost-display'
-import type { OpportunityEvaluationState } from '@/components/dashboard/savings-opportunities'
+import type { OpportunityEvaluationState, SavingsFigure } from '@/components/dashboard/savings-opportunities'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
 import { DollarSign, ShieldCheck, Gauge } from 'lucide-react'
@@ -85,7 +89,7 @@ function generateCostBreakdownData() {
 const DEMO_TOP_RISK = 'Lambda invocation spike on payment-processor (+178%) — review before it affects downstream services.'
 
 export default function DashboardPage() {
-  const { organization } = useAuth()
+  const { organization, user } = useAuth()
   const { socket } = useWebSocket()
   const queryClient = useQueryClient()
   const demoMode = useDemoMode()
@@ -165,6 +169,32 @@ export default function DashboardPage() {
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive,
   })
+
+  // Scan coverage: the same request and cache entry as the Security and
+  // Infrastructure overviews ("Last scan" in the header and the freshness row).
+  const { data: coverage } = useQuery<ServicesCoverage>({
+    queryKey: ['services-coverage', organization?.id],
+    queryFn: () => awsServicesService.getCoverage(),
+    enabled: !isDemoActive && !!organization?.id,
+    retry: false, refetchOnWindowFocus: false,
+  })
+  // "Last login": the previous sign-in from a /me response made for this
+  // Dashboard view, never the user cached at sign-in or held in the auth store
+  // (refreshed only on a full page load), so a sign-in on another device shows
+  // up. Nothing is kept once the page unmounts (gcTime 0); an earlier answer
+  // or a failed request is never shown.
+  const { data: freshMe, isFetchedAfterMount: meFetchedAfterMount, isError: meFailed } = useQuery({
+    queryKey: ['dashboard-me', user?.id],
+    queryFn: () => authService.getCurrentUser(),
+    enabled: !isDemoActive && !!user?.id,
+    staleTime: 0, gcTime: 0, refetchOnMount: 'always',
+    refetchOnWindowFocus: false, retry: false,
+  })
+  const freshPreviousLoginAt = meFetchedAfterMount && !meFailed ? freshMe?.previousLoginAt : undefined
+  // Resource checks' CloudWatch capture time, once that section has loaded (DB-D9).
+  const [cloudwatchCapturedAt, setCloudwatchCapturedAt] = useState<number | null>(null)
+  // The viewer's "today", for "today, 6:02 PM" / "yesterday, …" (re-read at local midnight).
+  const now = useNowEachLocalDay(!isDemoActive)
 
   // Same authoritative cost_recommendations boundary /costs and /cost-optimization
   // already consume, via costRecommendationsService -- no independent fetch/transform.
@@ -383,19 +413,10 @@ export default function DashboardPage() {
 
   const costDeltaColor = costChange > 0 ? 'var(--text-danger)' : costChange < 0 ? 'var(--text-success)' : 'var(--text-warning)'
 
-  const systemStatusLabel = isDemoActive ? 'healthy' : systemHealth?.status === 'operational' ? 'healthy' : systemHealth?.status === 'disrupted' ? 'down' : systemHealth?.status === 'degraded' ? 'degraded' : 'unknown'
-
-  // systemHealth is DevControl's own /health check (API + database), not the
-  // customer's AWS -- each state's one caption says so. "Responding" is only
-  // claimed when that check reports operational; the other states keep their
-  // existing wording.
-  const systemStatusConfig = {
-    healthy:  { color: 'var(--text-success)', dot: 'var(--fill-success)', value: 'Operational', caption: 'API and database responding · not your AWS resources' },
-    degraded: { color: 'var(--text-warning)', dot: 'var(--fill-warning)', value: 'Degraded', caption: "DevControl's own services are degraded. Not a status of your AWS resources." },
-    down:     { color: 'var(--text-danger)', dot: 'var(--fill-danger)', value: 'Not responding', caption: "DevControl's API is not responding normally. Not a status of your AWS resources." },
-    unknown:  { color: 'var(--text-secondary)', dot: 'var(--text-secondary)', value: 'Checking', caption: "Checking DevControl's own service status." },
-  } as const
-  const statusConf = systemStatusConfig[systemStatusLabel as keyof typeof systemStatusConfig] || systemStatusConfig.unknown
+  // DevControl's own /health check (API + database), not the customer's AWS:
+  // Operational / Degraded (a 500 with the database disconnected) / Unavailable
+  // / Checking… (DB-D7). "Checked <time>" is that check's own time.
+  const serviceStatus = serviceStatusView(systemHealth, now, isDemoActive)
 
   // Cost-saving opportunities, grouped by resource type from the already-fetched cost
   // recommendations — no new fetch. Structured as a list (not one variable per type)
@@ -421,8 +442,8 @@ export default function DashboardPage() {
   ]
   const opportunityCategories = isDemoActive
     ? [
-        { type: 'EC2', title: 'Review EC2 instances', description: 'Low-activity instances and Reserved Instance coverage gaps', count: 2, savingsLabel: '$0.48/mo', priorityBadge: priorityBadgeFor('LOW') },
-        { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', priorityBadge: priorityBadgeFor('LOW') },
+        { type: 'EC2', title: 'Review EC2 instances', description: 'Low-activity instances and Reserved Instance coverage gaps', count: 2, savingsLabel: '$0.48/mo', savingsFigures: [{ text: '$0.48/mo', tone: 'success' as const }], priorityBadge: priorityBadgeFor('LOW') },
+        { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', savingsFigures: [{ text: '$0.32/mo', tone: 'success' as const }], priorityBadge: priorityBadgeFor('LOW') },
         { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: '$0/mo', priorityBadge: undefined },
       ]
     : OPPORTUNITY_CATEGORIES.map((cat) => {
@@ -431,17 +452,21 @@ export default function DashboardPage() {
         // recommendations can draw on the same instance's cost (e.g. idle + RI).
         // Estimates and ceilings (S3 lifecycle's upper bound) are separate server
         // totals and are shown apart, never added; a type whose active rows have
-        // no savings basis has no dollar figure at all.
+        // no savings basis has no dollar figure at all. Green only for an
+        // estimate above $0; an upper bound says so and is neutral (DB-D13).
         const total = costRecStats?.potentialSavingsByResourceType?.[cat.type]
         const ceiling = costRecStats?.potentialSavingsCeilingByResourceType?.[cat.type]
-        const figures = [
-          ...(total != null ? [`${formatSavingsCents(roundCents(total))}/mo`] : []),
-          ...(ceiling != null ? [`Up to ${formatSavingsCents(roundCents(ceiling))}/mo`] : []),
+        const figures: SavingsFigure[] = [
+          ...(total != null ? [{ text: `${formatSavingsCents(roundCents(total))}/mo`, tone: roundCents(total) > 0 ? 'success' as const : 'neutral' as const }] : []),
+          ...(ceiling != null ? [{ text: `Up to ${formatSavingsCents(roundCents(ceiling))}/mo · upper bound`, tone: 'neutral' as const }] : []),
         ]
+        const savingsFigures: SavingsFigure[] | undefined = matches.length === 0 || !costRecStats ? undefined
+          : figures.length > 0 ? figures : [{ text: NO_DOLLAR_ESTIMATE, tone: 'neutral' }]
         return {
           ...cat,
           count: matches.length,
-          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : !costRecStats ? '—' : figures.length > 0 ? figures.join(' + ') : NO_DOLLAR_ESTIMATE,
+          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : !costRecStats ? '—' : figures.length > 0 ? figures.map((f) => f.text).join(' + ') : NO_DOLLAR_ESTIMATE,
+          savingsFigures,
           priorityBadge: priorityBadgeFor(matches[0]?.severity),
         }
       })
@@ -572,13 +597,19 @@ export default function DashboardPage() {
     resourceScanCompleted: resourceStats?.scan_completed,
     resourceComplianceError,
   })
-  const postureCaption = isDemoActive || displayedHealthScore === null ? null : postureCompositionCaption(systemIntelligence?.components)
   const postureTileCaptions = {
     cost: costComponentCaption(systemIntelligence?.components?.cost),
     security: securityFindingsLoading ? null : securityScopeCaption({ findingCounts: accountFindingStats?.bySeverity, findingsError, resourceIssues }),
   }
 
   const orgName = isDemoActive ? 'WayUP Technology' : (organization?.displayName || organization?.name || 'your organization')
+
+  // "Last scan: <time> · Last login: <time>": Security's scan line and the
+  // previous sign-in (never the current one); each part omitted without a source.
+  const headerLine = isDemoActive ? null : headerStatusLine({ coverage, previousLoginAt: freshPreviousLoginAt, now })
+  const freshness = isDemoActive ? [] : dataFreshnessSegments({
+    costSummary, costSummaryError, coverage, cloudwatchCapturedAt, serviceCheckedAt: systemHealth?.lastUpdate, now,
+  })
 
   // Top spacing is the app's page-top token (24 / 32 / 40 px) in every state.
   return (
@@ -592,6 +623,7 @@ export default function DashboardPage() {
           awsHealth={isDemoActive ? null : awsAccounts?.health?.state ?? null}
           orgName={orgName}
           lastSynced={isDemoActive ? DEMO_LAST_SYNCED : null}
+          statusLine={headerLine}
         />
       )}
 
@@ -703,7 +735,7 @@ export default function DashboardPage() {
                 ...(infraHealthBadge ? [{ label: infraHealthBadge.label, color: infraHealthBadge.color, direction: infraHealthBadge.direction, testId: 'posture-status' }] : []),
                 ...(postureIsPartial ? [{ label: 'Partial', color: 'var(--text-secondary)', testId: 'posture-partial' }] : []),
               ]}
-              caption={postureCaption}
+              /* No caption (DB-D11 P1): the component scores are the section's tiles directly below. */
               progress={displayedHealthScore === null || !infraHealthBadge ? undefined : {
                 value: displayedHealthScore,
                 fillClassName: toneFillClass(infraHealthBadge.color),
@@ -716,12 +748,12 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* ── SECTION 2: TOP RISK + DEVCONTROL SYSTEM HEALTH ── */}
+          {/* ── SECTION 2: TOP RISK + DEVCONTROL SERVICE STATUS ── */}
           <InfrastructureIntelligence
             topRisk={topRisk}
             topRiskStatus={topRiskStatus}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
-            systemStatus={{ value: statusConf.value, caption: statusConf.caption, operational: systemStatusLabel === 'healthy', color: statusConf.color, dotColor: statusConf.dot }}
+            systemStatus={{ value: serviceStatus.value, caption: serviceStatus.caption, operational: serviceStatus.state === 'operational', color: serviceStatus.color, dotColor: serviceStatus.dotColor }}
           />
 
           {/* ── SECTION 3: INFRASTRUCTURE POSTURE ── */}
@@ -743,6 +775,7 @@ export default function DashboardPage() {
             isDemoActive={isDemoActive}
             organizationId={organization?.id}
             aboveLoaded={!costSummaryLoading && !securityFindingsLoading && !systemIntelligenceLoading && !aiSummaryLoading}
+            onCapturedAt={setCloudwatchCapturedAt}
           />
 
           {/* ── AWS COST TRENDS + SECURITY KEY FINDINGS ── */}
@@ -776,33 +809,32 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ── COST-SAVING OPPORTUNITIES + EXECUTIVE ROI ── */}
+          {/* ── COST-SAVING OPPORTUNITIES (estimated savings in its header, DB-D12 S1) ── */}
           {/* Derived from cost_recommendations, not AWS billing data -- shown as soon as
               the initial discovery scan has run once, independent of hasBillingData/
               hasServicesOnly (the separate, much slower 24-48h Cost Explorer billing
               sync). */}
           {showRecommendationSections && (
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
-              <div className="lg:col-span-3">
-                <SavingsOpportunities
-                  items={dashboardOpportunityCategories}
-                  evaluationState={opportunityEvaluationState}
-                  totalActiveCount={activeOpportunityCount}
-                />
-              </div>
-              <div className="lg:col-span-2">
-                <ExecutiveRoiCard
-                  monthlySavingsLabel={monthlySavings > 0 ? formatSavingsCents(monthlySavings) : null}
-                  annualSavingsLabel={monthlySavings > 0 ? formatSavingsCents(annualSavings) : null}
-                  isDemoActive={isDemoActive}
-                  evaluationState={opportunityEvaluationState}
-                  activeCount={activeOpportunityCount}
-                  ceilingLabel={!isDemoActive && (costRecStats?.potentialSavingsCeiling ?? 0) > 0 ? formatSavingsCents(roundCents(costRecStats!.potentialSavingsCeiling)) : null}
-                  statsLoading={!isDemoActive && costRecStatsLoading}
-                  statsFailed={!isDemoActive && costRecStatsFailed && !costRecStats}
-                  onRetry={() => { void refetchCostRecStats(); void refetchCostRecs(); void refetchAnalysisRuns(); void refetchDiscoveryJobs() }}
-                />
-              </div>
+            <div className="mb-6">
+              <SavingsOpportunities
+                items={dashboardOpportunityCategories}
+                evaluationState={opportunityEvaluationState}
+                totalActiveCount={activeOpportunityCount}
+                summary={
+                  <EstimatedSavingsSummary
+                    monthlySavingsLabel={monthlySavings > 0 ? formatSavingsCents(monthlySavings) : null}
+                    annualSavingsLabel={monthlySavings > 0 ? formatSavingsCents(annualSavings) : null}
+                    isDemoActive={isDemoActive}
+                    evaluationState={opportunityEvaluationState}
+                    activeCount={activeOpportunityCount}
+                    ceilingByResourceType={isDemoActive ? null : costRecStats?.potentialSavingsCeilingByResourceType ?? null}
+                    formatAmount={(amount) => formatSavingsCents(roundCents(amount))}
+                    statsLoading={!isDemoActive && costRecStatsLoading}
+                    statsFailed={!isDemoActive && costRecStatsFailed && !costRecStats}
+                    onRetry={() => { void refetchCostRecStats(); void refetchCostRecs(); void refetchAnalysisRuns(); void refetchDiscoveryJobs() }}
+                  />
+                }
+              />
             </div>
           )}
 
@@ -822,10 +854,20 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ── DATA REFRESH NOTE ── the live-update status is the floating pill (ConnectionIndicator). */}
-          <p className="mt-2 mb-2 text-meta text-ink-muted" data-testid="data-refresh-note">
-            Each data source refreshes on its own schedule.
-          </p>
+          {/* ── DATA FRESHNESS ── one segment per source with a real time; none without one.
+              The live-update status is the floating pill (ConnectionIndicator). */}
+          {freshness.length > 0 && (
+            <div className="mt-2 mb-2 text-meta text-ink-muted" data-testid="data-freshness">
+              <p className="m-0 font-semibold text-ink">Data freshness</p>
+              <ul className="list-none m-0 p-0 mt-1 flex flex-col gap-0.5">
+                {freshness.map((segment) => (
+                  <li key={segment.key} data-testid={`freshness-${segment.key}`}>
+                    <span className="font-medium text-ink">{segment.label}:</span> <span>{segment.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </div>

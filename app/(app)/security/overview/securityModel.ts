@@ -26,6 +26,7 @@ import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type Findin
 import { typeLabel } from '../../services/AttentionTable'
 import { hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
 import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
+import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
 import { EVALUATION_COPY, FRAMEWORK_STALE_AFTER_MS, SEE_PLANS, evaluateFramework, type EvaluationOverlay, type EvaluationState } from '@/lib/compliance/evaluation'
 import {
@@ -350,7 +351,6 @@ function countOpen(rows: FindingRow[]): SeverityCounts {
   return c
 }
 
-const lastCompletedIso = (c: ServicesCoverage) => c.last_completed_scan?.completed_at ?? c.last_successful_scan_at ?? null
 
 function needReview(c: number, h: number): string {
   const verb = plural(c + h, 'finding needs review', 'findings need review')

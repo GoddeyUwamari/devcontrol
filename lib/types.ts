@@ -15,6 +15,11 @@ export interface User {
   role?: UserRole; // Optional for RBAC features
   status?: UserStatus; // Optional for user management
   lastLoginAt?: string;
+  /**
+   * The sign-in before the current one (GET /api/auth/me, DB-D8). null when
+   * there is none; absent from a backend without it. Never the current sign-in.
+   */
+  previousLoginAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

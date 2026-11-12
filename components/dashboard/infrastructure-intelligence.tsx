@@ -52,8 +52,8 @@ const NEUTRAL_CARD = { color: NEUTRAL_COLOR, background: 'var(--surface-2)', bor
 
 // Existing page over the same account findings Top Risk names.
 const TOP_RISK_HREF = '/security#findings'
-// DevControl's own status page: the same /health check this card reports.
-const SYSTEM_STATUS_HREF = '/status'
+
+export const SERVICE_STATUS_TITLE = 'DevControl service status'
 
 export const SYSTEM_HEALTH_EXPLANATION =
   "Measures whether DevControl's API and database respond to a health check. This indicator reflects DevControl application availability, not your connected AWS infrastructure uptime."
@@ -117,12 +117,11 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2 min-w-0">
-            <p className="text-ui font-semibold text-ink m-0 truncate">DevControl System Health</p>
-            <EvidenceInfo about="DevControl System Health" align="start">
+            <p className="text-ui font-semibold text-ink m-0 truncate">{SERVICE_STATUS_TITLE}</p>
+            <EvidenceInfo about={SERVICE_STATUS_TITLE} align="start">
               <p className="m-0">{SYSTEM_HEALTH_EXPLANATION}</p>
             </EvidenceInfo>
           </div>
-          <CardArrowLink href={SYSTEM_STATUS_HREF} label="Open DevControl status" />
         </div>
         <span
           className="inline-flex items-center gap-1.5 text-label font-semibold px-2 py-0.5 rounded-full border border-border"
@@ -138,7 +137,7 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
 }
 
 /**
- * Risk and status row: Top Risk (left) and DevControl System Health (right).
+ * Risk and status row: Top Risk (left) and DevControl service status (right).
  *
  * Top Risk's "No urgent risks identified" is a specific, falsifiable claim,
  * so it's shown only when the backend reports topRiskStatus
@@ -147,8 +146,9 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
  * "Risk status unavailable". Only an identified risk links to the findings,
  * through the arrow button; neither card is itself a link.
  *
- * System Health is DevControl's own /health check (API + database), never
- * the customer's AWS, and its one caption says so in every state.
+ * DevControl service status is DevControl's own /health check (API +
+ * database), never the customer's AWS. It has no link: its info panel says
+ * what it measures.
  */
 export function InfrastructureIntelligence({ topRisk, topRiskStatus, aiSummaryLoading, systemStatus }: InfrastructureIntelligenceProps) {
   return (

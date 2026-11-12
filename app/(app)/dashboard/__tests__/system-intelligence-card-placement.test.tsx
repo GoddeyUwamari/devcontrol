@@ -114,8 +114,11 @@ describe('Infrastructure Posture section on the real Dashboard page', () => {
     await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Alert Coverage score' })).toBeInTheDocument())
     expect(within(postureKpi()).getByText('69')).toBeInTheDocument()
     // The KPI card carries the composite; the section (no ring) carries the same response's component scores.
-    expect(within(postureKpi()).getByTestId('kpi-caption')).toHaveTextContent('Composite · Cost 95 · Security 59 · Alert coverage 55')
+    // DB-D11 P1: the KPI no longer repeats them in a caption; each is still on the page once, in its tile.
+    expect(within(postureKpi()).queryByTestId('kpi-caption')).toBeNull()
     expect(within(await postureSection()).getByText('95')).toBeInTheDocument()
+    expect(within(await postureSection()).getByText('59')).toBeInTheDocument()
+    expect(within(await postureSection()).getByText('55')).toBeInTheDocument()
     expect(within(await postureSection()).queryByText('69')).toBeNull()
     expect(intelligenceSpy).toHaveBeenCalledTimes(1)
     expect(client.getQueryCache().findAll({ queryKey: ['system-intelligence'] })).toHaveLength(1)

@@ -1,4 +1,4 @@
-import { Zap, CheckCircle2 } from 'lucide-react'
+import { Zap } from 'lucide-react'
 
 interface RecommendedActionCardProps {
   opportunityCount: number
@@ -30,10 +30,10 @@ export function RecommendedActionCard({ opportunityCount, savingsLabel, ctaHref,
           <div className="text-card-title text-ink mb-1">
             {opportunityCount} optimization opportunit{opportunityCount !== 1 ? 'ies' : 'y'} identified
           </div>
+          {/* No status icon: an estimate is not a success (DB-D14). Green text: a real estimate. */}
           {savingsLabel && (
-            <div className="flex items-center gap-1.5 text-meta" style={{ color: 'var(--text-success)' }}>
-              <CheckCircle2 size={13} />
-              <span>Estimated potential savings: {savingsLabel}</span>
+            <div className="text-meta" style={{ color: 'var(--text-success)' }} data-testid="recommended-action-savings">
+              Estimated potential savings: {savingsLabel}
             </div>
           )}
           {isDemoActive && (
@@ -47,9 +47,12 @@ export function RecommendedActionCard({ opportunityCount, savingsLabel, ctaHref,
           )}
         </div>
       </div>
+      {/* Below 640 px: full width and at least 44 px tall (a touch target), label centred and
+          allowed to wrap. From sm: up, unchanged: its own width, right-aligned, one line. */}
       <a
         href={ctaHref}
-        className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline whitespace-nowrap shrink-0 self-start sm:self-center"
+        className="bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline shrink-0 inline-flex items-center justify-center text-center w-full min-h-11 self-stretch sm:w-auto sm:min-h-0 sm:whitespace-nowrap sm:self-center"
+        data-testid="recommended-action-cta"
       >
         Review {opportunityCount} recommendation{opportunityCount !== 1 ? 's' : ''} →
       </a>

@@ -84,22 +84,22 @@ describe('AWS provider pill', () => {
   })
 })
 
-describe('System Health arrow', () => {
-  it('is the card\'s arrow button (a 14px ArrowRight), not on the title', () => {
+describe('DevControl service status card (PR-UI-b, §F row 7)', () => {
+  it('has no arrow and no link at all: the /status link is removed; the title is not a link', () => {
     render(
       <InfrastructureIntelligence
         topRisk={null}
         topRiskStatus="unavailable"
         aiSummaryLoading={false}
-        systemStatus={{ value: 'Operational', caption: 'API and database responding · not your AWS resources', operational: true, color: 'green', dotColor: 'green' }}
+        systemStatus={{ value: 'Operational', caption: "DevControl's API and database are responding. This is our service, not your AWS resources.", operational: true, color: 'green', dotColor: 'green' }}
       />
     )
-    expect(screen.getByText('DevControl System Health').closest('a')).toBeNull()
-    const link = screen.getByRole('link', { name: 'Open DevControl status' })
-    const arrows = link.querySelectorAll('svg.lucide-arrow-right')
-    expect(arrows).toHaveLength(1)
-    expect(arrows[0].getAttribute('width')).toBe('14')
-    expect(chevronsIn(link)).toHaveLength(0)
+    const card = screen.getByTestId('system-health-card')
+    expect(screen.getByText('DevControl service status').closest('a')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Open DevControl status' })).toBeNull()
+    expect(card.querySelector('a')).toBeNull()
+    expect(card.querySelectorAll('svg.lucide-arrow-right')).toHaveLength(0)
+    expect(chevronsIn(card)).toHaveLength(0)
   })
 })
 

@@ -1,0 +1,143 @@
+{
+  "estimateWithCeilings": {
+    "recommendedAction": [
+      "[icon]",
+      "Recommended action {color=var(--text-accent) class=text-label}",
+      "3 optimization opportunities identified {class=text-card-title text-ink}",
+      "Estimated potential savings: $5.17/month {color=var(--text-success) class=text-meta}",
+      "Review 3 recommendations → {class=text-white text-meta text-center} [href=/cost-optimization]"
+    ],
+    "recommendedActionCtaClass": "bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline shrink-0 inline-flex items-center justify-center text-center w-full min-h-11 self-stretch sm:w-auto sm:min-h-0 sm:whitespace-nowrap sm:self-center",
+    "opportunities": [
+      "[icon]",
+      "Cost-Saving Opportunities {class=text-section text-ink}",
+      "View all (3) → {color=var(--text-accent) class=text-label} [href=/cost-optimization]",
+      "Estimated monthly savings {class=text-label text-ink-muted}",
+      "$5.17 {color=var(--text-success) class=text-kpi}",
+      "Based on current optimization opportunities {class=text-meta text-ink-muted}",
+      "Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above). {class=text-meta text-ink-muted}",
+      "Plus up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above). {class=text-meta text-ink-muted}",
+      "Potential annual savings {color=var(--text-accent) class=text-label}",
+      "$62.04 {color=var(--text-accent) class=text-section}",
+      "(estimated) {class=text-label text-ink-muted}",
+      "Optimize EBS volumes {class=text-label text-ink-muted}",
+      "$5.17/mo {color=var(--text-success) class=text-section}",
+      "1 opportunity {class=text-meta text-ink-muted}",
+      "Unattached volumes and gp2-to-gp3 migration opportunities {class=text-meta text-ink-muted}",
+      "Low priority {color=var(--text-secondary) class=text-label}",
+      "Optimize S3 storage {class=text-label text-ink-muted}",
+      "Up to $0.01/mo · upper bound {class=text-ink}",
+      "1 opportunity {class=text-meta text-ink-muted}",
+      "Lifecycle and storage-class opportunities {class=text-meta text-ink-muted}",
+      "Low priority {color=var(--text-secondary) class=text-label}"
+    ],
+    "estimatedSavingsCard": null
+  },
+  "ceilingOnly": {
+    "recommendedAction": [
+      "[icon]",
+      "Recommended action {color=var(--text-accent) class=text-label}",
+      "1 optimization opportunity identified {class=text-card-title text-ink}",
+      "Review 1 recommendation → {class=text-white text-meta text-center} [href=/cost-optimization]"
+    ],
+    "recommendedActionCtaClass": "bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline shrink-0 inline-flex items-center justify-center text-center w-full min-h-11 self-stretch sm:w-auto sm:min-h-0 sm:whitespace-nowrap sm:self-center",
+    "opportunities": [
+      "[icon]",
+      "Cost-Saving Opportunities {class=text-section text-ink}",
+      "View all (1) → {color=var(--text-accent) class=text-label} [href=/cost-optimization]",
+      "Up to $0.01/month if S3 data qualifies for Standard-IA (upper bound). {class=text-meta text-ink-muted}",
+      "Optimize S3 storage {class=text-label text-ink-muted}",
+      "Up to $0.01/mo · upper bound {class=text-ink}",
+      "1 opportunity {class=text-meta text-ink-muted}",
+      "Lifecycle and storage-class opportunities {class=text-meta text-ink-muted}",
+      "Low priority {color=var(--text-secondary) class=text-label}"
+    ],
+    "estimatedSavingsCard": null
+  },
+  "dynamoCeilingOnly": {
+    "recommendedAction": [
+      "[icon]",
+      "Recommended action {color=var(--text-accent) class=text-label}",
+      "1 optimization opportunity identified {class=text-card-title text-ink}",
+      "Review 1 recommendation → {class=text-white text-meta text-center} [href=/cost-optimization]"
+    ],
+    "recommendedActionCtaClass": "bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline shrink-0 inline-flex items-center justify-center text-center w-full min-h-11 self-stretch sm:w-auto sm:min-h-0 sm:whitespace-nowrap sm:self-center",
+    "opportunities": [
+      "[icon]",
+      "Cost-Saving Opportunities {class=text-section text-ink}",
+      "View all (1) → {color=var(--text-accent) class=text-label} [href=/cost-optimization]",
+      "Up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound). {class=text-meta text-ink-muted}",
+      "[icon]",
+      "Scan results by check are on the Cost Optimization page. {class=text-ui text-ink-muted}"
+    ],
+    "estimatedSavingsCard": null
+  },
+  "riOnly": {
+    "recommendedAction": [
+      "[icon]",
+      "Recommended action {color=var(--text-accent) class=text-label}",
+      "2 optimization opportunities identified {class=text-card-title text-ink}",
+      "Review 2 recommendations → {class=text-white text-meta text-center} [href=/cost-optimization]"
+    ],
+    "recommendedActionCtaClass": "bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline shrink-0 inline-flex items-center justify-center text-center w-full min-h-11 self-stretch sm:w-auto sm:min-h-0 sm:whitespace-nowrap sm:self-center",
+    "opportunities": [
+      "[icon]",
+      "Cost-Saving Opportunities {class=text-section text-ink}",
+      "View all (2) → {color=var(--text-accent) class=text-label} [href=/cost-optimization]",
+      "2 findings found; none has a dollar estimate yet. {class=text-ui text-ink-muted}",
+      "Review EC2 instances {class=text-label text-ink-muted}",
+      "No dollar estimate {class=text-ink}",
+      "2 opportunities {class=text-meta text-ink-muted}",
+      "Low-activity instances and Reserved Instance coverage gaps {class=text-meta text-ink-muted}",
+      "Low priority {color=var(--text-secondary) class=text-label}"
+    ],
+    "estimatedSavingsCard": null
+  },
+  "mixedType": {
+    "recommendedAction": [
+      "[icon]",
+      "Recommended action {color=var(--text-accent) class=text-label}",
+      "2 optimization opportunities identified {class=text-card-title text-ink}",
+      "Estimated potential savings: $1.20/month {color=var(--text-success) class=text-meta}",
+      "Review 2 recommendations → {class=text-white text-meta text-center} [href=/cost-optimization]"
+    ],
+    "recommendedActionCtaClass": "bg-[var(--text-accent)] text-white rounded-xl px-5 py-2.5 text-meta font-semibold no-underline shrink-0 inline-flex items-center justify-center text-center w-full min-h-11 self-stretch sm:w-auto sm:min-h-0 sm:whitespace-nowrap sm:self-center",
+    "opportunities": [
+      "[icon]",
+      "Cost-Saving Opportunities {class=text-section text-ink}",
+      "View all (2) → {color=var(--text-accent) class=text-label} [href=/cost-optimization]",
+      "Estimated monthly savings {class=text-label text-ink-muted}",
+      "$1.20 {color=var(--text-success) class=text-kpi}",
+      "Based on current optimization opportunities {class=text-meta text-ink-muted}",
+      "Plus up to $0.50/month if S3 data qualifies for Standard-IA (upper bound, not included above). {class=text-meta text-ink-muted}",
+      "Potential annual savings {color=var(--text-accent) class=text-label}",
+      "$14.40 {color=var(--text-accent) class=text-section}",
+      "(estimated) {class=text-label text-ink-muted}",
+      "Optimize S3 storage {class=text-label text-ink-muted}",
+      "$1.20/mo {color=var(--text-success) class=text-section}",
+      "+ {class=text-ink-muted}",
+      "Up to $0.50/mo · upper bound {class=text-ink}",
+      "2 opportunities {class=text-meta text-ink-muted}",
+      "Lifecycle and storage-class opportunities {class=text-meta text-ink-muted}",
+      "Low priority {color=var(--text-secondary) class=text-label}"
+    ],
+    "estimatedSavingsCard": null
+  },
+  "statsFailed": {
+    "recommendedAction": null,
+    "recommendedActionCtaClass": null,
+    "opportunities": [
+      "[icon]",
+      "Cost-Saving Opportunities {class=text-section text-ink}",
+      "View all → {color=var(--text-accent) class=text-label} [href=/cost-optimization]",
+      "Savings couldn’t be loaded. {class=text-ui text-ink-muted}",
+      "Retry {color=var(--text-accent) class=text-label} [button]",
+      "Optimize EBS volumes {class=text-label text-ink-muted}",
+      "— {class=text-ink}",
+      "1 opportunity {class=text-meta text-ink-muted}",
+      "Unattached volumes and gp2-to-gp3 migration opportunities {class=text-meta text-ink-muted}",
+      "Low priority {color=var(--text-secondary) class=text-label}"
+    ],
+    "estimatedSavingsCard": null
+  }
+}
