@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Gauge } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Num } from '@/components/ui/typography'
@@ -48,7 +49,7 @@ function ComponentTile({ componentKey, component, statusBadge, caption }: {
   return (
     <div className="relative min-w-0 rounded-xl border border-border p-4 flex flex-col" data-testid={`posture-tile-${componentKey}`}>
       <div className="flex items-center gap-2 mb-2 min-w-0">
-        <Icon size={15} aria-hidden="true" className="text-ink-muted shrink-0" />
+        <Icon size={15} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" className="text-ink-muted shrink-0" />
         <p className="text-ui font-semibold text-ink truncate m-0">{d.label}</p>
         {component.reason && (
           <EvidenceInfo about={`${d.label} score`} align="start">
@@ -102,7 +103,7 @@ export function SystemIntelligenceCard({ isDemoActive, components, isLoading, st
       <div className="relative flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-5">
         <div className="flex items-start gap-2.5 min-w-0">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-[var(--bg-accent)]">
-            <Gauge size={16} aria-hidden="true" style={{ color: 'var(--text-accent)' }} />
+            <Gauge size={16} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" style={{ color: 'var(--text-accent)' }} />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

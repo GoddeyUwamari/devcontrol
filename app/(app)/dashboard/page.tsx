@@ -40,7 +40,7 @@ import { costComponentCaption, INFRASTRUCTURE_POSTURE_LABEL, postureStatusLabel 
 import { EvidenceSection } from '@/components/dashboard/evidence-info'
 import { PostureEvidence } from '@/components/dashboard/posture-evidence'
 import { ResourceChecksSection } from '@/components/dashboard/resource-checks-section'
-import { toneFillClass } from '@/components/dashboard/evidence-badge'
+import { toneFillClass, toneStatusKind } from '@/components/dashboard/evidence-badge'
 import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
@@ -557,10 +557,10 @@ export default function DashboardPage() {
   const displayedHealthStatus = isDemoActive ? 'Healthy' : (systemIntelligence?.status ?? null)
   const postureBadgeLabel = postureStatusLabel(displayedHealthStatus)
   const infraHealthBadge = displayedHealthScore === null || postureBadgeLabel === null ? undefined
-    : displayedHealthStatus === 'Healthy' ? { label: postureBadgeLabel, direction: 'up' as const, color: 'var(--text-success)' }
-    : displayedHealthStatus === 'Stable' ? { label: postureBadgeLabel, direction: 'flat' as const, color: 'var(--text-success)' }
-    : displayedHealthStatus === 'Degraded' ? { label: postureBadgeLabel, direction: 'flat' as const, color: 'var(--text-warning)' }
-    : { label: postureBadgeLabel, direction: 'down' as const, color: 'var(--text-danger)' }
+    : displayedHealthStatus === 'Healthy' ? { label: postureBadgeLabel, color: 'var(--text-success)' }
+    : displayedHealthStatus === 'Stable' ? { label: postureBadgeLabel, color: 'var(--text-success)' }
+    : displayedHealthStatus === 'Degraded' ? { label: postureBadgeLabel, color: 'var(--text-warning)' }
+    : { label: postureBadgeLabel, color: 'var(--text-danger)' }
 
   // The backend's composite_state, read as-is: the frontend never derives it.
   const postureIsPartial = !isDemoActive && displayedHealthScore !== null && systemIntelligence?.composite_state === 'partial'
@@ -697,7 +697,7 @@ export default function DashboardPage() {
               label="Security Posture"
               value={securityKpi.value}
               valueSuffix={securityKpi.score === null ? undefined : '/ 100'}
-              badges={securityKpi.badge ? [{ label: securityKpi.badge.label, color: securityKpi.badge.color, direction: securityKpi.badge.direction, testId: 'security-status' }] : undefined}
+              badges={securityKpi.badge ? [{ label: securityKpi.badge.label, color: securityKpi.badge.color, status: toneStatusKind(securityKpi.badge.color), testId: 'security-status' }] : undefined}
               caption={securityCaption}
               progress={securityKpi.score === null || !securityKpi.badge ? undefined : {
                 value: securityKpi.score,
@@ -732,7 +732,7 @@ export default function DashboardPage() {
               value={postureValue}
               valueSuffix={displayedHealthScore === null ? undefined : '/ 100'}
               badges={[
-                ...(infraHealthBadge ? [{ label: infraHealthBadge.label, color: infraHealthBadge.color, direction: infraHealthBadge.direction, testId: 'posture-status' }] : []),
+                ...(infraHealthBadge ? [{ label: infraHealthBadge.label, color: infraHealthBadge.color, status: toneStatusKind(infraHealthBadge.color), testId: 'posture-status' }] : []),
                 ...(postureIsPartial ? [{ label: 'Partial', color: 'var(--text-secondary)', testId: 'posture-partial' }] : []),
               ]}
               /* No caption (DB-D11 P1): the component scores are the section's tiles directly below. */
@@ -753,7 +753,7 @@ export default function DashboardPage() {
             topRisk={topRisk}
             topRiskStatus={topRiskStatus}
             aiSummaryLoading={!isDemoActive && aiSummaryLoading}
-            systemStatus={{ value: serviceStatus.value, caption: serviceStatus.caption, operational: serviceStatus.state === 'operational', color: serviceStatus.color, dotColor: serviceStatus.dotColor }}
+            systemStatus={{ value: serviceStatus.value, caption: serviceStatus.caption, operational: serviceStatus.state === 'operational', color: serviceStatus.color, state: serviceStatus.state }}
           />
 
           {/* ── SECTION 3: INFRASTRUCTURE POSTURE ── */}
@@ -828,6 +828,8 @@ export default function DashboardPage() {
                     evaluationState={opportunityEvaluationState}
                     activeCount={activeOpportunityCount}
                     ceilingByResourceType={isDemoActive ? null : costRecStats?.potentialSavingsCeilingByResourceType ?? null}
+                    estimatedFindings={isDemoActive ? null : costRecStats?.estimatedFindings ?? null}
+                    unestimatedFindings={isDemoActive ? null : costRecStats?.unestimatedFindings ?? null}
                     formatAmount={(amount) => formatSavingsCents(roundCents(amount))}
                     statsLoading={!isDemoActive && costRecStatsLoading}
                     statsFailed={!isDemoActive && costRecStatsFailed && !costRecStats}
@@ -857,9 +859,10 @@ export default function DashboardPage() {
           {/* ── DATA FRESHNESS ── one segment per source with a real time; none without one.
               The live-update status is the floating pill (ConnectionIndicator). */}
           {freshness.length > 0 && (
-            <div className="mt-2 mb-2 text-meta text-ink-muted" data-testid="data-freshness">
-              <p className="m-0 font-semibold text-ink">Data freshness</p>
-              <ul className="list-none m-0 p-0 mt-1 flex flex-col gap-0.5">
+            <div className="mt-2 mb-2 rounded-xl border border-border bg-[var(--surface-2)] px-4 py-3 text-meta" data-testid="data-freshness">
+              <p className="m-0 text-label text-ink" data-testid="data-freshness-label">Data freshness</p>
+              {/* Item text in the secondary text colour (--text-secondary, which also has a dark value). */}
+              <ul className="list-none m-0 p-0 mt-1.5 flex flex-col gap-0.5" style={{ color: 'var(--text-secondary)' }}>
                 {freshness.map((segment) => (
                   <li key={segment.key} data-testid={`freshness-${segment.key}`}>
                     <span className="font-medium text-ink">{segment.label}:</span> <span>{segment.text}</span>

@@ -1,4 +1,5 @@
 import { MoreHorizontal } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { CostTrendChart } from './cost-trend-chart'
 import { CostBreakdownBarList } from './cost-breakdown-barlist'
 
@@ -39,7 +40,7 @@ export function CostTrendsCard({
       <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full">
         <div className="flex items-start justify-between mb-5">
           <h3 className="text-section text-ink">AWS Cost Trends</h3>
-          <a href="/costs" className="text-ink-muted"><MoreHorizontal size={16} /></a>
+          <a href="/costs" className="text-ink-muted"><MoreHorizontal size={16} strokeWidth={DASHBOARD_ICON_STROKE} /></a>
         </div>
         <CostBreakdownBarList
           data={demoBreakdownData}

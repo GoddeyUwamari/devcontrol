@@ -46,7 +46,6 @@ export interface ServiceStatusView {
   value: string
   caption: string
   color: string
-  dotColor: string
 }
 
 export const SERVICE_STATUS_COPY = {
@@ -68,16 +67,16 @@ export function serviceStatusView(health: Pick<SystemHealth, 'status' | 'lastUpd
     return {
       state: 'operational', value: 'Operational',
       caption: `${SERVICE_STATUS_COPY.operational}${checked ? ` · Checked ${checked}` : ''}`,
-      color: 'var(--text-success)', dotColor: 'var(--fill-success)',
+      color: 'var(--text-success)',
     }
   }
   if (health?.status === 'degraded') {
-    return { state: 'degraded', value: 'Degraded', caption: SERVICE_STATUS_COPY.degraded, color: 'var(--text-warning)', dotColor: 'var(--fill-warning)' }
+    return { state: 'degraded', value: 'Degraded', caption: SERVICE_STATUS_COPY.degraded, color: 'var(--text-warning)' }
   }
   if (health?.status === 'disrupted') {
-    return { state: 'unavailable', value: 'Unavailable', caption: SERVICE_STATUS_COPY.unavailable, color: 'var(--text-danger)', dotColor: 'var(--fill-danger)' }
+    return { state: 'unavailable', value: 'Unavailable', caption: SERVICE_STATUS_COPY.unavailable, color: 'var(--text-danger)' }
   }
-  return { state: 'checking', value: 'Checking…', caption: SERVICE_STATUS_COPY.checking, color: 'var(--text-secondary)', dotColor: 'var(--text-secondary)' }
+  return { state: 'checking', value: 'Checking…', caption: SERVICE_STATUS_COPY.checking, color: 'var(--text-secondary)' }
 }
 
 // ── Data freshness (DB-D6, DB-D9, DB-D10) ──

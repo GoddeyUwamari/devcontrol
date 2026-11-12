@@ -1,4 +1,5 @@
 import { Zap } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 
 interface RecommendedActionCardProps {
   opportunityCount: number
@@ -21,7 +22,7 @@ export function RecommendedActionCard({ opportunityCount, savingsLabel, ctaHref,
     <div className="rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6" style={{ background: 'var(--bg-accent)', borderColor: 'var(--border-accent)' }}>
       <div className="flex items-start gap-3.5">
         <div className="w-10 h-10 rounded-xl bg-[var(--surface-2)] flex items-center justify-center shrink-0">
-          <Zap size={17} style={{ color: 'var(--text-accent)' }} />
+          <Zap size={17} strokeWidth={DASHBOARD_ICON_STROKE} style={{ color: 'var(--text-accent)' }} />
         </div>
         <div>
           <div className="text-label font-semibold tracking-widest uppercase mb-1" style={{ color: 'var(--text-accent)' }}>

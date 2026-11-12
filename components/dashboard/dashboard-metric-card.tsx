@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { Progress } from '@/components/ui/progress'
 import { EvidenceBadge, type EvidenceBadgeProps } from './evidence-badge'
 import { EvidenceInfo } from './evidence-info'
@@ -66,7 +67,7 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
       <div className="flex items-center justify-between gap-2 mb-4">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: iconBackground }}>
-            <Icon size={16} style={{ color: iconColor }} aria-hidden="true" />
+            <Icon size={16} strokeWidth={DASHBOARD_ICON_STROKE} style={{ color: iconColor }} aria-hidden="true" />
           </div>
           <p className="text-ui font-semibold text-ink truncate m-0" data-testid="kpi-title">{label}</p>
           {info && (

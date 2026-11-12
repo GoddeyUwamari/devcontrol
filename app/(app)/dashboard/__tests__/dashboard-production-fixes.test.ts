@@ -201,7 +201,9 @@ describe('Infrastructure Posture badge: canonical System Intelligence status, no
 
   it('the KPI value itself is still the canonical system_score (Tier 0 source unchanged)', () => {
     expect(pageSource).toMatch(/const displayedHealthScore = isDemoActive \? 87 : \(systemIntelligence\?\.system_score \?\? null\)/)
-    expect(pageSource).toMatch(/\.\.\.\(infraHealthBadge \? \[\{ label: infraHealthBadge\.label, color: infraHealthBadge\.color, direction: infraHealthBadge\.direction/)
+    // PR-ICONS-b: a status tier carries a filled status icon, never a trend arrow.
+    expect(pageSource).toMatch(/\.\.\.\(infraHealthBadge \? \[\{ label: infraHealthBadge\.label, color: infraHealthBadge\.color, status: toneStatusKind\(infraHealthBadge\.color\)/)
+    expect(pageSource).not.toMatch(/infraHealthBadge\.direction/)
   })
 })
 

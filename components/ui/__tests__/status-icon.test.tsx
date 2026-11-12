@@ -114,7 +114,7 @@ describe('accessibility', () => {
 
 type Mode = 'light' | 'dark'
 const SELECTOR: Record<Mode, string> = { light: ':root', dark: '.dark' }
-const NAMES = ['--surface-1', '--surface-2', '--fill-success', '--fill-warning', '--fill-danger', '--text-accent', '--bg-success', '--bg-accent']
+const NAMES = ['--surface-1', '--surface-2', '--fill-success', '--fill-warning', '--fill-danger', '--text-accent', '--bg-success', '--bg-accent', '--bg-danger']
 
 let parsed: Record<Mode, Record<string, string>> | null = null
 /** Called inside tests, so a missing or duplicated token fails a named test. */
@@ -173,5 +173,19 @@ describe('contrast: each fill token ≥ 3:1 (WCAG 1.4.11 non-text) on both surfa
     const T = tokens()
     const bg = over(T[mode][tint], T[mode]['--surface-2'])
     expect(contrast(T[mode][STATUS_FILL_TOKEN[kind]], bg)).toBeGreaterThanOrEqual(3)
+  })
+
+  // PR-ICONS-b: the Dashboard's Top Risk card (critical/high) and the "At risk" badge put the error icon on
+  // --bg-danger, and the service card and "Strong" badge put success on --bg-success, over either surface.
+  // (Warning on --bg-warning, the medium Top Risk card and "Needs attention", is 2.86:1 in light mode: those
+  // icons are decorative next to the status text, and are recorded for review, not pinned here.)
+  it.each(
+    (['light', 'dark'] as Mode[]).flatMap((mode) => (['--surface-1', '--surface-2'] as const).flatMap((surface) => [
+      { mode, kind: 'error' as const, tint: '--bg-danger', surface },
+      { mode, kind: 'success' as const, tint: '--bg-success', surface },
+    ])),
+  )('$mode $kind on its $tint tint over $surface (Dashboard Top Risk, service card, KPI badges)', ({ mode, kind, tint, surface }) => {
+    const T = tokens()
+    expect(contrast(T[mode][STATUS_FILL_TOKEN[kind]], over(T[mode][tint], T[mode][surface]))).toBeGreaterThanOrEqual(3)
   })
 })

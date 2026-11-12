@@ -79,6 +79,30 @@ export function describeCeilingsWithoutEstimate(ceilingByResourceType: Record<st
       : `Up to ${format(amount)}/${period} from ${type} upper-bound figures`)
 }
 
+// The weekly email's savings sentences (savingsLines in
+// backend/src/services/weekly-summary-content.ts), for the Dashboard's
+// Cost-Saving Opportunities header. Counts come from /stats
+// (countSavingsFindings, the email's own count).
+const openFindings = (count: number) => `${count} open finding${count === 1 ? '' : 's'}`
+
+/** "Estimated savings: $X/month across N open finding(s). This is a DevControl estimate, not realized savings." */
+export function estimatedSavingsHeadline(amount: string, estimatedFindings: number): string {
+  return `Estimated savings: ${amount}/month across ${openFindings(estimatedFindings)}. This is a DevControl estimate, not realized savings.`
+}
+
+/** "K more open finding(s) has/have no dollar estimate yet.", or null when there are none. */
+export function unestimatedFindingsLine(unestimatedFindings: number): string | null {
+  if (!(unestimatedFindings > 0)) return null
+  return unestimatedFindings === 1
+    ? '1 more open finding has no dollar estimate yet.'
+    : `${unestimatedFindings} more open findings have no dollar estimate yet.`
+}
+
+/** "Estimated savings: N open finding(s); none has a dollar estimate yet." */
+export function noEstimateHeadline(activeFindings: number): string {
+  return `Estimated savings: ${openFindings(activeFindings)}; none has a dollar estimate yet.`
+}
+
 const RANK: Record<SavingsBasisKind | 'none', number> = { estimate: 0, ceiling: 1, none: 2 }
 
 /**

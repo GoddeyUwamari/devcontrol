@@ -16,8 +16,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { InfrastructureIntelligence, parseTopRiskSeverity, topRiskTitle } from '../infrastructure-intelligence'
 
-const OPERATIONAL = { value: 'Operational', caption: "DevControl's API and database are responding. This is our service, not your AWS resources. · Checked today, 8:37 PM", operational: true, color: 'var(--text-success)', dotColor: 'green' }
-const DEGRADED = { value: 'Degraded', caption: 'Some DevControl services are slow or failing. Figures on this page may be delayed.', operational: false, color: 'var(--text-warning)', dotColor: 'orange' }
+const OPERATIONAL = { value: 'Operational', caption: "DevControl's API and database are responding. This is our service, not your AWS resources. · Checked today, 8:37 PM", operational: true, color: 'var(--text-success)', state: 'operational' as const }
+const DEGRADED = { value: 'Degraded', caption: 'Some DevControl services are slow or failing. Figures on this page may be delayed.', operational: false, color: 'var(--text-warning)', state: 'degraded' as const }
 
 function renderRow(overrides: Partial<ComponentProps<typeof InfrastructureIntelligence>> = {}) {
   return render(<InfrastructureIntelligence topRisk={null} topRiskStatus="unavailable" aiSummaryLoading={false} systemStatus={OPERATIONAL} {...overrides} />)

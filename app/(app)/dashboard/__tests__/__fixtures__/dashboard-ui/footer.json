@@ -1,36 +1,36 @@
 {
   "every source": [
-    "Data freshness {class=text-ink}",
-    "Costs: {class=text-ink}",
-    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {class=text-meta text-ink-muted}",
-    "Resources and security: {class=text-ink}",
-    "last scan today, 6:02 PM · every 6 hours {class=text-meta text-ink-muted}",
-    "Alerts: {class=text-ink}",
-    "CloudWatch · checked today, 8:36 PM {class=text-meta text-ink-muted}",
-    "DevControl service: {class=text-ink}",
-    "checked today, 8:37 PM {class=text-meta text-ink-muted}"
+    "Data freshness {class=text-label text-ink}",
+    "Costs: {color=var(--text-secondary) class=text-ink}",
+    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
+    "Resources and security: {color=var(--text-secondary) class=text-ink}",
+    "last scan today, 6:02 PM · every 6 hours {color=var(--text-secondary) class=text-meta}",
+    "Alerts: {color=var(--text-secondary) class=text-ink}",
+    "CloudWatch · checked today, 8:36 PM {color=var(--text-secondary) class=text-meta}",
+    "DevControl service: {color=var(--text-secondary) class=text-ink}",
+    "checked today, 8:37 PM {color=var(--text-secondary) class=text-meta}"
   ],
   "coverage stale": [
-    "Data freshness {class=text-ink}",
-    "Costs: {class=text-ink}",
-    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {class=text-meta text-ink-muted}",
-    "Resources and security: {class=text-ink}",
-    "last scan today, 6:02 PM {class=text-meta text-ink-muted}",
-    "Alerts: {class=text-ink}",
-    "CloudWatch · checked today, 8:36 PM {class=text-meta text-ink-muted}",
-    "DevControl service: {class=text-ink}",
-    "checked today, 8:37 PM {class=text-meta text-ink-muted}"
+    "Data freshness {class=text-label text-ink}",
+    "Costs: {color=var(--text-secondary) class=text-ink}",
+    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
+    "Resources and security: {color=var(--text-secondary) class=text-ink}",
+    "last scan today, 6:02 PM {color=var(--text-secondary) class=text-meta}",
+    "Alerts: {color=var(--text-secondary) class=text-ink}",
+    "CloudWatch · checked today, 8:36 PM {color=var(--text-secondary) class=text-meta}",
+    "DevControl service: {color=var(--text-secondary) class=text-ink}",
+    "checked today, 8:37 PM {color=var(--text-secondary) class=text-meta}"
   ],
   "last scan attempt failed": [
-    "Data freshness {class=text-ink}",
-    "Costs: {class=text-ink}",
-    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {class=text-meta text-ink-muted}",
-    "Resources and security: {class=text-ink}",
-    "last scan today, 6:02 PM {class=text-meta text-ink-muted}",
-    "Alerts: {class=text-ink}",
-    "CloudWatch · checked today, 8:36 PM {class=text-meta text-ink-muted}",
-    "DevControl service: {class=text-ink}",
-    "checked today, 8:37 PM {class=text-meta text-ink-muted}"
+    "Data freshness {class=text-label text-ink}",
+    "Costs: {color=var(--text-secondary) class=text-ink}",
+    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
+    "Resources and security: {color=var(--text-secondary) class=text-ink}",
+    "last scan today, 6:02 PM {color=var(--text-secondary) class=text-meta}",
+    "Alerts: {color=var(--text-secondary) class=text-ink}",
+    "CloudWatch · checked today, 8:36 PM {color=var(--text-secondary) class=text-meta}",
+    "DevControl service: {color=var(--text-secondary) class=text-ink}",
+    "checked today, 8:37 PM {color=var(--text-secondary) class=text-meta}"
   ],
   "no sources: costs unavailable, coverage failed, CloudWatch failed, service still checking": null
 }

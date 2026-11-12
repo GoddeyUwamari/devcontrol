@@ -6,6 +6,7 @@ import { CHART_TICK } from '@/lib/chart-theme';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
+import { DASHBOARD_ICON_STROKE } from './icon-stroke';
 import {
   AreaChart,
   Area,
@@ -300,7 +301,7 @@ export function CostTrendChart({
             {/* Export Button */}
             {onExport && (
               <Button variant="outline" size="sm" onClick={onExport} className="shrink-0">
-                <Download className="h-4 w-4 mr-2" />
+                <Download className="h-4 w-4 mr-2" strokeWidth={DASHBOARD_ICON_STROKE} />
                 Export
               </Button>
             )}
