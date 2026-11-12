@@ -1,0 +1,74 @@
+{
+  "table": [
+    [
+      "Critical",
+      "SSH open to the world",
+      "launch-wizard-1 (sg-0123456789abcdef0) Security group",
+      "us-east-1",
+      "Review"
+    ],
+    [
+      "High",
+      "RDP open to the world",
+      "sg-0aaaaaaaaaaaaaaaa Security group",
+      "us-east-1",
+      "Review"
+    ],
+    [
+      "High",
+      "All ports open",
+      "sg-0bbbbbbbbbbbbbbbb Security group",
+      "us-east-1",
+      "Review"
+    ],
+    [
+      "High",
+      "Console user without MFA",
+      "arn:aws:iam::123456789012:user/example-user IAM user",
+      "Global (IAM)",
+      "Review"
+    ],
+    [
+      "High",
+      "Bare ID",
+      "sg-0cccccccccccccccc Security group",
+      "us-east-1",
+      "Review"
+    ]
+  ],
+  "phone": [
+    [
+      "SSH open to the world",
+      "launch-wizard-1 (sg-0123456789abcdef0) · Security group · us-east-1"
+    ],
+    [
+      "RDP open to the world",
+      "sg-0aaaaaaaaaaaaaaaa · Security group · us-east-1"
+    ],
+    [
+      "All ports open",
+      "sg-0bbbbbbbbbbbbbbbb · Security group · us-east-1"
+    ],
+    [
+      "Console user without MFA",
+      "arn:aws:iam::123456789012:user/example-user · IAM user · Global (IAM)"
+    ],
+    [
+      "Bare ID",
+      "sg-0cccccccccccccccc · Security group · us-east-1"
+    ]
+  ],
+  "reviewButtons": [
+    "Review launch-wizard-1 (sg-0123456789abcdef0)",
+    "Review sg-0aaaaaaaaaaaaaaaa",
+    "Review sg-0bbbbbbbbbbbbbbbb",
+    "Review arn:aws:iam::123456789012:user/example-user",
+    "Review sg-0cccccccccccccccc"
+  ],
+  "links": [
+    {
+      "text": "Security findings →",
+      "href": "/security"
+    }
+  ]
+}

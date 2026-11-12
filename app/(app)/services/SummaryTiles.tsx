@@ -4,7 +4,7 @@ import Link from 'next/link'
 import type { AWSServicesStats, ServicesCoverage } from '@/lib/services/aws-services.service'
 import type { CostSummary } from '@/lib/types'
 import { formatUsd } from '../costs/cost-display'
-import { PhaseTwoTag } from './PhaseTwoTag'
+import { ComingSoonTag } from './ComingSoonTag'
 import { inventoryGap, resourcesScopeCaption } from './coverage'
 
 export interface StatsState { loading: boolean; unavailable: boolean; stats: AWSServicesStats | undefined }
@@ -42,6 +42,15 @@ export function describeServicesSpend({ loading, error, summary }: SpendState):
   if (section.data.finishedThrough) notes.push(`billed through ${finishedThroughLabel(section.data.finishedThrough)}`)
   if (section.state === 'partial') notes.push('partial data')
   return { kind: 'billed', value: formatUsd(section.data.amount), notes }
+}
+
+/**
+ * The Needs attention tile's caption: "7 resources with no flagged issues",
+ * "1 resource with no flagged issues". `shown` is the tile's own count text
+ * ("…" loading, "—" unknown), which reads as plural.
+ */
+export function noFlaggedIssuesCaption(shown: string): string {
+  return `${shown} ${shown === '1' ? 'resource' : 'resources'} with no flagged issues`
 }
 
 export const CONNECT_ACCOUNT_TEXT = 'Connect an AWS account'
@@ -104,7 +113,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
             ))}
           </ul>
         )}
-        <p className="m-0 text-meta text-slate-600">No flagged issues: {count(stats?.healthy)}</p>
+        <p className="m-0 text-meta text-slate-600">{noFlaggedIssuesCaption(count(stats?.healthy))}</p>
         {gap && <GapCaption gap={gap} />}
       </Tile>
 
@@ -127,13 +136,13 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
 
       <Tile label="Services" value={kpi(registered.count, { loading: registered.loading, unavailable: registered.error })}>
         <p className="m-0 text-meta text-slate-600">
-          registered{stats?.mapped_to_service === 0 && stats.total > 0 && <> · resources not mapped to services yet <PhaseTwoTag /></>}
+          registered{stats?.mapped_to_service === 0 && stats.total > 0 && <> · resources not mapped to services yet <ComingSoonTag /></>}
         </p>
       </Tile>
 
       <Tile label="AWS spend, month to date" value={spendView.kind === 'loading' ? '…' : spendView.kind === 'billed' ? spendView.value : '—'}>
         {spendView.kind === 'billed' && (
-          <p className="m-0 text-meta text-slate-600">{spendView.notes.join(' · ')} · per service <PhaseTwoTag /></p>
+          <p className="m-0 text-meta text-slate-600">{spendView.notes.join(' · ')} · per service <ComingSoonTag /></p>
         )}
         {spendView.kind === 'unavailable' && (
           <p className="m-0 text-meta text-slate-600">

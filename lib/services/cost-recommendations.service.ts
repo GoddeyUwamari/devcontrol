@@ -186,6 +186,11 @@ function parseAnalysisCounts(raw: unknown): AnalysisCounts | null {
   };
 }
 
+/** A count the API sent as a whole number >= 0; anything else (absent, null, malformed) is null, never 0. */
+function findingCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 export const costRecommendationsService = {
   // Get all recommendations. limit/offset are already supported by the backend
   // (repository.findAll -- ORDER BY potential_savings DESC, created_at DESC) but were
@@ -241,6 +246,8 @@ export const costRecommendationsService = {
       potentialSavingsByResourceType: result.potential_savings_by_resource_type ?? {},
       potentialSavingsCeiling: parseFloat(result.potential_savings_ceiling) || 0,
       potentialSavingsCeilingByResourceType: result.potential_savings_ceiling_by_resource_type ?? {},
+      estimatedFindings: findingCount(result.estimated_findings),
+      unestimatedFindings: findingCount(result.unestimated_findings),
       bySeverity: {
         high: result.by_severity?.high || 0,
         medium: result.by_severity?.medium || 0,

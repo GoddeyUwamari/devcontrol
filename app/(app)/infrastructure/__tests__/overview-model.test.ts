@@ -109,8 +109,13 @@ describe('O-K2 / O-K2b / O-K2c / O-Q8 open findings', () => {
 describe('O-K3 / RU-3 possible savings', () => {
   it('the estimate only; each ceiling on its own line, never added', () => {
     const s = view().tiles!.savings
-    expect(s.value).toBe('$123.45/mo est.')
-    expect(s.captions).toEqual([[OVERVIEW_COPY.savingsSource], ['Plus up to $41.27/mo if S3 data qualifies for Standard-IA (upper bound, not included above)']])
+    expect(s.value).toBe('$123.45/month')
+    expect(s.tone).toBe('success')
+    expect(s.captions).toEqual([
+      ['Estimated savings: $123.45/month. This is a DevControl estimate, not realized savings.'],
+      ['Plus up to $41.27/month if S3 data qualifies for Standard-IA (upper bound, not included above).'],
+      [OVERVIEW_COPY.savingsSource],
+    ])
     expect(JSON.stringify(s)).not.toMatch(/164\.72/)
   })
   it('no recommendations: $0/mo est. and says so; no time is printed', () => {

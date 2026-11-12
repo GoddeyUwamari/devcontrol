@@ -6,7 +6,7 @@ import type { AWSService, AWSServicesPage, ServicesCoverage } from '@/lib/servic
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { RESOURCE_TYPE_CHIPS, TYPE_DISPLAY } from './resourceTypes'
 import { Details, OwnerCell, SEVERITY_LABEL, environmentLabel, typeLabel } from './AttentionTable'
-import { PhaseTwoTag } from './PhaseTwoTag'
+import { ComingSoonTag } from './ComingSoonTag'
 import { resourcesScopeCaption, timeAgo } from './coverage'
 import type { StatsState } from './SummaryTiles'
 import {
@@ -311,7 +311,7 @@ export function AllResourcesTable({
           <span aria-hidden="true">Group by</span>
           <button type="button" aria-pressed="true" className="rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1 font-semibold text-violet-900">Resource</button>
           <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 opacity-60 cursor-not-allowed">Service</button>
-          <PhaseTwoTag />
+          <ComingSoonTag />
         </div>
         </div>
       </div>

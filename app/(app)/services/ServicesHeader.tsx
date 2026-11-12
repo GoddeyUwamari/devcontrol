@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { RefreshCw, Check, Scan, Rocket } from 'lucide-react'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
+import type { ScanLine, ScanLineState } from '../security/overview/securityModel'
 import { AddServiceButton } from './AddServiceButton'
 
 // The page heading; the navigation label stays "Services".
@@ -16,19 +17,38 @@ export const SERVICES_SUBTITLE = "What we found, what needs attention, who owns 
  */
 export const SCAN_RUNNING_HINT = 'A scan is already running for this AWS account.'
 
-export function ServicesHeader({ isDiscovering, discoveryComplete, discoveryMsg, onAutoDiscover, scanRunning = false }: {
+/** The scan line's dot is decorative (aria-hidden); the text carries the meaning. Same colours as Security's header. */
+const SCAN_DOT: Record<ScanLineState, string> = {
+  finished: 'bg-emerald-600',
+  running: 'bg-blue-600',
+  failed: 'bg-red-600',
+  none: 'bg-slate-400',
+}
+
+export function ServicesHeader({ isDiscovering, discoveryComplete, discoveryMsg, onAutoDiscover, scanRunning = false, scan = null }: {
   isDiscovering: boolean
   discoveryComplete: boolean
   discoveryMsg: string | null
   onAutoDiscover: () => void
   /** A discovery scan holds the account's lease (coverage scan_in_progress, M6 only). */
   scanRunning?: boolean
+  /**
+   * "Last scan: <time>" under the subtitle: Security's and the Dashboard's line
+   * (scanLine, from the same coverage response). null leaves it out.
+   */
+  scan?: ScanLine | null
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
       <div>
         <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1')}>{SERVICES_HEADING}</h1>
         <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0')}>{SERVICES_SUBTITLE}</p>
+        {scan && (
+          <p data-testid="services-scan-line" data-state={scan.state} role="status" className="m-0 mt-1 flex items-center gap-2 text-meta text-ink-muted">
+            <span aria-hidden="true" className={cn('inline-block size-2 shrink-0 rounded-full', SCAN_DOT[scan.state])} />
+            {scan.text}
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Link

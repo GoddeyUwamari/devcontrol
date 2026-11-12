@@ -122,7 +122,9 @@ describe('R2 Auto Discover while a scan is running', () => {
     expect(header).toHaveAccessibleDescription(SCAN_RUNNING_HINT)
     expect(empty).toBeDisabled()
     expect(screen.queryByRole('button', { name: /Auto Discover/ })).toBeNull()
-    expect(card()).toHaveTextContent(/Scan in progress since today, .* · showing results from today, /)
+    // The scan time is in the header (Security's and the Dashboard's line), not the card.
+    expect(screen.getByTestId('services-scan-line')).toHaveTextContent(/^Scan running…$/)
+    expect(card()).not.toHaveTextContent(/Scan in progress since|showing results from/)
     expect(within(table()).getAllByRole('row')[1]).toHaveTextContent('Scanning')
   })
 
@@ -130,9 +132,9 @@ describe('R2 Auto Discover while a scan is running', () => {
     vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'false')
     mockGetCoverage.mockResolvedValue(running())
     renderPage()
-    await screen.findByText(/Scan in progress, started/)
+    await screen.findByText(/^Scan running…$/, { selector: '[data-testid="services-scan-line"]' })
     expect(screen.getAllByRole('button', { name: /Auto Discover/ })[0]).toBeEnabled()
-    expect(screen.queryByText(/Scan running…/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Scan running…/ })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Region coverage' })).toBeNull()
   })
 })
@@ -183,7 +185,7 @@ const exactOf = (iso: string) => new Intl.DateTimeFormat('en-US', { dateStyle: '
 describe('R5 times: local, with the exact time on hover and keyboard focus', () => {
   it('keyboard focus opens the tooltip (role=tooltip, not the phone layout\'s printed line)', async () => {
     await show(prodCoverage(NOW))
-    const time = within(card()).getByText(/^today, /, { selector: 'time' })
+    const time = within(table()).getAllByText(/^today, /, { selector: 'time' })[0]
     expect(time).toHaveAttribute('tabindex', '0')
     expect(time).toHaveAttribute('dateTime', hoursAgo(2))
     expect(time).not.toHaveAttribute('title')
@@ -196,7 +198,7 @@ describe('R5 times: local, with the exact time on hover and keyboard focus', () 
 
   it('the exact time is visually hidden text inside <time>, found by a screen-reader query', async () => {
     await show(prodCoverage(NOW))
-    const time = within(card()).getByText(/^today, /, { selector: 'time' })
+    const time = within(table()).getAllByText(/^today, /, { selector: 'time' })[0]
     expect(time).not.toHaveAttribute('aria-label')
     const hidden = within(time).getByText(`(${exactOf(hoursAgo(2))})`)
     expect(hidden).toHaveClass('sr-only')
@@ -229,9 +231,10 @@ describe('R9 Q8 in the DOM', () => {
 })
 
 describe('R10 labels', () => {
-  it('card: "Last scan finished"; panel: "Last full scan"', async () => {
+  it('header: "Last scan: <time>"; card: no scan time; panel: "Last full scan"', async () => {
     await show(prodCoverage(NOW))
-    expect(card()).toHaveTextContent(/Last scan finished today, /)
+    expect(screen.getByTestId('services-scan-line')).toHaveTextContent(/^Last scan: today, 1:00 PM$/)
+    expect(card()).not.toHaveTextContent(/Last scan finished/)
     expect(card()).not.toHaveTextContent(/Last successful scan/)
     expect(panel()).not.toHaveTextContent(/Last successful scan/)
   })
@@ -292,7 +295,7 @@ describe('R8 coverage refetch while a scan runs (Q11)', () => {
     mockGetCoverage.mockClear()
     mockGetCoverage.mockResolvedValue(running())
     renderPage()
-    await screen.findByText(/Scan in progress, started/)
+    await screen.findByText(/^Scan running…$/, { selector: '[data-testid="services-scan-line"]' })
     await act(async () => { await vi.advanceTimersByTimeAsync(5 * SCAN_RUNNING_REFETCH_MS) })
     expect(mockGetCoverage).toHaveBeenCalledTimes(1)
   })
@@ -312,7 +315,7 @@ describe('R8 coverage refetch while a scan runs (Q11)', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     mockGetCoverage.mockResolvedValue(withoutM5c(running()))
     renderPage()
-    await screen.findByText(/Scan in progress, started/)
+    await screen.findByText(/home · scan in progress/)
     await act(async () => { await vi.advanceTimersByTimeAsync(5 * SCAN_RUNNING_REFETCH_MS) })
     expect(mockGetCoverage).toHaveBeenCalledTimes(1)
   })
@@ -325,15 +328,16 @@ describe('R11 a tab left open past midnight (P2-3)', () => {
     mockGetCoverage.mockResolvedValue(prodCoverage(start)) // finished 2 h before: 9:59 PM
     renderPage()
     await screen.findByRole('region', { name: 'Region coverage' })
-    expect(card()).toHaveTextContent('Last scan finished today, 9:59 PM')
+    const line = () => screen.getByTestId('services-scan-line')
+    expect(line()).toHaveTextContent('Last scan: today, 9:59 PM')
     expect(within(table()).getAllByRole('row')[1]).toHaveTextContent('today, 9:59 PM')
     await act(async () => { await vi.advanceTimersByTimeAsync(2 * 60_000) })
-    expect(card()).toHaveTextContent('Last scan finished yesterday, 9:59 PM')
+    expect(line()).toHaveTextContent('Last scan: yesterday, 9:59 PM')
     expect(within(table()).getAllByRole('row')[1]).toHaveTextContent('yesterday, 9:59 PM')
     expect(mockGetCoverage).toHaveBeenCalledTimes(1)
     // And again the next night.
     await act(async () => { await vi.advanceTimersByTimeAsync(24 * 3600_000) })
-    expect(card()).toHaveTextContent('Last scan finished Oct 22, 2026, 9:59 PM')
+    expect(line()).toHaveTextContent(/^Last scan: (Thu, )?Oct 22, (2026, )?9:59 PM$/)
     expect(mockGetCoverage).toHaveBeenCalledTimes(1)
   })
 })

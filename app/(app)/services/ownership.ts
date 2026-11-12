@@ -22,3 +22,27 @@ export function ownerDisplay(row: Pick<AWSService, 'owner' | 'team' | 'ownership
   // An older backend without the ownership field: nothing is claimed.
   return { kind: 'none', label: '—' }
 }
+
+/**
+ * Owner values written by automation, not by a person: the GitHub webhook
+ * registers services with 'github-actions@webhook'. Matched exactly (after
+ * trimming), never by pattern; add an identity here only when it is known.
+ */
+export const AUTOMATION_OWNERS: readonly string[] = ['github-actions@webhook']
+
+export const NO_OWNER_SET = 'No owner set'
+
+/** True only for a value on AUTOMATION_OWNERS (exact, after trimming). */
+export function isAutomationOwner(owner: string | null | undefined): boolean {
+  return typeof owner === 'string' && AUTOMATION_OWNERS.includes(owner.trim())
+}
+
+/**
+ * A registered service's Owner cell: the stored owner as it is, or null
+ * ("No owner set") when it is blank or a known automation identity. Display
+ * only: the stored owner is never changed.
+ */
+export function serviceOwnerLabel(owner: string | null | undefined): string | null {
+  if (!owner?.trim() || isAutomationOwner(owner)) return null
+  return owner
+}

@@ -1,0 +1,20 @@
+{
+  "healthy 7": [
+    "Needs attention",
+    "2",
+    "2 High",
+    "7 resources with no flagged issues"
+  ],
+  "healthy 1": [
+    "Needs attention",
+    "2",
+    "2 High",
+    "1 resource with no flagged issues"
+  ],
+  "healthy 0": [
+    "Needs attention",
+    "2",
+    "2 High",
+    "0 resources with no flagged issues"
+  ]
+}

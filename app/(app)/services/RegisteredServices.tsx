@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
+import { isAutomationOwner, NO_OWNER_SET } from './ownership'
 
 /**
  * The services registered through Add Service (the services table, via
@@ -60,7 +61,7 @@ export function RegisteredServices() {
             {query.data.map((service) => (
               <tr key={service.id} className="border-b border-slate-50 last:border-0">
                 <td className="px-5 py-3 font-semibold text-slate-900 sm:px-7">{service.name}</td>
-                <td className="px-3 py-3 text-slate-600">{service.owner}</td>
+                <td className="px-3 py-3 text-slate-600">{isAutomationOwner(service.owner) ? <span className="text-slate-400">{NO_OWNER_SET}</span> : service.owner}</td>
                 <td className="px-3 py-3 text-slate-600">{service.teamName ?? <span className="text-slate-400">No team</span>}</td>
                 <td className="px-3 py-3">
                   {service.githubUrl ? (

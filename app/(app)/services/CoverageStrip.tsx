@@ -35,7 +35,8 @@ function Note({ note }: { note: CoverageNote }) {
 /**
  * Account and scan coverage (stage M6), with today's resource status line
  * (E5) as its second line and the discovery warnings (E4) as notes. Legend:
- * only the states possible at M6 (Q8).
+ * only the states possible at M6 (Q8). The first line is the connection and
+ * region info only: the last scan time is in the page header (ServicesHeader).
  */
 export const STORED_RESOURCES_NOTE = '· showing resources from a previous connection'
 
@@ -85,7 +86,6 @@ export function CoverageStrip({ state, statusHeadline, inTabWarnings, storedReso
               <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-green-700" />AWS account connected
             </span>
             <span><strong className="text-slate-900">{view.headline}</strong> <span className="text-slate-600">{view.headlineSub}</span></span>
-            <span className={view.lastScanFailed ? 'font-semibold text-red-700' : 'text-slate-600'}>{view.lastScan}</span>
           </>
         )}
       </div>
@@ -158,7 +158,6 @@ function RegionCoverageStrip({ view, statusHeadline, now }: { view: RegionCovera
           <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-green-700" />AWS account connected
         </span>
         <span><strong className="text-slate-900">{view.headline}</strong>{view.headlineSub && <> <span className="text-slate-600">{view.headlineSub}</span></>}</span>
-        <span role="status" className="text-slate-600"><RichText parts={view.scanLine} now={now} /></span>
         <a href={`#${REGION_COVERAGE_ID}`} className="ml-auto text-violet-700 underline-offset-2 hover:underline">Region coverage <span aria-hidden="true">→</span></a>
       </div>
 

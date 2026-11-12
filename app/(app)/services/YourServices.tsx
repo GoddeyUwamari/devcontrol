@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import type { RegisteredService } from '@/lib/types'
 import { AddServiceButton } from './AddServiceButton'
-import { PhaseTwoTag } from './PhaseTwoTag'
+import { ComingSoonTag } from './ComingSoonTag'
+import { NO_OWNER_SET, serviceOwnerLabel } from './ownership'
 
 export type YourServicesState =
   | { status: 'loading' }
@@ -68,14 +69,14 @@ export function YourServices({ state, mappedToService, totalResources }: {
               <th scope="col" className="px-3 py-2.5">Team</th>
               <th scope="col" className="px-3 py-2.5">Repository</th>
               <th scope="col" className="px-3 py-2.5">Registered</th>
-              {notMapped && <th scope="col" className="px-3 py-2.5">Resources · findings · cost · deploys <PhaseTwoTag /></th>}
+              {notMapped && <th scope="col" className="px-3 py-2.5">Resources · findings · cost · deploys <ComingSoonTag /></th>}
             </tr>
           </thead>
           <tbody>
             {rows.map((service) => (
               <tr key={service.id} className="border-b border-slate-50 last:border-0">
                 <td className="px-4 py-3 font-semibold text-slate-900">{service.name}</td>
-                <td className="px-3 py-3 text-slate-700">{service.owner?.trim() ? service.owner : <span className="text-slate-600">No owner set</span>}</td>
+                <td className="px-3 py-3 text-slate-700">{serviceOwnerLabel(service.owner) ?? <span className="text-slate-600">{NO_OWNER_SET}</span>}</td>
                 <td className="px-3 py-3 text-slate-700">{service.teamName ?? <span className="text-slate-600">No team set</span>}</td>
                 <td className="px-3 py-3">
                   {service.githubUrl ? (
@@ -128,7 +129,7 @@ export function YourServices({ state, mappedToService, totalResources }: {
           <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-label text-slate-700 opacity-60 cursor-not-allowed">
             Map resources to services
           </button>
-          <PhaseTwoTag />
+          <ComingSoonTag />
         </div>
       )}
     </section>

@@ -671,6 +671,14 @@ export interface RecommendationStats {
   /** Upper bounds (savings_basis 'ceiling: ...', e.g. S3 lifecycle), kept out of the total above. */
   potentialSavingsCeiling: number;
   potentialSavingsCeilingByResourceType: Record<string, number>;
+  /**
+   * Open findings whose estimate adds more than $0 to the total, and open
+   * findings with neither an estimate nor an upper bound (the weekly email's
+   * counts). null when the API does not send them (a backend before
+   * PR-ICONS-b): never computed here.
+   */
+  estimatedFindings?: number | null;
+  unestimatedFindings?: number | null;
   bySeverity: {
     high: number;
     medium: number;
