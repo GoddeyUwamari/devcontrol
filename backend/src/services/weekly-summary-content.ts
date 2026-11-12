@@ -26,7 +26,7 @@ import { describeCeilings, describeCeilingsWithoutEstimate } from './estimated-s
 import { PLAN_NAME } from '../config/plan-names';
 import { PLAN_ENTITLEMENTS } from '../config/plan-entitlements';
 import { SUPPORT_EMAIL, WEEKLY_EMAIL_PATHS } from '../config/weekly-email-paths';
-import { CONNECTION_FAILING_HELP } from '../config/weekly-email-copy';
+import { ANALYSIS_PARTIAL_NOTE, CONNECTION_FAILING_HELP } from '../config/weekly-email-copy';
 import {
   SECURITY_PRELIMINARY_REASON,
   type DayWindow,
@@ -189,6 +189,17 @@ function startedThisWeek(e: WeeklyEvidence, startedAt: string): boolean {
   return Date.parse(startedAt) >= Date.parse(e.period.delivery.start);
 }
 
+/**
+ * The latest discovery scan completed and so did the latest cost analysis,
+ * fully: not partial, not in progress, not unfinished, not unreadable (WE-2
+ * review M-1). Only then do findings and savings both come from the latest scan.
+ */
+function latestScanAndAnalysisCompleted(e: WeeklyEvidence): boolean {
+  const scan = e.scan && hasEvidence(e.scan) ? e.scan.data : null;
+  const analysis = e.costAnalysis && hasEvidence(e.costAnalysis) ? e.costAnalysis.data : null;
+  return scan?.latest?.state === 'completed' && analysis?.latest?.state === 'completed';
+}
+
 function costLines(e: WeeklyEvidence): EmailLine[] {
   const current = e.currentWeekSpend;
   const compact = formatCompactWindow(e.period.cost);
@@ -248,10 +259,13 @@ function costLines(e: WeeklyEvidence): EmailLine[] {
   };
 
   if (current.state === 'error') {
-    // Only a fresh OK health check says the connection itself works.
+    // Only a fresh OK health check says the connection itself works, and only
+    // security and savings read from the latest completed scan and analysis
+    // are current (WE-2 review L-1); otherwise the sentence is left out.
     const connectionOk = e.connectionHealth != null && hasEvidence(e.connectionHealth) && e.connectionHealth.data.state === 'ok';
+    const othersCurrent = hasEvidence(e.security) && hasEvidence(e.recommendations) && latestScanAndAnalysisCompleted(e);
     return [
-      body(`AWS Cost Explorer spend for ${compact} couldn't be retrieved.${connectionOk ? ' Other sections are unaffected.' : ''}`),
+      body(`AWS Cost Explorer spend for ${compact} couldn't be retrieved.${connectionOk && othersCurrent ? ' Other sections are unaffected.' : ''}`),
       ...estimateLines(),
     ];
   }
@@ -347,8 +361,9 @@ function savingsLines(e: WeeklyEvidence): EmailLine[] {
 }
 
 type AnalysisState =
-  | { kind: 'completed'; at: string }
-  | { kind: 'from_last_completed'; lastAt: string; latest: 'did_not_finish' | 'in_progress'; thisWeek: boolean }
+  /** `partial`: it completed with some cost checks failed (WE-2 review H-1). */
+  | { kind: 'completed'; at: string; partial: boolean }
+  | { kind: 'from_last_completed'; lastAt: string; lastPartial: boolean; latest: 'did_not_finish' | 'in_progress'; thisWeek: boolean }
   | { kind: 'did_not_finish' }
   | { kind: 'in_progress' }
   | { kind: 'never' }
@@ -360,9 +375,18 @@ function analysisState(e: WeeklyEvidence): AnalysisState {
   if (!a || !hasEvidence(a)) return { kind: 'unreadable' };
   const { latest, lastCompleted } = a.data;
   if (!latest) return { kind: 'never' };
-  if (latest.state === 'completed') return { kind: 'completed', at: latest.at };
+  // A partial run completed with gaps: it dates the figures it reconciled.
+  if (latest.state === 'completed' || latest.state === 'partial') {
+    return { kind: 'completed', at: latest.at, partial: latest.state === 'partial' };
+  }
   if (lastCompleted) {
-    return { kind: 'from_last_completed', lastAt: lastCompleted.at, latest: latest.state, thisWeek: startedThisWeek(e, latest.startedAt) };
+    return {
+      kind: 'from_last_completed',
+      lastAt: lastCompleted.at,
+      lastPartial: lastCompleted.partial === true,
+      latest: latest.state,
+      thisWeek: startedThisWeek(e, latest.startedAt),
+    };
   }
   return { kind: latest.state };
 }
@@ -371,11 +395,12 @@ function analysisState(e: WeeklyEvidence): AnalysisState {
 function analysisLine(a: AnalysisState, hasFindings: boolean): string | null {
   switch (a.kind) {
     case 'completed':
-      return `From the cost analysis completed ${formatInstant(a.at)}.`;
+      return `From the cost analysis completed ${formatInstant(a.at)}.${a.partial ? ` ${ANALYSIS_PARTIAL_NOTE}` : ''}`;
     case 'from_last_completed':
       return `From the last completed cost analysis, ${formatInstantDay(a.lastAt)}. ` + (a.latest === 'in_progress'
         ? 'A new analysis is in progress.'
-        : a.thisWeek ? "This week's analysis didn't finish." : "The latest analysis didn't finish.");
+        : a.thisWeek ? "This week's analysis didn't finish." : "The latest analysis didn't finish.") +
+        (a.lastPartial ? ` ${ANALYSIS_PARTIAL_NOTE}` : '');
     case 'did_not_finish':
       return "The last cost analysis didn't finish.";
     case 'in_progress':
@@ -457,6 +482,13 @@ const LINES_OF: Record<EmailSectionId, (e: WeeklyEvidence) => EmailLine[]> = {
 
 const HEALTH_LAST_RESULT: Record<'ok' | 'failing' | 'lost', string> = { ok: 'OK', failing: 'failing', lost: 'lost' };
 
+/** The stale line's last result, or null when it is missing or not one of the three. */
+function lastResultLabel(result: unknown): string | null {
+  return typeof result === 'string' && Object.prototype.hasOwnProperty.call(HEALTH_LAST_RESULT, result)
+    ? HEALTH_LAST_RESULT[result as keyof typeof HEALTH_LAST_RESULT]
+    : null;
+}
+
 /** The connection box for a connected organization: health, then the latest scan (mock v1 (a)/(c)). */
 function connectedStatus(e: WeeklyEvidence): NonNullable<WeeklySummaryContent['status']> {
   const lines: EmailLine[] = [];
@@ -475,8 +507,9 @@ function connectedStatus(e: WeeklyEvidence): NonNullable<WeeklySummaryContent['s
         : `AWS connection: lost, failing since ${day(d.failingSince)}.`));
       lines.push(body(CONNECTION_FAILING_HELP));
       action = { label: 'Open Connect AWS →', path: WEEKLY_EMAIL_PATHS.connectAws };
-    } else if (d.state === 'not_checked_recently' && d.checkedAt) {
-      lines.push(body(`AWS connection: not checked recently (last result ${HEALTH_LAST_RESULT[d.lastResult ?? 'ok']}, ${day(d.checkedAt)}).`));
+    } else if (d.state === 'not_checked_recently' && d.checkedAt && lastResultLabel(d.lastResult)) {
+      // No last result (or an unknown one) is never read as OK: it falls to the read-error line (WE-2 review L-2).
+      lines.push(body(`AWS connection: not checked recently (last result ${lastResultLabel(d.lastResult)}, ${day(d.checkedAt)}).`));
     } else if (d.state === 'not_checked_yet') {
       lines.push(body('AWS connection: not checked yet. DevControl checks at each scan.'));
     } else {
@@ -498,17 +531,21 @@ function connectedStatus(e: WeeklyEvidence): NonNullable<WeeklySummaryContent['s
   return { lines, action };
 }
 
-/** The connected intro: mock (a) only after a completed latest scan, mock (c) after this week's unfinished one. */
+/**
+ * The connected intro: mock (a) only when the latest scan and the latest cost
+ * analysis both completed fully (WE-2 review M-1), mock (c) after this week's
+ * unfinished scan.
+ */
 function connectedIntro(e: WeeklyEvidence, organizationLabel: string): string {
   const scan = e.scan && hasEvidence(e.scan) ? e.scan.data : null;
-  if (scan?.latest?.state === 'completed') {
+  if (latestScanAndAnalysisCompleted(e)) {
     return `Here's what DevControl measured for ${organizationLabel}. Spend covers the 7 full UTC days before this email. ` +
       'Findings and savings come from the latest scan.';
   }
   if (scan?.latest?.state === 'did_not_finish' && scan.lastCompleted && startedThisWeek(e, scan.latest.startedAt)) {
     return "DevControl couldn't finish this week's scan, so some figures below come from the last completed scan and say so.";
   }
-  // No completed latest scan to point at: the approved WE-1 intro, which claims no scan.
+  // No completed latest scan and analysis to point at: the approved WE-1 intro, which claims no scan.
   return 'Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.';
 }
 

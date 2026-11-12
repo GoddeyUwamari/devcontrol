@@ -147,16 +147,31 @@ export interface WeeklyDORAMetrics {
 export type WeeklyRunState = 'completed' | 'in_progress' | 'did_not_finish';
 
 /**
+ * How a cost analysis ended. 'partial' is a run that reached its end with at
+ * least one cost check failed (completed with gaps, WE-2 review H-1): it set
+ * completed_at and reconciled the open findings, so it dates them, and the
+ * email adds the Cost Optimization page's partial sentence. A 'partial' row
+ * with no completion time didn't finish.
+ */
+export type WeeklyAnalysisRunState = WeeklyRunState | 'partial';
+
+/**
  * The latest discovery scan (or cost analysis) and the last one that
  * completed, as ISO timestamps. `latest.at` is when it ended, or when it
  * started while it is still running; `latest.startedAt` is when it started.
  */
-export interface WeeklyRunEvidence {
+export interface WeeklyRunEvidence<S extends WeeklyAnalysisRunState = WeeklyRunState> {
   /** Null when there has been none. */
-  latest: { state: WeeklyRunState; at: string; startedAt: string } | null;
-  /** Null when none has completed. */
-  lastCompleted: { at: string } | null;
+  latest: { state: S; at: string; startedAt: string } | null;
+  /**
+   * Null when none has completed. For a cost analysis, a partial run with a
+   * completion time counts as completed, with `partial: true`.
+   */
+  lastCompleted: { at: string; partial?: true } | null;
 }
+
+/** The latest cost analysis run and the last completed one (completed, or partial with gaps). */
+export type WeeklyAnalysisEvidence = WeeklyRunEvidence<WeeklyAnalysisRunState>;
 
 /** Whether any deployment was ever recorded for the organization, whatever the window. */
 export interface WeeklyDeploymentHistoryEvidence {
@@ -179,7 +194,7 @@ export interface WeeklyEvidence {
    */
   scan: ContextSection<WeeklyRunEvidence> | null;
   /** The latest cost analysis run (cost_analysis_runs, any source) and the last completed one. Null when not connected. */
-  costAnalysis: ContextSection<WeeklyRunEvidence> | null;
+  costAnalysis: ContextSection<WeeklyAnalysisEvidence> | null;
   deploymentHistory: ContextSection<WeeklyDeploymentHistoryEvidence>;
   currentWeekSpend: ContextSection<WeeklySpendEvidence>;
   previousWeekSpend: ContextSection<WeeklySpendEvidence>;
@@ -228,7 +243,7 @@ function roundCents(amount: number): number {
   return Math.round(amount * 100) / 100;
 }
 
-type RunTimes = { started_at?: unknown; completed_at?: unknown; created_at?: unknown };
+type RunTimes = { started_at?: unknown; completed_at?: unknown; created_at?: unknown; status?: unknown };
 
 function isoOf(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -237,7 +252,11 @@ function isoOf(value: unknown): string | null {
 }
 
 /** A latest run (job or analysis) and the last completed one as WeeklyRunEvidence; times fall back to the row's creation. */
-function runEvidence(latest: RunTimes | undefined | null, state: WeeklyRunState | null, lastCompleted: RunTimes | undefined | null): WeeklyRunEvidence {
+function runEvidence<S extends WeeklyAnalysisRunState>(
+  latest: RunTimes | undefined | null,
+  state: S | null,
+  lastCompleted: RunTimes | undefined | null
+): WeeklyRunEvidence<S> {
   const created = (row: RunTimes) => isoOf(row.created_at);
   const startedAt = latest ? isoOf(latest.started_at) ?? created(latest) : null;
   const at = latest && state
@@ -246,7 +265,7 @@ function runEvidence(latest: RunTimes | undefined | null, state: WeeklyRunState 
   const lastAt = lastCompleted ? isoOf(lastCompleted.completed_at) ?? created(lastCompleted) : null;
   return {
     latest: latest && state && at && startedAt ? { state, at, startedAt } : null,
-    lastCompleted: lastAt ? { at: lastAt } : null,
+    lastCompleted: lastAt ? { at: lastAt, ...(lastCompleted?.status === 'partial' ? { partial: true as const } : {}) } : null,
   };
 }
 
@@ -429,18 +448,24 @@ export class WeeklySummaryRepository {
   /**
    * The latest cost analysis run (any source) and the last completed one, as
    * the Cost Optimization page reads them (latestAnalysisRuns: run_state, so a
-   * dead worker's run is interrupted). Running is in progress; partial, failed
-   * and interrupted didn't finish -- the analysis-runs API's status too.
+   * dead worker's run is interrupted). Running is in progress; partial with a
+   * completion time is completed with gaps ("Analysis partly complete" on the
+   * Cost Optimization page); failed, interrupted, and partial with no
+   * completion time didn't finish.
    */
-  getCostAnalysisSection(organizationId: string, client?: PoolClient): Promise<ContextSection<WeeklyRunEvidence>> {
-    return collectSection<WeeklyRunEvidence>(
+  getCostAnalysisSection(organizationId: string, client?: PoolClient): Promise<ContextSection<WeeklyAnalysisEvidence>> {
+    return collectSection<WeeklyAnalysisEvidence>(
       { source: ANALYSIS_SOURCE, provenance: 'derived', period: { kind: 'point_in_time' } },
       () => this.onOrgClient(organizationId, client, async (db) => {
         const runs = await latestAnalysisRuns(db, organizationId);
         const run = runs.latest;
-        const state: WeeklyRunState | null = !run
+        const state: WeeklyAnalysisRunState | null = !run
           ? null
-          : run.run_state === 'running' ? 'in_progress' : run.run_state === 'completed' ? 'completed' : 'did_not_finish';
+          : run.run_state === 'running'
+            ? 'in_progress'
+            : run.run_state === 'completed'
+              ? 'completed'
+              : run.run_state === 'partial' && isoOf(run.completed_at) ? 'partial' : 'did_not_finish';
         return { state: 'available', data: runEvidence(run, state, runs.lastCompleted) };
       })
     );

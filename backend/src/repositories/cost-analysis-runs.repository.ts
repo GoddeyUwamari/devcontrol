@@ -318,15 +318,16 @@ export async function latestLeasedRun(client: PoolClient, organizationId: string
 /** The organization's latest analysis run (any source) as a reader sees it, and its last completed one. */
 export interface LatestAnalysisRuns {
   latest: Pick<CostAnalysisRun, 'run_state' | 'started_at' | 'completed_at' | 'created_at'> | null;
-  lastCompleted: Pick<CostAnalysisRun, 'completed_at' | 'created_at'> | null;
+  lastCompleted: Pick<CostAnalysisRun, 'status' | 'completed_at' | 'created_at'> | null;
 }
 
 /**
  * The organization's latest cost analysis run, any source, with run_state read
  * exactly as getLatest() reads it (a dead worker's 'running' row is
- * 'interrupted'), and its latest run whose status is 'completed'. On the
- * caller's org-tagged client (the weekly summary's held client). Nothing is
- * written.
+ * 'interrupted'), and its latest run that completed: status 'completed', or
+ * 'partial' with a completion time (it reached its end with some cost checks
+ * failed, and reconciled the open findings). On the caller's org-tagged client
+ * (the weekly summary's held client). Nothing is written.
  */
 export async function latestAnalysisRuns(client: Pick<PoolClient, 'query'>, organizationId: string): Promise<LatestAnalysisRuns> {
   const latest = await client.query(
@@ -349,9 +350,10 @@ export async function latestAnalysisRuns(client: Pick<PoolClient, 'query'>, orga
     [organizationId, QUEUED_RUN_TIMEOUT_SECONDS, SCAN_KIND_DISCOVERY]
   );
   const completed = await client.query(
-    `SELECT r.completed_at, r.created_at
+    `SELECT r.status, r.completed_at, r.created_at
      FROM cost_analysis_runs r
-     WHERE r.organization_id = $1 AND r.status = 'completed'
+     WHERE r.organization_id = $1
+       AND (r.status = 'completed' OR (r.status = 'partial' AND r.completed_at IS NOT NULL))
      ORDER BY r.created_at DESC
      LIMIT 1`,
     [organizationId]

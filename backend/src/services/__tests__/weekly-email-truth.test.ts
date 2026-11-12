@@ -22,6 +22,8 @@ import {
   WEEKLY_SECTION_TITLES,
 } from '../weekly-summary-content';
 import type {
+  WeeklyAnalysisEvidence,
+  WeeklyAnalysisRunState,
   WeeklyDORAMetrics,
   WeeklyEvidence,
   WeeklyRecommendationEvidence,
@@ -33,6 +35,8 @@ import type { HealthDisplay } from '../connection-health';
 import { WeeklyAISummaryJob } from '../../jobs/weekly-ai-summary.job';
 // The Connect AWS page's HEALTH_FAILING_HELP; the frontend test weekly-email-health-copy.test.ts keeps them equal.
 import { CONNECTION_FAILING_HELP as HEALTH_FAILING_HELP } from '../../config/weekly-email-copy';
+// The Cost Optimization page's PARTIAL_MESSAGE; the same frontend test keeps them equal.
+import { ANALYSIS_PARTIAL_NOTE } from '../../config/weekly-email-copy';
 import {
   FIXTURE_IDS,
   FIXTURE_ORG_NAME,
@@ -110,12 +114,16 @@ const HISTORY = 'DevControl deployment records (all time)';
 const T = (dayTime: string) => `2026-11-${dayTime}:00.000Z`;
 
 const health = (o: Partial<HealthDisplay>) => available<HealthDisplay>(HEALTH, { ...HEALTH_OK, ...o });
-const runs = (latest: { state: WeeklyRunState; at: string; startedAt?: string } | null, lastCompletedAt: string | null): WeeklyRunEvidence => ({
+const runs = <S extends WeeklyAnalysisRunState = WeeklyRunState>(
+  latest: { state: S; at: string; startedAt?: string } | null,
+  lastCompletedAt: string | null,
+  lastCompletedPartial = false
+): WeeklyRunEvidence<S> => ({
   latest: latest ? { state: latest.state, at: latest.at, startedAt: latest.startedAt ?? latest.at } : null,
-  lastCompleted: lastCompletedAt ? { at: lastCompletedAt } : null,
+  lastCompleted: lastCompletedAt ? { at: lastCompletedAt, ...(lastCompletedPartial ? { partial: true as const } : {}) } : null,
 });
 const scanOf = (r: WeeklyRunEvidence) => available<WeeklyRunEvidence>(SCAN, r);
-const analysisOf = (r: WeeklyRunEvidence) => available<WeeklyRunEvidence>(ANALYSIS, r);
+const analysisOf = (r: WeeklyAnalysisEvidence) => available<WeeklyAnalysisEvidence>(ANALYSIS, r);
 const historyOf = (anyRecorded: boolean) => available(HISTORY, { anyRecorded });
 
 /** Named WE-2 states over C2 (or C4 for the estimate), each changing one read. */
@@ -141,6 +149,13 @@ async function we2States(): Promise<Array<{ name: string; e: WeeklyEvidence }>> 
     { name: 'analysis did not finish, first', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('16T06:15'), startedAt: T('16T06:14') }, null)) } },
     { name: 'analysis never', e: { ...b, costAnalysis: await analysisOf(runs(null, null)) } },
     { name: 'analysis read error', e: { ...b, costAnalysis: await failed<WeeklyRunEvidence>(ANALYSIS) } },
+    // WE-2 review H-1/L-3: a partial run completed with gaps; its own completion dates the figures.
+    { name: 'analysis partial', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'partial', at: T('16T06:20'), startedAt: T('16T06:14') }, T('16T06:20'), true)) } },
+    { name: 'analysis partial, older completed', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'partial', at: T('16T06:20'), startedAt: T('16T06:14') }, T('08T06:20'))) } },
+    { name: 'analysis every run partial', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'partial', at: T('16T06:20'), startedAt: T('16T06:14') }, T('16T06:20'), true)) } },
+    { name: 'analysis interrupted, older completed', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('16T06:44'), startedAt: T('16T06:14') }, T('08T06:20'))) } },
+    { name: 'analysis interrupted, first', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('16T06:44'), startedAt: T('16T06:14') }, null)) } },
+    { name: 'analysis did not finish, older partial', e: { ...b, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('16T06:15'), startedAt: T('16T06:14') }, T('08T06:20'), true)) } },
     { name: 'deployments never recorded, connected', e: { ...b, delivery: await available<WeeklyDORAMetrics>(DELIVERY, { deploymentCount: 0, successfulDeployments: 0, failedDeployments: 0 }), deploymentHistory: await historyOf(false) } },
     { name: 'deployment history read error', e: { ...b, delivery: await available<WeeklyDORAMetrics>(DELIVERY, { deploymentCount: 0, successfulDeployments: 0, failedDeployments: 0 }), deploymentHistory: await failed(HISTORY) } },
     { name: 'every WE-2 read failed', e: { ...b, connectionHealth: await failed<HealthDisplay>(HEALTH), scan: await failed<WeeklyRunEvidence>(SCAN), costAnalysis: await failed<WeeklyRunEvidence>(ANALYSIS), deploymentHistory: await failed(HISTORY) } },
@@ -456,6 +471,25 @@ describe('intro: scan-dated (WE-2; mock v1 (a) and (c))', () => {
     }
   });
 
+  it('the latest scan completed but its cost analysis did not complete fully: the approved WE-1 intro (WE-2 review M-1), in HTML and text', async () => {
+    const analysisStates = [
+      'analysis in progress, older completed', 'analysis did not finish, first', 'analysis never', 'analysis read error',
+      'analysis partial', 'analysis partial, older completed', 'analysis every run partial',
+      'analysis interrupted, older completed', 'analysis interrupted, first', 'analysis did not finish, older partial',
+    ];
+    const states = (await we2States()).filter(s => analysisStates.includes(s.name));
+    expect(states.length).toBe(analysisStates.length);
+    for (const { name, e } of states) {
+      expect(e.scan?.data?.latest?.state).toBe('completed');
+      const { data, html, text } = render(e);
+      expect({ name, intro: data.intro }).toEqual({ name, intro: ON_RECORD });
+      expect({ name, html: html.includes(ON_RECORD), text: text.includes(ON_RECORD) }).toEqual({ name, html: true, text: true });
+      expect({ name, latest: /latest scan/.test(`${html}\n${text}`.replace(/Latest scan/g, '')) }).toEqual({ name, latest: false });
+    }
+    // C4's analysis didn't finish either, but its scan didn't: mock (c) still leads.
+    expect(render(await fixtureEvidence('C4')).data.intro).toBe(NOT_FINISHED);
+  });
+
   it('not connected: the not-connected intro is unchanged', async () => {
     expect(render(await fixtureEvidence('C3')).data.intro)
       .toBe(`No AWS account is connected to ${FIXTURE_ORG_NAME} yet, so this week has no spend, security or savings data.`);
@@ -566,13 +600,48 @@ describe('WE-2 connection box (mock v1 (a)/(c) and the (c) table)', () => {
     expect(text).not.toMatch(/Latest scan|AWS connection: OK|AWS connection health/);
   });
 
-  it('Cost Explorer failed: "Other sections are unaffected." only with a fresh OK health check', async () => {
+  it('Cost Explorer failed: "Other sections are unaffected." only with a fresh OK health check and current security and savings (WE-2 review L-1)', async () => {
     const c4 = await fixtureEvidence('C4');
-    const first = (e: WeeklyEvidence) => sectionText(render(e).text, 'costs').split('\n')[0];
-    expect(first({ ...c4, connectionHealth: await health({}) }))
-      .toBe("AWS Cost Explorer spend for Nov 9 – Nov 15, 2026 couldn't be retrieved. Other sections are unaffected.");
-    for (const h of [await fixtureEvidence('C4').then(x => x.connectionHealth), await health({ state: 'not_checked_recently', lastResult: 'ok' }), await failed<HealthDisplay>(HEALTH)]) {
-      expect(first({ ...c4, connectionHealth: h })).toBe("AWS Cost Explorer spend for Nov 9 – Nov 15, 2026 couldn't be retrieved.");
+    const b = await base();
+    // C4's Cost Explorer failure, with C2's completed latest scan and analysis.
+    const current = { ...c4, scan: b.scan, costAnalysis: b.costAnalysis, connectionHealth: await health({}) };
+    const first = (e: WeeklyEvidence) => {
+      const { text, htmlText } = render(e);
+      const line = sectionText(text, 'costs').split('\n')[0];
+      expect(htmlText).toContain(line);
+      return line;
+    };
+    const UNAFFECTED = "AWS Cost Explorer spend for Nov 9 – Nov 15, 2026 couldn't be retrieved. Other sections are unaffected.";
+    const PLAIN = "AWS Cost Explorer spend for Nov 9 – Nov 15, 2026 couldn't be retrieved.";
+    expect(first(current)).toBe(UNAFFECTED);
+    // Health not fresh and OK.
+    for (const h of [c4.connectionHealth, await health({ state: 'not_checked_recently', lastResult: 'ok' }), await failed<HealthDisplay>(HEALTH)]) {
+      expect(first({ ...current, connectionHealth: h })).toBe(PLAIN);
+    }
+    // Health OK, but security or savings not from the latest completed scan and analysis.
+    const notCurrent: Array<[string, Partial<WeeklyEvidence>]> = [
+      ["the latest scan didn't finish (C4)", { scan: c4.scan }],
+      ['the latest scan in progress', { scan: await scanOf(runs({ state: 'in_progress', at: T('16T06:00') }, T('08T06:10'))) }],
+      ['scan read error', { scan: await failed<WeeklyRunEvidence>(SCAN) }],
+      ["the latest analysis didn't finish (C4)", { costAnalysis: c4.costAnalysis }],
+      ['analysis partial', { costAnalysis: await analysisOf(runs({ state: 'partial', at: T('16T06:20') }, T('16T06:20'), true)) }],
+      ['analysis in progress', { costAnalysis: await analysisOf(runs({ state: 'in_progress', at: T('16T06:14') }, T('08T06:20'))) }],
+      ['analysis read error', { costAnalysis: await failed<WeeklyAnalysisEvidence>(ANALYSIS) }],
+      ['security error', { security: await failed<WeeklySecurityEvidence>(SECURITY) }],
+      ['savings error', { recommendations: await failed<WeeklyRecommendationEvidence>(RECS) }],
+    ];
+    for (const [name, override] of notCurrent) {
+      expect({ name, line: first({ ...current, ...override }) }).toEqual({ name, line: PLAIN });
+    }
+  });
+
+  it('stale health with no last result, or an unknown one, is the read-error line, never "last result OK" (WE-2 review L-2)', async () => {
+    const READ_ERROR = "AWS connection health couldn't be retrieved for this summary.";
+    for (const lastResult of [null, 'unexpected', 'toString'] as unknown as Array<HealthDisplay['lastResult']>) {
+      const { text, htmlText, html } = render({ ...(await base()), connectionHealth: await health({ state: 'not_checked_recently', lastResult, checkedAt: T('13T06:02') }) });
+      expect(statusText(text)).toEqual([READ_ERROR, scanLine]);
+      expect(htmlText).toContain(READ_ERROR);
+      expect(`${html}\n${text}`).not.toMatch(/last result|not checked recently/);
     }
   });
 });
@@ -659,10 +728,70 @@ describe('WE-2 savings: cost analysis state (WE-D3 and mock v1)', () => {
     expect(await savingsOf(e, NONE)).toEqual(['Cost analysis in progress. Savings appear when it finishes.']);
   });
 
+  /** The savings lines from the text part, each checked to appear in the HTML too. */
+  async function savingsBoth(e: WeeklyEvidence, r?: WeeklyRecommendationEvidence) {
+    const withRecs = r ? { ...e, recommendations: await available<WeeklyRecommendationEvidence>(RECS, r) } : e;
+    const { text, htmlText, html } = render(withRecs);
+    const lines = sectionText(text, 'savings').split('\n').filter(l => !l.startsWith('See Cost Optimization'));
+    for (const line of lines) expect(htmlText).toContain(line);
+    return { lines, all: `${html}\n${text}` };
+  }
+  const PARTIAL_DATED = `From the cost analysis completed Nov 16, 2026, 06:20 UTC. ${ANALYSIS_PARTIAL_NOTE}`;
+
+  it('the partial sentence is the Cost Optimization page\'s, word for word', () => {
+    expect(ANALYSIS_PARTIAL_NOTE).toBe("Some cost checks didn't complete, so these results may be incomplete.");
+  });
+
+  it.each([
+    ['a partial run', 'analysis partial'],
+    ['a partial run after an older completed one', 'analysis partial, older completed'],
+    ['every run partial, none completed', 'analysis every run partial'],
+  ])('H-1: %s is completed with gaps, dated by its own completion, never "didn\'t finish" (HTML and text)', async (_label, state) => {
+    const e = (await states()).find(s => s.name === state)!.e;
+    const withFindings = await savingsBoth(e);
+    expect(withFindings.lines).toEqual([C2_HEADLINE, PARTIAL_DATED]);
+    const none = await savingsBoth(e, NONE);
+    expect(none.lines).toEqual(['No open savings findings in the last analysis.', PARTIAL_DATED]);
+    for (const { all, lines } of [withFindings, none]) {
+      expect(all).not.toMatch(/didn(&#x27;|')t finish/);
+      expect(lines.join('\n')).not.toContain('Nov 8, 2026');
+      expect(all).not.toMatch(/last completed cost analysis/);
+      expect(all).toContain("Some cost checks didn&#x27;t complete, so these results may be incomplete.");
+    }
+  });
+
+  it('H-1: an interrupted run did not finish: dated by the last completed run, or "didn\'t finish" when none completed (HTML and text)', async () => {
+    const all = await states();
+    const older = await savingsBoth(all.find(s => s.name === 'analysis interrupted, older completed')!.e);
+    expect(older.lines).toEqual([C2_HEADLINE, "From the last completed cost analysis, Nov 8, 2026. This week's analysis didn't finish."]);
+    const first = await savingsBoth(all.find(s => s.name === 'analysis interrupted, first')!.e, NONE);
+    expect(first.lines).toEqual(["The last cost analysis didn't finish."]);
+    for (const { all: out } of [older, first]) expect(out).not.toContain(ANALYSIS_PARTIAL_NOTE);
+  });
+
+  it('H-1: a run that didn\'t finish after a partial one: dated by the partial run, with the partial sentence (HTML and text)', async () => {
+    const e = (await states()).find(s => s.name === 'analysis did not finish, older partial')!.e;
+    expect((await savingsBoth(e)).lines).toEqual([
+      C2_HEADLINE,
+      `From the last completed cost analysis, Nov 8, 2026. This week's analysis didn't finish. ${ANALYSIS_PARTIAL_NOTE}`,
+    ]);
+  });
+
+  it('the partial sentence appears only with figures dated by a partial run', async () => {
+    for (const { name, e } of await allEmails()) {
+      const a = e.costAnalysis && e.costAnalysis.state === 'available' ? e.costAnalysis.data! : null;
+      const partial = !!a && (a.latest?.state === 'partial' || (a.latest?.state !== 'completed' && a.lastCompleted?.partial === true));
+      const { text, htmlText } = render(e);
+      expect({ name, text: text.includes(ANALYSIS_PARTIAL_NOTE), html: htmlText.includes(ANALYSIS_PARTIAL_NOTE) }).toEqual({ name, text: partial, html: partial });
+    }
+  });
+
   it('"No open savings findings in the last analysis." appears only after a completed analysis', async () => {
     for (const { name, e } of await allEmails()) {
       const out = render({ ...e, recommendations: e.recommendations.state === 'not_connected' ? e.recommendations : await available<WeeklyRecommendationEvidence>(RECS, NONE) }).text;
-      const completed = !!e.costAnalysis && e.costAnalysis.state === 'available' && e.costAnalysis.data!.latest?.state === 'completed';
+      // A partial run completed with gaps (WE-2 review H-1); its date line carries the partial sentence.
+      const latestState = e.costAnalysis && e.costAnalysis.state === 'available' ? e.costAnalysis.data!.latest?.state : undefined;
+      const completed = latestState === 'completed' || latestState === 'partial';
       expect({ name, shown: out.includes('No open savings findings in the last analysis.') }).toEqual({ name, shown: completed });
     }
   });

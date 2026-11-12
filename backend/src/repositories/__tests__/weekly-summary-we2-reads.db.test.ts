@@ -10,6 +10,9 @@
  *      reading B's id on A's tag finds nothing of B.
  *   3. The CI schema (no aws_accounts table): the connection is 'unknown', the
  *      health read is an error section, and every other read still works.
+ *   4. Every cost analysis run status (WE-2 review H-1/L-3): the state it maps
+ *      to and the savings line it renders. A partial run with a completion
+ *      time is completed with gaps, never "didn't finish".
  *
  * aws_accounts is the shared fixture table (shared-fixture-tables.ts), so the
  * "table present" shape works in CI too; the CI shape is a throwaway schema
@@ -25,8 +28,10 @@ jest.mock('../../services/aws-cost.service', () => ({
 }));
 
 import { Pool, PoolClient } from 'pg';
-import { WeeklySummaryRepository, type WeeklyEvidence } from '../weekly-summary.repository';
-import { composeWeeklySummary } from '../../services/weekly-summary-content';
+import { WeeklySummaryRepository, weeklySummaryPeriod, type WeeklyEvidence } from '../weekly-summary.repository';
+import { composeWeeklySummary, formatInstant, formatInstantDay } from '../../services/weekly-summary-content';
+import { ANALYSIS_PARTIAL_NOTE } from '../../config/weekly-email-copy';
+import { fixtureEvidence } from '../../jobs/__tests__/weekly-email-fixtures';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 import { pool as appPool } from '../../config/database';
 
@@ -343,5 +348,132 @@ describe('the CI schema: no aws_accounts table', () => {
       await client.query('RESET search_path');
       client.release();
     }
+  });
+});
+
+describe('cost analysis run states: mapped state and the savings line (WE-2 review H-1, L-3)', () => {
+  /** A run of `status` started at `at`; finished 5 minutes later unless running or `completed` says otherwise. */
+  async function analysisRun(orgId: string, status: string, at: Date, o: { completed?: Date | null; leaseAcquired?: Date } = {}) {
+    const completed = o.completed !== undefined ? o.completed : status === 'running' ? null : new Date(at.getTime() + 5 * 60e3);
+    await pool.query(
+      `INSERT INTO cost_analysis_runs (organization_id, status, started_at, completed_at, created_at, source, lease_acquired_at)
+       VALUES ($1, $2, $3, $4, $3, 'discovery', $5)`,
+      [orgId, status, at, completed, o.leaseAcquired ?? null]
+    );
+    return (completed ?? at).toISOString();
+  }
+  async function lease(orgId: string, live: boolean) {
+    await pool.query(
+      `INSERT INTO aws_scan_leases (organization_id, aws_account_id, scan_kind, holder, acquired_at, heartbeat_at, expires_at)
+       VALUES ($1, '123456789012', 'discovery', 'we2-synthetic', $2, $2, $3)`,
+      [orgId, ago(2 * HOUR), live ? new Date(Date.now() + 10 * 60e3) : ago(HOUR)]
+    );
+  }
+  /** The analysis read on a client tagged for the org, and the savings lines it renders on C2's other evidence. */
+  async function readAndRender(orgId: string) {
+    const client = await taggedClient(orgId);
+    try {
+      const analysis = await new WeeklySummaryRepository(pool).getCostAnalysisSection(orgId, client);
+      // C2's other evidence, on this run's week (so "this week's" is judged against NOW).
+      const c2 = { ...(await fixtureEvidence('C2')), period: weeklySummaryPeriod(NOW) };
+      const savings = composeWeeklySummary({ ...c2, costAnalysis: analysis }, { organizationName: 'S (synthetic)' })
+        .sections.find(s => s.id === 'savings')!.lines.map(l => l.text).filter(Boolean);
+      return { analysis, savings };
+    } finally {
+      client.release();
+    }
+  }
+  const HEADLINE = 'Estimated savings: $845/month across 3 open findings. This is a DevControl estimate, not realized savings.';
+  const DIDNT_FINISH = /didn't finish/;
+
+  it('completed: completed, dated by its completion', async () => {
+    const o = await org('st-completed');
+    const done = await analysisRun(o, 'completed', ago(3 * HOUR));
+    const { analysis, savings } = await readAndRender(o);
+    expect(analysis.data).toMatchObject({ latest: { state: 'completed', at: done }, lastCompleted: { at: done } });
+    expect(analysis.data?.lastCompleted).not.toHaveProperty('partial');
+    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}.`]);
+  });
+
+  it('partial: completed with gaps, dated by its own completion with the partial sentence', async () => {
+    const o = await org('st-partial');
+    const done = await analysisRun(o, 'partial', ago(3 * HOUR));
+    const { analysis, savings } = await readAndRender(o);
+    expect(analysis.data).toEqual({
+      latest: { state: 'partial', at: done, startedAt: ago(3 * HOUR).toISOString() },
+      lastCompleted: { at: done, partial: true },
+    });
+    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
+  });
+
+  it('partial after an older completed run: dated by the partial run, not the older one', async () => {
+    const o = await org('st-partial-older');
+    const older = await analysisRun(o, 'completed', ago(8 * DAY));
+    const done = await analysisRun(o, 'partial', ago(3 * HOUR));
+    const { analysis, savings } = await readAndRender(o);
+    expect(analysis.data).toMatchObject({ latest: { state: 'partial', at: done }, lastCompleted: { at: done, partial: true } });
+    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
+    expect(savings.join('\n')).not.toContain(formatInstantDay(older));
+  });
+
+  it('every run partial, none completed: never "didn\'t finish"', async () => {
+    const o = await org('st-all-partial');
+    await analysisRun(o, 'partial', ago(15 * DAY));
+    await analysisRun(o, 'partial', ago(8 * DAY));
+    const done = await analysisRun(o, 'partial', ago(3 * HOUR));
+    const { analysis, savings } = await readAndRender(o);
+    expect(analysis.data).toMatchObject({ latest: { state: 'partial', at: done }, lastCompleted: { at: done, partial: true } });
+    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
+    expect(savings.join('\n')).not.toMatch(DIDNT_FINISH);
+  });
+
+  it('partial with no completion time: did not finish, and it is not the last completed run', async () => {
+    const o = await org('st-partial-open');
+    await analysisRun(o, 'partial', ago(3 * HOUR), { completed: null });
+    const { analysis, savings } = await readAndRender(o);
+    expect(analysis.data).toMatchObject({ latest: { state: 'did_not_finish' }, lastCompleted: null });
+    expect(savings).toEqual([HEADLINE, "The last cost analysis didn't finish."]);
+  });
+
+  it.each([
+    ['failed', 'failed', {}],
+    ['interrupted', 'interrupted', {}],
+    ['running whose lease expired (interrupted at read)', 'running', { leaseAcquired: ago(2 * HOUR), lease: false }],
+    ['running that never took the lease, queued past the timeout (interrupted at read)', 'running', {}],
+  ] as const)('%s after an older completed run: did not finish, dated by the older run', async (_label, status, o) => {
+    const org_ = await org(`st-${status}-${Math.random().toString(36).slice(2, 6)}`);
+    const older = await analysisRun(org_, 'completed', ago(8 * DAY));
+    const opts = 'leaseAcquired' in o ? { leaseAcquired: o.leaseAcquired } : {};
+    await analysisRun(org_, status, ago(3 * HOUR), opts);
+    if ('lease' in o) await lease(org_, o.lease);
+    const { analysis, savings } = await readAndRender(org_);
+    expect(analysis.data).toMatchObject({ latest: { state: 'did_not_finish' }, lastCompleted: { at: older } });
+    expect(savings).toEqual([HEADLINE, `From the last completed cost analysis, ${formatInstantDay(older)}. This week's analysis didn't finish.`]);
+    expect(savings.join('\n')).not.toContain(ANALYSIS_PARTIAL_NOTE);
+  });
+
+  it('failed after a partial run: did not finish, dated by the partial run with the partial sentence', async () => {
+    const o = await org('st-failed-after-partial');
+    const partial = await analysisRun(o, 'partial', ago(8 * DAY));
+    await analysisRun(o, 'failed', ago(3 * HOUR));
+    const { analysis, savings } = await readAndRender(o);
+    expect(analysis.data).toMatchObject({ latest: { state: 'did_not_finish' }, lastCompleted: { at: partial, partial: true } });
+    expect(savings).toEqual([
+      HEADLINE,
+      `From the last completed cost analysis, ${formatInstantDay(partial)}. This week's analysis didn't finish. ${ANALYSIS_PARTIAL_NOTE}`,
+    ]);
+  });
+
+  it.each([
+    ['running with a live lease', { leaseAcquired: ago(0.2), lease: true }],
+    ['running, queued for the lease within the timeout', { recent: true }],
+  ] as const)('%s: in progress', async (_label, o) => {
+    const org_ = await org(`st-running-${Math.random().toString(36).slice(2, 6)}`);
+    const older = await analysisRun(org_, 'completed', ago(8 * DAY));
+    await analysisRun(org_, 'running', 'recent' in o ? ago(0.05) : ago(0.2), 'leaseAcquired' in o ? { leaseAcquired: o.leaseAcquired } : {});
+    if ('lease' in o) await lease(org_, o.lease);
+    const { analysis, savings } = await readAndRender(org_);
+    expect(analysis.data).toMatchObject({ latest: { state: 'in_progress' }, lastCompleted: { at: older } });
+    expect(savings).toEqual([HEADLINE, `From the last completed cost analysis, ${formatInstantDay(older)}. A new analysis is in progress.`]);
   });
 });
