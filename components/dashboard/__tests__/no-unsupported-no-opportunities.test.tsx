@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import { RecommendedActionCard } from '../recommended-action-card'
 import { SavingsOpportunities } from '../savings-opportunities'
-import { ExecutiveRoiCard } from '../executive-roi-card'
+import { EstimatedSavingsSummary } from '../executive-roi-card'
 
 const NO_OPPORTUNITIES_CLAIM = /no (active )?(cost[- ])?(saving|optimi[sz]ation)s? ?(opportunit|found|detected|identified)|no savings|nothing to optimi|no waste/i
 
@@ -24,8 +24,8 @@ describe('dashboard cards with nothing active draw no "no opportunities" conclus
     expect(container.textContent).not.toMatch(NO_OPPORTUNITIES_CLAIM)
   })
 
-  it('ExecutiveRoiCard with no savings figure makes no claim', () => {
-    const { container } = render(<ExecutiveRoiCard monthlySavingsLabel={null} annualSavingsLabel={null} isDemoActive={false} />)
+  it('EstimatedSavingsSummary with no savings figure makes no claim', () => {
+    const { container } = render(<EstimatedSavingsSummary monthlySavingsLabel={null} annualSavingsLabel={null} isDemoActive={false} />)
     expect(container.textContent).not.toMatch(NO_OPPORTUNITIES_CLAIM)
   })
 })
@@ -51,8 +51,8 @@ describe('real findings stay visible, with savings labeled as estimates', () => 
     expect(container.textContent).not.toMatch(/right-?siz/i)
   })
 
-  it('ExecutiveRoiCard labels its figure as estimated', () => {
-    const { container } = render(<ExecutiveRoiCard monthlySavingsLabel="$94.50" annualSavingsLabel="$1,134" isDemoActive={false} />)
+  it('EstimatedSavingsSummary labels its figure as estimated', () => {
+    const { container } = render(<EstimatedSavingsSummary monthlySavingsLabel="$94.50" annualSavingsLabel="$1,134" isDemoActive={false} />)
     expect(container.textContent).toContain('Estimated monthly savings')
     expect(container.textContent).toContain('(estimated)')
   })

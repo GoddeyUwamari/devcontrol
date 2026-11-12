@@ -1,52 +1,42 @@
 {
   "200 ok": [
     "[icon]",
-    "DevControl System Health {class=text-ui text-ink}",
+    "DevControl service status {class=text-ui text-ink}",
     " [button]",
     "[icon]",
-    " [href=/status]",
-    "[icon]",
     "Operational {color=var(--text-success) class=text-label}",
-    "API and database responding · not your AWS resources {class=text-meta text-ink-muted}"
+    "DevControl's API and database are responding. This is our service, not your AWS resources. · Checked today, 8:37 PM {class=text-meta text-ink-muted}"
   ],
   "500 database disconnected": [
     "[icon]",
-    "DevControl System Health {class=text-ui text-ink}",
+    "DevControl service status {class=text-ui text-ink}",
     " [button]",
     "[icon]",
-    " [href=/status]",
-    "[icon]",
-    "Not responding {color=var(--text-danger) class=text-label}",
-    "DevControl's API is not responding normally. Not a status of your AWS resources. {class=text-meta text-ink-muted}"
+    "Degraded {color=var(--text-warning) class=text-label}",
+    "Some DevControl services are slow or failing. Figures on this page may be delayed. {class=text-meta text-ink-muted}"
   ],
   "500 without a database field": [
     "[icon]",
-    "DevControl System Health {class=text-ui text-ink}",
+    "DevControl service status {class=text-ui text-ink}",
     " [button]",
     "[icon]",
-    " [href=/status]",
-    "[icon]",
-    "Not responding {color=var(--text-danger) class=text-label}",
-    "DevControl's API is not responding normally. Not a status of your AWS resources. {class=text-meta text-ink-muted}"
+    "Unavailable {color=var(--text-danger) class=text-label}",
+    "Can't reach DevControl's API right now. Figures on this page may be out of date. {class=text-meta text-ink-muted}"
   ],
   "timeout / network": [
     "[icon]",
-    "DevControl System Health {class=text-ui text-ink}",
+    "DevControl service status {class=text-ui text-ink}",
     " [button]",
     "[icon]",
-    " [href=/status]",
-    "[icon]",
-    "Not responding {color=var(--text-danger) class=text-label}",
-    "DevControl's API is not responding normally. Not a status of your AWS resources. {class=text-meta text-ink-muted}"
+    "Unavailable {color=var(--text-danger) class=text-label}",
+    "Can't reach DevControl's API right now. Figures on this page may be out of date. {class=text-meta text-ink-muted}"
   ],
   "still checking": [
     "[icon]",
-    "DevControl System Health {class=text-ui text-ink}",
+    "DevControl service status {class=text-ui text-ink}",
     " [button]",
     "[icon]",
-    " [href=/status]",
-    "[icon]",
-    "Checking {color=var(--text-secondary) class=text-label}",
+    "Checking… {color=var(--text-secondary) class=text-label}",
     "Checking DevControl's own service status. {class=text-meta text-ink-muted}"
   ]
 }

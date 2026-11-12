@@ -1,14 +1,36 @@
 {
   "every source": [
-    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
+    "Data freshness {class=text-ink}",
+    "Costs: {class=text-ink}",
+    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {class=text-meta text-ink-muted}",
+    "Resources and security: {class=text-ink}",
+    "last scan today, 6:02 PM · every 6 hours {class=text-meta text-ink-muted}",
+    "Alerts: {class=text-ink}",
+    "CloudWatch · checked today, 8:36 PM {class=text-meta text-ink-muted}",
+    "DevControl service: {class=text-ink}",
+    "checked today, 8:37 PM {class=text-meta text-ink-muted}"
   ],
   "coverage stale": [
-    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
+    "Data freshness {class=text-ink}",
+    "Costs: {class=text-ink}",
+    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {class=text-meta text-ink-muted}",
+    "Resources and security: {class=text-ink}",
+    "last scan today, 6:02 PM {class=text-meta text-ink-muted}",
+    "Alerts: {class=text-ink}",
+    "CloudWatch · checked today, 8:36 PM {class=text-meta text-ink-muted}",
+    "DevControl service: {class=text-ink}",
+    "checked today, 8:37 PM {class=text-meta text-ink-muted}"
   ],
   "last scan attempt failed": [
-    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
+    "Data freshness {class=text-ink}",
+    "Costs: {class=text-ink}",
+    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {class=text-meta text-ink-muted}",
+    "Resources and security: {class=text-ink}",
+    "last scan today, 6:02 PM {class=text-meta text-ink-muted}",
+    "Alerts: {class=text-ink}",
+    "CloudWatch · checked today, 8:36 PM {class=text-meta text-ink-muted}",
+    "DevControl service: {class=text-ink}",
+    "checked today, 8:37 PM {class=text-meta text-ink-muted}"
   ],
-  "no sources: costs unavailable, coverage failed, CloudWatch failed, service still checking": [
-    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
-  ]
+  "no sources: costs unavailable, coverage failed, CloudWatch failed, service still checking": null
 }

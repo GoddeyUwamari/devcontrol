@@ -1,8 +1,8 @@
-import { LineChart } from 'lucide-react'
 import { Num } from '@/components/ui/typography'
+import { describeCeilings, describeCeilingsWithoutEstimate } from '@/lib/savings-basis'
 import type { OpportunityEvaluationState } from './savings-opportunities'
 
-interface ExecutiveRoiCardProps {
+interface EstimatedSavingsSummaryProps {
   monthlySavingsLabel: string | null
   annualSavingsLabel: string | null
   isDemoActive: boolean
@@ -10,32 +10,40 @@ interface ExecutiveRoiCardProps {
   evaluationState?: OpportunityEvaluationState
   /** Server count of active findings; null when the stats request failed. */
   activeCount?: number | null
-  /** S3 lifecycle upper bound, shown apart from the estimate and never added to it. */
-  ceilingLabel?: string | null
+  /**
+   * Upper bounds per resource type (S3 lifecycle, DynamoDB capacity, ...), shown
+   * apart from the estimate and never added to it: one line each.
+   */
+  ceilingByResourceType?: Record<string, number> | null
+  /** The surface's currency formatter for the ceiling lines. */
+  formatAmount?: (value: number) => string
   statsLoading?: boolean
   statsFailed?: boolean
   onRetry?: () => void
-  detailsHref?: string
 }
 
 /**
- * Compact summary of identified (not realized) savings. Never claims
- * DevControl "has saved" anything in real mode, and never turns an empty
- * finding list into a "nothing to save" conclusion: a completed scan does not
- * record whether each check succeeded. Exactly one line per situation.
+ * Identified (not realized) savings: the header of the Dashboard's
+ * Cost-Saving Opportunities card (DB-D12 S1, formerly the separate "Estimated
+ * savings" card). Never claims DevControl "has saved" anything in real mode,
+ * and never turns an empty finding list into a "nothing to save" conclusion:
+ * a completed scan does not record whether each check succeeded. Exactly one
+ * line per situation, plus one line per ceiling type in the weekly email's
+ * wording (DB-D13). Green is used only for a real estimate.
  */
-export function ExecutiveRoiCard({
+export function EstimatedSavingsSummary({
   monthlySavingsLabel,
   annualSavingsLabel,
   isDemoActive,
   evaluationState = 'loading',
   activeCount = null,
-  ceilingLabel = null,
+  ceilingByResourceType = null,
+  formatAmount = (value) => `$${value.toFixed(2)}`,
   statsLoading = false,
   statsFailed = false,
   onRetry,
-  detailsHref = '/cost-optimization',
-}: ExecutiveRoiCardProps) {
+}: EstimatedSavingsSummaryProps) {
+  const ceilings = !isDemoActive && ceilingByResourceType ? ceilingByResourceType : {}
   const statusLine = (text: string, extra?: React.ReactNode) => (
     <div className="mb-1.5" data-testid="roi-state">
       <p className="text-ui text-ink-muted leading-relaxed">{text}</p>
@@ -50,6 +58,9 @@ export function ExecutiveRoiCard({
   const link = (label: string) => (
     <a href="/cost-optimization" className="text-label font-semibold no-underline inline-block mt-1.5" style={{ color: 'var(--text-accent)' }}>{label}</a>
   )
+  const ceilingLines = (lines: string[]) => lines.map((line) => (
+    <p key={line} className="text-meta text-ink-muted mb-1.5" data-testid="savings-ceiling-line">{`${line}.`}</p>
+  ))
 
   let body: React.ReactNode
   if (isDemoActive || monthlySavingsLabel) {
@@ -62,13 +73,11 @@ export function ExecutiveRoiCard({
           {monthlySavingsLabel ?? '—'}
         </div>
         {monthlySavingsLabel && (
-          <p className="text-meta text-ink-muted mb-4">
+          <p className="text-meta text-ink-muted mb-1.5">
             Based on current optimization opportunities
           </p>
         )}
-        {!isDemoActive && ceilingLabel && (
-          <p className="text-meta text-ink-muted mb-4">Plus up to {ceilingLabel}/month from S3 lifecycle (upper bound)</p>
-        )}
+        {ceilingLines(describeCeilings(ceilings, formatAmount, 'month'))}
       </>
     )
   } else if (statsLoading) {
@@ -77,8 +86,9 @@ export function ExecutiveRoiCard({
     body = statusLine('Savings couldn’t be loaded.', retry)
   } else if (activeCount !== null && activeCount > 0) {
     // An active finding always wins over the analysis state.
-    body = ceilingLabel
-      ? statusLine(`Up to ${ceilingLabel}/month · S3 lifecycle, upper bound`)
+    const lines = describeCeilingsWithoutEstimate(ceilings, formatAmount, 'month')
+    body = lines.length > 0
+      ? <div data-testid="roi-state">{ceilingLines(lines)}</div>
       : statusLine(`${activeCount} finding${activeCount === 1 ? '' : 's'} found; none has a dollar estimate yet.`)
   } else if (evaluationState === 'loading') {
     body = statusLine('Loading…')
@@ -93,21 +103,10 @@ export function ExecutiveRoiCard({
   }
 
   return (
-    <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full flex flex-col">
-      <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-4">
-        <div className="flex items-center gap-2.5">
-          <LineChart size={17} style={{ color: 'var(--text-accent)' }} />
-          <h3 className="text-section text-ink">Estimated savings</h3>
-        </div>
-        <a href={detailsHref} className="text-label font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
-          View findings →
-        </a>
-      </div>
-
-      {body}
-
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4" data-testid="savings-summary">
+      <div className="min-w-0">{body}</div>
       {annualSavingsLabel && (
-        <div className="bg-[var(--bg-accent)] border border-[var(--border-accent)] rounded-xl px-4 py-3 mt-auto">
+        <div className="bg-[var(--bg-accent)] border border-[var(--border-accent)] rounded-xl px-4 py-3 shrink-0" data-testid="savings-annual">
           <p className="text-label font-semibold" style={{ color: 'var(--text-accent)' }}>Potential annual savings</p>
           <p className="text-section tracking-tight" style={{ color: 'var(--text-accent)' }}><Num>{annualSavingsLabel}</Num></p>
           <p className="text-label font-normal text-ink-muted">(estimated)</p>

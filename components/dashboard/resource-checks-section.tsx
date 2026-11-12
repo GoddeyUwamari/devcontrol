@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { CircleDashed, ExternalLink, ListChecks, Server } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
@@ -275,16 +276,20 @@ function DetailsPanel({ view }: { view: ResourceChecksView }) {
  * above have loaded, so their loading skeletons cannot pull it into view). Not part of Infrastructure
  * Posture. Never shown in demo mode (no check results are invented).
  */
-export function ResourceChecksSection({ isDemoActive, organizationId, aboveLoaded = true }: {
+export function ResourceChecksSection({ isDemoActive, organizationId, aboveLoaded = true, onCapturedAt }: {
   isDemoActive: boolean
   organizationId: string | null | undefined
   /** False while sections above are still loading and can still move this one. */
   aboveLoaded?: boolean
+  /** The shown results' CloudWatch capture time (ms), or null while there are none (the Dashboard's freshness row). */
+  onCapturedAt?: (capturedAtMs: number | null) => void
 }) {
   const [ref, inView] = useInViewOnce<HTMLDivElement>(aboveLoaded)
   const state = useResourceChecks(inView && !isDemoActive, organizationId)
-  if (isDemoActive) return null
   const view = resourceChecksView(state)
+  const capturedAtMs = !isDemoActive && view.kind === 'results' && view.capturedAt ? view.capturedAt.getTime() : null
+  useEffect(() => { onCapturedAt?.(capturedAtMs) }, [capturedAtMs, onCapturedAt])
+  if (isDemoActive) return null
 
   return (
     <div ref={ref} className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 mb-6" data-testid="resource-checks-section">

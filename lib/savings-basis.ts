@@ -47,15 +47,36 @@ const CEILING_CONDITIONS: Record<string, string> = {
   DynamoDB: 'if DynamoDB provisioned capacity were cut to its observed peak',
 }
 
-/** One "Plus up to $X/mo ..." line per resource type with a positive ceiling (S3, DynamoDB, then others A-Z). */
-export function describeCeilings(ceilingByResourceType: Record<string, number>, format: (value: number) => string): string[] {
+/** Positive ceilings, S3 and DynamoDB first, then others A-Z (the backend's order). */
+function orderedCeilings(ceilingByResourceType: Record<string, number>): [string, number][] {
   const order = (type: string) => { const i = Object.keys(CEILING_CONDITIONS).indexOf(type); return i === -1 ? Number.MAX_SAFE_INTEGER : i }
   return Object.entries(ceilingByResourceType)
     .filter(([, amount]) => amount > 0)
     .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
+}
+
+/**
+ * One "Plus up to $X/<period> ..." line per resource type with a positive
+ * ceiling (S3, DynamoDB, then others A-Z). Mirror of describeCeilings in
+ * backend/src/services/estimated-savings.ts (the weekly email's wording).
+ */
+export function describeCeilings(ceilingByResourceType: Record<string, number>, format: (value: number) => string, period = 'mo'): string[] {
+  return orderedCeilings(ceilingByResourceType)
     .map(([type, amount]) => CEILING_CONDITIONS[type]
-      ? `Plus up to ${format(amount)}/mo ${CEILING_CONDITIONS[type]} (upper bound, not included above)`
-      : `Plus up to ${format(amount)}/mo from ${type} upper-bound figures (not included above)`)
+      ? `Plus up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound, not included above)`
+      : `Plus up to ${format(amount)}/${period} from ${type} upper-bound figures (not included above)`)
+}
+
+/**
+ * describeCeilings() for when there is no estimated total to add to: one
+ * "Up to $X/<period> ... (upper bound)" line per resource type, same order.
+ * Mirror of describeCeilingsWithoutEstimate in the backend.
+ */
+export function describeCeilingsWithoutEstimate(ceilingByResourceType: Record<string, number>, format: (value: number) => string, period = 'mo'): string[] {
+  return orderedCeilings(ceilingByResourceType)
+    .map(([type, amount]) => CEILING_CONDITIONS[type]
+      ? `Up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound)`
+      : `Up to ${format(amount)}/${period} from ${type} upper-bound figures`)
 }
 
 const RANK: Record<SavingsBasisKind | 'none', number> = { estimate: 0, ceiling: 1, none: 2 }

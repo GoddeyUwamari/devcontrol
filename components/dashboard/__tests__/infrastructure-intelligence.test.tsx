@@ -7,18 +7,17 @@
  * replaces in the visible title), and links to the findings only when a risk
  * is identified.
  *
- * System Health is DevControl's own /health check, never the customer's AWS:
- * its one caption says so in every state, "responding" is claimed only when
- * operational, and its title links to /admin/monitoring (the System Status
- * hotfix: /observability has no page).
+ * DevControl service status is DevControl's own /health check, never the
+ * customer's AWS: "responding" is claimed only when operational, and the card
+ * has no link (PR-UI-b removed the /status arrow; §F row 7).
  */
 import { describe, it, expect } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { InfrastructureIntelligence, parseTopRiskSeverity, topRiskTitle } from '../infrastructure-intelligence'
 
-const OPERATIONAL = { value: 'Operational', caption: 'API and database responding · not your AWS resources', operational: true, color: 'var(--text-success)', dotColor: 'green' }
-const DEGRADED = { value: 'Degraded', caption: "DevControl's own services are degraded. Not a status of your AWS resources.", operational: false, color: 'var(--text-warning)', dotColor: 'orange' }
+const OPERATIONAL = { value: 'Operational', caption: "DevControl's API and database are responding. This is our service, not your AWS resources. · Checked today, 8:37 PM", operational: true, color: 'var(--text-success)', dotColor: 'green' }
+const DEGRADED = { value: 'Degraded', caption: 'Some DevControl services are slow or failing. Figures on this page may be delayed.', operational: false, color: 'var(--text-warning)', dotColor: 'orange' }
 
 function renderRow(overrides: Partial<ComponentProps<typeof InfrastructureIntelligence>> = {}) {
   return render(<InfrastructureIntelligence topRisk={null} topRiskStatus="unavailable" aiSummaryLoading={false} systemStatus={OPERATIONAL} {...overrides} />)
@@ -144,30 +143,28 @@ describe('Top Risk link', () => {
   })
 })
 
-describe('DevControl System Health is DevControl\'s own health, not customer AWS', () => {
-  it('titles the card "DevControl System Health" (not a link) and its one arrow opens /status', () => {
+describe('DevControl service status is DevControl\'s own health, not customer AWS', () => {
+  it('titles the card "DevControl service status" (not a link) and has no link at all', () => {
     renderRow()
-    expect(screen.getByText('DevControl System Health').closest('a')).toBeNull()
-    const links = within(healthCard()).getAllByRole('link')
-    expect(links).toHaveLength(1)
-    expect(links[0]).toHaveAccessibleName('Open DevControl status')
-    expect(links[0]).toHaveAttribute('href', '/status')
+    expect(screen.getByText('DevControl service status').closest('a')).toBeNull()
+    expect(within(healthCard()).queryAllByRole('link')).toHaveLength(0)
+    expect(healthCard().textContent).not.toMatch(/System Health|Open DevControl status/)
   })
 
-  it('operational: "Operational", one caption ("responding · not your AWS resources"), and a green tint', () => {
+  it('operational: "Operational", one caption ("responding … not your AWS resources"), and a green tint', () => {
     renderRow()
     const card = healthCard()
     expect(card).toHaveTextContent('Operational')
-    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent('API and database responding · not your AWS resources')
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent("DevControl's API and database are responding. This is our service, not your AWS resources. · Checked today, 8:37 PM")
     expect(card.querySelectorAll('[data-testid="system-health-caption"]')).toHaveLength(1)
     expect(card.style.background).toBe('var(--bg-success)')
     expect(card.textContent).not.toMatch(/\bHealthy\b|All systems|All API & database services live/i)
   })
 
-  it('not operational: existing wording, no "responding" claim, not-your-AWS still on the face, no green tint', () => {
+  it('not operational: its own wording, no "responding" claim, no green tint', () => {
     renderRow({ systemStatus: DEGRADED })
     const card = healthCard()
-    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent("DevControl's own services are degraded. Not a status of your AWS resources.")
+    expect(within(card).getByTestId('system-health-caption')).toHaveTextContent('Some DevControl services are slow or failing. Figures on this page may be delayed.')
     expect(card.textContent).not.toMatch(/responding|Live/)
     expect(card.querySelectorAll('[data-testid="system-health-caption"]')).toHaveLength(1)
     expect(card.style.background).toBe('var(--surface-2)')
@@ -176,9 +173,9 @@ describe('DevControl System Health is DevControl\'s own health, not customer AWS
   it('the longer explanation is behind the info button, not on the face', () => {
     renderRow()
     expect(healthCard().textContent).not.toMatch(/health check/)
-    fireEvent.click(within(healthCard()).getByRole('button', { name: 'About DevControl System Health' }))
+    fireEvent.click(within(healthCard()).getByRole('button', { name: 'About DevControl service status' }))
     const dialog = screen.getByRole('dialog', { name: 'How this is calculated' })
-    expect(dialog).toHaveTextContent('DevControl System Health')
+    expect(dialog).toHaveTextContent('DevControl service status')
     expect(dialog).toHaveTextContent("Measures whether DevControl's API and database respond to a health check. This indicator reflects DevControl application availability, not your connected AWS infrastructure uptime.")
     expect(dialog.textContent).not.toMatch(/telemetry/i)
   })

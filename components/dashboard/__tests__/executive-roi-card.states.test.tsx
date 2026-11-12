@@ -1,28 +1,33 @@
 /**
  * CAT-3 (§4.1, CAT-D11, C3-D1): one explicit line per situation, and never a
  * "nothing to save" conclusion from an empty list (a completed scan does not
- * record whether each check succeeded).
+ * record whether each check succeeded). Since PR-UI-b (DB-D12 S1) these lines
+ * are the header of Cost-Saving Opportunities, rendered here inside that card;
+ * ceilings are one line per resource type in the weekly email's wording (DB-D13).
  */
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { ExecutiveRoiCard } from '../executive-roi-card'
-import type { OpportunityEvaluationState } from '../savings-opportunities'
+import { EstimatedSavingsSummary } from '../executive-roi-card'
+import { SavingsOpportunities, type OpportunityEvaluationState } from '../savings-opportunities'
 
 // Same pattern as no-unsupported-no-opportunities.test.tsx.
 const NO_OPPORTUNITIES_CLAIM = /no (active )?(cost[- ])?(saving|optimi[sz]ation)s? ?(opportunit|found|detected|identified)|no savings|nothing to optimi|no waste/i
 
-type Props = Parameters<typeof ExecutiveRoiCard>[0]
+type Props = Parameters<typeof EstimatedSavingsSummary>[0]
 const BASE: Props = { monthlySavingsLabel: null, annualSavingsLabel: null, isDemoActive: false }
 
 function renderCard(props: Partial<Props>) {
-  const view = render(<ExecutiveRoiCard {...BASE} {...props} />)
-  const card = view.container.firstElementChild as HTMLElement
+  const view = render(
+    <SavingsOpportunities items={[]} evaluationState="in_progress" totalActiveCount={null} summary={<EstimatedSavingsSummary {...BASE} {...props} />} />,
+  )
+  const card = view.getByTestId('savings-summary')
   return { ...view, card, text: () => card.textContent ?? '' }
 }
 
 function expectCommon(text: string) {
-  expect(screen.getByRole('heading', { name: 'Estimated savings' })).toBeInTheDocument()
-  expect(screen.getByText('View findings →').closest('a')!.getAttribute('href')).toBe('/cost-optimization')
+  expect(screen.getByRole('heading', { name: 'Cost-Saving Opportunities' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Estimated savings' })).toBeNull()
+  expect(screen.getByText('View all →').closest('a')!.getAttribute('href')).toBe('/cost-optimization')
   expect(text).not.toMatch(NO_OPPORTUNITIES_CLAIM)
   expect(text).not.toMatch(/Executive ROI|realized|View report/)
 }
@@ -96,9 +101,14 @@ describe('one line per situation', () => {
     expect(screen.getByText('1 finding found; none has a dollar estimate yet.')).toBeInTheDocument()
   })
 
-  it('findings whose only figure is the S3 lifecycle ceiling: shown as an upper bound', () => {
-    const { text } = renderCard({ evaluationState: 'evaluated', activeCount: 2, ceilingLabel: '$12.00' })
-    expect(text()).toContain('Up to $12.00/month · S3 lifecycle, upper bound')
+  it('findings whose only figures are ceilings: one upper-bound line per type, never S3 for DynamoDB', () => {
+    const { text } = renderCard({ evaluationState: 'evaluated', activeCount: 2, ceilingByResourceType: { DynamoDB: 3, S3: 12 } })
+    expect(screen.getAllByTestId('savings-ceiling-line').map((l) => l.textContent)).toEqual([
+      'Up to $12.00/month if S3 data qualifies for Standard-IA (upper bound).',
+      'Up to $3.00/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound).',
+    ])
+    expect(text()).not.toContain('none has a dollar estimate')
+    expect(text()).not.toContain('S3 lifecycle')
     expectCommon(text())
   })
 
@@ -114,12 +124,24 @@ describe('one line per situation', () => {
     expectCommon(text())
   })
 
-  it('an estimate and a ceiling: the ceiling is shown apart, never added', () => {
-    const { text } = renderCard({ monthlySavingsLabel: '$94.50', annualSavingsLabel: '$1,134.00', ceilingLabel: '$12.00', evaluationState: 'evaluated', activeCount: 2 })
+  it('an estimate and ceilings: each ceiling is its own line, shown apart, never added', () => {
+    const { text } = renderCard({ monthlySavingsLabel: '$94.50', annualSavingsLabel: '$1,134.00', ceilingByResourceType: { S3: 12, DynamoDB: 3 }, evaluationState: 'evaluated', activeCount: 2 })
     expect(text()).toContain('$94.50')
-    expect(text()).toContain('Plus up to $12.00/month from S3 lifecycle (upper bound)')
+    expect(screen.getAllByTestId('savings-ceiling-line').map((l) => l.textContent)).toEqual([
+      'Plus up to $12.00/month if S3 data qualifies for Standard-IA (upper bound, not included above).',
+      'Plus up to $3.00/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above).',
+    ])
+    expect(text()).toContain('Potential annual savings')
     expect(text()).not.toContain('$106.50')
+    expect(text()).not.toContain('$109.50')
     expectCommon(text())
+  })
+
+  it('a ceiling line is never green (only the estimate is)', () => {
+    renderCard({ monthlySavingsLabel: '$94.50', annualSavingsLabel: '$1,134.00', ceilingByResourceType: { S3: 12 }, evaluationState: 'evaluated', activeCount: 2 })
+    const line = screen.getByTestId('savings-ceiling-line')
+    expect(line.getAttribute('style') ?? '').not.toContain('success')
+    expect(line.className).toContain('text-ink-muted')
   })
 })
 

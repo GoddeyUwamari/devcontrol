@@ -49,7 +49,9 @@ describe('CAT-3: replaced in-app claims stay gone', () => {
   })
 
   it('the replacements are present', () => {
-    expect(read('components/dashboard/executive-roi-card.tsx')).toContain('Estimated savings')
+    // "Estimated savings" was a card heading; since PR-UI-b (DB-D12 S1) the same figures are the
+    // Cost-Saving Opportunities header, labelled "Estimated monthly savings".
+    expect(read('components/dashboard/executive-roi-card.tsx')).toContain('Estimated monthly savings')
     expect(read('app/(app)/costs/efficiency/page.tsx')).toContain("'Stopped or Starting Resources'")
     expect(read('app/(app)/costs/efficiency/page.tsx')).toContain("'Estimated at running rates; AWS charges less while instances are stopped.'")
     expect(read('app/(app)/infrastructure/page.tsx')).toContain('Remove unattached Elastic IPs')

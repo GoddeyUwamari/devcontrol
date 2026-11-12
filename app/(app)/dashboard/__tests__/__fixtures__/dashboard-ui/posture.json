@@ -9,8 +9,7 @@
     "71 {class=text-kpi text-ink}",
     "/ 100 {class=text-body text-ink-muted}",
     "[icon]",
-    "Stable {color=var(--app-color-ink-success-strong) class=text-label}",
-    "Composite · Cost 96 · Security 57 · Alert coverage 60 {class=text-meta text-ink-muted}"
+    "Stable {color=var(--app-color-ink-success-strong) class=text-label}"
   ],
   "section": [
     "[icon]",

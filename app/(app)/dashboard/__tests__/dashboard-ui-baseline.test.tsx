@@ -271,6 +271,9 @@ function dump(root: Element | null): string[] | null {
   return out
 }
 
+// Each pin renders the whole page once per state; under a loaded machine that exceeds the 5 s default.
+const LOOP_TIMEOUT_MS = 30_000
+
 const renderDashboard = () => render(<QueryClientProvider client={client}><DashboardPage /></QueryClientProvider>)
 const kpi = (href: string) => screen.getAllByTestId('kpi-card').find((c) => c.querySelector(`a[href="${href}"]`)) as HTMLElement
 const card = (title: string) => screen.queryAllByText(title).map((el) => el.closest('.rounded-2xl')).find(Boolean) ?? null
@@ -289,7 +292,8 @@ async function settled(opts: { checking?: boolean } = {}) {
 }
 
 const header = () => dump(screen.getByRole('heading', { level: 1 }).parentElement)
-const footer = (container: HTMLElement) => dump(container.firstElementChild?.lastElementChild ?? null)
+// The old note's or the new row's own element; null when the page renders neither (the row is omitted).
+const footer = (container: HTMLElement) => dump(container.querySelector('[data-testid="data-refresh-note"], [data-testid="data-freshness"]'))
 
 // ── Pins ──
 
@@ -314,7 +318,7 @@ describe('header', () => {
       client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     }
     pin('header.json', result)
-  })
+  }, LOOP_TIMEOUT_MS)
 })
 
 describe('DevControl service card', () => {
@@ -339,7 +343,7 @@ describe('DevControl service card', () => {
       client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     }
     pin('service-card.json', result)
-  })
+  }, LOOP_TIMEOUT_MS)
 })
 
 describe('footer', () => {
@@ -363,7 +367,7 @@ describe('footer', () => {
       client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     }
     pin('footer.json', result)
-  })
+  }, LOOP_TIMEOUT_MS)
 })
 
 describe('savings cards', () => {
@@ -388,7 +392,7 @@ describe('savings cards', () => {
       client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     }
     pin('savings.json', result)
-  })
+  }, LOOP_TIMEOUT_MS)
 })
 
 describe('posture area', () => {
@@ -398,7 +402,7 @@ describe('posture area', () => {
     renderDashboard()
     await settled()
     pin('posture.json', { kpi: dump(kpi('/infrastructure')), section: dump(screen.getByTestId('posture-section')) })
-  })
+  }, LOOP_TIMEOUT_MS)
 })
 
 it('the fixture clock and zone are what the pins assume', () => {

@@ -10,6 +10,12 @@ interface BackendHealthResponse {
   environment?: string;
 }
 
+/** A /health answer of 500 whose body reports the database as disconnected. */
+function databaseDisconnected(error: unknown): boolean {
+  const response = (error as { response?: { status?: number; data?: Partial<BackendHealthResponse> } } | null)?.response;
+  return response?.status === 500 && response.data?.database === 'disconnected';
+}
+
 /**
  * Get overall system health by checking the real backend's /health endpoint
  * (single monolithic EC2 backend — see backend/src/server.ts).
@@ -50,7 +56,10 @@ export const getSystemHealth = async (): Promise<SystemHealth> => {
     const responseTime = Date.now() - startTime;
 
     return {
-      status: 'disrupted',
+      // The API answered, but its database check failed (server.ts /health:
+      // 500 with database "disconnected"): degraded, not unreachable. A
+      // timeout, a network error or any other non-2xx stays disrupted.
+      status: databaseDisconnected(error) ? 'degraded' : 'disrupted',
       servicesUp: 0,
       totalServices: 1,
       healthPercentage: 0,
