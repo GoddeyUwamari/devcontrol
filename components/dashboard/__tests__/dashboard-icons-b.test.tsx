@@ -60,6 +60,10 @@ describe('Top Risk: filled status icon by severity (mock §8)', () => {
     expect(icon.getAttribute('data-glyph')).toBe(glyph)
     expect(icon.getAttribute('aria-hidden')).toBe('true')
     expect(icon.getAttribute('width')).toBe('20')
+    // The card is tinted (--bg-danger / --bg-warning): the on-tint fill (ruling 1).
+    expect(icon.getAttribute('data-on-tint')).toBe('true')
+    if (kind === 'warning') expect(icon.getAttribute('class')).toContain('fill-[var(--app-color-ink-warning-strong)]')
+    else expect(icon.style.fill).toBe('var(--fill-danger)')
     expect(topRiskCard().querySelector('.lucide-triangle-alert, .lucide-alert-triangle')).toBeNull()
     expect(within(topRiskCard()).getByText('Open SSH to the internet')).toBeInTheDocument()
     expect(within(topRiskCard()).getByTestId('top-risk-severity')).toHaveTextContent(chip)
@@ -116,6 +120,9 @@ describe('DevControl service status: filled status icon per state (mock §2)', (
     expect(icon.getAttribute('data-status-kind')).toBe(kind)
     expect(icon.getAttribute('data-glyph')).toBe(glyph)
     expect(icon.getAttribute('aria-hidden')).toBe('true')
+    // Only Operational tints the card; Degraded's warning icon sits on --surface-2 with its own fill.
+    expect(icon.getAttribute('data-on-tint')).toBe(state === 'operational' ? 'true' : null)
+    if (state === 'degraded') expect(icon.style.fill).toBe('var(--fill-warning)')
     const pill = within(card).getByTestId('system-health-status')
     expect(pill.textContent).toBe(value)
     const pillIcon = pill.querySelector('svg')!
@@ -166,6 +173,9 @@ describe('EvidenceBadge: a status tier uses StatusLabel, a trend keeps its arrow
     expect(icon.getAttribute('data-status-kind')).toBe(kind)
     expect(icon.getAttribute('data-glyph')).toBe(glyph)
     expect(icon.getAttribute('aria-hidden')).toBe('true')
+    // The chip is on its status tint: warning takes the -strong ink there (ruling 1).
+    expect(icon.getAttribute('data-on-tint')).toBe('true')
+    expect(icon.getAttribute('class')!.includes('fill-[var(--app-color-ink-warning-strong)]')).toBe(kind === 'warning')
     expect(badge.querySelector('.lucide-trending-up, .lucide-trending-down, .lucide-minus')).toBeNull()
   })
 

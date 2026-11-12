@@ -97,7 +97,7 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
       style={{ background: style.background, borderColor: style.border }}
     >
       {severity ? (
-        TOP_RISK_STATUS_KIND[severity] && <StatusIcon kind={TOP_RISK_STATUS_KIND[severity]} size={20} className="mt-0.5" data-testid="top-risk-icon" />
+        TOP_RISK_STATUS_KIND[severity] && <StatusIcon kind={TOP_RISK_STATUS_KIND[severity]} size={20} className="mt-0.5" onTint data-testid="top-risk-icon" />
       ) : (
         // No severity (no risk, unavailable, loading, unparsed text): the neutral outline icon, unchanged.
         <AlertTriangle size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: style.color }} />
@@ -140,7 +140,8 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
       style={{ background: tint.background, borderColor: tint.border }}
     >
       {kind ? (
-        <StatusIcon kind={kind} size={20} className="mt-0.5" data-testid="system-health-icon" />
+        // Only Operational tints the card (--bg-success); the other states sit on --surface-2.
+        <StatusIcon kind={kind} size={20} className="mt-0.5" onTint={systemStatus.operational} data-testid="system-health-icon" />
       ) : (
         <CircleDashed size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: 'var(--text-secondary)' }} data-testid="system-health-icon" />
       )}

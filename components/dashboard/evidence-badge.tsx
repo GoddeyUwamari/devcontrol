@@ -68,7 +68,8 @@ export function EvidenceBadge({ label, color, direction, status, testId }: Evide
       style={{ color: toneText(color), background: toneBackground(color) }}
     >
       {status ? (
-        <StatusLabel kind={status} size={12} className="min-w-0">{label}</StatusLabel>
+        // On its own tint (toneBackground) when the colour is a status tone; neutral chips sit on --surface-1.
+        <StatusLabel kind={status} size={12} className="min-w-0" onTint={TONES[color] !== undefined}>{label}</StatusLabel>
       ) : (
         <>
           {Icon && <Icon size={12} aria-hidden="true" className="shrink-0" />}
