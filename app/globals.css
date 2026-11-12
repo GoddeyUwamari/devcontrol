@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 
 html {
   scroll-behavior: smooth;
