@@ -609,7 +609,7 @@ describe('DORA context labeling', () => {
 });
 
 describe('Comparison provenance: asOf and basis', () => {
-  it('carries when its daily trend was fetched, and states that credits are excluded (daily category charges floored to zero)', async () => {
+  it('carries when its daily trend was fetched, and states its basis (after credits and refunds, daily category charges floored to zero)', async () => {
     const orgId = await insertOrg();
     stubConnectedAccount();
     mockCostExplorer(500, [{ service: 'AWS Lambda', amount: 500 }]);
@@ -621,7 +621,7 @@ describe('Comparison provenance: asOf and basis', () => {
 
     expect(fetchedAt).toHaveBeenCalledWith(orgId, '90d');
     expect(comparison.asOf).toBe('2026-09-25T15:17:36.123Z');
-    expect(comparison.basis).toMatch(/daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded/);
+    expect(comparison.basis).toMatch(/daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero/);
     const section = (chatService as any).formatComparisonSection(comparison);
     expect(section).toMatch(/- As of: 2026-09-25T15:17:36\.123Z/);
     expect(section).toMatch(/- Basis: sum of AWS Cost Explorer daily charges per cost category/);
@@ -650,7 +650,7 @@ describe('Comparison provenance: asOf and basis', () => {
 });
 
 function dailyBasis() {
-  return 'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month-to-date spend';
+  return 'sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend';
 }
 
 describe('Credits: month-to-date spend vs the comparison window total', () => {
@@ -676,7 +676,7 @@ describe('Credits: month-to-date spend vs the comparison window total', () => {
     const formatted = format(context);
     expect(formatted).toMatch(/- Month-to-date spend: \$10\.00 \(observed spend for the period above/);
     expect(formatted).toMatch(/- Current window: .* total \$15\.00/);
-    expect(formatted).toMatch(/- Basis: .*credits and refunds are excluded, so window totals can differ from month-to-date spend/);
+    expect(formatted).toMatch(/- Basis: .*after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend/);
     expect(formatted).toMatch(/- Not the same total as month-to-date spend: this window's total \(\$15\.00\) and the month-to-date spend above \(\$10\.00\) are calculated differently \(see Basis\) -- present them as two different figures, never as the same total/);
   });
 

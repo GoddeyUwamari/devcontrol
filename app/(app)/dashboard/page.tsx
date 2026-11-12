@@ -220,11 +220,9 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['ai-summary'] })
       queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
     }
-    socket.on('metrics:costs', (data) => {
-      if (!shouldUpdate('metrics:costs')) return
-      if (data.totalCost > 0) toast.info('AWS costs updated', { description: `New total: $${data.totalCost.toFixed(2)}` })
-      invalidateAll()
-    })
+    // No 'metrics:costs' handler: the backend no longer emits it (it was a
+    // platform-wide figure, not this organization's), and costs come only from
+    // this organization's own cost endpoints.
     socket.on('alert:created', (data) => {
       if (!shouldUpdate('alert:created')) return
       toast.error(`New ${data.severity} Alert`, { description: data.message })
@@ -247,7 +245,7 @@ export default function DashboardPage() {
       invalidateAll()
     })
     return () => {
-      socket.off('metrics:costs'); socket.off('alert:created')
+      socket.off('alert:created')
       socket.off('deployment:started'); socket.off('deployment:completed'); socket.off('service:health')
     }
   }, [socket, queryClient])
@@ -642,6 +640,7 @@ export default function DashboardPage() {
                   : [{ label: `${costChange > 0 ? '+' : ''}${Math.abs(costChange)}% vs last 30 days`, color: costDeltaColor, direction: costChange > 0 ? 'up' : costChange < 0 ? 'down' : 'flat' }]
               }
               caption={spendCard?.caption}
+              secondaryCaption={spendCard?.previousMonth}
               sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
               info={spendCard?.evidence ? {
                 align: 'start',

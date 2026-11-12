@@ -53,7 +53,7 @@ jest.mock('@aws-sdk/client-cost-explorer', () => {
   };
 });
 
-import awsCostService from '../aws-cost.service';
+import awsCostService, { monthToDatePeriodUtc } from '../aws-cost.service';
 import { StatsController } from '../../controllers/stats.controller';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
@@ -97,9 +97,11 @@ async function insertOrgWithAwsAccount(): Promise<string> {
   return orgId;
 }
 
+// The current UTC month's result, with its TimePeriod as Cost Explorer returns it.
 function costExplorerResponse(service: string, amount: string) {
+  const { start, end } = monthToDatePeriodUtc(new Date());
   return {
-    ResultsByTime: [{ Groups: [{ Keys: [service], Metrics: { UnblendedCost: { Amount: amount } } }] }],
+    ResultsByTime: [{ TimePeriod: { Start: start, End: end }, Groups: [{ Keys: [service], Metrics: { UnblendedCost: { Amount: amount } } }] }],
   };
 }
 

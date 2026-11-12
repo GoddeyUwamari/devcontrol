@@ -394,7 +394,7 @@ describe('Costs page -- month-over-month basis', () => {
     for (const range of ['7D', '30D', '3M', '6M', '1Y']) {
       fireEvent.click(await screen.findByRole('button', { name: range }))
       const basis = await screen.findByTestId('mom-basis')
-      expect(basis.textContent).toBe("Finished days this month vs same days last month · not the selected range · Credits/refunds excluded · today's spend still being billed")
+      expect(basis.textContent).toBe("Finished days this month vs same days last month · not the selected range · After credits and refunds; amounts below $0 count as $0 · today's spend still being billed")
     }
     // The comparison is fetched once, not per range.
     expect(mockGetCostSummary).toHaveBeenCalledTimes(1)
@@ -426,7 +426,7 @@ describe('Costs page -- month-over-month basis', () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: momMissing('unavailable') })
     renderPage()
 
-    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Finished days this month vs same days last month · not the selected range · Credits/refunds excluded')
+    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Finished days this month vs same days last month · not the selected range · After credits and refunds; amounts below $0 count as $0')
   })
 })
 
@@ -462,23 +462,23 @@ describe('Costs page -- spike banner', () => {
 })
 
 describe('Costs page -- trend basis', () => {
-  it('says the Spend Trend excludes credits and refunds (the backend floors each category at $0)', async () => {
+  it('says the Spend Trend is after credits and refunds, each category floored at $0', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(0), monthOverMonth: mom(0, 0) })
     renderPage()
-    expect(await screen.findByText(/from Cost Explorer · Credits\/refunds excluded/)).toBeInTheDocument()
+    expect(await screen.findByText(/from Cost Explorer · After credits and refunds; amounts below \$0 count as \$0/)).toBeInTheDocument()
   })
 
   it('the month-over-month strip, built from the same floored trend, says credits/refunds are excluded', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(14.2, 1.42) })
     renderPage()
-    expect((await screen.findByTestId('mom-basis')).textContent).toContain('Credits/refunds excluded')
+    expect((await screen.findByTestId('mom-basis')).textContent).toContain('After credits and refunds; amounts below $0 count as $0')
   })
 
-  it('Cost by Service, summed from the trend categories, says credits/refunds are excluded', async () => {
+  it('Cost by Service, summed from the trend categories, states the after-credits, floored basis', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(0, 0) })
     renderPage()
     const basis = await screen.findByTestId('cost-by-service-basis')
-    expect(basis.textContent).toMatch(/^AWS Cost Explorer · selected range \(.+\) · Credits\/refunds excluded$/)
+    expect(basis.textContent).toMatch(/^AWS Cost Explorer · selected range \(.+\) · After credits and refunds; amounts below \$0 count as \$0$/)
   })
 
   it('the exported CSV opens with the same basis row before its header', async () => {
@@ -497,7 +497,7 @@ describe('Costs page -- trend basis', () => {
     fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
     expect(click).toHaveBeenCalled()
     const lines = (await blob!.text()).split('\n')
-    expect(lines[0]).toBe('"AWS Cost Explorer daily totals · Credits/refunds excluded"')
+    expect(lines[0]).toBe('"AWS Cost Explorer daily totals · After credits and refunds; amounts below $0 count as $0"')
     expect(lines[1]).toBe('"Date","Service","Cost"')
     expect(lines[2]).toMatch(/^"2026-09-26",/)
     click.mockRestore()

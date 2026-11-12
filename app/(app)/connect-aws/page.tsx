@@ -13,6 +13,7 @@ import {
   CONNECTED_PAGE_SUBTITLE,
   CONNECTED_TOAST,
   CONNECTION_PAGE_TITLE,
+  COST_EXPLORER_BILLING_NOTE,
   MANUAL_SETUP_ID,
   PAGE_SUBTITLE,
   PAGE_TITLE,
@@ -166,6 +167,7 @@ export default function ConnectAwsPage() {
                   </li>
                 ))}
               </ul>
+              <p className="text-meta text-ink-muted mt-3 mb-0" data-testid="cost-explorer-billing-note">{COST_EXPLORER_BILLING_NOTE}</p>
 
               <p className="text-label text-ink-muted uppercase tracking-[0.04em] mt-6 mb-3.5">{SIDE_SECURITY_TITLE}</p>
               <ul className="space-y-2.5">

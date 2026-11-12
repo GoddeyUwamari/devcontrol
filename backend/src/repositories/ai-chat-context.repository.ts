@@ -448,6 +448,9 @@ export class AIChatContextRepository {
         ...costSectionFields('billed'),
         costExplorer,
         comparison,
+        previousMonth: monthlyCost.previousMonth
+          ? { start: monthlyCost.previousMonth.period.start, endExclusive: monthlyCost.previousMonth.period.end, amount: roundCents(monthlyCost.previousMonth.total) }
+          : null,
       };
     }
 

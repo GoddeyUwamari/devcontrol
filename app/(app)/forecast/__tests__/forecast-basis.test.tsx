@@ -57,11 +57,11 @@ beforeEach(() => {
 })
 
 describe('/forecast basis', () => {
-  it('a real forecast says it is projected from Cost Explorer daily totals, credits/refunds excluded', async () => {
+  it('a real forecast says it is projected from Cost Explorer daily totals, after credits and refunds, floored at $0', async () => {
     getForecast.mockResolvedValue(forecast('00000000-0000-4000-8000-000000000001'))
     render(<ForecastPage />)
     const basis = await screen.findByTestId('forecast-basis')
-    expect(basis.textContent).toBe('Projected from AWS Cost Explorer daily totals · Credits/refunds excluded')
+    expect(basis.textContent).toBe('Projected from AWS Cost Explorer daily totals · After credits and refunds; amounts below $0 count as $0')
   })
 
   it('the demo forecast makes no Cost Explorer claim', async () => {

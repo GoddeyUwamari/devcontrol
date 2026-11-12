@@ -1,0 +1,8 @@
+{
+  "TREND_TOTALS_NOTE": "After credits and refunds; amounts below $0 count as $0",
+  "chartSubtitle": {
+    "7d": "Daily cost breakdown by service category over time · After credits and refunds; amounts below $0 count as $0",
+    "6mo": "Monthly cost breakdown by service category · After credits and refunds; amounts below $0 count as $0",
+    "1yr": "Monthly cost breakdown by service category · After credits and refunds; amounts below $0 count as $0"
+  }
+}

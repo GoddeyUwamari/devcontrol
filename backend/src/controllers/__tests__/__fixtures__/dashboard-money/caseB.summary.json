@@ -1,0 +1,85 @@
+{
+  "success": true,
+  "data": {
+    "spend": {
+      "state": "available",
+      "source": "AWS Cost Explorer",
+      "provenance": "actual",
+      "asOf": "2026-11-01T00:37:00.000Z",
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": {
+        "kind": "range",
+        "start": "2026-11-01",
+        "endExclusive": "2026-11-02"
+      },
+      "completeness": null,
+      "coverage": null,
+      "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete",
+      "derivedFrom": null,
+      "data": {
+        "amount": 0,
+        "basis": "billed_month_to_date",
+        "topServices": [],
+        "lastDayInProgress": true,
+        "finishedThrough": "2026-10-30",
+        "previousMonth": {
+          "start": "2026-10-01",
+          "endExclusive": "2026-11-01",
+          "amount": 412.3
+        }
+      },
+      "retrievedAt": "2026-11-01T00:37:00.000Z",
+      "freshness": null,
+      "classification": "billed",
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthOverMonth": {
+      "state": "unavailable",
+      "source": "DevControl month-over-month comparison",
+      "provenance": null,
+      "asOf": null,
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": null,
+      "completeness": null,
+      "coverage": null,
+      "reason": "cannot be calculated: AWS Cost Explorer daily trend: not available",
+      "derivedFrom": [
+        {
+          "source": "AWS Cost Explorer daily trend",
+          "state": "unavailable",
+          "provenance": null,
+          "scope": {
+            "kind": "cost_explorer",
+            "connectedAccountId": "123456789012",
+            "linkedAccountFilter": "none",
+            "consolidatedBilling": "unknown",
+            "regions": "all"
+          },
+          "period": null,
+          "asOf": null
+        }
+      ],
+      "data": null,
+      "retrievedAt": "2026-11-01T00:37:00.000Z",
+      "freshness": null,
+      "classification": null,
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    }
+  }
+}

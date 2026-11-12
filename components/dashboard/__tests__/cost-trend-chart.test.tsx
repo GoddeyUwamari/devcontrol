@@ -44,8 +44,15 @@ describe('CostTrendChart -- date range tabs', () => {
 })
 
 describe('CostTrendChart -- basis', () => {
-  it('says its totals exclude credits and refunds', () => {
+  it('says its totals are after credits and refunds, floored at $0 (never "excluded")', () => {
     render(<CostTrendChart data={sampleData} dateRange="7d" onDateRangeChange={() => {}} />)
-    expect(screen.getByText(/Credits\/refunds excluded/)).toBeInTheDocument()
+    expect(screen.getByText(/^Daily cost breakdown .* · After credits and refunds; amounts below \$0 count as \$0$/)).toBeInTheDocument()
+    expect(screen.queryByText(/excluded/i)).toBeNull()
+  })
+
+  it.each(['6mo', '1yr'] as const)('%s: monthly Cost Explorer buckets are called monthly, not daily', (range) => {
+    render(<CostTrendChart data={sampleData} dateRange={range} onDateRangeChange={() => {}} />)
+    expect(screen.getByText(/^Monthly cost breakdown by service( category)? · After credits and refunds; amounts below \$0 count as \$0$/)).toBeInTheDocument()
+    expect(screen.queryByText(/Daily cost breakdown/)).toBeNull()
   })
 })

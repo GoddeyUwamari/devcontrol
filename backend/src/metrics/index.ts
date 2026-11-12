@@ -1,6 +1,4 @@
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client'
-import { WebSocketServer } from '../websocket/server'
-import { MetricsEvents } from '../services/metricsEvents'
 
 export const register = new Registry()
 
@@ -109,8 +107,11 @@ export const alertsMTTRMinutes = new Gauge({
   registers: [register],
 })
 
-// Update business metrics from database and AWS
-export async function updateBusinessMetrics(dbPool: any, wsServer?: WebSocketServer) {
+// Update business metrics from database and AWS.
+// Prometheus gauges only: this platform-wide loop never emits a socket event.
+// It reads across every organization, so anything it sent to an organization
+// would be another organization's data, or a sum over all of them.
+export async function updateBusinessMetrics(dbPool: any) {
   try {
     // Services
     const services = await dbPool.query(`
@@ -138,20 +139,6 @@ export async function updateBusinessMetrics(dbPool: any, wsServer?: WebSocketSer
       const awsCost = Number(awsTotalRecord.rows[0].cost_per_month)
       infrastructureCostTotal.set(awsCost)
       console.log(`Updated infrastructure cost from AWS Cost Explorer: $${awsCost.toFixed(2)}`)
-
-      // Emit WebSocket event for cost update
-      if (wsServer) {
-        const metricsEvents = new MetricsEvents(wsServer)
-        // Get all organizations and emit to each
-        const organizations = await dbPool.query('SELECT id FROM organizations WHERE status = $1', ['active'])
-        organizations.rows.forEach((org: any) => {
-          metricsEvents.costsUpdated(org.id, {
-            total: awsCost,
-            monthToDate: awsCost,
-            trend: 'stable',
-          })
-        })
-      }
     } else {
       // Fallback to summing database costs (for resources not synced with AWS)
       const infra = await dbPool.query(`
@@ -164,20 +151,6 @@ export async function updateBusinessMetrics(dbPool: any, wsServer?: WebSocketSer
       if (infra.rows.length > 0) {
         const totalCost = Number(infra.rows[0].total_cost)
         infrastructureCostTotal.set(totalCost)
-
-        // Emit WebSocket event for cost update
-        if (wsServer) {
-          const metricsEvents = new MetricsEvents(wsServer)
-          // Get all organizations and emit to each
-          const organizations = await dbPool.query('SELECT id FROM organizations WHERE is_active = $1 AND deleted_at IS NULL', [true])
-          organizations.rows.forEach((org: any) => {
-            metricsEvents.costsUpdated(org.id, {
-              total: totalCost,
-              monthToDate: totalCost,
-              trend: 'stable',
-            })
-          })
-        }
       }
     }
 

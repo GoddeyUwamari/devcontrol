@@ -63,7 +63,7 @@ export interface CostComparison {
  * each floored at $0 (the Dashboard's comparison uses the same figures).
  */
 export const COMPARISON_BASIS =
-  'sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month-to-date spend';
+  'sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend';
 
 /** How each state reads in model-facing text (shared with every AI surface). */
 const STATE_LABELS = CONTEXT_STATE_LABELS;
@@ -149,6 +149,14 @@ export interface ChatCostFigures {
 export type ChatCostSection = ContextSection<ChatCostFigures> & {
   costExplorer: { state: ContextDataState; reason: string | null };
   comparison: CostComparison;
+  /**
+   * The previous UTC calendar month's net Cost Explorer total, from the same
+   * request as the month to date; null or absent when there is none (no Cost
+   * Explorer result, or an estimate). Not part of `data`, so AI surfaces that
+   * render the cost section are unchanged; only the cost summary endpoint
+   * exposes it.
+   */
+  previousMonth?: { start: string; endExclusive: string; amount: number } | null;
 };
 
 export interface ChatContext {
@@ -549,8 +557,9 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
 
     lines.push(`- Current window: ${currentWindow.start} through ${currentWindow.end} inclusive (${formatInclusiveRange(currentWindow.start, currentWindow.end)}), total ${this.formatMoney(currentWindowTotal)} (${coverage.currentDays} of ${coverage.expectedCurrentDays} days of data)`);
     lines.push(`- Previous window: ${previousWindow.start} through ${previousWindow.end} inclusive (${formatInclusiveRange(previousWindow.start, previousWindow.end)}), total ${this.formatMoney(previousWindowTotal)} (${coverage.previousDays} of ${coverage.expectedPreviousDays} days of data)`);
-    // The window total is summed from daily category charges with credits
-    // excluded (see Basis); month-to-date spend is Cost Explorer's own total.
+    // The window total is summed from daily category charges after credits,
+    // each category floored at $0 (see Basis); month-to-date spend is Cost
+    // Explorer's own net total.
     if (monthToDateSpend !== null && Math.round(monthToDateSpend * 100) !== Math.round(currentWindowTotal * 100)) {
       lines.push(`- Not the same total as month-to-date spend: this window's total (${this.formatMoney(currentWindowTotal)}) and the month-to-date spend above (${this.formatMoney(monthToDateSpend)}) are calculated differently (see Basis) -- present them as two different figures, never as the same total`);
     }

@@ -177,6 +177,16 @@ beforeEach(() => {
   mockGetConnectionChecks.mockResolvedValue(null)
 })
 
+describe('Connect AWS page: Cost Explorer billing note (DB-D16)', () => {
+  it.each([['connected', true], ['not connected', false]] as const)('%s: the sidebar states the founder-approved wording, once', async (_name, connected) => {
+    if (connected) mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
+    renderPage()
+    const note = await screen.findByTestId('cost-explorer-billing-note')
+    expect(note.textContent).toBe('Cost Explorer requests are billed at USD 0.01 per request. Results are cached for 4 hours, so a typical account makes only a few requests per day.')
+    expect(screen.getAllByTestId('cost-explorer-billing-note')).toHaveLength(1)
+  })
+})
+
 describe('Connect AWS page: which view opens', () => {
   it('T1 connected on mount: board 4, no setup form, connect-init and connect never called', async () => {
     mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)

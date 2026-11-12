@@ -46,6 +46,12 @@ export interface SpendEvidence {
    * month-over-month comparison never extends past it. null for estimates.
    */
   finishedThrough: string | null;
+  /**
+   * Only with spendSection(costs, { previousMonth: true }) (the cost summary
+   * endpoint): the previous UTC calendar month's net Cost Explorer total, from
+   * the same request as the month to date; null when there is none.
+   */
+  previousMonth?: { start: string; endExclusive: string; amount: number } | null;
 }
 
 export interface MonthOverMonthEvidence {
@@ -82,7 +88,7 @@ function nextDay(date: string): string {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
-export async function spendSection(costs: ChatCostSection): Promise<ContextSection<SpendEvidence>> {
+export async function spendSection(costs: ChatCostSection, options: { previousMonth?: boolean } = {}): Promise<ContextSection<SpendEvidence>> {
   if (costs.provenance === 'actual' && costs.data) {
     const period: EvidencePeriod | null = costs.period?.kind === 'range' ? costs.period : null;
     const lastDay = period?.kind === 'range' ? lastIncludedDay(period.endExclusive) : null;
@@ -97,6 +103,7 @@ export async function spendSection(costs: ChatCostSection): Promise<ContextSecti
         topServices: (topSpenders ?? []).map(s => ({ service: s.service, amount: s.cost, sharePercent: s.percentage })),
         lastDayInProgress,
         finishedThrough: costs.comparison.finishedThrough,
+        ...(options.previousMonth ? { previousMonth: costs.previousMonth ?? null } : {}),
       },
       reason: lastDayInProgress ? 'month-to-date; the last day of the period is still being billed, so it is incomplete' : null,
     }));

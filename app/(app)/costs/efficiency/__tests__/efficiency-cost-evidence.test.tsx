@@ -76,9 +76,9 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('spend breakdown: a failure is not "no data"', () => {
-  it('says its totals exclude credits and refunds', async () => {
+  it('says its totals are after credits and refunds, floored at $0', async () => {
     renderPage()
-    expect(await screen.findByText('Monthly cost by service · Last 6 months · Credits/refunds excluded')).toBeInTheDocument()
+    expect(await screen.findByText('Monthly cost by service · Last 6 months · After credits and refunds; amounts below $0 count as $0')).toBeInTheDocument()
   })
 
   it('a failed trend request reads as a failure', async () => {

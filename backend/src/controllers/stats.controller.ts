@@ -159,7 +159,7 @@ export class StatsController {
 
     try {
       const { costs } = await this.costContext.gatherCostContext(organizationId);
-      const [spend, monthOverMonth] = await Promise.all([spendSection(costs), monthOverMonthSection(costs)]);
+      const [spend, monthOverMonth] = await Promise.all([spendSection(costs, { previousMonth: true }), monthOverMonthSection(costs)]);
       res.json({ success: true, data: { spend, monthOverMonth } });
     } catch (error: any) {
       // The raw failure can carry SQL or AWS detail: server log only.

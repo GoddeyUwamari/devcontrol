@@ -53,17 +53,18 @@ const ESTIMATE_SUB = 'Estimate from resource inventory · not AWS billed spend'
  * Shown instead of an estimate of $0 or less. An inventory estimate is a sum of
  * per-resource list-price estimates, so $0 means nothing was estimated (no
  * resources discovered, or none with a price) -- not that the account costs
- * nothing. On the stats endpoint it also stands in for Cost Explorer failing,
- * no connected account, a real $0 month, and net credits, which it cannot tell
- * apart. Either way there is no figure to show.
+ * nothing. On the stats endpoint it also stands in for Cost Explorer failing
+ * or no connected account, which it cannot tell apart. Either way there is no
+ * figure to show.
  */
 export const NO_SPEND_FIGURE_SUB = 'Not available · no AWS Cost Explorer spend or inventory estimate'
 
 /**
  * Whether GET /api/platform/stats/dashboard's figure is worth showing: Cost
- * Explorer data, or an estimate above $0. The backend sends 'actual' only for a
- * Cost Explorer total above $0 and otherwise falls back to the inventory
- * estimate (AWSCostService.getMonthlySpendWithFallback). The Dashboard's
+ * Explorer data, or an estimate above $0. The backend sends 'actual' for any
+ * successful Cost Explorer result (including $0 and a net-negative credit
+ * month) and falls back to the inventory estimate only when Cost Explorer
+ * fails (AWSCostService.getMonthlySpendWithFallback). The Dashboard's
  * hasBillingData gate and describeStatsSpend both read this.
  */
 export function statsHasSpendFigure(stats: { monthlyAwsCost: number; costSource?: 'actual' | 'estimated' }): boolean {
@@ -141,7 +142,67 @@ export function noFinishedDayThisMonth(section: ContextSection<CostSpendEvidence
   return section?.provenance === 'actual' && typeof finishedThrough === 'string' && period?.kind === 'range' && finishedThrough < period.start
 }
 
+/**
+ * Day one of the month: the spend section's period is a single day and that
+ * day is still being billed, so no day of this month has finished billing.
+ */
+export function noBilledDaysThisMonth(section: ContextSection<CostSpendEvidence> | undefined): boolean {
+  const period = section?.period
+  if (section?.provenance !== 'actual' || !section.data?.lastDayInProgress || period?.kind !== 'range') return false
+  const [y, m, d] = period.start.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10) === period.endExclusive
+}
+
+/**
+ * AWS Cost Explorer has reported no charge for this month yet: a billed result
+ * with no service and $0, while no day of the month has finished (the first
+ * days of a UTC month). That is "no data yet", not a measured $0, so it is
+ * shown as "—", never "$0.00". Once a day of the month has finished, an empty
+ * result is a real $0.
+ */
+export function noChargesReportedYet(section: ContextSection<CostSpendEvidence> | undefined): boolean {
+  const data = section?.data
+  if (section?.provenance !== 'actual' || !data || data.basis !== 'billed_month_to_date') return false
+  if (data.amount !== 0 || (data.topServices?.length ?? 0) > 0) return false
+  return noBilledDaysThisMonth(section) || noFinishedDayThisMonth(section)
+}
+
+/** Why there is no figure yet, in the words the Dashboard card already uses. */
+export function noChargesYetNote(section: ContextSection<CostSpendEvidence> | undefined): string {
+  return noBilledDaysThisMonth(section) ? 'no billed days yet this month' : LATEST_DAYS_REPORTING
+}
+
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** The day before an exclusive YYYY-MM-DD end (calendar dates, UTC). */
+function dayBefore(endExclusive: string): string {
+  const [y, m, d] = endExclusive.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10)
+}
+
+/** "Nov 1–12 (UTC)", or "Nov 1 (UTC)" for one day: billed spend's own period; null for anything else. */
+export function spendPeriodLabel(section: ContextSection<CostSpendEvidence> | undefined): string | null {
+  const period = section?.period
+  if (section?.provenance !== 'actual' || period?.kind !== 'range') return null
+  return `${formatDayWindow({ start: period.start, end: dayBefore(period.endExclusive) })} (UTC)`
+}
+
+/**
+ * "October (UTC): $412.37 · latest days still updating": the previous month's
+ * net Cost Explorer total, only while no day of this month has finished (the
+ * month-to-date figure has nothing to show yet). The "latest days" note only
+ * while that month's last day is still inside Cost Explorer's reporting window.
+ */
+export function previousMonthLine(section: ContextSection<CostSpendEvidence> | undefined): string | null {
+  const previous = section?.data?.previousMonth
+  if (!previous || section?.provenance !== 'actual') return null
+  if (!noBilledDaysThisMonth(section) && !noFinishedDayThisMonth(section)) return null
+  const month = MONTH_NAME[Number(previous.start.split('-')[1]) - 1]
+  const finishedThrough = section.data?.finishedThrough
+  const stillUpdating = typeof finishedThrough !== 'string' || finishedThrough < dayBefore(previous.endExclusive)
+  return `${month} (UTC): ${formatUsd(previous.amount)}${stillUpdating ? ' · latest days still updating' : ''}`
+}
 
 /** "Oct 1–13" for an inclusive YYYY-MM-DD window within one month; "Oct 1" for a single day. */
 function formatDayWindow(window: { start: string; end: string }): string {

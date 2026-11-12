@@ -263,9 +263,14 @@ export function CostTrendChart({
           <div>
             <CardTitle className="text-section">AWS Cost Trends</CardTitle>
             <CardDescription>
-              {hasServiceBreakdown
-                ? `Daily cost breakdown by service over time · ${TREND_TOTALS_NOTE}`
-                : `Daily cost breakdown by service category over time · ${TREND_TOTALS_NOTE}`}
+              {/* 6mo and 1yr are MONTHLY Cost Explorer buckets (AWSCostService trendPeriodUtc). */}
+              {dateRange === '6mo' || dateRange === '1yr'
+                ? (hasServiceBreakdown
+                    ? `Monthly cost breakdown by service · ${TREND_TOTALS_NOTE}`
+                    : `Monthly cost breakdown by service category · ${TREND_TOTALS_NOTE}`)
+                : (hasServiceBreakdown
+                    ? `Daily cost breakdown by service over time · ${TREND_TOTALS_NOTE}`
+                    : `Daily cost breakdown by service category over time · ${TREND_TOTALS_NOTE}`)}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">

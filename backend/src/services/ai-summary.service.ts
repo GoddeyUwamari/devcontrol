@@ -376,7 +376,7 @@ export class AISummaryService {
       const partial = s.monthOverMonth.state === 'partial' ? '; some days have no daily data' : '';
       facts.push(
         `Month-to-date spend vs the same days last month: ${pct} (${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)}, ` +
-        `daily charges with credits excluded${today}${partial}).`
+        `daily charges after credits, each category floored at $0${today}${partial}).`
       );
     } else if (hasEvidence(s.spend)) {
       facts.push(`Month-over-month change: ${notAvailable(s.monthOverMonth)}. Do not describe spend as up, down, flat, or unchanged.`);

@@ -1,0 +1,10 @@
+{
+  "registered": [
+    "alert:created",
+    "deployment:completed",
+    "deployment:started",
+    "service:health"
+  ],
+  "metricsCostsHandler": "not registered",
+  "toastsAfterMetricsCosts": []
+}

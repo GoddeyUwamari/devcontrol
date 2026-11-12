@@ -27,7 +27,7 @@ import type { AccountSecurityFinding, ComplianceSeverity } from '@/lib/services/
 import type { CostSummary, RecommendationStats } from '@/lib/types'
 import type { SeverityLevel } from '@/lib/utils/severity-colors'
 import { describeCeilings } from '@/lib/savings-basis'
-import { formatUsd } from '../../costs/cost-display'
+import { formatUsd, noChargesReportedYet, noChargesYetNote } from '../../costs/cost-display'
 import { describeServicesSpend, SPEND_UNAVAILABLE_TEXT } from '../../services/SummaryTiles'
 import { SEVERITY_LABEL, STATUS_LABEL, typeLabel } from '../../services/AttentionTable'
 import { footerText, hasRegionCoverage, latestAttempt, regionCounts, type Rich } from '../../services/regionCoverage'
@@ -453,9 +453,16 @@ function spendTile(i: OverviewInputs): Tile {
     return { key: 'spend', label: 'Spend this month', value: SPEND_UNAVAILABLE_TEXT, captions: reason ? [[reason]] : [] }
   }
   const asOf = summary?.spend.asOf
+  const asOfCaption: Rich[] = asOf ? [['Cost Explorer, as of ', { iso: asOf }]] : []
+  // Nothing reported yet this month is "no data yet", not a measured $0.00 --
+  // and a "billed through" day from the previous month would contradict the label.
+  if (noChargesReportedYet(summary?.spend)) {
+    const notes = spend.notes.filter((n) => !n.startsWith('billed through'))
+    return { key: 'spend', label: 'Spend this month', value: '—', captions: [[[...notes, noChargesYetNote(summary?.spend)].join(' · ')], ...asOfCaption] }
+  }
   return {
     key: 'spend', label: 'Spend this month', value: spend.value,
-    captions: [[spend.notes.join(' · ')], ...(asOf ? [['Cost Explorer, as of ', { iso: asOf }] as Rich] : [])],
+    captions: [[spend.notes.join(' · ')], ...asOfCaption],
   }
 }
 

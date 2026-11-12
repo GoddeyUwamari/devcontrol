@@ -21,6 +21,8 @@ interface DashboardMetricCardProps {
   badges?: EvidenceBadgeProps[]
   /** The one concise basis line under the value; omitted when there is no evidence for it. Longer evidence goes in `info`. */
   caption?: string | null
+  /** A second short line under the caption, only when the card has one (e.g. the previous month's spend). */
+  secondaryCaption?: string | null
   /** Score bar; omitted whenever there is no real score. */
   progress?: { value: number; fillClassName: string; ariaValueText: string }
   /** Real historical series only — omit rather than fabricate a trend shape. */
@@ -58,7 +60,7 @@ function Sparkline({ points, color }: { points: SparklinePoint[]; color: string 
  * visualization. Detailed evidence lives in the info panel, not on the face.
  * Neither the card nor its title is a link.
  */
-export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, badges, caption, progress, sparkline, sparklineColor, info, link }: DashboardMetricCardProps) {
+export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, label, value, valueSuffix, badges, caption, secondaryCaption, progress, sparkline, sparklineColor, info, link }: DashboardMetricCardProps) {
   return (
     <div className="relative bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full flex flex-col" data-testid="kpi-card">
       <div className="flex items-center justify-between gap-2 mb-4">
@@ -87,6 +89,7 @@ export function DashboardMetricCard({ icon: Icon, iconColor, iconBackground, lab
         )}
       </div>
       {caption && <p className="text-meta text-ink-muted leading-snug mt-2.5 mb-0" data-testid="kpi-caption">{caption}</p>}
+      {secondaryCaption && <p className="text-meta text-ink-muted leading-snug mt-1 mb-0" data-testid="kpi-secondary-caption">{secondaryCaption}</p>}
       <div className="mt-auto">
         {progress && (
           <Progress
