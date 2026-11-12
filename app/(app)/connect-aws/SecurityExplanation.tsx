@@ -15,6 +15,7 @@ import {
   SEC_READ_ONLY_ACCESS,
   SEC_REMOVE,
   SEC_REMOVE_LEAD,
+  SEC_REMOVE_STACK,
   SEC_ROLE_DELETED,
 } from './connectAwsCopy'
 import { ContactLink, DisconnectSentence } from './connectAwsParts'
@@ -24,9 +25,10 @@ const CARD_TITLE = 'text-label text-ink-muted uppercase tracking-[0.04em] mb-3.5
 
 /**
  * Board 7: what DevControl can read, what the role can't do with the recommended policy set, and how
- * access works and is removed. No CloudFormation wording until the template exists (PR D2).
+ * access works and is removed. Stack wording (S-3, PR D2) only while the setup view shows the
+ * CloudFormation card: the connected view doesn't know how the role was made.
  */
-export function SecurityExplanation() {
+export function SecurityExplanation({ cloudFormation = false }: { cloudFormation?: boolean }) {
   return (
     <section id={SECURITY_ID} data-testid="security-explanation" className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className={CARD}>
@@ -58,6 +60,7 @@ export function SecurityExplanation() {
           <p><strong className="text-ink">{SEC_EXTERNAL_ID_LEAD}</strong> {SEC_EXTERNAL_ID}</p>
           <p><strong className="text-ink">{SEC_CREDENTIALS_LEAD}</strong> {SEC_CREDENTIALS}</p>
           <p><strong className="text-ink">{SEC_REMOVE_LEAD}</strong> {SEC_REMOVE}</p>
+          {cloudFormation && <p data-testid="security-remove-stack">{SEC_REMOVE_STACK}</p>}
           <p className="text-meta text-ink-muted">{SEC_ROLE_DELETED}</p>
           <p className="text-meta text-ink-muted">{SEC_DATA_BEFORE}<ContactLink>{SEC_DATA_LINK}</ContactLink>{SEC_DATA_AFTER}</p>
           <p className="text-meta text-ink-muted"><DisconnectSentence /></p>

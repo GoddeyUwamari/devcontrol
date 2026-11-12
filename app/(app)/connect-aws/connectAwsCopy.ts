@@ -32,10 +32,14 @@ export const CF_INTRO = 'The stack creates one IAM role using the same recommend
 export const CF_STEP1_TITLE = 'Launch the stack in your AWS account'
 export const CF_STEP1_BODY = 'Sign in to the AWS account you want to connect. The console opens with your External ID and role name already filled in. Tick the IAM acknowledgement, then create the stack.'
 export const CF_LAUNCH = 'Launch stack ↗'
+/** S-1 (PR D2): the template version under Launch stack, and its View template link. */
+export const cfTemplateVersion = (version: string) => `Template v${version}`
+export const CF_TEMPLATE_SEPARATOR = ' · '
+export const CF_VIEW_TEMPLATE = 'View template'
 export const CF_STEP2_TITLE = "Paste the role ARN from the stack's Outputs"
 export const CF_STEP2_BODY = 'When the stack shows CREATE_COMPLETE, open its Outputs tab and copy RoleArn.'
 export const CF_FAILED_TITLE = 'Stack failed?'
-export const CF_FAILED_BODY = 'If the stack shows ROLLBACK_COMPLETE, open its Events tab. A common cause is an existing role with the same name: launch again with another role name that starts with DevControlRole, or use that role under "Set it up by hand".'
+export const CF_FAILED_BODY = 'If the stack shows ROLLBACK_COMPLETE, open its Events tab to see why. AWS can only delete a stack in that state, so delete it before you launch again. A common cause is an existing role with the same name: launch again with another role name that starts with DevControlRole, or use that role under "Set it up by hand".'
 export const MANUAL_SUMMARY = 'Set it up by hand instead'
 
 // Board 2: manual setup.
@@ -244,6 +248,8 @@ export const SEC_CREDENTIALS_LEAD = 'Short-lived credentials.'
 export const SEC_CREDENTIALS = "DevControl doesn't ask for access keys. It uses short-lived credentials from your role, with a configured maximum of one hour."
 export const SEC_REMOVE_LEAD = 'Remove access.'
 export const SEC_REMOVE = 'Delete the role in IAM. DevControl can then no longer assume it. Credentials it already holds stop working when they expire, with a configured maximum of one hour.'
+/** S-3 (PR D2): only in the setup view while the CloudFormation card is shown. */
+export const SEC_REMOVE_STACK = 'If you created the role with the DevControl CloudFormation stack, you can delete the stack instead: that deletes the role.'
 export const SEC_ROLE_DELETED = "Deleting the role in AWS doesn't remove your connection in DevControl. This page then shows its health as failing, then lost."
 export const SEC_DATA_BEFORE = 'DevControl keeps the data it already collected. '
 export const SEC_DATA_LINK = 'Contact us'
