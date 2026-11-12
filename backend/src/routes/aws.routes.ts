@@ -22,7 +22,7 @@ import {
 import { isConnectionChanged } from '../services/aws-connection-fence'
 import { AWS_NOT_CONNECTED_CODE, AWS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages'
 import type { AssumeResult } from '../services/connection-health'
-import { compareRolePolicies, type IamSender, type PolicyCompareResult } from '../services/connect-policy-compare'
+import { CUSTOMER_ROLE_CONTRACT_VERSION, compareRolePolicies, type IamSender, type PolicyCompareResult } from '../services/connect-policy-compare'
 import { IAMClient } from '@aws-sdk/client-iam'
 import { authenticate } from '../middleware/auth.middleware'
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery'
@@ -38,6 +38,8 @@ import { runPermissionCheck, type ProbeClients } from '../services/connect-permi
 import { resolveOrganizationExternalId } from '../repositories/aws-external-id.repository'
 import { ConnectCheckSlots, type ConnectSlotRefusal } from '../services/connect-check-slots'
 import { releaseRequestConnection } from '../middleware/request-lifecycle'
+import { buildTrustPolicy } from '../services/customer-role-trust-policy'
+import { launchStackFor } from '../services/launch-stack'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -86,22 +88,6 @@ const requireCurrentOwnerForCheck = requireCurrentOwnerWith(CHECK_AGAIN_FORBIDDE
  */
 function platformAwsAccountId(): string | null {
   return parseAwsAccountId(process.env.AWS_ACCOUNT_ID)
-}
-
-function buildTrustPolicy(externalId: string, platformAccountId: string): object {
-  return {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Effect: 'Allow',
-        Principal: { AWS: `arn:aws:iam::${platformAccountId}:root` },
-        Action: 'sts:AssumeRole',
-        Condition: {
-          StringEquals: { 'sts:ExternalId': externalId },
-        },
-      },
-    ],
-  }
 }
 
 /**
@@ -198,7 +184,7 @@ async function comparePoliciesWith(
   context: string
 ): Promise<PolicyCompareResult> {
   const iam = iamClientFor(credentials)
-  if (!iam) return { unreadable: true, contractVersion: 1 }
+  if (!iam) return { unreadable: true, contractVersion: CUSTOMER_ROLE_CONTRACT_VERSION }
   return compareRolePolicies({ iam, roleArn: account.role_arn, accountId: account.account_id ?? '', context })
 }
 
@@ -262,12 +248,16 @@ router.get('/accounts/connect-init', requireCurrentOwner, async (req: Request, r
       eventName: 'aws_connection_started',
     })
 
+    // The CloudFormation link (PR D2): present only when its server switch and
+    // template configuration are valid; otherwise the response is unchanged.
+    const launchStack = launchStackFor(externalId)
     return res.json({
       success: true,
       data: {
         externalId,
         platformAccountId,
         trustPolicy: buildTrustPolicy(externalId, platformAccountId),
+        ...(launchStack ? { launchStack } : {}),
       },
     })
   } catch (err: any) {

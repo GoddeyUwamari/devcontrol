@@ -31,6 +31,7 @@ import { ConnectSetup } from './ConnectSetup'
 import { ConnectedView, type JustConnected } from './ConnectedView'
 import { DisconnectSentence } from './connectAwsParts'
 import { SecurityExplanation } from './SecurityExplanation'
+import { usableLaunchStack } from './launchStackUrl'
 
 type PageView = 'loading' | 'connected' | 'ambiguous' | 'setup'
 
@@ -190,7 +191,7 @@ export default function ConnectAwsPage() {
         </div>
 
         <div className="mt-8">
-          <SecurityExplanation />
+          <SecurityExplanation cloudFormation={view === 'setup' && usableLaunchStack(initData?.launchStack) !== null} />
         </div>
       </div>
     </div>

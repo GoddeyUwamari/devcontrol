@@ -2,7 +2,7 @@
  * The Connect AWS page (AWS connect PR E): it reads the server's connection state first, a
  * connected organization sees its connection (board 4) and never the setup form, and the setup
  * (boards 1-3, 6) shows only founder-approved copy. The CloudFormation card renders only when
- * connect-init returns launchStack, which no server sends before PR D2.
+ * connect-init returns a launchStack whose console link passes the L-6 check (PR D2).
  *
  * Also kept from before: a successful connect invalidates the dashboard's 4-hour
  * platform-dashboard-stats cache (Traffic Experiment #1 P0 fix).
@@ -17,6 +17,7 @@ import {
   ACCOUNTS_ERROR,
   ALREADY_CONNECTED_TEXT,
   AMBIGUOUS_TEXT,
+  CF_FAILED_BODY,
   CF_INTRO,
   CF_TITLE,
   CHECKING_BUTTON,
@@ -38,6 +39,7 @@ import {
   SEC_CREDENTIALS,
   SEC_EXTERNAL_ID,
   SEC_REMOVE,
+  SEC_REMOVE_STACK,
   SUPPORT_MAILTO,
   permissionFixText,
 } from '../connectAwsCopy'
@@ -90,7 +92,10 @@ const CONNECT_INIT_DATA = {
   platformAccountId: PLATFORM,
   trustPolicy: { Version: '2012-10-17', Statement: [] },
 }
-const WITH_LAUNCH_STACK = { ...CONNECT_INIT_DATA, launchStack: { url: 'https://example.test/quickcreate', templateVersion: '1.0.0' } }
+// PR D2: a link the L-6 check accepts (the PR E fixture, https://example.test/quickcreate, no longer renders).
+const LAUNCH_URL = 'https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=x&stackName=DevControl&param_ExternalId=ext-123&param_RoleName=DevControlRole'
+const TEMPLATE_URL = 'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'
+const WITH_LAUNCH_STACK = { ...CONNECT_INIT_DATA, launchStack: { url: LAUNCH_URL, templateVersion: '1', templateUrl: TEMPLATE_URL } }
 
 const ACCOUNT = { id: 1, org_id: 'org-1', account_id: '123456789012', role_arn: 'arn:aws:iam::123456789012:role/DevControlRole', nickname: null, external_id: 'ext-123', region: 'us-east-1', connected_at: new Date().toISOString(), status: 'active' }
 const ACTIONS = ['ec2:DescribeRegions', 's3:ListAllMyBuckets', 'lambda:ListFunctions', 'cloudwatch:GetMetricData', 'ce:GetCostAndUsage', 'resource-explorer-2:Search']
@@ -266,8 +271,67 @@ describe('Connect AWS page: the CloudFormation card', () => {
     const card = await screen.findByTestId('cloudformation-card')
     expect(card.textContent).toContain(CF_INTRO)
     expect(CF_INTRO).toBe('The stack creates one IAM role using the same recommended DevControl permission set as the manual setup below.')
-    expect(within(card).getByRole('link', { name: 'Launch stack ↗' }).getAttribute('href')).toBe('https://example.test/quickcreate')
+    expect(within(card).getByRole('link', { name: 'Launch stack ↗' }).getAttribute('href')).toBe(LAUNCH_URL)
     expect(screen.getByText(MANUAL_SUMMARY).closest('details')?.hasAttribute('open')).toBe(false)
+  })
+
+  it('F3 S-1: "Template v1 · View template", View template opens the hosted template in a new tab', async () => {
+    mockConnectInit.mockResolvedValue(WITH_LAUNCH_STACK)
+    renderPage()
+    const line = await screen.findByTestId('cloudformation-template')
+    expect(line.textContent).toBe('Template v1 · View template')
+    const link = within(line).getByRole('link', { name: 'View template' })
+    expect(link.getAttribute('href')).toBe(TEMPLATE_URL)
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // S-1b (the checksum line) is not in D2.
+    expect(document.body.textContent).not.toMatch(/checksum|SHA-256/i)
+  })
+
+  it.each([
+    ['another host', 'https://example.test/quickcreate'],
+    ['a look-alike host', 'https://console.aws.amazon.com.evil.test/cloudformation/home'],
+    ['http', 'http://console.aws.amazon.com/cloudformation/home'],
+    ['javascript:', 'javascript:alert(1)'],
+    ['credentials', 'https://user@console.aws.amazon.com/cloudformation/home'],
+    ['another console path', 'https://console.aws.amazon.com/s3/home'],
+    ['an empty URL', ''],
+  ])('F2 a Launch link with %s: no card, the manual setup open, no stack wording on the page', async (_label, url) => {
+    mockConnectInit.mockResolvedValue({ ...CONNECT_INIT_DATA, launchStack: { ...WITH_LAUNCH_STACK.launchStack, url } })
+    renderPage()
+    await screen.findByTestId('external-id-field')
+    expect(screen.queryByTestId('cloudformation-card')).toBeNull()
+    expect(screen.queryByText(MANUAL_SUMMARY)).toBeNull()
+    expect(screen.getByRole('heading', { level: 2, name: 'Enter your Role ARN' })).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain(url || 'console.aws.amazon.com')
+    expect(screen.queryByTestId('security-remove-stack')).toBeNull()
+  })
+
+  it('F4 an invalid template URL: the card and version stay, without the View template link', async () => {
+    mockConnectInit.mockResolvedValue({ ...CONNECT_INIT_DATA, launchStack: { ...WITH_LAUNCH_STACK.launchStack, templateUrl: 'https://example.test/t.json' } })
+    renderPage()
+    const line = await screen.findByTestId('cloudformation-template')
+    expect(line.textContent).toBe('Template v1')
+    expect(within(line).queryByRole('link')).toBeNull()
+  })
+
+  it('F5 S-2: the failed-stack help says to delete the stack before launching again', async () => {
+    mockConnectInit.mockResolvedValue(WITH_LAUNCH_STACK)
+    renderPage()
+    const card = await screen.findByTestId('cloudformation-card')
+    expect(CF_FAILED_BODY).toBe('If the stack shows ROLLBACK_COMPLETE, open its Events tab to see why. AWS can only delete a stack in that state, so delete it before you launch again. A common cause is an existing role with the same name: launch again with another role name that starts with DevControlRole, or use that role under "Set it up by hand".')
+    expect(card.textContent).toContain(CF_FAILED_BODY)
+    expectNoRemovedText()
+  })
+
+  it('F6 S-3: board 7 names the stack only while the card is shown', async () => {
+    mockConnectInit.mockResolvedValue(WITH_LAUNCH_STACK)
+    renderPage()
+    await screen.findByTestId('cloudformation-card')
+    expect(SEC_REMOVE_STACK).toBe('If you created the role with the DevControl CloudFormation stack, you can delete the stack instead: that deletes the role.')
+    const section = screen.getByTestId('security-explanation')
+    expect(within(section).getByTestId('security-remove-stack').textContent).toBe(SEC_REMOVE_STACK)
+    expect(section.textContent).toContain(`Remove access. ${SEC_REMOVE}${SEC_REMOVE_STACK}`)
   })
 })
 

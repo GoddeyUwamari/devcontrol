@@ -1,0 +1,28 @@
+{
+  "status": 200,
+  "cacheControl": "private, no-store",
+  "body": {
+    "success": true,
+    "data": {
+      "externalId": "{{ORG_EXTERNAL_ID}}",
+      "platformAccountId": "123456789012",
+      "trustPolicy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": "arn:aws:iam::123456789012:root"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+              "StringEquals": {
+                "sts:ExternalId": "{{ORG_EXTERNAL_ID}}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

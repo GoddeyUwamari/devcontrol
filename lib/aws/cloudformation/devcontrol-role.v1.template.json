@@ -1,0 +1,131 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "DevControl read-only access, template v1. Creates one IAM role that DevControl's AWS account can assume only with your External ID. Permissions: the AWS managed policies SecurityAudit and ViewOnlyAccess, and the inline policy DevControlReadExtras.",
+  "Parameters": {
+    "ExternalId": {
+      "Type": "String",
+      "Description": "Your organization's External ID from the Connect AWS page in DevControl. Keep the value that is filled in.",
+      "MinLength": 2,
+      "MaxLength": 64,
+      "AllowedPattern": "^[A-Za-z0-9+=,.@:/_-]{2,64}$",
+      "ConstraintDescription": "must be 2 to 64 characters: letters, numbers and + = , . @ : / _ -"
+    },
+    "RoleName": {
+      "Type": "String",
+      "Description": "Name of the IAM role to create. It must start with DevControlRole.",
+      "Default": "DevControlRole",
+      "MaxLength": 64,
+      "AllowedPattern": "^DevControlRole[\\w+=,.@-]*$",
+      "ConstraintDescription": "must start with DevControlRole, use only letters, numbers and + = , . @ _ -, and be at most 64 characters"
+    }
+  },
+  "Resources": {
+    "DevControlRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Ref": "RoleName"
+        },
+        "Path": "/",
+        "Description": "DevControl read-only access (template v1)",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::{{PLATFORM_ACCOUNT_ID}}:root"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "sts:ExternalId": {
+                    "Ref": "ExternalId"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/SecurityAudit",
+          "arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "DevControlReadExtras",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "DevControlCostExplorerRead",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ce:GetCostAndUsage"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "DevControlResourceExplorerSearch",
+                  "Effect": "Allow",
+                  "Action": [
+                    "resource-explorer-2:Search"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:resource-explorer-2:*:${AWS::AccountId}:view/*"
+                  }
+                },
+                {
+                  "Sid": "DevControlDenyContentAdjacentReads",
+                  "Effect": "Deny",
+                  "Action": [
+                    "s3:ListBucket",
+                    "s3:GetObjectAcl",
+                    "s3:GetObjectVersionAcl",
+                    "s3:GetObjectTagging",
+                    "s3-object-lambda:GetObjectAcl",
+                    "s3-object-lambda:GetObjectVersionAcl",
+                    "ec2:DescribeInstanceAttribute",
+                    "ec2:DescribeLaunchTemplateVersions",
+                    "ec2:DescribeSpotFleetRequests",
+                    "ec2:DescribeSpotInstanceRequests",
+                    "autoscaling:DescribeLaunchConfigurations",
+                    "lambda:GetFunctionConfiguration",
+                    "lambda:ListVersionsByFunction",
+                    "ecs:DescribeTaskDefinition",
+                    "ecs:DescribeTasks",
+                    "rds:DownloadDBLogFilePortion",
+                    "cloudtrail:LookupEvents",
+                    "cloudformation:GetTemplate",
+                    "codepipeline:GetJobDetails",
+                    "elasticbeanstalk:DescribeConfigurationSettings",
+                    "batch:DescribeJobDefinitions",
+                    "security-ir:GetCaseAttachmentDownloadUrl",
+                    "cleanrooms:GetProtectedQuery"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "RoleArn": {
+      "Description": "Paste this into the Connect AWS page in DevControl.",
+      "Value": {
+        "Fn::GetAtt": [
+          "DevControlRole",
+          "Arn"
+        ]
+      }
+    },
+    "TemplateVersion": {
+      "Description": "DevControl template version",
+      "Value": "1"
+    }
+  }
+}

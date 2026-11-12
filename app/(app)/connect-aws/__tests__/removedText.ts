@@ -1,6 +1,6 @@
 /**
  * The Connect AWS page's forbidden-text scan, shared by its test suites (not a test file itself).
- * Strings PR E removed, plus the ones AWS connect PR D1 retires: never rendered again, in any state.
+ * Strings PR E removed, plus the ones AWS connect PR D1 and PR D2 retire: never rendered again, in any state.
  */
 import { expect } from 'vitest'
 
@@ -19,6 +19,8 @@ export const REMOVED_STRINGS = [
   // PR D1: the old ALREADY_CONNECTED (B1) and discovery (B2) wording, and a status the page never claims.
   'in Settings',
   'Connected and working',
+  // PR D2: the old failed-stack help said to launch again without deleting the failed stack (S-2).
+  'open its Events tab. A common cause',
 ]
 
 export function expectNoRemovedText() {

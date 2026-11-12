@@ -18,7 +18,10 @@ import {
   CF_STEP1_TITLE,
   CF_STEP2_BODY,
   CF_STEP2_TITLE,
+  CF_TEMPLATE_SEPARATOR,
   CF_TITLE,
+  CF_VIEW_TEMPLATE,
+  cfTemplateVersion,
   CHECKING_ASSUME,
   CHECKING_ASSUME_NOTE,
   CHECKING_BUTTON,
@@ -52,6 +55,7 @@ import {
   notAssumableCauses,
 } from './connectAwsCopy'
 import { connectErrorView, type ConnectErrorView } from './connectAwsErrors'
+import { usableLaunchStack } from './launchStackUrl'
 import { CopyButton, DisconnectSentence, INLINE_POLICY_DENY_COUNT, INLINE_POLICY_JSON, PolicyJson } from './connectAwsParts'
 
 /** Same rule the server applies to a new connection: a role with no IAM path whose name starts with DevControlRole. */
@@ -99,9 +103,9 @@ interface Props {
 }
 
 /**
- * Not connected: the CloudFormation card (only when connect-init returns launchStack, which no
- * server sends before PR D2), the manual setup, the Role ARN form, the checking state and the
- * connect errors by code.
+ * Not connected: the CloudFormation card (only when connect-init returns a launchStack whose
+ * console link passes the L-6 check, launchStackUrl.ts), the manual setup, the Role ARN form, the
+ * checking state and the connect errors by code.
  */
 export function ConnectSetup({ initData, initError, onConnected, onAlreadyConnected }: Props) {
   const [roleArn, setRoleArn] = useState('')
@@ -112,7 +116,7 @@ export function ConnectSetup({ initData, initError, onConnected, onAlreadyConnec
   const [roleArnFocused, setRoleArnFocused] = useState(false)
   const [nicknameFocused, setNicknameFocused] = useState(false)
 
-  const cloudFormation = initData?.launchStack ?? null
+  const cloudFormation = usableLaunchStack(initData?.launchStack)
   const arnValid = DEVCONTROL_ROLE_ARN.test(roleArn.trim())
   const extractedId = extractAccountId(roleArn.trim())
   const trustPolicyStr = initData ? JSON.stringify(initData.trustPolicy, null, 2) : null
@@ -290,6 +294,22 @@ export function ConnectSetup({ initData, initError, onConnected, onAlreadyConnec
               >
                 {CF_LAUNCH}
               </a>
+              <p className="mt-3 text-meta text-ink-muted" data-testid="cloudformation-template">
+                {cfTemplateVersion(cloudFormation.templateVersion)}
+                {cloudFormation.templateUrl && (
+                  <>
+                    {CF_TEMPLATE_SEPARATOR}
+                    <a
+                      href={cloudFormation.templateUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-ink-accent font-medium hover:text-violet-800 underline"
+                    >
+                      {CF_VIEW_TEMPLATE}
+                    </a>
+                  </>
+                )}
+              </p>
             </Step>
           </div>
           <Step n={2} title={CF_STEP2_TITLE}>
