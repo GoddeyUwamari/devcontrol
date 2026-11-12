@@ -1,0 +1,46 @@
+Your DevControl Weekly Summary
+Cost, security, and delivery summary
+
+Hi Alex,
+
+Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.
+
+COSTS
+AWS Cost Explorer spend, Nov 9 – Nov 15, 2026 (UTC): $0.00.
+Cost Explorer reported $0.00 for these days. If AWS credits cover your usage, it shows $0 here.
+The previous 7 days (Nov 2, 2026 – Nov 8, 2026) total $0.00, so a week-over-week percentage cannot be calculated.
+Unblended cost by service, after any credits and refunds AWS applied. If credits take a category below $0 on a day, that category counts as $0. Recent days may still be updating.
+See costs: https://app.example.test/costs
+
+SECURITY
+DevControl's configuration checks currently report no active findings.
+This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
+See security findings: https://app.example.test/security
+Security posture score and its trend are included in Optimization Engine. Compare plans: https://app.example.test/settings/billing
+
+ESTIMATED SAVINGS
+No open savings findings.
+See Cost Optimization: https://app.example.test/cost-optimization
+
+ALERTS
+Alert history (Coming soon)
+See your active CloudWatch alarms on Operational Health: https://app.example.test/admin/monitoring
+
+DELIVERY
+No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.
+See deployments: https://app.example.test/deployments
+
+View Full Dashboard: https://app.example.test/dashboard
+
+---
+This is your weekly automated summary from DevControl.
+Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
+Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
+
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
+
+DevControl, Inc.
+Questions? Email support@getdevcontrol.com.
+
+© 2026 DevControl. All rights reserved.

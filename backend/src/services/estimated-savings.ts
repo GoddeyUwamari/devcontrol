@@ -109,15 +109,38 @@ function roundCents(amount: number): number {
   return Math.round(amount * 100) / 100;
 }
 
-export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): EstimatedSavingsAggregate {
-  const estimates = recs.filter((rec) => classifySavingsBasis(rec.metadata?.savings_basis) === 'estimate');
+/**
+ * What each recommendation adds to aggregateEstimatedSavings().total, in the
+ * same order as `recs`: the estimate after the fleet-discount clamp, or null
+ * for a row that is not an estimate or has no figure. A 0 here (a gate-blocked
+ * comparison, or a fleet discount whose pool is already claimed) adds nothing.
+ */
+export function countedEstimateAmounts(recs: SavingsRecommendation[]): Array<number | null> {
+  const isEstimate = (rec: SavingsRecommendation) => classifySavingsBasis(rec.metadata?.savings_basis) === 'estimate';
 
   const fullyClaimed = new Set<string>();
-  for (const rec of estimates) {
+  for (const rec of recs) {
+    if (!isEstimate(rec)) continue;
     const claim = claimOf(rec);
     if (claim?.kind === 'full_resource_cost') claim.resource_ids.forEach((id) => fullyClaimed.add(id));
   }
 
+  return recs.map((rec) => {
+    if (!isEstimate(rec)) return null;
+    const amount = toAmount(rec.potential_savings);
+    if (amount === null) return null; // no figure -- contributes nothing, not $0-as-fact
+
+    const claim = claimOf(rec);
+    if (claim?.kind === 'fleet_discount') {
+      const alreadyClaimed = new Set(claim.resource_ids.filter((id) => fullyClaimed.has(id))).size;
+      const remaining = Math.max(0, claim.counted_resources - alreadyClaimed);
+      return Math.min(amount, claim.per_resource_savings * remaining);
+    }
+    return amount;
+  });
+}
+
+export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): EstimatedSavingsAggregate {
   let ceilingTotal = 0;
   const ceilingByResourceType: Record<string, number> = {};
   for (const rec of recs) {
@@ -130,20 +153,12 @@ export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): Estima
 
   let total = 0;
   const byResourceType: Record<string, number> = {};
-  for (const rec of estimates) {
-    let amount = toAmount(rec.potential_savings);
-    if (amount === null) continue; // no figure -- contributes nothing, not $0-as-fact
-
-    const claim = claimOf(rec);
-    if (claim?.kind === 'fleet_discount') {
-      const alreadyClaimed = new Set(claim.resource_ids.filter((id) => fullyClaimed.has(id))).size;
-      const remaining = Math.max(0, claim.counted_resources - alreadyClaimed);
-      amount = Math.min(amount, claim.per_resource_savings * remaining);
-    }
-
+  countedEstimateAmounts(recs).forEach((amount, i) => {
+    if (amount === null) return;
+    const type = recs[i].resource_type;
     total += amount;
-    byResourceType[rec.resource_type] = (byResourceType[rec.resource_type] ?? 0) + amount;
-  }
+    byResourceType[type] = (byResourceType[type] ?? 0) + amount;
+  });
 
   for (const type of Object.keys(byResourceType)) byResourceType[type] = roundCents(byResourceType[type]);
   for (const type of Object.keys(ceilingByResourceType)) ceilingByResourceType[type] = roundCents(ceilingByResourceType[type]);
@@ -170,4 +185,18 @@ export function describeCeilings(ceilingByResourceType: Record<string, number>, 
     .map(([type, amount]) => CEILING_CONDITIONS[type]
       ? `Plus up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound, not included above)`
       : `Plus up to ${format(amount)}/${period} from ${type} upper-bound figures (not included above)`);
+}
+
+/**
+ * describeCeilings() for when there is no estimated total to add to: one
+ * "Up to $X/<period> ... (upper bound)" line per resource type, same order.
+ */
+export function describeCeilingsWithoutEstimate(ceilingByResourceType: Record<string, number>, format: (amount: number) => string, period: string): string[] {
+  const order = (type: string) => { const i = Object.keys(CEILING_CONDITIONS).indexOf(type); return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
+  return Object.entries(ceilingByResourceType)
+    .filter(([, amount]) => amount > 0)
+    .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
+    .map(([type, amount]) => CEILING_CONDITIONS[type]
+      ? `Up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound)`
+      : `Up to ${format(amount)}/${period} from ${type} upper-bound figures`);
 }

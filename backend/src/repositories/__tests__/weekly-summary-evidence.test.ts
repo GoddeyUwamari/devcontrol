@@ -83,7 +83,7 @@ describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
 
     expect(s.currentWeekSpend.state).toBe('available');
     expect(s.currentWeekSpend.provenance).toBe('actual');
-    expect(s.currentWeekSpend.data).toEqual({ amount: 140, basis: 'gross_daily_charges_before_credits' });
+    expect(s.currentWeekSpend.data).toEqual({ amount: 140, basis: 'unblended_after_credits_category_floored' });
     expect(s.currentWeekSpend.period).toEqual({ kind: 'range', start: '2026-09-21', endExclusive: '2026-09-28' });
     expect(s.previousWeekSpend.data?.amount).toBe(70);
     expect(s.weekOverWeek.state).toBe('available');
@@ -109,11 +109,12 @@ describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
     expect(s.weekOverWeek.data?.changePercent).toBeNull();
   });
 
-  it('C: weekly figures carry the gross-before-credits basis of the floored trend series', async () => {
+  it('C: weekly figures carry the after-credits, category-floored basis of the trend series (WE-D2)', async () => {
     fetchCostTrend.mockResolvedValue(trend(() => 3));
     const s = await repository.getWeeklySpendSections(ORG, period, fakeClient({}));
-    expect(s.currentWeekSpend.data?.basis).toBe('gross_daily_charges_before_credits');
-    expect(s.weekOverWeek.coverage).toMatch(/gross daily charges before credits/);
+    expect(s.currentWeekSpend.data?.basis).toBe('unblended_after_credits_category_floored');
+    expect(s.weekOverWeek.coverage).toMatch(/UnblendedCost by service after credits and refunds, each category floored at \$0 per day/);
+    expect(s.weekOverWeek.coverage).not.toMatch(/gross|before credits/);
   });
 
   it('D: a Cost Explorer failure with no inventory estimate is error/unavailable -- never $0', async () => {
@@ -132,12 +133,16 @@ describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
     expect(s.currentWeekSpend.reason).not.toMatch(/Throttling/);
   });
 
-  it('D: no AWS connection is unavailable (not an error, not $0)', async () => {
+  it('D: no AWS connection is not_connected (not an error, not $0) and reads no inventory estimate', async () => {
     fetchCostTrend.mockRejectedValue(new Error(`AWS_NOT_CONNECTED: org ${ORG} has not connected an AWS account`));
-    const s = await repository.getWeeklySpendSections(ORG, period, fakeClient({ total_resources: '0', priced_resources: '0', total_cost: '0' }));
-    expect(s.currentWeekSpend.state).toBe('unavailable');
+    const client = fakeClient({ total_resources: '9', priced_resources: '9', total_cost: '99' });
+    const s = await repository.getWeeklySpendSections(ORG, period, client);
+    expect(s.currentWeekSpend.state).toBe('not_connected');
     expect(s.currentWeekSpend.reason).toBe('no AWS account is connected');
     expect(s.currentWeekSpend.data).toBeNull();
+    expect(s.weekOverWeek.data).toBeNull();
+    expect(s.inventoryEstimate).toBeNull();
+    expect(client.query).not.toHaveBeenCalled();
   });
 
   it('D: an empty Cost Explorer response is unavailable with 0 of 7 days, never a $0 week', async () => {
@@ -149,7 +154,7 @@ describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
   });
 
   it('E: the inventory fallback is an estimated, point-in-time run-rate -- never actual spend for the week', async () => {
-    fetchCostTrend.mockRejectedValue(new Error('AWS_NOT_CONNECTED: no account'));
+    fetchCostTrend.mockRejectedValue(new Error('ThrottlingException'));
     const client = fakeClient({ total_resources: '10', priced_resources: '8', total_cost: '412.5' });
 
     const s = await repository.getWeeklySpendSections(ORG, period, client);
@@ -178,7 +183,7 @@ describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
   });
 
   it('P: queries only the requesting organization', async () => {
-    fetchCostTrend.mockRejectedValue(new Error('AWS_NOT_CONNECTED: no account'));
+    fetchCostTrend.mockRejectedValue(new Error('ThrottlingException'));
     const client = fakeClient({ total_resources: '1', priced_resources: '1', total_cost: '5' });
 
     await repository.getWeeklySpendSections(ORG, period, client);

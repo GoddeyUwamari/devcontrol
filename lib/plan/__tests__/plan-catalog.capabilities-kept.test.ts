@@ -164,7 +164,7 @@ const LEGACY: Record<string, ReadonlyArray<readonly [string, Target]>> = {
     ['Up to 10 team members', 'members-pro'],
     ['Priority support', 'support-pro'],
     ['✨ Scheduled AI Reports (weekly/monthly)', 'scheduled-ai-reports'],
-    ['✨ Weekly AI Email Summaries', 'weekly-ai-summary'],
+    ['✨ Weekly AI Email Summaries', ['weekly-ai-summary', 'weekly-ai-recommendations']],
     ['✨ Custom Anomaly Detection Rules', 'custom-anomaly-rules'],
     ['✨ Executive AI Reports (auto-delivered monthly to leadership)', 'scheduled-ai-reports'],
     ['Unlimited AWS resources', 'limits-enterprise'],
@@ -261,6 +261,8 @@ const PINNED_IDS = [
   'limits-enterprise', 'soc2-evidence', 'custom-frameworks', 'sso', 'remediation', 'optimization-rules', 'custom-anomaly-rules',
   'slo', 'scheduled-reports', 'dora-benchmarks', 'multi-account', 'scheduled-ai-reports', 'custom-optimization-policies',
   'custom-integrations', 'members-enterprise', 'support-enterprise',
+  // Added after CAT-1: WE-D1 (founder 2026-11-11) split the weekly email's AI part into its own Coming soon row.
+  'weekly-ai-recommendations',
 ]
 
 const featureIds = new Set(FEATURES.map((f) => f.id))

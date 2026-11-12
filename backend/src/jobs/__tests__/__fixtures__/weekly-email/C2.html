@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevControl Weekly Summary</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #374151;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f9fafb;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .header {
+      border-bottom: 3px solid #635BFF;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+    }
+    .header h1 {
+      margin: 0 0 4px 0;
+      color: #111827;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .header p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .greeting {
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+    .section {
+      margin-bottom: 24px;
+      padding: 20px;
+      border-left: 4px solid #e5e7eb;
+      background: #f9fafb;
+      border-radius: 0 8px 8px 0;
+    }
+    .section.cost {
+      border-left-color: #10b981;
+      background: #ecfdf5;
+    }
+    .section.alert {
+      border-left-color: #f59e0b;
+      background: #fffbeb;
+    }
+    .section.security {
+      border-left-color: #6366f1;
+      background: #eef2ff;
+    }
+    .section.dora {
+      border-left-color: #3b82f6;
+      background: #eff6ff;
+    }
+    .section.recommendation {
+      border-left-color: #8b5cf6;
+      background: #faf5ff;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 12px 0;
+      color: #111827;
+      display: flex;
+      align-items: center;
+    }
+    .section-content {
+      font-size: 15px;
+      color: #374151;
+      margin: 0;
+    }
+    .cta-container {
+      text-align: center;
+      margin-top: 32px;
+    }
+    .button {
+      display: inline-block;
+      background: #635BFF;
+      color: white !important;
+      padding: 14px 36px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      transition: background 0.2s;
+    }
+    .button:hover {
+      background: #4f46e5;
+    }
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+    .footer a {
+      color: #6b7280;
+      text-decoration: none;
+    }
+    .footer a:hover {
+      text-decoration: underline;
+    }
+    .line {
+      font-size: 15px;
+      color: #374151;
+      margin: 0 0 8px 0;
+    }
+    .line:last-child {
+      margin-bottom: 0;
+    }
+    .line.note {
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .line.upsell {
+      font-size: 14px;
+      border-top: 1px dashed #d1d5db;
+      padding-top: 8px;
+      margin-top: 8px;
+    }
+    .lnk {
+      color: #635BFF;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .soon {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      padding: 0 8px;
+    }
+    .status {
+      border: 1px solid #a5b4fc;
+      background: #eef2ff;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <h1>Your DevControl Weekly Summary</h1>
+      <p>Cost, security, and delivery summary</p>
+    </div>
+
+    <p class="greeting">Hi Alex,</p>
+    <p style="margin-bottom: 24px;">Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.</p>
+
+
+    <div class="section cost">
+      <div class="section-title">COSTS</div>
+      <p class="line">AWS Cost Explorer spend, Nov 9 – Nov 15, 2026 (UTC): <strong>$1,234.56</strong>.</p><p class="line">That is up 4.2% from $1,184.80 for the previous 7 days (Nov 2, 2026 – Nov 8, 2026).</p><p class="line note">Unblended cost by service, after any credits and refunds AWS applied. If credits take a category below $0 on a day, that category counts as $0. Recent days may still be updating.</p><p class="line"><a class="lnk" href="https://app.example.test/costs">See costs →</a></p>
+    </div>
+    <div class="section security">
+      <div class="section-title">SECURITY</div>
+      <p class="line">DevControl&#x27;s configuration checks currently report 2 account-level findings (security groups, IAM) and 5 resource compliance issues (encryption, backups, tagging, and other infrastructure checks).</p><p class="line">Security posture score: 72/100.</p><p class="line note">This covers DevControl&#x27;s own configuration checks, not AWS Security Hub or every AWS security finding.</p><p class="line"><a class="lnk" href="https://app.example.test/security">See security findings →</a></p>
+    </div>
+    <div class="section recommendation">
+      <div class="section-title">ESTIMATED SAVINGS</div>
+      <p class="line">Estimated savings: <strong>$845/month</strong> across 3 open findings. This is a DevControl estimate, not realized savings.</p><p class="line"><a class="lnk" href="https://app.example.test/cost-optimization">See Cost Optimization →</a></p>
+    </div>
+    <div class="section alert">
+      <div class="section-title">ALERTS</div>
+      <p class="line">Alert history <span class="soon">Coming soon</span></p><p class="line"><a class="lnk" href="https://app.example.test/admin/monitoring">See your active CloudWatch alarms on Operational Health →</a></p>
+    </div>
+    <div class="section dora">
+      <div class="section-title">DELIVERY</div>
+      <p class="line">6 deployments recorded in DevControl in the 7 days before this summary: 4 succeeded, 2 failed.</p><p class="line">Deployment frequency (successful deployments): 0.57 per day.</p><p class="line">Change failure rate: 33.3% (2 of 6 finished deployments failed).</p><p class="line note">Lead time for changes and time to restore service: Not tracked.</p><p class="line"><a class="lnk" href="https://app.example.test/deployments">See deployments →</a></p>
+    </div>
+
+    <div class="cta-container">
+      <a href="https://app.example.test/dashboard" class="button">View Full Dashboard →</a>
+    </div>
+
+    <div class="footer">
+      <p>This is your weekly automated summary from DevControl.</p>
+      <p style="margin-top: 8px;">
+        <a href="https://api.example.test/api/user/preferences/unsubscribe?token&#x3D;v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC">Unsubscribe</a> |
+        <a href="https://app.example.test/settings/notifications">Email Preferences</a> |
+        <a href="https://app.example.test/legal/privacy">Privacy Policy</a>
+      </p>
+      <p style="margin-top: 16px; font-size: 12px; color: #9ca3af;">
+        You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
+      </p>
+      <p style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
+        DevControl, Inc.<br>
+        Questions? Email <a href="mailto:support@getdevcontrol.com">support@getdevcontrol.com</a>.
+      </p>
+      <p style="margin-top: 16px; color: #d1d5db;">
+        &copy; 2026 DevControl. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

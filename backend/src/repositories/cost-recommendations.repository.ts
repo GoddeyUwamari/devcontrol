@@ -9,7 +9,7 @@ import {
 } from '../types';
 import { DetectorObservation } from '../services/cost-optimization.service';
 import { HeldLease, beginFenced } from '../services/scan-lease';
-import { aggregateEstimatedSavings } from '../services/estimated-savings';
+import { aggregateEstimatedSavings, classifySavingsBasis, countedEstimateAmounts } from '../services/estimated-savings';
 import { EMPTY_RECONCILE_COUNTS, ReconcileCounts } from '../services/cost-analysis-outcome';
 import { AuditEventAction, AuditRequestContext, insertAuditEventInTransaction } from '../services/auditEvents.service';
 import { DetectionState, NotConfirmedReason, judgeFreshness } from '../services/cost-finding-freshness';
@@ -25,6 +25,20 @@ import {
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
 } from '../config/optimization-rules';
+
+/** Open findings by what their dollar figure is (getActiveSavingsBreakdown). */
+export interface ActiveSavingsBreakdown {
+  /** Every ACTIVE finding. */
+  active: number;
+  /** De-duplicated sum of the estimates (aggregateEstimatedSavings().total); never includes an upper bound. */
+  estimatedMonthlySavings: number;
+  /** Findings whose estimate adds more than $0 to estimatedMonthlySavings (countedEstimateAmounts). */
+  estimatedFindings: number;
+  /** Upper bounds by resource type (aggregateEstimatedSavings().ceilingByResourceType). */
+  ceilingByResourceType: Record<string, number>;
+  /** Findings with neither an estimate above $0 nor an upper bound (no figure, no supported basis, or an estimate that adds $0). */
+  unestimatedFindings: number;
+}
 
 // Fixed, canonical issue strings for the resource-identity-based detectors
 // this occurrence lifecycle applies to
@@ -1135,6 +1149,45 @@ export class CostRecommendationsRepository {
           medium: parseInt(severityQuery.rows[0].medium),
           low: parseInt(severityQuery.rows[0].low),
         },
+      };
+    });
+  }
+
+  /**
+   * The open (ACTIVE) findings split by what their dollar figure is, for the
+   * weekly summary: the de-duplicated estimate total (same rule as getStats),
+   * how many findings carry an estimate, the upper bounds by resource type,
+   * and how many carry neither -- so "no figure" is never shown as $0.
+   */
+  async getActiveSavingsBreakdown(organizationId: string): Promise<ActiveSavingsBreakdown> {
+    return this.withOrgClient(organizationId, async (client) => {
+      const { rows } = await client.query(
+        'SELECT resource_type, potential_savings, metadata FROM cost_recommendations WHERE status = $1 AND organization_id = $2',
+        ['ACTIVE', organizationId]
+      );
+      const savings = aggregateEstimatedSavings(rows);
+      const hasAmount = (value: unknown) =>
+        value !== null && value !== undefined && Number.isFinite(typeof value === 'number' ? value : parseFloat(String(value)));
+      // An estimate counts only when what it adds to the total is > $0. A
+      // gate-blocked DynamoDB comparison is stored at 0 and a fully claimed
+      // fleet discount adds 0: those are findings with no dollar estimate.
+      const counted = countedEstimateAmounts(rows);
+      let estimatedFindings = 0;
+      let ceilingFindings = 0;
+      rows.forEach((row, i) => {
+        const amount = counted[i];
+        if (amount !== null) {
+          if (amount > 0) estimatedFindings++;
+          return;
+        }
+        if (hasAmount(row.potential_savings) && classifySavingsBasis(row.metadata?.savings_basis) === 'ceiling') ceilingFindings++;
+      });
+      return {
+        active: rows.length,
+        estimatedMonthlySavings: savings.total,
+        estimatedFindings,
+        ceilingByResourceType: savings.ceilingByResourceType,
+        unestimatedFindings: rows.length - estimatedFindings - ceilingFindings,
       };
     });
   }

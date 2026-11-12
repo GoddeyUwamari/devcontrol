@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
+import { WEEKLY_EMAIL_PATHS } from '../../backend/src/config/weekly-email-paths'
 
 const ROOT = process.cwd()
 const SCANNED = ['app/(app)', 'app/(auth)', 'components', 'lib']
@@ -150,5 +151,16 @@ describe('the CAT-3 dead links are fixed', () => {
     for (const f of files) {
       expect(src(f), f).not.toMatch(/["'`](\/support|\/privacy|\/terms|\/billing|\/docs\/pricing|\/admin\/alerts)["'`$?]/)
     }
+  })
+})
+
+describe('the weekly summary email links only to pages that exist (WE-1)', () => {
+  it.each(Object.entries(WEEKLY_EMAIL_PATHS))('%s: %s resolves', (_name, path) => {
+    expect(resolves(path), path).toBe(true)
+  })
+
+  it('the old dead privacy path is not among them', () => {
+    expect(Object.values(WEEKLY_EMAIL_PATHS)).not.toContain('/privacy')
+    expect(resolves('/privacy')).toBe(false)
   })
 })

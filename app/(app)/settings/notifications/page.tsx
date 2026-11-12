@@ -12,6 +12,7 @@ import { Bell, Mail, AlertTriangle, DollarSign, Rocket, Check, Loader2 } from 'l
 import { userPreferencesService, type EmailPreferences } from '@/lib/services/user-preferences.service';
 import { toast } from 'sonner';
 import { logError } from '@/lib/safe-log';
+import { useCurrentRole } from '@/lib/hooks/use-current-role';
 
 export default function NotificationsSettingsPage() {
   const [preferences, setPreferences] = useState<EmailPreferences>({
@@ -22,6 +23,8 @@ export default function NotificationsSettingsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Only owners receive the weekly summary (weekly-summary.repository.ts); null = not known yet.
+  const role = useCurrentRole();
 
   useEffect(() => {
     loadPreferences();
@@ -104,15 +107,19 @@ export default function NotificationsSettingsPage() {
                 <Bell className="w-5 h-5 text-purple-600" />
               </div>
               <div className="space-y-1 flex-1">
-                <div className="font-semibold text-gray-900">Weekly AI Summary</div>
+                <div className="font-semibold text-gray-900">Weekly summary email</div>
                 <p className="text-sm text-gray-600">
-                  Receive a comprehensive AI-powered summary every Monday at 9 AM with cost savings,
-                  anomaly detections, deployment metrics, and personalized recommendations.
+                  Every Monday at 09:00 UTC: last week&apos;s AWS spend, security findings, estimated savings and deployments for your organization.
                 </p>
                 <div className="flex items-center gap-2 mt-2">
                   <Check className="w-4 h-4 text-green-600" />
-                  <span className="text-xs text-gray-500">Sent every Monday at 9:00 AM</span>
+                  <span className="text-xs text-gray-500">Sent every Monday at 09:00 UTC</span>
                 </div>
+                {role !== null && role !== 'owner' && (
+                  <p className="text-xs text-gray-500 mt-2" data-testid="weekly-summary-owner-note">
+                    Only organization owners receive the weekly summary. This setting applies if you become an owner.
+                  </p>
+                )}
               </div>
             </div>
             <Switch

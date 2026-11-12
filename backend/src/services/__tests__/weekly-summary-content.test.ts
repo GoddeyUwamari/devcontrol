@@ -31,7 +31,6 @@ import {
 } from '../../repositories/weekly-summary.repository';
 import { buildRecommendationPrompt, checkRecommendationText, composeWeeklySummary } from '../weekly-summary-content';
 import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../../jobs/weekly-ai-summary.job';
-import { setModelClientForTests } from '../ai/model-client';
 
 
 const fetchCostTrend = awsCostService.fetchCostTrend as jest.Mock;
@@ -88,6 +87,7 @@ const DELIVERY: WeeklyDORAMetrics = {
 };
 
 interface Overrides {
+  awsConnection?: WeeklyEvidence['awsConnection'];
   trend?: () => Promise<unknown>;
   inventory?: Record<string, string>;
   delivery?: WeeklyEvidence['delivery'];
@@ -105,6 +105,7 @@ async function evidence(o: Overrides = {}): Promise<WeeklyEvidence> {
   );
   return {
     period,
+    awsConnection: o.awsConnection ?? 'connected',
     ...spend,
     alerts: await repository.getWeeklyAlerts(ORG, period),
     delivery: o.delivery ?? await available<WeeklyDORAMetrics>('DevControl deployment records', DELIVERY),
@@ -112,22 +113,23 @@ async function evidence(o: Overrides = {}): Promise<WeeklyEvidence> {
       score: 72, accountLevelFindings: 2, resourceComplianceIssues: 5,
     }),
     recommendations: o.recommendations ?? await available<WeeklyRecommendationEvidence>('DevControl cost recommendations', {
-      active: 3, totalEstimatedMonthlySavings: 845.2,
+      active: 3, estimatedMonthlySavings: 845.2, estimatedFindings: 3, ceilingByResourceType: {}, unestimatedFindings: 0,
     }),
   };
 }
 
-/** The full rendered email (HTML with tags stripped, plus the plain-text version). */
-function render(e: WeeklyEvidence, recommendation: string | null = null): string {
-  const data = job.buildTemplateData({
+function templateData(e: WeeklyEvidence) {
+  return job.buildTemplateData({
     userName: 'Alex',
-    content: composeWeeklySummary(e),
-    recommendation,
-    dashboardUrl: 'https://app.example.test/dashboard',
+    content: composeWeeklySummary(e, { organizationName: 'Example Org (synthetic)' }),
+    frontendUrl: 'https://app.example.test',
     unsubscribeUrl: 'https://api.example.test/unsubscribe?token=x',
-    preferencesUrl: 'https://app.example.test/settings/notifications',
-    privacyUrl: 'https://app.example.test/privacy',
   });
+}
+
+/** The full rendered email (HTML with tags stripped, plus the plain-text version). */
+function render(e: WeeklyEvidence): string {
+  const data = templateData(e);
   const { html, text } = job.renderEmail(data);
   const htmlText = html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ');
   return `${htmlText}\n${text}`;
@@ -146,12 +148,14 @@ const UNSUPPORTED = {
 };
 
 describe('Weekly Summary email wording', () => {
-  it('A/G/C: actual spend is labeled with its real 7-day period and gross-before-credits basis, never as monthly spend', async () => {
+  it('A/G/C: actual spend is labeled with its real 7-day period and its after-credits basis, never as monthly spend', async () => {
     const out = render(await evidence());
+    expect(out).toContain('AWS Cost Explorer spend, Sep 21 – Sep 27, 2026 (UTC): $770.00.');
     expect(out).toContain(
-      'AWS Cost Explorer gross charges for the last 7 days (Sep 21, 2026 – Sep 27, 2026, UTC), per Cost Explorer data as of Sep 28, 2026, 08:55 UTC: ' +
-      '$770.00, before credits and refunds. Cost Explorer figures for recent days may still be updating.'
+      'Unblended cost by service, after any credits and refunds AWS applied. If credits take a category below $0 on a day, ' +
+      'that category counts as $0. Recent days may still be updating.'
     );
+    expect(out).not.toMatch(/gross charges|before credits/i);
     // H2: never implies finalized figures.
     expect(out).not.toMatch(/complete days/i);
     expect(out).toContain('up 10.0% from $700.00 for the previous 7 days (Sep 14, 2026 – Sep 20, 2026)');
@@ -159,37 +163,40 @@ describe('Weekly Summary email wording', () => {
     expect(out).not.toMatch(/monthly/i);
   });
 
-  it('B: a real $0 week says $0.00 of actual charges -- not "no spend recorded", not an estimate', async () => {
+  it('B: a measured $0 week says $0.00 and that credits can cause it -- not "no spend recorded", not an estimate', async () => {
     const e = await evidence({
       trend: async () => days(() => 0),
       inventory: { total_resources: '4', priced_resources: '4', total_cost: '120' },
     });
     const out = render(e);
-    expect(out).toContain('gross charges for the last 7 days (Sep 21, 2026 – Sep 27, 2026, UTC), per Cost Explorer data as of Sep 28, 2026, 08:55 UTC: $0.00');
+    expect(out).toContain('AWS Cost Explorer spend, Sep 21 – Sep 27, 2026 (UTC): $0.00.');
+    expect(out).toContain('Cost Explorer reported $0.00 for these days. If AWS credits cover your usage, it shows $0 here.');
     expect(out).toContain('a week-over-week percentage cannot be calculated');
     expect(out).not.toMatch(UNSUPPORTED.noSpend);
-    expect(composeWeeklySummary(e).costSummary).not.toMatch(/estimate|run-rate/i);
+    const costs = composeWeeklySummary(e).sections.find(x => x.id === 'costs')!.lines.map(l => l.text).join(' ');
+    expect(costs).not.toMatch(/estimate|run-rate/i);
   });
 
-  it('D: unavailable cost says unavailable -- never $0 or "no spend"', async () => {
-    const out = render(await evidence({ trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); } }));
-    expect(out).toContain('Cloud spend data was unavailable for this period (no AWS account is connected).');
+  it('D: no AWS connection says not connected -- never $0 or "no spend"', async () => {
+    const out = render(await evidence({ awsConnection: 'not_connected', trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); } }));
+    expect(out).toContain('Not connected. Cost Explorer spend appears here after you connect AWS.');
     expect(out).not.toMatch(UNSUPPORTED.noSpend);
     expect(out).not.toMatch(/\$0\b|\$0\.00/);
   });
 
   it('D: a cost retrieval error says it could not be retrieved', async () => {
     const out = render(await evidence({ trend: async () => { throw new Error('ThrottlingException'); } }));
-    expect(out).toContain('Cloud spend data could not be retrieved for this period.');
+    expect(out).toContain("AWS Cost Explorer spend for Sep 21 – Sep 27, 2026 couldn't be retrieved.");
     expect(out).not.toMatch(/Throttling/);
     expect(out).not.toMatch(UNSUPPORTED.noSpend);
   });
 
   it('E: the inventory fallback is explicitly an estimated monthly run-rate, not billed spend', async () => {
     const out = render(await evidence({
-      trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); },
+      trend: async () => { throw new Error('AccessDenied: synthetic refusal'); },
       inventory: { total_resources: '10', priced_resources: '8', total_cost: '412.5' },
     }));
+    expect(out).toContain("AWS Cost Explorer spend for Sep 21 – Sep 27, 2026 couldn't be retrieved.");
     expect(out).toContain('Estimated monthly run-rate for currently discovered resources: approximately $412.50/month');
     expect(out).toContain('a DevControl list-price estimate, not billed AWS spend');
     expect(out).toContain('Only 8 of 10 discovered resources have a cost estimate.');
@@ -211,7 +218,7 @@ describe('Weekly Summary email wording', () => {
 
   it('H: savings are an estimated opportunity, never a definite "you can save"', async () => {
     const out = render(await evidence());
-    expect(out).toContain('Estimated savings opportunity: $845/month across 3 open cost recommendations (a DevControl estimate, not realized savings).');
+    expect(out).toContain('Estimated savings: $845/month across 3 open findings. This is a DevControl estimate, not realized savings.');
     expect(out).not.toMatch(UNSUPPORTED.definiteSavings);
   });
 
@@ -221,15 +228,21 @@ describe('Weekly Summary email wording', () => {
     expect(out).not.toMatch(/no (savings )?opportunit|no recommendations/i);
   });
 
-  it('I: zero open recommendations makes no savings claim at all', async () => {
-    const e = await evidence({ recommendations: await available<WeeklyRecommendationEvidence>('DevControl cost recommendations', { active: 0, totalEstimatedMonthlySavings: 0 }) });
-    expect(composeWeeklySummary(e).savingsSummary).toBeNull();
-    expect(render(e)).not.toMatch(/savings|opportunit/i);
+  it('I: zero open findings keeps the section, states the count, and makes no dollar claim', async () => {
+    const e = await evidence({ recommendations: await available<WeeklyRecommendationEvidence>('DevControl cost recommendations', {
+      active: 0, estimatedMonthlySavings: 0, estimatedFindings: 0, ceilingByResourceType: {}, unestimatedFindings: 0,
+    }) });
+    const out = render(e);
+    expect(out).toContain('ESTIMATED SAVINGS');
+    expect(out).toContain('No open savings findings.');
+    expect(out).not.toMatch(/\$0\/month|opportunit/i);
   });
 
   it('J: alerts are stated as unavailable, never "no alerts"', async () => {
     const out = render(await evidence());
-    expect(out).toContain('Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.');
+    expect(out).toContain('Alert history (Coming soon)');
+    expect(out).toContain('See your active CloudWatch alarms on Operational Health: https://app.example.test/admin/monitoring');
+    expect(out).not.toContain('Alert history for this period is not available yet.');
     expect(out).not.toMatch(/alert sync|associate alerts with an organization/);
     expect(out).not.toMatch(UNSUPPORTED.noAlerts);
   });
@@ -238,14 +251,14 @@ describe('Weekly Summary email wording', () => {
     const out = render(await evidence({
       security: await unavailable<WeeklySecurityEvidence>('DevControl security posture score and configuration checks', 'the security posture score is still preliminary'),
     }));
-    expect(out).toContain('Security findings were unavailable for this period (the security posture score is still preliminary).');
+    expect(out).toContain("Your first scan hasn't finished yet. Findings appear here after it completes.");
     expect(out).not.toMatch(UNSUPPORTED.noSecurityRisks);
     expect(out).not.toMatch(/no active findings/i);
   });
 
   it('K: a security error is stated as an error', async () => {
     const out = render(await evidence({ security: await failed<WeeklySecurityEvidence>('DevControl security posture score and configuration checks') }));
-    expect(out).toContain('Security findings could not be retrieved for this period.');
+    expect(out).toContain("Security findings couldn't be retrieved for this summary. They're on the Security page.");
     expect(out).not.toMatch(/connection terminated/);
   });
 
@@ -259,7 +272,8 @@ describe('Weekly Summary email wording', () => {
     const out = render(await evidence({
       security: await available<WeeklySecurityEvidence>('DevControl security posture score and configuration checks', { score: 100, accountLevelFindings: 0, resourceComplianceIssues: 0 }),
     }));
-    expect(out).toContain("DevControl's configuration checks currently report no active findings (security posture score 100/100).");
+    expect(out).toContain("DevControl's configuration checks currently report no active findings.");
+    expect(out).toContain('Security posture score: 100/100.');
     expect(out).not.toMatch(UNSUPPORTED.noSecurityRisks);
   });
 
@@ -277,7 +291,7 @@ describe('Weekly Summary email wording', () => {
       { ...DELIVERY, deploymentCount: 4, successfulDeployments: 1, failedDeployments: 3, deploymentFrequency: '0.14 per day', changeFailureRate: 75 },
     ]) {
       const e = await evidence({ delivery: await available<WeeklyDORAMetrics>('DevControl deployment records', delivery) });
-      expect(composeWeeklySummary(e).deliverySummary).not.toMatch(/benchmark|\btier\b|\b(elite|high|medium|low)\b|industry|performer/i);
+      expect(composeWeeklySummary(e).sections.find(x => x.id === 'delivery')!.lines.map(l => l.text).join(' ')).not.toMatch(/benchmark|\btier\b|\b(elite|high|medium|low)\b|industry|performer/i);
       expect(render(e)).not.toMatch(/benchmark/i);
     }
   });
@@ -318,7 +332,7 @@ describe('Weekly Summary email wording', () => {
 
   it('19: no unsupported claim appears in the worst case (every source missing)', async () => {
     const out = render(await evidence({
-      trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); },
+      trend: async () => { throw new Error('ThrottlingException'); },
       delivery: await failed<WeeklyDORAMetrics>('DevControl deployment records'),
       security: await failed<WeeklySecurityEvidence>('DevControl security posture score and configuration checks'),
       recommendations: await failed<WeeklyRecommendationEvidence>('DevControl cost recommendations'),
@@ -331,39 +345,19 @@ describe('Weekly Summary email wording', () => {
     const out = render(await evidence());
     expect(out).toContain('Unsubscribe: https://api.example.test/unsubscribe?token=x');
     expect(out).toContain('Email Preferences: https://app.example.test/settings/notifications');
+    expect(out).toContain('Privacy Policy: https://app.example.test/legal/privacy');
   });
 });
 
-describe('Weekly Summary model-written recommendation (disabled, PR #136 review B1)', () => {
-  it('B1: generateAIRecommendation returns null and makes no model call, even with open recommendations and findings', async () => {
-    const e = await evidence(); // 3 open recommendations, 7 active findings: the old code would have called the model
-    // Every model call goes through the shared model client; a stub that records calls proves none is made.
-    const spy = jest.fn();
-    setModelClientForTests({ messages: { create: spy, stream: spy } } as never);
-    expect(await job.generateAIRecommendation(e, composeWeeklySummary(e))).toBeNull();
-    expect(spy).not.toHaveBeenCalled();
-    setModelClientForTests(undefined);
-  });
-
-  it('B1: with no recommendation, no AI section or AI claim renders in HTML or plain text; the deterministic savings line still does', async () => {
-    const e = await evidence();
-    const content = composeWeeklySummary(e);
-    const data = job.buildTemplateData({
-      userName: 'Alex',
-      content,
-      recommendation: await job.generateAIRecommendation(e, content),
-      dashboardUrl: 'https://app.example.test/dashboard',
-      unsubscribeUrl: 'https://api.example.test/unsubscribe?token=x',
-      preferencesUrl: 'https://app.example.test/settings/notifications',
-      privacyUrl: 'https://app.example.test/privacy',
-    });
-    const { html, text } = job.renderEmail(data);
-
+describe('Weekly Summary model-written recommendation (removed, PR #136 review B1, WE-D9)', () => {
+  it('B1: the job has no recommendation step, and no AI section or AI claim renders in HTML or plain text', async () => {
+    expect((job as any).generateAIRecommendation).toBeUndefined();
+    const { html, text } = job.renderEmail(templateData(await evidence()));
     for (const out of [html, text]) {
       expect(out).not.toMatch(/AI recommendation/i);
       expect(out).not.toMatch(/AI-Powered/i);
       expect(out).not.toMatch(/\bAI\b/);
-      expect(out).toContain('Estimated savings opportunity: $845/month');
+      expect(out).toContain('$845/month');
     }
   });
 
@@ -391,7 +385,7 @@ describe('Weekly Summary model-written recommendation (disabled, PR #136 review 
     const content = composeWeeklySummary(e);
     const prompt = buildRecommendationPrompt(e, content)!;
 
-    expect(content.deliverySummary).toContain('Lead time for changes and time to restore service: Not tracked.');
+    expect(content.sections.find(x => x.id === 'delivery')!.lines.map(l => l.text)).toContain('Lead time for changes and time to restore service: Not tracked.');
     expect(render(e)).toContain('Lead time for changes and time to restore service: Not tracked.');
 
     const facts = prompt.slice(prompt.indexOf('Facts:'));
@@ -403,10 +397,10 @@ describe('Weekly Summary model-written recommendation (disabled, PR #136 review 
   });
 
   it('retained helper: the prompt carries every evidence state and the no-fabrication rules', async () => {
-    const e = await evidence({ trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); } });
+    const e = await evidence({ awsConnection: 'not_connected', trend: async () => { throw new Error('AWS_NOT_CONNECTED: none'); } });
     const prompt = buildRecommendationPrompt(e, composeWeeklySummary(e))!;
-    expect(prompt).toContain('Cloud spend data was unavailable for this period');
-    expect(prompt).toContain('Alerts: Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.');
+    expect(prompt).toContain('Not connected. Cost Explorer spend appears here after you connect AWS.');
+    expect(prompt).toContain('Alerts: Alert history: Coming soon.');
     expect(prompt).toMatch(/never describe it as zero, none/);
     expect(prompt).toMatch(/Do not recommend rightsizing, Reserved Instances, or Savings Plans/);
     expect(prompt).not.toMatch(/Current monthly cloud spend/);
