@@ -1,0 +1,20 @@
+[
+  {
+    "org": "org-a",
+    "event": "metrics:costs",
+    "data": {
+      "totalCost": 1234.56,
+      "monthToDate": 1234.56,
+      "trend": "stable"
+    }
+  },
+  {
+    "org": "org-b",
+    "event": "metrics:costs",
+    "data": {
+      "totalCost": 1234.56,
+      "monthToDate": 1234.56,
+      "trend": "stable"
+    }
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "aiChatComparisonBasis": "sum of AWS Cost Explorer daily charges per cost category, with any negative daily category amount floored to zero -- credits and refunds are excluded, so window totals can differ from month-to-date spend",
+  "aiSummaryMonthOverMonth": [
+    "Month-to-date spend vs the same days last month: up 5.3% ($133.00 vs $126.30, daily charges with credits excluded)."
+  ],
+  "aiReportMonthOverMonth": "Spend from 2026-11-01 to 2026-11-10 was $133.00 vs $126.30 for 2026-10-01 to 2026-10-10, a change of $6.70 (+5.3%), from AWS Cost Explorer daily charges with credits excluded."
+}
