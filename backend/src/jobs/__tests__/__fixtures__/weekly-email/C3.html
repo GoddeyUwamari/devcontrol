@@ -67,10 +67,6 @@
       border-left-color: #8b5cf6;
       background: #faf5ff;
     }
-    .section-icon {
-      font-size: 20px;
-      margin-right: 8px;
-    }
     .section-title {
       font-size: 16px;
       font-weight: 600;
@@ -83,16 +79,6 @@
       font-size: 15px;
       color: #374151;
       margin: 0;
-    }
-    .savings {
-      display: inline-block;
-      background: #d1fae5;
-      color: #065f46;
-      padding: 6px 16px;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 14px;
-      margin-top: 12px;
     }
     .cta-container {
       text-align: center;
@@ -127,14 +113,50 @@
     .footer a:hover {
       text-decoration: underline;
     }
-    .divider {
-      height: 1px;
-      background: #e5e7eb;
-      margin: 24px 0;
+    .line {
+      font-size: 15px;
+      color: #374151;
+      margin: 0 0 8px 0;
+    }
+    .line:last-child {
+      margin-bottom: 0;
+    }
+    .line.note {
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .line.upsell {
+      font-size: 14px;
+      border-top: 1px dashed #d1d5db;
+      padding-top: 8px;
+      margin-top: 8px;
+    }
+    .lnk {
+      color: #635BFF;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .soon {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      padding: 0 8px;
+    }
+    .status {
+      border: 1px solid #a5b4fc;
+      background: #eef2ff;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 24px;
     }
   </style>
 </head>
 <body>
+
   <div class="container">
     <div class="header">
       <h1>Your DevControl Weekly Summary</h1>
@@ -142,39 +164,36 @@
     </div>
 
     <p class="greeting">Hi Alex,</p>
-    <p style="margin-bottom: 24px;">Here's your DevControl summary for the past week:</p>
+    <p style="margin-bottom: 24px;">No AWS account is connected to Example Org (synthetic) yet, so this week has no spend, security or savings data.</p>
+
+    <div class="status">
+      <p class="line">AWS connection: not connected.</p><p class="line">DevControl connects with a read-only role in your AWS account.</p>
+      <p style="margin: 12px 0 0 0;"><a href="https://app.example.test/connect-aws" class="button">Connect AWS →</a></p>
+    </div>
 
     <div class="section cost">
-      <div class="section-title">
-        <span class="section-icon">&#128176;</span> COSTS
-      </div>
-      <p class="section-content">Cloud spend data was unavailable for this period (no AWS account is connected).</p>
+      <div class="section-title">COSTS</div>
+      <p class="line">Not connected. Cost Explorer spend appears here after you connect AWS.</p>
     </div>
-
     <div class="section security">
-      <div class="section-title">
-        <span class="section-icon">&#128274;</span> SECURITY
-      </div>
-      <p class="section-content">Security findings were unavailable for this period (the security posture score is still preliminary).</p>
+      <div class="section-title">SECURITY</div>
+      <p class="line">Not connected. DevControl&#x27;s security checks run after you connect AWS.</p>
     </div>
-
+    <div class="section recommendation">
+      <div class="section-title">ESTIMATED SAVINGS</div>
+      <p class="line">Not connected. Savings checks run after you connect AWS.</p>
+    </div>
     <div class="section alert">
-      <div class="section-title">
-        <span class="section-icon">&#9888;&#65039;</span> ALERTS
-      </div>
-      <p class="section-content">Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.</p>
+      <div class="section-title">ALERTS</div>
+      <p class="line">Alert history <span class="soon">Coming soon</span></p><p class="line">Active CloudWatch alarms appear on Operational Health once AWS is connected.</p>
     </div>
-
     <div class="section dora">
-      <div class="section-title">
-        <span class="section-icon">&#128200;</span> DELIVERY
-      </div>
-      <p class="section-content">No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.</p>
+      <div class="section-title">DELIVERY</div>
+      <p class="line">No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.</p><p class="line"><a class="lnk" href="https://app.example.test/deployments">See deployments →</a></p>
     </div>
-
 
     <div class="cta-container">
-      <a href="https://app.example.test/dashboard" class="button">View Full Dashboard &rarr;</a>
+      <a href="https://app.example.test/dashboard" class="lnk">View Full Dashboard →</a>
     </div>
 
     <div class="footer">
@@ -182,15 +201,14 @@
       <p style="margin-top: 8px;">
         <a href="https://api.example.test/api/user/preferences/unsubscribe?token&#x3D;v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC">Unsubscribe</a> |
         <a href="https://app.example.test/settings/notifications">Email Preferences</a> |
-        <a href="https://app.example.test/privacy">Privacy Policy</a>
+        <a href="https://app.example.test/legal/privacy">Privacy Policy</a>
       </p>
       <p style="margin-top: 16px; font-size: 12px; color: #9ca3af;">
-        You're receiving this email because you have an active DevControl account
-        with weekly summaries enabled.
+        You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
       </p>
       <p style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
         DevControl, Inc.<br>
-        Questions? Reply to this email or contact support.
+        Questions? Email <a href="mailto:support@getdevcontrol.com">support@getdevcontrol.com</a>.
       </p>
       <p style="margin-top: 16px; color: #d1d5db;">
         &copy; 2026 DevControl. All rights reserved.

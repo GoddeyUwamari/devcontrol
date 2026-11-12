@@ -171,3 +171,17 @@ export function describeCeilings(ceilingByResourceType: Record<string, number>, 
       ? `Plus up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound, not included above)`
       : `Plus up to ${format(amount)}/${period} from ${type} upper-bound figures (not included above)`);
 }
+
+/**
+ * describeCeilings() for when there is no estimated total to add to: one
+ * "Up to $X/<period> ... (upper bound)" line per resource type, same order.
+ */
+export function describeCeilingsWithoutEstimate(ceilingByResourceType: Record<string, number>, format: (amount: number) => string, period: string): string[] {
+  const order = (type: string) => { const i = Object.keys(CEILING_CONDITIONS).indexOf(type); return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
+  return Object.entries(ceilingByResourceType)
+    .filter(([, amount]) => amount > 0)
+    .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
+    .map(([type, amount]) => CEILING_CONDITIONS[type]
+      ? `Up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound)`
+      : `Up to ${format(amount)}/${period} from ${type} upper-bound figures`);
+}

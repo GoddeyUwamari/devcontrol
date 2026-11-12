@@ -135,3 +135,44 @@ describe('getStats -- estimated potential savings aggregate', () => {
     expect(stats.potential_savings_ceiling_by_resource_type).toEqual({});
   });
 });
+
+describe('getActiveSavingsBreakdown -- the weekly email savings states (WE-1)', () => {
+  it('splits open findings into estimates, upper bounds and no figure; the estimate total matches getStats', async () => {
+    const orgId = await insertOrg();
+    await repository.createBulk([
+      rec({ resource_id: 'vol-a', resource_type: 'EBS', issue: 'Unattached Volume', potential_savings: 12.5, metadata: { savings_basis: ESTIMATED } }),
+      rec({ resource_id: 'bucket-a', resource_type: 'S3', issue: 'Lifecycle', potential_savings: 300, metadata: { savings_basis: 'ceiling: all Standard data qualifies' } }),
+      rec({ resource_id: 'ri-a', issue: 'Reserved Instance Opportunity', potential_savings: 0, metadata: {} }),
+    ], orgId);
+
+    const b = await repository.getActiveSavingsBreakdown(orgId);
+    expect(b).toEqual({
+      active: 3,
+      estimatedMonthlySavings: 12.5,
+      estimatedFindings: 1,
+      ceilingByResourceType: { S3: 300 },
+      unestimatedFindings: 1,
+    });
+    expect(b.estimatedMonthlySavings).toBe((await repository.getStats(orgId)).total_potential_savings);
+  });
+
+  it('only upper bounds and unpriced findings: the estimate total is 0 with no estimated finding -- never a "$0" estimate', async () => {
+    const orgId = await insertOrg();
+    await repository.createBulk([
+      rec({ resource_id: 'bucket-b', resource_type: 'S3', issue: 'Lifecycle', potential_savings: 310, metadata: { savings_basis: 'ceiling: all Standard data qualifies' } }),
+      rec({ resource_id: 'ri-b', issue: 'Reserved Instance Opportunity', potential_savings: 0, metadata: {} }),
+    ], orgId);
+
+    const b = await repository.getActiveSavingsBreakdown(orgId);
+    expect(b.estimatedFindings).toBe(0);
+    expect(b.ceilingByResourceType).toEqual({ S3: 310 });
+    expect(b.unestimatedFindings).toBe(1);
+  });
+
+  it('no open findings', async () => {
+    const orgId = await insertOrg();
+    expect(await repository.getActiveSavingsBreakdown(orgId)).toEqual({
+      active: 0, estimatedMonthlySavings: 0, estimatedFindings: 0, ceilingByResourceType: {}, unestimatedFindings: 0,
+    });
+  });
+});

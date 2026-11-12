@@ -1,33 +1,42 @@
-
 Your DevControl Weekly Summary
 Cost, security, and delivery summary
 
 Hi Alex,
 
-Here's your DevControl summary for the past week:
+No AWS account is connected to Example Org (synthetic) yet, so this week has no spend, security or savings data.
+
+AWS connection: not connected.
+DevControl connects with a read-only role in your AWS account.
+Connect AWS: https://app.example.test/connect-aws
 
 COSTS
-Cloud spend data was unavailable for this period (no AWS account is connected).
+Not connected. Cost Explorer spend appears here after you connect AWS.
 
 SECURITY
-Security findings were unavailable for this period (the security posture score is still preliminary).
+Not connected. DevControl's security checks run after you connect AWS.
+
+ESTIMATED SAVINGS
+Not connected. Savings checks run after you connect AWS.
 
 ALERTS
-Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.
+Alert history (Coming soon)
+Active CloudWatch alarms appear on Operational Health once AWS is connected.
 
 DELIVERY
 No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.
+See deployments: https://app.example.test/deployments
+
 View Full Dashboard: https://app.example.test/dashboard
 
 ---
 This is your weekly automated summary from DevControl.
 Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
 Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
 
-You're receiving this email because you have an active DevControl account
-with weekly summaries enabled.
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
 
 DevControl, Inc.
-Questions? Reply to this email or contact support.
+Questions? Email support@getdevcontrol.com.
 
 © 2026 DevControl. All rights reserved.

@@ -1,36 +1,44 @@
-
 Your DevControl Weekly Summary
 Cost, security, and delivery summary
 
 Hi Alex,
 
-Here's your DevControl summary for the past week:
+Here's what DevControl measured for Example Org (synthetic). Spend covers the 7 full UTC days before this email. Findings and savings come from the latest scan.
 
 COSTS
-Billed AWS spend for Nov 9, 2026 – Nov 15, 2026 could not be retrieved. Estimated monthly run-rate for currently discovered resources: approximately $412.50/month — a DevControl list-price estimate, not billed AWS spend. Only 18 of 24 discovered resources have a cost estimate. No week-over-week comparison is available.
+AWS Cost Explorer spend for Nov 9 – Nov 15, 2026 couldn't be retrieved.
+Estimated monthly run-rate for currently discovered resources: approximately $412.50/month — a DevControl list-price estimate, not billed AWS spend. Only 18 of 24 discovered resources have a cost estimate.
+No week-over-week comparison is available.
 
 SECURITY
-DevControl's configuration checks currently report 1 account-level finding (security groups, IAM) and 4 resource compliance issues (encryption, backups, tagging, and other infrastructure checks); security posture score 81/100. This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
+DevControl's configuration checks currently report 1 account-level finding (security groups, IAM) and 4 resource compliance issues (encryption, backups, tagging, and other infrastructure checks).
+This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
+See security findings: https://app.example.test/security
+Security posture score and its trend are included in Optimization Engine. Compare plans: https://app.example.test/settings/billing
+
+ESTIMATED SAVINGS
+Estimated savings: $120/month across 2 open findings. This is a DevControl estimate, not realized savings.
+See Cost Optimization: https://app.example.test/cost-optimization
 
 ALERTS
-Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.
+Alert history (Coming soon)
+See your active CloudWatch alarms on Operational Health: https://app.example.test/admin/monitoring
 
 DELIVERY
 No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.
+See deployments: https://app.example.test/deployments
 
-RECOMMENDATIONS
-Estimated savings opportunity: $120/month across 2 open cost recommendations (a DevControl estimate, not realized savings).
 View Full Dashboard: https://app.example.test/dashboard
 
 ---
 This is your weekly automated summary from DevControl.
 Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
 Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
 
-You're receiving this email because you have an active DevControl account
-with weekly summaries enabled.
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
 
 DevControl, Inc.
-Questions? Reply to this email or contact support.
+Questions? Email support@getdevcontrol.com.
 
 © 2026 DevControl. All rights reserved.

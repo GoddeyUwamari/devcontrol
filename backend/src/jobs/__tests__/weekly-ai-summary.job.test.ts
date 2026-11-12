@@ -4,7 +4,7 @@
  * no database, no Cost Explorer, no model call, and no email leaves the process.
  */
 import { Pool } from 'pg';
-import { WeeklyAISummaryJob, WEEKLY_SUMMARY_SUBJECT } from '../weekly-ai-summary.job';
+import { WeeklyAISummaryJob, WEEKLY_SUMMARY_REPLY_TO, WEEKLY_SUMMARY_SUBJECT } from '../weekly-ai-summary.job';
 import { setModelClientForTests } from '../../services/ai/model-client';
 import { verifyUnsubscribeToken } from '../../services/unsubscribe-token';
 import { FAKE_RESEND_KEY, guardFetch, startFakeResendApi } from '../../__tests__/helpers/fake-resend-api';
@@ -92,6 +92,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     const missing = (source: string) => notSupported({ source }, 'not evaluated in this test');
     return jest.spyOn(repository, 'gatherWeeklyEvidence').mockImplementation(async (...args: any[]) => ({
       period: weeklySummaryPeriod(args[1]),
+      awsConnection: 'connected',
       currentWeekSpend: missing('AWS Cost Explorer daily trend'),
       previousWeekSpend: missing('AWS Cost Explorer daily trend'),
       weekOverWeek: missing('DevControl week-over-week comparison'),
@@ -102,7 +103,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
         state: 'available', data: { score: 70, accountLevelFindings: 2, resourceComplianceIssues: 3 },
       })),
       recommendations: await collectSection({ source: 'DevControl cost recommendations' }, async () => ({
-        state: 'available', data: { active: 3, totalEstimatedMonthlySavings: 845 },
+        state: 'available', data: { active: 3, estimatedMonthlySavings: 845, estimatedFindings: 3, ceilingByResourceType: {}, unestimatedFindings: 0 },
       })),
     }));
   }
@@ -132,6 +133,9 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       expect(body).toContain(token);
     }
     expect(payload.text).toContain('Cloud spend data was unavailable for this period');
+    // WE-D11: replies go to the support mailbox, never to the no-reply sender.
+    expect(payload.replyTo).toBe(WEEKLY_SUMMARY_REPLY_TO);
+    expect(WEEKLY_SUMMARY_REPLY_TO).toBe('support@getdevcontrol.com');
     expect(payload.text).not.toMatch(/No cloud spend recorded|No alerts|DORA|lead time/i);
 
     // B1: no model call; nothing model-written or "AI"-claimed reaches the email.
@@ -140,9 +144,28 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     expect(payload.subject).not.toMatch(/\bAI\b/);
     for (const body of [payload.html, payload.text]) {
       expect(body).not.toMatch(/AI recommendation|AI-Powered/i);
-      expect(body).toContain('Estimated savings opportunity: $845/month');
     }
+    expect(payload.html).toContain('Estimated savings: <strong>$845/month</strong>');
+    expect(payload.text).toContain('Estimated savings: $845/month across 3 open findings.');
     setModelClientForTests(undefined);
+  });
+
+  it('P1: the logs never carry the recipient address or the provider message id, on success or failure', async () => {
+    const { job, send, repository } = setup(org => ({ userId: userOf(org), email: `owner@${org}.test`, fullName: 'Pat Owner' }));
+    stubEvidence(repository);
+    send.mockResolvedValueOnce({ data: { id: 'provider-message-id-synthetic' } } as any);
+    send.mockRejectedValueOnce(new Error('socket hang up'));
+    const lines = [console.log, console.error, console.warn] as jest.Mock[];
+    lines.forEach(l => l.mockClear());
+
+    expect(await job.triggerManual(ORG_A)).toEqual({ sent: 1, skipped: 0, errors: 0 });
+    expect(await job.triggerManual(ORG_B)).toEqual({ sent: 0, skipped: 0, errors: 1 });
+
+    const logged = lines.flatMap(l => l.mock.calls).map(call => call.map(String).join(' ')).join('\n');
+    expect(logged).toContain('✅ Sent the summary for org');
+    expect(logged).toContain('Send failed for org');
+    expect(logged).not.toContain('@');
+    expect(logged).not.toContain('provider-message-id-synthetic');
   });
 
   it('H1: a Resend { error } result is a failed send -- counted as an error, never as sent, with a sanitized log', async () => {
@@ -190,7 +213,8 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       expect(method).toBe('POST');
       expect(path).toBe('/emails');
       expect(headers.authorization).toBe(`Bearer ${FAKE_RESEND_KEY}`);
-      expect(Object.keys(body).sort()).toEqual(['from', 'headers', 'html', 'subject', 'text', 'to']);
+      expect(Object.keys(body).sort()).toEqual(['from', 'headers', 'html', 'reply_to', 'subject', 'text', 'to']);
+      expect(body.reply_to).toBe('support@getdevcontrol.com');
       expect(body.to).toBe(`owner@${ORG_B}.test`);
       expect(body.subject).toBe(WEEKLY_SUMMARY_SUBJECT);
       expect(body.text).toContain('Cloud spend data was unavailable for this period');

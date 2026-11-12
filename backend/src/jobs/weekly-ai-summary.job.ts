@@ -1,7 +1,8 @@
 /**
  * Weekly Summary Job
  * Sends the evidence-grounded weekly summary email every Monday at 9 AM.
- * The email contains no model-written content (see generateAIRecommendation).
+ * The email contains no model-written content: every line comes from
+ * composeWeeklySummary() (weekly-summary-content.ts).
  * Log lines keep the "[Weekly AI Summary]" prefix: weeklyEmailJobMonitor.ts
  * matches its START/COMPLETE/ERROR markers on it.
  */
@@ -12,30 +13,62 @@ import fs from 'fs';
 import path from 'path';
 import Handlebars from 'handlebars';
 import { Resend } from 'resend';
-import { WeeklySummaryRepository, type WeeklyEvidence } from '../repositories/weekly-summary.repository';
+import { WeeklySummaryRepository } from '../repositories/weekly-summary.repository';
 import { requireOrganizationId } from '../services/ai-context-contract';
-import { composeWeeklySummary, type WeeklySummaryContent } from '../services/weekly-summary-content';
+import {
+  composeWeeklySummary,
+  SUPPORT_EMAIL,
+  WEEKLY_EMAIL_PATHS,
+  type EmailLine,
+  type EmailLink,
+  type EmailSectionId,
+  type WeeklySummaryContent,
+} from '../services/weekly-summary-content';
 import { signUnsubscribeToken } from '../services/unsubscribe-token';
 import { RELEASE_SHA } from '../version';
 
 /** No "AI" claim: the email contains no model-written content. */
 export const WEEKLY_SUMMARY_SUBJECT = 'Your DevControl Weekly Summary';
 
+/** Replies go to the support mailbox, whatever EMAIL_FROM is (WE-D11). */
+export const WEEKLY_SUMMARY_REPLY_TO = SUPPORT_EMAIL;
+
+/** One rendered line: the text split around its bold part, with absolute link URLs. */
+export interface TemplateLine {
+  text: string;
+  before: string;
+  strong: string;
+  after: string;
+  hasText: boolean;
+  isNote: boolean;
+  isUpsell: boolean;
+  chip: string;
+  link: { label: string; href: string } | null;
+}
+
 export interface WeeklyEmailTemplateData {
   userName: string;
-  costSummary: string;
-  securitySummary: string;
-  alertSummary: string;
-  deliverySummary: string;
-  hasRecommendations: boolean;
-  recommendation?: string;
-  savingsSummary?: string;
+  organizationName: string;
+  intro: string;
+  status: { lines: TemplateLine[]; action: { label: string; href: string } | null } | null;
+  sections: Array<{ id: EmailSectionId; title: string; cssClass: string; lines: TemplateLine[] }>;
+  cta: { label: string; href: string; isButton: boolean };
   dashboardUrl: string;
   unsubscribeUrl: string;
   preferencesUrl: string;
   privacyUrl: string;
+  supportEmail: string;
   year: number;
 }
+
+/** The template's colour per section (classes kept from the previous layout). */
+const SECTION_CSS: Record<EmailSectionId, string> = {
+  costs: 'cost',
+  security: 'security',
+  savings: 'recommendation',
+  alerts: 'alert',
+  delivery: 'dora',
+};
 
 export class WeeklyAISummaryJob {
   private repository: WeeklySummaryRepository;
@@ -219,9 +252,11 @@ export class WeeklyAISummaryJob {
         return 'skipped';
       }
 
-      const evidence = await this.repository.gatherWeeklyEvidence(organizationId, new Date(), client);
-      const content = composeWeeklySummary(evidence);
-      const recommendation = await this.generateAIRecommendation(evidence, content);
+      const [evidence, organizationName] = await Promise.all([
+        this.repository.gatherWeeklyEvidence(organizationId, new Date(), client),
+        this.repository.getOrganizationName(organizationId, client),
+      ]);
+      const content = composeWeeklySummary(evidence, { organizationName });
 
       const userName = recipient.fullName?.split(' ')[0] || recipient.email.split('@')[0];
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
@@ -235,11 +270,8 @@ export class WeeklyAISummaryJob {
       const templateData = this.buildTemplateData({
         userName,
         content,
-        recommendation,
-        dashboardUrl: `${frontendUrl}/dashboard`,
+        frontendUrl,
         unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
-        preferencesUrl: `${frontendUrl}/settings/notifications`,
-        privacyUrl: `${frontendUrl}/privacy`,
       });
 
       const html = this.emailTemplate(templateData);
@@ -252,6 +284,7 @@ export class WeeklyAISummaryJob {
         const result = await this.resend.emails.send({
           from: process.env.EMAIL_FROM || 'DevControl <noreply@devcontrol.app>',
           to: recipient.email,
+          replyTo: WEEKLY_SUMMARY_REPLY_TO,
           subject: WEEKLY_SUMMARY_SUBJECT,
           html,
           text: textContent,
@@ -269,10 +302,11 @@ export class WeeklyAISummaryJob {
           throw new Error(`Resend rejected the send (${result.error.name ?? 'unknown_error'})`);
         }
 
-        console.log(`[Weekly AI Summary] ✅ Sent to ${recipient.email} via Resend (ID: ${result.data?.id})`);
+        // No recipient address and no provider message id in the logs.
+        console.log(`[Weekly AI Summary] ✅ Sent the summary for org ${organizationId}`);
         return 'sent';
       } catch (error: any) {
-        console.error(`[Weekly AI Summary] ❌ Failed to send to ${recipient.email}:`, error.message);
+        console.error(`[Weekly AI Summary] ❌ Send failed for org ${organizationId}:`, error.message);
         throw error;
       }
     } finally {
@@ -280,30 +314,46 @@ export class WeeklyAISummaryJob {
     }
   }
 
-  /** Template/text-version fields, from the deterministic content plus the optional model recommendation. */
+  /** Template and text-version fields from the composed content; link paths become absolute URLs. */
   buildTemplateData(input: {
     userName: string;
     content: WeeklySummaryContent;
-    recommendation: string | null;
-    dashboardUrl: string;
+    frontendUrl: string;
     unsubscribeUrl: string;
-    preferencesUrl: string;
-    privacyUrl: string;
   }): WeeklyEmailTemplateData {
-    const { content, recommendation } = input;
+    const { content, frontendUrl } = input;
+    const href = (link: EmailLink) => (link.path.startsWith('mailto:') ? link.path : `${frontendUrl}${link.path}`);
+    const line = (l: EmailLine): TemplateLine => {
+      const at = l.strong ? l.text.indexOf(l.strong) : -1;
+      return {
+        text: l.text,
+        before: at === -1 ? l.text : l.text.slice(0, at),
+        strong: at === -1 ? '' : l.strong!,
+        after: at === -1 ? '' : l.text.slice(at + l.strong!.length),
+        hasText: l.text !== '',
+        isNote: l.style === 'note',
+        isUpsell: l.style === 'upsell',
+        chip: l.chip ?? '',
+        link: l.link ? { label: l.link.label, href: href(l.link) } : null,
+      };
+    };
     return {
       userName: input.userName,
-      costSummary: content.costSummary,
-      securitySummary: content.securitySummary,
-      alertSummary: content.alertSummary,
-      deliverySummary: content.deliverySummary,
-      hasRecommendations: recommendation !== null || content.savingsSummary !== null,
-      recommendation: recommendation ?? undefined,
-      savingsSummary: content.savingsSummary ?? undefined,
-      dashboardUrl: input.dashboardUrl,
+      organizationName: content.organizationName,
+      intro: content.intro,
+      status: content.status
+        ? {
+            lines: content.status.lines.map(line),
+            action: content.status.action ? { label: content.status.action.label, href: href(content.status.action) } : null,
+          }
+        : null,
+      sections: content.sections.map(s => ({ id: s.id, title: s.title, cssClass: SECTION_CSS[s.id], lines: s.lines.map(line) })),
+      cta: { label: content.cta.link.label, href: href(content.cta.link), isButton: content.cta.style === 'button' },
+      dashboardUrl: `${frontendUrl}${WEEKLY_EMAIL_PATHS.dashboard}`,
       unsubscribeUrl: input.unsubscribeUrl,
-      preferencesUrl: input.preferencesUrl,
-      privacyUrl: input.privacyUrl,
+      preferencesUrl: `${frontendUrl}${WEEKLY_EMAIL_PATHS.preferences}`,
+      privacyUrl: `${frontendUrl}${WEEKLY_EMAIL_PATHS.privacy}`,
+      supportEmail: SUPPORT_EMAIL,
       year: new Date().getFullYear(),
     };
   }
@@ -315,77 +365,48 @@ export class WeeklyAISummaryJob {
   }
 
   /**
-   * The model-written recommendation is DISABLED: always null, and no model
-   * call is made. PR #136 review finding B1 showed the denylist in
-   * checkRecommendationText() (weekly-summary-content.ts) lets evidence-
-   * contradicting prose through -- "No security issues were detected" while
-   * security is unavailable, "Your monthly spend is $X" for a 7-day figure,
-   * spelled-out or "k"/"percent" figures, "guaranteed" savings, and
-   * downsizing/reservation advice. buildRecommendationPrompt() and
-   * checkRecommendationText() are kept, unused, pending a grounded redesign
-   * (e.g. an allowlist of evidence figures and claims); re-enabling needs
-   * that redesign, not this denylist.
-   */
-  async generateAIRecommendation(_evidence: WeeklyEvidence, _content: WeeklySummaryContent): Promise<string | null> {
-    return null;
-  }
-
-  /**
-   * Generate plain text version of email for better deliverability
+   * The plain-text part: the same lines as the HTML, a link written as
+   * "Label: URL" (arrow dropped) and a chip as "(Coming soon)".
    */
   private generateTextVersion(data: WeeklyEmailTemplateData): string {
-    let text = `
-Your DevControl Weekly Summary
-Cost, security, and delivery summary
-
-Hi ${data.userName},
-
-Here's your DevControl summary for the past week:
-
-COSTS
-${data.costSummary}
-
-SECURITY
-${data.securitySummary}
-
-ALERTS
-${data.alertSummary}
-
-DELIVERY
-${data.deliverySummary}
-`;
-
-    if (data.hasRecommendations) {
-      text += `
-RECOMMENDATIONS`;
-      if (data.recommendation) {
-        text += `
-AI recommendation: ${data.recommendation}`;
-      }
-      if (data.savingsSummary) {
-        text += `
-${data.savingsSummary}`;
-      }
-      text += '\n';
+    const lineText = (l: TemplateLine) => {
+      let out = l.text;
+      if (l.chip) out += ` (${l.chip})`;
+      if (l.link) out += `${l.hasText ? ' ' : ''}${l.link.label.replace(/ →$/, '')}: ${l.link.href}`;
+      return out;
+    };
+    const parts: string[] = [
+      'Your DevControl Weekly Summary',
+      'Cost, security, and delivery summary',
+      '',
+      `Hi ${data.userName},`,
+      '',
+      data.intro,
+    ];
+    if (data.status) {
+      parts.push('', ...data.status.lines.map(lineText));
+      if (data.status.action) parts.push(`${data.status.action.label.replace(/ →$/, '')}: ${data.status.action.href}`);
     }
-
-    text += `
-View Full Dashboard: ${data.dashboardUrl}
-
----
-This is your weekly automated summary from DevControl.
-Unsubscribe: ${data.unsubscribeUrl}
-Email Preferences: ${data.preferencesUrl}
-
-You're receiving this email because you have an active DevControl account
-with weekly summaries enabled.
-
-DevControl, Inc.
-Questions? Reply to this email or contact support.
-
-© ${data.year} DevControl. All rights reserved.
-`.trim();
-
-    return text;
+    for (const section of data.sections) {
+      parts.push('', section.title, ...section.lines.map(lineText));
+    }
+    parts.push(
+      '',
+      `${data.cta.label.replace(/ →$/, '')}: ${data.cta.href}`,
+      '',
+      '---',
+      'This is your weekly automated summary from DevControl.',
+      `Unsubscribe: ${data.unsubscribeUrl}`,
+      `Email Preferences: ${data.preferencesUrl}`,
+      `Privacy Policy: ${data.privacyUrl}`,
+      '',
+      `You're receiving this because you're an owner of ${data.organizationName} and weekly summaries are on in your notification settings.`,
+      '',
+      'DevControl, Inc.',
+      `Questions? Email ${data.supportEmail}.`,
+      '',
+      `© ${data.year} DevControl. All rights reserved.`,
+    );
+    return parts.join('\n');
   }
 }

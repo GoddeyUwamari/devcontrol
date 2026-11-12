@@ -33,8 +33,8 @@ const PINNED_SHA256: Record<string, { filled: string; empty: string }> = {
     empty: '9ed8470341e602ea82507dbf362b322bd1f1518a2bc52b7ce418fc2710cf77a0',
   },
   'weekly-summary-email.html': {
-    filled: '59ee65d107150a4589d901d4db9f7674ede671b169ed198bc9d40a7bc5152cdc',
-    empty: 'c692e0df20e3dda5bd41da27ed1086df40e0aa31c70e909f23949f67d82e7dbb',
+    filled: '9c166e2a2c9f749980c959149b32f4a1fad3dedfc63b5cb682ca8e6b2b26c7a3',
+    empty: 'b0c3c49310a633c0779e5b66ea6be8b228f829df4a3af35b760b45f370c5ba46',
   },
 };
 

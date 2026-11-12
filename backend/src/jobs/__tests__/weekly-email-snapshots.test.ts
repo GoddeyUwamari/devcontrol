@@ -20,7 +20,7 @@ import * as path from 'path';
 import { Pool } from 'pg';
 import { composeWeeklySummary } from '../../services/weekly-summary-content';
 import { WeeklyAISummaryJob } from '../weekly-ai-summary.job';
-import { FIXTURE_IDS, FIXTURE_URLS, fixtureEvidence, type FixtureId } from './weekly-email-fixtures';
+import { FIXTURE_IDS, FIXTURE_ORG_NAME, FIXTURE_URLS, fixtureEvidence, type FixtureId } from './weekly-email-fixtures';
 
 const DIR = path.join(__dirname, '__fixtures__', 'weekly-email');
 const WRITE = process.env.WEEKLY_EMAIL_FIXTURES === 'write';
@@ -44,8 +44,7 @@ async function renderFixture(id: FixtureId): Promise<{ html: string; text: strin
   const e = await fixtureEvidence(id);
   const data = job.buildTemplateData({
     userName: 'Alex',
-    content: composeWeeklySummary(e),
-    recommendation: null,
+    content: composeWeeklySummary(e, { organizationName: FIXTURE_ORG_NAME }),
     ...FIXTURE_URLS,
   });
   data.year = 2026;

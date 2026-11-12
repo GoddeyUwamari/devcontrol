@@ -46,17 +46,19 @@ router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLim
       result
     });
   } catch (error: any) {
-    console.error('[AI Insights] Trigger weekly summary error:', error);
+    console.error('[AI Insights] Trigger weekly summary error:', error?.message);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: 'Weekly summary could not be sent.'
     });
   }
 });
 
 // GET /api/ai-insights/preview-weekly-summary
-// Preview the caller's own org's weekly summary evidence and wording without sending email
-router.get('/preview-weekly-summary', async (req, res) => {
+// Preview the caller's own org's weekly summary evidence and wording without
+// sending email. Owner only, like the manual send. The evidence carries only
+// what the org's plan includes (the repository leaves plan-gated figures out).
+router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
   try {
     const { WeeklySummaryRepository } = await import('../repositories/weekly-summary.repository');
     const { composeWeeklySummary } = await import('../services/weekly-summary-content');
@@ -67,9 +69,10 @@ router.get('/preview-weekly-summary', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Organization context required' });
     }
 
-    const [recipient, evidence] = await Promise.all([
+    const [recipient, evidence, organizationName] = await Promise.all([
       repository.getUserInfo(organizationId),
       repository.gatherWeeklyEvidence(organizationId, new Date()),
+      repository.getOrganizationName(organizationId),
     ]);
 
     res.json({
@@ -77,14 +80,14 @@ router.get('/preview-weekly-summary', async (req, res) => {
       organizationId,
       userInfo: recipient ? { email: recipient.email, fullName: recipient.fullName } : null,
       evidence,
-      content: composeWeeklySummary(evidence),
-      message: 'This is the evidence and wording the weekly email would use (the AI recommendation is not generated in preview)'
+      content: composeWeeklySummary(evidence, { organizationName }),
+      message: 'This is the evidence and wording the weekly email would use'
     });
   } catch (error: any) {
-    console.error('[AI Insights] Preview error:', error);
+    console.error('[AI Insights] Preview error:', error?.message);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: 'Weekly summary preview could not be generated.'
     });
   }
 });

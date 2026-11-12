@@ -9,7 +9,7 @@ import {
 } from '../types';
 import { DetectorObservation } from '../services/cost-optimization.service';
 import { HeldLease, beginFenced } from '../services/scan-lease';
-import { aggregateEstimatedSavings } from '../services/estimated-savings';
+import { aggregateEstimatedSavings, classifySavingsBasis } from '../services/estimated-savings';
 import { EMPTY_RECONCILE_COUNTS, ReconcileCounts } from '../services/cost-analysis-outcome';
 import { AuditEventAction, AuditRequestContext, insertAuditEventInTransaction } from '../services/auditEvents.service';
 import { DetectionState, NotConfirmedReason, judgeFreshness } from '../services/cost-finding-freshness';
@@ -25,6 +25,20 @@ import {
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
 } from '../config/optimization-rules';
+
+/** Open findings by what their dollar figure is (getActiveSavingsBreakdown). */
+export interface ActiveSavingsBreakdown {
+  /** Every ACTIVE finding. */
+  active: number;
+  /** De-duplicated sum of the estimates (aggregateEstimatedSavings().total); never includes an upper bound. */
+  estimatedMonthlySavings: number;
+  /** Findings whose figure is an estimate. */
+  estimatedFindings: number;
+  /** Upper bounds by resource type (aggregateEstimatedSavings().ceilingByResourceType). */
+  ceilingByResourceType: Record<string, number>;
+  /** Findings with neither an estimate nor an upper bound (no figure, or no supported basis). */
+  unestimatedFindings: number;
+}
 
 // Fixed, canonical issue strings for the resource-identity-based detectors
 // this occurrence lifecycle applies to
@@ -1135,6 +1149,39 @@ export class CostRecommendationsRepository {
           medium: parseInt(severityQuery.rows[0].medium),
           low: parseInt(severityQuery.rows[0].low),
         },
+      };
+    });
+  }
+
+  /**
+   * The open (ACTIVE) findings split by what their dollar figure is, for the
+   * weekly summary: the de-duplicated estimate total (same rule as getStats),
+   * how many findings carry an estimate, the upper bounds by resource type,
+   * and how many carry neither -- so "no figure" is never shown as $0.
+   */
+  async getActiveSavingsBreakdown(organizationId: string): Promise<ActiveSavingsBreakdown> {
+    return this.withOrgClient(organizationId, async (client) => {
+      const { rows } = await client.query(
+        'SELECT resource_type, potential_savings, metadata FROM cost_recommendations WHERE status = $1 AND organization_id = $2',
+        ['ACTIVE', organizationId]
+      );
+      const savings = aggregateEstimatedSavings(rows);
+      const hasAmount = (value: unknown) =>
+        value !== null && value !== undefined && Number.isFinite(typeof value === 'number' ? value : parseFloat(String(value)));
+      let estimatedFindings = 0;
+      let ceilingFindings = 0;
+      for (const row of rows) {
+        if (!hasAmount(row.potential_savings)) continue;
+        const kind = classifySavingsBasis(row.metadata?.savings_basis);
+        if (kind === 'estimate') estimatedFindings++;
+        else if (kind === 'ceiling') ceilingFindings++;
+      }
+      return {
+        active: rows.length,
+        estimatedMonthlySavings: savings.total,
+        estimatedFindings,
+        ceilingByResourceType: savings.ceilingByResourceType,
+        unestimatedFindings: rows.length - estimatedFindings - ceilingFindings,
       };
     });
   }

@@ -1,36 +1,48 @@
-
 Your DevControl Weekly Summary
 Cost, security, and delivery summary
 
 Hi Alex,
 
-Here's your DevControl summary for the past week:
+Here's what DevControl measured for Example Org (synthetic). Spend covers the 7 full UTC days before this email. Findings and savings come from the latest scan.
 
 COSTS
-AWS Cost Explorer gross charges for the last 7 days (Nov 9, 2026 – Nov 15, 2026, UTC), per Cost Explorer data as of Nov 16, 2026, 09:00 UTC: $1,234.56, before credits and refunds. Cost Explorer figures for recent days may still be updating. That is up 4.2% from $1,184.80 for the previous 7 days (Nov 2, 2026 – Nov 8, 2026).
+AWS Cost Explorer spend, Nov 9 – Nov 15, 2026 (UTC): $1,234.56.
+That is up 4.2% from $1,184.80 for the previous 7 days (Nov 2, 2026 – Nov 8, 2026).
+Unblended cost by service, after any credits and refunds AWS applied. If credits take a category below $0 on a day, that category counts as $0. Recent days may still be updating.
+See costs: https://app.example.test/costs
 
 SECURITY
-DevControl's configuration checks currently report 2 account-level findings (security groups, IAM) and 5 resource compliance issues (encryption, backups, tagging, and other infrastructure checks); security posture score 72/100. This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
+DevControl's configuration checks currently report 2 account-level findings (security groups, IAM) and 5 resource compliance issues (encryption, backups, tagging, and other infrastructure checks).
+Security posture score: 72/100.
+This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
+See security findings: https://app.example.test/security
+
+ESTIMATED SAVINGS
+Estimated savings: $845/month across 3 open findings. This is a DevControl estimate, not realized savings.
+See Cost Optimization: https://app.example.test/cost-optimization
 
 ALERTS
-Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.
+Alert history (Coming soon)
+See your active CloudWatch alarms on Operational Health: https://app.example.test/admin/monitoring
 
 DELIVERY
-6 deployments recorded in DevControl in the 7 days before this summary: 4 succeeded, 2 failed. Deployment frequency (successful deployments): 0.57 per day. Change failure rate: 33.3% (2 of 6 finished deployments failed). Lead time for changes and time to restore service: Not tracked.
+6 deployments recorded in DevControl in the 7 days before this summary: 4 succeeded, 2 failed.
+Deployment frequency (successful deployments): 0.57 per day.
+Change failure rate: 33.3% (2 of 6 finished deployments failed).
+Lead time for changes and time to restore service: Not tracked.
+See deployments: https://app.example.test/deployments
 
-RECOMMENDATIONS
-Estimated savings opportunity: $845/month across 3 open cost recommendations (a DevControl estimate, not realized savings).
 View Full Dashboard: https://app.example.test/dashboard
 
 ---
 This is your weekly automated summary from DevControl.
 Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
 Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
 
-You're receiving this email because you have an active DevControl account
-with weekly summaries enabled.
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
 
 DevControl, Inc.
-Questions? Reply to this email or contact support.
+Questions? Email support@getdevcontrol.com.
 
 © 2026 DevControl. All rights reserved.

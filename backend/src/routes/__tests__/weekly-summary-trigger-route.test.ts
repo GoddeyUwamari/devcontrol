@@ -1,5 +1,6 @@
 /**
- * POST /api/ai-insights/trigger-weekly-summary authorization and rate control (Q).
+ * POST /api/ai-insights/trigger-weekly-summary authorization and rate control (Q),
+ * and GET /api/ai-insights/preview-weekly-summary authorization (WE-1, P3).
  *
  * The route sends a real email, so it is owner-only and limited per
  * organization. Auth is stubbed (the caller's role/org come from test
@@ -32,7 +33,23 @@ jest.mock('../../jobs/weekly-ai-summary.job', () => ({
   WeeklyAISummaryJob: jest.fn().mockImplementation(() => ({ triggerManual: mockTriggerManual })),
 }));
 
+const mockRepo = {
+  getUserInfo: jest.fn(),
+  gatherWeeklyEvidence: jest.fn(),
+  getOrganizationName: jest.fn(),
+};
+const mockRepoConstructed = jest.fn();
+jest.mock('../../repositories/weekly-summary.repository', () => ({
+  ...jest.requireActual('../../repositories/weekly-summary.repository'),
+  WeeklySummaryRepository: jest.fn().mockImplementation(() => {
+    mockRepoConstructed();
+    return mockRepo;
+  }),
+}));
+
 import aiInsightsRoutes from '../ai-insights.routes';
+import { notSupported, notConnected } from '../../services/ai-context-contract';
+import { weeklySummaryPeriod } from '../../repositories/weekly-summary.repository';
 
 let server: http.Server;
 let baseUrl: string;
@@ -102,5 +119,71 @@ describe('POST /api/ai-insights/trigger-weekly-summary', () => {
     const res = await trigger('org-fail-1', 'owner');
     expect(res.status).toBe(500);
     expect(((await res.json()) as any).success).toBe(false);
+  });
+});
+
+describe('POST /api/ai-insights/trigger-weekly-summary errors (WE-1)', () => {
+  it('a thrown failure answers a generic error -- never the raw message', async () => {
+    mockTriggerManual.mockRejectedValue(new Error('synthetic raw failure detail'));
+    const res = await trigger('org-throw-1', 'owner');
+    const text = await res.text();
+    expect(res.status).toBe(500);
+    expect(JSON.parse(text)).toEqual({ success: false, error: 'Weekly summary could not be sent.' });
+    expect(text).not.toContain('synthetic raw failure detail');
+  });
+});
+
+describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
+  const missing = (source: string) => notSupported({ source }, 'not evaluated in this test');
+  const evidence = () => ({
+    period: weeklySummaryPeriod(new Date('2026-11-16T09:00:00.000Z')),
+    awsConnection: 'not_connected',
+    currentWeekSpend: notConnected({ source: 'AWS Cost Explorer daily trend' }, 'no AWS account is connected'),
+    previousWeekSpend: notConnected({ source: 'AWS Cost Explorer daily trend' }, 'no AWS account is connected'),
+    weekOverWeek: missing('DevControl week-over-week comparison'),
+    inventoryEstimate: null,
+    alerts: missing('DevControl alert history'),
+    delivery: missing('DevControl deployment records'),
+    security: notConnected({ source: 'DevControl security posture score and configuration checks' }, 'no AWS account is connected'),
+    recommendations: notConnected({ source: 'DevControl cost recommendations' }, 'no AWS account is connected'),
+  });
+
+  function preview(org: string, role: string) {
+    return fetch(`${baseUrl}/api/ai-insights/preview-weekly-summary`, { headers: { 'x-test-org': org, 'x-test-role': role } });
+  }
+
+  beforeEach(() => {
+    mockRepoConstructed.mockReset();
+    mockRepo.getUserInfo.mockReset().mockResolvedValue({ userId: 'u', email: 'owner@example.test', fullName: 'Pat Owner' });
+    mockRepo.gatherWeeklyEvidence.mockReset().mockImplementation(async () => evidence());
+    mockRepo.getOrganizationName.mockReset().mockResolvedValue('Example Org (synthetic)');
+  });
+
+  it.each(['member', 'admin', 'viewer'])('a %s cannot preview (403; no evidence gathered, no owner details returned)', async role => {
+    const res = await preview('org-preview-1', role);
+    const text = await res.text();
+    expect(res.status).toBe(403);
+    expect(mockRepoConstructed).not.toHaveBeenCalled();
+    expect(mockRepo.gatherWeeklyEvidence).not.toHaveBeenCalled();
+    expect(text).not.toContain('owner@example.test');
+  });
+
+  it("an owner previews their own org's email content: five sections, composed from what the repository returned", async () => {
+    const res = await preview('org-preview-2', 'owner');
+    const body = (await res.json()) as any;
+    expect(res.status).toBe(200);
+    expect(mockRepo.gatherWeeklyEvidence).toHaveBeenCalledWith('org-preview-2', expect.any(Date));
+    expect(body.content.sections.map((s: any) => s.title)).toEqual(['COSTS', 'SECURITY', 'ESTIMATED SAVINGS', 'ALERTS', 'DELIVERY']);
+    expect(body.content.organizationName).toBe('Example Org (synthetic)');
+    expect(body.message).not.toMatch(/\bAI\b/);
+  });
+
+  it('a failure answers a generic error -- never the raw message', async () => {
+    mockRepo.gatherWeeklyEvidence.mockRejectedValue(new Error('synthetic raw failure detail'));
+    const res = await preview('org-preview-3', 'owner');
+    const text = await res.text();
+    expect(res.status).toBe(500);
+    expect(JSON.parse(text)).toEqual({ success: false, error: 'Weekly summary preview could not be generated.' });
+    expect(text).not.toContain('synthetic raw failure detail');
   });
 });

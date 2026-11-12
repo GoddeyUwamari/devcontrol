@@ -7,9 +7,23 @@
  */
 import { EC2Client } from '@aws-sdk/client-ec2';
 import costOptimizationService from '../cost-optimization.service';
-import { aggregateEstimatedSavings, classifySavingsBasis, SavingsRecommendation } from '../estimated-savings';
+import { aggregateEstimatedSavings, classifySavingsBasis, describeCeilings, describeCeilingsWithoutEstimate, SavingsRecommendation } from '../estimated-savings';
 
 const ESTIMATED = 'estimated: list price';
+
+describe('describeCeilingsWithoutEstimate (weekly email, no estimate to add to)', () => {
+  const fmt = (n: number) => '$' + String(n);
+  it('one "Up to" line per type, in describeCeilings order, positive amounts only', () => {
+    const ceilings = { DynamoDB: 40, S3: 310, Lambda: 5, EBS: 0 };
+    expect(describeCeilingsWithoutEstimate(ceilings, fmt, 'month')).toEqual([
+      'Up to $310/month if S3 data qualifies for Standard-IA (upper bound)',
+      'Up to $40/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound)',
+      'Up to $5/month from Lambda upper-bound figures',
+    ]);
+    expect(describeCeilings(ceilings, fmt, 'month')).toHaveLength(3);
+    expect(describeCeilingsWithoutEstimate({}, fmt, 'month')).toEqual([]);
+  });
+});
 const CEILING = 'ceiling: assumes 100% of current Standard storage transitions to Standard-IA';
 
 function idle(instanceId: string, savings: number): SavingsRecommendation {

@@ -14,6 +14,7 @@ import {
   collectSection,
   deriveSection,
   hasEvidence,
+  notConnected,
   type ContextSection,
   type CostExplorerScope,
 } from '../services/ai-context-contract';
@@ -22,7 +23,8 @@ import { createEvidenceBasis } from '../services/ai/evidence/basis';
 import { alertHistoryProvider } from '../services/ai/evidence/providers/not-built';
 import { changeFailureRate } from '../services/deployment-status';
 import { RiskTrackingService } from '../services/risk-tracking.service';
-import { CostRecommendationsRepository } from './cost-recommendations.repository';
+import { CostRecommendationsRepository, type ActiveSavingsBreakdown } from './cost-recommendations.repository';
+import { hasEligibleAwsAccount } from './aws-accounts.repository';
 import { AccountSecurityFindingsRepository } from './account-security-findings.repository';
 import { organizationHasEntitlement } from '../middleware/subscription.middleware';
 
@@ -59,10 +61,15 @@ export interface WeeklySummaryPeriod {
   delivery: { start: string; end: string };
 }
 
-/** Gross daily charges for one window: the sum of Cost Explorer trend days, each category floored at $0. */
+/**
+ * Cost Explorer spend for one window: the sum of the trend's days. Each day is
+ * UnblendedCost by service, so credits and refunds are already netted in; a
+ * category that credits take below $0 on a day counts as $0
+ * (AWSCostService.queryCostTrend). Not gross, not the net bill.
+ */
 export interface WeeklySpendEvidence {
   amount: number;
-  basis: 'gross_daily_charges_before_credits';
+  basis: 'unblended_after_credits_category_floored';
 }
 
 export interface WeekOverWeekEvidence {
@@ -86,16 +93,28 @@ export interface WeeklyAlertEvidence {
 }
 
 export interface WeeklySecurityEvidence {
-  score: number;
+  /**
+   * The security posture score: left out (not null) below
+   * PLAN_ENTITLEMENTS.riskScore, as GET /api/risk-score/current is gated.
+   */
+  score?: number;
   accountLevelFindings: number;
   resourceComplianceIssues: number;
 }
 
-export interface WeeklyRecommendationEvidence {
-  active: number;
-  /** De-duplicated estimate (aggregateEstimatedSavings), not realized savings. */
-  totalEstimatedMonthlySavings: number;
-}
+/** Open savings findings by what their figure is (CostRecommendationsRepository.getActiveSavingsBreakdown). */
+export type WeeklyRecommendationEvidence = ActiveSavingsBreakdown;
+
+/**
+ * Whether the organization has an AWS connection DevControl uses (one
+ * eligible account). 'unknown' when that could not be read: then no section
+ * is worded as not connected.
+ */
+export type WeeklyAwsConnection = 'connected' | 'not_connected' | 'unknown';
+
+/** The reason the security section gives while no scan has completed. */
+export const SECURITY_PRELIMINARY_REASON = 'the security posture score is still preliminary';
+const NOT_CONNECTED_REASON = 'no AWS account is connected';
 
 /**
  * Deployment metrics for the delivery window, with the same definitions as
@@ -122,6 +141,7 @@ export interface WeeklyDORAMetrics {
 
 export interface WeeklyEvidence {
   period: WeeklySummaryPeriod;
+  awsConnection: WeeklyAwsConnection;
   currentWeekSpend: ContextSection<WeeklySpendEvidence>;
   previousWeekSpend: ContextSection<WeeklySpendEvidence>;
   weekOverWeek: ContextSection<WeekOverWeekEvidence>;
@@ -136,6 +156,8 @@ export interface WeeklyEvidence {
 const TREND_SOURCE = 'AWS Cost Explorer daily trend';
 const COMPARISON_SOURCE = 'DevControl week-over-week comparison';
 const ESTIMATE_SOURCE = 'DevControl inventory cost estimate';
+const SECURITY_SOURCE = 'DevControl security posture score and configuration checks';
+const RECOMMENDATIONS_SOURCE = 'DevControl cost recommendations';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 
@@ -219,6 +241,10 @@ export class WeeklySummaryRepository {
       endDate: new Date(period.delivery.end),
     };
 
+    const awsConnection = await this.getAwsConnection(organizationId, client);
+    const notConnectedSection = <T>(source: string) =>
+      notConnected<T>({ source }, NOT_CONNECTED_REASON);
+
     const [spend, delivery, security, recommendations] = await Promise.all([
       this.getWeeklySpendSections(organizationId, period, client),
       collectSection<WeeklyDORAMetrics>(
@@ -230,21 +256,29 @@ export class WeeklySummaryRepository {
         },
         async () => ({ state: 'available', data: await this.getWeeklyDeliveryOnPlan(deliveryQuery, client) })
       ),
-      this.getSecuritySection(organizationId),
-      collectSection<WeeklyRecommendationEvidence>(
-        { source: 'DevControl cost recommendations', provenance: 'estimated' },
-        async () => {
-          const stats = await this.costRecommendationsRepository.getStats(organizationId);
-          return {
-            state: 'available',
-            data: { active: stats.active_recommendations, totalEstimatedMonthlySavings: stats.total_potential_savings },
-          };
-        }
-      ),
+      awsConnection === 'not_connected'
+        ? Promise.resolve(notConnectedSection<WeeklySecurityEvidence>(SECURITY_SOURCE))
+        : this.getSecuritySection(organizationId, client),
+      awsConnection === 'not_connected'
+        ? Promise.resolve(notConnectedSection<WeeklyRecommendationEvidence>(RECOMMENDATIONS_SOURCE))
+        : collectSection<WeeklyRecommendationEvidence>(
+            { source: RECOMMENDATIONS_SOURCE, provenance: 'estimated' },
+            async () => ({ state: 'available', data: await this.costRecommendationsRepository.getActiveSavingsBreakdown(organizationId) })
+          ),
     ]);
 
     const alerts = await this.getWeeklyAlerts(organizationId, period);
-    return { period, ...spend, alerts, delivery, security, recommendations };
+    return { period, awsConnection, ...spend, alerts, delivery, security, recommendations };
+  }
+
+  /** One eligible AWS account or none; 'unknown' when the read fails (logged without detail). */
+  async getAwsConnection(organizationId: string, client?: PoolClient): Promise<WeeklyAwsConnection> {
+    try {
+      return (await hasEligibleAwsAccount(client ?? this.pool, organizationId)) ? 'connected' : 'not_connected';
+    } catch {
+      console.error('[Weekly Summary] AWS connection lookup failed');
+      return 'unknown';
+    }
   }
 
   /**
@@ -252,10 +286,12 @@ export class WeeklySummaryRepository {
    * their comparison, and -- only when the current window has no Cost
    * Explorer evidence -- the inventory estimate, labeled as an estimate.
    *
-   * The trend is AWSCostService.fetchCostTrend() (the dashboard's source),
-   * whose categories are floored at $0 per day: these are gross charges
-   * before credits, not the net bill. A day Cost Explorer did not return is
-   * reported missing, never filled.
+   * The trend is AWSCostService.fetchCostTrend() (the dashboard's source):
+   * UnblendedCost by service, so credits and refunds are netted in, with each
+   * category floored at $0 per day -- neither gross charges nor the net bill.
+   * A day Cost Explorer did not return is reported missing, never filled.
+   * No AWS connection makes every cost section not_connected and skips the
+   * inventory estimate.
    */
   async getWeeklySpendSections(
     organizationId: string,
@@ -263,7 +299,7 @@ export class WeeklySummaryRepository {
     client?: PoolClient
   ): Promise<Pick<WeeklyEvidence, 'currentWeekSpend' | 'previousWeekSpend' | 'weekOverWeek' | 'inventoryEstimate'>> {
     let trendByDay: Map<string, number> | null = null;
-    let notConnected = false;
+    let notConnectedOrg = false;
     let failure: unknown = null;
     try {
       const trend = await awsCostService.fetchCostTrend(organizationId, '30d');
@@ -271,7 +307,7 @@ export class WeeklySummaryRepository {
     } catch (error: any) {
       // AWSCostService.createForOrg() throws AWS_NOT_CONNECTED when the org has
       // no active AWS connection: nothing to query, not a failure.
-      if (String(error?.message ?? '').startsWith('AWS_NOT_CONNECTED')) notConnected = true;
+      if (String(error?.message ?? '').startsWith('AWS_NOT_CONNECTED')) notConnectedOrg = true;
       else failure = error;
     }
     const asOf = await awsCostService.getCostTrendFetchedAt(organizationId, '30d');
@@ -286,7 +322,8 @@ export class WeeklySummaryRepository {
         },
         async () => {
           if (failure) throw failure;
-          if (notConnected || !trendByDay) return { state: 'unavailable', reason: 'no AWS account is connected' };
+          if (notConnectedOrg) return { state: 'not_connected', reason: NOT_CONNECTED_REASON };
+          if (!trendByDay) return { state: 'unavailable', reason: 'AWS Cost Explorer returned no data' };
           const days = daysOf(window);
           const received = days.filter(day => trendByDay!.has(day));
           const missing = days.filter(day => !trendByDay!.has(day));
@@ -300,7 +337,7 @@ export class WeeklySummaryRepository {
             return { state: 'unavailable', reason: 'AWS Cost Explorer returned no daily data for this period', completeness };
           }
           const amount = roundCents(received.reduce((sum, day) => sum + trendByDay!.get(day)!, 0));
-          return { state: 'available', asOf, completeness, data: { amount, basis: 'gross_daily_charges_before_credits' } };
+          return { state: 'available', asOf, completeness, data: { amount, basis: 'unblended_after_credits_category_floored' } };
         }
       );
 
@@ -315,7 +352,7 @@ export class WeeklySummaryRepository {
         scope: COST_EXPLORER_SCOPE,
         period: { kind: 'range', start: period.previousCost.start, endExclusive: period.cost.endExclusive },
         asOf,
-        coverage: 'the 7 UTC days before today vs the 7 days before them; gross daily charges before credits, per Cost Explorer data that may still be updating for recent days',
+        coverage: 'the 7 UTC days before today vs the 7 days before them; UnblendedCost by service after credits and refunds, each category floored at $0 per day, per Cost Explorer data that may still be updating for recent days',
       },
       [currentWeekSpend, previousWeekSpend] as const,
       ([current, previous]) => ({
@@ -328,7 +365,7 @@ export class WeeklySummaryRepository {
       })
     );
 
-    const inventoryEstimate = hasEvidence(currentWeekSpend)
+    const inventoryEstimate = hasEvidence(currentWeekSpend) || notConnectedOrg
       ? null
       : await collectSection<InventoryEstimateEvidence>(
           { source: ESTIMATE_SOURCE, provenance: 'estimated', period: { kind: 'point_in_time' } },
@@ -405,21 +442,27 @@ export class WeeklySummaryRepository {
   /**
    * DevControl's security posture score and the account-level findings it
    * includes. Unavailable while the score is preliminary; a failure is an
-   * error -- never a zero-findings result.
+   * error -- never a zero-findings result. The score itself is left out below
+   * PLAN_ENTITLEMENTS.riskScore (and when the plan cannot be read), as the
+   * risk score API is gated; the finding counts are on every plan.
    */
-  private async getSecuritySection(organizationId: string): Promise<ContextSection<WeeklySecurityEvidence>> {
+  private async getSecuritySection(organizationId: string, client?: PoolClient): Promise<ContextSection<WeeklySecurityEvidence>> {
     return collectSection<WeeklySecurityEvidence>(
       {
-        source: 'DevControl security posture score and configuration checks',
+        source: SECURITY_SOURCE,
         provenance: 'derived',
         coverage: "DevControl's own configuration checks on discovered resources and account-level checks (security groups, IAM); not AWS Security Hub",
       },
       async () => {
-        const [risk, active] = await Promise.all([
+        const [risk, active, scoreOnPlan] = await Promise.all([
           this.riskTrackingService.getCurrentRiskScore(organizationId),
           this.accountFindingsRepository.getActive(organizationId),
+          organizationHasEntitlement(organizationId, 'riskScore', client ?? this.pool).catch(() => {
+            console.error('[Weekly Summary] plan lookup failed');
+            return false;
+          }),
         ]);
-        if (risk.isPreliminary) return { state: 'unavailable', reason: 'the security posture score is still preliminary' };
+        if (risk.isPreliminary) return { state: 'unavailable', reason: SECURITY_PRELIMINARY_REASON };
         // The score's counts combine account-level findings with per-resource
         // compliance issues (RiskTrackingService.combineSeverityCounts), so the
         // resource count is the exact difference.
@@ -428,7 +471,7 @@ export class WeeklySummaryRepository {
         return {
           state: 'available',
           data: {
-            score: risk.score,
+            ...(scoreOnPlan ? { score: risk.score } : {}),
             accountLevelFindings: active.length,
             resourceComplianceIssues: Math.max(0, combined - active.length),
           },
@@ -475,9 +518,9 @@ export class WeeklySummaryRepository {
   /**
    * Get organization name
    */
-  async getOrganizationName(organizationId: string): Promise<string> {
+  async getOrganizationName(organizationId: string, client?: PoolClient): Promise<string> {
     try {
-      const result = await this.pool.query(
+      const result = await (client ?? this.pool).query(
         `SELECT name FROM organizations WHERE id = $1`,
         [organizationId]
       );

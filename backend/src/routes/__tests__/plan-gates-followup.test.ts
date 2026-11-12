@@ -162,6 +162,9 @@ beforeEach(() => {
     active_recommendations: 2,
     total_potential_savings: 120,
   } as never);
+  jest.spyOn(CostRecommendationsRepository.prototype, 'getActiveSavingsBreakdown').mockResolvedValue({
+    active: 2, estimatedMonthlySavings: 120, estimatedFindings: 2, ceilingByResourceType: {}, unestimatedFindings: 0,
+  });
   jest.spyOn(WeeklySummaryRepository.prototype, 'getUserInfo').mockResolvedValue({
     userId: org.owner,
     email: org.emails.owner,
@@ -240,10 +243,16 @@ describe('A1: effectiveTier on the organization responses the UI loads', () => {
 
 // ─── A2: weekly summary ──────────────────────────────────────────────────────
 
-const DORA_TEXT = /deployment frequency|change failure rate|lead time/i;
+/** DORA figures -- not the plan line that names the metrics (WE-1). */
+const DORA_TEXT = /Deployment frequency \(successful|Change failure rate:|lead time/i;
 const DORA_KEYS = /deploymentFrequency|changeFailureRate/;
 const COUNTS = { deploymentCount: 4, successfulDeployments: 3, failedDeployments: 1 };
 const COUNTS_LINE = '4 deployments recorded in DevControl in the 7 days before this summary: 3 succeeded, 1 failed.';
+const DORA_PLAN_LINE = 'Deployment frequency and change failure rate are DORA metrics, included in Optimization Engine.';
+/** The delivery section's words (links left out). */
+const deliveryOf = (content: any): string[] =>
+  content.sections.find((s: any) => s.id === 'delivery').lines.map((l: any) => l.text).filter((t: string) => t !== '');
+const withoutDelivery = (content: any) => ({ ...content, sections: content.sections.filter((s: any) => s.id !== 'delivery') });
 
 /** The weekly email for the org, through the job's own send path, with the content it was built from. */
 async function sendWeeklyEmail(): Promise<{ content: WeeklySummaryContent; html: string; text: string }> {
@@ -270,32 +279,35 @@ describe('A2: the weekly email leaves the DORA metrics out below Pro', () => {
     await setPlan(state);
     const { content, html, text } = await sendWeeklyEmail();
     if (atLeast(state, 'pro')) {
-      expect(content.deliverySummary).toContain('Deployment frequency (successful deployments): 0.43 per day.');
-      expect(content.deliverySummary).toContain('Change failure rate: 25% (1 of 4 finished deployments failed).');
+      expect(deliveryOf(content)).toContain('Deployment frequency (successful deployments): 0.43 per day.');
+      expect(deliveryOf(content)).toContain('Change failure rate: 25% (1 of 4 finished deployments failed).');
+      expect(deliveryOf(content)).not.toContain(DORA_PLAN_LINE);
       expect(text).toMatch(/Change failure rate: 25%/);
       expect(html).toMatch(/Change failure rate: 25%/);
     } else {
-      expect(content.deliverySummary).toBe(COUNTS_LINE);
+      // Below the plan the figures are replaced by the line naming the plan -- never silently dropped.
+      expect(deliveryOf(content)).toEqual([COUNTS_LINE, DORA_PLAN_LINE]);
       expect(text).not.toMatch(DORA_TEXT);
       expect(html).not.toMatch(DORA_TEXT);
       expect(text).toContain(COUNTS_LINE);
+      expect(text).toContain(DORA_PLAN_LINE);
     }
   });
 
-  it('every other section is the same below Pro as on Pro, and the counts line is Pro\'s first sentence', async () => {
+  it('every other section is the same below Pro as on Pro, and the counts line is Pro\'s first line', async () => {
     await setPlan(STATES.pro);
     const proContent = (await sendWeeklyEmail()).content;
     await setPlan(STATES.free);
     const freeContent = (await sendWeeklyEmail()).content;
-    expect({ ...freeContent, deliverySummary: null }).toEqual({ ...proContent, deliverySummary: null });
-    expect(proContent.deliverySummary.startsWith(`${freeContent.deliverySummary} `)).toBe(true);
+    expect(withoutDelivery(freeContent)).toEqual(withoutDelivery(proContent));
+    expect(deliveryOf(proContent)[0]).toBe(deliveryOf(freeContent)[0]);
   });
 
-  it('the plan cannot be read: the DORA metrics are left out and the email is still sent', async () => {
+  it('the plan cannot be read: the DORA metrics are left out, the plan line is shown, and the email is still sent', async () => {
     await setPlan(STATES.enterprise);
     failWhen = (sql) => sql.includes(PLAN_LOOKUP);
     const { content, text } = await sendWeeklyEmail();
-    expect(content.deliverySummary).toBe(COUNTS_LINE);
+    expect(deliveryOf(content)).toEqual([COUNTS_LINE, DORA_PLAN_LINE]);
     expect(text).not.toMatch(DORA_TEXT);
   });
 });
@@ -309,10 +321,10 @@ describe('A2: the weekly summary preview applies the same rule', () => {
     expect(delivery.state).toBe('available');
     if (atLeast(state, 'pro')) {
       expect(delivery.data).toEqual({ ...COUNTS, deploymentFrequency: '0.43 per day', changeFailureRate: 25 });
-      expect(body.content.deliverySummary).toContain('Change failure rate: 25%');
+      expect(deliveryOf(body.content)).toContain('Change failure rate: 25% (1 of 4 finished deployments failed).');
     } else {
       expect(delivery.data).toEqual(COUNTS);
-      expect(body.content.deliverySummary).toBe(COUNTS_LINE);
+      expect(deliveryOf(body.content)).toEqual([COUNTS_LINE, DORA_PLAN_LINE]);
       expect(JSON.stringify(body)).not.toMatch(DORA_KEYS);
       expect(JSON.stringify(body)).not.toMatch(DORA_TEXT);
     }
@@ -326,10 +338,9 @@ describe('A2: the weekly summary preview applies the same rule', () => {
     // Everything but the delivery section (and the generation time, and each section's per-call retrievedAt).
     const strip = (b: any) => {
       const evidence = JSON.parse(JSON.stringify(b.evidence, (key, value) => (key === 'retrievedAt' ? undefined : value)));
-      const content = { ...b.content };
+      const content = withoutDelivery(b.content);
       delete evidence.delivery;
       delete evidence.period;
-      delete content.deliverySummary;
       return { evidence, content };
     };
     expect(strip(restricted)).toEqual(strip(pro));
