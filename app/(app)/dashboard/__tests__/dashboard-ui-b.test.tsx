@@ -619,11 +619,11 @@ describe('regression: the four spend states are unchanged (PR-MONEY owns them)',
 
 describe('PR-ICONS-b page: service status icons', () => {
   it.each([
-    ['200 ok', health.ok, 'Operational', 'success', false],
-    ['500 database disconnected', health.dbDown, 'Degraded', 'warning', false],
-    ['timeout', health.unreachable, 'Unavailable', 'error', false],
-    ['still checking', health.checking, 'Checking…', null, true],
-  ] as const)('%s → %s with the %s icon; no Activity icon, no dot', async (_, mock, value, kind, checking) => {
+    ['200 ok', 'Operational', 'success', health.ok, false],
+    ['500 database disconnected', 'Degraded', 'warning', health.dbDown, false],
+    ['timeout', 'Unavailable', 'error', health.unreachable, false],
+    ['still checking', 'Checking…', null, health.checking, true],
+  ] as const)('%s → %s with the %s icon; no Activity icon, no dot', async (_, value, kind, mock, checking) => {
     setup()
     mock()
     renderDashboard()
