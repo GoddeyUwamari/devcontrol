@@ -126,6 +126,8 @@ describe('header line (§F row 1, DB-D8)', () => {
 
   it('"Last scan" is the shared helper: last completed job, else the last successful scan', () => {
     expect(lastCompletedScanIso(COVERAGE.finished)).toBe(SCAN_DONE)
+    // The completed job's own time wins over the account's last-successful timestamp.
+    expect(lastCompletedScanIso(coverage({ last_successful_scan_at: '2026-11-10T12:00:00Z' }))).toBe(SCAN_DONE)
     expect(lastCompletedScanIso(coverage({ last_completed_scan: null, last_successful_scan_at: '2026-11-10T12:00:00Z' }))).toBe('2026-11-10T12:00:00Z')
     expect(lastCompletedScanIso(COVERAGE.none)).toBeNull()
   })
