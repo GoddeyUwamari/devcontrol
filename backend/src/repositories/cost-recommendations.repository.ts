@@ -9,7 +9,7 @@ import {
 } from '../types';
 import { DetectorObservation } from '../services/cost-optimization.service';
 import { HeldLease, beginFenced } from '../services/scan-lease';
-import { aggregateEstimatedSavings, classifySavingsBasis, countedEstimateAmounts } from '../services/estimated-savings';
+import { aggregateEstimatedSavings, countSavingsFindings } from '../services/estimated-savings';
 import { EMPTY_RECONCILE_COUNTS, ReconcileCounts } from '../services/cost-analysis-outcome';
 import { AuditEventAction, AuditRequestContext, insertAuditEventInTransaction } from '../services/auditEvents.service';
 import { DetectionState, NotConfirmedReason, judgeFreshness } from '../services/cost-finding-freshness';
@@ -1124,6 +1124,9 @@ export class CostRecommendationsRepository {
         ['ACTIVE', organizationId]
       );
       const savings = aggregateEstimatedSavings(savingsRows.rows);
+      // The weekly email's own count (getActiveSavingsBreakdown), so the Dashboard's
+      // "across N open findings" and "K more ... no dollar estimate" match it.
+      const findings = countSavingsFindings(savingsRows.rows);
 
       const severityQuery = await client.query(
         `
@@ -1144,6 +1147,8 @@ export class CostRecommendationsRepository {
         potential_savings_by_resource_type: savings.byResourceType,
         potential_savings_ceiling: savings.ceilingTotal,
         potential_savings_ceiling_by_resource_type: savings.ceilingByResourceType,
+        estimated_findings: findings.estimatedFindings,
+        unestimated_findings: findings.unestimatedFindings,
         by_severity: {
           high: parseInt(severityQuery.rows[0].high),
           medium: parseInt(severityQuery.rows[0].medium),
@@ -1166,28 +1171,14 @@ export class CostRecommendationsRepository {
         ['ACTIVE', organizationId]
       );
       const savings = aggregateEstimatedSavings(rows);
-      const hasAmount = (value: unknown) =>
-        value !== null && value !== undefined && Number.isFinite(typeof value === 'number' ? value : parseFloat(String(value)));
-      // An estimate counts only when what it adds to the total is > $0. A
-      // gate-blocked DynamoDB comparison is stored at 0 and a fully claimed
-      // fleet discount adds 0: those are findings with no dollar estimate.
-      const counted = countedEstimateAmounts(rows);
-      let estimatedFindings = 0;
-      let ceilingFindings = 0;
-      rows.forEach((row, i) => {
-        const amount = counted[i];
-        if (amount !== null) {
-          if (amount > 0) estimatedFindings++;
-          return;
-        }
-        if (hasAmount(row.potential_savings) && classifySavingsBasis(row.metadata?.savings_basis) === 'ceiling') ceilingFindings++;
-      });
+      // The same count getStats() returns to the Dashboard (countSavingsFindings).
+      const { estimatedFindings, unestimatedFindings } = countSavingsFindings(rows);
       return {
         active: rows.length,
         estimatedMonthlySavings: savings.total,
         estimatedFindings,
         ceilingByResourceType: savings.ceilingByResourceType,
-        unestimatedFindings: rows.length - estimatedFindings - ceilingFindings,
+        unestimatedFindings,
       };
     });
   }

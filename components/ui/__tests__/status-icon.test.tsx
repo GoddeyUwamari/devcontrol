@@ -11,7 +11,16 @@ import postcss, { type Rule } from 'postcss'
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { contrast } from '@/app/__tests__/contrast'
-import { STATUS_FILL_TOKEN, StatusIcon, StatusLabel, type StatusGlyph, type StatusKind } from '../status-icon'
+import {
+  ON_TINT_FILL_CLASS,
+  STATUS_FILL_TOKEN,
+  STATUS_ON_TINT_FILL_TOKEN,
+  STATUS_TINT_TOKEN,
+  StatusIcon,
+  StatusLabel,
+  type StatusGlyph,
+  type StatusKind,
+} from '../status-icon'
 
 const require_ = createRequire(import.meta.url)
 
@@ -114,7 +123,7 @@ describe('accessibility', () => {
 
 type Mode = 'light' | 'dark'
 const SELECTOR: Record<Mode, string> = { light: ':root', dark: '.dark' }
-const NAMES = ['--surface-1', '--surface-2', '--fill-success', '--fill-warning', '--fill-danger', '--text-accent', '--bg-success', '--bg-accent']
+const NAMES = ['--surface-1', '--surface-2', '--fill-success', '--fill-warning', '--fill-danger', '--text-accent', '--bg-success', '--bg-accent', '--bg-danger', '--bg-warning']
 
 let parsed: Record<Mode, Record<string, string>> | null = null
 /** Called inside tests, so a missing or duplicated token fails a named test. */
@@ -146,6 +155,23 @@ function over(top: string, base: string): string {
   return '#' + [0, 2, 4].map((i) => Math.round(ch(m[1], i) * a + ch(b, i) * (1 - a)).toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * A token's value in a mode: the :root / .dark tokens above, or an app ink
+ * (--app-color-ink-*, set once in the [data-surface="app"] block, the same in light and dark)
+ * resolved through Tailwind's palette (node_modules/tailwindcss/theme.css).
+ */
+function resolve(mode: Mode, name: string): string {
+  const own = tokens()[mode][name]
+  if (own) return own
+  const css = readFileSync(join(process.cwd(), 'app/globals.css'), 'utf8')
+  const appVar = css.match(new RegExp(`\\[data-surface="app"\\] \\{[^}]*?${name}:\\s*var\\((--color-[\\w-]+)\\);`))
+  expect(appVar, `${name} in the [data-surface="app"] block`).not.toBeNull()
+  const theme = readFileSync(require_.resolve('tailwindcss/theme.css'), 'utf8')
+  const value = theme.match(new RegExp(`${appVar![1]}:\\s*([^;]+);`))
+  expect(value, `${appVar![1]} in tailwindcss/theme.css`).not.toBeNull()
+  return value![1].trim()
+}
+
 const KINDS: StatusKind[] = ['success', 'warning', 'info', 'error', 'security']
 
 describe('contrast: each fill token ≥ 3:1 (WCAG 1.4.11 non-text) on both surfaces, light and dark', () => {
@@ -165,13 +191,56 @@ describe('contrast: each fill token ≥ 3:1 (WCAG 1.4.11 non-text) on both surfa
     expect(contrast(fill, bg), `${STATUS_FILL_TOKEN[kind]} ${fill} on ${surface} ${bg}`).toBeGreaterThanOrEqual(3)
   })
 
-  // Recent Activity puts the sync and security icons on their own tint inside the --surface-2 card.
-  it.each([
-    ...(['light', 'dark'] as Mode[]).map((mode) => ({ mode, kind: 'success' as const, tint: '--bg-success' })),
-    ...(['light', 'dark'] as Mode[]).map((mode) => ({ mode, kind: 'security' as const, tint: '--bg-accent' })),
-  ])('$mode $kind on its $tint tint over --surface-2 (Recent Activity)', ({ mode, kind, tint }) => {
+  // Every kind on its own status tint (STATUS_TINT_TOKEN), with the fill StatusIcon uses there
+  // (STATUS_ON_TINT_FILL_TOKEN), over either surface, light and dark: Recent Activity, the Dashboard's
+  // Top Risk card, service card and KPI badges (PR-ICONS-b ruling 1).
+  it.each(
+    (['light', 'dark'] as Mode[]).flatMap((mode) => KINDS.flatMap((kind) =>
+      (['--surface-1', '--surface-2'] as const).map((surface) => ({ mode, kind, tint: STATUS_TINT_TOKEN[kind], surface })))),
+  )('$mode $kind on its $tint tint over $surface', ({ mode, kind, tint, surface }) => {
     const T = tokens()
-    const bg = over(T[mode][tint], T[mode]['--surface-2'])
-    expect(contrast(T[mode][STATUS_FILL_TOKEN[kind]], bg)).toBeGreaterThanOrEqual(3)
+    const fill = resolve(mode, STATUS_ON_TINT_FILL_TOKEN[kind][mode])
+    const bg = over(T[mode][tint], T[mode][surface])
+    expect(contrast(fill, bg), `${kind} ${STATUS_ON_TINT_FILL_TOKEN[kind][mode]} ${fill} on ${tint} over ${surface} ${bg}`).toBeGreaterThanOrEqual(3)
+  })
+})
+
+describe('on a status tint (PR-ICONS-b ruling 1)', () => {
+  it('only warning changes fill on a tint, and its class is exactly the light / dark tokens of the map', () => {
+    for (const kind of KINDS) {
+      const t = STATUS_ON_TINT_FILL_TOKEN[kind]
+      if (kind === 'warning') {
+        expect(t).toEqual({ light: '--app-color-ink-warning-strong', dark: '--fill-warning' })
+        expect(ON_TINT_FILL_CLASS.warning).toBe(`fill-[var(${t.light})] dark:fill-[var(${t.dark})]`)
+      } else {
+        expect(t).toEqual({ light: STATUS_FILL_TOKEN[kind], dark: STATUS_FILL_TOKEN[kind] })
+        expect(ON_TINT_FILL_CLASS[kind]).toBeUndefined()
+      }
+    }
+  })
+
+  it('warning onTint: the -strong ink class (light) and its own fill (dark); no inline fill', () => {
+    render(<StatusIcon kind="warning" onTint data-testid="i" />)
+    const icon = screen.getByTestId('i')
+    expect(icon.getAttribute('class')).toContain('fill-[var(--app-color-ink-warning-strong)]')
+    expect(icon.getAttribute('class')).toContain('dark:fill-[var(--fill-warning)]')
+    expect(icon.style.fill).toBe('')
+    expect(icon.getAttribute('data-on-tint')).toBe('true')
+  })
+
+  it('warning off a tint keeps its own inline fill', () => {
+    render(<StatusIcon kind="warning" data-testid="i" />)
+    expect(screen.getByTestId('i').style.fill).toBe('var(--fill-warning)')
+    expect(screen.getByTestId('i').getAttribute('class')).not.toContain('fill-[')
+  })
+
+  it.each(['success', 'error', 'info', 'security'] as const)('%s onTint keeps its inline token fill', (kind) => {
+    render(<StatusIcon kind={kind} onTint data-testid="i" />)
+    expect(screen.getByTestId('i').style.fill).toBe(`var(${STATUS_FILL_TOKEN[kind]})`)
+  })
+
+  it('StatusLabel passes onTint to its icon', () => {
+    render(<StatusLabel kind="warning" onTint data-testid="l">Needs attention</StatusLabel>)
+    expect(screen.getByTestId('l').querySelector('svg')!.getAttribute('class')).toContain('fill-[var(--app-color-ink-warning-strong)]')
   })
 })

@@ -1,4 +1,5 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { StatusLabel, type StatusKind } from '@/components/ui/status-icon'
 
 /**
  * Small status chip for the Dashboard's top sections. Callers pass the text
@@ -31,24 +32,50 @@ export function toneFillClass(color: string): string {
   return (TONES[color] ?? NEUTRAL).fillClass
 }
 
-export interface EvidenceBadgeProps {
+/**
+ * The status kind a tier's colour stands for: success, warning or error. Any
+ * other colour (neutral "Unavailable", "Not yet available") is not a status
+ * and gets no icon.
+ */
+const TONE_STATUS: Record<string, Extract<StatusKind, 'success' | 'warning' | 'error'>> = {
+  'var(--text-success)': 'success',
+  'var(--text-warning)': 'warning',
+  'var(--text-danger)': 'error',
+}
+
+export function toneStatusKind(color: string): Extract<StatusKind, 'success' | 'warning' | 'error'> | undefined {
+  return TONE_STATUS[color]
+}
+
+type BadgeIcon =
+  /** Trend arrow, for real trends only (a comparison over time, e.g. spend vs last month). */
+  | { direction?: 'up' | 'down' | 'flat'; status?: never }
+  /** Filled status icon with the label (StatusLabel), for status tiers (Strong / At risk); never an arrow. */
+  | { status?: StatusKind; direction?: never }
+
+export type EvidenceBadgeProps = BadgeIcon & {
   label: string
   color: string
-  /** Trend arrow for comparison badges; omit for plain status chips. */
-  direction?: 'up' | 'down' | 'flat'
   testId?: string
 }
 
-export function EvidenceBadge({ label, color, direction, testId }: EvidenceBadgeProps) {
-  const Icon = direction === 'up' ? TrendingUp : direction === 'down' ? TrendingDown : direction === 'flat' ? Minus : null
+export function EvidenceBadge({ label, color, direction, status, testId }: EvidenceBadgeProps) {
+  const Icon = status ? null : direction === 'up' ? TrendingUp : direction === 'down' ? TrendingDown : direction === 'flat' ? Minus : null
   return (
     <span
       data-testid={testId}
       className="inline-flex items-center gap-1 text-label font-semibold px-2 py-0.5 rounded-full border border-border whitespace-nowrap max-w-full"
       style={{ color: toneText(color), background: toneBackground(color) }}
     >
-      {Icon && <Icon size={12} aria-hidden="true" className="shrink-0" />}
-      <span className="truncate">{label}</span>
+      {status ? (
+        // On its own tint (toneBackground) when the colour is a status tone; neutral chips sit on --surface-1.
+        <StatusLabel kind={status} size={12} className="min-w-0" onTint={TONES[color] !== undefined}>{label}</StatusLabel>
+      ) : (
+        <>
+          {Icon && <Icon size={12} aria-hidden="true" className="shrink-0" />}
+          <span className="truncate">{label}</span>
+        </>
+      )}
     </span>
   )
 }

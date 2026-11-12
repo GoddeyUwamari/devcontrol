@@ -58,6 +58,34 @@ export const STATUS_FILL_TOKEN: Record<StatusKind, string> = {
   security: '--text-accent',
 }
 
+/** The status tint each kind sits on when it is placed on a tinted card or chip (--bg-*). */
+export const STATUS_TINT_TOKEN: Record<StatusKind, string> = {
+  success: '--bg-success',
+  warning: '--bg-warning',
+  info: '--bg-accent',
+  error: '--bg-danger',
+  security: '--bg-accent',
+}
+
+/**
+ * The fill on that tint, light and dark (PR-ICONS-b, founder ruling 1). Warning's own fill is
+ * under 3:1 on --bg-warning in light mode, so it takes the -strong warning ink that text on that
+ * tint uses (evidence-badge toneText). That ink has no dark value and is under 3:1 on the dark
+ * tint, so in dark mode warning keeps its own fill, which passes there. No new colour token.
+ */
+export const STATUS_ON_TINT_FILL_TOKEN: Record<StatusKind, { light: string; dark: string }> = {
+  success: { light: '--fill-success', dark: '--fill-success' },
+  warning: { light: '--app-color-ink-warning-strong', dark: '--fill-warning' },
+  info: { light: '--text-accent', dark: '--text-accent' },
+  error: { light: '--fill-danger', dark: '--fill-danger' },
+  security: { light: '--text-accent', dark: '--text-accent' },
+}
+
+/** Literal class strings (so Tailwind generates them) for the kinds whose on-tint fill differs. */
+export const ON_TINT_FILL_CLASS: Partial<Record<StatusKind, string>> = {
+  warning: 'fill-[var(--app-color-ink-warning-strong)] dark:fill-[var(--fill-warning)]',
+}
+
 export function statusGlyph(kind: StatusKind, variant?: 'x'): StatusGlyph {
   switch (kind) {
     case 'success': return 'circle-check'
@@ -77,12 +105,15 @@ export type StatusIconProps = KindProps & {
   className?: string
   /** Only for a standalone icon with no text next to it. Without it the icon is aria-hidden. */
   'aria-label'?: string
+  /** The icon sits on its kind's status tint (STATUS_TINT_TOKEN): use the on-tint fill. */
+  onTint?: boolean
   'data-testid'?: string
 }
 
-export function StatusIcon({ kind, variant, size = 16, className, 'aria-label': ariaLabel, 'data-testid': testId }: StatusIconProps) {
+export function StatusIcon({ kind, variant, size = 16, className, 'aria-label': ariaLabel, onTint = false, 'data-testid': testId }: StatusIconProps) {
   const glyph = statusGlyph(kind, variant)
   const a11y = ariaLabel ? { role: 'img', 'aria-label': ariaLabel } : { 'aria-hidden': true as const }
+  const tintClass = onTint ? ON_TINT_FILL_CLASS[kind] : undefined
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -90,9 +121,11 @@ export function StatusIcon({ kind, variant, size = 16, className, 'aria-label': 
       height={size}
       viewBox="0 0 24 24"
       focusable="false"
-      className={cn('shrink-0', className)}
-      style={{ fill: `var(${STATUS_FILL_TOKEN[kind]})` }}
+      className={cn('shrink-0', tintClass, className)}
+      // A class fill (light and dark) when the on-tint fill differs; else the token inline.
+      style={tintClass ? undefined : { fill: `var(${STATUS_FILL_TOKEN[kind]})` }}
       data-status-kind={kind}
+      data-on-tint={onTint ? 'true' : undefined}
       data-glyph={glyph}
       data-testid={testId}
       {...a11y}
@@ -106,12 +139,16 @@ export type StatusLabelProps = KindProps & {
   children: ReactNode
   size?: number
   className?: string
+  /** The label sits on its kind's status tint: the icon uses the on-tint fill. */
+  onTint?: boolean
   'data-testid'?: string
 }
 
 /** Icon + text: the default way to show a status. The text is the accessible name; the icon is aria-hidden. */
-export function StatusLabel({ kind, variant, children, size = 14, className, 'data-testid': testId }: StatusLabelProps) {
-  const icon = kind === 'error' ? <StatusIcon kind="error" variant={variant} size={size} /> : <StatusIcon kind={kind} size={size} />
+export function StatusLabel({ kind, variant, children, size = 14, className, onTint = false, 'data-testid': testId }: StatusLabelProps) {
+  const icon = kind === 'error'
+    ? <StatusIcon kind="error" variant={variant} size={size} onTint={onTint} />
+    : <StatusIcon kind={kind} size={size} onTint={onTint} />
   return (
     <span className={cn('inline-flex items-center gap-1', className)} data-testid={testId}>
       {icon}

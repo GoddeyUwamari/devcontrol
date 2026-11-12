@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { Clock, TrendingUp, Gauge, Activity as ActivityIcon } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { StatusIcon, type StatusKind } from '@/components/ui/status-icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ActivityEventType, ActivityEvent } from '@/lib/services/activity-feed.service'
@@ -49,7 +50,7 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
   return (
     <div className="bg-[var(--surface-2)] border border-border rounded-2xl p-5 h-full">
       <div className="flex items-center gap-2.5 mb-4">
-        <Clock size={17} style={{ color: 'var(--text-accent)' }} />
+        <Clock size={17} strokeWidth={DASHBOARD_ICON_STROKE} style={{ color: 'var(--text-accent)' }} />
         <h3 className="text-section text-ink">Recent Activity</h3>
       </div>
 
@@ -76,7 +77,7 @@ export function RecentActivityCard({ isDemoActive, data, isLoading, isError }: R
                 <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: conf.background }}>
                   {'status' in conf
                     ? <StatusIcon kind={conf.status} size={14} data-testid="activity-status-icon" />
-                    : <conf.icon size={14} aria-hidden="true" style={{ color: conf.color }} />}
+                    : <conf.icon size={14} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" style={{ color: conf.color }} />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-meta font-semibold text-ink leading-snug line-clamp-1" title={event.message}>{event.message}</p>

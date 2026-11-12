@@ -1,9 +1,13 @@
-import { AlertTriangle, Activity } from 'lucide-react'
+import { AlertTriangle, CircleDashed } from 'lucide-react'
+import { StatusIcon, StatusLabel, type StatusKind } from '@/components/ui/status-icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EvidenceBadge, NEUTRAL_COLOR, toneText } from './evidence-badge'
 import { EvidenceInfo } from './evidence-info'
 import { CardArrowLink } from './card-arrow-link'
 import type { AISummaryResult } from '@/lib/services/ai-summary.service'
+
+/** The service card's state (the same union as dashboardFreshness.ts ServiceStatusState). */
+export type ServiceStatusState = 'operational' | 'degraded' | 'unavailable' | 'checking'
 
 interface InfrastructureIntelligenceProps {
   topRisk: string | null
@@ -15,7 +19,7 @@ interface InfrastructureIntelligenceProps {
   topRiskStatus: AISummaryResult['topRiskStatus']
   aiSummaryLoading: boolean
   /** DevControl's own service health (its /health check) -- never the customer's AWS. */
-  systemStatus: { value: string; caption: string; operational: boolean; color: string; dotColor: string }
+  systemStatus: { value: string; caption: string; operational: boolean; color: string; state: ServiceStatusState }
 }
 
 export type TopRiskSeverity = 'critical' | 'high' | 'medium' | 'low'
@@ -50,6 +54,22 @@ const SEVERITY_STYLE: Record<TopRiskSeverity, { label: string; color: string; ba
 }
 const NEUTRAL_CARD = { color: NEUTRAL_COLOR, background: 'var(--surface-2)', border: 'var(--border)' }
 
+/** Filled status icon per severity (mock §8): error for critical/high, warning for medium, none for low. */
+export const TOP_RISK_STATUS_KIND: Record<TopRiskSeverity, Extract<StatusKind, 'error' | 'warning'> | null> = {
+  critical: 'error',
+  high: 'error',
+  medium: 'warning',
+  low: null,
+}
+
+/** Filled status icon per service state (mock §2); "Checking…" is not a status and has none. */
+export const SERVICE_STATUS_KIND: Record<ServiceStatusState, Extract<StatusKind, 'success' | 'warning' | 'error'> | null> = {
+  operational: 'success',
+  degraded: 'warning',
+  unavailable: 'error',
+  checking: null,
+}
+
 // Existing page over the same account findings Top Risk names.
 const TOP_RISK_HREF = '/security#findings'
 
@@ -76,7 +96,12 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
       className="rounded-2xl border p-5 h-full flex items-start gap-3"
       style={{ background: style.background, borderColor: style.border }}
     >
-      <AlertTriangle size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: style.color }} />
+      {severity ? (
+        TOP_RISK_STATUS_KIND[severity] && <StatusIcon kind={TOP_RISK_STATUS_KIND[severity]} size={20} className="mt-0.5" onTint data-testid="top-risk-icon" />
+      ) : (
+        // No severity (no risk, unavailable, loading, unparsed text): the neutral outline icon, unchanged.
+        <AlertTriangle size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: style.color }} />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
@@ -103,6 +128,7 @@ function TopRiskCard({ topRisk, topRiskStatus, aiSummaryLoading }: Omit<Infrastr
 }
 
 function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntelligenceProps['systemStatus'] }) {
+  const kind = SERVICE_STATUS_KIND[systemStatus.state]
   // Green only when DevControl's own health check reports operational.
   const tint = systemStatus.operational
     ? { background: 'var(--bg-success)', border: 'var(--border-success)' }
@@ -113,7 +139,12 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
       className="relative rounded-2xl border p-5 h-full flex items-start gap-3"
       style={{ background: tint.background, borderColor: tint.border }}
     >
-      <Activity size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: systemStatus.color }} />
+      {kind ? (
+        // Only Operational tints the card (--bg-success); the other states sit on --surface-2.
+        <StatusIcon kind={kind} size={20} className="mt-0.5" onTint={systemStatus.operational} data-testid="system-health-icon" />
+      ) : (
+        <CircleDashed size={20} aria-hidden="true" className="shrink-0 mt-0.5" style={{ color: 'var(--text-secondary)' }} data-testid="system-health-icon" />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-2 min-w-0">
@@ -126,9 +157,9 @@ function SystemHealthCard({ systemStatus }: { systemStatus: InfrastructureIntell
         <span
           className="inline-flex items-center gap-1.5 text-label font-semibold px-2 py-0.5 rounded-full border border-border"
           style={{ color: systemStatus.color, background: 'var(--surface-2)' }}
+          data-testid="system-health-status"
         >
-          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: systemStatus.dotColor }} aria-hidden="true" />
-          {systemStatus.value}
+          {kind ? <StatusLabel kind={kind}>{systemStatus.value}</StatusLabel> : systemStatus.value}
         </span>
         <p className="text-meta text-ink-muted leading-snug mt-2 mb-0" data-testid="system-health-caption">{systemStatus.caption}</p>
       </div>

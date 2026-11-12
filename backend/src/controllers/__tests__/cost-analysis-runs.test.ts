@@ -73,7 +73,7 @@ function fakeStats(totalPotentialSavings: number, activeRecommendations = 1): Re
     total_recommendations: activeRecommendations,
     active_recommendations: activeRecommendations,
     total_potential_savings: totalPotentialSavings,
-    potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {},
+    potential_savings_by_resource_type: {}, potential_savings_ceiling: 0, potential_savings_ceiling_by_resource_type: {}, estimated_findings: 0, unestimated_findings: 0,
     by_severity: { high: 0, medium: 0, low: activeRecommendations },
   };
 }

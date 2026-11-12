@@ -4,6 +4,7 @@
     "DevControl service status {class=text-ui text-ink}",
     " [button]",
     "[icon]",
+    "[icon]",
     "Operational {color=var(--text-success) class=text-label}",
     "DevControl's API and database are responding. This is our service, not your AWS resources. · Checked today, 8:37 PM {class=text-meta text-ink-muted}"
   ],
@@ -11,6 +12,7 @@
     "[icon]",
     "DevControl service status {class=text-ui text-ink}",
     " [button]",
+    "[icon]",
     "[icon]",
     "Degraded {color=var(--text-warning) class=text-label}",
     "Some DevControl services are slow or failing. Figures on this page may be delayed. {class=text-meta text-ink-muted}"
@@ -20,6 +22,7 @@
     "DevControl service status {class=text-ui text-ink}",
     " [button]",
     "[icon]",
+    "[icon]",
     "Unavailable {color=var(--text-danger) class=text-label}",
     "Can't reach DevControl's API right now. Figures on this page may be out of date. {class=text-meta text-ink-muted}"
   ],
@@ -27,6 +30,7 @@
     "[icon]",
     "DevControl service status {class=text-ui text-ink}",
     " [button]",
+    "[icon]",
     "[icon]",
     "Unavailable {color=var(--text-danger) class=text-label}",
     "Can't reach DevControl's API right now. Figures on this page may be out of date. {class=text-meta text-ink-muted}"

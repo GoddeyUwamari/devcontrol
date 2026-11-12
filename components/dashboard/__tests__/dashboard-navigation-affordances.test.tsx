@@ -91,7 +91,7 @@ describe('DevControl service status card (PR-UI-b, §F row 7)', () => {
         topRisk={null}
         topRiskStatus="unavailable"
         aiSummaryLoading={false}
-        systemStatus={{ value: 'Operational', caption: "DevControl's API and database are responding. This is our service, not your AWS resources.", operational: true, color: 'green', dotColor: 'green' }}
+        systemStatus={{ value: 'Operational', caption: "DevControl's API and database are responding. This is our service, not your AWS resources.", operational: true, color: 'green', state: 'operational' }}
       />
     )
     const card = screen.getByTestId('system-health-card')

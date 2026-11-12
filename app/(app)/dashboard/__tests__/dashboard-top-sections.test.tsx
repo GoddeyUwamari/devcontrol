@@ -373,6 +373,26 @@ describe('5. Partial follows composite_state', () => {
     expect(status.parentElement!.className).toMatch(/\bgap-/)
   })
 
+  // PR-ICONS-b (mock §8): status tiers carry a filled status icon, never a trend arrow.
+  it('the Security and Posture status badges use StatusLabel, with no trend arrow; their text is unchanged', async () => {
+    renderDashboard()
+    await settled()
+    for (const [href, id, text, kind] of [
+      ['/infrastructure', 'posture-status', 'Needs attention', 'warning'],
+      ['/security', 'security-status', 'At risk', 'error'],
+    ] as const) {
+      const badge = within(kpi(href)).getByTestId(id)
+      expect(badge.textContent).toBe(text)
+      const icon = badge.querySelector('svg')!
+      expect(icon.getAttribute('data-status-kind')).toBe(kind)
+      expect(icon.getAttribute('aria-hidden')).toBe('true')
+      expect(icon.nextElementSibling!.textContent).toBe(text)
+      expect(badge.querySelector('.lucide-trending-up, .lucide-trending-down, .lucide-minus')).toBeNull()
+    }
+    // "Partial" is an evidence state, not a status: no icon.
+    expect(within(kpi('/infrastructure')).getByTestId('posture-partial').querySelector('svg')).toBeNull()
+  })
+
   it('available: no composite Partial badge on either', async () => {
     intelligenceSpy.mockResolvedValue(AVAILABLE_INTELLIGENCE as never)
     renderDashboard()
@@ -497,6 +517,9 @@ describe('10. change badge is neutral while today is still billing', () => {
     // Green on the success tint: the -strong ink, which keeps 4.5:1 there (typography plan T1).
     expect(badge.style.color).toBe('var(--app-color-ink-success-strong)')
     expect(badge.style.background).toBe('var(--bg-success)')
+    // A real trend keeps its arrow (PR-ICONS-b), and gets no status icon.
+    expect(badge.querySelector('.lucide-trending-down')).not.toBeNull()
+    expect(badge.querySelector('[data-status-kind]')).toBeNull()
   })
 
   it('an unavailable comparison renders no change badge at all', async () => {
@@ -647,7 +670,7 @@ describe('UI polish: card arrows, info buttons, both security scopes', () => {
 })
 
 describe('6. the data freshness row (replaces "Each data source refreshes on its own schedule.")', () => {
-  it('only sources with a time, in the meta role and muted ink, with no connection status', async () => {
+  it('only sources with a time, in the meta role and secondary ink, with no connection status', async () => {
     vi.spyOn(monitoringService, 'getSystemHealth').mockResolvedValue({ status: 'operational', lastUpdate: '2026-10-14T12:00:00.000Z' } as never)
     renderDashboard()
     await settled()
@@ -656,7 +679,9 @@ describe('6. the data freshness row (replaces "Each data source refreshes on its
     // This fixture has no Cost Explorer time, no coverage and no Resource checks result: only the service check.
     expect(within(row).getAllByRole('listitem').map((li) => li.getAttribute('data-testid'))).toEqual(['freshness-service'])
     expect(within(row).getByTestId('freshness-service').textContent).toMatch(/^DevControl service: checked /)
-    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-meta', 'text-ink-muted']))
+    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-meta']))
+    // PR-ICONS-b: the item text is the secondary text colour (--text-secondary), on a light card.
+    expect(row.querySelector('ul')!.style.color).toBe('var(--text-secondary)')
     expect(row.querySelector('svg')).toBeNull()
     expect(document.body.textContent).not.toMatch(/Live update channel|reconnecting/i)
   })

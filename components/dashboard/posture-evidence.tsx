@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { Bell, Cloud, Shield } from 'lucide-react'
 import type { SystemIntelligenceComponentScore, SystemIntelligenceResult } from '@/lib/services/system-intelligence.service'
 import {
@@ -74,7 +75,7 @@ export function PostureEvidence({ components, statusBadge }: {
               return (
                 <li key={key} data-testid={`posture-evidence-${key}`} className="flex gap-3 py-2.5 border-b border-border last:border-b-0">
                   <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-[var(--surface-1)] border border-border">
-                    <Icon size={14} aria-hidden="true" className="text-ink-muted" />
+                    <Icon size={14} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" className="text-ink-muted" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">

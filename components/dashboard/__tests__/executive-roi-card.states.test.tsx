@@ -29,7 +29,8 @@ function expectCommon(text: string) {
   expect(screen.queryByRole('heading', { name: 'Estimated savings' })).toBeNull()
   expect(screen.getByText('View all →').closest('a')!.getAttribute('href')).toBe('/cost-optimization')
   expect(text).not.toMatch(NO_OPPORTUNITIES_CLAIM)
-  expect(text).not.toMatch(/Executive ROI|realized|View report/)
+  // "not realized savings" is the weekly email's own disclaimer (PR-ICONS-b); any other "realized" is a claim.
+  expect(text.replace('This is a DevControl estimate, not realized savings.', '')).not.toMatch(/Executive ROI|realized|View report/)
 }
 
 const stateLine = () => screen.getAllByTestId('roi-state')
@@ -94,20 +95,23 @@ describe('one line per situation', () => {
 
   it('findings without a dollar figure: counts them and says none has an estimate', () => {
     const { text, unmount } = renderCard({ evaluationState: 'evaluated', activeCount: 3 })
-    expect(text()).toContain('3 findings found; none has a dollar estimate yet.')
+    expect(text()).toContain('Estimated savings: 3 open findings; none has a dollar estimate yet.')
+    expect(screen.queryAllByTestId('savings-ceiling-line')).toHaveLength(0)
     expectCommon(text())
     unmount()
     renderCard({ evaluationState: 'evaluated', activeCount: 1 })
-    expect(screen.getByText('1 finding found; none has a dollar estimate yet.')).toBeInTheDocument()
+    expect(screen.getByText('Estimated savings: 1 open finding; none has a dollar estimate yet.')).toBeInTheDocument()
   })
 
-  it('findings whose only figures are ceilings: one upper-bound line per type, never S3 for DynamoDB', () => {
+  it('findings whose only figures are ceilings: the email\'s "none has a dollar estimate" line, then one upper-bound line per type, never S3 for DynamoDB', () => {
     const { text } = renderCard({ evaluationState: 'evaluated', activeCount: 2, ceilingByResourceType: { DynamoDB: 3, S3: 12 } })
-    expect(screen.getAllByTestId('savings-ceiling-line').map((l) => l.textContent)).toEqual([
+    const state = screen.getByTestId('roi-state')
+    expect([...state.querySelectorAll('p')].map((l) => l.textContent)).toEqual([
+      'Estimated savings: 2 open findings; none has a dollar estimate yet.',
       'Up to $12.00/month if S3 data qualifies for Standard-IA (upper bound).',
       'Up to $3.00/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound).',
     ])
-    expect(text()).not.toContain('none has a dollar estimate')
+    expect(text()).not.toMatch(/\$0(\.00)?\b/)
     expect(text()).not.toContain('S3 lifecycle')
     expectCommon(text())
   })
@@ -148,7 +152,7 @@ describe('one line per situation', () => {
 describe('precedence', () => {
   it('an active finding wins over a "not evaluated" analysis state', () => {
     const { text } = renderCard({ evaluationState: 'not_evaluated', activeCount: 2 })
-    expect(text()).toContain('2 findings found; none has a dollar estimate yet.')
+    expect(text()).toContain('Estimated savings: 2 open findings; none has a dollar estimate yet.')
     expect(text()).not.toContain('Shown after your first cost analysis finishes.')
   })
 

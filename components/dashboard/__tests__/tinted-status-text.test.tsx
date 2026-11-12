@@ -104,7 +104,7 @@ describe('the tinted Dashboard sites use the -strong ink', () => {
     ['critical', STRONG.danger],
     ['medium', STRONG.warning],
   ])('Top Risk (%s): the title on the tinted card', (severity, text) => {
-    render(<InfrastructureIntelligence topRisk={`Some finding (${severity} severity)`} topRiskStatus="identified" aiSummaryLoading={false} systemStatus={{ value: 'Operational', caption: 'x', operational: true, color: 'var(--text-success)', dotColor: 'green' } as never} />)
+    render(<InfrastructureIntelligence topRisk={`Some finding (${severity} severity)`} topRiskStatus="identified" aiSummaryLoading={false} systemStatus={{ value: 'Operational', caption: 'x', operational: true, color: 'var(--text-success)', state: 'operational' } as never} />)
     const card = screen.getByTestId('top-risk-card')
     expect(within(card).getByText('Top Risk').style.color).toBe(text)
   })

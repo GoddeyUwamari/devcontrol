@@ -1,5 +1,11 @@
 import { Num } from '@/components/ui/typography'
-import { describeCeilings, describeCeilingsWithoutEstimate } from '@/lib/savings-basis'
+import {
+  describeCeilings,
+  describeCeilingsWithoutEstimate,
+  estimatedSavingsHeadline,
+  noEstimateHeadline,
+  unestimatedFindingsLine,
+} from '@/lib/savings-basis'
 import type { OpportunityEvaluationState } from './savings-opportunities'
 
 interface EstimatedSavingsSummaryProps {
@@ -15,6 +21,13 @@ interface EstimatedSavingsSummaryProps {
    * apart from the estimate and never added to it: one line each.
    */
   ceilingByResourceType?: Record<string, number> | null
+  /**
+   * /stats counts (the weekly email's own): findings whose estimate adds more
+   * than $0, and findings with no estimate and no upper bound. null or absent
+   * from an older backend: the estimate keeps its previous caption.
+   */
+  estimatedFindings?: number | null
+  unestimatedFindings?: number | null
   /** The surface's currency formatter for the ceiling lines. */
   formatAmount?: (value: number) => string
   statsLoading?: boolean
@@ -29,7 +42,8 @@ interface EstimatedSavingsSummaryProps {
  * and never turns an empty finding list into a "nothing to save" conclusion:
  * a completed scan does not record whether each check succeeded. Exactly one
  * line per situation, plus one line per ceiling type in the weekly email's
- * wording (DB-D13). Green is used only for a real estimate.
+ * wording (DB-D13). With an estimate or open findings, the header sentence is
+ * the weekly email's (PR-ICONS-b). Green is used only for a real estimate.
  */
 export function EstimatedSavingsSummary({
   monthlySavingsLabel,
@@ -38,6 +52,8 @@ export function EstimatedSavingsSummary({
   evaluationState = 'loading',
   activeCount = null,
   ceilingByResourceType = null,
+  estimatedFindings = null,
+  unestimatedFindings = null,
   formatAmount = (value) => `$${value.toFixed(2)}`,
   statsLoading = false,
   statsFailed = false,
@@ -62,6 +78,11 @@ export function EstimatedSavingsSummary({
     <p key={line} className="text-meta text-ink-muted mb-1.5" data-testid="savings-ceiling-line">{`${line}.`}</p>
   ))
 
+  // The weekly email's sentence needs its count; without one (an older backend)
+  // the estimate keeps its previous caption.
+  const counted = !isDemoActive && monthlySavingsLabel !== null && typeof estimatedFindings === 'number' && estimatedFindings > 0
+  const moreLine = counted && typeof unestimatedFindings === 'number' ? unestimatedFindingsLine(unestimatedFindings) : null
+
   let body: React.ReactNode
   if (isDemoActive || monthlySavingsLabel) {
     body = (
@@ -72,12 +93,18 @@ export function EstimatedSavingsSummary({
         <div className="text-kpi tabular-nums leading-none mb-1.5" style={{ color: 'var(--text-success)' }}>
           {monthlySavingsLabel ?? '—'}
         </div>
-        {monthlySavingsLabel && (
+        {counted ? (
+          <p className="text-meta text-ink-muted mb-1.5" data-testid="savings-headline">
+            {estimatedSavingsHeadline(monthlySavingsLabel as string, estimatedFindings as number)}
+          </p>
+        ) : monthlySavingsLabel && (
           <p className="text-meta text-ink-muted mb-1.5">
             Based on current optimization opportunities
           </p>
         )}
         {ceilingLines(describeCeilings(ceilings, formatAmount, 'month'))}
+        {/* The weekly email's order: estimate, upper bounds, then the findings with no estimate. */}
+        {moreLine && <p className="text-meta text-ink-muted mb-1.5" data-testid="savings-unestimated-line">{moreLine}</p>}
       </>
     )
   } else if (statsLoading) {
@@ -86,10 +113,8 @@ export function EstimatedSavingsSummary({
     body = statusLine('Savings couldn’t be loaded.', retry)
   } else if (activeCount !== null && activeCount > 0) {
     // An active finding always wins over the analysis state.
-    const lines = describeCeilingsWithoutEstimate(ceilings, formatAmount, 'month')
-    body = lines.length > 0
-      ? <div data-testid="roi-state">{ceilingLines(lines)}</div>
-      : statusLine(`${activeCount} finding${activeCount === 1 ? '' : 's'} found; none has a dollar estimate yet.`)
+    // The weekly email's wording, then one upper-bound line per type.
+    body = statusLine(noEstimateHeadline(activeCount), ceilingLines(describeCeilingsWithoutEstimate(ceilings, formatAmount, 'month')))
   } else if (evaluationState === 'loading') {
     body = statusLine('Loading…')
   } else if (evaluationState === 'in_progress') {

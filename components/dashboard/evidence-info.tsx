@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Info, X } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -76,7 +77,7 @@ export function EvidenceInfo({ about, label = `About ${about}`, heading = INFO_H
           aria-label="Close"
           className="inline-flex items-center justify-center w-11 h-11 -my-3 -mr-3 rounded-full text-ink-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--text-accent)]"
         >
-          <X size={16} aria-hidden="true" />
+          <X size={16} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" />
         </DialogPrimitive.Close>
       </div>
       <div className="px-4 py-3 text-meta text-ink-muted leading-relaxed">{children}</div>
@@ -94,7 +95,7 @@ export function EvidenceInfo({ about, label = `About ${about}`, heading = INFO_H
               className="group inline-flex items-center justify-center w-11 h-11 -m-3 rounded-full shrink-0 cursor-pointer text-ink-muted focus-visible:outline-none"
             >
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors group-hover:bg-[var(--surface-1)] group-focus-visible:bg-[var(--surface-1)] group-focus-visible:ring-2 group-focus-visible:ring-[var(--text-accent)]">
-                <Info size={15} aria-hidden="true" />
+                <Info size={15} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" />
               </span>
             </DialogPrimitive.Trigger>
           </TooltipTrigger>

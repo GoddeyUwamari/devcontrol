@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import axios from 'axios'
+import api from '@/lib/api'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CostSummary, SystemHealth } from '@/lib/types'
@@ -464,7 +465,6 @@ describe('page: data freshness row', () => {
     expect(document.body.textContent).not.toContain('Each data source refreshes on its own schedule.')
     const row = screen.getByTestId('data-freshness')
     expect(row.className).toContain('text-meta')
-    expect(row.className).toContain('text-ink-muted')
     expect(within(row).getByText('Data freshness')).toBeInTheDocument()
     expect(['costs', 'resources', 'alerts', 'service'].map((k) => within(row).getByTestId(`freshness-${k}`).textContent)).toEqual([
       'Costs: AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM',
@@ -612,5 +612,94 @@ describe('regression: the four spend states are unchanged (PR-MONEY owns them)',
     expect(screen.queryByTestId('kpi-row')).toBeNull()
     expect(screen.queryByTestId('data-freshness')).toBeNull()
     expect(screen.queryByTestId('dashboard-header-status')).toBeNull()
+  })
+})
+
+// ── PR-ICONS-b at page level (mock §2, §7, §8; data freshness block) ──
+
+describe('PR-ICONS-b page: service status icons', () => {
+  it.each([
+    ['200 ok', 'Operational', 'success', health.ok, false],
+    ['500 database disconnected', 'Degraded', 'warning', health.dbDown, false],
+    ['timeout', 'Unavailable', 'error', health.unreachable, false],
+    ['still checking', 'Checking…', null, health.checking, true],
+  ] as const)('%s → %s with the %s icon; no Activity icon, no dot', async (_, value, kind, mock, checking) => {
+    setup()
+    mock()
+    renderDashboard()
+    await settled({ checking })
+    const card = serviceCard()
+    const icon = within(card).getByTestId('system-health-icon')
+    expect(icon.getAttribute('data-status-kind')).toBe(kind)
+    if (kind === null) expect(icon.getAttribute('class')).toContain('lucide-circle-dashed')
+    expect(within(card).getByTestId('system-health-status').textContent).toBe(value)
+    expect(card.querySelector('.lucide-activity')).toBeNull()
+  })
+})
+
+describe('PR-ICONS-b page: savings header from /stats counts (the weekly email wording)', () => {
+  it('estimate, ceilings and findings with no estimate, in the weekly email\'s order: sentence, per-type ceilings, "K more", annual figure', async () => {
+    setup({
+      recs: [rec('ebs1', 'EBS', 5.17, 'estimated:x'), rec('s31', 'S3', 0.01, 'ceiling:s3'), rec('ri1', 'EC2', 0, null), rec('ri2', 'EC2', 0, null)],
+      stats: { ...stats(5.17, 4, { EBS: 5.17 }, { S3: 0.01 }), estimatedFindings: 1, unestimatedFindings: 2 },
+    })
+    health.ok()
+    renderDashboard()
+    await settled()
+    const header = screen.getByTestId('savings-summary')
+    expect([...header.querySelectorAll('p')].map((p) => p.textContent)).toEqual([
+      'Estimated monthly savings',
+      'Estimated savings: $5.17/month across 1 open finding. This is a DevControl estimate, not realized savings.',
+      'Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above).',
+      '2 more open findings have no dollar estimate yet.',
+      'Potential annual savings',
+      '$62.04',
+      '(estimated)',
+    ])
+  })
+
+  it('no estimate but open findings: "Estimated savings: N open findings; none has a dollar estimate yet." then the ceiling line', async () => {
+    setup({ recs: [rec('s31', 'S3', 0.01, 'ceiling:s3'), rec('ri1', 'EC2', 0, null)], stats: { ...stats(0, 2, {}, { S3: 0.01 }), estimatedFindings: 0, unestimatedFindings: 1 } })
+    health.ok()
+    renderDashboard()
+    await settled()
+    expect([...screen.getByTestId('roi-state').querySelectorAll('p')].map((p) => p.textContent)).toEqual([
+      'Estimated savings: 2 open findings; none has a dollar estimate yet.',
+      'Up to $0.01/month if S3 data qualifies for Standard-IA (upper bound).',
+    ])
+  })
+
+  it('the stats request maps the counts, and leaves them null when the backend omits them (never 0)', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({ data: { success: true, data: { total_recommendations: 3, active_recommendations: 3, total_potential_savings: 5.17, estimated_findings: 1, unestimated_findings: 2 } } })
+    expect(await costRecommendationsService.getStats()).toMatchObject({ estimatedFindings: 1, unestimatedFindings: 2 })
+    vi.spyOn(api, 'get').mockResolvedValueOnce({ data: { success: true, data: { total_recommendations: 3, active_recommendations: 3, total_potential_savings: 5.17 } } })
+    expect(await costRecommendationsService.getStats()).toMatchObject({ estimatedFindings: null, unestimatedFindings: null })
+    vi.spyOn(api, 'get').mockResolvedValueOnce({ data: { success: true, data: { estimated_findings: '1', unestimated_findings: -1 } } })
+    expect(await costRecommendationsService.getStats()).toMatchObject({ estimatedFindings: null, unestimatedFindings: null })
+  })
+})
+
+describe('PR-ICONS-b page: data freshness block', () => {
+  it('a light card: border and surface background, "Data freshness" as a section label, items in the secondary text colour; same segments', async () => {
+    setup()
+    health.ok()
+    renderDashboard()
+    await settled()
+    const row = screen.getByTestId('data-freshness')
+    for (const cls of ['rounded-xl', 'border', 'border-border', 'bg-[var(--surface-2)]', 'text-meta']) expect(row.className.split(/\s+/)).toContain(cls)
+    expect(row.className).not.toContain('text-ink-muted')
+    const label = screen.getByTestId('data-freshness-label')
+    expect(label.textContent).toBe('Data freshness')
+    expect(label.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-label', 'text-ink']))
+    const list = row.querySelector('ul')!
+    expect(list.style.color).toBe('var(--text-secondary)')
+    expect(list.className).not.toMatch(/text-ink-muted/)
+    expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      'Costs: AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM',
+      'Resources and security: last scan today, 6:02 PM · every 6 hours',
+      'Alerts: CloudWatch · checked today, 8:36 PM',
+      'DevControl service: checked today, 8:37 PM',
+    ])
+    expect(row.querySelector('svg')).toBeNull()
   })
 })

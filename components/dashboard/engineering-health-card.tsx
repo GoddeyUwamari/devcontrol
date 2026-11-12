@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import { Code2, TrendingUp, TrendingDown } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements'
@@ -113,7 +114,7 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
     <div className={`bg-[var(--surface-2)] rounded-2xl border border-border p-5 ${isDemoActive ? 'h-full' : 'self-start'}`} data-testid="engineering-health-card">
       <div className={`flex items-center flex-wrap justify-between gap-x-3 gap-y-1 ${isDemoActive ? 'mb-4' : 'mb-3'}`}>
         <div className="flex items-center gap-2.5">
-          <Code2 size={17} style={{ color: 'var(--text-accent)' }} />
+          <Code2 size={17} strokeWidth={DASHBOARD_ICON_STROKE} style={{ color: 'var(--text-accent)' }} />
           <h3 className="text-section text-ink">Engineering Health</h3>
         </div>
         <a href="/app/dora-metrics" className="text-label font-semibold no-underline flex items-center gap-1 whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>

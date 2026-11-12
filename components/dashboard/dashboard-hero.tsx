@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { Plug } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
 import type { ConnectionHealthState } from '@/lib/services/aws-accounts.service'
@@ -91,7 +92,7 @@ export function ProviderPills({ awsConnection, canConnectAws, awsHealth = null }
           data-testid="provider-pill-aws"
           data-state="not-connected"
         >
-          <Plug size={12} aria-hidden="true" />
+          <Plug size={12} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" />
           Connect AWS
         </Link>
       ) : (
@@ -100,7 +101,7 @@ export function ProviderPills({ awsConnection, canConnectAws, awsHealth = null }
           data-testid="provider-pill-aws"
           data-state="not-connected"
         >
-          <Plug size={12} aria-hidden="true" />
+          <Plug size={12} strokeWidth={DASHBOARD_ICON_STROKE} aria-hidden="true" />
           AWS not connected
         </span>
       ))}

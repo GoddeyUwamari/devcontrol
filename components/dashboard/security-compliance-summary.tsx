@@ -1,4 +1,5 @@
 import { ShieldCheck, ChevronRight } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toneText } from './evidence-badge'
 
@@ -69,7 +70,7 @@ function Row({ badge, headline, sub, href }: { badge: { label: string; color: st
         <p className="text-meta font-semibold text-ink leading-snug truncate">{headline}</p>
         <p className="text-meta text-ink-muted leading-snug truncate">{sub}</p>
       </div>
-      {href && <ChevronRight size={14} className="text-ink-muted shrink-0" />}
+      {href && <ChevronRight size={14} strokeWidth={DASHBOARD_ICON_STROKE} className="text-ink-muted shrink-0" />}
     </div>
   )
   return href ? <a href={href} className={`no-underline block ${divider}`}>{content}</a> : content
@@ -130,7 +131,7 @@ export function SecurityComplianceSummary({
     <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full">
       <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-2">
         <div className="flex items-center gap-2.5">
-          <ShieldCheck size={17} style={{ color: 'var(--text-accent)' }} />
+          <ShieldCheck size={17} strokeWidth={DASHBOARD_ICON_STROKE} style={{ color: 'var(--text-accent)' }} />
           <h3 className="text-section text-ink">Security Key Findings</h3>
         </div>
         <a href={detailsHref} className="text-label font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>

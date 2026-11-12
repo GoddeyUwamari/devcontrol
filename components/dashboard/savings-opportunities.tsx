@@ -1,4 +1,5 @@
 import { PuzzleIcon, Sparkles } from 'lucide-react'
+import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { Num } from '@/components/ui/typography'
 import { toneText } from './evidence-badge'
 
@@ -90,7 +91,7 @@ export function SavingsOpportunities({ items, evaluationState, totalActiveCount,
     <div className="bg-[var(--surface-2)] rounded-2xl border border-border p-5 h-full">
       <div className="flex items-center flex-wrap justify-between gap-x-3 gap-y-1 mb-4">
         <div className="flex items-center gap-2.5">
-          <PuzzleIcon size={17} style={{ color: 'var(--text-accent)' }} />
+          <PuzzleIcon size={17} strokeWidth={DASHBOARD_ICON_STROKE} style={{ color: 'var(--text-accent)' }} />
           <h3 className="text-section text-ink">Cost-Saving Opportunities</h3>
         </div>
         <a href={detailsHref} className="text-label font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }}>
