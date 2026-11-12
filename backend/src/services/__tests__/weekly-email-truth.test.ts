@@ -379,6 +379,18 @@ describe('footer names no organization when its name could not be read (WE-1 rev
       }
     }
   });
+
+  it('the not-connected intro says "your organization" too, in HTML and text', async () => {
+    const intro = 'No AWS account is connected to your organization yet, so this week has no spend, security or savings data.';
+    for (const unknown of [null, '']) {
+      const { htmlText, text, data } = render(await fixtureEvidence('C3'), unknown);
+      expect(data.intro).toBe(intro);
+      for (const out of [htmlText, text]) {
+        expect(out).toContain(intro);
+        expect(out).not.toContain('Your Organization');
+      }
+    }
+  });
 });
 
 describe('text part matches the HTML', () => {

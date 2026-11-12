@@ -334,7 +334,7 @@ export function composeWeeklySummary(e: WeeklyEvidence, options: { organizationN
     organizationName,
     organizationNameKnown,
     intro: notConnected
-      ? `No AWS account is connected to ${organizationName} yet, so this week has no spend, security or savings data.`
+      ? `No AWS account is connected to ${organizationNameKnown ? organizationName : 'your organization'} yet, so this week has no spend, security or savings data.`
       : 'Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.',
     status: notConnected
       ? {
