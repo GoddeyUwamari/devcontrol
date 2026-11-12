@@ -516,18 +516,19 @@ export class WeeklySummaryRepository {
   }
 
   /**
-   * Get organization name
+   * The organization's name, or null when it can't be read (no row, an empty
+   * name, or a failed query) -- the email then names no organization.
    */
-  async getOrganizationName(organizationId: string, client?: PoolClient): Promise<string> {
+  async getOrganizationName(organizationId: string, client?: PoolClient): Promise<string | null> {
     try {
       const result = await (client ?? this.pool).query(
         `SELECT name FROM organizations WHERE id = $1`,
         [organizationId]
       );
 
-      return result.rows[0]?.name || 'Your Organization';
+      return result.rows[0]?.name || null;
     } catch (error) {
-      return 'Your Organization';
+      return null;
     }
   }
 

@@ -58,6 +58,8 @@ export interface EmailSection {
 
 export interface WeeklySummaryContent {
   organizationName: string;
+  /** False when the organization's name couldn't be read; the footer then says "your organization". */
+  organizationNameKnown: boolean;
   intro: string;
   /** The AWS connection box; null when nothing is stated about the connection. */
   status: { lines: EmailLine[]; action: EmailLink | null } | null;
@@ -241,7 +243,9 @@ function savingsLines(e: WeeklyEvidence): EmailLine[] {
   const lines: EmailLine[] = [];
   if (d.active === 0) {
     lines.push(body('No open savings findings.'));
-  } else if (d.estimatedFindings > 0) {
+  } else if (d.estimatedMonthlySavings > 0 && d.estimatedFindings > 0) {
+    // Only a total above $0 is a headline: an estimate row stored at 0 is not
+    // a measured $0 saving (same rule as the dashboard's savings card).
     const amount = `${perMonth(d.estimatedMonthlySavings)}/month`;
     lines.push(body(
       `Estimated savings: ${amount} across ${plural(d.estimatedFindings, 'open finding')}. This is a DevControl estimate, not realized savings.`,
@@ -322,15 +326,16 @@ const LINES_OF: Record<EmailSectionId, (e: WeeklyEvidence) => EmailLine[]> = {
   delivery: deliveryLines,
 };
 
-export function composeWeeklySummary(e: WeeklyEvidence, options: { organizationName?: string } = {}): WeeklySummaryContent {
-  const organizationName = options.organizationName ?? 'Your Organization';
+export function composeWeeklySummary(e: WeeklyEvidence, options: { organizationName?: string | null } = {}): WeeklySummaryContent {
+  const organizationNameKnown = Boolean(options.organizationName);
+  const organizationName = options.organizationName || 'Your Organization';
   const notConnected = e.awsConnection === 'not_connected';
   return {
     organizationName,
+    organizationNameKnown,
     intro: notConnected
       ? `No AWS account is connected to ${organizationName} yet, so this week has no spend, security or savings data.`
-      : `Here's what DevControl measured for ${organizationName}. Spend covers the 7 full UTC days before this email. ` +
-        'Findings and savings come from the latest scan.',
+      : 'Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.',
     status: notConnected
       ? {
           lines: [body('AWS connection: not connected.'), body('DevControl connects with a read-only role in your AWS account.')],

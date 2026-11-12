@@ -2,7 +2,8 @@
  * gatherWeeklyEvidence() for the email's plan gate and connection state
  * (WE-1): the posture score only with PLAN_ENTITLEMENTS.riskScore (left out
  * below it and when the plan can't be read), and no security or savings read
- * at all when the organization has no AWS connection. Every source is stubbed;
+ * at all when the organization has no AWS connection; and the organization
+ * name lookup (null when unreadable). Every source is stubbed;
  * no database, no AWS. Synthetic ids only.
  */
 jest.mock('../../middleware/subscription.middleware', () => ({
@@ -112,5 +113,16 @@ describe('weekly evidence: AWS connection', () => {
     expect(e.awsConnection).toBe('unknown');
     expect(e.security.state).toBe('available');
     expect(risk).toHaveBeenCalled();
+  });
+});
+
+describe('getOrganizationName (WE-1 review L-4)', () => {
+  const withQuery = (query: jest.Mock) => new WeeklySummaryRepository({ query } as unknown as Pool);
+
+  it('the name when it can be read; null (no invented name) when there is no row, no name, or the read fails', async () => {
+    expect(await withQuery(jest.fn(async () => ({ rows: [{ name: 'Example Org (synthetic)' }] }))).getOrganizationName(ORG)).toBe('Example Org (synthetic)');
+    expect(await withQuery(jest.fn(async () => ({ rows: [] }))).getOrganizationName(ORG)).toBeNull();
+    expect(await withQuery(jest.fn(async () => ({ rows: [{ name: '' }] }))).getOrganizationName(ORG)).toBeNull();
+    expect(await withQuery(jest.fn(async () => { throw new Error('synthetic read failure'); })).getOrganizationName(ORG)).toBeNull();
   });
 });

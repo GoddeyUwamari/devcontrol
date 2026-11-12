@@ -58,10 +58,10 @@ const breakdown = (o: Partial<WeeklyRecommendationEvidence>): WeeklyRecommendati
   active: 0, estimatedMonthlySavings: 0, estimatedFindings: 0, ceilingByResourceType: {}, unestimatedFindings: 0, ...o,
 });
 
-function render(e: WeeklyEvidence) {
+function render(e: WeeklyEvidence, organizationName: string | null = FIXTURE_ORG_NAME) {
   const data = job.buildTemplateData({
     userName: 'Alex',
-    content: composeWeeklySummary(e, { organizationName: FIXTURE_ORG_NAME }),
+    content: composeWeeklySummary(e, { organizationName }),
     ...FIXTURE_URLS,
   });
   data.year = 2026;
@@ -97,6 +97,10 @@ async function allEmails(): Promise<Array<{ name: string; e: WeeklyEvidence }>> 
   out.push({ name: 'security error', e: { ...b, security: await failed<WeeklySecurityEvidence>(SECURITY) } });
   out.push({ name: 'security preliminary', e: { ...b, security: await unavailable<WeeklySecurityEvidence>(SECURITY, 'the security posture score is still preliminary') } });
   out.push({ name: 'savings error', e: { ...b, recommendations: await failed<WeeklyRecommendationEvidence>(RECS) } });
+  out.push({
+    name: 'savings: an estimate row at $0',
+    e: { ...b, recommendations: await available<WeeklyRecommendationEvidence>(RECS, breakdown({ active: 1, estimatedFindings: 1 })) },
+  });
   out.push({ name: 'delivery error', e: { ...b, delivery: await failed<WeeklyDORAMetrics>(DELIVERY) } });
   out.push({ name: 'connection unknown', e: { ...b, awsConnection: 'unknown' } });
   return out;
@@ -213,6 +217,21 @@ describe('ESTIMATED SAVINGS: "$0/month" regressions', () => {
     expect(two).toContain('2 more open findings have no dollar estimate yet.');
   });
 
+  // WE-1 review H-1: the headline needs a total above $0, whatever the count says.
+  it('an estimate count with a $0 total: no headline and no "$0/month"; none has a dollar estimate yet', async () => {
+    const out = await savings(breakdown({ active: 1, estimatedFindings: 1, estimatedMonthlySavings: 0 }));
+    expect(out).toBe([
+      '1 open finding; none has a dollar estimate yet.',
+      'See Cost Optimization: https://app.example.test/cost-optimization',
+    ].join('\n'));
+    const withCeiling = await savings(breakdown({ active: 2, estimatedFindings: 1, ceilingByResourceType: { S3: 310 } }));
+    expect(withCeiling.split('\n').slice(0, 2)).toEqual([
+      '2 open findings; none has a dollar estimate yet.',
+      'Up to $310/month if S3 data qualifies for Standard-IA (upper bound).',
+    ]);
+    expect(withCeiling).not.toMatch(/\$0\b/);
+  });
+
   it('none open, error, not connected', async () => {
     expect((await savings(breakdown({}))).split('\n')[0]).toBe('No open savings findings.');
     expect(await savings(await failed<WeeklyRecommendationEvidence>(RECS))).toBe('Cost recommendations could not be retrieved for this period.');
@@ -326,6 +345,37 @@ describe('output privacy: no identifiers or raw errors reach the email', () => {
       for (const out of [html, text]) {
         expect({ name, arn: /arn:aws/i.test(out), digits: /\d{12}/.test(out), ext: /external.?id/i.test(out), err: /AccessDenied|Throttling|Error\b/.test(out) })
           .toEqual({ name, arn: false, digits: false, ext: false, err: false });
+      }
+    }
+  });
+});
+
+describe('intro (WE-1 review M-1)', () => {
+  const INTRO = 'Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.';
+
+  it('connected, and connection unknown: exactly the approved intro, in HTML and text; never "latest scan"', async () => {
+    for (const { name, e } of (await allEmails()).filter(x => x.e.awsConnection !== 'not_connected')) {
+      const { html, text, data } = render(e);
+      expect({ name, intro: data.intro }).toEqual({ name, intro: INTRO });
+      expect(html).toContain(INTRO);
+      expect(text).toContain(INTRO);
+      for (const out of [html, text]) expect(out).not.toMatch(/latest scan|Here's what DevControl measured/);
+    }
+  });
+
+  it('not connected: the not-connected intro is unchanged', async () => {
+    expect(render(await fixtureEvidence('C3')).data.intro)
+      .toBe(`No AWS account is connected to ${FIXTURE_ORG_NAME} yet, so this week has no spend, security or savings data.`);
+  });
+});
+
+describe('footer names no organization when its name could not be read (WE-1 review L-4)', () => {
+  it("\"you're an owner of your organization\", lower case, in HTML and text; no invented name", async () => {
+    for (const unknown of [null, '']) {
+      const { htmlText, text } = render(await base(), unknown);
+      for (const out of [htmlText, text]) {
+        expect(out).toContain("You're receiving this because you're an owner of your organization and weekly summaries are on in your notification settings.");
+        expect(out).not.toContain('Your Organization');
       }
     }
   });

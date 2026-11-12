@@ -178,6 +178,21 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     expect(body.message).not.toMatch(/\bAI\b/);
   });
 
+  // WE-1 review L-3: the org comes from the session only, as on the trigger route.
+  it("an owner previews only their own org -- a client-supplied organizationId is ignored", async () => {
+    const res = await fetch(`${baseUrl}/api/ai-insights/preview-weekly-summary?organizationId=someone-elses-org`, {
+      headers: { 'x-test-org': 'org-preview-4', 'x-test-role': 'owner' },
+    });
+    const body = (await res.json()) as any;
+    expect(res.status).toBe(200);
+    expect(body.organizationId).toBe('org-preview-4');
+    for (const read of [mockRepo.getUserInfo, mockRepo.gatherWeeklyEvidence, mockRepo.getOrganizationName]) {
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read.mock.calls[0][0]).toBe('org-preview-4');
+    }
+    expect(JSON.stringify(body)).not.toContain('someone-elses-org');
+  });
+
   it('a failure answers a generic error -- never the raw message', async () => {
     mockRepo.gatherWeeklyEvidence.mockRejectedValue(new Error('synthetic raw failure detail'));
     const res = await preview('org-preview-3', 'owner');

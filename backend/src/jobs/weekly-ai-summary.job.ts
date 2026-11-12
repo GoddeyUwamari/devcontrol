@@ -339,7 +339,8 @@ export class WeeklyAISummaryJob {
     };
     return {
       userName: input.userName,
-      organizationName: content.organizationName,
+      // Named in the footer only; when the name couldn't be read, no name is invented.
+      organizationName: content.organizationNameKnown ? content.organizationName : 'your organization',
       intro: content.intro,
       status: content.status
         ? {

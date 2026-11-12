@@ -9,7 +9,7 @@ import {
 } from '../types';
 import { DetectorObservation } from '../services/cost-optimization.service';
 import { HeldLease, beginFenced } from '../services/scan-lease';
-import { aggregateEstimatedSavings, classifySavingsBasis } from '../services/estimated-savings';
+import { aggregateEstimatedSavings, classifySavingsBasis, countedEstimateAmounts } from '../services/estimated-savings';
 import { EMPTY_RECONCILE_COUNTS, ReconcileCounts } from '../services/cost-analysis-outcome';
 import { AuditEventAction, AuditRequestContext, insertAuditEventInTransaction } from '../services/auditEvents.service';
 import { DetectionState, NotConfirmedReason, judgeFreshness } from '../services/cost-finding-freshness';
@@ -32,11 +32,11 @@ export interface ActiveSavingsBreakdown {
   active: number;
   /** De-duplicated sum of the estimates (aggregateEstimatedSavings().total); never includes an upper bound. */
   estimatedMonthlySavings: number;
-  /** Findings whose figure is an estimate. */
+  /** Findings whose estimate adds more than $0 to estimatedMonthlySavings (countedEstimateAmounts). */
   estimatedFindings: number;
   /** Upper bounds by resource type (aggregateEstimatedSavings().ceilingByResourceType). */
   ceilingByResourceType: Record<string, number>;
-  /** Findings with neither an estimate nor an upper bound (no figure, or no supported basis). */
+  /** Findings with neither an estimate above $0 nor an upper bound (no figure, no supported basis, or an estimate that adds $0). */
   unestimatedFindings: number;
 }
 
@@ -1168,14 +1168,20 @@ export class CostRecommendationsRepository {
       const savings = aggregateEstimatedSavings(rows);
       const hasAmount = (value: unknown) =>
         value !== null && value !== undefined && Number.isFinite(typeof value === 'number' ? value : parseFloat(String(value)));
+      // An estimate counts only when what it adds to the total is > $0. A
+      // gate-blocked DynamoDB comparison is stored at 0 and a fully claimed
+      // fleet discount adds 0: those are findings with no dollar estimate.
+      const counted = countedEstimateAmounts(rows);
       let estimatedFindings = 0;
       let ceilingFindings = 0;
-      for (const row of rows) {
-        if (!hasAmount(row.potential_savings)) continue;
-        const kind = classifySavingsBasis(row.metadata?.savings_basis);
-        if (kind === 'estimate') estimatedFindings++;
-        else if (kind === 'ceiling') ceilingFindings++;
-      }
+      rows.forEach((row, i) => {
+        const amount = counted[i];
+        if (amount !== null) {
+          if (amount > 0) estimatedFindings++;
+          return;
+        }
+        if (hasAmount(row.potential_savings) && classifySavingsBasis(row.metadata?.savings_basis) === 'ceiling') ceilingFindings++;
+      });
       return {
         active: rows.length,
         estimatedMonthlySavings: savings.total,

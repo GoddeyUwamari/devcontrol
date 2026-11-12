@@ -3,7 +3,7 @@ Cost, security, and delivery summary
 
 Hi Alex,
 
-Here's what DevControl measured for Example Org (synthetic). Spend covers the 7 full UTC days before this email. Findings and savings come from the latest scan.
+Spend covers the 7 full UTC days before this email. Findings and savings show what DevControl currently has on record.
 
 COSTS
 AWS Cost Explorer spend for Nov 9 – Nov 15, 2026 couldn't be retrieved.

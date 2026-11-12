@@ -17,7 +17,9 @@
  * Postgres (role-gate-harness.ts). Stubbed: Cost Explorer, the security score,
  * cost recommendations and account findings (not under test), the weekly
  * recipient lookup (its columns are not in the CI schema; covered by
- * weekly-summary-recipient.test.ts), the Resend client, and the export handler.
+ * weekly-summary-recipient.test.ts), the weekly AWS connection lookup (the CI
+ * schema has no aws_accounts table; stubbed as connected so the security
+ * section is always read), the Resend client, and the export handler.
  * Expected tiers are written out, never read from PLAN_ENTITLEMENTS.
  */
 jest.mock('../../services/aws-cost.service', () => ({
@@ -165,6 +167,7 @@ beforeEach(() => {
   jest.spyOn(CostRecommendationsRepository.prototype, 'getActiveSavingsBreakdown').mockResolvedValue({
     active: 2, estimatedMonthlySavings: 120, estimatedFindings: 2, ceilingByResourceType: {}, unestimatedFindings: 0,
   });
+  jest.spyOn(WeeklySummaryRepository.prototype, 'getAwsConnection').mockResolvedValue('connected');
   jest.spyOn(WeeklySummaryRepository.prototype, 'getUserInfo').mockResolvedValue({
     userId: org.owner,
     email: org.emails.owner,
@@ -252,7 +255,20 @@ const DORA_PLAN_LINE = 'Deployment frequency and change failure rate are DORA me
 /** The delivery section's words (links left out). */
 const deliveryOf = (content: any): string[] =>
   content.sections.find((s: any) => s.id === 'delivery').lines.map((l: any) => l.text).filter((t: string) => t !== '');
-const withoutDelivery = (content: any) => ({ ...content, sections: content.sections.filter((s: any) => s.id !== 'delivery') });
+/** The posture score is plan-gated too (riskScore, Optimization Engine): on the plan its line, below it the line naming the plan. */
+const SCORE_LINE = 'Security posture score: 82/100.';
+const SCORE_PLAN_LINE = 'Security posture score and its trend are included in Optimization Engine.';
+const securityOf = (content: any): string[] =>
+  content.sections.find((s: any) => s.id === 'security').lines.map((l: any) => l.text).filter((t: string) => t !== '');
+/** Every section but delivery, with the posture score's line (or its plan line) left out of security. */
+const withoutPlanGated = (content: any) => ({
+  ...content,
+  sections: content.sections
+    .filter((s: any) => s.id !== 'delivery')
+    .map((s: any) => (s.id === 'security'
+      ? { ...s, lines: s.lines.filter((l: any) => l.text !== SCORE_LINE && l.text !== SCORE_PLAN_LINE) }
+      : s)),
+});
 
 /** The weekly email for the org, through the job's own send path, with the content it was built from. */
 async function sendWeeklyEmail(): Promise<{ content: WeeklySummaryContent; html: string; text: string }> {
@@ -299,8 +315,13 @@ describe('A2: the weekly email leaves the DORA metrics out below Pro', () => {
     const proContent = (await sendWeeklyEmail()).content;
     await setPlan(STATES.free);
     const freeContent = (await sendWeeklyEmail()).content;
-    expect(withoutDelivery(freeContent)).toEqual(withoutDelivery(proContent));
+    expect(withoutPlanGated(freeContent)).toEqual(withoutPlanGated(proContent));
     expect(deliveryOf(proContent)[0]).toBe(deliveryOf(freeContent)[0]);
+    // The security section differs only by the posture score's plan gate.
+    expect(securityOf(proContent)).toContain(SCORE_LINE);
+    expect(securityOf(proContent)).not.toContain(SCORE_PLAN_LINE);
+    expect(securityOf(freeContent)).toContain(SCORE_PLAN_LINE);
+    expect(securityOf(freeContent)).not.toContain(SCORE_LINE);
   });
 
   it('the plan cannot be read: the DORA metrics are left out, the plan line is shown, and the email is still sent', async () => {
@@ -335,15 +356,35 @@ describe('A2: the weekly summary preview applies the same rule', () => {
     const pro = await preview();
     await setPlan(STATES['pro, restricted']);
     const restricted = await preview();
-    // Everything but the delivery section (and the generation time, and each section's per-call retrievedAt).
+    // Everything but the delivery section and the posture score (and the
+    // generation time, and each section's per-call retrievedAt).
     const strip = (b: any) => {
       const evidence = JSON.parse(JSON.stringify(b.evidence, (key, value) => (key === 'retrievedAt' ? undefined : value)));
-      const content = withoutDelivery(b.content);
+      const content = withoutPlanGated(b.content);
       delete evidence.delivery;
       delete evidence.period;
+      delete evidence.security.data.score;
       return { evidence, content };
     };
     expect(strip(restricted)).toEqual(strip(pro));
+  });
+
+  // WE-1 review L-3: the score is left out of the preview JSON below the plan, even with a completed scan.
+  it.each(RECOGNISED)('posture score from a completed scan, %s: in the preview only on Optimization Engine', async (name) => {
+    const state = STATES[name];
+    await setPlan(state);
+    const body = await preview();
+    const security = body.evidence.security;
+    expect(security.state).toBe('available'); // not preliminary: the scan completed
+    if (atLeast(state, 'pro')) {
+      expect(security.data).toEqual({ score: 82, accountLevelFindings: 0, resourceComplianceIssues: 1 });
+      expect(securityOf(body.content)).toContain(SCORE_LINE);
+      expect(securityOf(body.content)).not.toContain(SCORE_PLAN_LINE);
+    } else {
+      expect(security.data).toEqual({ accountLevelFindings: 0, resourceComplianceIssues: 1 });
+      expect(securityOf(body.content)).toContain(SCORE_PLAN_LINE);
+      expect(JSON.stringify(body)).not.toMatch(/"score"|82\/100/);
+    }
   });
 
   it('the plan cannot be read: the DORA metrics are left out', async () => {
