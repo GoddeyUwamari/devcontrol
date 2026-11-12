@@ -249,10 +249,12 @@ describe('getActiveSavingsBreakdown -- the weekly email savings states (WE-1)', 
       rec({ resource_id: 'vol-a', resource_type: 'EBS', issue: 'Unattached Volume', potential_savings: 12.5, metadata: { savings_basis: ESTIMATED } }),
       rec({ resource_id: 'bucket-a', resource_type: 'S3', issue: 'Lifecycle', potential_savings: 300, metadata: { savings_basis: 'ceiling: all Standard data qualifies' } }),
       blockedComparison('table-d'),
+      blockedComparison('table-e'),
     ], orgId);
 
     const [b, stats] = [await repository.getActiveSavingsBreakdown(orgId), await repository.getStats(orgId)];
-    expect(b).toEqual({ active: 5, estimatedMonthlySavings: 82.5, estimatedFindings: 2, ceilingByResourceType: { S3: 300 }, unestimatedFindings: 2 });
+    // The two counts differ (2 and 3), so a swap between them cannot pass.
+    expect(b).toEqual({ active: 6, estimatedMonthlySavings: 82.5, estimatedFindings: 2, ceilingByResourceType: { S3: 300 }, unestimatedFindings: 3 });
     expect(stats.estimated_findings).toBe(b.estimatedFindings);
     expect(stats.unestimated_findings).toBe(b.unestimatedFindings);
     expect(stats.total_potential_savings).toBe(b.estimatedMonthlySavings);
