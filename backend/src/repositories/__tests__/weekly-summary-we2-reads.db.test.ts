@@ -452,7 +452,7 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     expect(savings.join('\n')).not.toContain(ANALYSIS_PARTIAL_NOTE);
   });
 
-  it('failed after a partial run: did not finish, dated by the partial run with the partial sentence', async () => {
+  it('failed after a partial run: did not finish, dated by the partial run, the partial sentence, then the didn\'t-finish sentence', async () => {
     const o = await org('st-failed-after-partial');
     const partial = await analysisRun(o, 'partial', ago(8 * DAY));
     await analysisRun(o, 'failed', ago(3 * HOUR));
@@ -460,7 +460,7 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     expect(analysis.data).toMatchObject({ latest: { state: 'did_not_finish' }, lastCompleted: { at: partial, partial: true } });
     expect(savings).toEqual([
       HEADLINE,
-      `From the last completed cost analysis, ${formatInstantDay(partial)}. This week's analysis didn't finish. ${ANALYSIS_PARTIAL_NOTE}`,
+      `From the last completed cost analysis, ${formatInstantDay(partial)}. ${ANALYSIS_PARTIAL_NOTE} This week's analysis didn't finish.`,
     ]);
   });
 

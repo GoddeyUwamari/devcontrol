@@ -769,12 +769,22 @@ describe('WE-2 savings: cost analysis state (WE-D3 and mock v1)', () => {
     for (const { all: out } of [older, first]) expect(out).not.toContain(ANALYSIS_PARTIAL_NOTE);
   });
 
-  it('H-1: a run that didn\'t finish after a partial one: dated by the partial run, with the partial sentence (HTML and text)', async () => {
+  it('H-1: a run that didn\'t finish after a partial one: dated by the partial run, the partial sentence, then the didn\'t-finish sentence (HTML and text)', async () => {
     const e = (await states()).find(s => s.name === 'analysis did not finish, older partial')!.e;
-    expect((await savingsBoth(e)).lines).toEqual([
+    const thisWeek = await savingsBoth(e);
+    expect(thisWeek.lines).toEqual([
       C2_HEADLINE,
-      `From the last completed cost analysis, Nov 8, 2026. This week's analysis didn't finish. ${ANALYSIS_PARTIAL_NOTE}`,
+      `From the last completed cost analysis, Nov 8, 2026. ${ANALYSIS_PARTIAL_NOTE} This week's analysis didn't finish.`,
     ]);
+    expect(thisWeek.all).toContain('Some cost checks didn&#x27;t complete, so these results may be incomplete. This week&#x27;s analysis didn&#x27;t finish.');
+    // Started before this week: WE2-P13's "The latest analysis didn't finish." after the partial sentence.
+    const older = await savingsBoth({ ...e, costAnalysis: await analysisOf(runs({ state: 'did_not_finish', at: T('05T06:15'), startedAt: T('05T06:14') }, T('01T06:20'), true)) });
+    expect(older.lines).toEqual([
+      C2_HEADLINE,
+      `From the last completed cost analysis, Nov 1, 2026. ${ANALYSIS_PARTIAL_NOTE} The latest analysis didn't finish.`,
+    ]);
+    expect(older.all).toContain('Some cost checks didn&#x27;t complete, so these results may be incomplete. The latest analysis didn&#x27;t finish.');
+    for (const { lines } of [thisWeek, older]) expect(lines.join('\n').match(/didn't finish/g)).toHaveLength(1);
   });
 
   it('the partial sentence appears only with figures dated by a partial run', async () => {
