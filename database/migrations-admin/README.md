@@ -94,8 +94,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202611071200_add_checkout_reservation.sql`**,
 **`202611091200_add_trial_used_at.sql`**,
 **`202611091300_harden_database_ownership.sql`**,
-**`202611101200_transfer_tenant_table_ownership.sql`**, and
-**`202611111200_create_aws_connection_checks.sql`**.
+**`202611101200_transfer_tenant_table_ownership.sql`**,
+**`202611111200_create_aws_connection_checks.sql`**, and
+**`202611121200_add_users_previous_login_at.sql`**.
 
 `202611111200_create_aws_connection_checks.sql` (AWS connect PR D1a) creates
 the tenant table `aws_connection_checks`, one row per AWS connection: health
@@ -1158,3 +1159,37 @@ unless the restored state equals the recorded one:
 psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
   -f 202611101200_transfer_tenant_table_ownership_rollback.sql
 ```
+
+## Classification -- `202611121200_add_users_previous_login_at.sql`
+
+Adds one nullable column with no default to `users`: `previous_login_at`
+(timestamptz), the sign-in before the latest one, for the Dashboard's "Last
+login". Both sign-in paths (password login and SAML) set
+`previous_login_at = last_login_at, last_login_at = NOW()` in one UPDATE;
+token refresh and every other path leave both columns alone. It is
+administrative because `users` is `postgres`-owned, and it is applied by hand
+**before** the code that uses it is merged: that code writes the column on
+every sign-in and reads it in `/me`, and fails without it.
+
+It is additive and safe under the release already running: that release never
+reads or writes the column, no row is rewritten (catalog-only `ADD COLUMN`),
+and existing rows read NULL. No backfill: the first sign-in after the release
+copies the stored `last_login_at`, which is that user's previous sign-in. It
+raises an exception, with nothing applied, when not run as a superuser, when
+`users.last_login_at` (timestamptz) is missing, or when the column already
+exists. The application role reaches the column through its existing
+table-level `SELECT` and `UPDATE` on `users`; no grant changes.
+
+### Rollback
+
+`202611121200_add_users_previous_login_at_rollback.sql`, manual only, as
+`postgres`, in one transaction, **after** reverting the application to a
+release before PR-UI-a:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611121200_add_users_previous_login_at_rollback.sql
+```
+
+It loses each user's previous sign-in time (display only). It drops the column
+only if it carries the migration's marker, and its `schema_migrations` row.

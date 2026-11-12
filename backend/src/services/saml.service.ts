@@ -433,7 +433,11 @@ export const samlService = {
     const profile = await this.validateCallback(organizationId, body);
     const member = await this.resolveActiveMember(organizationId, profile.email);
 
-    await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [member.userId]);
+    // Same as password login: the old last_login_at becomes previous_login_at.
+    await pool.query(
+      'UPDATE users SET previous_login_at = last_login_at, last_login_at = NOW() WHERE id = $1',
+      [member.userId]
+    );
 
     return authService.generateTokenPair({
       userId: member.userId,

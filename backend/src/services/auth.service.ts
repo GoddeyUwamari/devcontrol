@@ -368,11 +368,14 @@ export class AuthService {
 
     const primaryOrg = orgsResult.rows[0];
 
-    // Reset failed attempts and update last login
+    // Reset failed attempts and record the sign-in. previous_login_at takes
+    // the old last_login_at (the right-hand side reads the row before this
+    // UPDATE), so /me can show the sign-in before this one.
     await pool.query(
       `UPDATE users
        SET failed_login_attempts = 0,
            locked_until = NULL,
+           previous_login_at = last_login_at,
            last_login_at = NOW(),
            last_login_ip = $1
        WHERE id = $2`,
@@ -870,7 +873,7 @@ export class AuthService {
    */
   async getCurrentUser(userId: string): Promise<any> {
     const result = await pool.query(
-      `SELECT id, email, full_name, avatar_url, is_email_verified, created_at, last_login_at
+      `SELECT id, email, full_name, avatar_url, is_email_verified, created_at, last_login_at, previous_login_at
        FROM users
        WHERE id = $1 AND deleted_at IS NULL`,
       [userId]
@@ -902,6 +905,8 @@ export class AuthService {
       isEmailVerified: user.is_email_verified,
       createdAt: user.created_at,
       lastLoginAt: user.last_login_at,
+      // The sign-in before the current one; null until a second sign-in.
+      previousLoginAt: user.previous_login_at ?? null,
       organizations: orgsResult.rows.map((org) => ({
         id: org.id,
         name: org.name,
