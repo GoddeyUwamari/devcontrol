@@ -7,7 +7,7 @@
  */
 import { EC2Client } from '@aws-sdk/client-ec2';
 import costOptimizationService from '../cost-optimization.service';
-import { aggregateEstimatedSavings, classifySavingsBasis, countedEstimateAmounts, describeCeilings, describeCeilingsWithoutEstimate, SavingsRecommendation } from '../estimated-savings';
+import { aggregateEstimatedSavings, classifySavingsBasis, countedEstimateAmounts, countSavingsFindings, describeCeilings, describeCeilingsWithoutEstimate, SavingsRecommendation } from '../estimated-savings';
 
 const ESTIMATED = 'estimated: list price';
 
@@ -126,6 +126,33 @@ describe('countedEstimateAmounts (what each row adds to the total; WE-1 review H
     expect(countedEstimateAmounts(recs)).toEqual([70, 0, 0, null, null, null]);
     const sum = countedEstimateAmounts(recs).reduce<number>((total, amount) => total + (amount ?? 0), 0);
     expect(sum).toBe(aggregateEstimatedSavings(recs).total);
+  });
+});
+
+describe('countSavingsFindings (one count for the weekly email and the Dashboard /stats)', () => {
+  it('estimate > $0, upper bound, or neither: a fully claimed fleet discount, a $0 comparison, a null figure and an unsupported basis have no dollar estimate', () => {
+    const recs = [
+      idle('i-a', 70),
+      ri(['i-a'], 1, 24.5),
+      plain('DynamoDB', 0, 'comparison:on_demand_vs_provisioned_observed_workload — modeled cost difference only'),
+      plain('S3', 310, CEILING),
+      plain('EC2', null),
+      plain('RDS', 98, null),
+    ];
+    expect(countSavingsFindings(recs)).toEqual({ estimatedFindings: 1, ceilingFindings: 1, unestimatedFindings: 4 });
+  });
+
+  it('a ceiling with no figure is not an upper-bound finding; string amounts count like numbers', () => {
+    expect(countSavingsFindings([plain('S3', null, CEILING), plain('S3', '41.27', CEILING), plain('EBS', '12.40')]))
+      .toEqual({ estimatedFindings: 1, ceilingFindings: 1, unestimatedFindings: 1 });
+  });
+
+  it('the three counts always add up to the number of findings; none for an empty list', () => {
+    const recs = [idle('i-a', 70), idle('i-b', 30), ri(['i-a', 'i-b', 'i-c'], 3, 10), plain('S3', 5, CEILING)];
+    const c = countSavingsFindings(recs);
+    expect(c).toEqual({ estimatedFindings: 3, ceilingFindings: 1, unestimatedFindings: 0 });
+    expect(c.estimatedFindings + c.ceilingFindings + c.unestimatedFindings).toBe(recs.length);
+    expect(countSavingsFindings([])).toEqual({ estimatedFindings: 0, ceilingFindings: 0, unestimatedFindings: 0 });
   });
 });
 

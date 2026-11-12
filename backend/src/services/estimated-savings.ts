@@ -140,6 +140,39 @@ export function countedEstimateAmounts(recs: SavingsRecommendation[]): Array<num
   });
 }
 
+/** Open findings by what their figure is; the three counts add up to recs.length. */
+export interface SavingsFindingCounts {
+  /** Findings whose estimate adds more than $0 to aggregateEstimatedSavings().total. */
+  estimatedFindings: number;
+  /** Findings whose figure is an upper bound (a ceiling with an amount). */
+  ceilingFindings: number;
+  /** Findings with neither: no figure, no supported basis, or an estimate that adds $0. */
+  unestimatedFindings: number;
+}
+
+/**
+ * The one count the weekly email and the Dashboard both read. An estimate
+ * counts only when what it adds to the total is > $0: a gate-blocked DynamoDB
+ * comparison is stored at 0 and a fully claimed fleet discount adds 0, so
+ * those are findings with no dollar estimate.
+ */
+export function countSavingsFindings(recs: SavingsRecommendation[]): SavingsFindingCounts {
+  const hasAmount = (value: unknown) =>
+    value !== null && value !== undefined && Number.isFinite(typeof value === 'number' ? value : parseFloat(String(value)));
+  const counted = countedEstimateAmounts(recs);
+  let estimatedFindings = 0;
+  let ceilingFindings = 0;
+  recs.forEach((rec, i) => {
+    const amount = counted[i];
+    if (amount !== null) {
+      if (amount > 0) estimatedFindings++;
+      return;
+    }
+    if (hasAmount(rec.potential_savings) && classifySavingsBasis(rec.metadata?.savings_basis) === 'ceiling') ceilingFindings++;
+  });
+  return { estimatedFindings, ceilingFindings, unestimatedFindings: recs.length - estimatedFindings - ceilingFindings };
+}
+
 export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): EstimatedSavingsAggregate {
   let ceilingTotal = 0;
   const ceilingByResourceType: Record<string, number> = {};

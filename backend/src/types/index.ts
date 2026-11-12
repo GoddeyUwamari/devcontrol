@@ -224,6 +224,10 @@ export interface RecommendationStats {
   /** Upper bounds (savings_basis 'ceiling: ...'), kept out of the total above. */
   potential_savings_ceiling: number;
   potential_savings_ceiling_by_resource_type: Record<string, number>;
+  /** Active findings whose estimate adds more than $0 to the total (countSavingsFindings). */
+  estimated_findings: number;
+  /** Active findings with neither an estimate above $0 nor an upper bound (countSavingsFindings). */
+  unestimated_findings: number;
   by_severity: {
     high: number;
     medium: number;
