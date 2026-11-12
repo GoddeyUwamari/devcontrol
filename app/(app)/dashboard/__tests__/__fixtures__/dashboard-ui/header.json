@@ -1,0 +1,27 @@
+{
+  "finished scan, previous sign-in": [
+    "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
+    "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
+    "Acme Labs {class=text-meta text-ink-muted}"
+  ],
+  "scan running, previousLoginAt null": [
+    "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
+    "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
+    "Acme Labs {class=text-meta text-ink-muted}"
+  ],
+  "last scan failed, previousLoginAt absent": [
+    "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
+    "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
+    "Acme Labs {class=text-meta text-ink-muted}"
+  ],
+  "no scan finished yet": [
+    "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
+    "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
+    "Acme Labs {class=text-meta text-ink-muted}"
+  ],
+  "coverage request failed": [
+    "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
+    "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
+    "Acme Labs {class=text-meta text-ink-muted}"
+  ]
+}

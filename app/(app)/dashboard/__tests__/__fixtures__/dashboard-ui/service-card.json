@@ -1,0 +1,52 @@
+{
+  "200 ok": [
+    "[icon]",
+    "DevControl System Health {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    " [href=/status]",
+    "[icon]",
+    "Operational {color=var(--text-success) class=text-label}",
+    "API and database responding · not your AWS resources {class=text-meta text-ink-muted}"
+  ],
+  "500 database disconnected": [
+    "[icon]",
+    "DevControl System Health {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    " [href=/status]",
+    "[icon]",
+    "Not responding {color=var(--text-danger) class=text-label}",
+    "DevControl's API is not responding normally. Not a status of your AWS resources. {class=text-meta text-ink-muted}"
+  ],
+  "500 without a database field": [
+    "[icon]",
+    "DevControl System Health {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    " [href=/status]",
+    "[icon]",
+    "Not responding {color=var(--text-danger) class=text-label}",
+    "DevControl's API is not responding normally. Not a status of your AWS resources. {class=text-meta text-ink-muted}"
+  ],
+  "timeout / network": [
+    "[icon]",
+    "DevControl System Health {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    " [href=/status]",
+    "[icon]",
+    "Not responding {color=var(--text-danger) class=text-label}",
+    "DevControl's API is not responding normally. Not a status of your AWS resources. {class=text-meta text-ink-muted}"
+  ],
+  "still checking": [
+    "[icon]",
+    "DevControl System Health {class=text-ui text-ink}",
+    " [button]",
+    "[icon]",
+    " [href=/status]",
+    "[icon]",
+    "Checking {color=var(--text-secondary) class=text-label}",
+    "Checking DevControl's own service status. {class=text-meta text-ink-muted}"
+  ]
+}

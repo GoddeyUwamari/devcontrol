@@ -1,0 +1,14 @@
+{
+  "every source": [
+    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
+  ],
+  "coverage stale": [
+    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
+  ],
+  "last scan attempt failed": [
+    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
+  ],
+  "no sources: costs unavailable, coverage failed, CloudWatch failed, service still checking": [
+    "Each data source refreshes on its own schedule. {class=text-meta text-ink-muted}"
+  ]
+}
