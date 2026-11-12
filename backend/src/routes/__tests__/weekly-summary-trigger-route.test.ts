@@ -126,13 +126,61 @@ describe('POST /api/ai-insights/trigger-weekly-summary', () => {
   });
 });
 
+// Founder ruling 2026-11-12: the answer names counts only, never an address.
+describe('POST /api/ai-insights/trigger-weekly-summary messages (WE-3a)', () => {
+  async function answer(result: { sent: number; skipped: number; errors: number }, org: string) {
+    mockTriggerManual.mockResolvedValue(result);
+    const res = await trigger(org, 'owner');
+    return { status: res.status, body: (await res.json()) as { success: boolean; message: string; result: unknown } };
+  }
+
+  it.each([
+    [1, 'Weekly summary sent to 1 owner.'],
+    [2, 'Weekly summary sent to 2 owners.'],
+    [3, 'Weekly summary sent to 3 owners.'],
+  ])('all sent (%i): 200 "%s"', async (sent, message) => {
+    const { status, body } = await answer({ sent, skipped: 0, errors: 0 }, `org-msg-all-${sent}`);
+    expect(status).toBe(200);
+    expect(body).toEqual({ success: true, message, result: { sent, skipped: 0, errors: 0 } });
+  });
+
+  it.each([
+    [1, 1, "Weekly summary sent to 1 of 2 owners. 1 couldn't be sent; try again later."],
+    [2, 1, "Weekly summary sent to 2 of 3 owners. 1 couldn't be sent; try again later."],
+    [1, 2, "Weekly summary sent to 1 of 3 owners. 2 couldn't be sent; try again later."],
+  ])('some sent (%i sent, %i failed): 200 "%s"', async (sent, errors, message) => {
+    const { status, body } = await answer({ sent, skipped: 0, errors }, `org-msg-some-${sent}-${errors}`);
+    expect(status).toBe(200);
+    expect(body).toEqual({ success: true, message, result: { sent, skipped: 0, errors } });
+  });
+
+  it.each([1, 2])('none sent (%i failed): 500 "Weekly summary couldn\'t be sent. Try again later."', async errors => {
+    const { status, body } = await answer({ sent: 0, skipped: 0, errors }, `org-msg-none-${errors}`);
+    expect(status).toBe(500);
+    expect(body).toEqual({
+      success: false,
+      message: "Weekly summary couldn't be sent. Try again later.",
+      result: { sent: 0, skipped: 0, errors },
+    });
+  });
+
+  it('no message carries an address', async () => {
+    for (const [i, result] of [
+      { sent: 2, skipped: 0, errors: 0 }, { sent: 1, skipped: 0, errors: 1 }, { sent: 0, skipped: 0, errors: 1 }, { sent: 0, skipped: 1, errors: 0 },
+    ].entries()) {
+      const { body } = await answer(result, `org-msg-addr-${i}`);
+      expect(body.message).not.toMatch(/@/);
+    }
+  });
+});
+
 describe('POST /api/ai-insights/trigger-weekly-summary errors (WE-1)', () => {
   it('a thrown failure answers a generic error -- never the raw message', async () => {
     mockTriggerManual.mockRejectedValue(new Error('synthetic raw failure detail'));
     const res = await trigger('org-throw-1', 'owner');
     const text = await res.text();
     expect(res.status).toBe(500);
-    expect(JSON.parse(text)).toEqual({ success: false, error: 'Weekly summary could not be sent.' });
+    expect(JSON.parse(text)).toEqual({ success: false, error: "Weekly summary couldn't be sent. Try again later." });
     expect(text).not.toContain('synthetic raw failure detail');
   });
 });

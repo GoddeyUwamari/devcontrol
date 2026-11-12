@@ -16,6 +16,31 @@ import { weeklySummaryTriggerRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
+const TRIGGER_NONE_SENT = "Weekly summary couldn't be sent. Try again later.";
+
+/**
+ * The manual send's answer, from counts only (never an address). N owners
+ * were tried: all sent → 200; some sent → 200 naming how many couldn't be;
+ * none sent → 500. No eligible owner keeps its own message (200).
+ */
+function triggerOutcome(result: { sent: number; skipped: number; errors: number }): { status: number; message: string } {
+  const owners = (n: number) => `${n} ${n === 1 ? 'owner' : 'owners'}`;
+  const tried = result.sent + result.errors;
+  if (result.sent > 0 && result.errors === 0) {
+    return { status: 200, message: `Weekly summary sent to ${owners(result.sent)}.` };
+  }
+  if (result.sent > 0) {
+    return {
+      status: 200,
+      message: `Weekly summary sent to ${result.sent} of ${owners(tried)}. ${result.errors} couldn't be sent; try again later.`,
+    };
+  }
+  if (result.skipped > 0 && result.errors === 0) {
+    return { status: 200, message: 'Not sent: no organization owner has weekly summaries enabled and a verified email address.' };
+  }
+  return { status: 500, message: TRIGGER_NONE_SENT };
+}
+
 router.use(authenticate);
 
 // POST /api/ai-insights/trigger-weekly-summary
@@ -34,14 +59,9 @@ router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLim
     const job = new WeeklyAISummaryJob(pool);
     const result = await job.triggerManual(organizationId);
 
-    const message = result.sent > 0
-      ? 'Weekly summary sent to the organization owner. Check your email inbox.'
-      : result.skipped > 0
-        ? 'Not sent: no organization owner has weekly summaries enabled and a verified email address.'
-        : 'Weekly summary could not be sent.';
-
-    res.status(result.errors > 0 ? 500 : 200).json({
-      success: result.errors === 0,
+    const { status, message } = triggerOutcome(result);
+    res.status(status).json({
+      success: status === 200,
       message,
       result
     });
@@ -49,7 +69,7 @@ router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLim
     console.error('[AI Insights] Trigger weekly summary error:', error?.message);
     res.status(500).json({
       success: false,
-      error: 'Weekly summary could not be sent.'
+      error: TRIGGER_NONE_SENT
     });
   }
 });
