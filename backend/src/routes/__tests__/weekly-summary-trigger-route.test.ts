@@ -33,8 +33,11 @@ jest.mock('../../jobs/weekly-ai-summary.job', () => ({
   WeeklyAISummaryJob: jest.fn().mockImplementation(() => ({ triggerManual: mockTriggerManual })),
 }));
 
+/** The held, org-tagged connection the preview reads through (WE-3a); one object per withOrganizationClient call. */
+const mockHeldClients: Array<{ organizationId: string; client: object }> = [];
 const mockRepo = {
-  getUserInfo: jest.fn(),
+  withOrganizationClient: jest.fn(),
+  getRecipients: jest.fn(),
   gatherWeeklyEvidence: jest.fn(),
   getOrganizationName: jest.fn(),
   getPlanName: jest.fn(),
@@ -155,7 +158,16 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
 
   beforeEach(() => {
     mockRepoConstructed.mockReset();
-    mockRepo.getUserInfo.mockReset().mockResolvedValue({ userId: 'u', email: 'owner@example.test', fullName: 'Pat Owner' });
+    mockHeldClients.length = 0;
+    mockRepo.withOrganizationClient.mockReset().mockImplementation(async (organizationId: string, work: (c: object) => unknown) => {
+      const client = { heldFor: organizationId };
+      mockHeldClients.push({ organizationId, client });
+      return work(client);
+    });
+    mockRepo.getRecipients.mockReset().mockResolvedValue([
+      { userId: 'u', email: 'owner@example.test', fullName: 'Pat Owner' },
+      { userId: 'v', email: 'second-owner@example.test', fullName: 'Sam Owner' },
+    ]);
     mockRepo.gatherWeeklyEvidence.mockReset().mockImplementation(async () => evidence());
     mockRepo.getOrganizationName.mockReset().mockResolvedValue('Example Org (synthetic)');
     mockRepo.getPlanName.mockReset().mockResolvedValue('Visibility');
@@ -174,7 +186,7 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     const res = await preview('org-preview-2', 'owner');
     const body = (await res.json()) as any;
     expect(res.status).toBe(200);
-    expect(mockRepo.gatherWeeklyEvidence).toHaveBeenCalledWith('org-preview-2', expect.any(Date));
+    expect(mockRepo.gatherWeeklyEvidence).toHaveBeenCalledWith('org-preview-2', expect.any(Date), mockHeldClients[0].client);
     expect(body.content.sections.map((s: any) => s.title)).toEqual(['COSTS', 'SECURITY', 'ESTIMATED SAVINGS', 'ALERTS', 'DELIVERY']);
     expect(body.content.organizationName).toBe('Example Org (synthetic)');
     expect(body.content.header).toMatch(/^Example Org \(synthetic\) · Visibility plan · .+ \(UTC\)$/);
@@ -190,11 +202,35 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     const body = (await res.json()) as any;
     expect(res.status).toBe(200);
     expect(body.organizationId).toBe('org-preview-4');
-    for (const read of [mockRepo.getUserInfo, mockRepo.gatherWeeklyEvidence, mockRepo.getOrganizationName, mockRepo.getPlanName]) {
+    for (const read of [mockRepo.withOrganizationClient, mockRepo.getRecipients, mockRepo.gatherWeeklyEvidence, mockRepo.getOrganizationName, mockRepo.getPlanName]) {
       expect(read).toHaveBeenCalledTimes(1);
       expect(read.mock.calls[0][0]).toBe('org-preview-4');
     }
     expect(JSON.stringify(body)).not.toContain('someone-elses-org');
+  });
+
+  // WE-3a (audit P3): no bare-pool read -- every read runs on one connection
+  // tagged for the caller's org, the way the scheduled send reads.
+  it("every preview read runs on one connection held and tagged for the caller's org", async () => {
+    const res = await preview('org-preview-5', 'owner');
+    expect(res.status).toBe(200);
+    expect(mockRepo.withOrganizationClient).toHaveBeenCalledTimes(1);
+    expect(mockHeldClients).toHaveLength(1);
+    expect(mockHeldClients[0].organizationId).toBe('org-preview-5');
+    const held = mockHeldClients[0].client;
+    expect(mockRepo.getRecipients).toHaveBeenCalledWith('org-preview-5', held);
+    expect(mockRepo.gatherWeeklyEvidence).toHaveBeenCalledWith('org-preview-5', expect.any(Date), held);
+    expect(mockRepo.getOrganizationName).toHaveBeenCalledWith('org-preview-5', held);
+    expect(mockRepo.getPlanName).toHaveBeenCalledWith('org-preview-5', held);
+  });
+
+  it('WE-D7: the preview lists every owner the email would go to', async () => {
+    const body = (await (await preview('org-preview-6', 'owner')).json()) as Record<string, unknown>;
+    expect(body.recipients).toEqual([
+      { email: 'owner@example.test', fullName: 'Pat Owner' },
+      { email: 'second-owner@example.test', fullName: 'Sam Owner' },
+    ]);
+    expect(body).not.toHaveProperty('userInfo');
   });
 
   it('a failure answers a generic error -- never the raw message', async () => {

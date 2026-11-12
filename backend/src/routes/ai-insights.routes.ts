@@ -20,8 +20,8 @@ router.use(authenticate);
 
 // POST /api/ai-insights/trigger-weekly-summary
 // Manually send the weekly summary email for the caller's own org. Owner only
-// and rate limited per org: each call sends a real email. The recipient is
-// the org's eligible owner (opted in + verified), same as the scheduled run.
+// and rate limited per org: each call sends real email. The recipients are
+// the org's eligible owners (opted in + verified), same as the scheduled run.
 router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLimiter, async (req, res) => {
   try {
     // Always the caller's own org — never trust a client-supplied id.
@@ -58,6 +58,9 @@ router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLim
 // Preview the caller's own org's weekly summary evidence and wording without
 // sending email. Owner only, like the manual send. The evidence carries only
 // what the org's plan includes (the repository leaves plan-gated figures out).
+// Every read runs on one connection tagged for the org (withOrganizationClient),
+// the same way the scheduled send reads, so the preview and the email agree
+// under row level security.
 router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
   try {
     const { WeeklySummaryRepository } = await import('../repositories/weekly-summary.repository');
@@ -69,17 +72,20 @@ router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Organization context required' });
     }
 
-    const [recipient, evidence, organizationName, planName] = await Promise.all([
-      repository.getUserInfo(organizationId),
-      repository.gatherWeeklyEvidence(organizationId, new Date()),
-      repository.getOrganizationName(organizationId),
-      repository.getPlanName(organizationId),
-    ]);
+    const [recipients, evidence, organizationName, planName] = await repository.withOrganizationClient(
+      organizationId,
+      (client) => Promise.all([
+        repository.getRecipients(organizationId, client),
+        repository.gatherWeeklyEvidence(organizationId, new Date(), client),
+        repository.getOrganizationName(organizationId, client),
+        repository.getPlanName(organizationId, client),
+      ])
+    );
 
     res.json({
       success: true,
       organizationId,
-      userInfo: recipient ? { email: recipient.email, fullName: recipient.fullName } : null,
+      recipients: recipients.map(r => ({ email: r.email, fullName: r.fullName })),
       evidence,
       content: composeWeeklySummary(evidence, { organizationName, planName }),
       message: 'This is the evidence and wording the weekly email would use'

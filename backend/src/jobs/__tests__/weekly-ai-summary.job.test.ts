@@ -5,6 +5,7 @@
  */
 import { Pool } from 'pg';
 import { WeeklyAISummaryJob, WEEKLY_SUMMARY_REPLY_TO, WEEKLY_SUMMARY_SUBJECT_PREFIX } from '../weekly-ai-summary.job';
+import type { WeeklySummaryRepository } from '../../repositories/weekly-summary.repository';
 
 /** WE-D12: "Your DevControl weekly summary · Nov 9 – 15, 2026" for the 7 UTC days before the send. */
 const SUBJECT = new RegExp(`^${WEEKLY_SUMMARY_SUBJECT_PREFIX} · [A-Z][a-z]{2} \\d{1,2}(, \\d{4})? – ([A-Z][a-z]{2} )?\\d{1,2}, \\d{4}$`);
@@ -42,27 +43,49 @@ afterAll(() => {
   if (originalAnthropicKey) process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
 });
 
+/** What the job hands to resend.emails.send (the fields these tests read). */
+interface SentMessage { to: string; subject: string; html: string; text: string; replyTo: string; headers: Record<string, string> }
+type SendResult = { data: { id: string } | null; error?: { name: string; message?: string } };
+
+/** `recipientFor` returns one recipient, null (none eligible), or an array (several owners). */
 function setup(recipientFor: (org: string) => unknown) {
   const { pool, clients } = fakePool();
   const job = new WeeklyAISummaryJob(pool);
-  const send = jest.fn(async () => ({ data: { id: 'email-id' } }));
+  const send = jest.fn<Promise<SendResult>, [SentMessage]>(async () => ({ data: { id: 'email-id' } }));
   (job as any).resend = { emails: { send } };
   const repository = (job as any).repository;
-  const getUserInfo = jest.spyOn(repository, 'getUserInfo').mockImplementation(async (org: any) => recipientFor(org));
+  const getRecipients = jest.spyOn(repository, 'getRecipients').mockImplementation(async (org: unknown) => {
+    const r = recipientFor(String(org));
+    return r == null ? [] : Array.isArray(r) ? r : [r];
+  });
   const gatherWeeklyEvidence = jest.spyOn(repository, 'gatherWeeklyEvidence').mockImplementation(async () => {
     throw new Error('evidence should not be gathered in this test');
   });
-  return { job, send, clients, getUserInfo, gatherWeeklyEvidence, repository };
+  return { job, send, clients, getRecipients, gatherWeeklyEvidence, repository };
 }
+
+/** Serves `orgs` (sorted) the way getActiveOrganizationsPage pages them: id order after the cursor. */
+function pageOver(repository: WeeklySummaryRepository, orgs: string[]) {
+  const sorted = [...orgs].sort();
+  return jest.spyOn(repository, 'getActiveOrganizationsPage').mockImplementation(async (afterId: string | null, pageSize = 100) =>
+    sorted.filter(id => afterId === null || id > afterId).slice(0, pageSize));
+}
+
+/** The scheduled run (private on the job). */
+const runAll = (job: WeeklyAISummaryJob) =>
+  (job as unknown as { sendWeeklySummaries(): Promise<unknown> }).sendWeeklySummaries();
+/** Every logged line, each argument as a string (objects as JSON). */
+const loggedText = (mocks: jest.Mock[]) =>
+  mocks.flatMap(l => l.mock.calls).map(call => call.map((c: unknown) => (typeof c === 'string' ? c : JSON.stringify(c))).join(' ')).join('\n');
 
 describe('WeeklyAISummaryJob recipient eligibility', () => {
   it('R: the manual trigger never sends or gathers data when no owner is eligible', async () => {
-    const { job, send, gatherWeeklyEvidence, getUserInfo, clients } = setup(() => null);
+    const { job, send, gatherWeeklyEvidence, getRecipients, clients } = setup(() => null);
 
     const result = await job.triggerManual(ORG_A);
 
     expect(result).toEqual({ sent: 0, skipped: 1, errors: 0 });
-    expect(getUserInfo).toHaveBeenCalledWith(ORG_A, clients[0]);
+    expect(getRecipients).toHaveBeenCalledWith(ORG_A, clients[0]);
     expect(gatherWeeklyEvidence).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     // The eligibility query ran on this org's tenant-tagged connection.
@@ -72,9 +95,9 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
 
   it('R: the scheduled run counts an ineligible org as skipped, not sent', async () => {
     const { job, send, repository } = setup(() => null);
-    jest.spyOn(repository, 'getActiveOrganizations').mockResolvedValue([ORG_A, ORG_B]);
+    pageOver(repository, [ORG_A, ORG_B]);
 
-    const result = await (job as any).sendWeeklySummaries();
+    const result = await runAll(job);
 
     expect(result).toEqual({ sent: 0, skipped: 2, errors: 0 });
     expect(send).not.toHaveBeenCalled();
@@ -82,7 +105,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
 
   it('15: the manual trigger requires an organization -- it never falls through to every org', async () => {
     const { job, repository } = setup(() => null);
-    const all = jest.spyOn(repository, 'getActiveOrganizations');
+    const all = jest.spyOn(repository, 'getActiveOrganizationsPage');
     await expect(job.triggerManual('' as any)).rejects.toThrow(/organizationId is required/);
     await expect(job.triggerManual(undefined as any)).rejects.toThrow(/organizationId is required/);
     expect(all).not.toHaveBeenCalled();
@@ -160,7 +183,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
   it('P1: the logs never carry the recipient address or the provider message id, on success or failure', async () => {
     const { job, send, repository } = setup(org => ({ userId: userOf(org), email: `owner@${org}.test`, fullName: 'Pat Owner' }));
     stubEvidence(repository);
-    send.mockResolvedValueOnce({ data: { id: 'provider-message-id-synthetic' } } as any);
+    send.mockResolvedValueOnce({ data: { id: 'provider-message-id-synthetic' } });
     send.mockRejectedValueOnce(new Error('socket hang up'));
     const lines = [console.log, console.error, console.warn] as jest.Mock[];
     lines.forEach(l => l.mockClear());
@@ -168,11 +191,13 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     expect(await job.triggerManual(ORG_A)).toEqual({ sent: 1, skipped: 0, errors: 0 });
     expect(await job.triggerManual(ORG_B)).toEqual({ sent: 0, skipped: 0, errors: 1 });
 
-    const logged = lines.flatMap(l => l.mock.calls).map(call => call.map(String).join(' ')).join('\n');
-    expect(logged).toContain('✅ Sent the summary for org');
-    expect(logged).toContain('Send failed for org');
+    const logged = loggedText(lines);
+    expect(logged).toContain('A send failed');
+    expect(logged).toContain('socket hang up');
     expect(logged).not.toContain('@');
     expect(logged).not.toContain('provider-message-id-synthetic');
+    // WE-3a: counts-only -- no organization or user id either.
+    for (const id of [ORG_A, ORG_B, userOf(ORG_A), userOf(ORG_B)]) expect(logged).not.toContain(id);
   });
 
   it('H1: a Resend { error } result is a failed send -- counted as an error, never as sent, with a sanitized log', async () => {
@@ -181,21 +206,21 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     send.mockResolvedValue({
       data: null,
       error: { name: 'validation_error', message: `Invalid \`to\` field: owner@${ORG_A}.test is not allowed` },
-    } as any);
-    jest.spyOn(repository, 'getActiveOrganizations').mockResolvedValue([ORG_A, ORG_B]);
+    });
+    pageOver(repository, [ORG_A, ORG_B]);
     const errorLog = console.error as jest.Mock;
     const logLine = console.log as jest.Mock;
     errorLog.mockClear();
     logLine.mockClear();
 
-    const scheduled = await (job as any).sendWeeklySummaries();
+    const scheduled = await runAll(job);
     expect(scheduled).toEqual({ sent: 0, skipped: 0, errors: 2 });
 
     const manual = await job.triggerManual(ORG_A);
     expect(manual).toEqual({ sent: 0, skipped: 0, errors: 1 });
 
     // Never logged as a success, and Resend's raw message never reaches the logs.
-    const logged = [...errorLog.mock.calls, ...logLine.mock.calls].map(call => call.map(String).join(' ')).join('\n');
+    const logged = loggedText([errorLog, logLine]);
     expect(logged).not.toContain('✅ Sent');
     expect(logged).toContain('Resend rejected the send (validation_error)');
     expect(logged).not.toContain('is not allowed');
@@ -239,5 +264,151 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       await api.close();
     }
     expect(guard.refused).toEqual([]);
+  });
+  // ─── WE-3a: every eligible owner, paging, one failure never stops the run ───
+
+  const ownerOf = (org: string, n: number) => ({
+    userId: `${userOf(org).slice(0, -1)}${n}`,
+    email: `owner${n}@${org}.test`,
+    fullName: `Owner${n} Person`,
+  });
+  const tokenOf = (payload: SentMessage) => /[?&]token=([^&>]+)>$/.exec(payload.headers['List-Unsubscribe'])?.[1] ?? '';
+
+  it('WE-D7: two opted-in owners of one org both receive it, each with an unsubscribe token for that owner only', async () => {
+    const owners = [ownerOf(ORG_A, 1), ownerOf(ORG_A, 2)];
+    const { job, send, repository } = setup(() => owners);
+    const gather = stubEvidence(repository);
+
+    expect(await job.triggerManual(ORG_A)).toEqual({ sent: 2, skipped: 0, errors: 0 });
+
+    // The evidence is gathered once for the org; one email per owner.
+    expect(gather).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    const payloads = send.mock.calls.map(c => c[0]);
+    expect(payloads.map(p => p.to)).toEqual(owners.map(o => o.email));
+    payloads.forEach((payload, i) => {
+      const token = tokenOf(payload);
+      expect(verifyUnsubscribeToken(token, 'weekly-summary')).toEqual({ kind: 'signed', userId: owners[i].userId });
+      for (const body of [payload.html, payload.text]) {
+        expect(body).toContain(token);
+        // The other owner's link is never in this owner's email.
+        expect(body).not.toContain(tokenOf(payloads[1 - i]));
+      }
+      expect(payload.text).toContain(`Hi ${owners[i].fullName.split(' ')[0]},`);
+      expect(payload.subject).toBe(payloads[0].subject);
+    });
+    expect(tokenOf(payloads[0])).not.toBe(tokenOf(payloads[1]));
+  });
+
+  it('WE-3a: a failed send to one owner is counted, and the other owners are still sent', async () => {
+    const owners = [ownerOf(ORG_A, 1), ownerOf(ORG_A, 2), ownerOf(ORG_A, 3)];
+    const { job, send, repository } = setup(() => owners);
+    stubEvidence(repository);
+    send.mockImplementation(async (message: SentMessage) => {
+      if (message.to === owners[0].email) throw new Error('socket hang up');
+      if (message.to === owners[1].email) return { data: null, error: { name: 'rate_limit_exceeded' } };
+      return { data: { id: 'email-id' } };
+    });
+
+    expect(await job.triggerManual(ORG_A)).toEqual({ sent: 1, skipped: 0, errors: 2 });
+    expect(send.mock.calls.map(c => c[0].to)).toEqual(owners.map(o => o.email));
+  });
+
+  it('WE-3a: one organization failing never stops the run -- the others are still sent, and the counts say so', async () => {
+    const orgs = [ORG_A, ORG_B, 'c0000000-0000-4000-8000-00000000000c'];
+    const { job, send, repository } = setup(org => [ownerOf(org, 1), ownerOf(org, 2)]);
+    const gather = stubEvidence(repository);
+    const real = gather.getMockImplementation()!;
+    gather.mockImplementation(async (...args: unknown[]) => {
+      if (args[0] === ORG_A) throw new Error(`relation lookup failed for owner1@${ORG_A}.test`);
+      return real(...(args as never[]));
+    });
+    send.mockImplementation(async (message: SentMessage) => {
+      if (message.to === `owner2@${ORG_B}.test`) throw new Error('socket hang up');
+      return { data: { id: 'provider-message-id-synthetic' } };
+    });
+    pageOver(repository, orgs);
+    const logLine = console.log as jest.Mock;
+    const errorLog = console.error as jest.Mock;
+    logLine.mockClear();
+    errorLog.mockClear();
+
+    expect(await runAll(job)).toEqual({ sent: 3, skipped: 0, errors: 2 });
+    expect(send.mock.calls.map(c => c[0].to)).toEqual([
+      `owner1@${ORG_B}.test`, `owner2@${ORG_B}.test`, `owner1@${orgs[2]}.test`, `owner2@${orgs[2]}.test`,
+    ]);
+
+    const complete = JSON.parse(/COMPLETE (\{.*\})$/.exec(
+      logLine.mock.calls.map(c => String(c[0])).find(l => l.includes('[Weekly AI Summary] COMPLETE'))!
+    )![1]);
+    expect(complete).toMatchObject({
+      organizations: 3, pages: 1, recipients: 4, sent: 3, skipped: 0, errors: 2, failedOrganizations: 1, failedSends: 1,
+    });
+  });
+
+  it('WE-3a: more than one page of eligible orgs (101+) -- every org is visited exactly once, in pages of 100', async () => {
+    const orgs = Array.from({ length: 250 }, (_, i) => `c0000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`);
+    const { job, send, repository } = setup(org => ownerOf(org, 1));
+    stubEvidence(repository);
+    const pages = pageOver(repository, orgs);
+
+    expect(await runAll(job)).toEqual({ sent: 250, skipped: 0, errors: 0 });
+
+    const visited = send.mock.calls.map(c => /@(.+)\.test$/.exec(c[0].to)![1]);
+    expect(visited).toEqual([...orgs].sort());
+    expect(new Set(visited).size).toBe(250);
+    // Three reads: two full pages and a short last one; each read continues after the previous page's last id.
+    expect(pages.mock.calls).toEqual([[null, 100], [[...orgs].sort()[99], 100], [[...orgs].sort()[199], 100]]);
+  });
+
+  it('WE-3a: an exact multiple of the page size ends on an empty page, not a missed org', async () => {
+    const orgs = Array.from({ length: 200 }, (_, i) => `c0000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`);
+    const { job, send, repository } = setup(org => ownerOf(org, 1));
+    stubEvidence(repository);
+    const pages = pageOver(repository, orgs);
+
+    expect(await runAll(job)).toEqual({ sent: 200, skipped: 0, errors: 0 });
+    expect(send).toHaveBeenCalledTimes(200);
+    expect(pages).toHaveBeenCalledTimes(3);
+  });
+
+  it('WE-3a: the run logs carry counts only -- no address, provider id, organization id or user id', async () => {
+    const orgs = [ORG_A, ORG_B];
+    const { job, send, repository } = setup(org => [ownerOf(org, 1), ownerOf(org, 2)]);
+    const gather = stubEvidence(repository);
+    const real = gather.getMockImplementation()!;
+    gather.mockImplementation(async (...args: unknown[]) => {
+      if (args[0] === ORG_B) throw new Error(`read failed for org ${ORG_B} (owner1@${ORG_B}.test)`);
+      return real(...(args as never[]));
+    });
+    send.mockImplementationOnce(async () => ({ data: { id: 'provider-message-id-synthetic' } }));
+    send.mockImplementationOnce(async () => { throw new Error(`Invalid to: owner2@${ORG_A}.test`); });
+    pageOver(repository, orgs);
+    const lines = [console.log, console.error, console.warn] as jest.Mock[];
+    lines.forEach(l => l.mockClear());
+
+    expect(await runAll(job)).toEqual({ sent: 1, skipped: 0, errors: 2 });
+
+    const logged = loggedText(lines);
+    expect(logged).toContain('[Weekly AI Summary] COMPLETE');
+    expect(logged).not.toContain('@');
+    expect(logged).not.toContain('provider-message-id-synthetic');
+    for (const id of [...orgs, ...orgs.flatMap(o => [ownerOf(o, 1).userId, ownerOf(o, 2).userId])]) {
+      expect(logged).not.toContain(id);
+    }
+  });
+  it('WE-3a: a page that does not move past the previous one stops the run -- no organization is sent twice', async () => {
+    const orgs = Array.from({ length: 100 }, (_, i) => `c0000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`);
+    const { job, send, repository } = setup(org => ownerOf(org, 1));
+    stubEvidence(repository);
+    // A broken page read: the same full page twice, then nothing.
+    jest.spyOn(repository, 'getActiveOrganizationsPage')
+      .mockResolvedValueOnce(orgs)
+      .mockResolvedValueOnce(orgs)
+      .mockResolvedValue([]);
+
+    await expect(runAll(job)).rejects.toThrow('Organization paging did not advance');
+    expect(send).toHaveBeenCalledTimes(100);
+    expect(new Set(send.mock.calls.map(c => c[0].to)).size).toBe(100);
   });
 });

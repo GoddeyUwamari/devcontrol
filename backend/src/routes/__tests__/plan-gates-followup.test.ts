@@ -168,11 +168,11 @@ beforeEach(() => {
     active: 2, estimatedMonthlySavings: 120, estimatedFindings: 2, ceilingByResourceType: {}, unestimatedFindings: 0,
   });
   jest.spyOn(WeeklySummaryRepository.prototype, 'getAwsConnection').mockResolvedValue('connected');
-  jest.spyOn(WeeklySummaryRepository.prototype, 'getUserInfo').mockResolvedValue({
+  jest.spyOn(WeeklySummaryRepository.prototype, 'getRecipients').mockResolvedValue([{
     userId: org.owner,
     email: org.emails.owner,
     fullName: 'Owner Person',
-  });
+  }]);
   exportHandler = jest
     .spyOn(AWSResourcesController.prototype, 'exportResources')
     .mockImplementation(async (_req: any, res: any) => {
