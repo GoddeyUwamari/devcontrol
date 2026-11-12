@@ -1,0 +1,36 @@
+
+Your DevControl Weekly Summary
+Cost, security, and delivery summary
+
+Hi Alex,
+
+Here's your DevControl summary for the past week:
+
+COSTS
+AWS Cost Explorer gross charges for the last 7 days (Nov 9, 2026 – Nov 15, 2026, UTC), per Cost Explorer data as of Nov 16, 2026, 09:00 UTC: $1,234.56, before credits and refunds. Cost Explorer figures for recent days may still be updating. That is up 4.2% from $1,184.80 for the previous 7 days (Nov 2, 2026 – Nov 8, 2026).
+
+SECURITY
+DevControl's configuration checks currently report 2 account-level findings (security groups, IAM) and 5 resource compliance issues (encryption, backups, tagging, and other infrastructure checks); security posture score 72/100. This covers DevControl's own configuration checks, not AWS Security Hub or every AWS security finding.
+
+ALERTS
+Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.
+
+DELIVERY
+6 deployments recorded in DevControl in the 7 days before this summary: 4 succeeded, 2 failed.
+
+RECOMMENDATIONS
+Estimated savings opportunity: $0/month across 3 open cost recommendations (a DevControl estimate, not realized savings).
+View Full Dashboard: https://app.example.test/dashboard
+
+---
+This is your weekly automated summary from DevControl.
+Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
+Email Preferences: https://app.example.test/settings/notifications
+
+You're receiving this email because you have an active DevControl account
+with weekly summaries enabled.
+
+DevControl, Inc.
+Questions? Reply to this email or contact support.
+
+© 2026 DevControl. All rights reserved.

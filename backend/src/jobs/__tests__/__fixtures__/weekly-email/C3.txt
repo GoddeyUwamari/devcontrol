@@ -1,0 +1,33 @@
+
+Your DevControl Weekly Summary
+Cost, security, and delivery summary
+
+Hi Alex,
+
+Here's your DevControl summary for the past week:
+
+COSTS
+Cloud spend data was unavailable for this period (no AWS account is connected).
+
+SECURITY
+Security findings were unavailable for this period (the security posture score is still preliminary).
+
+ALERTS
+Alert history for this period is not available yet. See Operational Health for your active CloudWatch alarms.
+
+DELIVERY
+No deployments were recorded in DevControl in the 7 days before this summary, so delivery metrics could not be calculated.
+View Full Dashboard: https://app.example.test/dashboard
+
+---
+This is your weekly automated summary from DevControl.
+Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
+Email Preferences: https://app.example.test/settings/notifications
+
+You're receiving this email because you have an active DevControl account
+with weekly summaries enabled.
+
+DevControl, Inc.
+Questions? Reply to this email or contact support.
+
+© 2026 DevControl. All rights reserved.
