@@ -24,19 +24,22 @@ export const LAUNCH_STACK_ENV = {
   region: 'CONNECT_LAUNCH_STACK_REGION',
 } as const;
 
-export const DEFAULT_LAUNCH_STACK_REGION = 'us-east-1';
+/**
+ * The only Region the link uses, for the console and for the template's S3 host
+ * (founder decision D2-D7, review L-3). CONNECT_LAUNCH_STACK_REGION may be unset
+ * or exactly this value; anything else turns the link off with a warning.
+ */
+export const LAUNCH_STACK_REGION = 'us-east-1';
 /** The stack name the link fills in (D2-D8); the customer can change it in the console. */
 export const LAUNCH_STACK_NAME = 'DevControl';
 /** The role name the link fills in: the template's default, and the connect rule's prefix. */
 export const LAUNCH_STACK_ROLE_NAME = 'DevControlRole';
 
 const MAX_TEMPLATE_URL_LENGTH = 1024;
-const REGION = '[a-z]{2}(?:-gov)?-[a-z]+-\\d';
-const REGION_PATTERN = new RegExp(`^${REGION}$`);
-/** Path-style S3 host: https://s3.<region>.amazonaws.com/<bucket>/<key>. */
-const S3_PATH_STYLE_HOST = new RegExp(`^s3\\.${REGION}\\.amazonaws\\.com$`);
-/** Virtual-hosted S3 host: https://<bucket>.s3.<region>.amazonaws.com/<key>. */
-const S3_VIRTUAL_HOST = new RegExp(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\\.s3\\.${REGION}\\.amazonaws\\.com$`);
+/** Path-style S3 host in us-east-1: https://s3.us-east-1.amazonaws.com/<bucket>/<key>. */
+const S3_PATH_STYLE_HOST = /^s3\.us-east-1\.amazonaws\.com$/;
+/** Virtual-hosted S3 host in us-east-1: https://<bucket>.s3.us-east-1.amazonaws.com/<key>. */
+const S3_VIRTUAL_HOST = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.us-east-1\.amazonaws\.com$/;
 const S3_BUCKET = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
 const SAFE_PATH = /^[A-Za-z0-9._\/-]+$/;
 
@@ -48,9 +51,12 @@ export type LaunchStackConfig =
   | { state: 'misconfigured'; problems: string[] };
 
 /**
- * Whether `raw` is the https URL of a template object in S3 under the version's
- * own prefix: no credentials, port, query or fragment; the legacy s3-<region>
- * host refused. A presigned URL (it expires) is refused by the no-query rule.
+ * Whether `raw` is the https URL of template version `version` in S3 in
+ * us-east-1: the key must end in exactly /v{n}/devcontrol-role.v{n}.json (review
+ * L-2), with no empty or dot segments; no credentials, port, query or fragment;
+ * the legacy s3-<region> host refused. A presigned URL (it expires) is refused by
+ * the no-query rule. The page applies the same rule (connect-aws/launchStackUrl.ts);
+ * both are tested against one shared table (__tests__/fixtures/launch-stack-template-urls.json).
  */
 export function isTemplateUrlFor(raw: string, version: string): boolean {
   if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_TEMPLATE_URL_LENGTH) return false;
@@ -74,7 +80,9 @@ export function isTemplateUrlFor(raw: string, version: string): boolean {
   } else {
     return false;
   }
-  return key.includes(`/v${version}/`) && key.endsWith('.json') && !key.split('/').includes('..');
+  const segments = key.split('/').slice(1);
+  if (segments.length === 0 || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return false;
+  return key.endsWith(`/v${version}/devcontrol-role.v${version}.json`);
 }
 
 /** The configuration as read now. `off` names the version only when the rest is valid. */
@@ -98,8 +106,8 @@ export function readLaunchStackConfig(env: NodeJS.ProcessEnv = process.env): Lau
   if (templateUrl === undefined || !versionOk || !isTemplateUrlFor(templateUrl, templateVersion as string)) {
     problems.push(LAUNCH_STACK_ENV.templateUrl);
   }
-  const region = regionRaw ?? DEFAULT_LAUNCH_STACK_REGION;
-  if (!REGION_PATTERN.test(region)) problems.push(LAUNCH_STACK_ENV.region);
+  const region = regionRaw ?? LAUNCH_STACK_REGION;
+  if (region !== LAUNCH_STACK_REGION) problems.push(LAUNCH_STACK_ENV.region);
 
   if (problems.length > 0) return { state: 'misconfigured', problems };
   if (!enabled) return { state: 'off', templateVersion: templateVersion as string };

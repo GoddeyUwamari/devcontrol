@@ -3,6 +3,8 @@
  * configuration checks, the documented quick-create URL, and log lines that
  * name variables but never values. Pure; no AWS, no network. Placeholders only.
  */
+import fs from 'fs';
+import path from 'path';
 import {
   buildLaunchStackUrl,
   isTemplateUrlFor,
@@ -14,6 +16,10 @@ import {
 
 const TEMPLATE_URL = 'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json';
 const EXTERNAL_ID = 'AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+/** One table for the server rule and the page's rule (D2 review L-4). */
+const TEMPLATE_URL_TABLE = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '__tests__', 'fixtures', 'launch-stack-template-urls.json'), 'utf8')) as {
+  cases: Array<{ label: string; url: string; version: string; accepted: boolean }>;
+};
 const VALID = {
   CONNECT_LAUNCH_STACK_ENABLED: 'true',
   CONNECT_TEMPLATE_URL: TEMPLATE_URL,
@@ -44,13 +50,23 @@ describe('LS1 the quick-create link (documented format)', () => {
     });
   });
 
-  it('uses the configured Region in the host and the region parameter', () => {
-    const link = launchStackFor(EXTERNAL_ID, { ...VALID, CONNECT_LAUNCH_STACK_REGION: 'eu-west-2' })!;
+  it('uses us-east-1 when the Region is unset or exactly us-east-1 (D2-D7)', () => {
+    const link = launchStackFor(EXTERNAL_ID, { ...VALID, CONNECT_LAUNCH_STACK_REGION: 'us-east-1' })!;
+    expect(link).toEqual(launchStackFor(EXTERNAL_ID, VALID));
     const url = new URL(link.url);
-    expect(url.hostname).toBe('eu-west-2.console.aws.amazon.com');
+    expect(url.hostname).toBe('us-east-1.console.aws.amazon.com');
     expect(url.pathname).toBe('/cloudformation/home');
-    expect(url.searchParams.get('region')).toBe('eu-west-2');
+    expect(url.searchParams.get('region')).toBe('us-east-1');
   });
+
+  it.each(['eu-west-2', 'us-west-2', 'us-gov-west-1', 'cn-north-1', 'US-EAST-1', ' us-east-1', 'us-east-1 ', ''])(
+    'any other Region (%j) turns the link off with the Region warning (review L-3)',
+    (region) => {
+      expect(launchStackFor(EXTERNAL_ID, { ...VALID, CONNECT_LAUNCH_STACK_REGION: region })).toBeNull();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toBe('[connect] Launch stack is off: invalid or missing CONNECT_LAUNCH_STACK_REGION');
+    }
+  );
 
   it('builds the same link through the pure builder', () => {
     expect(buildLaunchStackUrl({ region: 'us-east-1', templateUrl: TEMPLATE_URL, externalId: EXTERNAL_ID })).toBe(launchStackFor(EXTERNAL_ID, VALID)!.url);
@@ -85,31 +101,35 @@ describe('LS3 off unless everything is valid', () => {
     ['an inherited property as a version', { CONNECT_TEMPLATE_VERSION: 'constructor' }],
     ['a bad Region', { CONNECT_LAUNCH_STACK_REGION: 'us-east-1.evil.test' }],
     ['an empty Region', { CONNECT_LAUNCH_STACK_REGION: '' }],
+    ['a GovCloud Region', { CONNECT_LAUNCH_STACK_REGION: 'us-gov-west-1' }],
+    ['a China Region', { CONNECT_LAUNCH_STACK_REGION: 'cn-north-1' }],
+    ['a typo-shaped Region', { CONNECT_LAUNCH_STACK_REGION: 'zz-fake-9' }],
   ])('no link with %s', (_label, change) => {
     expect(launchStackFor(EXTERNAL_ID, { ...VALID, ...change } as NodeJS.ProcessEnv)).toBeNull();
   });
 
-  it.each([
-    ['http', TEMPLATE_URL.replace('https:', 'http:')],
-    ['the legacy s3-<region> host', 'https://s3-us-east-1.amazonaws.com/template-bucket/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'],
-    ['a foreign host', 'https://templates.example.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'],
-    ['a look-alike host', 'https://template-bucket.s3.us-east-1.amazonaws.com.evil.test/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'],
-    ['a query (presigned)', `${TEMPLATE_URL}?X-Amz-Signature=abc`],
-    ['a fragment', `${TEMPLATE_URL}#x`],
-    ['credentials', 'https://user:pass@template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'],
-    ['a port', 'https://template-bucket.s3.us-east-1.amazonaws.com:8443/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'],
-    ['a path without the version', 'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/devcontrol-role.v1.json'],
-    ['another version\'s path', 'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v2/devcontrol-role.v2.json'],
-    ['a non-JSON file', 'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.yaml'],
-    ['an encoded path', 'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol%2Drole.v1.json'],
-    ['dot segments', 'https://template-bucket.s3.us-east-1.amazonaws.com/x/../cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'],
-    ['an upper-case host', 'https://TEMPLATE-BUCKET.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json'],
-    ['path style without a key', 'https://s3.us-east-1.amazonaws.com/template-bucket'],
-    ['javascript:', 'javascript:alert(1)//s3.us-east-1.amazonaws.com/v1/a.json'],
-    ['too long', `https://template-bucket.s3.us-east-1.amazonaws.com/v1/${'a'.repeat(1100)}.json`],
-  ])('no link with a template URL that has %s', (_label, url) => {
-    expect(isTemplateUrlFor(url, '1')).toBe(false);
-    expect(launchStackFor(EXTERNAL_ID, { ...VALID, CONNECT_TEMPLATE_URL: url })).toBeNull();
+  it.each(TEMPLATE_URL_TABLE.cases.map((c) => [c.label, c.version, c.accepted, c.url] as const))(
+    'template URL with %s (version %s): accepted = %s',
+    (_label, version, accepted, url) => {
+      expect(isTemplateUrlFor(url, version)).toBe(accepted);
+      if (version === '1') {
+        const link = launchStackFor(EXTERNAL_ID, { ...VALID, CONNECT_TEMPLATE_URL: url });
+        expect(link === null).toBe(!accepted);
+      }
+    }
+  );
+
+  it('the shared table covers the review cases: the version-mismatched file, empty segments, other Regions', () => {
+    const urls = TEMPLATE_URL_TABLE.cases.filter((c) => !c.accepted).map((c) => c.url);
+    expect(urls).toEqual(expect.arrayContaining([
+      'https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v2.json',
+      'https://template-bucket.s3.us-east-1.amazonaws.com/x/v1/.json',
+      'https://template-bucket.s3.us-east-1.amazonaws.com/v1//x.json',
+    ]));
+    expect(urls.some((u) => u.includes('.s3.us-gov-west-1.'))).toBe(true);
+    expect(urls.some((u) => u.includes('.s3.cn-north-1.'))).toBe(true);
+    expect(urls.some((u) => u.includes('.s3.eu-west-2.'))).toBe(true);
+    expect(TEMPLATE_URL_TABLE.cases.filter((c) => c.accepted).length).toBeGreaterThanOrEqual(2);
   });
 
   it('accepts both documented S3 forms', () => {

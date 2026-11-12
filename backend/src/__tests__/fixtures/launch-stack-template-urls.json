@@ -1,0 +1,317 @@
+{
+  "description": "Template URLs and whether the Launch stack rule accepts them for the given template version. Shared by backend/src/services/__tests__/launch-stack.test.ts (isTemplateUrlFor) and app/(app)/connect-aws/__tests__/launchStackUrl.test.ts (isS3TemplateUrlFor), so the two rules cannot drift (D2 review L-4). Placeholder bucket names only.",
+  "cases": [
+    {
+      "label": "virtual-hosted",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": true
+    },
+    {
+      "label": "path-style",
+      "url": "https://s3.us-east-1.amazonaws.com/template-bucket/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": true
+    },
+    {
+      "label": "a bucket name with dots",
+      "url": "https://template.bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": true
+    },
+    {
+      "label": "the shortest key",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": true
+    },
+    {
+      "label": "version 2 under its own folder",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v2/devcontrol-role.v2.json",
+      "version": "2",
+      "accepted": true
+    },
+    {
+      "label": "the v1 folder with the v2 file (review L-2)",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v2.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an empty file name (review L-2)",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/x/v1/.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an empty segment (review L-2)",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/v1//x.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an empty segment before the version folder",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation//v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a trailing slash",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json/",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "the v10 folder for v1",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v10/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "v10 files for v1",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v10/devcontrol-role.v10.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "the v1 files for v2",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "2",
+      "accepted": false
+    },
+    {
+      "label": "no version folder",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "another file name",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/template.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a YAML file",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.yaml",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a suffix after .json",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json.bak",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "another Region, virtual-hosted (review L-3)",
+      "url": "https://template-bucket.s3.eu-west-2.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "another Region, path-style (review L-3)",
+      "url": "https://s3.eu-west-2.amazonaws.com/template-bucket/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "GovCloud (review L-3)",
+      "url": "https://template-bucket.s3.us-gov-west-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "China (review L-3)",
+      "url": "https://template-bucket.s3.cn-north-1.amazonaws.com.cn/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "China on the commercial suffix (review L-3)",
+      "url": "https://template-bucket.s3.cn-north-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "the legacy s3-<region> host",
+      "url": "https://s3-us-east-1.amazonaws.com/template-bucket/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "the global S3 host",
+      "url": "https://template-bucket.s3.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "the website host",
+      "url": "https://template-bucket.s3-website-us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "the dual-stack host",
+      "url": "https://s3.dualstack.us-east-1.amazonaws.com/template-bucket/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "http",
+      "url": "http://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a foreign host",
+      "url": "https://templates.example.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a look-alike host",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com.evil.test/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a trailing-dot host",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com./cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an upper-case host",
+      "url": "https://TEMPLATE-BUCKET.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a query (presigned)",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json?X-Amz-Signature=abc",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an empty query",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json?",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a fragment",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json#x",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "credentials",
+      "url": "https://user:pass@template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an empty username",
+      "url": "https://:@template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a port",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com:8443/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "the default port written out",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com:443/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an encoded character",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol%2Drole.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "encoded dot segments",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/%2e%2e/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "dot segments",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/x/../cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a single-dot segment",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/./cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a backslash",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com\\cloudformation\\devcontrol-role\\v1\\devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a leading space",
+      "url": " https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a trailing space",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json ",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "a newline",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json\n",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "path style without a key",
+      "url": "https://s3.us-east-1.amazonaws.com/template-bucket",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "path style with an invalid bucket name",
+      "url": "https://s3.us-east-1.amazonaws.com/Template_Bucket/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "javascript:",
+      "url": "javascript:alert(1)//s3.us-east-1.amazonaws.com/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "data:",
+      "url": "data:application/json,{}",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "an empty string",
+      "url": "",
+      "version": "1",
+      "accepted": false
+    },
+    {
+      "label": "too long",
+      "url": "https://template-bucket.s3.us-east-1.amazonaws.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/v1/devcontrol-role.v1.json",
+      "version": "1",
+      "accepted": false
+    }
+  ]
+}

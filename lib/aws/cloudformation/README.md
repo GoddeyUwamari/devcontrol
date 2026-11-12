@@ -63,15 +63,33 @@ one such bucket.
    - in the bucket's Block Public Access, only the two *policy* settings turned off;
    - Versioning enabled;
    - SSE-S3 encryption;
-   - Object Lock enabled, with no default retention.
-2. **Render.** From a checkout of the commit that published the version:
+   - Object Lock enabled, with no default retention;
+   - **no lifecycle rules, ever.** A rule that expires current versions would
+     put a delete marker over the template, and every Launch stack link would
+     then fail.
+2. **Render.** From a checkout of the commit that published the version, into
+   a directory **outside** the checkout. The rendered file holds the real
+   account ID, and the script refuses any path inside the repository:
 
    ```
+   mkdir -p "$HOME/devcontrol-template"
    node scripts/render-customer-role-template.js --version 1 \
-     --platform-account-id <PLATFORM_ACCOUNT_ID> --out devcontrol-role.v1.json
+     --platform-account-id <PLATFORM_ACCOUNT_ID> \
+     --out "$HOME/devcontrol-template/devcontrol-role.v1.json"
    ```
 
-   Note the SHA-256 it prints and check it with `shasum -a 256 devcontrol-role.v1.json`.
+   It prints two lines:
+
+   ```
+   Source SHA-256 <source hash>  devcontrol-role.v1.template.json
+   SHA-256 <output hash>  devcontrol-role.v1.json
+   ```
+
+   - **Source:** compare `<source hash>` with `sourceSha256` for version 1 in
+     `lib/aws/cloudformation/published-templates.json` **on GitHub at the merge
+     commit**, not just in your checkout. If they differ, stop.
+   - **Output:** check `<output hash>` with
+     `shasum -a 256 "$HOME/devcontrol-template/devcontrol-role.v1.json"`.
 3. **Upload with no retention.**
    - Key: `cloudformation/devcontrol-role/v1/devcontrol-role.v1.json`.
    - Content-Type: `application/json`.
@@ -91,6 +109,9 @@ one such bucket.
    (Object Lock retention → Compliance, retain until one year after today).
    In Compliance mode nobody can overwrite or delete that version, or shorten
    the period. The period can be extended later.
+   - **Extend the retain-until date before it passes.** Set a reminder well
+     before that date. After it, only the bucket-policy Deny from step 7
+     protects the version, and an administrator can remove that Deny.
 7. **Bucket policy, second edit: the write-Deny, last.** Add a Deny for
    `s3:PutObject`, `s3:DeleteObject` and `s3:DeleteObjectVersion` on
    `cloudformation/devcontrol-role/v1/*` for principal `*`.
@@ -118,14 +139,24 @@ The backend reads these variables on every request:
 |---|---|
 | `CONNECT_TEMPLATE_URL` | `https://<TEMPLATE_BUCKET>.s3.us-east-1.amazonaws.com/cloudformation/devcontrol-role/v1/devcontrol-role.v1.json` |
 | `CONNECT_TEMPLATE_VERSION` | `1` |
-| `CONNECT_LAUNCH_STACK_REGION` | optional, default `us-east-1` |
+| `CONNECT_LAUNCH_STACK_REGION` | optional; if set, exactly `us-east-1` (the only Region the link uses) |
 | `CONNECT_LAUNCH_STACK_ENABLED` | `true`. **Set last**, after checking the startup line below |
 
-At startup the API logs one line:
+At startup the API logs exactly one of these lines:
 
 ```
-[connect] Launch stack: off | ready (template v1) | misconfigured (<variable names>)
+[connect] Launch stack: off
+[connect] Launch stack: off (template v1 configured)
+[connect] Launch stack: ready (template v1)
+[connect] Launch stack: misconfigured (<variable names>)
 ```
 
-It names variables, never their values. With the switch off, or any value
-invalid, the Connect AWS page shows the manual setup only.
+| Line | Meaning |
+|---|---|
+| `off` | No template variables are set, and the switch is unset or `false` |
+| `off (template v1 configured)` | The template variables are valid and the switch is unset or `false`. Expect this before you set the switch |
+| `ready (template v1)` | The switch is `true` and everything is valid: the Connect AWS page shows Launch stack |
+| `misconfigured (…)` | The named variables are missing or invalid. For example, a switch value other than `true`/`false`, a template URL not in us-east-1 or not ending in `/v1/devcontrol-role.v1.json`, or a Region other than `us-east-1`. The link stays off |
+
+The line names variables, never their values. With the switch off, or any
+value invalid, the Connect AWS page shows the manual setup only.
