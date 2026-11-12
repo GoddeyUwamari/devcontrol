@@ -1,0 +1,108 @@
+{
+  "estimate > 0, S3 ceiling, no counts": {
+    "lines": [
+      "Possible savings",
+      "$123.45/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "Plus up to $41.27/mo if S3 data qualifies for Standard-IA (upper bound, not included above)",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "estimate > 0, S3 + DynamoDB ceilings, counts 1 and 2": {
+    "lines": [
+      "Possible savings",
+      "$5.17/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)",
+      "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "estimate > 0, no ceiling, counts 3 and 1": {
+    "lines": [
+      "Possible savings",
+      "$1,200.00/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "estimate > 0, counts 2 and 0": {
+    "lines": [
+      "Possible savings",
+      "$10.00/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "no estimate, S3 ceiling, 2 open": {
+    "lines": [
+      "Possible savings",
+      "$0.00/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "no estimate, DynamoDB ceiling only, 1 open": {
+    "lines": [
+      "Possible savings",
+      "$0.00/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "no estimate, no ceiling, 3 open": {
+    "lines": [
+      "Possible savings",
+      "$0.00/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "zero (no open findings)": {
+    "lines": [
+      "Possible savings",
+      "$0.00/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "No cost recommendations right now",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "zero with a closed history": {
+    "lines": [
+      "Possible savings",
+      "$0.00/mo est.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill.",
+      "No cost recommendations right now",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "error": {
+    "lines": [
+      "Possible savings",
+      "—",
+      "Savings couldn't be loaded",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "loading": {
+    "lines": [
+      "Possible savings",
+      "…",
+      "Review recommendations →"
+    ],
+    "valueClass": "m-0 text-kpi tabular-nums text-slate-900"
+  },
+  "not connected": null
+}

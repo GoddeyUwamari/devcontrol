@@ -1,0 +1,112 @@
+{
+  "finished, M6 off": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "us-east-1 scanned, plus S3 buckets in every region and CloudFront (global) · other regions not scanned yet",
+      "Last successful scan Oct 22, 1:00 PM (2 h ago)"
+    ]
+  },
+  "running, M6 off": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "us-east-1 scanned · other regions not scanned yet",
+      "Scan in progress, started Oct 22, 2:48 PM (12 min ago) · last successful scan Oct 22, 1:00 PM (2 h ago)"
+    ]
+  },
+  "failed, M6 off": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "us-east-1 scanned · other regions not scanned yet",
+      "Last scan failed Oct 22, 2:00 PM (1 h ago) · Last successful scan Oct 22, 1:00 PM (2 h ago)"
+    ]
+  },
+  "none, M6 off": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "us-east-1: not scanned yet · other regions not scanned yet",
+      "No successful scan yet"
+    ]
+  },
+  "not connected, M6 off": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "No AWS account connected · showing resources from a previous connectionConnect AWS account"
+    ]
+  },
+  "finished, M6 on": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "1 of 17 enabled regions checked · us-east-1 (home), plus S3 in every region and CloudFront (global)",
+      "Last scan finished today, 1:00 PM (Thursday, October 22, 2026 at 1:00:00 PM UTC)",
+      "Region coverage →"
+    ]
+  },
+  "running, M6 on": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "1 of 17 enabled regions checked · us-east-1 (home), plus S3 in every region and CloudFront (global)",
+      "Scan in progress since today, 2:48 PM (Thursday, October 22, 2026 at 2:48:00 PM UTC) · showing results from today, 1:00 PM (Thursday, October 22, 2026 at 1:00:00 PM UTC)",
+      "Region coverage →"
+    ]
+  },
+  "failed, M6 on": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "1 of 17 enabled regions checked · us-east-1 (home), plus S3 in every region and CloudFront (global)",
+      "Last scan finished today, 1:00 PM (Thursday, October 22, 2026 at 1:00:00 PM UTC)",
+      "Region coverage →"
+    ]
+  },
+  "none, M6 on": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "AWS account connected",
+      "1 of 17 enabled regions checked · us-east-1 (home)",
+      "No scan has finished yet",
+      "Region coverage →"
+    ]
+  },
+  "not connected, M6 on": {
+    "header": [
+      "Services & Ownership",
+      "What we found, what needs attention, who owns it, and what we haven't verified yet."
+    ],
+    "statusLine": [
+      "No AWS account connected · showing resources from a previous connectionConnect AWS account"
+    ]
+  }
+}

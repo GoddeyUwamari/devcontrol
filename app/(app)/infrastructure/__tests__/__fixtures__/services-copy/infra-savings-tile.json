@@ -1,0 +1,174 @@
+{
+  "estimate > 0, S3 ceiling, no counts": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$123.45/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ],
+      [
+        "Plus up to $41.27/mo if S3 data qualifies for Standard-IA (upper bound, not included above)"
+      ]
+    ]
+  },
+  "estimate > 0, S3 + DynamoDB ceilings, counts 1 and 2": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$5.17/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ],
+      [
+        "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)"
+      ],
+      [
+        "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)"
+      ]
+    ]
+  },
+  "estimate > 0, no ceiling, counts 3 and 1": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$1,200.00/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ]
+    ]
+  },
+  "estimate > 0, counts 2 and 0": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$10.00/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ]
+    ]
+  },
+  "no estimate, S3 ceiling, 2 open": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$0.00/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ],
+      [
+        "Plus up to $0.01/mo if S3 data qualifies for Standard-IA (upper bound, not included above)"
+      ]
+    ]
+  },
+  "no estimate, DynamoDB ceiling only, 1 open": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$0.00/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ],
+      [
+        "Plus up to $0.02/mo if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)"
+      ]
+    ]
+  },
+  "no estimate, no ceiling, 3 open": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$0.00/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ]
+    ]
+  },
+  "zero (no open findings)": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$0.00/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ],
+      [
+        "No cost recommendations right now"
+      ]
+    ]
+  },
+  "zero with a closed history": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "$0.00/mo est.",
+    "captions": [
+      [
+        "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
+      ],
+      [
+        "No cost recommendations right now"
+      ]
+    ]
+  },
+  "error": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "—",
+    "captions": [
+      [
+        "Savings couldn't be loaded"
+      ]
+    ]
+  },
+  "loading": {
+    "key": "savings",
+    "label": "Possible savings",
+    "link": {
+      "text": "Review recommendations →",
+      "href": "/cost-optimization"
+    },
+    "value": "…",
+    "captions": []
+  },
+  "not connected": null
+}

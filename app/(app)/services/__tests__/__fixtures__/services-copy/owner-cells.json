@@ -1,0 +1,18 @@
+[
+  {
+    "service": "svc-webhook",
+    "owner": "github-actions@webhook"
+  },
+  {
+    "service": "svc-person",
+    "owner": "alice@example.com"
+  },
+  {
+    "service": "svc-blank",
+    "owner": "No owner set"
+  },
+  {
+    "service": "svc-near",
+    "owner": "GitHub-Actions@webhook"
+  }
+]
