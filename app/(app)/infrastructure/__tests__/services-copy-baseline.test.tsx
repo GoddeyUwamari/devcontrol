@@ -7,8 +7,10 @@
  * change:
  *   SERVICES_COPY_FIXTURES=write npx vitest run infrastructure/__tests__/services-copy-baseline
  *
- * Synthetic data only: account 123456789012 and sg-0123456789abcdef0-style
- * placeholder IDs.
+ * Synthetic data only: account 123456789012 and placeholder sg- IDs the
+ * identifier guard accepts (sg-0123456789abcdef0, or one repeated hex digit
+ * such as sg-0aaaaaaaaaaaaaaaa); see
+ * backend/src/config/__tests__/aws-account-id-literals.test.ts.
  */
 process.env.TZ = 'UTC'
 
@@ -111,8 +113,8 @@ describe('baseline: Infrastructure "Possible savings" tile', () => {
 // ── Security-group rows ──
 
 const SG = 'sg-0123456789abcdef0'
-const SG2 = 'sg-0123456789abcdef1'
-const SG3 = 'sg-0123456789abcdef2'
+const SG2 = 'sg-0aaaaaaaaaaaaaaaa'
+const SG3 = 'sg-0bbbbbbbbbbbbbbbb'
 const arn = (id: string) => `arn:aws:ec2:us-east-1:123456789012:security-group/${id}`
 const evidence = (id: string, name: string) => ({
   schema_version: 1 as const, security_group_id: id, security_group_name: name, vpc_id: 'vpc-0123456789abcdef0', region: 'us-east-1',
@@ -123,7 +125,7 @@ const SG_FINDINGS: AccountSecurityFinding[] = [
   finding('f-named', { severity: 'critical', resource_identifier: arn(SG), evidence: evidence(SG, 'launch-wizard-1'), title: 'SSH open to the world', recommendation: 'Restrict port 22' }),
   finding('f-no-evidence', { severity: 'high', resource_identifier: arn(SG2), evidence: null, title: 'RDP open to the world' }),
   finding('f-blank-name', { severity: 'high', resource_identifier: arn(SG3), evidence: evidence(SG3, '  '), title: 'All ports open' }),
-  finding('f-bare-id', { severity: 'high', resource_identifier: 'sg-0123456789abcdef3', evidence: null, title: 'Bare ID' }),
+  finding('f-bare-id', { severity: 'high', resource_identifier: 'sg-0cccccccccccccccc', evidence: null, title: 'Bare ID' }),
   finding('f-iam', { category: 'iam', severity: 'high', region: null, resource_identifier: 'arn:aws:iam::123456789012:user/example-user', title: 'Console user without MFA' }),
 ]
 

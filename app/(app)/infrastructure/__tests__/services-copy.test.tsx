@@ -200,7 +200,7 @@ describe('securityGroupLabel', () => {
     ['ARN, no evidence', arn(SG), null, SG],
     ['ARN, blank name', arn(SG), evidence(SG, '   '), SG],
     ['bare sg- ID + name', SG, evidence(SG, 'web'), `web (${SG})`],
-    ['evidence about another group: its name is not used', arn(SG), evidence('sg-0123456789abcdef9', 'other'), SG],
+    ['evidence about another group: its name is not used', arn(SG), evidence('sg-0dddddddddddddddd', 'other'), SG],
     ['no sg- ID in the identifier: the evidence ID', 'some-group', evidence(SG, 'web'), `web (${SG})`],
     ['nothing to go on: the stored identifier as it is', 'some-group', null, 'some-group'],
     ['name equal to the ID', arn(SG), evidence(SG, SG), SG],
@@ -212,7 +212,7 @@ describe('securityGroupLabel', () => {
 describe('"What needs attention": security groups', () => {
   const findings: AccountSecurityFinding[] = [
     finding('f-named', { severity: 'critical', resource_identifier: arn(SG), evidence: evidence(SG, 'launch-wizard-1'), title: 'SSH open to the world', recommendation: 'Restrict port 22' }),
-    finding('f-unnamed', { severity: 'high', resource_identifier: arn('sg-0123456789abcdef1'), evidence: null, title: 'RDP open' }),
+    finding('f-unnamed', { severity: 'high', resource_identifier: arn('sg-0aaaaaaaaaaaaaaaa'), evidence: null, title: 'RDP open' }),
     finding('f-iam', { category: 'iam', severity: 'high', region: null, resource_identifier: 'arn:aws:iam::123456789012:user/example-user', title: 'No MFA', recommendation: 'Enable MFA' }),
   ]
 
@@ -222,7 +222,7 @@ describe('"What needs attention": security groups', () => {
     expect(rows.map((r) => [r.key, r.resource, r.resourceKind])).toEqual([
       ['account-f-named', `launch-wizard-1 (${SG})`, 'Security group'],
       // Ordered by the stored identifier, as before: arn:aws:ec2… sorts before arn:aws:iam….
-      ['account-f-unnamed', 'sg-0123456789abcdef1', 'Security group'],
+      ['account-f-unnamed', 'sg-0aaaaaaaaaaaaaaaa', 'Security group'],
       ['account-f-iam', 'arn:aws:iam::123456789012:user/example-user', 'IAM user'],
     ])
     expect(rows[0].found).toBe('SSH open to the world (security group)')
@@ -237,7 +237,7 @@ describe('"What needs attention": security groups', () => {
     const table = container.querySelector('table')!
     expect(within(table).getByRole('rowheader', { name: 'SSH open to the world' }).closest('tr')).toHaveTextContent(`launch-wizard-1 (${SG}) Security group`)
     expect(within(table).getByRole('button', { name: `Review launch-wizard-1 (${SG})` })).toBeInTheDocument()
-    expect(within(table).getByRole('button', { name: 'Review sg-0123456789abcdef1' })).toBeInTheDocument()
+    expect(within(table).getByRole('button', { name: 'Review sg-0aaaaaaaaaaaaaaaa' })).toBeInTheDocument()
     expect([...container.querySelectorAll('ul > li p')].map((p) => p.textContent)).toContain(`launch-wizard-1 (${SG}) · Security group · us-east-1`)
     expect([...container.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Security findings →', '/security']])
     expect(container.textContent).not.toMatch(/arn:aws:ec2/)

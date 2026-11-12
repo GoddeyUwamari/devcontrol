@@ -10,14 +10,14 @@
     [
       "High",
       "RDP open to the world",
-      "sg-0123456789abcdef1 Security group",
+      "sg-0aaaaaaaaaaaaaaaa Security group",
       "us-east-1",
       "Review"
     ],
     [
       "High",
       "All ports open",
-      "sg-0123456789abcdef2 Security group",
+      "sg-0bbbbbbbbbbbbbbbb Security group",
       "us-east-1",
       "Review"
     ],
@@ -31,7 +31,7 @@
     [
       "High",
       "Bare ID",
-      "sg-0123456789abcdef3 Security group",
+      "sg-0cccccccccccccccc Security group",
       "us-east-1",
       "Review"
     ]
@@ -43,11 +43,11 @@
     ],
     [
       "RDP open to the world",
-      "sg-0123456789abcdef1 · Security group · us-east-1"
+      "sg-0aaaaaaaaaaaaaaaa · Security group · us-east-1"
     ],
     [
       "All ports open",
-      "sg-0123456789abcdef2 · Security group · us-east-1"
+      "sg-0bbbbbbbbbbbbbbbb · Security group · us-east-1"
     ],
     [
       "Console user without MFA",
@@ -55,15 +55,15 @@
     ],
     [
       "Bare ID",
-      "sg-0123456789abcdef3 · Security group · us-east-1"
+      "sg-0cccccccccccccccc · Security group · us-east-1"
     ]
   ],
   "reviewButtons": [
     "Review launch-wizard-1 (sg-0123456789abcdef0)",
-    "Review sg-0123456789abcdef1",
-    "Review sg-0123456789abcdef2",
+    "Review sg-0aaaaaaaaaaaaaaaa",
+    "Review sg-0bbbbbbbbbbbbbbbb",
     "Review arn:aws:iam::123456789012:user/example-user",
-    "Review sg-0123456789abcdef3"
+    "Review sg-0cccccccccccccccc"
   ],
   "links": [
     {
