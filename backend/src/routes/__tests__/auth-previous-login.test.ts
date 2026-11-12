@@ -21,6 +21,7 @@ import express from 'express';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import bcrypt from 'bcrypt';
 import { Pool } from 'pg';
 import authRoutes from '../auth.routes';
@@ -53,15 +54,23 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** An organization with one active member who can sign in with PASSWORD. */
-async function member(): Promise<{ id: string; email: string; orgId: string }> {
+/**
+ * An active member who can sign in with PASSWORD: of a new organization, or of
+ * `orgId` when given (two members of one organization).
+ */
+async function member(orgId?: string): Promise<{ id: string; email: string; orgId: string }> {
   const suffix = uniqueSuffix();
-  const { rows: org } = await pool.query(
-    `INSERT INTO organizations (name, slug, display_name, subscription_tier, max_services, max_users)
-     VALUES ($1, $2, $1, 'pro', 10, 20) RETURNING id`,
-    [`PrevLogin ${suffix}`, `prev-login-${suffix}`]
-  );
-  createdOrgIds.push(org[0].id);
+  let org: { id: string }[];
+  if (orgId) {
+    org = [{ id: orgId }];
+  } else {
+    ({ rows: org } = await pool.query(
+      `INSERT INTO organizations (name, slug, display_name, subscription_tier, max_services, max_users)
+       VALUES ($1, $2, $1, 'pro', 10, 20) RETURNING id`,
+      [`PrevLogin ${suffix}`, `prev-login-${suffix}`]
+    ));
+    createdOrgIds.push(org[0].id);
+  }
   const email = `prev-login-${suffix}@example.com`;
   const { rows: user } = await pool.query(
     `INSERT INTO users (email, password_hash, full_name) VALUES ($1, $2, 'Prev Login User') RETURNING id`,
@@ -206,6 +215,53 @@ describe('password sign-in records the previous sign-in', () => {
   });
 });
 
+describe('/me returns only the signed-in user\'s own sign-in times', () => {
+  it('two members of one organization, sign-ins interleaved: each /me shows its own previousLoginAt and lastLoginAt, never the other\'s', async () => {
+    const a = await member();
+    const b = await member(a.orgId);
+    // Different stored sign-ins from before this release, so even the first copy differs per user.
+    await pool.query(`UPDATE users SET last_login_at = '2026-10-01T08:00:00.123456Z' WHERE id = $1`, [a.id]);
+    await pool.query(`UPDATE users SET last_login_at = '2026-10-02T09:30:00.456789Z' WHERE id = $1`, [b.id]);
+
+    // A, B, A, B: B signs in last, so a "latest sign-in in the organization" read would hand A B's times.
+    const a1 = await login(a.email);
+    expect(a1.status).toBe(200);
+    const aAfterFirst = await logins(a.id);
+    const b1 = await login(b.email);
+    expect(b1.status).toBe(200);
+    const bAfterFirst = await logins(b.id);
+    const a2 = await login(a.email);
+    expect(a2.status).toBe(200);
+    const b2 = await login(b.email);
+    expect(b2.status).toBe(200);
+
+    const aStored = await logins(a.id);
+    const bStored = await logins(b.id);
+    expect(aStored.previous).toBe(aAfterFirst.last);
+    expect(bStored.previous).toBe(bAfterFirst.last);
+
+    const expected = {
+      a: { previousLoginAt: await iso(aStored.previous!), lastLoginAt: await iso(aStored.last!) },
+      b: { previousLoginAt: await iso(bStored.previous!), lastLoginAt: await iso(bStored.last!) },
+    };
+    // Four distinct instants, so a value from the wrong user cannot pass by coincidence.
+    expect(new Set([...Object.values(expected.a), ...Object.values(expected.b)]).size).toBe(4);
+
+    // Both of each user's tokens (first and second sign-in) read only that user's row.
+    for (const [token, who] of [
+      [a1.body.data.accessToken, 'a'],
+      [a2.body.data.accessToken, 'a'],
+      [b1.body.data.accessToken, 'b'],
+      [b2.body.data.accessToken, 'b'],
+    ] as const) {
+      const current = await me(token);
+      expect(current.status).toBe(200);
+      expect(current.body.data.id).toBe(who === 'a' ? a.id : b.id);
+      expect({ previousLoginAt: current.body.data.previousLoginAt, lastLoginAt: current.body.data.lastLoginAt }).toEqual(expected[who]);
+    }
+  });
+});
+
 describe('token refresh changes neither column', () => {
   it('refreshing (twice) leaves last_login_at and previous_login_at as they were; /me on the new token shows the same times', async () => {
     const user = await member();
@@ -251,27 +307,91 @@ describe('/me shape', () => {
 });
 
 // ─── Static: only the two sign-in UPDATEs write either column ───────────────
+//
+// Scans every tracked file in the repository (backend, database, scripts, dev,
+// .github, the frontend), not only backend/src. Excluded: tests, and the
+// migration pair that creates and drops previous_login_at (their comments
+// quote the sign-in UPDATE; they write no value).
 
+const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const SRC = path.join(__dirname, '../..');
-const WRITE = /\b(?:last|previous)_login_at\s*=(?!=)/g;
-const WRITES_ANY = new RegExp(WRITE.source);
+const COL = String.raw`["'\x60]?\b(?:last|previous)_login_at\b["'\x60]?`;
+/** Every write form this sweep recognizes, on whitespace-collapsed text. */
+const WRITE_FORMS: Record<string, RegExp> = {
+  // last_login_at = …, "last_login_at" = …, users.last_login_at = … (not ==, not =>)
+  assignment: new RegExp(String.raw`${COL}\s*=(?![=>])`, 'g'),
+  // SET (a, last_login_at) = (…) / ROW(…)
+  rowAssignment: new RegExp(String.raw`\([^()]*${COL}[^()]*\)\s*=(?![=>])`, 'g'),
+  // { last_login_at: … }, { 'last_login_at': … } for an object-to-SQL builder (not a ::cast)
+  objectKey: new RegExp(String.raw`${COL}\s*:(?!:)`, 'g'),
+  // INSERT INTO users (…, last_login_at, …) / COPY users (…, last_login_at, …)
+  insertOrCopyColumnList: new RegExp(String.raw`\b(?:INSERT\s+INTO|COPY)\s+[\w."]+\s*\([^)]*${COL}`, 'gi'),
+};
+const CODE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|sql|sh|py|ya?ml)$/;
+const EXCLUDED_FILES = new Set([
+  'database/migrations-admin/202611121200_add_users_previous_login_at.sql',
+  'database/migrations-admin/202611121200_add_users_previous_login_at_rollback.sql',
+]);
+const ALLOWED_WRITERS = ['backend/src/services/auth.service.ts', 'backend/src/services/saml.service.ts'];
 
-function sourceFiles(dir: string): string[] {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === '__tests__' || entry.name === 'node_modules' ? [] : sourceFiles(full);
-    return /\.(ts|js)$/.test(entry.name) && !/\.test\.(ts|js)$/.test(entry.name) ? [full] : [];
-  });
+function writeHits(text: string): string[] {
+  const collapsed = text.replace(/\s+/g, ' ');
+  return Object.entries(WRITE_FORMS).flatMap(([form, re]) => (collapsed.match(re) ?? []).map((m) => `${form}: ${m}`));
+}
+
+function repoCodeFiles(): string[] {
+  return execFileSync('git', ['ls-files', '-z'], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .split('\0')
+    .filter((file) => file !== '')
+    .filter((file) => CODE_FILE.test(file))
+    .filter((file) => !/(^|\/)(__tests__|node_modules)\//.test(file) && !/\.(test|spec)\.[a-z]+$/.test(file))
+    .filter((file) => !EXCLUDED_FILES.has(file));
 }
 
 describe('only the password and SAML sign-ins write last_login_at / previous_login_at', () => {
-  it('exactly two files write them, each once, as previous_login_at = last_login_at, last_login_at = NOW()', () => {
-    const writers = sourceFiles(SRC)
-      .map((file) => ({ file: path.relative(SRC, file), text: fs.readFileSync(file, 'utf8').replace(/\s+/g, ' ') }))
-      .filter(({ text }) => WRITES_ANY.test(text));
-    expect(writers.map((w) => w.file).sort()).toEqual(['services/auth.service.ts', 'services/saml.service.ts']);
-    for (const { text } of writers) {
-      expect(text.match(WRITE)).toHaveLength(2);
+  it('the write patterns catch every listed form and ignore reads', () => {
+    for (const write of [
+      'UPDATE users SET last_login_at = NOW() WHERE id = $1',
+      'UPDATE users SET "last_login_at" = NOW()',
+      'UPDATE users SET "previous_login_at"=$2',
+      'UPDATE public.users u SET u.last_login_at = now()',
+      'UPDATE users SET (failed_login_attempts, last_login_at) = (0, NOW())',
+      'UPDATE users SET (previous_login_at) = ROW(last_login_at)',
+      "knex('users').update({ last_login_at: new Date() })",
+      "db.update('users', { 'previous_login_at': x })",
+      'INSERT INTO users (email, last_login_at) VALUES ($1, NOW())',
+      'insert into public.users (email,\n  previous_login_at) values ($1, $2)',
+      'COPY users (id, last_login_at) FROM STDIN',
+    ]) {
+      expect({ write, hits: writeHits(write).length > 0 }).toEqual({ write, hits: true });
+    }
+    for (const read of [
+      'SELECT id, last_login_at, previous_login_at FROM users WHERE id = $1',
+      'lastLoginAt: user.last_login_at,',
+      'previousLoginAt: user.previous_login_at ?? null,',
+      'SELECT last_login_at::text AS last',
+      'WHERE last_login_at > previous_login_at',
+      "WHERE attname = 'previous_login_at'",
+      'if (row.last_login_at == null) return;',
+      'last_login_at TIMESTAMP WITH TIME ZONE,',
+    ]) {
+      expect({ read, hits: writeHits(read) }).toEqual({ read, hits: [] });
+    }
+  });
+
+  it('across the whole repository, exactly two files write them, each once, as previous_login_at = last_login_at, last_login_at = NOW()', () => {
+    const files = repoCodeFiles();
+    // The sweep really covers the backend, the migrations and the scripts.
+    expect(files).toEqual(expect.arrayContaining([...ALLOWED_WRITERS, 'database/migrate.js', 'database/migrations-admin/004_add_multi_tenancy.sql']));
+    expect(files.some((f) => f.startsWith('scripts/'))).toBe(true);
+
+    const writers = files
+      .map((file) => ({ file, hits: writeHits(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8')) }))
+      .filter(({ hits }) => hits.length > 0);
+    expect(writers.map((w) => w.file).sort()).toEqual(ALLOWED_WRITERS);
+    for (const { file, hits } of writers) {
+      expect({ file, hits }).toEqual({ file, hits: ['assignment: previous_login_at =', 'assignment: last_login_at ='] });
+      const text = fs.readFileSync(path.join(REPO_ROOT, file), 'utf8').replace(/\s+/g, ' ');
       expect(text.split('previous_login_at = last_login_at, last_login_at = NOW()')).toHaveLength(2);
     }
   });
