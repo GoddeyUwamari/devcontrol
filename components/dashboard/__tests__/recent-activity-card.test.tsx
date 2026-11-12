@@ -8,7 +8,7 @@
  * a separate, out-of-scope follow-up) are unchanged.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RecentActivityCard } from '../recent-activity-card'
 import { useActivityFeed } from '@/lib/hooks/useActivityFeed'
@@ -174,5 +174,42 @@ describe('with the real activity query: org-scoped, fetched once, toggle never f
     const spy = vi.spyOn(activityFeedService, 'getActivity').mockResolvedValue(events(15))
     render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
     expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+describe('status icons (PR-ICONS-a)', () => {
+  const at = (type: ActivityEvent['type'], message: string, severity?: string): ActivityEvent =>
+    ({ type, message, timestamp: new Date(NOW).toISOString(), ...(severity ? { severity } : {}) } as ActivityEvent)
+  const rowOf = (message: string) => screen.getByText(message).closest('div.flex.items-start') as HTMLElement
+
+  it.each([
+    { type: 'sync' as const, kind: 'success', glyph: 'circle-check', label: /^sync$/i, severity: undefined },
+    { type: 'security' as const, kind: 'security', glyph: 'shield-check', label: /^security · high$/i, severity: 'high' },
+    { type: 'anomaly' as const, kind: 'security', glyph: 'shield-check', label: /^anomaly · medium$/i, severity: 'medium' },
+  ])('$type → filled $glyph ($kind), aria-hidden next to the unchanged message and type text', ({ type, kind, glyph, label, severity }) => {
+    render(card([at(type, 'Row message', severity)]))
+    const row = rowOf('Row message')
+    const icon = row.querySelector('svg')!
+    expect(icon.getAttribute('data-status-kind')).toBe(kind)
+    expect(icon.getAttribute('data-glyph')).toBe(glyph)
+    expect(icon).toHaveAttribute('aria-hidden', 'true')
+    expect(within(row).getByText('Row message')).toBeInTheDocument()
+    expect(row.querySelector('p.text-meta.text-ink-muted')).toHaveTextContent(label)
+  })
+
+  it('optimization and score keep their outline icons (not status icons)', () => {
+    render(card([at('optimization', 'Opt row'), at('score', 'Score row')]))
+    for (const [message, cls] of [['Opt row', 'lucide-trending-up'], ['Score row', 'lucide-gauge']]) {
+      const icon = rowOf(message).querySelector('svg')!
+      expect(icon).not.toHaveAttribute('data-status-kind')
+      expect(icon.getAttribute('class')).toContain(cls)
+    }
+    expect(within(rowOf('Score row')).getByText('Historical snapshot')).toBeInTheDocument()
+  })
+
+  it('no lucide outline check or shield-alert is left for status events', () => {
+    render(card([at('sync', 'A'), at('security', 'B', 'high'), at('anomaly', 'C')]))
+    expect(document.querySelector('.lucide-circle-check-big, .lucide-check-circle-2, .lucide-circle-check, .lucide-shield-alert')).toBeNull()
+    expect(screen.getAllByTestId('activity-status-icon')).toHaveLength(3)
   })
 })

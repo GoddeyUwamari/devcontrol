@@ -216,6 +216,8 @@ const STRICT = [
   'components/dashboard/savings-opportunities.tsx',
   'components/dashboard/security-compliance-summary.tsx',
   'components/dashboard/system-intelligence-card.tsx',
+  // PR-ICONS-a: the shared status icons.
+  'components/ui/status-icon.tsx',
   // G2: the Costs pages.
   ...COSTS,
   // G1: Infrastructure + Services, Invoices and AI Reports.
@@ -349,8 +351,7 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'components/dashboard/infrastructure-intelligence.tsx', match: 'color: severity', rule: 'inline text style', count: 1, reason: 'The Top Risk title: toneText(severity colour) (-strong ink on the tint) or var(--foreground) when there is no severity.' },
   { file: 'components/dashboard/infrastructure-intelligence.tsx', match: 'color: systemStatus.color', rule: 'inline text style', count: 2, reason: "DevControl System Health's icon (aria-hidden svg) and status pill text, a status colour chosen at runtime from the app's listed colour variables (APP_COLOUR_VARS)." },
   { file: 'components/dashboard/recent-activity-card.tsx', match: "color: '#1D4ED8'", rule: 'inline text style', count: 1, reason: "The score event's icon colour (blue-700, an svg icon on #EFF6FF; 6.2:1)." },
-  { file: 'components/dashboard/recent-activity-card.tsx', match: 'color: conf.color', rule: 'inline text style', count: 1, reason: "Each event's icon (an svg, not text), coloured from EVENT_CONFIG." },
-  { file: 'components/dashboard/resource-checks-section.tsx', match: 'color: iconColor', rule: 'inline text style', count: 1, reason: "The summary's decorative status icon (aria-hidden svg), success/issue/neutral tone." },
+  { file: 'components/dashboard/recent-activity-card.tsx', match: 'color: conf.color', rule: 'inline text style', count: 1, reason: "The optimization event's outline icon (an svg, not text), coloured from EVENT_CONFIG; sync, security and anomaly use StatusIcon." },
   { file: 'components/dashboard/savings-opportunities.tsx', match: 'color: count', rule: 'inline text style', count: 1, reason: 'Each savings figure: count > 0 ? var(--text-success) : var(--text-secondary), both in APP_COLOUR_VARS.' },
   { file: 'components/dashboard/savings-opportunities.tsx', match: 'color: toneText(priorityBadge.color)', rule: 'inline text style', count: 1, reason: "The priority chip's text: the -strong ink on its tint, or var(--text-secondary) for Low (toneText)." },
   { file: 'components/dashboard/security-compliance-summary.tsx', match: "color: '#1D4ED8'", rule: 'inline text style', count: 1, reason: 'The Info severity chip (blue-700 on #EFF6FF, 6.2:1); passed through toneText unchanged.' },
