@@ -3,19 +3,8 @@
     "alert:created",
     "deployment:completed",
     "deployment:started",
-    "metrics:costs",
     "service:health"
   ],
-  "metricsCostsHandler": "registered",
-  "toastsAfterMetricsCosts": [
-    [
-      "info",
-      [
-        "AWS costs updated",
-        {
-          "description": "New total: $1234.56"
-        }
-      ]
-    ]
-  ]
+  "metricsCostsHandler": "not registered",
+  "toastsAfterMetricsCosts": []
 }

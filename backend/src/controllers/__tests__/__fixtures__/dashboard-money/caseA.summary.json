@@ -27,7 +27,12 @@
         "basis": "billed_month_to_date",
         "topServices": [],
         "lastDayInProgress": true,
-        "finishedThrough": "2026-10-30"
+        "finishedThrough": "2026-10-30",
+        "previousMonth": {
+          "start": "2026-10-01",
+          "endExclusive": "2026-11-01",
+          "amount": 412.3
+        }
       },
       "retrievedAt": "2026-11-01T00:37:00.000Z",
       "freshness": null,

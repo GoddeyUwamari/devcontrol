@@ -22,7 +22,7 @@ import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 import { CostTrendChart } from '@/components/dashboard/cost-trend-chart'
 
 const socketMock = vi.hoisted(() => {
-  const handlers: Record<string, (data: unknown) => void> = {}
+  const handlers: Record<string, ((data: unknown) => void) | undefined> = {}
   const socket = {
     on: (event: string, fn: (data: unknown) => void) => { handlers[event] = fn },
     off: (event: string) => { delete handlers[event] },
@@ -134,5 +134,13 @@ describe('Dashboard cost socket handler', () => {
     const handler = socketMock.handlers['metrics:costs']
     if (handler) handler({ totalCost: 1234.56, monthToDate: 1234.56, trend: 'stable', timestamp: '2026-11-01T00:37:00.000Z' })
     pin('socket.json', { registered, metricsCostsHandler: handler ? 'registered' : 'not registered', toastsAfterMetricsCosts: toastMock.calls })
+  })
+
+  it('F12: the Dashboard has no metrics:costs handler and no "AWS costs updated" toast', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DashboardPage /></QueryClientProvider>)
+    await waitFor(() => expect(Object.keys(socketMock.handlers).length).toBeGreaterThan(0))
+    expect(socketMock.handlers['metrics:costs']).toBeUndefined()
+    expect(toastMock.calls.filter(([, args]) => String(args[0]).includes('AWS costs updated'))).toEqual([])
   })
 })

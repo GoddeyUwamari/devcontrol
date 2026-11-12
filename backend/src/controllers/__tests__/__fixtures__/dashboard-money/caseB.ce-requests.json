@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "TimePeriod": {
+      "Start": "2026-10-01",
+      "End": "2026-11-02"
+    },
+    "Granularity": "MONTHLY",
+    "Metrics": [
+      "UNBLENDED_COST"
+    ],
+    "GroupBy": [
+      {
+        "Type": "DIMENSION",
+        "Key": "SERVICE"
+      }
+    ]
+  },
+  {
+    "TimePeriod": {
+      "Start": "2026-08-03",
+      "End": "2026-11-02"
+    },
+    "Granularity": "DAILY",
+    "Metrics": [
+      "UNBLENDED_COST"
+    ],
+    "GroupBy": [
+      {
+        "Type": "DIMENSION",
+        "Key": "SERVICE"
+      }
+    ]
+  }
+]

@@ -1,8 +1,9 @@
 {
   "dashboardCard": {
     "label": "Month-to-Date Spend",
-    "value": "$0.00",
-    "caption": "Actual · AWS Cost Explorer · no billed days yet this month",
+    "value": "—",
+    "caption": "Nov 1 (UTC) · Actual · AWS Cost Explorer · no billed days yet this month",
+    "previousMonth": "October (UTC): $412.30 · latest days still updating",
     "evidence": {
       "source": "Actual · AWS Cost Explorer · today's spend still being billed",
       "comparison": "No comparison until a day of this month has finished billing"
@@ -11,10 +12,10 @@
   "infrastructureSpendTile": {
     "key": "spend",
     "label": "Spend this month",
-    "value": "$0.00",
+    "value": "—",
     "captions": [
       [
-        "whole account · billed, from Cost Explorer · billed through Oct 30"
+        "whole account · billed, from Cost Explorer · no billed days yet this month"
       ],
       [
         "Cost Explorer, as of ",

@@ -5,7 +5,7 @@
       "state": "available",
       "source": "AWS Cost Explorer",
       "provenance": "actual",
-      "asOf": "2026-10-31T21:00:00.000Z",
+      "asOf": "2026-11-01T00:37:00.000Z",
       "scope": {
         "kind": "cost_explorer",
         "connectedAccountId": "123456789012",
@@ -15,30 +15,24 @@
       },
       "period": {
         "kind": "range",
-        "start": "2026-10-01",
-        "endExclusive": "2026-11-01"
+        "start": "2026-11-01",
+        "endExclusive": "2026-11-02"
       },
       "completeness": null,
       "coverage": null,
       "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete",
       "derivedFrom": null,
       "data": {
-        "amount": 412.3,
+        "amount": 0,
         "basis": "billed_month_to_date",
-        "topServices": [
-          {
-            "service": "Amazon Elastic Compute Cloud - Compute",
-            "amount": 391.53,
-            "sharePercent": 94.96240601503759
-          },
-          {
-            "service": "Amazon Simple Storage Service",
-            "amount": 20.77,
-            "sharePercent": 5.037593984962407
-          }
-        ],
+        "topServices": [],
         "lastDayInProgress": true,
-        "finishedThrough": "2026-10-30"
+        "finishedThrough": "2026-10-30",
+        "previousMonth": {
+          "start": "2026-10-01",
+          "endExclusive": "2026-11-01",
+          "amount": 412.3
+        }
       },
       "retrievedAt": "2026-11-01T00:37:00.000Z",
       "freshness": null,

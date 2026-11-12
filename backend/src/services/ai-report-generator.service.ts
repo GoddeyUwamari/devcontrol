@@ -623,7 +623,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     const pct = d.changePercent !== null ? ` (${d.changePercent > 0 ? '+' : ''}${d.changePercent.toFixed(1)}%)` : ' (percentage undefined: the previous window totals $0.00)';
     const today = d.currentWindowIncludesToday ? " The current window's last day is today and still being billed." : '';
     const partial = section.state === 'partial' ? ' Some days in the compared windows have no daily data.' : '';
-    return `Spend from ${d.currentWindow.start} to ${d.currentWindow.end} was ${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)} for ${d.previousWindow.start} to ${d.previousWindow.end}, a change of ${money(d.changeAmount)}${pct}, from AWS Cost Explorer daily charges with credits excluded.${today}${partial}`;
+    return `Spend from ${d.currentWindow.start} to ${d.currentWindow.end} was ${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)} for ${d.previousWindow.start} to ${d.previousWindow.end}, a change of ${money(d.changeAmount)}${pct}, from AWS Cost Explorer daily charges after credits, each category floored at $0.${today}${partial}`;
   }
 
   private securitySentence(section: ContextSection<ComplianceFindingsEvidence>): string {

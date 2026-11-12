@@ -37,11 +37,13 @@ import { COMPARISON_BASIS } from '../../services/ai-chat.service';
 import { AISummaryService } from '../../services/ai-summary.service';
 import { AIReportGeneratorService } from '../../services/ai-report-generator.service';
 import { collectSection } from '../../services/ai-context-contract';
+import { spendSection } from '../../services/cost-context-sections';
 import { updateBusinessMetrics } from '../../metrics';
 import { ceLedgerResponse, ACCOUNT_ROW } from './dashboard-money-fixtures';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const ambientPool = require('../../config/database').pool as { query: jest.Mock };
+import * as database from '../../config/database';
+
+const ambientPool = database.pool as unknown as { query: jest.Mock };
 
 const DIR = path.join(__dirname, '__fixtures__', 'dashboard-money');
 const WRITE = process.env.DASHBOARD_MONEY_FIXTURES === 'write';
@@ -112,6 +114,17 @@ describe('cost summary at 2026-11-01T00:37Z (Oct 31 8:37 PM EDT)', () => {
   });
 });
 
+describe('previousMonth reaches only the cost summary endpoint', () => {
+  it('the AI cost section (spendSection without the option) is unchanged; the summary one carries it', async () => {
+    jest.setSystemTime(new Date('2026-11-01T00:37:00.000Z'));
+    const { costs } = await new AIChatContextRepository({ query: jest.fn() } as unknown as Pool).gatherCostContext(ORG);
+    const forAi = await spendSection(costs);
+    const forSummary = await spendSection(costs, { previousMonth: true });
+    expect(forAi.data).not.toHaveProperty('previousMonth');
+    expect(forSummary.data?.previousMonth).toEqual({ start: '2026-10-01', endExclusive: '2026-11-01', amount: 412.3 });
+  });
+});
+
 describe('cost basis strings', () => {
   it('as the AI surfaces state them', async () => {
     const mom = await collectSection({ source: 'DevControl month-over-month comparison' }, async () => ({
@@ -150,7 +163,8 @@ describe('cost socket emissions from the 30-second metrics loop', () => {
     const ws = { emitToOrganization: jest.fn() };
     await (updateBusinessMetrics as (pool: unknown, ws?: unknown) => Promise<void>)(fakePool(costTotalRow), ws);
     pin(file, ws.emitToOrganization.mock.calls.map(([org, event, data]) => {
-      const { timestamp: _t, ...rest } = data as Record<string, unknown>;
+      const rest = { ...(data as Record<string, unknown>) };
+      delete rest.timestamp;
       return { org, event, data: rest };
     }));
   });

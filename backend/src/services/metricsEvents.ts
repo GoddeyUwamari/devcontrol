@@ -7,16 +7,6 @@ export class MetricsEvents {
     this.wsServer = wsServer;
   }
 
-  // Emit when AWS costs update
-  public costsUpdated(organizationId: string, costs: any) {
-    this.wsServer.emitToOrganization(organizationId, 'metrics:costs', {
-      totalCost: costs.total,
-      monthToDate: costs.monthToDate,
-      trend: costs.trend,
-      timestamp: new Date(),
-    });
-  }
-
   // Emit when new alert is created
   public alertCreated(organizationId: string, alert: any) {
     this.wsServer.emitToOrganization(organizationId, 'alert:created', {

@@ -220,7 +220,7 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     renderDashboard()
     await settled()
     await waitFor(() => expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent('compliance scan pending'))
-    expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent(/^Actual · AWS Cost Explorer · today still billing$/)
+    expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent(/^Oct 1–14 \(UTC\) · Actual · AWS Cost Explorer · today still billing$/)
     expect(within(kpi('/security')).getByTestId('kpi-caption')).toHaveTextContent(/^1 critical · 3 high · 1 low account findings · compliance scan pending$/)
     expect(within(kpi('/infrastructure')).getByTestId('kpi-caption')).toHaveTextContent(/^Composite · Cost 97 · Security 57 · Alert coverage 0$/)
     expect(screen.getByTestId('posture-tile-caption-cost')).toHaveTextContent(/^Monthly run-rate estimate · anomaly checks not yet active$/)
@@ -264,7 +264,7 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
     await settled()
     const spendCaption = within(kpi('/costs')).getByTestId('kpi-caption').textContent!
     const costCaption = screen.getByTestId('posture-tile-caption-cost').textContent!
-    expect(spendCaption).toMatch(/^Actual · AWS Cost Explorer/)
+    expect(spendCaption).toMatch(/^Oct 1–14 \(UTC\) · Actual · AWS Cost Explorer/)
     expect(costCaption).toMatch(/^Monthly run-rate estimate/)
     expect(costCaption).not.toMatch(/Actual|AWS Cost Explorer/)
     expect(spendCaption).not.toMatch(/Estimate/)
@@ -475,7 +475,7 @@ describe('9. estimated spend is labeled as an estimate', () => {
     await settled()
     const dialog = openInfo(kpi('/costs'), 'About Month-to-Date Spend')
     expect(dialog).toHaveTextContent("Actual · AWS Cost Explorer · today's spend still being billed")
-    expect(dialog).toHaveTextContent('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1 · Credits/refunds excluded · the current window ends today, which is still being billed')
+    expect(dialog).toHaveTextContent('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1 · After credits and refunds; amounts below $0 count as $0 · the current window ends today, which is still being billed')
   })
 })
 

@@ -316,11 +316,11 @@ const startServer = async () => {
 
     // Update business metrics every 30s
     setInterval(async () => {
-      await updateBusinessMetrics(pool, wsServer);
+      await updateBusinessMetrics(pool);
     }, 30000);
 
     // Initial metrics update
-    await updateBusinessMetrics(pool, wsServer);
+    await updateBusinessMetrics(pool);
 
     // The local stack runs no background jobs: they reach AWS, Prometheus,
     // email or Anthropic, and an empty local organization has nothing to sync.

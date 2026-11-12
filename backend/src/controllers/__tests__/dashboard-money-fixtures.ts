@@ -38,8 +38,8 @@ function nextMonthStart(day: string): string {
   return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
 }
 
-function groupsFor(days: string[]) {
-  const billed = days.filter((d) => d <= DATA_THROUGH);
+function groupsFor(days: string[], dataThrough: string) {
+  const billed = days.filter((d) => d <= dataThrough);
   if (billed.length === 0) return [];
   return LEDGER.map(([service, amount]) => ({
     Keys: [service],
@@ -53,19 +53,20 @@ export interface CeInput {
   NextPageToken?: string;
 }
 
-export function ceLedgerResponse(input: CeInput) {
+/** `dataThrough`: the last UTC day with charges (default DATA_THROUGH). */
+export function ceLedgerResponse(input: CeInput, dataThrough: string = DATA_THROUGH) {
   const { Start, End } = input.TimePeriod;
   const results: Array<{ TimePeriod: { Start: string; End: string }; Total: Record<string, never>; Groups: ReturnType<typeof groupsFor>; Estimated: boolean }> = [];
   if (input.Granularity === 'DAILY') {
     for (let d = Start; d < End; d = addDays(d, 1)) {
-      results.push({ TimePeriod: { Start: d, End: addDays(d, 1) }, Total: {}, Groups: groupsFor([d]), Estimated: d >= '2026-10-30' });
+      results.push({ TimePeriod: { Start: d, End: addDays(d, 1) }, Total: {}, Groups: groupsFor([d], dataThrough), Estimated: d >= addDays(dataThrough, -1) });
     }
   } else {
     for (let s = Start; s < End; s = nextMonthStart(s)) {
       const e = nextMonthStart(s) < End ? nextMonthStart(s) : End;
       const days: string[] = [];
       for (let d = s; d < e; d = addDays(d, 1)) days.push(d);
-      results.push({ TimePeriod: { Start: s, End: e }, Total: {}, Groups: groupsFor(days), Estimated: e > '2026-10-30' });
+      results.push({ TimePeriod: { Start: s, End: e }, Total: {}, Groups: groupsFor(days, dataThrough), Estimated: e > addDays(dataThrough, -1) });
     }
   }
   return { ResultsByTime: results, DimensionValueAttributes: [], GroupDefinitions: [{ Type: 'DIMENSION', Key: 'SERVICE' }] };

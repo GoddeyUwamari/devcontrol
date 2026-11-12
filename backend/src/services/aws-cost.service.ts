@@ -1,8 +1,10 @@
 import {
   CostExplorerClient,
   GetCostAndUsageCommand,
+  type GetCostAndUsageCommandInput,
   Granularity,
   Metric,
+  type ResultByTime,
 } from '@aws-sdk/client-cost-explorer'
 import { Pool } from 'pg'
 import { pool } from '../config/database'
@@ -32,6 +34,11 @@ export interface MonthlyCost {
   // infrastructure.controller.ts, aws.routes.ts, system-intelligence.service.ts,
   // cloudwatch.service.ts) is unaffected by this additive field.
   fetchedAt?: string
+  // The previous UTC calendar month's net total (same metric and grouping),
+  // from the same Cost Explorer request as the month to date. null when Cost
+  // Explorer returned no result for that month. Optional for the same reason
+  // as fetchedAt.
+  previousMonth?: { period: { start: string; end: string }; total: number } | null
 }
 
 interface MonthlyCostCacheEntry {
@@ -47,15 +54,62 @@ interface CostTrendCacheEntry {
 /**
  * The key of every cost cache and in-flight entry (AWS connect PR B): the
  * organization AND its connection identity (awsConnectionIdentity of the
- * aws_accounts row whose credentials fetched the data), plus the range for the
- * trend. The identity is read BEFORE the lookup and the fetch then uses that same
- * row, so an entry only ever holds data fetched with its own connection's
- * credentials: a request after a connection change misses every entry of the old
- * connection, including an old in-flight fetch that completes later, and empty
- * results (a $0 month) are scoped the same way. Errors are never stored.
+ * aws_accounts row whose credentials fetched the data), plus the exact Cost
+ * Explorer period the entry answers (start, exclusive end, and for the trend
+ * its range and granularity). The identity is read BEFORE the lookup and the
+ * fetch then uses that same row, so an entry only ever holds data fetched with
+ * its own connection's credentials: a request after a connection change misses
+ * every entry of the old connection, including an old in-flight fetch that
+ * completes later, and empty results (a $0 month) are scoped the same way.
+ * The period is computed once per request and the fetch uses that same period,
+ * so after 00:00 UTC on the 1st a request for the new month never receives an
+ * entry fetched for the old one. Errors are never stored.
  */
-function costCacheKey(organizationId: string, identity: string, range?: CostTrendRange): string {
-  return JSON.stringify(range === undefined ? [organizationId, identity] : [organizationId, identity, range])
+function costCacheKey(organizationId: string, identity: string, period: readonly string[]): string {
+  return JSON.stringify([organizationId, identity, ...period])
+}
+
+/** Drop entries older than the TTL, so entries for past periods don't accumulate. */
+function pruneExpired<T extends { timestamp: number }>(cache: Map<string, T>, ttl: number, now: number): void {
+  for (const [key, entry] of cache) {
+    if (now - entry.timestamp >= ttl) cache.delete(key)
+  }
+}
+
+/**
+ * Every page of one GetCostAndUsage request (USD 0.01 per page to the customer's
+ * account), merged: results for the same TimePeriod have their Groups joined
+ * in page order. Any failed page fails the whole read -- a partial result is
+ * never returned -- and a response that keeps paging past MAX_COST_EXPLORER_PAGES
+ * is refused rather than truncated.
+ */
+export const MAX_COST_EXPLORER_PAGES = 20
+
+export async function getCostAndUsageAllPages(client: CostExplorerClient, input: GetCostAndUsageCommandInput): Promise<ResultByTime[]> {
+  const merged: ResultByTime[] = []
+  const byPeriod = new Map<string, ResultByTime>()
+  let token: string | undefined
+  let pages = 0
+  do {
+    if (pages === MAX_COST_EXPLORER_PAGES) {
+      throw new Error(`Cost Explorer returned more than ${MAX_COST_EXPLORER_PAGES} pages; the result was not used`)
+    }
+    const page = await client.send(new GetCostAndUsageCommand(token ? { ...input, NextPageToken: token } : input))
+    pages++
+    for (const result of page.ResultsByTime ?? []) {
+      const key = `${result.TimePeriod?.Start ?? ''}/${result.TimePeriod?.End ?? ''}`
+      const existing = byPeriod.get(key)
+      if (existing) {
+        existing.Groups = [...(existing.Groups ?? []), ...(result.Groups ?? [])]
+      } else {
+        const copy: ResultByTime = { ...result, Groups: [...(result.Groups ?? [])] }
+        byPeriod.set(key, copy)
+        merged.push(copy)
+      }
+    }
+    token = page.NextPageToken || undefined
+  } while (token)
+  return merged
 }
 
 export type CostTrendRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
@@ -184,6 +238,21 @@ export function monthToDatePeriodUtc(now: Date): { start: string; end: string } 
   return {
     start: utcDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
     end: utcDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))),
+  }
+}
+
+/**
+ * The one MONTHLY Cost Explorer request behind the month to date: from the 1st
+ * of the previous UTC month through today, so the same request (and charge)
+ * also returns the previous month's total. `monthToDate` is the current
+ * month's part of it.
+ */
+export function monthlyCostsRequestPeriodUtc(now: Date): { start: string; end: string; monthToDate: { start: string; end: string } } {
+  const monthToDate = monthToDatePeriodUtc(now)
+  return {
+    start: utcDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))),
+    end: monthToDate.end,
+    monthToDate,
   }
 }
 
@@ -475,7 +544,9 @@ class AWSCostService {
   }
 
   private async monthlyCostsFor(organizationId: string, account: AwsAccountRow, connection: string): Promise<MonthlyCost> {
-    const key = costCacheKey(organizationId, connection)
+    // The period is fixed here, once: the key and the query below both use it.
+    const period = monthlyCostsRequestPeriodUtc(new Date())
+    const key = costCacheKey(organizationId, connection, ['month_to_date', period.start, period.end])
 
     const cached = this.monthlyCostCache.get(key)
     if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
@@ -489,10 +560,11 @@ class AWSCostService {
 
     const fetchPromise = (async () => {
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
-      const result = await orgService.queryMonthlyCosts()
+      const result = await orgService.queryMonthlyCosts(period)
       // Stamped once, right here, at the moment the real Cost Explorer call
       // actually succeeded -- not when a later cache hit happens to be read.
       const resultWithTimestamp: MonthlyCost = { ...result, fetchedAt: new Date().toISOString() }
+      pruneExpired(this.monthlyCostCache, AWSCostService.MONTHLY_COST_CACHE_TTL, Date.now())
       this.monthlyCostCache.set(key, { data: resultWithTimestamp, timestamp: Date.now() })
       return resultWithTimestamp
     })().finally(() => {
@@ -503,14 +575,18 @@ class AWSCostService {
     return fetchPromise
   }
 
-  /** The Cost Explorer query itself, on this instance's organization credentials. */
-  private async queryMonthlyCosts(): Promise<MonthlyCost> {
+  /**
+   * The Cost Explorer query itself, on this instance's organization credentials:
+   * one MONTHLY request from the 1st of the previous UTC month through today
+   * (every page), split into the month to date and the previous month by each
+   * result's own TimePeriod. A response without a result for the current month
+   * is an error, never a $0 month.
+   */
+  private async queryMonthlyCosts(period: ReturnType<typeof monthlyCostsRequestPeriodUtc>): Promise<MonthlyCost> {
     const costExplorer = this.customerCostExplorer()
 
     try {
-      const period = monthToDatePeriodUtc(new Date())
-
-      const command = new GetCostAndUsageCommand({
+      const results = await getCostAndUsageAllPages(costExplorer, {
         TimePeriod: { Start: period.start, End: period.end },
         Granularity: Granularity.MONTHLY,
         Metrics: [Metric.UNBLENDED_COST],
@@ -522,21 +598,32 @@ class AWSCostService {
         ],
       })
 
-      const response = await costExplorer.send(command)
-
-      const byService =
-        response.ResultsByTime?.[0]?.Groups?.map((group) => ({
+      const serviceAmounts = (result: ResultByTime) =>
+        (result.Groups ?? []).map((group) => ({
           service: group.Keys?.[0] || 'Unknown',
           amount: parseFloat(group.Metrics?.UnblendedCost?.Amount || '0'),
-        })) || []
+        }))
 
+      const current = results.find((r) => r.TimePeriod?.Start === period.monthToDate.start)
+      if (!current) {
+        throw new Error('Cost Explorer returned no result for the current month')
+      }
+      const previous = results.find((r) => r.TimePeriod?.Start === period.start)
+
+      const byService = serviceAmounts(current)
       const total = byService.reduce((sum, item) => sum + item.amount, 0)
 
       return {
         total,
         byService,
-        period,
+        period: period.monthToDate,
         fetchedAt: new Date().toISOString(),
+        previousMonth: previous
+          ? {
+              period: { start: period.start, end: period.monthToDate.start },
+              total: serviceAmounts(previous).reduce((sum, item) => sum + item.amount, 0),
+            }
+          : null,
       }
     } catch (error) {
       console.error('Error fetching monthly costs:', error)
@@ -551,21 +638,21 @@ class AWSCostService {
    * in-flight dedup above, so calling this doesn't add any Cost Explorer traffic
    * beyond what that cache already governs. The DB estimate query and its
    * organization/status filtering are unchanged from both prior call sites.
+   *
+   * Any successful Cost Explorer result is 'actual', whatever its value: a real
+   * $0 month (including the first hours of a month, before AWS reports any
+   * charge) and a net-negative month (credits exceed charges) are billing data,
+   * not a failure. Only a failed fetch falls back to the inventory estimate.
    */
   async getMonthlySpendWithFallback(
     organizationId: string
   ): Promise<{ amount: number; source: SpendProvenance }> {
-    let liveTotal = 0
     try {
       const liveCost = await this.fetchMonthlyCosts(organizationId)
-      liveTotal = liveCost.total
+      return { amount: liveCost.total, source: 'actual' }
     } catch (_err) {
       // Live fetch failed — fall through to the DB estimate below, same as
       // both call sites this consolidates.
-    }
-
-    if (liveTotal > 0) {
-      return { amount: liveTotal, source: 'actual' }
     }
 
     return { amount: await this.getInventoryMonthlyRunRate(organizationId), source: 'estimated' }
@@ -583,20 +670,16 @@ class AWSCostService {
     return parseFloat(estimateResult.rows[0].total)
   }
 
-  /**
-   * Compute the TimePeriod + Granularity for a given trend range.
-   * Short ranges use DAILY granularity; 6mo/1yr use MONTHLY (calendar-month aligned,
-   * current partial month included).
-   */
-  private resolveTrendPeriod(range: CostTrendRange): { start: string; end: string; granularity: Granularity } {
-    return trendPeriodUtc(range, new Date())
+  /** The trend cache key for a range and the period it resolves to right now. */
+  private static trendCacheKey(organizationId: string, identity: string, range: CostTrendRange, period: { start: string; end: string; granularity: Granularity }): string {
+    return costCacheKey(organizationId, identity, ['trend', range, period.start, period.end, period.granularity])
   }
 
   /**
    * When the cached fetchCostTrend() result for this org's CURRENT connection and
-   * range was actually fetched from Cost Explorer (ISO timestamp), or null if
-   * nothing is cached for it (or the organization has no eligible connection, or
-   * its connection could not be read).
+   * range, for the period that range resolves to now, was actually fetched from
+   * Cost Explorer (ISO timestamp), or null if nothing is cached for it (or the
+   * organization has no eligible connection, or its connection could not be read).
    */
   async getCostTrendFetchedAt(organizationId: string, range: CostTrendRange): Promise<string | null> {
     let account: AwsAccountRow
@@ -605,7 +688,7 @@ class AWSCostService {
     } catch {
       return null
     }
-    const cached = this.costTrendCache.get(costCacheKey(organizationId, awsConnectionIdentity(account), range))
+    const cached = this.costTrendCache.get(AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), range, trendPeriodUtc(range, new Date())))
     return cached ? new Date(cached.timestamp).toISOString() : null
   }
 
@@ -623,7 +706,9 @@ class AWSCostService {
 
     // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
     const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
-    const cacheKey = costCacheKey(organizationId, awsConnectionIdentity(account), range)
+    // The period is fixed here, once: the key and the query below both use it.
+    const period = trendPeriodUtc(range, new Date())
+    const cacheKey = AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), range, period)
     const cached = this.costTrendCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
       return cached.data
@@ -636,7 +721,8 @@ class AWSCostService {
 
     const fetchPromise = (async () => {
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
-      const result = await orgService.queryCostTrend(range)
+      const result = await orgService.queryCostTrend(period)
+      pruneExpired(this.costTrendCache, AWSCostService.MONTHLY_COST_CACHE_TTL, Date.now())
       this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
       return result
     })().finally(() => {
@@ -647,13 +733,13 @@ class AWSCostService {
     return fetchPromise
   }
 
-  /** The Cost Explorer query itself, on this instance's organization credentials. */
-  private async queryCostTrend(range: CostTrendRange): Promise<CostTrendPoint[]> {
+  /** The Cost Explorer query itself (every page), on this instance's organization credentials. */
+  private async queryCostTrend(period: { start: string; end: string; granularity: Granularity }): Promise<CostTrendPoint[]> {
     const costExplorer = this.customerCostExplorer()
 
-    const { start, end, granularity } = this.resolveTrendPeriod(range)
+    const { start, end, granularity } = period
 
-    const command = new GetCostAndUsageCommand({
+    const results = await getCostAndUsageAllPages(costExplorer, {
       TimePeriod: { Start: start, End: end },
       Granularity: granularity,
       Metrics: [Metric.UNBLENDED_COST],
@@ -665,9 +751,7 @@ class AWSCostService {
       ],
     })
 
-    const response = await costExplorer.send(command)
-
-    const points: CostTrendPoint[] = (response.ResultsByTime || []).map((result) => {
+    const points: CostTrendPoint[] = results.map((result) => {
       const raw: Record<CostCategory, number> = {
         compute: 0,
         storage: 0,

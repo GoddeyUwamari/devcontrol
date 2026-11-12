@@ -258,6 +258,8 @@ export const SEC_DATA_AFTER = " and we'll delete it."
 // Sidebar.
 export const SIDE_READS_TITLE = 'What DevControl reads'
 export const SIDE_READS: readonly string[] = ['EC2, RDS, Lambda, S3 resource metadata', 'CloudWatch metrics and alarms', 'Cost Explorer data']
+/** DB-D16 (founder wording, Nov 12): what reading Cost Explorer costs the customer. Backend cache TTL: aws-cost.service.ts MONTHLY_COST_CACHE_TTL. */
+export const COST_EXPLORER_BILLING_NOTE = 'Cost Explorer requests are billed at USD 0.01 per request. Results are cached for 4 hours, so a typical account makes only a few requests per day.'
 export const SIDE_SECURITY_TITLE = 'Security'
 export const SIDE_SECURITY: readonly string[] = ['Database stored on an encrypted disk (AWS EBS encryption)', 'Role credentials never stored']
 export const SIDE_NEED_HELP = 'Need help?'

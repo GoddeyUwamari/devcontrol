@@ -563,6 +563,12 @@ export interface CostSpendEvidence {
    * estimates; absent from responses of a backend that predates it.
    */
   topServices?: Array<{ service: string; amount: number; sharePercent: number | null }> | null;
+  /**
+   * Billed spend: the previous UTC calendar month's net AWS Cost Explorer
+   * total (from the same request as the month to date); null when there is
+   * none; absent from responses of a backend that predates it.
+   */
+  previousMonth?: { start: string; endExclusive: string; amount: number } | null;
 }
 
 /** MonthOverMonthEvidence in backend/src/services/cost-context-sections.ts. */

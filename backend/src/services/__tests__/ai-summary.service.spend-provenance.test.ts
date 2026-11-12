@@ -227,7 +227,7 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
         currentWindowIncludesToday: true, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
       }),
     });
-    expect(withComparison.prompt).toContain('Month-to-date spend vs the same days last month: up 20.0% ($120.00 vs $100.00, daily charges with credits excluded; the current day is still being billed).');
+    expect(withComparison.prompt).toContain('Month-to-date spend vs the same days last month: up 20.0% ($120.00 vs $100.00, daily charges after credits, each category floored at $0; the current day is still being billed).');
 
     jest.restoreAllMocks();
     const without = await run();

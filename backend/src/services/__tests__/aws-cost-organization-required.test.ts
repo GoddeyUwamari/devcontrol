@@ -57,7 +57,7 @@ process.env.AWS_SECRET_ACCESS_KEY = PLATFORM_KEYS.secretAccessKey;
 process.env.AWS_REGION = 'us-east-1';
 
 import type { Pool } from 'pg';
-import sharedCostService, { AWSCostService } from '../aws-cost.service';
+import sharedCostService, { AWSCostService, monthToDatePeriodUtc } from '../aws-cost.service';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ambientPool = require('../../config/database').pool as { query: jest.Mock };
 
@@ -70,8 +70,10 @@ const ENV_BEFORE_TESTS = { ...process.env };
 let poolQuery: jest.Mock;
 let service: AWSCostService;
 
+// The current UTC month's result, with its TimePeriod as Cost Explorer returns it.
 function monthlyResponse(amount: string) {
-  return { ResultsByTime: [{ Groups: [{ Keys: ['Amazon EC2'], Metrics: { UnblendedCost: { Amount: amount } } }] }] };
+  const { start, end } = monthToDatePeriodUtc(new Date());
+  return { ResultsByTime: [{ TimePeriod: { Start: start, End: end }, Groups: [{ Keys: ['Amazon EC2'], Metrics: { UnblendedCost: { Amount: amount } } }] }] };
 }
 
 beforeEach(() => {
