@@ -455,7 +455,9 @@ describe('L-1: the deleted-resources count across concurrent regions', () => {
     // Each is one absence away from the termination threshold (MISSING_SCAN_THRESHOLD = 2).
     await pool.query(`UPDATE aws_resources SET missing_scan_count = 1 WHERE organization_id = $1`, [orgId]);
     mockAws();
-    const svc = service({ regionPool: 2 });
+    // Two step connections: the home region's EBS reconcile step is held open below
+    // until ap-south-1 has written its status, which needs a step of its own.
+    const svc = service({ regionPool: 2, regionDbSteps: 2 });
 
     // ap-south-1 has finished (its Resource Explorer termination counted, its status
     // written) only after the home region's EBS reconcile started, and before it ends.
@@ -829,5 +831,125 @@ describe('the fence probe at a region boundary (A6)', () => {
     expect(rows['ap-south-1']).toMatchObject({ last_scan_status: 'ok' });
     for (const region of ['eu-west-1', 'me-central-1', 'us-west-2']) expect(rows[region].last_scan_status).toBe('never_scanned');
     expect(await job(orgId)).toMatchObject({ status: 'failed', error_message: DISCOVERY_INTERRUPTED_MESSAGE });
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+describe('M-1 (PR 1b): a region worker holds no database connection while it waits on AWS', () => {
+  /** Connections of the test's pool checked out right now (the service scans on the same pool). */
+  const checkedOut = () => pool.totalCount - pool.idleCount;
+  const until = async (condition: () => boolean, timeoutMs = 20_000) => {
+    const started = Date.now();
+    while (!condition()) {
+      if (Date.now() - started > timeoutMs) throw new Error('condition not reached');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+
+  it('during a slow AWS call in eu-west-1, the only connection out is the scan\'s own; every step connection is returned', async () => {
+    const orgId = await insertOrg();
+    let euWaiting!: () => void;
+    const euCalled = new Promise<void>((resolve) => (euWaiting = resolve));
+    let releaseEu!: () => void;
+    const euReleased = new Promise<void>((resolve) => (releaseEu = resolve));
+    mockAws({
+      [EU]: {
+        ec2: {
+          // eu-west-1's instance listing (after its fence probe) answers only when released.
+          DescribeInstancesCommand: async () => {
+            euWaiting();
+            await euReleased;
+            return { Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: 't3.micro', State: { Name: 'running' } }] }] };
+          },
+        },
+      },
+    });
+    const svc = service();
+    // No heartbeat renewal (its own short checkout) during the measurement.
+    (svc as any).leaseTiming = { ...FAST, heartbeat: { intervalMs: 60 * 60_000 } };
+    const stepRegions: string[] = [];
+    const realStep = (svc as any).regionDbStep.bind(svc);
+    jest.spyOn(svc as any, 'regionDbStep').mockImplementation((org: any, region: any, fn: any) => {
+      stepRegions.push(region);
+      return realStep(org, region, fn);
+    });
+
+    const scanning = svc.discoverAllResources(orgId);
+    await euCalled;
+    // Every other region has finished (its log line comes after its status write and
+    // after that step's connection went back): eu-west-1 is the only region running.
+    await until(() => regionLogLines().filter((line) => line.region !== EU).length === SCAN_ORDER.length - 1);
+    expect(checkedOut()).toBe(1);
+    // eu-west-1 did use the database before its AWS call (its fence probe), on a step connection.
+    expect(stepRegions.filter((region) => region === EU)).toEqual([EU]);
+    releaseEu();
+    const result = await scanning;
+
+    expect(result.errors).toEqual([]);
+    expect(await resource(orgId, euInstanceArn)).toMatchObject({ region: EU, status: 'running' });
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'ok' });
+    // After the scan every connection is back.
+    expect(checkedOut()).toBe(0);
+  }, 60_000);
+
+  it('the regions\' step connections take turns: never more than REGION_DB_STEP_CONNECTIONS (1) at once', async () => {
+    const orgId = await insertOrg();
+    const instances = {
+      DescribeInstancesCommand: () => ({
+        Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: 't3.micro', State: { Name: 'running' } }] }],
+      }),
+    };
+    mockAws(Object.fromEntries(SCAN_ORDER.map((region) => [region, { ec2: instances }])));
+    const svc = service({ regionPool: 3 });
+    let inStep = 0;
+    let most = 0;
+    let total = 0;
+    const realStep = (svc as any).regionDbStep.bind(svc);
+    jest.spyOn(svc as any, 'regionDbStep').mockImplementation(async (org: any, region: any, fn: any) => {
+      inStep++;
+      total++;
+      most = Math.max(most, inStep);
+      try {
+        // Held a little, so overlapping steps would be seen.
+        return await realStep(org, region, async (client: any) => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return fn(client);
+        });
+      } finally {
+        inStep--;
+      }
+    });
+    await svc.discoverAllResources(orgId);
+    expect(total).toBeGreaterThanOrEqual(SCAN_ORDER.length * 3);
+    expect(most).toBe(1);
+  }, 60_000);
+
+  it.each([
+    ['its fence probe', 1],
+    ['its EC2 upsert', 2],
+  ])('no connection for eu-west-1 (%s): that region is failed (error), the others ok, the job completes', async (_label, failOnCall) => {
+    const orgId = await insertOrg();
+    mockAws({
+      [EU]: {
+        ec2: {
+          DescribeInstancesCommand: () => ({ Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: 't3.micro', State: { Name: 'running' } }] }] }),
+        },
+      },
+    });
+    const svc = service();
+    const realStep = (svc as any).regionDbStep.bind(svc);
+    let euCalls = 0;
+    jest.spyOn(svc as any, 'regionDbStep').mockImplementation((org: any, region: any, fn: any) => {
+      if (region === EU && ++euCalls === failOnCall) return Promise.reject(new Error('timeout exceeded when trying to connect'));
+      return realStep(org, region, fn);
+    });
+
+    const result = await svc.discoverAllResources(orgId);
+
+    const rows = await regionRows(orgId);
+    expect(rows[EU]).toMatchObject({ last_scan_status: 'failed', last_error_code: 'error' });
+    for (const region of SCAN_ORDER.filter((r) => r !== EU)) expect(rows[region]).toMatchObject({ last_scan_status: 'ok' });
+    expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['region_incomplete'], regions: SCAN_ORDER });
+    expect(result.errors).toEqual([]);
   }, 60_000);
 });

@@ -133,7 +133,8 @@ async function worker(kind: Kind, state: 'stale' | 'fresh'): Promise<Worker> {
   };
 }
 
-const fencedOn = (w: Worker) => <T>(fn: () => Promise<T>) => w.session.fenced(w.client, fn);
+// The discovery service's Fenced: the step's statements run on the connection it hands over.
+const fencedOn = (w: Worker) => <T>(fn: (client: PoolClient) => Promise<T>) => w.session.fenced(w.client, () => fn(w.client));
 
 async function insertResource(orgId: string, row: { arn: string; type: string; region?: string; missing?: number; metadata?: object }): Promise<string> {
   const { rows } = await pool.query(

@@ -270,3 +270,29 @@ export async function runRegionPool(
   await Promise.all(Array.from({ length: Math.max(1, Math.min(size, regions.length)) }, worker));
   if (stopped !== undefined) throw stopped;
 }
+
+/**
+ * At most `size` of a scan's region database steps at a time (multi-region PR 1b,
+ * review M-1). A region worker holds no database connection of its own: each of its
+ * database steps (a fenced write, its status write, its security-group findings)
+ * checks one out for that step only, and this limiter bounds how many such steps of
+ * one scan hold a connection at once. Steps run in the order they asked.
+ */
+export class StepLimiter {
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+
+  constructor(private readonly size: number) {}
+
+  async run<T>(step: () => Promise<T>): Promise<T> {
+    if (this.active >= this.size) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    else this.active++;
+    try {
+      return await step();
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.active--;
+    }
+  }
+}

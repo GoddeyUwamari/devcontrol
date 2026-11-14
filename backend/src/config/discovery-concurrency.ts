@@ -34,6 +34,15 @@ export const REGION_DEADLINE_MS = 10 * 60 * 1000;
 export const SCAN_BUDGET_MS = 45 * 60 * 1000;
 
 /**
+ * How many of one multi-region scan's region database steps hold a pool connection
+ * at the same time (multi-region PR 1b, review M-1). A region worker holds no
+ * connection while it waits on AWS; each database step checks one out and returns
+ * it. One: the regions' steps take turns, so a flagged scan never holds more than
+ * one connection beyond its own (and a manual Sync's request connection).
+ */
+export const REGION_DB_STEP_CONNECTIONS = 1;
+
+/**
  * The throttle breaker (Step 1 §A2): every THROTTLE_BREAKER_STEP throttled calls in
  * one region halve that region's resource pool, never below THROTTLE_BREAKER_FLOOR.
  * The region slows down; it is never stopped for being throttled.
