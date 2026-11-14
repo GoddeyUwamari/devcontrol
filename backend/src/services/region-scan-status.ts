@@ -36,9 +36,11 @@ const FAILURES = ['denied', 'timed_out', 'failed'] as const satisfies readonly (
 /**
  * The home region's status from the scan's source outcomes, or null when no
  * source counts (nothing is then written). Outcomes of other sources are ignored.
+ * `sources`: which sources count (a non-home region of a multi-region scan also
+ * counts its security-group listing, region-run.ts NON_HOME_REGION_SOURCES).
  */
-export function homeRegionScanStatus(outcomes: readonly SourceOutcome[]): HomeRegionScanResult | null {
-  const counted = outcomes.filter((o) => HOME_REGION_SOURCES.includes(o.source) && o.status !== 'skipped_tier');
+export function homeRegionScanStatus(outcomes: readonly SourceOutcome[], sources: readonly string[] = HOME_REGION_SOURCES): HomeRegionScanResult | null {
+  const counted = outcomes.filter((o) => sources.includes(o.source) && o.status !== 'skipped_tier');
   if (counted.length === 0) return null;
 
   const statuses = new Set<SourceStatus>(counted.map((o) => o.status));

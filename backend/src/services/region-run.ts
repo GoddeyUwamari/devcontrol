@@ -96,11 +96,15 @@ export function classifyRegionFailure(error: unknown): { status: SourceStatus; r
  * region whose deadline passed is timed_out with region_deadline whatever else
  * happened in it: it did not finish. Null when no source counts.
  */
-export function regionScanResult(outcomes: readonly RegionSourceOutcome[], deadlineHit: boolean): HomeRegionScanResult | null {
+export function regionScanResult(
+  outcomes: readonly RegionSourceOutcome[],
+  deadlineHit: boolean,
+  sources: readonly string[] = HOME_REGION_SOURCES
+): HomeRegionScanResult | null {
   if (deadlineHit) return { status: 'timed_out', errorCode: REGION_CODE_DEADLINE };
-  const base = homeRegionScanStatus(outcomes);
+  const base = homeRegionScanStatus(outcomes, sources);
   if (!base || base.status === 'ok' || base.status === 'partial') return base;
-  const counted = outcomes.filter((o) => HOME_REGION_SOURCES.includes(o.source) && o.status === base.status);
+  const counted = outcomes.filter((o) => sources.includes(o.source) && o.status === base.status);
   // An organization policy refusing the region explains every other refusal in it.
   const reasons = counted.map((o) => o.reason).filter((reason): reason is string => !!reason);
   const reason = reasons.includes(REGION_CODE_ACCESS_DENIED_SCP) ? REGION_CODE_ACCESS_DENIED_SCP : reasons[0];
@@ -112,6 +116,19 @@ function defaultCode(status: HomeRegionScanResult['status']): string {
   if (status === 'timed_out') return REGION_CODE_CALL_TIMEOUT;
   return REGION_CODE_ERROR;
 }
+
+/** The source name of a region's security-group listing (DescribeSecurityGroups). */
+export const SECURITY_GROUPS_SOURCE = 'security-groups';
+
+/**
+ * The sources a NON-home region's status is made of (PR 1b, review M-4): the home
+ * region's sources plus its security-group listing, so a region whose security groups
+ * could not be read is not checked completely (region_incomplete) and its networking
+ * findings are not resolved. The home region's status keeps the M5b sources
+ * (region-scan-status.ts): a home security-group failure is the job's
+ * (compliance_scan_completed = false), as before.
+ */
+export const NON_HOME_REGION_SOURCES: readonly string[] = [...HOME_REGION_SOURCES, SECURITY_GROUPS_SOURCE];
 
 /** The status of an enabled region the scan never started (the scan budget ran out). */
 export const SCAN_BUDGET_RESULT: HomeRegionScanResult = { status: 'timed_out', errorCode: REGION_CODE_SCAN_BUDGET };

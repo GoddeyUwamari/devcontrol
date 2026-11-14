@@ -325,7 +325,8 @@ describe('flag on: every enabled region, once each', () => {
           'outcome', 'reason', 'region', 'resource_pool', 'throttles',
         ].sort()
       );
-      expect(line).toMatchObject({ organization_id: orgId, outcome: 'ok', reason: null, listings: 6 });
+      // Five own listings, the Resource Explorer search and (PR 1b, M-4) the security groups.
+      expect(line).toMatchObject({ organization_id: orgId, outcome: 'ok', reason: null, listings: 7 });
       const text = JSON.stringify(line);
       expect(text).not.toMatch(/\d{12}/);
       for (const forbidden of ['arn:', INSTANCE, 'placeholder-web', 'vpc-']) expect(text).not.toContain(forbidden);
@@ -714,6 +715,78 @@ describe('security groups per region; findings with no region resolved once, wit
     expect(await status(orgId, 'k-eu')).toBe('resolved');
     // A region's security-group failure is the region's: not a job error.
     expect(result.errors).toEqual([]);
+  }, 60_000);
+
+  const jobCompliance = async (orgId: string) =>
+    (
+      await pool.query(
+        `SELECT status, error_message, compliance_scan_completed, to_jsonb(j) -> 'warnings' AS warnings FROM resource_discovery_jobs j WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [orgId]
+      )
+    ).rows[0];
+
+  it.each([
+    ['AccessDenied', 'denied', 'access_denied', () => accessDenied()],
+    ['a service control policy', 'denied', 'access_denied_scp', () => scpDenied()],
+    ['any other error', 'failed', 'error', () => awsError('InternalError', 'boom')],
+  ])('M-4: a NON-home security-group failure (%s) is that region\'s: its status %s %s, region_incomplete; the job\'s compliance stays complete', async (_label, regionStatus, code, error) => {
+    const orgId = await insertOrg();
+    await seedFinding(orgId, 'k-eu', EU);
+    await seedFinding(orgId, 'k-home', HOME);
+    await seedFinding(orgId, 'k-unregioned', null);
+    mockAws({ [EU]: { ec2: { DescribeSecurityGroupsCommand: () => { throw error(); } } } });
+
+    const result = await service().discoverAllResources(orgId);
+
+    expect(await jobCompliance(orgId)).toEqual({ status: 'completed', error_message: null, compliance_scan_completed: true, warnings: ['region_incomplete'] });
+    expect(result.errors).toEqual([]);
+    const rows = await regionRows(orgId);
+    expect(rows[EU]).toMatchObject({ last_scan_status: regionStatus, last_error_code: code, consecutive_failures: 1 });
+    for (const region of SCAN_ORDER.filter((r) => r !== EU)) expect(rows[region]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    // eu-west-1's networking findings were not reconciled; the home region's and the no-region ones were.
+    expect(await status(orgId, 'k-eu')).toBe('active');
+    expect(await status(orgId, 'k-home')).toBe('resolved');
+    expect(await status(orgId, 'k-unregioned')).toBe('resolved');
+    expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ outcome: regionStatus, reason: code });
+  }, 60_000);
+
+  it('M-4: a non-home security-group listing cut off at its page limit -> that region partial (discovery_listing_truncated); compliance complete', async () => {
+    const orgId = await insertOrg();
+    await seedFinding(orgId, 'k-eu', EU);
+    // Every page says there is another: listAllPages stops at its page limit.
+    mockAws({ [EU]: { ec2: { DescribeSecurityGroupsCommand: () => ({ SecurityGroups: [], NextToken: 'more' }) } } });
+    await service().discoverAllResources(orgId);
+    expect(await jobCompliance(orgId)).toMatchObject({ status: 'completed', compliance_scan_completed: true, warnings: ['discovery_listing_truncated'] });
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'partial', last_error_code: 'discovery_listing_truncated' });
+    expect(await status(orgId, 'k-eu')).toBe('active');
+  }, 60_000);
+
+  it('M-4: a HOME security-group failure keeps today\'s behaviour: compliance_scan_completed false, the home status ok, no job error', async () => {
+    const orgId = await insertOrg();
+    await seedFinding(orgId, 'k-home', HOME);
+    await seedFinding(orgId, 'k-eu', EU);
+    mockAws({ [HOME]: { ec2: { DescribeSecurityGroupsCommand: () => { throw accessDenied(); } } } });
+
+    const result = await service().discoverAllResources(orgId);
+
+    expect(await jobCompliance(orgId)).toEqual({ status: 'completed', error_message: null, compliance_scan_completed: false, warnings: null });
+    expect(result.errors).toEqual([]);
+    const rows = await regionRows(orgId);
+    for (const region of SCAN_ORDER) expect(rows[region]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    expect(await status(orgId, 'k-home')).toBe('active');
+    expect(await status(orgId, 'k-eu')).toBe('resolved');
+  }, 60_000);
+
+  it('M-4: every region\'s security groups are read inside its own run (its deadline): a region past its deadline before them reads none', async () => {
+    const orgId = await insertOrg();
+    await seedFinding(orgId, 'k-eu', EU);
+    mockAws({ [EU]: { rds: { DescribeDBInstancesCommand: () => new Promise(() => undefined) } } });
+    const groups = jest.spyOn(ComplianceScannerService.prototype, 'checkSecurityGroups');
+    await service({ regionDeadlineMs: 200 }).discoverAllResources(orgId);
+    expect(groups.mock.calls.map((call) => call[1]).sort()).toEqual(SCAN_ORDER.filter((r) => r !== EU).sort());
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'region_deadline' });
+    expect(await status(orgId, 'k-eu')).toBe('active');
+    expect(await jobCompliance(orgId)).toMatchObject({ status: 'completed', compliance_scan_completed: true });
   }, 60_000);
 
   it('the home security-group scan complete: no-region findings are resolved', async () => {

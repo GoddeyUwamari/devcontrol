@@ -90,11 +90,14 @@ import {
   recordRegionList,
   recordRegionScanStatus,
 } from '../repositories/multi-region-foundation.repository';
-import { HomeRegionScanResult, RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
+import { HOME_REGION_SOURCES, HomeRegionScanResult, RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
 import {
+  NON_HOME_REGION_SOURCES,
+  REGION_CODE_DEADLINE,
   RegionRun,
   RegionSourceOutcome,
   SCAN_BUDGET_RESULT,
+  SECURITY_GROUPS_SOURCE,
   StepLimiter,
   classifyRegionFailure,
   isRegionDeadline,
@@ -324,6 +327,14 @@ interface RegionScanRecord {
   region: string;
   result: HomeRegionScanResult | null;
   outcomes: RegionSourceOutcome[];
+}
+
+/** The security groups the regions of a multi-region scan read, each in its own run (PR 1b, M-4). */
+interface RegionalSecurity {
+  /** The home region's security groups were read completely (only this reaches the job). */
+  homeNetworkingComplete: boolean;
+  active: number;
+  resolved: number;
 }
 
 /** Region pool, deadlines and clock of a multi-region scan; tests shorten them. */
@@ -713,7 +724,13 @@ export class AWSResourceDiscoveryService {
     totals: { created: number; updated: number };
     warnings: DiscoveryWarning[];
     scanStartedAt: number;
-  }): Promise<{ records: RegionScanRecord[]; notStarted: string[]; terminated: number; homeReadinessErrors: string[] }> {
+  }): Promise<{
+    records: RegionScanRecord[];
+    notStarted: string[];
+    terminated: number;
+    homeReadinessErrors: string[];
+    security: RegionalSecurity;
+  }> {
     const { scan, scanContext, organizationId, jobId } = args;
     const timing = this.multiRegionTiming;
     const records: RegionScanRecord[] = [];
@@ -722,6 +739,9 @@ export class AWSResourceDiscoveryService {
     // R1 (founder decision Nov 14): the home region's own EC2 and RDS listing errors,
     // for the job's error text, which the Operational Health readiness gate reads.
     let homeReadinessErrors: string[] = [];
+    // Review M-4: the security groups of every region started, each read in its own run.
+    // Only the home region's completeness reaches the job (compliance_scan_completed).
+    const security: RegionalSecurity = { homeNetworkingComplete: false, active: 0, resolved: 0 };
 
     // Review M-1: a region worker holds no database connection. Each of its database
     // steps checks one out for that step only (regionDbStep), at most
@@ -788,11 +808,22 @@ export class AWSResourceDiscoveryService {
         // total before the await and would lose another region's additions made meanwhile.
         const ebsTerminated = await this.reconcileEbs(ctx);
         terminated += ebsTerminated;
-        outcomes = [...REGIONAL_TYPES.map((type) => ctx.outcomes[type]), ...(explorerOutcome ? [explorerOutcome] : [])];
+        const home = region === scanContext.region;
+        const groups = await this.scanRegionSecurityGroups(ctx, home, (step) => steps.run(step));
+        security.active += groups.active;
+        security.resolved += groups.resolved;
+        if (home) security.homeNetworkingComplete = groups.outcome.status === 'complete';
+        // A non-home region's security-group listing counts in its status (M-4); the
+        // home region's does not (M5b): its failure is the job's, as before.
+        outcomes = [
+          ...REGIONAL_TYPES.map((type) => ctx.outcomes[type]),
+          ...(explorerOutcome ? [explorerOutcome] : []),
+          ...(home ? [] : [groups.outcome]),
+        ];
         if (outcomes.some((o) => o.status === 'truncated' && o.source !== RESOURCE_EXPLORER_SOURCE)) {
           args.warnings.push(DISCOVERY_WARNING_LISTING_TRUNCATED);
         }
-        result = regionScanResult(outcomes, run.deadlineHit);
+        result = regionScanResult(outcomes, run.deadlineHit, home ? HOME_REGION_SOURCES : NON_HOME_REGION_SOURCES);
       } catch (error: unknown) {
         abortIfLeaseLost(error);
         // Anything else that escaped the region's own steps is the region's failure only.
@@ -826,7 +857,66 @@ export class AWSResourceDiscoveryService {
 
     const order = new Map(args.regions.map((region, index) => [region, index]));
     records.sort((a, b) => (order.get(a.region) ?? 0) - (order.get(b.region) ?? 0));
-    return { records, notStarted, terminated, homeReadinessErrors };
+    return { records, notStarted, terminated, homeReadinessErrors, security };
+  }
+
+  /**
+   * One region's security groups, inside its own run (PR 1b, review M-4, M-2): under
+   * the region's deadline and throttle breaker, its calls counted in its log line.
+   * Its findings are upserted (in a region database step), and that region's networking
+   * findings are resolved only when the listing was complete; findings with no region
+   * are resolved with the home region's (MR-D9). The outcome says how it ended: a
+   * refusal or failure is classified like a listing's (region-run.ts), a listing cut
+   * off at its page limit is truncated, and a region past its deadline reads nothing
+   * more and stores nothing (timed_out, region_deadline).
+   */
+  private async scanRegionSecurityGroups(
+    ctx: RegionInventory,
+    home: boolean,
+    step: <T>(fn: () => Promise<T>) => Promise<T>
+  ): Promise<{ outcome: RegionSourceOutcome; active: number; resolved: number }> {
+    const outcome: RegionSourceOutcome = { source: SECURITY_GROUPS_SOURCE, status: 'complete' };
+    const pastDeadline = () => {
+      outcome.status = 'timed_out';
+      outcome.reason = REGION_CODE_DEADLINE;
+      return { outcome, active: 0, resolved: 0 };
+    };
+    if (ctx.run?.deadlineHit) return pastDeadline();
+    ctx.scan.checkpoint();
+    if (ctx.run) ctx.run.listings++;
+    const startedAt = new Date();
+    const observation = await new ComplianceScannerService().checkSecurityGroups(ctx.clients.ec2!, ctx.region, ctx.clients.accountId);
+    if (ctx.run?.deadlineHit) return pastDeadline();
+    if (observation.failure !== undefined) {
+      const failure = classifyRegionFailure(observation.failure);
+      outcome.status = failure.status;
+      outcome.reason = failure.reason;
+      console.error(
+        `❌ [Discovery] Security group scan failed in ${ctx.region} (${failure.reason}, ${(observation.failure as { name?: string } | null)?.name ?? 'Error'})`
+      );
+    } else if (!observation.complete) {
+      outcome.status = 'truncated';
+    }
+    const { scan } = ctx;
+    try {
+      scan.checkpoint();
+      const findingsRepo = new AccountSecurityFindingsRepository();
+      const findings = AccountSecurityFindingsRepository.fromComplianceIssues(observation.issues, ctx.region);
+      const counts = await step(() =>
+        scan.watch(() =>
+          findingsRepo.reconcileScan(ctx.organizationId, startedAt, findings, outcome.status === 'complete' ? ['networking'] : [], ctx.region, scan.lease, {
+            unregioned: home,
+          })
+        )
+      );
+      return { outcome, ...counts };
+    } catch (error: unknown) {
+      abortIfLeaseLost(error);
+      console.error(`❌ [Discovery] Security group findings could not be stored for ${ctx.region} (${error instanceof Error ? error.name : 'unknown error'})`);
+      outcome.status = 'failed';
+      outcome.reason = classifyRegionFailure(error).reason;
+      return { outcome, active: 0, resolved: 0 };
+    }
   }
 
   /**
@@ -872,46 +962,24 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
-   * Security groups of every region a multi-region scan started, then IAM once
-   * (global). Each region's networking findings are upserted, and resolved in that
-   * region only when its security-group scan was complete; findings with no region are
-   * resolved once, with the home region (MR-D9 leaves IAM as it was). A region's
-   * security-group failure is the region's: logged, never a job error (MR-D6).
+   * The account-level security step of a multi-region scan: IAM once (global, MR-D9
+   * leaves it as it was), with the security groups each region read in its own run
+   * (scanRegions, PR 1b M-4). Networking is complete for the job when the HOME region's
+   * security groups were read completely; another region's failure is that region's
+   * (its status, region_incomplete), never the job's.
    */
   private async multiRegionSecurityScan(args: {
     organizationId: string;
     scan: LeaseSession;
     scanContext: ScanContext;
     homeClients: AWSClients;
-    regions: string[];
+    regional: RegionalSecurity;
     errors: string[];
   }): Promise<{ networkingComplete: boolean; iamComplete: boolean; active: number; resolved: number }> {
     const { organizationId, scan, scanContext, homeClients } = args;
     const scanner = new ComplianceScannerService();
     const findingsRepo = new AccountSecurityFindingsRepository();
-    let networkingComplete = true;
-    let active = 0;
-    let resolved = 0;
-
-    for (const region of args.regions) {
-      scan.checkpoint();
-      const regionStartedAt = new Date();
-      const ec2 = region === scanContext.region ? homeClients.ec2! : withCallPolicyOnClients(scanContext.clientsFor(region), this.callPolicy).ec2!;
-      const observation = await scanner.checkSecurityGroups(ec2, region, homeClients.accountId).catch((error: any) => {
-        console.error(`❌ [Discovery] Security group scan failed in ${region} (${error?.name ?? 'Error'})`);
-        return { category: 'networking' as const, complete: false, issues: [] };
-      });
-      networkingComplete &&= observation.complete;
-      const findings = AccountSecurityFindingsRepository.fromComplianceIssues(observation.issues, region);
-      scan.checkpoint();
-      const counts = await scan.watch(() =>
-        findingsRepo.reconcileScan(organizationId, regionStartedAt, findings, observation.complete ? ['networking'] : [], region, scan.lease, {
-          unregioned: region === scanContext.region,
-        })
-      );
-      active += counts.active;
-      resolved += counts.resolved;
-    }
+    const { homeNetworkingComplete: networkingComplete, active, resolved } = args.regional;
 
     const iamStartedAt = new Date();
     const iamObservation = await scanner.checkIAMSecurity(homeClients.iam!).catch((error: any) => {
@@ -1561,7 +1629,9 @@ export class AWSResourceDiscoveryService {
       // The home region's Resource Explorer inventory (inventoryResourceExplorer), or,
       // with the multi-region flag on, every enabled region's whole inventory.
       let resourceExplorerOutcome: RegionSourceOutcome | null = null;
-      let multi: { regions: string[]; records: RegionScanRecord[]; notStarted: string[]; homeReadinessErrors: string[] } | undefined;
+      let multi:
+        | { regions: string[]; records: RegionScanRecord[]; notStarted: string[]; homeReadinessErrors: string[]; security: RegionalSecurity }
+        | undefined;
       if (!multiRegion) {
         const explored = await this.inventoryResourceExplorer(home, allowedGenericTypes);
         resourceExplorerOutcome = explored.outcome;
@@ -1585,7 +1655,13 @@ export class AWSResourceDiscoveryService {
           scanStartedAt,
         });
         resourcesTerminated += scanned.terminated;
-        multi = { regions, records: scanned.records, notStarted: scanned.notStarted, homeReadinessErrors: scanned.homeReadinessErrors };
+        multi = {
+          regions,
+          records: scanned.records,
+          notStarted: scanned.notStarted,
+          homeReadinessErrors: scanned.homeReadinessErrors,
+          security: scanned.security,
+        };
         if (scanned.notStarted.length > 0 || scanned.records.some((record) => regionFailed(record.result))) {
           warnings.push(DISCOVERY_WARNING_REGION_INCOMPLETE);
         }
@@ -1792,7 +1868,7 @@ export class AWSResourceDiscoveryService {
             scan,
             scanContext,
             homeClients: awsClients,
-            regions: multi.records.map((record) => record.region),
+            regional: multi.security,
             errors,
           }));
         } else {

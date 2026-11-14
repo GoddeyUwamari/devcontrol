@@ -77,6 +77,12 @@ export interface CategoryObservation {
   category: 'networking' | 'iam';
   complete: boolean;
   issues: ComplianceIssue[];
+  /**
+   * The error that stopped the listing, when one did (checkSecurityGroups only).
+   * Read by a multi-region scan to classify a region's security-group failure
+   * (region-run.ts); never stored or shown.
+   */
+  failure?: unknown;
 }
 
 /** A resource's baseline findings, plus every framework check outcome. */
@@ -617,6 +623,7 @@ export class ComplianceScannerService {
   async checkSecurityGroups(ec2Client: EC2Client, region: string, accountId?: string): Promise<CategoryObservation> {
     const issues: ComplianceIssue[] = [];
     let complete = true;
+    let failure: unknown;
 
     try {
       // Each page is evaluated as it is read, so the findings of the pages read before
@@ -658,9 +665,10 @@ export class ComplianceScannerService {
     } catch (error: any) {
       console.error('[Compliance] checkSecurityGroups failed (partial results may still be usable):', error.message);
       complete = false;
+      failure = error;
     }
 
-    return { category: 'networking', complete, issues };
+    return failure === undefined ? { category: 'networking', complete, issues } : { category: 'networking', complete, issues, failure };
   }
 
   /**
