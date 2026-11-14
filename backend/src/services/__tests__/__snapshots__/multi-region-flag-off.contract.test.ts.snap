@@ -184,14 +184,6 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "region": "us-east-1",
       },
       {
-        "client": "s3-control",
-        "command": "GetPublicAccessBlockCommand",
-        "input": {
-          "AccountId": "123456789012",
-        },
-        "region": "us-east-1",
-      },
-      {
         "client": "s3",
         "command": "GetBucketAclCommand",
         "input": {
@@ -355,6 +347,14 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "client": "s3",
         "command": "ListBucketsCommand",
         "input": {},
+        "region": "us-east-1",
+      },
+      {
+        "client": "s3-control",
+        "command": "GetPublicAccessBlockCommand",
+        "input": {
+          "AccountId": "123456789012",
+        },
         "region": "us-east-1",
       },
     ],
@@ -1392,14 +1392,6 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "region": "us-east-1",
       },
       {
-        "client": "s3-control",
-        "command": "GetPublicAccessBlockCommand",
-        "input": {
-          "AccountId": "123456789012",
-        },
-        "region": "us-east-1",
-      },
-      {
         "client": "s3",
         "command": "GetBucketAclCommand",
         "input": {
@@ -1563,6 +1555,14 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "client": "s3",
         "command": "ListBucketsCommand",
         "input": {},
+        "region": "us-east-1",
+      },
+      {
+        "client": "s3-control",
+        "command": "GetPublicAccessBlockCommand",
+        "input": {
+          "AccountId": "123456789012",
+        },
         "region": "us-east-1",
       },
     ],
@@ -2615,14 +2615,6 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "region": "us-east-1",
       },
       {
-        "client": "s3-control",
-        "command": "GetPublicAccessBlockCommand",
-        "input": {
-          "AccountId": "123456789012",
-        },
-        "region": "us-east-1",
-      },
-      {
         "client": "s3",
         "command": "GetBucketAclCommand",
         "input": {
@@ -2786,6 +2778,14 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "client": "s3",
         "command": "ListBucketsCommand",
         "input": {},
+        "region": "us-east-1",
+      },
+      {
+        "client": "s3-control",
+        "command": "GetPublicAccessBlockCommand",
+        "input": {
+          "AccountId": "123456789012",
+        },
         "region": "us-east-1",
       },
     ],

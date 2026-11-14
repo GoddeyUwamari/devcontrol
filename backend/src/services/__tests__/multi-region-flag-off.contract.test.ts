@@ -302,25 +302,59 @@ function normalize(value: unknown, orgId: string): unknown {
   );
 }
 
+/**
+ * Plain code-unit order, independent of the database's collation and the process
+ * locale. An ORDER BY on text follows the database's collation (en_US.UTF-8 on
+ * macOS sorts close to byte order; glibc's en_US.utf8 in CI gives '*', ':' and '/'
+ * little weight), and localeCompare follows the locale, so either could reorder
+ * identical rows between machines.
+ */
+function byCodeUnit(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Rows sorted by `keys` in turn, each compared by code unit. */
+function sortedBy<T extends Record<string, unknown>>(rows: T[], ...keys: (keyof T)[]): T[] {
+  return [...rows].sort((a, b) => {
+    for (const key of keys) {
+      const order = byCodeUnit(String(a[key]), String(b[key]));
+      if (order !== 0) return order;
+    }
+    return 0;
+  });
+}
+
 async function footprint(orgId: string) {
   const q = async (sql: string) => (await pool.query(sql, [orgId])).rows;
+  // Text-keyed collections are sorted here, by code unit (byCodeUnit); the jobs and
+  // cost runs keep ORDER BY created_at, which no collation affects.
   return {
-    resources: await q(
-      `SELECT resource_arn, resource_id, resource_name, resource_type, region, status, missing_scan_count, is_encrypted, is_public, has_backup,
-              estimated_monthly_cost, tags, metadata, compliance_issues, is_orphaned, orphaned_monthly_savings
-         FROM aws_resources WHERE organization_id = $1 ORDER BY resource_arn`
+    resources: sortedBy(
+      await q(
+        `SELECT resource_arn, resource_id, resource_name, resource_type, region, status, missing_scan_count, is_encrypted, is_public, has_backup,
+                estimated_monthly_cost, tags, metadata, compliance_issues, is_orphaned, orphaned_monthly_savings
+           FROM aws_resources WHERE organization_id = $1`
+      ),
+      'resource_arn',
+      'resource_type'
     ),
     jobs: await q(
       `SELECT status, error_message, to_jsonb(j) -> 'warnings' AS warnings, resources_discovered, resources_updated, resources_deleted,
               compliance_scan_completed, cost_analysis_completed, resource_types, regions
          FROM resource_discovery_jobs j WHERE organization_id = $1 ORDER BY created_at`
     ),
-    regions: await q(
-      `SELECT region, enabled, opt_in_status, last_scan_status, last_error_code, consecutive_failures, last_success_at IS NOT NULL AS succeeded
-         FROM aws_account_regions WHERE organization_id = $1 ORDER BY region`
+    regions: sortedBy(
+      await q(
+        `SELECT region, enabled, opt_in_status, last_scan_status, last_error_code, consecutive_failures, last_success_at IS NOT NULL AS succeeded
+           FROM aws_account_regions WHERE organization_id = $1`
+      ),
+      'region'
     ),
-    findings: await q(
-      `SELECT finding_key, category, severity, status, region, resource_identifier FROM account_security_findings WHERE organization_id = $1 ORDER BY finding_key`
+    findings: sortedBy(
+      await q(
+        `SELECT finding_key, category, severity, status, region, resource_identifier FROM account_security_findings WHERE organization_id = $1`
+      ),
+      'finding_key'
     ),
     costRuns: await q(`SELECT status, source FROM cost_analysis_runs WHERE organization_id = $1 ORDER BY created_at`),
     lease: await q(`SELECT scan_kind, aws_account_id, released_at IS NOT NULL AS released FROM aws_scan_leases WHERE organization_id = $1`),
@@ -348,7 +382,7 @@ async function recordScan(orgId: string, scenario: Scenario) {
     // Every call with its input, as a multiset: the compliance pass reads its S3 rows
     // without an ORDER BY and evaluates buckets concurrently, so the interleaving of
     // two buckets' calls differs run to run (it did before PR 1 too).
-    calls: [...log].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    calls: [...log].sort((a, b) => byCodeUnit(JSON.stringify(a), JSON.stringify(b))),
     // The order the scan's steps first reach AWS in, which is deterministic.
     order: [...new Set(log.map((call) => `${call.client}:${call.command}`))],
     reconciles,
