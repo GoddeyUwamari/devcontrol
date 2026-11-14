@@ -155,6 +155,17 @@ export type IndexState =
 
 const USABLE_INDEX_STATES = new Set(['ACTIVE', 'UPDATING']);
 
+/**
+ * Whether a Search failure is AWS's "no default view" answer (multi-region PR 1, review
+ * M-3): 401 UnauthorizedException. With no ViewArn, Search uses the region's default
+ * view; when the region has none, or the caller cannot use it, AWS answers 401
+ * (AWS Resource Explorer API Reference, Search). Not an AccessDenied (403).
+ */
+export function isNoDefaultView(error: unknown): boolean {
+  const e = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } } | null | undefined;
+  return e?.name === 'UnauthorizedException' || e?.$metadata?.httpStatusCode === 401;
+}
+
 export interface NormalizedSearchResult {
   /** Every ARN Resource Explorer returned, deep-monitored and generic alike — the presence
    * signal reconciliation needs to decide what's still there vs. missing. */

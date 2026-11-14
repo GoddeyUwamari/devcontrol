@@ -69,6 +69,18 @@ export const DISCOVERY_WARNING_SCAN_BUDGET = 'scan_budget';
  */
 export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX = 'resource_explorer_no_index';
 
+/**
+ * Multi-region PR 1 (review M-3, founder decision Nov 14): a region scanned has an
+ * active Resource Explorer index, but its Search was refused with 401
+ * UnauthorizedException: the region has no default view, or the role cannot use it
+ * (Step 1 §A3; AWS Resource Explorer API Reference, Search). Handled as "not indexed":
+ * the generic types were not listed or reconciled in that region; every own listing
+ * still ran. Not an error, not a region failure, with the multi-region flag on and off.
+ * A code of its own because the cause and the remedy (a default view) differ from
+ * resource_explorer_no_index.
+ */
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW = 'resource_explorer_no_view';
+
 export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
@@ -77,6 +89,7 @@ export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_REGION_INCOMPLETE,
   DISCOVERY_WARNING_SCAN_BUDGET,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
 ] as const;
 
 export type DiscoveryWarning = (typeof DISCOVERY_WARNINGS)[number];

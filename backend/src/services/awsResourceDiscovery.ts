@@ -164,7 +164,7 @@ import { addReconcileCounts, summarizeDetectors } from './cost-analysis-outcome'
 import { AccountSecurityFindingsRepository, AccountFindingCategory } from '../repositories/account-security-findings.repository';
 import { securityAuditService } from './securityAudit.service';
 import { PoolClient } from 'pg';
-import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry, SearchResult } from './resourceExplorer.service';
+import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry, SearchResult, isNoDefaultView } from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
 import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
@@ -177,6 +177,7 @@ import {
   DISCOVERY_WARNING_LISTING_TRUNCATED,
   DISCOVERY_WARNING_REGION_INCOMPLETE,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
   DISCOVERY_WARNING_SCAN_BUDGET,
   DISCOVERY_WARNING_SCAN_LEASE_LOST,
   DISCOVERY_WARNING_TRUNCATED_INDEX,
@@ -539,6 +540,16 @@ export class AWSResourceDiscoveryService {
             cause: index.error,
           }
         : await this.resourceExplorer.search(clients.resourceExplorer, region);
+    if (!searchResult.success && index.state === 'indexed' && isNoDefaultView(searchResult.cause)) {
+      // Review M-3: an index, but no default view the role can use (Search 401). Treated
+      // as not indexed, with its own warning: no Resource Explorer outcome, no reconcile.
+      console.warn(
+        `⚠️  [Discovery] Resource Explorer in ${region} has no default view the role can use (Search refused, 401): ` +
+          `the generic types were not listed or reconciled in this region`
+      );
+      ctx.warnings.push(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW);
+      return { outcome: null, terminated };
+    }
     // How the search fared, for the region's scan status only (M5b). Nothing below
     // reads it: the reconcile still follows searchResult.
     const outcome: RegionSourceOutcome = {

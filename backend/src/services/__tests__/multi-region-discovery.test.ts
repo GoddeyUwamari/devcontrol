@@ -499,6 +499,49 @@ describe('Resource Explorer (A4, A5)', () => {
     expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['resource_explorer_no_index'], regions: [HOME] });
   }, 30_000);
 
+  /** An active index, but Search refused with 401: the region has no default view the role can use (review M-3). */
+  const noView = {
+    SearchCommand: () => {
+      throw Object.assign(new Error('placeholder unauthorized'), { name: 'UnauthorizedException', $metadata: { httpStatusCode: 401 } });
+    },
+  };
+
+  it('M-3 flag on: a Search 401 (no default view) is not a region failure: the warning, an ok status, own listings ran, nothing reconciled; the job completes', async () => {
+    const orgId = await insertOrg();
+    await seedResource(orgId, queueArn(EU), 'sqs', EU);
+    const { log } = mockAws({ [EU]: { explorer: noView } });
+    await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    for (const command of ['DescribeInstancesCommand', 'DescribeVolumesCommand', 'DescribeDBInstancesCommand', 'ListFunctionsCommand', 'DescribeLoadBalancersCommand']) {
+      expect(log.filter((call) => call.region === EU && call.command === command)).toHaveLength(1);
+    }
+    expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['resource_explorer_no_view'], regions: SCAN_ORDER });
+    expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
+    expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ outcome: 'ok', reason: null });
+  }, 60_000);
+
+  it('M-3 flag off: a home Search 401 (no default view) no longer fails the job: the warning, an ok status, own listings ran', async () => {
+    const orgId = await insertOrg({ flag: false });
+    await seedResource(orgId, queueArn(HOME), 'sqs', HOME);
+    const { log } = mockAws({ [HOME]: { explorer: noView } });
+    const result = await service().discoverAllResources(orgId);
+    expect(log.filter((call) => call.command === 'DescribeInstancesCommand')).toHaveLength(1);
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['resource_explorer_no_view'], regions: [HOME] });
+    expect(result.errors).toEqual([]);
+    expect(await resource(orgId, queueArn(HOME))).toMatchObject({ status: 'active', missing_scan_count: 0 });
+  }, 30_000);
+
+  it('M-3: only a 401 is "no view"; an AccessDenied Search is still the source\'s failure (flag off: the job fails as before)', async () => {
+    const orgId = await insertOrg({ flag: false });
+    mockAws({ [HOME]: { explorer: { SearchCommand: () => { throw accessDenied(); } } } });
+    await service().discoverAllResources(orgId);
+    const latest = await job(orgId);
+    expect(latest.status).toBe('failed');
+    expect(latest.error_message).toMatch(/^Resource Explorer: /);
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'denied' });
+  }, 30_000);
+
   it('flag on and off: every Search follows a GetIndex in the same region', async () => {
     for (const flag of [true, false]) {
       const orgId = await insertOrg({ flag });
