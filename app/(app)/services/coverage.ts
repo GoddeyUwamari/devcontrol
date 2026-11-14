@@ -25,6 +25,25 @@ export const DISCOVERY_WARNING_LISTING_TRUNCATED = 'discovery_listing_truncated'
 
 export const LISTING_TRUNCATED_TEXT = 'Some resource listings were cut off, so removed resources may still be listed until the next full scan.'
 
+/**
+ * The scan made no Resource Explorer search in a region: it has no index
+ * (resource_explorer_no_index), or no default view the role can use
+ * (resource_explorer_no_view). Backend: discovery-warnings.ts (multi-region PR 1).
+ */
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX = 'resource_explorer_no_index'
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW = 'resource_explorer_no_view'
+const RESOURCE_EXPLORER_OFF_WARNINGS = [DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX, DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW]
+
+/** Founder-approved copy (Nov 14) for resource_explorer_no_index; `region` is the home region. */
+export function resourceExplorerOffText(region: string): string {
+  return `Resource Explorer isn't turned on in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed. Everything else was checked.`
+}
+
+/** Founder-approved copy (Nov 14) for resource_explorer_no_view; `region` is the home region. */
+export function resourceExplorerNoViewText(region: string): string {
+  return `Resource Explorer has no default view in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed. Everything else was checked.`
+}
+
 const KNOWN_WARNINGS = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED]
 
 /**
@@ -127,17 +146,28 @@ export const UNKNOWN_WARNING_TEXT = 'The last scan reported a warning that this 
  * The strip's notes from the last scan's warnings (persisted, so they show on
  * every visit) plus warnings from a discovery run in this tab. Known codes have
  * their own copy; any other code gets one generic line.
+ *
+ * `homeRegion`: the account's home region, which the Resource Explorer sentence
+ * names. Without it those two codes are not described, and get the generic line.
  */
-export function warningNotes(persisted: readonly string[], inTab: readonly string[]): CoverageNote[] {
+export function warningNotes(persisted: readonly string[], inTab: readonly string[], homeRegion?: string | null): CoverageNote[] {
   const codes = new Set(shownWarnings([...persisted, ...inTab]))
   const notes: CoverageNote[] = []
+  const known = homeRegion ? [...KNOWN_WARNINGS, ...RESOURCE_EXPLORER_OFF_WARNINGS] : KNOWN_WARNINGS
   if (codes.has(DISCOVERY_WARNING_TRUNCATED_INDEX)) {
     notes.push({ key: 'deletion-paused', tone: 'warn', body: DELETION_DETECTION_PAUSED_TEXT })
   }
   if (codes.has(DISCOVERY_WARNING_LISTING_TRUNCATED)) {
     notes.push({ key: 'listing-truncated', tone: 'warn', body: LISTING_TRUNCATED_TEXT })
   }
-  if ([...codes].some((code) => !KNOWN_WARNINGS.includes(code))) {
+  // Each Resource Explorer code its own sentence (both, when a scan reported both).
+  if (homeRegion && codes.has(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX)) {
+    notes.push({ key: 'resource-explorer-off', tone: 'warn', body: resourceExplorerOffText(homeRegion) })
+  }
+  if (homeRegion && codes.has(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW)) {
+    notes.push({ key: 'resource-explorer-no-view', tone: 'warn', body: resourceExplorerNoViewText(homeRegion) })
+  }
+  if ([...codes].some((code) => !known.includes(code))) {
     notes.push({ key: 'unknown-warning', tone: 'warn', body: UNKNOWN_WARNING_TEXT })
   }
   return notes
@@ -220,7 +250,7 @@ export function describeCoverage(coverage: ServicesCoverage, now: number, inTabW
     lastScan,
     lastScanFailed: lastFailed,
     chips,
-    notes: [{ key: 'home-only', tone: 'info', ...HOME_REGION_ONLY_NOTE }, ...warningNotes(warnings, inTabWarnings)],
+    notes: [{ key: 'home-only', tone: 'info', ...HOME_REGION_ONLY_NOTE }, ...warningNotes(warnings, inTabWarnings, home.region)],
   }
 }
 

@@ -76,13 +76,33 @@ import {
   MAX_LIST_FUNCTIONS_PAGES,
   listAllPages,
   mapWithConcurrency,
+  mapWithDynamicConcurrency,
   withCallPolicyOnClients,
 } from '../utils/awsCallPolicy';
 import { SourceOutcome, authorizesCleanup, failedSourceStatus } from './source-outcome';
 import { LeaseLossReason, LeaseLostError, isLeaseLost, linkScanLeaseJob } from './scan-lease';
 import { describeAccountRegions } from './region-list';
-import { recordHomeRegionScanStatus, recordRegionList } from '../repositories/multi-region-foundation.repository';
-import { RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
+import {
+  MULTI_REGION_DISCOVERY_FLAG,
+  isOrganizationFeatureEnabled,
+  listScanRegions,
+  recordHomeRegionScanStatus,
+  recordRegionList,
+  recordRegionScanStatus,
+} from '../repositories/multi-region-foundation.repository';
+import { HomeRegionScanResult, RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
+import {
+  RegionRun,
+  RegionSourceOutcome,
+  SCAN_BUDGET_RESULT,
+  classifyRegionFailure,
+  isRegionDeadline,
+  notStartedLogLine,
+  regionFailed,
+  regionScanResult,
+  runRegionPool,
+} from './region-run';
+import { REGION_DEADLINE_MS, SCAN_BUDGET_MS, discoveryConcurrency } from '../config/discovery-concurrency';
 import {
   SAVED_SCAN_SOURCES,
   logChecksWriteFailure,
@@ -104,6 +124,7 @@ import {
   isScanAlreadyRunning,
   leaseTargetFor,
   leaseTargetOf,
+  onTaggedConnection,
   openScanSession,
   scanLeaseState,
   sleep,
@@ -143,7 +164,7 @@ import { addReconcileCounts, summarizeDetectors } from './cost-analysis-outcome'
 import { AccountSecurityFindingsRepository, AccountFindingCategory } from '../repositories/account-security-findings.repository';
 import { securityAuditService } from './securityAudit.service';
 import { PoolClient } from 'pg';
-import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry } from './resourceExplorer.service';
+import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry, SearchResult, isNoDefaultView } from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
 import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
@@ -154,6 +175,10 @@ import { describeAuroraClusters } from './aurora-cluster.util';
 import {
   DISCOVERY_WARNING_CONNECTION_CHANGED,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
+  DISCOVERY_WARNING_REGION_INCOMPLETE,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
+  DISCOVERY_WARNING_SCAN_BUDGET,
   DISCOVERY_WARNING_SCAN_LEASE_LOST,
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DiscoveryWarning,
@@ -236,6 +261,74 @@ const UNFENCED: Fenced = (fn) => fn();
 /** Resource upserts per fenced transaction (plan §5.1 F5): bounded, so no transaction holds its fence long. */
 export const UPSERT_BATCH_SIZE = 200;
 
+/** The own listings made in one region's endpoint (the rest are global: S3, CloudFront, IAM). */
+type RegionalType = 'ec2' | 'ebs' | 'rds' | 'lambda' | 'load-balancer';
+const REGIONAL_TYPES: RegionalType[] = ['ec2', 'ebs', 'rds', 'lambda', 'load-balancer'];
+/**
+ * The home region's listings whose errors a multi-region scan still writes into the
+ * job's error text (R1): the types the Operational Health readiness gate checks
+ * (observability-readiness.service.ts TYPE_ERROR_PREFIX).
+ */
+const HOME_READINESS_PREFIXES = ['EC2: ', 'RDS: '];
+
+/** Each regional listing's log label and error prefix (the job's error text, unchanged from before PR 1). */
+const REGIONAL_LISTINGS: Record<RegionalType, { label: string; prefix: string }> = {
+  ec2: { label: 'EC2 instances', prefix: 'EC2' },
+  ebs: { label: 'EBS volumes', prefix: 'EBS' },
+  rds: { label: 'RDS databases', prefix: 'RDS' },
+  lambda: { label: 'Lambda functions', prefix: 'Lambda' },
+  'load-balancer': { label: 'Load Balancers', prefix: 'Load Balancer' },
+};
+
+/**
+ * One region's inventory (multi-region PR 1): what its listings, Resource Explorer
+ * search and reconciles need, and where their results go. The scan without the
+ * multi-region flag uses one, for the home region, with the scan's own connection
+ * and the job's own error list; a multi-region scan uses one per region, each with
+ * its own connection, its RegionRun (deadline, breaker, counts) and its own error
+ * list (a region's failure is the region's, never the job's: MR-D6).
+ */
+interface RegionInventory {
+  organizationId: string;
+  region: string;
+  clients: AWSClients;
+  client: PoolClient;
+  fenced: Fenced;
+  scan: LeaseSession;
+  connection: string;
+  tier: SubscriptionTier;
+  allowedTypes: ResourceType[];
+  totals: { created: number; updated: number };
+  errors: string[];
+  warnings: DiscoveryWarning[];
+  outcomes: Record<RegionalType, RegionSourceOutcome>;
+  /** EC2, RDS, Lambda and load-balancer ARNs this region's own listings returned (the presence union, M4 Q6). */
+  ownListedArns: Set<string>;
+  ebsArnsFound: Set<string>;
+  checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>;
+  /** Set in a multi-region scan only. */
+  run?: RegionRun;
+}
+
+/** How one region of a multi-region scan ended. */
+interface RegionScanRecord {
+  region: string;
+  result: HomeRegionScanResult | null;
+  outcomes: RegionSourceOutcome[];
+}
+
+/** Region pool, deadlines and clock of a multi-region scan; tests shorten them. */
+export interface MultiRegionTiming {
+  regionPool: number;
+  regionDeadlineMs: number;
+  scanBudgetMs: number;
+  now: () => number;
+}
+
+function regionalOutcomes(): Record<RegionalType, RegionSourceOutcome> {
+  return Object.fromEntries(REGIONAL_TYPES.map((type) => [type, { source: type, status: 'skipped_tier' }])) as Record<RegionalType, RegionSourceOutcome>;
+}
+
 /**
  * A lost lease, or a second eligible AWS account seen by a fence, stops the scan:
  * a step's own catch passes it on instead of recording it as that step's error.
@@ -253,6 +346,14 @@ export class AWSResourceDiscoveryService {
   // How the scan lease is renewed and how a manual Sync waits for a running scan
   // (scan-session.ts). The defaults are production's; tests shorten them.
   private leaseTiming: LeaseTiming = {};
+  // A multi-region scan's region pool, deadlines and clock (config/discovery-concurrency.ts).
+  // The defaults are production's; tests shorten them.
+  private multiRegionTiming: MultiRegionTiming = {
+    regionPool: discoveryConcurrency().regionPool,
+    regionDeadlineMs: REGION_DEADLINE_MS,
+    scanBudgetMs: SCAN_BUDGET_MS,
+    now: Date.now,
+  };
 
   constructor(private pool: Pool) {}
 
@@ -270,6 +371,527 @@ export class AWSResourceDiscoveryService {
     return (listing) => {
       if (!listing.complete) outcome.status = 'truncated';
     };
+  }
+
+  /**
+   * Whether this organization's scans cover every enabled region (multi-region PR 1):
+   * organization_feature_flags.multi_region_discovery, OFF unless a row turns it on.
+   * A flag that cannot be read is OFF (logged once): the scan then runs exactly as
+   * it did before PR 1.
+   */
+  private async multiRegionEnabled(client: PoolClient, organizationId: string): Promise<boolean> {
+    try {
+      return await isOrganizationFeatureEnabled(client, organizationId, MULTI_REGION_DISCOVERY_FLAG);
+    } catch (error: unknown) {
+      console.warn(
+        `⚠️  [Discovery] multi_region_flag_unreadable: org ${organizationId} (${error instanceof Error ? error.name : 'unknown error'}); the home region is scanned as before`
+      );
+      return false;
+    }
+  }
+
+  /**
+   * The regions a multi-region scan scans, home first, then the others by name: the
+   * enabled regions of the account's latest stored region list
+   * (listScanRegions; never a static list, never a region the account has not
+   * enabled). No stored list, or one that cannot be read: the home region only
+   * (Step 1 R-D1), logged once.
+   */
+  private async regionsToScan(client: PoolClient, scanContext: ScanContext): Promise<string[]> {
+    const home = scanContext.region;
+    let listed: string[] = [];
+    try {
+      listed = await listScanRegions(client, scanContext.organizationId, scanContext.awsAccountId);
+    } catch (error: unknown) {
+      console.warn(
+        `⚠️  [Discovery] region_list_unreadable: org ${scanContext.organizationId} (${error instanceof Error ? error.name : 'unknown error'}); scanning the home region only`
+      );
+    }
+    if (listed.length === 0) {
+      console.warn(`⚠️  [Discovery] region_list_unknown: org ${scanContext.organizationId} has no stored region list; scanning the home region only`);
+    }
+    return [home, ...listed.filter((region) => region !== home)];
+  }
+
+  /**
+   * Runs the regional listings of `types` in that order for `ctx`'s region. A type
+   * the organization's tier does not include is skipped, and logged and added to
+   * `skippedTypes` when it is given (once per scan, not once per region).
+   */
+  private async listRegionTypes(ctx: RegionInventory, types: readonly RegionalType[], skippedTypes: string[] | null): Promise<void> {
+    for (const type of types) {
+      if (!this.isResourceTypeAllowed(type, ctx.allowedTypes)) {
+        if (skippedTypes) {
+          console.log(`⏭️  [Discovery] Skipping ${REGIONAL_LISTINGS[type].label} (not available in ${ctx.tier} tier)`);
+          skippedTypes.push(type);
+        }
+        continue;
+      }
+      await this.runRegionalListing(ctx, type);
+    }
+  }
+
+  /**
+   * One regional listing: list, then upsert what it read in fenced batches. A failed
+   * listing is recorded on its source outcome and in `ctx.errors`; a lost lease or an
+   * ambiguous account stops the scan. In a multi-region scan the region's deadline is
+   * checked before the listing and again before its upsert (a listing that ran past
+   * it stores nothing), and a failure is classified with its reason code
+   * (region-run.ts) and logged by error name only.
+   */
+  private async runRegionalListing(ctx: RegionInventory, type: RegionalType): Promise<void> {
+    const { label, prefix } = REGIONAL_LISTINGS[type];
+    const { client, fenced } = ctx;
+    const outcome = ctx.outcomes[type];
+    console.log(`🔎 [Discovery] Discovering ${label}...`);
+    try {
+      ctx.scan.checkpoint();
+      ctx.run?.checkDeadline();
+      if (ctx.run) ctx.run.listings++;
+      outcome.status = 'complete';
+      const resources = await this.listRegional(ctx, type, this.observeListing(outcome));
+      ctx.run?.checkDeadline();
+      const listed = type === 'ebs' ? ctx.ebsArnsFound : ctx.ownListedArns;
+      for (const resource of resources) listed.add(resource.resource_arn);
+      await this.upsertFenced(fenced, resources, (resource) => this.upsertResource(client, resource), ctx.totals);
+      console.log(`✅ [Discovery] Found ${resources.length} ${label}`);
+    } catch (error: any) {
+      abortIfLeaseLost(error);
+      if (ctx.run) {
+        const failure = classifyRegionFailure(error);
+        outcome.status = failure.status;
+        outcome.reason = failure.reason;
+        console.error(`❌ [Discovery] ${prefix} discovery failed in ${ctx.region} (${failure.reason}, ${error?.name ?? 'Error'})`);
+      } else {
+        outcome.status = failedSourceStatus(error);
+        console.error(`❌ [Discovery] ${prefix} discovery failed:`, error.message);
+      }
+      ctx.errors.push(`${prefix}: ${error.message}`);
+    }
+  }
+
+  private listRegional(ctx: RegionInventory, type: RegionalType, observe: ListingObserver): Promise<CreateAWSResourceInput[]> {
+    const { clients, organizationId, region } = ctx;
+    // A multi-region scan's per-resource work follows the region's throttle breaker.
+    const concurrency = ctx.run?.concurrency;
+    switch (type) {
+      case 'ec2':
+        return this.discoverEC2Instances(organizationId, clients.ec2!, region, clients.accountId, ctx.checkBackupEvidence, observe, concurrency);
+      case 'ebs':
+        return this.discoverEBSVolumes(organizationId, clients.ec2!, region, clients.accountId, ctx.checkBackupEvidence, observe, concurrency);
+      case 'rds':
+        return this.discoverRDSDatabases(organizationId, clients.rds!, region, observe);
+      case 'lambda':
+        return this.discoverLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, region, observe, ctx.connection);
+      case 'load-balancer':
+        return this.discoverLoadBalancers(organizationId, clients.elb, region, observe);
+    }
+  }
+
+  /**
+   * Generic resource inventory via AWS Resource Explorer (Phase 2B), in `ctx`'s
+   * region: replaces the old Describe*-based discovery for every type that isn't
+   * deep-monitored and doesn't have its own dedicated discovery (ecs, vpc, eks,
+   * dynamodb, api-gateway, elasticache, aurora, sqs, sns). S3 and CloudFront are
+   * deliberately excluded -- see their own discovery blocks. A single Search call both
+   * populates these generic rows AND supplies the presence signal that reconciliation
+   * uses to conservatively terminate stale rows for every type it's a valid signal for
+   * (RE_RECONCILED_TYPES) -- see resourceReconciliation.service.ts for why a failed
+   * Search must never advance any resource's missing_scan_count.
+   *
+   * Multi-region PR 1, with the flag on and off (founder decision Nov 14):
+   *   - GetIndex first (A5). No active index: no Search (a Search could create an
+   *     index in the customer's account), the warning resource_explorer_no_index, and
+   *     no Resource Explorer outcome (the source is not counted in the region's
+   *     status). A failed GetIndex fails the source as a failed Search does.
+   *   - Only the region's own results are kept (A4, ResourceExplorerService.normalize),
+   *     so they are reconciled in their own region, and only when that region's
+   *     search was complete.
+   *
+   * Returns the source's outcome (null: not searched, no index) and how many
+   * resources its reconcile terminated.
+   */
+  private async inventoryResourceExplorer(
+    ctx: RegionInventory,
+    allowedGenericTypes: ResourceType[]
+  ): Promise<{ outcome: RegionSourceOutcome | null; terminated: number }> {
+    const { clients, client, fenced, organizationId, region } = ctx;
+    let terminated = 0;
+    console.log(`🔎 [Discovery] Searching AWS Resource Explorer for generic inventory + reconciliation...`);
+    ctx.scan.checkpoint();
+    ctx.run?.checkDeadline();
+    if (ctx.run) ctx.run.listings++;
+
+    const index = await this.resourceExplorer.indexState(clients.resourceExplorer);
+    if (index.state === 'not_indexed') {
+      console.warn(
+        `⚠️  [Discovery] Resource Explorer has no active index in ${region}: no search was made there and nothing was created; ` +
+          `the generic types were not listed or reconciled in this region`
+      );
+      ctx.warnings.push(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX);
+      return { outcome: null, terminated };
+    }
+    const searchResult: SearchResult =
+      index.state === 'failed'
+        ? {
+            success: false,
+            error: (index.error as { message?: string } | undefined)?.message || 'Unknown Resource Explorer error',
+            status: index.status,
+            cause: index.error,
+          }
+        : await this.resourceExplorer.search(clients.resourceExplorer, region);
+    if (!searchResult.success && index.state === 'indexed' && isNoDefaultView(searchResult.cause)) {
+      // Review M-3: an index, but no default view the role can use (Search 401). Treated
+      // as not indexed, with its own warning: no Resource Explorer outcome, no reconcile.
+      console.warn(
+        `⚠️  [Discovery] Resource Explorer in ${region} has no default view the role can use (Search refused, 401): ` +
+          `the generic types were not listed or reconciled in this region`
+      );
+      ctx.warnings.push(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW);
+      return { outcome: null, terminated };
+    }
+    // How the search fared, for the region's scan status only (M5b). Nothing below
+    // reads it: the reconcile still follows searchResult.
+    const outcome: RegionSourceOutcome = {
+      source: RESOURCE_EXPLORER_SOURCE,
+      // An AccessDenied is 'denied' (AWS connect PR D1, refused sources); any other failure 'failed'.
+      status: !searchResult.success ? searchResult.status ?? 'failed' : searchResult.complete ? 'complete' : 'truncated',
+    };
+    if (!searchResult.success && ctx.run) {
+      const failure = classifyRegionFailure(searchResult.cause);
+      outcome.status = failure.status;
+      outcome.reason = failure.reason;
+    }
+
+    if (searchResult.success) {
+      const { allArns, genericEntries } = this.resourceExplorer.normalize(searchResult.resources, region);
+      const allowedEntries = genericEntries.filter((e) => allowedGenericTypes.includes(e.resourceType));
+
+      try {
+        await this.upsertFenced(fenced, allowedEntries, (entry) => this.upsertGenericResource(client, organizationId, entry), ctx.totals);
+        console.log(`✅ [Discovery] Found ${allowedEntries.length} generic resources via Resource Explorer (${searchResult.resources.length} total indexed)`);
+      } catch (error: any) {
+        abortIfLeaseLost(error);
+        // What the search read was not stored: the region was not inventoried
+        // (m5-plan.md §13, Q-E). The status only; the job and the reconcile are unchanged.
+        outcome.status = 'failed';
+        if (ctx.run) outcome.reason = classifyRegionFailure(error).reason;
+        console.error(`❌ [Discovery] Resource Explorer generic upsert failed:`, ctx.run ? error?.name : error.message);
+        ctx.errors.push(`Resource Explorer inventory: ${error.message}`);
+      }
+
+      try {
+        const dynamoDbEntries = allowedEntries.filter((e) => e.resourceType === 'dynamodb');
+        if (dynamoDbEntries.length > 0) {
+          const enrichedCount = await this.enrichDynamoDBTables(organizationId, client, clients, dynamoDbEntries, fenced);
+          console.log(`✅ [Discovery] Enriched ${enrichedCount} of ${dynamoDbEntries.length} DynamoDB table(s) with real configuration`);
+        }
+      } catch (error: any) {
+        abortIfLeaseLost(error);
+        console.error(`❌ [Discovery] DynamoDB enrichment failed:`, ctx.run ? error?.name : error.message);
+        ctx.errors.push(`DynamoDB enrichment: ${error.message}`);
+      }
+
+      try {
+        const auroraEntries = allowedEntries.filter((e) => e.resourceType === 'aurora');
+        if (auroraEntries.length > 0) {
+          const { confirmed, reclassified } = await this.enrichAuroraClusters(organizationId, client, clients.rds!, auroraEntries, fenced);
+          console.log(`✅ [Discovery] Confirmed ${confirmed} Aurora cluster(s), reclassified ${reclassified} non-Aurora DB cluster(s) out of 'aurora'`);
+        }
+      } catch (error: any) {
+        abortIfLeaseLost(error);
+        console.error(`❌ [Discovery] Aurora cluster enrichment failed:`, ctx.run ? error?.name : error.message);
+        ctx.errors.push(`Aurora cluster enrichment: ${error.message}`);
+      }
+
+      if (!searchResult.complete) {
+        // The search may have been cut off (see SearchResult): the resources it did return
+        // are real and were upserted above, but a resource missing from it may simply be
+        // past the cut-off. No row's missing_scan_count moves this cycle. A large account
+        // always lands here, so it is a warning, not a failure: the inventory still refreshed.
+        console.warn(
+          `⚠️  [Discovery] Resource Explorer search may be truncated (${searchResult.resources.length} results), reconciliation skipped`
+        );
+        ctx.warnings.push(DISCOVERY_WARNING_TRUNCATED_INDEX);
+      } else if (ctx.run?.deadlineHit) {
+        // The region ran past its deadline (A2): nothing in it is reconciled.
+        console.warn(`⚠️  [Discovery] ${region} ran past its deadline; Resource Explorer reconciliation skipped`);
+      } else {
+        try {
+          const presentArns = new Set([...allArns, ...ctx.ownListedArns]);
+          // F1: reset and increment in one fenced transaction.
+          const reconciliation = await fenced(() =>
+            this.reconciliation.reconcile(client, organizationId, region, presentArns, RE_RECONCILED_TYPES)
+          );
+          console.log(
+            `✅ [Discovery] Reconciliation complete (${reconciliation.resetCount} confirmed present, ` +
+            `${reconciliation.incrementedCount} absent this scan, ${reconciliation.terminatedArns.length} newly terminated)`
+          );
+          terminated += reconciliation.terminatedArns.length;
+        } catch (error: any) {
+          abortIfLeaseLost(error);
+          console.error(`❌ [Discovery] Reconciliation failed:`, ctx.run ? error?.name : error.message);
+          ctx.errors.push(`Reconciliation: ${error.message}`);
+        }
+      }
+    } else {
+      // GetIndex or Search failed (throttling, permission error, etc.) -- this is "no data
+      // this cycle", not "everything is gone". Skip both the generic upsert and
+      // reconciliation entirely; every aws_resources row keeps its last-known-good state.
+      console.error(
+        `❌ [Discovery] Resource Explorer search failed, skipping generic inventory + reconciliation:`,
+        ctx.run ? `${region} (${outcome.reason})` : searchResult.error
+      );
+      ctx.errors.push(`Resource Explorer: ${searchResult.error}`);
+    }
+    return { outcome, terminated };
+  }
+
+  /**
+   * EBS volumes' own reconcile() in `ctx`'s region (F4), only when the region's EBS
+   * listing was complete, and in a multi-region scan only when the region did not run
+   * past its deadline. Returns how many it terminated.
+   */
+  private async reconcileEbs(ctx: RegionInventory): Promise<number> {
+    if (!authorizesCleanup(ctx.outcomes.ebs) || ctx.run?.deadlineHit) return 0;
+    const { client, fenced } = ctx;
+    try {
+      // F4.
+      const ebsReconciliation = await fenced(() =>
+        this.reconciliation.reconcile(client, ctx.organizationId, ctx.region, ctx.ebsArnsFound, ['ebs'])
+      );
+      console.log(
+        `✅ [Discovery] EBS reconciliation complete (${ebsReconciliation.resetCount} confirmed present, ` +
+        `${ebsReconciliation.incrementedCount} absent this scan, ${ebsReconciliation.terminatedArns.length} newly terminated)`
+      );
+      return ebsReconciliation.terminatedArns.length;
+    } catch (error: any) {
+      abortIfLeaseLost(error);
+      console.error(`❌ [Discovery] EBS reconciliation failed:`, ctx.run ? error?.name : error.message);
+      ctx.errors.push(`EBS reconciliation: ${error.message}`);
+      return 0;
+    }
+  }
+
+  /**
+   * The regional part of a multi-region scan (MR-D1): every region in `regions` (home
+   * first) through a bounded pool (A1), each on its own database connection, with its
+   * own deadline, throttle breaker and error list.
+   *
+   * Per region: a fence probe at its boundary (A6: a lost lease or a changed AWS
+   * connection stops the scan before the region starts); its five own listings; its
+   * Resource Explorer search (GetIndex-gated, its own results only); its Resource
+   * Explorer and EBS reconciles, unless it ran past its deadline; then its status,
+   * written once (recordRegionScanStatus) and one structured log line (A7).
+   *
+   * Once the scan budget has run out no region is started: every region not yet
+   * started gets status timed_out with code scan_budget (A2), nothing in it is listed
+   * or reconciled, and its earlier resources stay as they were.
+   */
+  private async scanRegions(args: {
+    client: PoolClient;
+    scan: LeaseSession;
+    scanContext: ScanContext;
+    jobId: string;
+    organizationId: string;
+    tier: SubscriptionTier;
+    allowedTypes: ResourceType[];
+    allowedGenericTypes: ResourceType[];
+    regions: string[];
+    totals: { created: number; updated: number };
+    warnings: DiscoveryWarning[];
+    scanStartedAt: number;
+  }): Promise<{ records: RegionScanRecord[]; notStarted: string[]; terminated: number; homeReadinessErrors: string[] }> {
+    const { scan, scanContext, organizationId, jobId } = args;
+    const timing = this.multiRegionTiming;
+    const records: RegionScanRecord[] = [];
+    const notStarted: string[] = [];
+    let terminated = 0;
+    // R1 (founder decision Nov 14): the home region's own EC2 and RDS listing errors,
+    // for the job's error text, which the Operational Health readiness gate reads.
+    let homeReadinessErrors: string[] = [];
+
+    const scanOneRegion = (region: string) =>
+      onTaggedConnection(this.pool, organizationId, (regionClient) =>
+        requestContext.run(regionClient, async () => {
+          scan.checkpoint();
+          // A6: the fence probe at the region boundary.
+          await scan.fenced(regionClient, async () => undefined);
+          const run = new RegionRun(region, { deadlineMs: timing.regionDeadlineMs, resourcePool: this.callPolicy.concurrency, now: timing.now });
+          let result: HomeRegionScanResult | null;
+          let outcomes: RegionSourceOutcome[] = [];
+          try {
+            const clients = withCallPolicyOnClients(scanContext.clientsFor(region), run.policy(this.callPolicy));
+            const ctx: RegionInventory = {
+              organizationId,
+              region,
+              clients,
+              client: regionClient,
+              fenced: (fn) => scan.fenced(regionClient, fn),
+              scan,
+              connection: scanContext.connectionIdentity,
+              tier: args.tier,
+              allowedTypes: args.allowedTypes,
+              totals: args.totals,
+              errors: [],
+              warnings: args.warnings,
+              outcomes: regionalOutcomes(),
+              ownListedArns: new Set<string>(),
+              ebsArnsFound: new Set<string>(),
+              checkBackupEvidence: createAwsBackupEvidenceCache(clients.backup!),
+              run,
+            };
+            await this.listRegionTypes(ctx, REGIONAL_TYPES, null);
+            if (region === scanContext.region) {
+              homeReadinessErrors = ctx.errors.filter((message) => HOME_READINESS_PREFIXES.some((prefix) => message.startsWith(prefix)));
+            }
+            let explorerOutcome: RegionSourceOutcome | null = null;
+            try {
+              const explored = await this.inventoryResourceExplorer(ctx, args.allowedGenericTypes);
+              explorerOutcome = explored.outcome;
+              terminated += explored.terminated;
+            } catch (error: unknown) {
+              // The deadline passed before the search started: the region's status says so.
+              if (!isRegionDeadline(error)) throw error;
+            }
+            // Awaited first, then added (review L-1): `terminated += await ...` reads the
+            // total before the await and would lose another region's additions made meanwhile.
+            const ebsTerminated = await this.reconcileEbs(ctx);
+            terminated += ebsTerminated;
+            outcomes = [...REGIONAL_TYPES.map((type) => ctx.outcomes[type]), ...(explorerOutcome ? [explorerOutcome] : [])];
+            if (outcomes.some((o) => o.status === 'truncated' && o.source !== RESOURCE_EXPLORER_SOURCE)) {
+              args.warnings.push(DISCOVERY_WARNING_LISTING_TRUNCATED);
+            }
+            result = regionScanResult(outcomes, run.deadlineHit);
+          } catch (error: unknown) {
+            abortIfLeaseLost(error);
+            // Anything else that escaped the region's own steps is the region's failure only.
+            console.error(`❌ [Discovery] Region ${region} could not be scanned (${error instanceof Error ? error.name : 'unknown error'})`);
+            result = run.deadlineHit ? regionScanResult([], true) : { status: 'failed', errorCode: classifyRegionFailure(error).reason };
+          } finally {
+            run.stop();
+          }
+          await this.recordRegionStatus(regionClient, scan, jobId, region, organizationId, result);
+          console.log(run.logLine(organizationId, result));
+          records.push({ region, result, outcomes });
+        })
+      );
+
+    await runRegionPool(
+      args.regions,
+      timing.regionPool,
+      scanOneRegion,
+      () => timing.now() - args.scanStartedAt >= timing.scanBudgetMs,
+      (region) => notStarted.push(region)
+    );
+
+    // A2: the regions the scan budget left unstarted, each with its own status.
+    for (const region of notStarted) {
+      await this.recordRegionStatus(args.client, scan, jobId, region, organizationId, SCAN_BUDGET_RESULT);
+      console.log(notStartedLogLine(organizationId, region));
+    }
+    if (notStarted.length > 0) {
+      console.warn(`⚠️  [Discovery] scan_budget: org ${organizationId}: ${notStarted.length} region(s) not started; their earlier results are kept`);
+      args.warnings.push(DISCOVERY_WARNING_SCAN_BUDGET);
+    }
+
+    const order = new Map(args.regions.map((region, index) => [region, index]));
+    records.sort((a, b) => (order.get(a.region) ?? 0) - (order.get(b.region) ?? 0));
+    return { records, notStarted, terminated, homeReadinessErrors };
+  }
+
+  /**
+   * One region's status in a multi-region scan, in one fenced write (A6), on the
+   * connection given. Fail-soft as the home region's (recordHomeRegionStatus): a
+   * failed write is logged (organization id, region and error type only) and the scan
+   * goes on; a lost lease or an ambiguous account still stops it.
+   */
+  private async recordRegionStatus(
+    client: PoolClient,
+    scan: LeaseSession,
+    jobId: string,
+    region: string,
+    organizationId: string,
+    result: HomeRegionScanResult | null
+  ): Promise<void> {
+    if (!result) return;
+    let written: number;
+    try {
+      scan.checkpoint();
+      written = await scan.watch(() => recordRegionScanStatus(client, scan.lease, { region, jobId, result }));
+    } catch (error: unknown) {
+      abortIfLeaseLost(error);
+      console.warn(
+        `⚠️  [Discovery] region_status_write_failed: org ${organizationId} region ${region} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
+      );
+      return;
+    }
+    if (written === 0) {
+      console.warn(`⚠️  [Discovery] region_status_not_recorded: org ${organizationId} region ${region} (no row, or a newer scan's status); the scan continues`);
+    }
+  }
+
+  /**
+   * Security groups of every region a multi-region scan started, then IAM once
+   * (global). Each region's networking findings are upserted, and resolved in that
+   * region only when its security-group scan was complete; findings with no region are
+   * resolved once, with the home region (MR-D9 leaves IAM as it was). A region's
+   * security-group failure is the region's: logged, never a job error (MR-D6).
+   */
+  private async multiRegionSecurityScan(args: {
+    organizationId: string;
+    scan: LeaseSession;
+    scanContext: ScanContext;
+    homeClients: AWSClients;
+    regions: string[];
+    errors: string[];
+  }): Promise<{ networkingComplete: boolean; iamComplete: boolean; active: number; resolved: number }> {
+    const { organizationId, scan, scanContext, homeClients } = args;
+    const scanner = new ComplianceScannerService();
+    const findingsRepo = new AccountSecurityFindingsRepository();
+    let networkingComplete = true;
+    let active = 0;
+    let resolved = 0;
+
+    for (const region of args.regions) {
+      scan.checkpoint();
+      const regionStartedAt = new Date();
+      const ec2 = region === scanContext.region ? homeClients.ec2! : withCallPolicyOnClients(scanContext.clientsFor(region), this.callPolicy).ec2!;
+      const observation = await scanner.checkSecurityGroups(ec2, region, homeClients.accountId).catch((error: any) => {
+        console.error(`❌ [Discovery] Security group scan failed in ${region} (${error?.name ?? 'Error'})`);
+        return { category: 'networking' as const, complete: false, issues: [] };
+      });
+      networkingComplete &&= observation.complete;
+      const findings = AccountSecurityFindingsRepository.fromComplianceIssues(observation.issues, region);
+      scan.checkpoint();
+      const counts = await scan.watch(() =>
+        findingsRepo.reconcileScan(organizationId, regionStartedAt, findings, observation.complete ? ['networking'] : [], region, scan.lease, {
+          unregioned: region === scanContext.region,
+        })
+      );
+      active += counts.active;
+      resolved += counts.resolved;
+    }
+
+    const iamStartedAt = new Date();
+    const iamObservation = await scanner.checkIAMSecurity(homeClients.iam!).catch((error: any) => {
+      console.error(`❌ [Discovery] IAM security scan failed:`, error.message);
+      args.errors.push(`IAM security scan: ${error.message}`);
+      return { category: 'iam' as const, complete: false, issues: [] };
+    });
+    scan.checkpoint();
+    const iamCounts = await scan.watch(() =>
+      findingsRepo.reconcileScan(
+        organizationId,
+        iamStartedAt,
+        AccountSecurityFindingsRepository.fromComplianceIssues(iamObservation.issues, scanContext.region),
+        iamObservation.complete ? ['iam'] : [],
+        scanContext.region,
+        scan.lease,
+        { unregioned: false }
+      )
+    );
+    return { networkingComplete, iamComplete: iamObservation.complete, active: active + iamCounts.active, resolved: resolved + iamCounts.resolved };
   }
 
   /**
@@ -719,6 +1341,8 @@ export class AWSResourceDiscoveryService {
       // creates no job row at all.
       jobId = await this.openDiscoveryJob(client, scan, organizationId, allowedTypes, [scanContext.region]);
       console.log(`📋 [Discovery] Created discovery job: ${jobId}`);
+      // When the scan budget (a multi-region scan's) starts running.
+      const scanStartedAt = this.multiRegionTiming.now();
       const connectedClients = scanContext.clientsFor(scanContext.region);
 
       if (!connectedClients.enabled) {
@@ -752,90 +1376,46 @@ export class AWSResourceDiscoveryService {
       // How each own listing fared (source-outcome.ts). Only a complete one may drive a
       // reconcile; what any of them read is still upserted.
       const sourceOutcome = (source: string): SourceOutcome => ({ source, status: 'skipped_tier' });
-      const ec2Outcome = sourceOutcome('ec2');
-      const ebsOutcome = sourceOutcome('ebs');
-      const rdsOutcome = sourceOutcome('rds');
       const s3Outcome = sourceOutcome('s3');
-      const lambdaOutcome = sourceOutcome('lambda');
-      const loadBalancerOutcome = sourceOutcome('load-balancer');
       const cloudFrontOutcome = sourceOutcome('cloudfront');
-      // Every EC2, RDS, Lambda and load-balancer ARN this scan's own listings returned.
-      // Resource Explorer is their reconcile source, and its index can lag behind the
-      // account: a resource just listed here is present, whatever the index says yet
-      // (multi-region plan M4, Q6). Only adds presence, so it can only prevent a
-      // termination, never cause one.
-      const ownListedArns = new Set<string>();
 
-      // Discover EC2 instances
-      if (this.isResourceTypeAllowed('ec2', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering EC2 instances...`);
-        try {
-          scan.checkpoint();
-          ec2Outcome.status = 'complete';
-          const ec2Resources = await this.discoverEC2Instances(
-            organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence, this.observeListing(ec2Outcome)
-          );
-          for (const resource of ec2Resources) ownListedArns.add(resource.resource_arn);
-          await this.upsertFenced(fenced, ec2Resources, (resource) => this.upsertResource(client, resource), totals);
-          console.log(`✅ [Discovery] Found ${ec2Resources.length} EC2 instances`);
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          ec2Outcome.status = failedSourceStatus(error);
-          console.error(`❌ [Discovery] EC2 discovery failed:`, error.message);
-          errors.push(`EC2: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping EC2 instances (not available in ${tier} tier)`);
-        skippedTypes.push('ec2');
-      }
+      // Multi-region PR 1: with the organization's flag on, every enabled region is
+      // scanned (scanRegions below); with it off, the home region only, as before.
+      const multiRegion = await this.multiRegionEnabled(client, organizationId);
+      console.log(`🌍 [Discovery] Multi-region discovery: ${multiRegion ? 'on' : 'off'}`);
 
-      // Discover EBS volumes. Own dedicated discovery + reconcile() call
-      // (same pattern as S3/CloudFront below) rather than folding into the
-      // generic Resource Explorer path -- EBS needs real per-volume metadata
-      // (size, type, state) for the ebs_unattached analyzer, which the
-      // generic path's ARN-only presence signal can't provide.
-      const ebsArnsFound = new Set<string>();
-      if (this.isResourceTypeAllowed('ebs', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering EBS volumes...`);
-        try {
-          scan.checkpoint();
-          ebsOutcome.status = 'complete';
-          const ebsResources = await this.discoverEBSVolumes(
-            organizationId, awsClients.ec2!, awsClients.region, awsClients.accountId, checkBackupEvidence, this.observeListing(ebsOutcome)
-          );
-          for (const resource of ebsResources) ebsArnsFound.add(resource.resource_arn);
-          await this.upsertFenced(fenced, ebsResources, (resource) => this.upsertResource(client, resource), totals);
-          console.log(`✅ [Discovery] Found ${ebsResources.length} EBS volumes`);
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          ebsOutcome.status = failedSourceStatus(error);
-          console.error(`❌ [Discovery] EBS discovery failed:`, error.message);
-          errors.push(`EBS: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping EBS volumes (not available in ${tier} tier)`);
-        skippedTypes.push('ebs');
-      }
+      // The home region's inventory, as every scan without the flag has always made it:
+      // the scan's own connection, its errors are the job's. Every EC2, RDS, Lambda and
+      // load-balancer ARN its own listings return (ownListedArns) is present for the
+      // Resource Explorer reconcile, whatever the index says yet (multi-region plan M4,
+      // Q6): it only adds presence, so it can only prevent a termination, never cause one.
+      const home: RegionInventory = {
+        organizationId,
+        region: awsClients.region,
+        clients: awsClients,
+        client,
+        fenced,
+        scan,
+        connection: scanContext.connectionIdentity,
+        tier,
+        allowedTypes,
+        totals,
+        errors,
+        warnings,
+        outcomes: regionalOutcomes(),
+        ownListedArns: new Set<string>(),
+        ebsArnsFound: new Set<string>(),
+        checkBackupEvidence,
+      };
 
-      // Discover RDS databases
-      if (this.isResourceTypeAllowed('rds', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering RDS databases...`);
-        try {
-          scan.checkpoint();
-          rdsOutcome.status = 'complete';
-          const rdsResources = await this.discoverRDSDatabases(organizationId, awsClients.rds!, awsClients.region, this.observeListing(rdsOutcome));
-          for (const resource of rdsResources) ownListedArns.add(resource.resource_arn);
-          await this.upsertFenced(fenced, rdsResources, (resource) => this.upsertResource(client, resource), totals);
-          console.log(`✅ [Discovery] Found ${rdsResources.length} RDS databases`);
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          rdsOutcome.status = failedSourceStatus(error);
-          console.error(`❌ [Discovery] RDS discovery failed:`, error.message);
-          errors.push(`RDS: ${error.message}`);
-        }
+      if (!multiRegion) {
+        await this.listRegionTypes(home, ['ec2', 'ebs', 'rds'], skippedTypes);
       } else {
-        console.log(`⏭️  [Discovery] Skipping RDS databases (not available in ${tier} tier)`);
-        skippedTypes.push('rds');
+        for (const type of REGIONAL_TYPES) {
+          if (this.isResourceTypeAllowed(type, allowedTypes)) continue;
+          console.log(`⏭️  [Discovery] Skipping ${REGIONAL_LISTINGS[type].label} (not available in ${tier} tier)`);
+          skippedTypes.push(type);
+        }
       }
 
       // Discover S3 buckets. Kept as its own dedicated discovery (not folded into the
@@ -881,49 +1461,7 @@ export class AWSResourceDiscoveryService {
         skippedTypes.push('s3');
       }
 
-      // Discover Lambda functions
-      if (this.isResourceTypeAllowed('lambda', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering Lambda functions...`);
-        try {
-          scan.checkpoint();
-          lambdaOutcome.status = 'complete';
-          const lambdaResources = await this.discoverLambdaFunctions(
-            organizationId, awsClients.lambda, awsClients.cloudWatch, awsClients.region, this.observeListing(lambdaOutcome), scanContext.connectionIdentity
-          );
-          for (const resource of lambdaResources) ownListedArns.add(resource.resource_arn);
-          await this.upsertFenced(fenced, lambdaResources, (resource) => this.upsertResource(client, resource), totals);
-          console.log(`✅ [Discovery] Found ${lambdaResources.length} Lambda functions`);
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          lambdaOutcome.status = failedSourceStatus(error);
-          console.error(`❌ [Discovery] Lambda discovery failed:`, error.message);
-          errors.push(`Lambda: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping Lambda functions (not available in ${tier} tier)`);
-        skippedTypes.push('lambda');
-      }
-
-      // Discover Load Balancers
-      if (this.isResourceTypeAllowed('load-balancer', allowedTypes)) {
-        console.log(`🔎 [Discovery] Discovering Load Balancers...`);
-        try {
-          scan.checkpoint();
-          loadBalancerOutcome.status = 'complete';
-          const lbResources = await this.discoverLoadBalancers(organizationId, awsClients.elb, awsClients.region, this.observeListing(loadBalancerOutcome));
-          for (const resource of lbResources) ownListedArns.add(resource.resource_arn);
-          await this.upsertFenced(fenced, lbResources, (resource) => this.upsertResource(client, resource), totals);
-          console.log(`✅ [Discovery] Found ${lbResources.length} Load Balancers`);
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          loadBalancerOutcome.status = failedSourceStatus(error);
-          console.error(`❌ [Discovery] Load Balancer discovery failed:`, error.message);
-          errors.push(`Load Balancer: ${error.message}`);
-        }
-      } else {
-        console.log(`⏭️  [Discovery] Skipping Load Balancers (not available in ${tier} tier)`);
-        skippedTypes.push('load-balancer');
-      }
+      if (!multiRegion) await this.listRegionTypes(home, ['lambda', 'load-balancer'], skippedTypes);
 
       // Discover CloudFront distributions. Kept as its own dedicated discovery, pinned to
       // us-east-1 regardless of the org's configured region — CloudFront is a global service
@@ -956,7 +1494,10 @@ export class AWSResourceDiscoveryService {
       // An own listing cut off at its page limit: what it read was stored, but its
       // source is not reconciled this cycle. Like a truncated index, a warning, not an
       // error (an internal code, stored in the warnings column only).
-      const ownOutcomes = [ec2Outcome, ebsOutcome, rdsOutcome, s3Outcome, lambdaOutcome, loadBalancerOutcome, cloudFrontOutcome];
+      // (A multi-region scan checks its regions' own listings in scanRegions.)
+      const ownOutcomes: SourceOutcome[] = multiRegion
+        ? [s3Outcome, cloudFrontOutcome]
+        : [home.outcomes.ec2, home.outcomes.ebs, home.outcomes.rds, s3Outcome, home.outcomes.lambda, home.outcomes['load-balancer'], cloudFrontOutcome];
       const truncatedSources = ownOutcomes.filter((outcome) => outcome.status === 'truncated').map((outcome) => outcome.source);
       if (truncatedSources.length > 0) {
         console.warn(`⚠️  [Discovery] Listing stopped at its page limit for: ${truncatedSources.join(', ')}; not reconciled this cycle`);
@@ -978,90 +1519,37 @@ export class AWSResourceDiscoveryService {
         skippedTypes.push(t);
       });
 
-      console.log(`🔎 [Discovery] Searching AWS Resource Explorer for generic inventory + reconciliation...`);
-      scan.checkpoint();
-      const searchResult = await this.resourceExplorer.search(awsClients.resourceExplorer, awsClients.region);
-      // How the search fared, for the home region's scan status only (M5b). Nothing
-      // below reads it: the reconcile still follows searchResult.
-      const resourceExplorerOutcome: SourceOutcome = {
-        source: RESOURCE_EXPLORER_SOURCE,
-        // An AccessDenied is 'denied' (AWS connect PR D1, refused sources); any other failure 'failed'.
-        status: !searchResult.success ? searchResult.status ?? 'failed' : searchResult.complete ? 'complete' : 'truncated',
-      };
-
-      if (searchResult.success) {
-        const { allArns, genericEntries } = this.resourceExplorer.normalize(searchResult.resources, awsClients.region);
-        const allowedEntries = genericEntries.filter((e) => allowedGenericTypes.includes(e.resourceType));
-
-        try {
-          await this.upsertFenced(fenced, allowedEntries, (entry) => this.upsertGenericResource(client, organizationId, entry), totals);
-          console.log(`✅ [Discovery] Found ${allowedEntries.length} generic resources via Resource Explorer (${searchResult.resources.length} total indexed)`);
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          // What the search read was not stored: the home region was not inventoried
-          // (m5-plan.md §13, Q-E). The status only; the job and the reconcile are unchanged.
-          resourceExplorerOutcome.status = 'failed';
-          console.error(`❌ [Discovery] Resource Explorer generic upsert failed:`, error.message);
-          errors.push(`Resource Explorer inventory: ${error.message}`);
-        }
-
-        try {
-          const dynamoDbEntries = allowedEntries.filter((e) => e.resourceType === 'dynamodb');
-          if (dynamoDbEntries.length > 0) {
-            const enrichedCount = await this.enrichDynamoDBTables(organizationId, client, awsClients, dynamoDbEntries, fenced);
-            console.log(`✅ [Discovery] Enriched ${enrichedCount} of ${dynamoDbEntries.length} DynamoDB table(s) with real configuration`);
-          }
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          console.error(`❌ [Discovery] DynamoDB enrichment failed:`, error.message);
-          errors.push(`DynamoDB enrichment: ${error.message}`);
-        }
-
-        try {
-          const auroraEntries = allowedEntries.filter((e) => e.resourceType === 'aurora');
-          if (auroraEntries.length > 0) {
-            const { confirmed, reclassified } = await this.enrichAuroraClusters(organizationId, client, awsClients.rds!, auroraEntries, fenced);
-            console.log(`✅ [Discovery] Confirmed ${confirmed} Aurora cluster(s), reclassified ${reclassified} non-Aurora DB cluster(s) out of 'aurora'`);
-          }
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          console.error(`❌ [Discovery] Aurora cluster enrichment failed:`, error.message);
-          errors.push(`Aurora cluster enrichment: ${error.message}`);
-        }
-
-        if (!searchResult.complete) {
-          // The search may have been cut off (see SearchResult): the resources it did return
-          // are real and were upserted above, but a resource missing from it may simply be
-          // past the cut-off. No row's missing_scan_count moves this cycle. A large account
-          // always lands here, so it is a warning, not a failure: the inventory still refreshed.
-          console.warn(
-            `⚠️  [Discovery] Resource Explorer search may be truncated (${searchResult.resources.length} results), reconciliation skipped`
-          );
-          warnings.push(DISCOVERY_WARNING_TRUNCATED_INDEX);
-        } else {
-          try {
-            const presentArns = new Set([...allArns, ...ownListedArns]);
-            // F1: reset and increment in one fenced transaction.
-            const reconciliation = await fenced(() =>
-              this.reconciliation.reconcile(client, organizationId, awsClients.region, presentArns, RE_RECONCILED_TYPES)
-            );
-            console.log(
-              `✅ [Discovery] Reconciliation complete (${reconciliation.resetCount} confirmed present, ` +
-              `${reconciliation.incrementedCount} absent this scan, ${reconciliation.terminatedArns.length} newly terminated)`
-            );
-            resourcesTerminated += reconciliation.terminatedArns.length;
-          } catch (error: any) {
-            abortIfLeaseLost(error);
-            console.error(`❌ [Discovery] Reconciliation failed:`, error.message);
-            errors.push(`Reconciliation: ${error.message}`);
-          }
-        }
+      // The home region's Resource Explorer inventory (inventoryResourceExplorer), or,
+      // with the multi-region flag on, every enabled region's whole inventory.
+      let resourceExplorerOutcome: RegionSourceOutcome | null = null;
+      let multi: { regions: string[]; records: RegionScanRecord[]; notStarted: string[]; homeReadinessErrors: string[] } | undefined;
+      if (!multiRegion) {
+        const explored = await this.inventoryResourceExplorer(home, allowedGenericTypes);
+        resourceExplorerOutcome = explored.outcome;
+        resourcesTerminated += explored.terminated;
       } else {
-        // Search itself failed (no index/view provisioned, throttling, permission error, etc.) —
-        // this is "no data this cycle", not "everything is gone". Skip both the generic upsert
-        // and reconciliation entirely; every aws_resources row keeps its last-known-good state.
-        console.error(`❌ [Discovery] Resource Explorer search failed, skipping generic inventory + reconciliation:`, searchResult.error);
-        errors.push(`Resource Explorer: ${searchResult.error}`);
+        const regions = await this.regionsToScan(client, scanContext);
+        scanContext.allowRegions(regions);
+        console.log(`🌍 [Discovery] Scanning ${regions.length} enabled region(s), ${this.multiRegionTiming.regionPool} at a time`);
+        const scanned = await this.scanRegions({
+          client,
+          scan,
+          scanContext,
+          jobId,
+          organizationId,
+          tier,
+          allowedTypes,
+          allowedGenericTypes,
+          regions,
+          totals,
+          warnings,
+          scanStartedAt,
+        });
+        resourcesTerminated += scanned.terminated;
+        multi = { regions, records: scanned.records, notStarted: scanned.notStarted, homeReadinessErrors: scanned.homeReadinessErrors };
+        if (scanned.notStarted.length > 0 || scanned.records.some((record) => regionFailed(record.result))) {
+          warnings.push(DISCOVERY_WARNING_REGION_INCOMPLETE);
+        }
       }
 
       // S3 and CloudFront each get their own independent reconcile() call using their own
@@ -1101,20 +1589,12 @@ export class AWSResourceDiscoveryService {
         }
       }
 
-      if (authorizesCleanup(ebsOutcome)) {
-        try {
-          // F4.
-          const ebsReconciliation = await fenced(() => this.reconciliation.reconcile(client, organizationId, awsClients.region, ebsArnsFound, ['ebs']));
-          console.log(
-            `✅ [Discovery] EBS reconciliation complete (${ebsReconciliation.resetCount} confirmed present, ` +
-            `${ebsReconciliation.incrementedCount} absent this scan, ${ebsReconciliation.terminatedArns.length} newly terminated)`
-          );
-          resourcesTerminated += ebsReconciliation.terminatedArns.length;
-        } catch (error: any) {
-          abortIfLeaseLost(error);
-          console.error(`❌ [Discovery] EBS reconciliation failed:`, error.message);
-          errors.push(`EBS reconciliation: ${error.message}`);
-        }
+      // EBS volumes have their own reconcile (EBS needs real per-volume metadata for the
+      // ebs_unattached analyzer, which the generic path's ARN-only presence signal can't
+      // provide). A multi-region scan made each region's in scanRegions.
+      if (!multiRegion) {
+        const ebsTerminated = await this.reconcileEbs(home);
+        resourcesTerminated += ebsTerminated;
       }
 
       // Compliance scan: evaluate every currently-known resource for this org against
@@ -1262,49 +1742,67 @@ export class AWSResourceDiscoveryService {
       try {
         console.log(`🔎 [Discovery] Running account-level security scan (security groups + IAM)...`);
         scan.checkpoint();
-        const scanner = new ComplianceScannerService();
-        const scanStartedAt = new Date();
+        let networkingComplete: boolean;
+        let iamComplete: boolean;
+        let active: number;
+        let resolved: number;
+        if (multi) {
+          // Security groups in every region the scan started; IAM once (multi-region PR 1).
+          ({ networkingComplete, iamComplete, active, resolved } = await this.multiRegionSecurityScan({
+            organizationId,
+            scan,
+            scanContext,
+            homeClients: awsClients,
+            regions: multi.records.map((record) => record.region),
+            errors,
+          }));
+        } else {
+          const scanner = new ComplianceScannerService();
+          const scanStartedAt = new Date();
 
-        const networkingObservation = await scanner
-          .checkSecurityGroups(awsClients.ec2!, awsClients.region, awsClients.accountId)
-          .catch((error: any) => {
-            console.error(`❌ [Discovery] Security group scan failed:`, error.message);
-            errors.push(`Security group scan: ${error.message}`);
-            return { category: 'networking' as const, complete: false, issues: [] };
-          });
+          const networkingObservation = await scanner
+            .checkSecurityGroups(awsClients.ec2!, awsClients.region, awsClients.accountId)
+            .catch((error: any) => {
+              console.error(`❌ [Discovery] Security group scan failed:`, error.message);
+              errors.push(`Security group scan: ${error.message}`);
+              return { category: 'networking' as const, complete: false, issues: [] };
+            });
 
-        // checkIAMSecurity now returns the same CategoryObservation shape as
-        // checkSecurityGroups (previously it threw on any per-user failure,
-        // discarding findings from users already successfully processed
-        // earlier in that same call — see complianceScanner.ts). `.complete`
-        // is the honest completeness signal now; "didn't throw" is no longer
-        // how success is defined here.
-        const iamObservation = await scanner
-          .checkIAMSecurity(awsClients.iam!)
-          .catch((error: any) => {
-            console.error(`❌ [Discovery] IAM security scan failed:`, error.message);
-            errors.push(`IAM security scan: ${error.message}`);
-            return { category: 'iam' as const, complete: false, issues: [] };
-          });
+          // checkIAMSecurity now returns the same CategoryObservation shape as
+          // checkSecurityGroups (previously it threw on any per-user failure,
+          // discarding findings from users already successfully processed
+          // earlier in that same call — see complianceScanner.ts). `.complete`
+          // is the honest completeness signal now; "didn't throw" is no longer
+          // how success is defined here.
+          const iamObservation = await scanner
+            .checkIAMSecurity(awsClients.iam!)
+            .catch((error: any) => {
+              console.error(`❌ [Discovery] IAM security scan failed:`, error.message);
+              errors.push(`IAM security scan: ${error.message}`);
+              return { category: 'iam' as const, complete: false, issues: [] };
+            });
 
-        const findingsRepo = new AccountSecurityFindingsRepository();
-        const findings = AccountSecurityFindingsRepository.fromComplianceIssues(
-          [...networkingObservation.issues, ...iamObservation.issues],
-          awsClients.region
-        );
-        const completeCategories: AccountFindingCategory[] = [
-          ...(networkingObservation.complete ? (['networking'] as const) : []),
-          ...(iamObservation.complete ? (['iam'] as const) : []),
-        ];
-        // Networking findings are resolved in the region the security groups were
-        // listed in only (the repository's region limit). F10: fenced inside, on the
-        // repository's own connection; both AWS scans above are done before it.
-        scan.checkpoint();
-        const { active, resolved } = await scan.watch(() =>
-          findingsRepo.reconcileScan(organizationId, scanStartedAt, findings, completeCategories, awsClients.region, scan.lease)
-        );
+          const findingsRepo = new AccountSecurityFindingsRepository();
+          const findings = AccountSecurityFindingsRepository.fromComplianceIssues(
+            [...networkingObservation.issues, ...iamObservation.issues],
+            awsClients.region
+          );
+          const completeCategories: AccountFindingCategory[] = [
+            ...(networkingObservation.complete ? (['networking'] as const) : []),
+            ...(iamObservation.complete ? (['iam'] as const) : []),
+          ];
+          // Networking findings are resolved in the region the security groups were
+          // listed in only (the repository's region limit). F10: fenced inside, on the
+          // repository's own connection; both AWS scans above are done before it.
+          scan.checkpoint();
+          ({ active, resolved } = await scan.watch(() =>
+            findingsRepo.reconcileScan(organizationId, scanStartedAt, findings, completeCategories, awsClients.region, scan.lease)
+          ));
+          networkingComplete = networkingObservation.complete;
+          iamComplete = iamObservation.complete;
+        }
 
-        const fullyComplete = networkingObservation.complete && iamObservation.complete;
+        const fullyComplete = networkingComplete && iamComplete;
         if (!fullyComplete) {
           complianceScanCompleted = false;
         }
@@ -1312,7 +1810,7 @@ export class AWSResourceDiscoveryService {
           .record({
             organizationId,
             action: fullyComplete ? 'security.scan.completed' : 'security.scan.partial',
-            metadata: { active, resolved, networkingComplete: networkingObservation.complete, iamComplete: iamObservation.complete },
+            metadata: { active, resolved, networkingComplete, iamComplete },
           })
           .catch(() => {});
 
@@ -1472,10 +1970,27 @@ export class AWSResourceDiscoveryService {
         errors.push(`Cost analysis: ${error.message}`);
       }
 
+      // A multi-region scan fails only when a global step failed (below, as before) or
+      // when not one region could be checked (MR-D6, A3). A region's own failure is
+      // recorded on its region row and as region_incomplete, never as a job error.
+      if (multi && [...multi.records.map((record) => regionFailed(record.result)), ...multi.notStarted.map(() => true)].every(Boolean)) {
+        console.error(`❌ [Discovery] No enabled region could be checked for org ${organizationId}`);
+        errors.push(DISCOVERY_FAILED_MESSAGE);
+      }
+      // A multi-region scan's regions can each report the same warning: each once.
+      const jobWarningCodes: DiscoveryWarning[] = multi ? [...new Set(warnings)] : warnings;
+
       // A cost failure says the cost step failed, never that discovery did: it stays in
       // the job's error text, but does not set the job's status, which other pages read
       // as discovery's own. cost_analysis_completed and the run record carry it.
       const discoveryFailed = errors.some((message) => !message.startsWith('Cost analysis: '));
+      // The job's error text (R1, founder decision Nov 14): with the multi-region flag on,
+      // the home region's EC2 and RDS listing errors are added, in the format the
+      // Operational Health readiness gate reads ("EC2: ...", "RDS: ..."), so a home-region
+      // failure blocks that type's readiness as it does without the flag. They do not
+      // fail the job (A3; discoveryFailed above is decided without them). Another region's
+      // errors are never written here.
+      const jobErrors: string[] = multi ? [...errors, ...multi.homeReadinessErrors] : errors;
 
       // Update job status
       console.log(`\n📊 [Discovery] Discovery Summary:`);
@@ -1496,15 +2011,24 @@ export class AWSResourceDiscoveryService {
           console.log(`    ${idx + 1}. ${err}`);
         });
       }
-      if (warnings.length > 0) {
-        console.log(`  - Warnings: ${warnings.join(', ')}`);
+      if (jobWarningCodes.length > 0) {
+        console.log(`  - Warnings: ${jobWarningCodes.join(', ')}`);
       }
 
-      // Every home-region listing has finished: its scan status (M5b, F18).
-      await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, [...ownOutcomes, resourceExplorerOutcome]);
-      // The same listings, saved per source for the connection, and the policy compare
-      // when one was refused (AWS connect PR D1, CP-D11, D1-D9). Fail-soft.
-      await this.recordScanSources(client, scan, jobId, scanContext, awsClients, organizationId, [...ownOutcomes, resourceExplorerOutcome]);
+      if (!multi) {
+        // No Resource Explorer outcome: the home region has no index, so no search was made.
+        const homeOutcomes = resourceExplorerOutcome ? [...ownOutcomes, resourceExplorerOutcome] : ownOutcomes;
+        // Every home-region listing has finished: its scan status (M5b, F18).
+        await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, homeOutcomes);
+        // The same listings, saved per source for the connection, and the policy compare
+        // when one was refused (AWS connect PR D1, CP-D11, D1-D9). Fail-soft.
+        await this.recordScanSources(client, scan, jobId, scanContext, awsClients, organizationId, homeOutcomes);
+      } else {
+        // Each region's status was written when it finished (scanRegions). The connection's
+        // saved sources stay what they were: the home region's listings, S3 and CloudFront.
+        const homeRecord = multi.records.find((record) => record.region === scanContext.region);
+        await this.recordScanSources(client, scan, jobId, scanContext, awsClients, organizationId, [...(homeRecord?.outcomes ?? []), ...ownOutcomes]);
+      }
 
       // The job's final status, in one fenced transaction (AWS connect PR B): a worker
       // whose lease or AWS connection is no longer current never marks its job
@@ -1525,7 +2049,7 @@ export class AWSResourceDiscoveryService {
             totals.created,
             totals.updated,
             resourcesTerminated,
-            joinDiscoveryMessage(errors, warnings),
+            joinDiscoveryMessage(jobErrors, jobWarningCodes),
             complianceScanCompleted,
             costAnalysisCompleted,
             jobId
@@ -1534,8 +2058,12 @@ export class AWSResourceDiscoveryService {
         if (warningsColumn && (finished.rowCount ?? 0) > 0) {
           await client.query(
             `UPDATE resource_discovery_jobs SET warnings = $1::jsonb WHERE id = $2`,
-            [discoveryWarningsColumn(warnings), jobId]
+            [discoveryWarningsColumn(jobWarningCodes), jobId]
           );
+        }
+        // A multi-region scan's job lists the regions it scanned (those it started).
+        if (multi && (finished.rowCount ?? 0) > 0) {
+          await client.query(`UPDATE resource_discovery_jobs SET regions = $1 WHERE id = $2`, [multi.records.map((record) => record.region), jobId]);
         }
       });
 
@@ -1567,8 +2095,8 @@ export class AWSResourceDiscoveryService {
         resources_discovered: totals.created,
         resources_updated: totals.updated,
         resources_deleted: resourcesTerminated,
-        errors: errors,
-        warnings
+        errors: jobErrors,
+        warnings: jobWarningCodes
       };
     } catch (error: any) {
       if (isScanAlreadyRunning(error)) {
@@ -1773,6 +2301,14 @@ export class AWSResourceDiscoveryService {
   }
 
   /**
+   * Per-resource work at the call policy's concurrency, or, in a multi-region scan, at
+   * the region's pool, which its throttle breaker can lower while the work runs.
+   */
+  private mapPerResource<T, R>(items: readonly T[], concurrency: (() => number) | undefined, work: (item: T) => Promise<R>): Promise<R[]> {
+    return concurrency ? mapWithDynamicConcurrency(items, concurrency, work) : mapWithConcurrency(items, this.callPolicy.concurrency, work);
+  }
+
+  /**
    * Upserts `items` in fenced transactions of UPSERT_BATCH_SIZE (F5). Each batch's
    * counts are added to `totals` once it has committed, so a later batch that fails
    * (and throws) leaves the earlier batches counted.
@@ -1808,7 +2344,9 @@ export class AWSResourceDiscoveryService {
     region: string,
     accountId: string | undefined,
     checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>,
-    onListing?: ListingObserver
+    onListing?: ListingObserver,
+    // A multi-region scan's region pool (RegionRun.concurrency, its throttle breaker).
+    concurrency?: () => number
   ): Promise<CreateAWSResourceInput[]> {
     const listing = await listAllPages('EC2 instances: DescribeInstances', async (token) => {
       const page = await ec2Client.send(new DescribeInstancesCommand({ NextToken: token }));
@@ -1825,7 +2363,7 @@ export class AWSResourceDiscoveryService {
       : new Map<string, SecurityGroupRules>();
 
     // One unit of work per instance, a bounded number at a time (utils/awsCallPolicy.ts).
-    const resources = await mapWithConcurrency(instances, this.callPolicy.concurrency, async (instance): Promise<CreateAWSResourceInput | null> => {
+    const resources = await this.mapPerResource(instances, concurrency, async (instance): Promise<CreateAWSResourceInput | null> => {
       if (!instance.InstanceId) return null;
 
       const tags = this.extractTags(instance.Tags);
@@ -1892,7 +2430,9 @@ export class AWSResourceDiscoveryService {
     region: string,
     accountId: string | undefined,
     checkBackupEvidence: (resourceArn: string) => Promise<BackupEvidenceResult>,
-    onListing?: ListingObserver
+    onListing?: ListingObserver,
+    // A multi-region scan's region pool (RegionRun.concurrency, its throttle breaker).
+    concurrency?: () => number
   ): Promise<CreateAWSResourceInput[]> {
     const listing = await listAllPages('EBS volumes: DescribeVolumes', async (token) => {
       const page = await ec2Client.send(new DescribeVolumesCommand({ NextToken: token }));
@@ -1903,7 +2443,7 @@ export class AWSResourceDiscoveryService {
     this.logIfPaginated('EBS volumes', listing.pages, volumes.length);
 
     // One unit of work per volume, a bounded number at a time (utils/awsCallPolicy.ts).
-    const resources = await mapWithConcurrency(volumes, this.callPolicy.concurrency, async (volume): Promise<CreateAWSResourceInput | null> => {
+    const resources = await this.mapPerResource(volumes, concurrency, async (volume): Promise<CreateAWSResourceInput | null> => {
       if (!volume.VolumeId) return null;
 
       const tags = this.extractTags(volume.Tags);
@@ -2912,7 +3452,7 @@ export class AWSResourceDiscoveryService {
 
         const name = tags.Name || func.FunctionName;
         const memoryMB = func.MemorySize || 128;
-        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, connection, func.FunctionName);
+        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, connection, func.FunctionName, LAMBDA_USAGE_WINDOW_DAYS, region);
 
         resources.push({
           organization_id: organizationId,

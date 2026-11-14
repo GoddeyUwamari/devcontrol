@@ -183,6 +183,11 @@ export class AccountSecurityFindingsRepository {
    * `lease` (multi-region plan M4b, F10; required): the transaction
    * starts with the commit fence, so a worker that lost its lease changes nothing.
    *
+   * `unregioned` (multi-region PR 1; default true): whether networking rows with no
+   * region are resolved too. A multi-region scan reconciles networking once per
+   * region and passes true for the home region only, so those rows are resolved
+   * once per scan, as before.
+   *
    * Runs in a single transaction on the org-tagged client so a mid-scan failure
    * doesn't leave findings half-reconciled.
    */
@@ -192,7 +197,8 @@ export class AccountSecurityFindingsRepository {
     findings: NewAccountFinding[],
     completeCategories: AccountFindingCategory[],
     homeRegion: string | undefined,
-    lease: HeldLease
+    lease: HeldLease,
+    { unregioned = true }: { unregioned?: boolean } = {}
   ): Promise<{ active: number; resolved: number }> {
     const { resolvedIds, detectedIds } = await this.withOrgClient(organizationId, async (client) => {
       try {
@@ -247,9 +253,9 @@ export class AccountSecurityFindingsRepository {
             `UPDATE account_security_findings
              SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
              WHERE organization_id = $1 AND status = 'active' AND last_seen_at < $2 AND category = ANY($3::text[])
-               AND (category <> 'networking' OR $4::text IS NULL OR region = $4 OR region IS NULL)
+               AND (category <> 'networking' OR $4::text IS NULL OR region = $4 OR ($5::boolean AND region IS NULL))
              RETURNING id`,
-            [organizationId, scanStartedAt, completeCategories, homeRegion ?? null]
+            [organizationId, scanStartedAt, completeCategories, homeRegion ?? null, unregioned]
           );
           resolvedIds = resolvedResult.rows.map((r) => r.id as string);
         }

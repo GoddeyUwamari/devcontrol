@@ -14,7 +14,7 @@
  * machine (resourceReconciliation.service.ts) depends on.
  */
 import { failedSourceStatus, type SourceStatus } from './source-outcome';
-import { ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
+import { GetIndexCommand, ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { ResourceType, TagsState } from '../types/aws-resources.types';
 import { listAllPages } from '../utils/awsCallPolicy';
 
@@ -125,7 +125,46 @@ export const SEARCH_RESULT_LIMIT = 1000;
  */
 export type SearchResult =
   | { success: true; resources: REResource[]; complete: boolean }
-  | { success: false; error: string; /** The AWS error, classified as a scan source outcome (source-outcome.ts); AWS connect PR D1. */ status: SourceStatus };
+  | {
+      success: false;
+      error: string;
+      /** The AWS error, classified as a scan source outcome (source-outcome.ts); AWS connect PR D1. */
+      status: SourceStatus;
+      /** The error itself, for a multi-region scan's reason code (region-run.ts). Never logged or stored. */
+      cause?: unknown;
+    };
+
+/**
+ * Whether a region has a Resource Explorer index a Search may use (multi-region PR 1,
+ * A5). Asked with GetIndex before every Search, because a Search in a region with no
+ * index can make AWS create one in the customer's account ("Resource Explorer
+ * automatically creates user-owned indexes when users with appropriate permissions
+ * perform search operations in a Region", AWS Resource Explorer User Guide, Enabling
+ * cross-Region search). DevControl is read-only: it never creates an index.
+ *
+ *   indexed      the region's index is ACTIVE or UPDATING: Search may run
+ *   not_indexed  no index (ResourceNotFoundException), or one being created or
+ *                deleted: no Search; the generic types are not listed here this scan
+ *   failed       GetIndex itself failed (refused, throttled, timed out...): no
+ *                Search, recorded as a failure of the Resource Explorer source
+ */
+export type IndexState =
+  | { state: 'indexed'; type: string | undefined }
+  | { state: 'not_indexed' }
+  | { state: 'failed'; error: unknown; status: SourceStatus };
+
+const USABLE_INDEX_STATES = new Set(['ACTIVE', 'UPDATING']);
+
+/**
+ * Whether a Search failure is AWS's "no default view" answer (multi-region PR 1, review
+ * M-3): 401 UnauthorizedException. With no ViewArn, Search uses the region's default
+ * view; when the region has none, or the caller cannot use it, AWS answers 401
+ * (AWS Resource Explorer API Reference, Search). Not an AccessDenied (403).
+ */
+export function isNoDefaultView(error: unknown): boolean {
+  const e = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } } | null | undefined;
+  return e?.name === 'UnauthorizedException' || e?.$metadata?.httpStatusCode === 401;
+}
 
 export interface NormalizedSearchResult {
   /** Every ARN Resource Explorer returned, deep-monitored and generic alike — the presence
@@ -136,6 +175,17 @@ export interface NormalizedSearchResult {
 }
 
 export class ResourceExplorerService {
+  /** Whether `region` (the client's) has an index a Search may use. Never throws; never creates anything. */
+  async indexState(client: ResourceExplorer2Client): Promise<IndexState> {
+    try {
+      const index = await client.send(new GetIndexCommand({}));
+      return index.State && USABLE_INDEX_STATES.has(index.State) ? { state: 'indexed', type: index.Type } : { state: 'not_indexed' };
+    } catch (error: unknown) {
+      if ((error as { name?: unknown } | null)?.name === 'ResourceNotFoundException') return { state: 'not_indexed' };
+      return { state: 'failed', error, status: failedSourceStatus(error) };
+    }
+  }
+
   /**
    * Searches the connected account's Resource Explorer index for the given region.
    * Never throws — a failed/errored call (no index/view provisioned, throttling,
@@ -163,20 +213,28 @@ export class ResourceExplorerService {
       return { success: true, resources, complete };
     } catch (error: any) {
       console.error(`[ResourceExplorer] Search failed for region ${region}:`, error.message);
-      return { success: false, error: error.message || 'Unknown Resource Explorer error', status: failedSourceStatus(error) };
+      return { success: false, error: error.message || 'Unknown Resource Explorer error', status: failedSourceStatus(error), cause: error };
     }
   }
 
   /**
    * Normalizes raw Search results into the full ARN presence set (for reconciliation)
    * and the subset of generic-inventory entries (for upserting into aws_resources).
+   *
+   * Only the results whose own region is `region` (the region searched) are kept
+   * (multi-region PR 1, A4). A region whose index is the account's aggregator also
+   * returns other regions' resources; those are listed and reconciled only by their
+   * own region's search, and only when that search was complete. Before PR 1 they
+   * were stored here at their own region and never reconciled at all. A result with
+   * no Region is taken to be in the region searched.
    */
-  normalize(resources: REResource[], fallbackRegion: string): NormalizedSearchResult {
+  normalize(resources: REResource[], region: string): NormalizedSearchResult {
     const allArns = new Set<string>();
     const genericEntries: NormalizedResourceEntry[] = [];
 
     for (const resource of resources) {
       if (!resource.Arn) continue;
+      if ((resource.Region || region) !== region) continue;
       allArns.add(resource.Arn);
 
       const cfnType = resource.CfnResourceType;
@@ -189,7 +247,7 @@ export class ResourceExplorerService {
       genericEntries.push({
         arn: resource.Arn,
         resourceType,
-        region: resource.Region || fallbackRegion,
+        region,
         service: resource.Service,
         tags: tags ?? {},
         tagsState: tags ? 'observed' : 'unavailable',

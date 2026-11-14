@@ -116,6 +116,22 @@ function placeholderAccountColumn(organizationId: string): string {
   return `ph-${organizationId.replace(/-/g, '').slice(0, 29)}`;
 }
 
+/**
+ * What GetIndex answers for a region with an active local Resource Explorer index.
+ * Every Search is made only after GetIndex says so (multi-region PR 1, A5), so a
+ * fake Resource Explorer client of a scan whose search should run answers it.
+ */
+export const ACTIVE_INDEX = Object.freeze({
+  Arn: 'arn:aws:resource-explorer-2:us-east-1:123456789012:index/00000000-0000-4000-8000-00000000000b',
+  Type: 'LOCAL',
+  State: 'ACTIVE',
+});
+
+/** Whether a command sent to a fake client is Resource Explorer's GetIndex. */
+export function isGetIndex(command: unknown): boolean {
+  return (command as { constructor?: { name?: string } } | null)?.constructor?.name === 'GetIndexCommand';
+}
+
 /** How long a test lease is held: no heartbeat renews it, so it outlives any one test file. */
 const TEST_LEASE_TTL_SECONDS = 60 * 60;
 

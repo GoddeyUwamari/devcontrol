@@ -10,7 +10,7 @@ import { Pool } from 'pg';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { ACTIVE_INDEX, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
@@ -59,7 +59,7 @@ function mockAwsClients(instances: Array<{ InstanceId: string }>) {
   };
   // The index has not caught up: a complete, empty search.
   const resourceExplorer = new ResourceExplorer2Client({ region: 'us-east-1' });
-  (resourceExplorer as any).send = jest.fn(async () => ({ Resources: [], Count: { TotalResources: 0, Complete: true } }));
+  (resourceExplorer as any).send = jest.fn(async (command: unknown) => (isGetIndex(command) ? ACTIVE_INDEX : { Resources: [], Count: { TotalResources: 0, Complete: true } }));
   jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue({
     enabled: true, region: 'us-east-1', accountId: '123456789012',
     costExplorer: {}, ec2, rds: {}, s3: {}, s3Control: {}, cloudWatch: {}, lambda: {}, ecs: {}, elb: {}, eks: {}, dynamodb: {},

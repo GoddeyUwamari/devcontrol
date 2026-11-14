@@ -29,7 +29,7 @@ import { ElasticLoadBalancingV2Client } from '@aws-sdk/client-elastic-load-balan
 import { CloudFrontClient } from '@aws-sdk/client-cloudfront';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { ACTIVE_INDEX, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import { ComplianceScannerService } from '../complianceScanner';
 import { ResourceExplorerService, SEARCH_RESULT_LIMIT } from '../resourceExplorer.service';
 import costOptimizationService from '../cost-optimization.service';
@@ -106,7 +106,7 @@ function vpc(n: number): REResource {
 }
 
 function resourceExplorer(page: { Resources: REResource[]; Count?: { TotalResources?: number; Complete?: boolean } }) {
-  return withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), jest.fn().mockResolvedValue(page));
+  return withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), jest.fn(async (command: unknown) => (isGetIndex(command) ? ACTIVE_INDEX : page)));
 }
 
 function mockAwsClients(overrides: Record<string, unknown> = {}) {

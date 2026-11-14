@@ -97,6 +97,8 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-iam:GetRolePolicyCommand': read('iam:GetRolePolicy'),
   'client-cost-explorer:GetCostAndUsageCommand': read('ce:GetCostAndUsage'),
   'client-resource-explorer-2:SearchCommand': read('resource-explorer-2:Search'),
+  // Multi-region PR 1 (A5): whether a region has an index, before any Search (ViewOnlyAccess v47).
+  'client-resource-explorer-2:GetIndexCommand': read('resource-explorer-2:GetIndex'),
   'client-securityhub:GetEnabledStandardsCommand': read('securityhub:GetEnabledStandards'),
   'client-securityhub:DescribeStandardsCommand': read('securityhub:DescribeStandards'),
   'client-securityhub:GetFindingsCommand': read('securityhub:GetFindings'),
