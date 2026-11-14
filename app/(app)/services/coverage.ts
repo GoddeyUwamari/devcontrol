@@ -34,9 +34,14 @@ export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX = 'resource_explorer_n
 export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW = 'resource_explorer_no_view'
 const RESOURCE_EXPLORER_OFF_WARNINGS = [DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX, DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW]
 
-/** Founder-approved copy (Nov 14) for both Resource Explorer codes; `region` is the home region. */
+/** Founder-approved copy (Nov 14) for resource_explorer_no_index; `region` is the home region. */
 export function resourceExplorerOffText(region: string): string {
   return `Resource Explorer isn't turned on in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed. Everything else was checked.`
+}
+
+/** Founder-approved copy (Nov 14) for resource_explorer_no_view; `region` is the home region. */
+export function resourceExplorerNoViewText(region: string): string {
+  return `Resource Explorer has no default view in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed. Everything else was checked.`
 }
 
 const KNOWN_WARNINGS = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED]
@@ -155,9 +160,12 @@ export function warningNotes(persisted: readonly string[], inTab: readonly strin
   if (codes.has(DISCOVERY_WARNING_LISTING_TRUNCATED)) {
     notes.push({ key: 'listing-truncated', tone: 'warn', body: LISTING_TRUNCATED_TEXT })
   }
-  if (homeRegion && RESOURCE_EXPLORER_OFF_WARNINGS.some((code) => codes.has(code))) {
-    // One line, whichever of the two codes (or both) the scan reported.
+  // Each Resource Explorer code its own sentence (both, when a scan reported both).
+  if (homeRegion && codes.has(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX)) {
     notes.push({ key: 'resource-explorer-off', tone: 'warn', body: resourceExplorerOffText(homeRegion) })
+  }
+  if (homeRegion && codes.has(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW)) {
+    notes.push({ key: 'resource-explorer-no-view', tone: 'warn', body: resourceExplorerNoViewText(homeRegion) })
   }
   if ([...codes].some((code) => !known.includes(code))) {
     notes.push({ key: 'unknown-warning', tone: 'warn', body: UNKNOWN_WARNING_TEXT })
