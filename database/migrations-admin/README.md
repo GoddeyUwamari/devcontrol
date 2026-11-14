@@ -1240,9 +1240,17 @@ Not covered, pending production verification (no canonical migration creates
 them, so their production shape is unverified): `sso_configurations`,
 `api_usage`, `tenants`. Not in production: `api_keys`, `webhook_endpoints`.
 
+**Ownership caveat:** in production `organization_invitations` is owned by
+`devcontrol` (T-OWN allowlist, `C-G2-tenant-rls-off`); the other trigger
+tables are `postgres`-owned. A table's owner can always disable or drop a
+trigger on it, so the refusal on `organization_invitations` is advisory until
+C-G2 moves that table to `postgres`, and the request guard (PR-1b) must not
+rely on it. This migration changes no ownership.
+
 It is administrative because it alters the `postgres`-owned `organizations`,
 creates a table and functions (since `202611091300` `devcontrol` has no CREATE
-on `public`) and creates triggers on `postgres`-owned tables. Apply it by hand
+on `public`) and creates triggers on tables the application role does not own
+(except `organization_invitations`, above). Apply it by hand
 **before** PR-1a (shared demo exclusion) is merged: PR-1a's jobs and metrics
 select with `o.is_demo = false` and fail without the column. The release
 running before PR-1a never reads any of it. Locks, each held to commit and

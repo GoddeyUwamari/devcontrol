@@ -54,10 +54,21 @@
 -- PUBLIC. Every object carries the marker [202611141200_demo_workspace_foundation]
 -- in its comment; the paired rollback removes only marked objects.
 --
+-- OWNERSHIP OF THE TRIGGER TABLES IN PRODUCTION: scheduled_reports,
+-- observability_collection_scopes, aws_org_external_ids, aws_connection_checks
+-- and aws_accounts are owned by postgres. organization_invitations is owned by
+-- the application role devcontrol (T-OWN allowlist, C-G2-tenant-rls-off). A
+-- table's owner can always disable or drop a trigger on it, so devcontrol can
+-- disable or drop demo_workspace_refuse_row on organization_invitations: the
+-- database refusal there is advisory until C-G2 moves that table to postgres,
+-- and the request guard (PR-1b) must not rely on it. Owning the table gives
+-- devcontrol no way to run code as postgres through the trigger (no dynamic
+-- SQL, pinned search_path). This migration changes no ownership.
+--
 -- ADMINISTRATIVE MIGRATION (database/migrations-admin/README.md): it alters
 -- the postgres-owned organizations, creates a table and functions (devcontrol
--- has no CREATE on public since 202611091300) and creates triggers on
--- postgres-owned tables. Applied by hand as postgres; no application release
+-- has no CREATE on public since 202611091300) and creates triggers on tables
+-- it does not own as the application. Applied by hand as postgres; no application release
 -- reads or writes any of it until PR-1a (which reads is_demo), so apply it
 -- BEFORE PR-1a is merged. The runner applies this file and its ledger row in
 -- ONE transaction: any failure, including the 3 s lock timeout below, leaves
@@ -106,7 +117,7 @@ BEGIN
       RAISE EXCEPTION '%.organization_id (uuid) does not exist -- refusing to proceed.', t;
     END IF;
   END LOOP;
-  SELECT array_agg(c) INTO missing FROM unnest(required_columns) c
+  SELECT pg_catalog.array_agg(c) INTO missing FROM pg_catalog.unnest(required_columns) c
    WHERE NOT EXISTS (SELECT 1 FROM pg_attribute
                       WHERE attrelid = 'public.organizations'::regclass AND attname = c AND NOT attisdropped);
   IF missing IS NOT NULL THEN
@@ -282,7 +293,7 @@ DECLARE t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['organization_invitations', 'scheduled_reports', 'observability_collection_scopes',
                            'aws_org_external_ids', 'aws_connection_checks'] LOOP
-    EXECUTE format('COMMENT ON TRIGGER demo_workspace_refuse_row ON public.%I IS %L', t,
+    EXECUTE pg_catalog.format('COMMENT ON TRIGGER demo_workspace_refuse_row ON public.%I IS %L', t,
       '[202611141200_demo_workspace_foundation] Refuses a row for the demo organization.');
   END LOOP;
 END $$;
