@@ -378,8 +378,9 @@ class CostOptimizationService {
         lambdaLowUsageConfigResult.status === 'fulfilled'
           ? this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, lambdaLowUsageConfigResult.value, clients.region, connection)
           : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
-        this.detectDynamoDBCapacityOptimization(organizationId, clients),
-        this.detectDynamoDBOnDemandVsProvisionedOptimization(organizationId, clients),
+        // Home region only, like every other detector here (multi-region PR 1, FD-1 / H-1).
+        this.detectDynamoDBCapacityOptimization(organizationId, clients, clients.region),
+        this.detectDynamoDBOnDemandVsProvisionedOptimization(organizationId, clients, clients.region),
         this.detectReservedInstanceOpportunities(clients.ec2, clients.region),
       ]);
 
@@ -1092,7 +1093,12 @@ class CostOptimizationService {
    */
   private async detectDynamoDBCapacityOptimization(
     organizationId: string,
-    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion' | 'getCloudWatchClientForRegion' | 'getApplicationAutoScalingClientForRegion'>
+    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion' | 'getCloudWatchClientForRegion' | 'getApplicationAutoScalingClientForRegion'>,
+    // Multi-region PR 1 (FD-1, review H-1): only the home region's tables. A table name
+    // is unique within a region only, and a recommendation's identity is (organization,
+    // resource_id = table name, issue), so another region's tables wait for a
+    // region-safe identity.
+    homeRegion: string
   ): Promise<DetectorResult> {
     let client: PoolClient | undefined;
     try {
@@ -1108,8 +1114,8 @@ class CostOptimizationService {
       const tablesResult = await client.query(
         `SELECT resource_id, resource_name, region, metadata
          FROM aws_resources
-         WHERE organization_id = $1 AND resource_type = 'dynamodb'`,
-        [organizationId]
+         WHERE organization_id = $1 AND resource_type = 'dynamodb' AND region = $2`,
+        [organizationId, homeRegion]
       );
       client.release();
       client = undefined;
@@ -1509,7 +1515,9 @@ class CostOptimizationService {
    */
   private async detectDynamoDBOnDemandVsProvisionedOptimization(
     organizationId: string,
-    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion' | 'getCloudWatchClientForRegion' | 'getApplicationAutoScalingClientForRegion'>
+    awsClients: Pick<AWSClients, 'getDynamoDBClientForRegion' | 'getCloudWatchClientForRegion' | 'getApplicationAutoScalingClientForRegion'>,
+    // The home region's tables only (see detectDynamoDBCapacityOptimization).
+    homeRegion: string
   ): Promise<DetectorResult> {
     let client: PoolClient | undefined;
     try {
@@ -1523,8 +1531,8 @@ class CostOptimizationService {
       const tablesResult = await client.query(
         `SELECT resource_id, resource_name, region, metadata
          FROM aws_resources
-         WHERE organization_id = $1 AND resource_type = 'dynamodb'`,
-        [organizationId]
+         WHERE organization_id = $1 AND resource_type = 'dynamodb' AND region = $2`,
+        [organizationId, homeRegion]
       );
       client.release();
       client = undefined;

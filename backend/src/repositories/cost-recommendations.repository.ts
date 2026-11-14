@@ -24,6 +24,8 @@ import {
   ISSUE_EBS_GP2_TO_GP3,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
+  ISSUE_DYNAMODB_CAPACITY,
+  ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
 } from '../config/optimization-rules';
 
 /** Open findings by what their dollar figure is (getActiveSavingsBreakdown). */
@@ -77,9 +79,11 @@ export interface CostReconcileScope {
  * Issues whose detector lists the home region only (DescribeInstances,
  * DescribeAddresses, DescribeVolumes, ListFunctions with the home-region client), so
  * a scan reconciles their rows in the home region only (and rows with no region, as
- * written before regions were recorded). S3 lifecycle (account-wide ListBuckets), the
- * DynamoDB issues (every DynamoDB row of the organization, whatever its region) and the
- * retired oversized-RDS issue keep their region-unrestricted scope.
+ * written before regions were recorded). The DynamoDB issues too since multi-region
+ * PR 1 (review H-1): their detectors read the home region's DynamoDB rows only, so a
+ * recommendation of another region is not this scan's to end or delete. S3 lifecycle
+ * (account-wide ListBuckets) and the retired oversized-RDS issue keep their
+ * region-unrestricted scope.
  */
 const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
   ISSUE_EC2_IDLE_INSTANCE,
@@ -88,6 +92,8 @@ const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
   ISSUE_EBS_GP2_TO_GP3,
   ISSUE_LAMBDA_LOW_USAGE,
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
+  ISSUE_DYNAMODB_CAPACITY,
+  ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
 ]);
 
 /**

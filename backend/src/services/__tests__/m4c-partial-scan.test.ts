@@ -299,6 +299,8 @@ describe('P-1: a resource the detector could not evaluate keeps its recommendati
   });
 
   it('DynamoDB (both detectors): a table whose live DescribeTable fails is unknown', async () => {
+    // A home-region table: since multi-region PR 1 (review H-1) both detectors read the
+    // home region's tables only (cost-optimization-dynamodb-home-region.test.ts).
     const orgId = await insertOrg();
     const created = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
     await pool.query(
@@ -306,8 +308,8 @@ describe('P-1: a resource the detector could not evaluate keeps its recommendati
        VALUES ($1, $2, 'table-unread', 'table-unread', 'dynamodb', $3, 'unknown', $4)`,
       [
         orgId,
-        `arn:aws:dynamodb:${OTHER}:${ACCOUNT_ID}:table/table-unread`,
-        OTHER,
+        `arn:aws:dynamodb:${HOME}:${ACCOUNT_ID}:table/table-unread`,
+        HOME,
         JSON.stringify({ billing_mode: 'PROVISIONED', autoscaling_state: 'AUTOSCALING_DISABLED', creation_date_time: created }),
       ]
     );
@@ -319,7 +321,7 @@ describe('P-1: a resource the detector could not evaluate keeps its recommendati
     };
 
     for (const detector of ['detectDynamoDBCapacityOptimization', 'detectDynamoDBOnDemandVsProvisionedOptimization']) {
-      const result = await (costOptimizationService as any)[detector](orgId, clients);
+      const result = await (costOptimizationService as any)[detector](orgId, clients, HOME);
       expect(result).toEqual({ success: true, issues: [], unknownResourceIds: ['table-unread'] });
     }
   });
@@ -633,7 +635,7 @@ describe('P-4: orphan flags are written by one statement', () => {
 
 // ---------------------------------------------------------------------------
 describe('§6.2 region predicates', () => {
-  it('F12: home-listed issues reconcile in the home region (and rows with no region) only; S3 lifecycle and DynamoDB stay unrestricted', async () => {
+  it('F12: home-listed issues (DynamoDB too, since multi-region PR 1 review H-1) reconcile in the home region (and rows with no region) only; S3 lifecycle stays unrestricted', async () => {
     const orgId = await insertOrg();
     await seedRec(orgId, { resourceId: 'i-home', issue: ISSUE_EC2_IDLE_INSTANCE });
     await seedRec(orgId, { resourceId: 'i-no-region', issue: ISSUE_EC2_IDLE_INSTANCE, region: null });
@@ -649,6 +651,7 @@ describe('§6.2 region predicates', () => {
     );
 
     expect(await recs(orgId)).toEqual([
+      { resource_id: 'table-other', issue: ISSUE_DYNAMODB_CAPACITY, status: 'ACTIVE', aws_region: OTHER, ended: false },
       { resource_id: 'i-other', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'ACTIVE', aws_region: OTHER, ended: false },
       { resource_id: 'i-other-dismissed', issue: ISSUE_EC2_IDLE_INSTANCE, status: 'DISMISSED', aws_region: OTHER, ended: false },
     ]);
@@ -851,7 +854,7 @@ describe('F1: DynamoDB detectors treat too little data as unknown, never as "no 
 
   async function scan(orgId: string, detector: Detector, analysis: Record<string, unknown>) {
     stubLive(detector, analysis);
-    const result = await (costOptimizationService as any)[detector.detector](orgId, clients);
+    const result = await (costOptimizationService as any)[detector.detector](orgId, clients, HOME);
     await reconcileResult(orgId, detector.issue, result);
     return result;
   }
