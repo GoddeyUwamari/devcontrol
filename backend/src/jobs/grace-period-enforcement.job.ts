@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { Pool } from 'pg';
+import { DEMO_EXCLUSION_SQL } from '../demo/demo-workspace';
 
 /**
  * Grace Period Enforcement Job
@@ -56,12 +57,15 @@ export class GracePeriodEnforcementJob {
 
   async enforceExpiredGracePeriods(): Promise<number> {
     const result = await this.pool.query(
-      `UPDATE organizations
+      // The demo organization can never be in a grace period (its CHECK, admin
+      // migration 202611141200); it is excluded here all the same, like every job.
+      `UPDATE organizations o
        SET billing_lifecycle_state = 'restricted'
-       WHERE billing_lifecycle_state = 'grace_period'
-         AND grace_period_ends_at IS NOT NULL
-         AND grace_period_ends_at < NOW()
-       RETURNING id`
+       WHERE o.billing_lifecycle_state = 'grace_period'
+         AND o.grace_period_ends_at IS NOT NULL
+         AND o.grace_period_ends_at < NOW()
+         AND ${DEMO_EXCLUSION_SQL}
+       RETURNING o.id`
     );
 
     if (result.rows.length > 0) {

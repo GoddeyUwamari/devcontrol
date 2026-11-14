@@ -18,6 +18,13 @@ import * as path from 'path';
 import { WebSocketServer } from '../websocket/server';
 import { MetricsEvents } from '../services/metricsEvents';
 import { updateBusinessMetrics } from '../metrics';
+import { excludeDemoOrganizationSql } from '../demo/demo-workspace';
+
+/** excludeDemoOrganizationSql()'s output for any column, and nothing else. */
+const DEMO_ANTI_JOIN = new RegExp(
+  excludeDemoOrganizationSql('placeholder_column').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('placeholder_column', '[a-z_]+\\.[a-z_]+'),
+  'g'
+);
 
 const SRC = path.join(__dirname, '..');
 
@@ -64,8 +71,11 @@ describe('the business-metrics loop emits no socket event', () => {
     expect(emitToOrganization).not.toHaveBeenCalled();
     expect(broadcast).not.toHaveBeenCalled();
     for (const method of metricsEventMethods) expect(method).not.toHaveBeenCalled();
-    // It never even lists organizations: it has nobody to send to.
-    expect(pool.query.mock.calls.map(([sql]) => sql).some((sql: string) => /FROM organizations/.test(sql))).toBe(false);
+    // It never even lists organizations: it has nobody to send to. The demo
+    // exclusion's anti-join (demo/demo-workspace.ts, exactly as the helper
+    // writes it) reads one flag to leave rows out; it lists no organization.
+    expect(pool.query.mock.calls.map(([sql]) => sql)
+      .some((sql: string) => /FROM organizations/.test(sql.replace(DEMO_ANTI_JOIN, '')))).toBe(false);
   });
 });
 

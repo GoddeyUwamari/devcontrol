@@ -4,6 +4,7 @@ import { AWSResourcesRepository } from '../repositories/awsResources.repository'
 import { AccountSecurityFindingsRepository } from '../repositories/account-security-findings.repository';
 import { calculateRiskScore, RiskScore } from '../utils/riskScoring';
 import { CONNECTION_FENCE_STATEMENT_TIMEOUT_MS, currentConnectionIdentity, lockConnectionShared } from './aws-connection-fence';
+import { DEMO_EXCLUSION_SQL } from '../demo/demo-workspace';
 
 type SeverityCounts = { critical: number; high: number; medium: number; low: number };
 
@@ -30,6 +31,17 @@ export interface RiskScoreTrendResponse {
     end: string;
     days: number;
   };
+}
+
+/**
+ * The organizations the daily risk snapshot covers: every active one except
+ * the demo organization (demo/demo-workspace.ts).
+ */
+export async function listRiskSnapshotOrganizations(executor: Pool | PoolClient): Promise<Array<{ id: string; name: string }>> {
+  const { rows } = await executor.query<{ id: string; name: string }>(
+    `SELECT o.id, o.name FROM organizations o WHERE o.is_active = true AND ${DEMO_EXCLUSION_SQL}`
+  );
+  return rows;
 }
 
 export class RiskTrackingService {
@@ -194,11 +206,9 @@ export class RiskTrackingService {
   async storeAllOrganizationSnapshots(): Promise<void> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(
-        'SELECT id, name FROM organizations WHERE is_active = true'
-      );
+      const organizations = await listRiskSnapshotOrganizations(client);
 
-      for (const org of result.rows) {
+      for (const org of organizations) {
         try {
           // Session-scoped (is_local = false): this same `client` is threaded through
           // every query below with no wrapping BEGIN/COMMIT, so a `true` (local) value

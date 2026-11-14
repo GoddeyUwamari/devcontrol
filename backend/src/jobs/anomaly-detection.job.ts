@@ -5,6 +5,18 @@ import { AnomalyAIService } from '../services/anomaly-ai.service';
 import { AnomalyRepository } from '../repositories/anomaly.repository';
 import { AnomalyDetection } from '../types/anomaly.types';
 import { CustomAnomalyRulesService } from '../services/custom-anomaly-rules.service';
+import { DEMO_EXCLUSION_SQL } from '../demo/demo-workspace';
+
+/**
+ * The organizations each detection run scans: every active one except the
+ * demo organization (demo/demo-workspace.ts).
+ */
+export async function listAnomalyDetectionOrganizations(executor: Pool | PoolClient): Promise<Array<{ id: string }>> {
+  const { rows } = await executor.query<{ id: string }>(
+    `SELECT o.id FROM organizations o WHERE o.is_active = true AND ${DEMO_EXCLUSION_SQL}`
+  );
+  return rows;
+}
 
 export class AnomalyDetectionJob {
   private task: ReturnType<typeof cron.schedule> | null = null;
@@ -52,15 +64,12 @@ export class AnomalyDetectionJob {
     try {
       console.log('[Anomaly Detection Job] Running detection scan...');
 
-      // Get all active organizations
-      const orgsQuery = `
-        SELECT id FROM organizations WHERE is_active = true
-      `;
-      const orgsResult = await client.query(orgsQuery);
+      // Every active organization except the demo
+      const organizations = await listAnomalyDetectionOrganizations(client);
 
       let totalAnomalies = 0;
 
-      for (const org of orgsResult.rows) {
+      for (const org of organizations) {
         try {
           // Session-scoped (is_local = false): `client` is threaded through every
           // query below with no wrapping BEGIN/COMMIT, so a `true` (local) value

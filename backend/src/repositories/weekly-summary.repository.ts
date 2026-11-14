@@ -28,6 +28,7 @@ import { findEligibleAwsAccount, hasEligibleAwsAccount } from './aws-accounts.re
 import { AccountSecurityFindingsRepository } from './account-security-findings.repository';
 import { connectionChecksView, readConnectionChecksOrNull } from './aws-connection-checks.repository';
 import { latestAnalysisRuns } from './cost-analysis-runs.repository';
+import { DEMO_EXCLUSION_SQL } from '../demo/demo-workspace';
 import type { HealthDisplay } from '../services/connection-health';
 import { getOrganizationEntitlement, organizationHasEntitlement } from '../middleware/subscription.middleware';
 import { PLAN_NAME } from '../config/plan-names';
@@ -304,7 +305,8 @@ const WEEKLY_SUMMARY_RECIPIENT_PREDICATES = `om.role = 'owner'
          AND u.deleted_at IS NULL
          AND u.email IS NOT NULL
          AND u.email_weekly_summary = true
-         AND u.is_email_verified = true`;
+         AND u.is_email_verified = true
+         AND ${DEMO_EXCLUSION_SQL}`;
 
 export class WeeklySummaryRepository {
   private riskTrackingService: RiskTrackingService;

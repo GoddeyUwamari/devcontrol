@@ -47,6 +47,7 @@ import { Pool, PoolClient } from 'pg';
 import activationFunnelRoutes from '../activation-funnel.routes';
 import { pool as appPool } from '../../config/database';
 import { authService } from '../../services/auth.service';
+import { DEMO_EXCLUSION_SQL } from '../../demo/demo-workspace';
 
 function dbConfig() {
   return {
@@ -183,7 +184,8 @@ function recordFunnelReads() {
   };
   const note = (text: string | undefined, params: unknown[] | undefined, result: { rows: any[] } | undefined) => {
     if (!result || !text) return;
-    if (text === 'SELECT id FROM organizations') {
+    // The funnel's organization list (every organization except the demo; listActivationFunnelOrganizations).
+    if (text === `SELECT o.id FROM organizations o WHERE ${DEMO_EXCLUSION_SQL}`) {
       recorded.organizationIds = result.rows.map((r) => r.id);
     } else if (/FROM analytics_events\s+WHERE organization_id = \$1/.test(text)) {
       recorded.readCount += 1;

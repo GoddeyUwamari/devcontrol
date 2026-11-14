@@ -52,7 +52,8 @@ const ELIGIBLE_ORG_MEMBER = 'b0000000-0000-4000-8000-00000000000b';
 beforeAll(async () => {
   client = await appPool.connect();
   await client.query(`
-    CREATE TEMP TABLE organizations (id uuid PRIMARY KEY, created_at timestamptz NOT NULL, deleted_at timestamptz);
+    CREATE TEMP TABLE organizations (id uuid PRIMARY KEY, created_at timestamptz NOT NULL, deleted_at timestamptz,
+      is_demo boolean NOT NULL DEFAULT false);
     CREATE TEMP TABLE users (
       id uuid PRIMARY KEY, email text, full_name text,
       email_weekly_summary boolean, is_email_verified boolean, deleted_at timestamptz
