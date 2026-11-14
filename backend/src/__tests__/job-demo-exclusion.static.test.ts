@@ -51,11 +51,109 @@ const START = /\.start\(\)/;
 const HELPER_IMPORT = /from '(\.\.?\/)+demo\/demo-workspace'|from '\.\/demo-workspace'/;
 const HELPER_USE = /\bDEMO_EXCLUSION_SQL\b|\bexcludeDemoOrganizationSql\(|\bisDemoOrganization\(/;
 
-/** `pattern` must match the file's code (comments removed); with `count`, exactly that many times. */
-interface Evidence { file: string; pattern: RegExp; why: string; count?: number }
+/**
+ * `pattern` must match the file's code (comments removed); with `count`,
+ * exactly that many times. With `check`, the check's problems must be empty.
+ */
+interface Evidence { file: string; pattern: RegExp; why: string; count?: number; check?: (code: string) => string[] }
+
+/**
+ * The fixed list of reviewed reasons a scheduler may select no organizations.
+ * A "not-org-selecting" entry must name one, and the test then PROVES it on the
+ * code the scheduled callback runs (`proof.fn` in `proof.file`), after checking
+ * that the scheduler really calls it (`proof.chain`). A free-text reason is not
+ * accepted, and neither reason can be met by code that touches organizations.
+ */
+const NOT_ORG_SELECTING_REASONS = {
+  IN_MEMORY_ONLY: 'the scheduled callback runs no SQL and no I/O: it only reads and writes process memory',
+  OWN_LEASE_ROW_ONLY: 'the scheduled callback renews its own lease row: one fenced UPDATE of its lease table and no organization table or column',
+} as const;
+type NotOrgSelectingReason = keyof typeof NOT_ORG_SELECTING_REASONS;
+interface Proof { reason: NotOrgSelectingReason; chain: Evidence[]; file: string; fn: string }
+
 type Entry =
   | { status: 'excluded'; jobClass?: string; selection: string[]; evidence: Evidence[]; reason: string }
-  | { status: 'deferred' | 'not-org-selecting'; jobClass?: string; reason: string };
+  | { status: 'deferred'; jobClass?: string; reason: string }
+  | { status: 'not-org-selecting'; jobClass?: string; proof: Proof };
+
+/** Organization tables and columns: neither reviewed reason can be met by code that names them. */
+const ORGANIZATION_DATA = /\borganizations\b|\borganization_id\b|\borg_id\b|\bis_demo\b/;
+
+/**
+ * The body of function or method `fn` in `src` (comments already removed):
+ * from its declaration's `{` to the matching `}`. Null when not found.
+ */
+function functionBody(src: string, fn: string): string | null {
+  const declaration = new RegExp(`(?:\\bfunction\\s+${fn}|^[ \\t]*(?:(?:private|public|protected|static|async)\\s+)*${fn})\\s*\\(`, 'm').exec(src);
+  if (!declaration) return null;
+  let i = declaration.index + declaration[0].length;
+  for (let depth = 1; i < src.length && depth > 0; i += 1) {
+    if (src[i] === '(') depth += 1;
+    else if (src[i] === ')') depth -= 1;
+  }
+  const open = src.indexOf('{', i);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let j = open; j < src.length; j += 1) {
+    if (src[j] === '{') depth += 1;
+    else if (src[j] === '}' && --depth === 0) return src.slice(open, j + 1);
+  }
+  return null;
+}
+
+/** Why `proof` does not hold for `src` (the proof file's code), or [] when it does. */
+function proofProblemsIn(src: string, proof: Proof): string[] {
+  if (!Object.prototype.hasOwnProperty.call(NOT_ORG_SELECTING_REASONS, proof.reason)) {
+    return [`reason ${JSON.stringify(proof.reason)} is not on the reviewed list (${Object.keys(NOT_ORG_SELECTING_REASONS).join(', ')})`];
+  }
+  const body = functionBody(src, proof.fn);
+  if (!body) return [`${proof.fn} not found in ${proof.file}`];
+  const problems: string[] = [];
+  if (ORGANIZATION_DATA.test(body)) problems.push(`${proof.fn} names an organization table or column`);
+  const queries = (body.match(/\.query\s*(?:<[^>]*>)?\(/g) ?? []).length;
+  if (proof.reason === 'IN_MEMORY_ONLY') {
+    if (queries > 0 || /\bpool\b|\bconnect\(|\bfetch\(|\baxios\b|\b(?:SELECT|INSERT|UPDATE|DELETE)\b/.test(body)) {
+      problems.push(`${proof.fn} runs SQL or I/O, so it is not IN_MEMORY_ONLY`);
+    }
+  } else if (proof.reason === 'OWN_LEASE_ROW_ONLY') {
+    if (queries !== 1) problems.push(`${proof.fn} runs ${queries} queries, not exactly one`);
+    if (!/UPDATE \$\{\s*lease\.key\.table\s*\}/.test(body)) problems.push(`${proof.fn} does not UPDATE its own lease table`);
+    if (!/fencing_token\s*=/.test(body)) problems.push(`${proof.fn}'s UPDATE is not fenced by its token`);
+    if (/\b(?:SELECT|INSERT|DELETE)\b/.test(body.replace(/RETURNING[\s\S]*?`/g, '`'))) problems.push(`${proof.fn} does more than one UPDATE`);
+  }
+  return problems;
+}
+
+function proofProblems(key: string, proof: Proof | undefined): string[] {
+  if (!proof) return [`${key}: "not-org-selecting" needs a proof with a reason from the reviewed list; a free-text reason is not accepted`];
+  return [
+    ...failingEvidence(proof.chain).map((p) => `${key}: ${p}`),
+    ...proofProblemsIn(code(proof.file), proof).map((p) => `${key}: ${p}`),
+  ];
+}
+
+/**
+ * Every aggregate query in `src` (metrics/index.ts's code) applies the helper,
+ * for each table it reads, inside that same SQL: `FROM <table>` needs
+ * `${excludeDemoOrganizationSql('<table>.organization_id')}` in the same
+ * template. A count is not enough: the helper moved from one query to another
+ * keeps the count and must still fail here.
+ */
+function metricsPlacementProblems(src: string): string[] {
+  const queries = [...src.matchAll(/dbPool\.query\(\s*`([^`]*)`/g)].map((m) => m[1]);
+  const problems = queries.length >= 9 ? [] : [`expected at least 9 aggregate queries in updateBusinessMetrics, found ${queries.length}`];
+  for (const sql of queries) {
+    const ctes = new Set([...sql.matchAll(/\b([a-z_]+)\s+AS\s*\(/gi)].map((m) => m[1]));
+    const tables = new Set([...sql.matchAll(/\bFROM\s+([a-z_]+)/g)].map((m) => m[1]).filter((t) => !ctes.has(t)));
+    if (tables.size === 0) problems.push(`a metrics query reads no table: ${sql.trim().slice(0, 60)}`);
+    for (const table of tables) {
+      if (!sql.includes(`\${excludeDemoOrganizationSql('${table}.organization_id')}`)) {
+        problems.push(`the metrics query on ${table} does not exclude the demo for ${table}: ${sql.replace(/\s+/g, ' ').trim().slice(0, 70)}`);
+      }
+    }
+  }
+  return problems;
+}
 
 /**
  * Scheduler sites. Key: the file holding a `cron.schedule(`, or
@@ -111,7 +209,8 @@ const INVENTORY: Record<string, Entry> = {
     reason: 'Prometheus business gauges every 30 s, aggregated over all organizations.',
     evidence: [
       { file: 'server.ts', pattern: /setInterval\(async \(\) => \{\s*await updateBusinessMetrics\(pool\);/, why: 'the interval updates the business gauges' },
-      { file: 'metrics/index.ts', pattern: /\$\{excludeDemoOrganizationSql\('[a-z_]+\.organization_id'\)\}/g, count: 9, why: 'all nine aggregate queries apply the helper' },
+      { file: 'metrics/index.ts', pattern: /\$\{excludeDemoOrganizationSql\('[a-z_]+\.organization_id'\)\}/g, count: 9, why: 'nine helper uses' },
+      { file: 'metrics/index.ts', pattern: /updateBusinessMetrics/, check: metricsPlacementProblems, why: 'every aggregate query excludes the demo for each table it reads, inside that query' },
     ],
   },
   'jobs/resourceDiscovery.job.ts': {
@@ -120,15 +219,24 @@ const INVENTORY: Record<string, Entry> = {
   },
   'jobs/alert-sync.job.ts': {
     status: 'deferred', jobClass: 'AlertSyncJob',
-    reason: 'DEFERRED: tied to the separate alert-sync fix (alert-history.service.ts:84-99 resolves firing alerts of every organization, unscoped). Production check PENDING. Behaviour unchanged here.',
+    reason: 'DEFERRED: tied to the separate alert-sync fix (alert-history.service.ts:84-99 resolves firing alerts of every organization, unscoped). Production check CHECKED (2026-11-14, read-only): latent, 0 rows in alert_history. Behaviour unchanged here.',
   },
   'services/nl-query.service.ts#setInterval': {
     status: 'not-org-selecting',
-    reason: 'In-memory cache eviction every minute; reads and writes no organization data.',
+    proof: {
+      reason: 'IN_MEMORY_ONLY', file: 'services/nl-query.service.ts', fn: 'cleanCache',
+      chain: [{ file: 'services/nl-query.service.ts', pattern: /setInterval\(\(\) => this\.cleanCache\(\), /, why: 'the interval runs cleanCache only' }],
+    },
   },
   'services/scan-session.ts#start': {
     status: 'not-org-selecting',
-    reason: 'A compliance scan\'s own lease heartbeat, started by that scan; touches only its lease row.',
+    proof: {
+      reason: 'OWN_LEASE_ROW_ONLY', file: 'services/scan-lease.ts', fn: 'renewReportingAge',
+      chain: [
+        { file: 'services/scan-session.ts', pattern: /new LeaseHeartbeat\([^)]*\)\.start\(\)/, why: 'the scan starts its lease heartbeat' },
+        { file: 'services/scan-lease.ts', pattern: /class LeaseHeartbeat[\s\S]*?async beat\(\)[\s\S]{0,600}renewReportingAge\(client, this\.lease/, why: 'each beat renews through renewReportingAge' },
+      ],
+    },
   },
 };
 
@@ -189,12 +297,14 @@ function scan(): { sites: Site[]; startedClasses: Array<{ name: string; line: nu
 
 function holds(e: Evidence): boolean {
   const text = code(e.file);
+  if (e.check && e.check(text).length > 0) return false;
   if (e.count === undefined) return new RegExp(e.pattern.source, e.pattern.flags.replace('g', '')).test(text);
   return (text.match(new RegExp(e.pattern.source, e.pattern.flags.includes('g') ? e.pattern.flags : `${e.pattern.flags}g`)) ?? []).length === e.count;
 }
 
 function failingEvidence(evidence: Evidence[]): string[] {
-  return evidence.filter((e) => !holds(e)).map((e) => `${e.file}: ${e.why} (${e.pattern}${e.count === undefined ? '' : ` x${e.count}`})`);
+  return evidence.filter((e) => !holds(e)).map((e) =>
+    `${e.file}: ${e.why} (${e.pattern}${e.count === undefined ? '' : ` x${e.count}`})${e.check ? `: ${e.check(code(e.file)).join('; ')}` : ''}`);
 }
 
 describe('job demo exclusion inventory (real source)', () => {
@@ -222,8 +332,18 @@ describe('job demo exclusion inventory (real source)', () => {
       .map(([key]) => key)).toEqual([]);
   });
 
-  it('every entry gives a reason', () => {
-    for (const entry of Object.values(INVENTORY)) expect(entry.reason.trim().length).toBeGreaterThan(20);
+  it('every "excluded" or "deferred" entry gives a written reason', () => {
+    for (const entry of Object.values(INVENTORY)) {
+      if (entry.status !== 'not-org-selecting') expect(entry.reason.trim().length).toBeGreaterThan(20);
+    }
+  });
+
+  it('every "not-org-selecting" entry names a reason from the reviewed list, and its proof holds on the code the scheduler runs', () => {
+    const problems: string[] = [];
+    for (const [key, entry] of Object.entries(INVENTORY)) {
+      if (entry.status === 'not-org-selecting') problems.push(...proofProblems(key, entry.proof));
+    }
+    expect(problems).toEqual([]);
   });
 
   it('every "excluded" job imports the shared helper in its selection code and its evidence holds', () => {
@@ -276,5 +396,33 @@ describe('inventory scan self-test', () => {
     const tooFew: Evidence = { file: 'metrics/index.ts', pattern: /\$\{excludeDemoOrganizationSql\(/g, count: 10, why: 'probe' };
     const exact: Evidence = { file: 'metrics/index.ts', pattern: /\$\{excludeDemoOrganizationSql\(/g, count: 9, why: 'probe' };
     expect(failingEvidence([missing, tooFew, exact])).toHaveLength(2);
+  });
+
+  it('metrics placement: a helper moved from one query to another (count unchanged) fails, a new unprotected query fails', () => {
+    const q = (from: string, helperFor?: string) =>
+      `await dbPool.query(\`SELECT 1 FROM ${from} WHERE x = 1${helperFor ? ` AND \${excludeDemoOrganizationSql('${helperFor}.organization_id')}` : ''}\`)`;
+    const nine = (moved: boolean) => [
+      q('services', 'services'), q('services', 'services'),
+      q('cost_recommendations', moved ? undefined : 'cost_recommendations'),
+      ...Array.from({ length: 6 }, () => q('deployments', 'deployments')),
+      ...(moved ? [q('services', 'services')] : []),
+    ].join('\n');
+    expect(metricsPlacementProblems(nine(false))).toEqual([]);
+    expect(metricsPlacementProblems(nine(true))).toEqual([expect.stringContaining('the metrics query on cost_recommendations does not exclude the demo')]);
+    expect(metricsPlacementProblems(`${nine(false)}\n${q('alert_history')}`)).toEqual([expect.stringContaining('on alert_history')]);
+    expect(metricsPlacementProblems(`await dbPool.query(\`WITH d AS (SELECT * FROM deployments WHERE \${excludeDemoOrganizationSql('deployments.organization_id')}) SELECT 1 FROM d\`)`))
+      .toEqual(['expected at least 9 aggregate queries in updateBusinessMetrics, found 1']);
+  });
+
+  it('a "not-org-selecting" proof fails for a job that touches organizations, whatever reason it names, and for a reason off the list', () => {
+    const writer = 'export class ProbeJob {\n  private async sweep(): Promise<void> {\n    await this.pool.query(`UPDATE organizations SET is_active = false WHERE created_at < NOW()`);\n  }\n}';
+    for (const reason of Object.keys(NOT_ORG_SELECTING_REASONS) as NotOrgSelectingReason[]) {
+      expect(proofProblemsIn(writer, { reason, chain: [], file: 'jobs/probe.job.ts', fn: 'sweep' })).not.toEqual([]);
+    }
+    expect(proofProblemsIn(writer, { reason: 'Only tidies a cache, nothing else at all.' as NotOrgSelectingReason, chain: [], file: 'jobs/probe.job.ts', fn: 'sweep' }))
+      .toEqual([expect.stringContaining('is not on the reviewed list')]);
+    const memory = 'class C {\n  private cleanCache(): void {\n    for (const [k] of this.cache) this.cache.delete(k);\n  }\n}';
+    expect(proofProblemsIn(memory, { reason: 'IN_MEMORY_ONLY', chain: [], file: 'x.ts', fn: 'cleanCache' })).toEqual([]);
+    expect(proofProblemsIn(memory, { reason: 'IN_MEMORY_ONLY', chain: [], file: 'x.ts', fn: 'missing' })).toEqual(['missing not found in x.ts']);
   });
 });

@@ -45,7 +45,10 @@ import { GracePeriodEnforcementJob } from '../jobs/grace-period-enforcement.job'
 import { ScheduledReportsRepository } from '../repositories/scheduled-reports.repository';
 import { WeeklySummaryRepository } from '../repositories/weekly-summary.repository';
 import { onboardingService } from '../services/onboarding.service';
-import { updateBusinessMetrics, servicesTotal, doraDeploymentFrequency, alertsActiveTotal } from '../metrics';
+import {
+  updateBusinessMetrics, servicesTotal, doraDeploymentFrequency, alertsActiveTotal,
+  costOptimizationPotentialSavings, costOptimizationRecommendationsActive,
+} from '../metrics';
 import organizationsRoutes from '../routes/organizations.routes';
 
 function dbConfig() {
@@ -239,7 +242,7 @@ describe('platform aggregates leave the demo out and count the real organization
     });
   });
 
-  it('business metrics (Prometheus gauges): demo services, deployments and alerts are not counted', async () => {
+  it('business metrics (Prometheus gauges): demo services, deployments, alerts and cost recommendations are not counted', async () => {
     const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       await withOrgs(async ({ client, demo, real }) => {
@@ -251,6 +254,8 @@ describe('platform aggregates leave the demo out and count the real organization
             services: await gauge(servicesTotal),
             deployments: await gauge(doraDeploymentFrequency),
             critical: await gauge(alertsActiveTotal, { severity: 'critical' }),
+            savings: await gauge(costOptimizationPotentialSavings),
+            highRecommendations: await gauge(costOptimizationRecommendationsActive, { severity: 'HIGH' }),
           };
         };
         const seed = async (org: string) => {
@@ -264,6 +269,11 @@ describe('platform aggregates leave the demo out and count the real organization
           await client.query(
             `INSERT INTO alert_history (alert_name, severity, status, started_at, organization_id) VALUES ($1, 'critical', 'firing', NOW(), $2)`,
             [unique('alert'), org]);
+          // An active HIGH recommendation with a supported estimate (counted in the savings gauge).
+          await client.query(
+            `INSERT INTO cost_recommendations (resource_id, resource_type, issue, severity, organization_id, status, potential_savings, metadata)
+             VALUES ($1, 'EBS', 'Unattached EBS volume', 'HIGH', $2, 'ACTIVE', 55, '{"savings_basis": "estimated:probe"}')`,
+            [unique('vol'), org]);
         };
         const base = await read();
         await seed(demo);
@@ -273,6 +283,8 @@ describe('platform aggregates leave the demo out and count the real organization
         expect(after.services).toBe(base.services + 1);
         expect(after.deployments).toBeCloseTo(base.deployments + 3 / 30, 6);
         expect(after.critical).toBe(base.critical + 1);
+        expect(after.savings).toBeCloseTo(base.savings + 55, 6);
+        expect(after.highRecommendations).toBe(base.highRecommendations + 1);
       });
       expect(errors).not.toHaveBeenCalled();
     } finally {
