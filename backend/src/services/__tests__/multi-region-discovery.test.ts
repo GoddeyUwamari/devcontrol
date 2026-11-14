@@ -82,6 +82,7 @@ interface Call {
 interface RegionAnswers {
   ec2?: Record<string, Answer>;
   rds?: Record<string, Answer>;
+  dynamodb?: Record<string, Answer>;
   explorer?: Record<string, Answer>;
   backup?: Record<string, Answer>;
   /** Every call of the region's clients throws what this returns for the command (nothing: answered). */
@@ -125,6 +126,7 @@ function regionClients(log: Call[], region: string, answers: RegionAnswers = {})
     ...answers.explorer,
   }, f);
   const cloudWatch = fake(log, region, 'cloudwatch', { GetMetricStatisticsCommand: () => ({ Datapoints: [] }) }, f);
+  const dynamodb = fake(log, region, 'dynamodb', { ...answers.dynamodb }, f);
   return {
     enabled: true,
     region,
@@ -149,7 +151,7 @@ function regionClients(log: Call[], region: string, answers: RegionAnswers = {})
     backup: fake(log, region, 'backup', { ListRecoveryPointsByResourceCommand: () => ({ RecoveryPoints: [] }), ...answers.backup }, f),
     securityHub: {},
     resourceExplorer: explorer,
-    getDynamoDBClientForRegion: () => ({}),
+    getDynamoDBClientForRegion: () => dynamodb,
     getApplicationAutoScalingClientForRegion: () => ({}),
     getCloudWatchClientForRegion: () => cloudWatch,
     getS3ClientForRegion: () => ({}),
@@ -389,6 +391,42 @@ describe('failure isolation: one region fails, the scan completes', () => {
     expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
     expect(await resource(orgId, euVolumeArn)).toMatchObject({ status: 'active', missing_scan_count: 0 });
     expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ outcome: 'timed_out', reason: 'region_deadline' });
+  }, 60_000);
+
+  it('L-2: a region whose deadline passes AFTER its complete search (during enrichment): no Resource Explorer reconcile', async () => {
+    const orgId = await insertOrg();
+    // A queue the search no longer returns: a reconcile would count it missing.
+    await seedResource(orgId, queueArn(EU), 'sqs', EU);
+    const tableArn = `arn:aws:dynamodb:${EU}:${ACCOUNT}:table/placeholder-table`;
+    mockAws({
+      [EU]: {
+        explorer: {
+          SearchCommand: () => ({
+            Resources: [{ Arn: tableArn, Region: EU, Service: 'dynamodb', CfnResourceType: 'AWS::DynamoDB::Table', Properties: [] }],
+            Count: { TotalResources: 1, Complete: true },
+          }),
+        },
+        // The table's enrichment never answers: the deadline (300 ms) passes during it.
+        dynamodb: { DescribeTableCommand: () => new Promise(() => undefined) },
+      },
+    });
+    const reconcileRegions: Array<string | null> = [];
+    const svc = service({ regionDeadlineMs: 300 });
+    const reconciliation = (svc as any).reconciliation;
+    const realReconcile = reconciliation.reconcile.bind(reconciliation);
+    jest.spyOn(reconciliation, 'reconcile').mockImplementation(async (...args: any[]) => {
+      reconcileRegions.push(args[2]);
+      return realReconcile(...args);
+    });
+
+    await svc.discoverAllResources(orgId);
+
+    // The search was complete and its table stored, but the region did not finish.
+    expect(await resource(orgId, tableArn)).toMatchObject({ region: EU });
+    expect(reconcileRegions).not.toContain(EU);
+    expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'region_deadline' });
+    expect(await job(orgId)).toMatchObject({ status: 'completed', warnings: ['region_incomplete'] });
   }, 60_000);
 
   it('every region fails: the job fails (with the approved text), each region with its own status', async () => {
