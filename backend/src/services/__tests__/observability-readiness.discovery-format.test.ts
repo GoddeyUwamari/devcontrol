@@ -21,28 +21,44 @@ import { DISCOVERY_WARNING_TRUNCATED_INDEX, joinDiscoveryMessage, splitDiscovery
 
 const source = readFileSync(join(__dirname, '..', 'awsResourceDiscovery.ts'), 'utf8');
 
+/**
+ * Multi-region PR 1: the five regional listings push `${prefix}: ...` with the prefix
+ * from REGIONAL_LISTINGS (one shared helper for every region), read here from the
+ * table itself.
+ */
+const REGIONAL_PUSH = 'ctx.errors.push(`${prefix}: ${error.message}`)';
+const regionalPrefixes = [...source.matchAll(/^\s+(?:\w+|'[\w-]+'): \{ label: '[^']+', prefix: '([^']+)' \},$/gm)].map((m) => `${m[1]}: `);
+
 describe('readiness discovery gate -- pinned to runDiscovery() error format', () => {
   it('every errors.push() in runDiscovery uses a `<Prefix>: ${...}` template the gate knows, and no other', () => {
     const pushes = source.match(/errors\.push\(/g) ?? [];
     const prefixed = [...source.matchAll(/errors\.push\(`([^`$]+?: )\$\{/g)].map(m => m[1]);
+    const regional = source.split(REGIONAL_PUSH).length - 1;
+    // The one bare push: a multi-region scan in which no region could be checked, with
+    // the fixed approved message, which the gate fails closed on (see the fatal test below).
+    const bare = source.split('errors.push(DISCOVERY_FAILED_MESSAGE)').length - 1;
 
-    // Every push is a recognized template shape -- none uses a bare message.
+    // Every push is a recognized template shape, or that one fixed message.
     expect(pushes.length).toBeGreaterThan(0);
-    expect(prefixed).toHaveLength(pushes.length);
-    expect(new Set(prefixed)).toEqual(new Set(DISCOVERY_ERROR_PREFIXES));
+    expect(regional).toBe(1);
+    expect(bare).toBe(1);
+    expect(prefixed.length + regional + bare).toBe(pushes.length);
+    expect(regionalPrefixes).toEqual(['EC2: ', 'EBS: ', 'RDS: ', 'Lambda: ', 'Load Balancer: ']);
+    expect(new Set([...prefixed, ...regionalPrefixes])).toEqual(new Set(DISCOVERY_ERROR_PREFIXES));
     expect(DISCOVERY_ERROR_PREFIXES).toHaveLength(new Set(DISCOVERY_ERROR_PREFIXES).size);
   });
 
   it('the EC2 and RDS scans push under exactly the prefixes the gate checks per type', () => {
-    expect(source).toContain('errors.push(`EC2: ${error.message}`)');
-    expect(source).toContain('errors.push(`RDS: ${error.message}`)');
+    expect(source).toContain("ec2: { label: 'EC2 instances', prefix: 'EC2' },");
+    expect(source).toContain("rds: { label: 'RDS databases', prefix: 'RDS' },");
+    expect(source).toContain(REGIONAL_PUSH);
     expect(DISCOVERY_ERROR_PREFIXES).toContain('EC2: ');
     expect(DISCOVERY_ERROR_PREFIXES).toContain('RDS: ');
   });
 
   it('segments are joined with the separator the gate splits on', () => {
     expect(DISCOVERY_ERROR_SEPARATOR).toBe('; ');
-    expect(source).toContain('joinDiscoveryMessage(errors, warnings)');
+    expect(source).toContain('joinDiscoveryMessage(errors, jobWarningCodes)');
     expect(joinDiscoveryMessage(['EC2: a', 'RDS: b'], [])).toBe(['EC2: a', 'RDS: b'].join(DISCOVERY_ERROR_SEPARATOR));
   });
 

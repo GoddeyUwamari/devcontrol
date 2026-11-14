@@ -244,7 +244,22 @@ export class AWSClientFactory {
 
     console.log(`✅ Using STS AssumeRole credentials for org ${organizationId} (region: ${awsRegion})`);
 
-    const clients: AWSClients = {
+    const clients = this.buildClients(config.region, config.credentials, parseAccountIdFromArn(role_arn));
+    assumedRoleSources.set(clients, { organizationId, account, region: awsRegion, credentials: tempCredentials, expiration, attemptedAt, roleUniqueId });
+    return clients;
+  }
+
+  /**
+   * Every client for `region`, signing with `credentials` (the one object of an
+   * AssumeRole: no new AssumeRole is made). Cost Explorer, CloudFront and IAM are
+   * global and always us-east-1. createClients() builds the home region's set with
+   * it; a multi-region scan builds each other enabled region's set with it
+   * (ScanContext.clientsFor, multi-region PR 1), from the same credentials object, so
+   * a credential refresh reaches every region's clients at once.
+   */
+  static buildClients(region: string, credentials: TemporaryCredentials, accountId: string | undefined): AWSClients {
+    const config = { region, credentials };
+    return {
       costExplorer: new CostExplorerClient({ ...config, region: 'us-east-1' }), // Cost Explorer is global
       ec2: new EC2Client(config),
       rds: new RDSClient(config),
@@ -267,17 +282,14 @@ export class AWSClientFactory {
       resourceExplorer: new ResourceExplorer2Client(config),
       backup: new BackupClient(config),
       securityHub: new SecurityHubClient(config),
-      region: awsRegion,
+      region,
       enabled: true,
-      accountId: parseAccountIdFromArn(role_arn),
-      getDynamoDBClientForRegion: (region: string) => new DynamoDBClient({ region, credentials: tempCredentials }),
-      getApplicationAutoScalingClientForRegion: (region: string) =>
-        new ApplicationAutoScalingClient({ region, credentials: tempCredentials }),
-      getCloudWatchClientForRegion: (region: string) => new CloudWatchClient({ region, credentials: tempCredentials }),
-      getS3ClientForRegion: (region: string) => new S3Client({ region, credentials: tempCredentials }),
+      accountId,
+      getDynamoDBClientForRegion: (r: string) => new DynamoDBClient({ region: r, credentials }),
+      getApplicationAutoScalingClientForRegion: (r: string) => new ApplicationAutoScalingClient({ region: r, credentials }),
+      getCloudWatchClientForRegion: (r: string) => new CloudWatchClient({ region: r, credentials }),
+      getS3ClientForRegion: (r: string) => new S3Client({ region: r, credentials }),
     };
-    assumedRoleSources.set(clients, { organizationId, account, region: awsRegion, credentials: tempCredentials, expiration, attemptedAt, roleUniqueId });
-    return clients;
   }
 
   /**

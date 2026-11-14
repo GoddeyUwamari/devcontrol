@@ -12,8 +12,8 @@
  * separates them again: readers take the column when it is set and fall back to
  * error_message for older rows (jobWarnings()), and the readiness gate ignores them.
  * A code added after the column (DISCOVERY_WARNING_LISTING_TRUNCATED,
- * DISCOVERY_WARNING_SCAN_LEASE_LOST, DISCOVERY_WARNING_CONNECTION_CHANGED) is
- * written to the column only, never to error_message.
+ * DISCOVERY_WARNING_SCAN_LEASE_LOST, DISCOVERY_WARNING_CONNECTION_CHANGED and the
+ * multi-region PR 1 codes) is written to the column only, never to error_message.
  */
 
 /**
@@ -44,11 +44,39 @@ export const DISCOVERY_WARNING_SCAN_LEASE_LOST = 'scan_lease_lost';
  */
 export const DISCOVERY_WARNING_CONNECTION_CHANGED = 'connection_changed';
 
+/**
+ * Multi-region PR 1 (MR-D6, A3): at least one enabled region could not be checked
+ * completely on this scan (denied, timed out, failed, or never started because of
+ * the scan budget). The job still completed: what was checked was recorded, each
+ * region's own status is in aws_account_regions, and nothing in a region that was
+ * not checked completely was reconciled.
+ */
+export const DISCOVERY_WARNING_REGION_INCOMPLETE = 'region_incomplete';
+
+/**
+ * Multi-region PR 1 (A2): the 45-minute scan budget ran out, so at least one
+ * enabled region was never started on this scan. Each such region's status carries
+ * the same code (aws_account_regions.last_error_code = 'scan_budget').
+ */
+export const DISCOVERY_WARNING_SCAN_BUDGET = 'scan_budget';
+
+/**
+ * Multi-region PR 1 (A5, founder decision Nov 14): a region scanned has no active
+ * Resource Explorer index, so no Search was made there (a Search can create an
+ * index in the customer's account). The generic types (VPC, SQS, SNS, ...) were not
+ * listed or reconciled in that region; every own listing still ran. Not an error,
+ * not a region failure. Applies with the multi-region flag on and off.
+ */
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX = 'resource_explorer_no_index';
+
 export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
   DISCOVERY_WARNING_SCAN_LEASE_LOST,
   DISCOVERY_WARNING_CONNECTION_CHANGED,
+  DISCOVERY_WARNING_REGION_INCOMPLETE,
+  DISCOVERY_WARNING_SCAN_BUDGET,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
 ] as const;
 
 export type DiscoveryWarning = (typeof DISCOVERY_WARNINGS)[number];

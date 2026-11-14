@@ -34,7 +34,7 @@ import { DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX 
 import * as foundation from '../../repositories/multi-region-foundation.repository';
 import { RE_RECONCILED_TYPES } from '../resourceExplorer.service';
 import { AwsAccountAmbiguousError, isAwsAccountAmbiguous } from '../../repositories/aws-accounts.repository';
-import { PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource, refreshPlaceholderAccount } from './helpers/scan-source';
+import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource, refreshPlaceholderAccount } from './helpers/scan-source';
 
 const dbConfig = () => ({
   host: process.env.DB_HOST || 'localhost',
@@ -97,7 +97,7 @@ function fake(answers: Record<string, Answer>) {
 
 function explorer(page: () => any): ResourceExplorer2Client {
   const client = new ResourceExplorer2Client({ region: HOME });
-  (client as any).send = jest.fn(async () => page());
+  (client as any).send = jest.fn(async (command: unknown) => (isGetIndex(command) ? ACTIVE_INDEX : page()));
   return client;
 }
 
@@ -453,18 +453,23 @@ describe('Q-E: Resource Explorer results that failed to store', () => {
     expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'failed', last_error_code: null, last_success_at: null });
   }, 30_000);
 
-  it('static: the status-only Resource Explorer outcome is referenced exactly 4 times (declared, Q-E, the status write\'s and the saved scan sources\' input)', () => {
+  it('static: the status-only Resource Explorer outcome reaches the status write and the saved scan sources only', () => {
+    // Multi-region PR 1 moved the search into inventoryResourceExplorer (shared with each
+    // region of a multi-region scan), which returns the outcome; Q-E's 'failed' is set there.
     const discovery = fs
       .readFileSync(path.join(__dirname, '..', 'awsResourceDiscovery.ts'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
-    const lines = discovery.split('\n').filter((line) => /\bresourceExplorerOutcome\b/.test(line)).map((line) => line.trim());
-    expect(discovery.match(/\bresourceExplorerOutcome\b/g)).toHaveLength(4);
-    expect(lines).toEqual([
-      'const resourceExplorerOutcome: SourceOutcome = {',
-      "resourceExplorerOutcome.status = 'failed';",
-      'await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, [...ownOutcomes, resourceExplorerOutcome]);',
-      'await this.recordScanSources(client, scan, jobId, scanContext, awsClients, organizationId, [...ownOutcomes, resourceExplorerOutcome]);',
+    const linesWith = (name: string) => discovery.split('\n').filter((line) => new RegExp(`\\b${name}\\b`).test(line)).map((line) => line.trim());
+    expect(linesWith('resourceExplorerOutcome')).toEqual([
+      'let resourceExplorerOutcome: RegionSourceOutcome | null = null;',
+      'resourceExplorerOutcome = explored.outcome;',
+      'const homeOutcomes = resourceExplorerOutcome ? [...ownOutcomes, resourceExplorerOutcome] : ownOutcomes;',
+    ]);
+    expect(linesWith('homeOutcomes')).toEqual([
+      'const homeOutcomes = resourceExplorerOutcome ? [...ownOutcomes, resourceExplorerOutcome] : ownOutcomes;',
+      'await this.recordHomeRegionStatus(client, scan, jobId, awsClients.region, organizationId, homeOutcomes);',
+      'await this.recordScanSources(client, scan, jobId, scanContext, awsClients, organizationId, homeOutcomes);',
     ]);
   });
 });

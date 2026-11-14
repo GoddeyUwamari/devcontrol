@@ -22,7 +22,7 @@ import { HeldLease, acquireScanLease, isLeaseLost } from '../scan-lease';
 import { DISCOVERY_LEASE_LOST_MESSAGE, LeaseTiming, SCAN_KIND_DISCOVERY, onTaggedConnection } from '../scan-session';
 import { AwsCallTimeoutError } from '../../utils/awsCallPolicy';
 import * as foundation from '../../repositories/multi-region-foundation.repository';
-import { PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 
 const dbConfig = () => ({
   host: process.env.DB_HOST || 'localhost',
@@ -88,7 +88,7 @@ function fake(answers: Record<string, (input: any) => any>) {
 
 function explorer(): ResourceExplorer2Client {
   const client = new ResourceExplorer2Client({ region: HOME });
-  (client as any).send = jest.fn(async () => ({ Resources: [], Count: { TotalResources: 0, Complete: true } }));
+  (client as any).send = jest.fn(async (command: unknown) => (isGetIndex(command) ? ACTIVE_INDEX : { Resources: [], Count: { TotalResources: 0, Complete: true } }));
   return client;
 }
 

@@ -10,6 +10,7 @@
  * This module only shapes the calls. What a failed call means (unknown, never a
  * default) is decided where the call is made.
  */
+import { discoveryConcurrency } from '../config/discovery-concurrency';
 
 export interface AwsCallPolicy {
   /** How many per-resource (or per-region) units of work run at once. */
@@ -28,10 +29,21 @@ export interface AwsCallPolicy {
   /** Replaceable so a test does not have to wait out real backoff. */
   sleep: (ms: number) => Promise<void>;
   random: () => number;
+  /**
+   * Multi-region PR 1: a region's deadline. Once it is aborted no call starts, a call
+   * in flight is abandoned (its request aborted) and a retry is not attempted; the call
+   * throws the signal's reason. Unset: no deadline beyond timeoutMs per attempt.
+   */
+  signal?: AbortSignal;
+  /** Told of every throttled attempt (the region's throttle breaker and its count). */
+  onThrottle?: () => void;
+  /** Told of every attempt's command before it is sent (the region's call counts). */
+  onCall?: (command: unknown) => void;
 }
 
 export const DEFAULT_AWS_CALL_POLICY: AwsCallPolicy = {
-  concurrency: 8,
+  // The resource pool (config/discovery-concurrency.ts): 8 unless an operator sets it.
+  concurrency: discoveryConcurrency().resourcePool,
   timeoutMs: 15_000,
   maxAttempts: 2,
   baseDelayMs: 200,
@@ -86,11 +98,14 @@ export async function callWithPolicy<T>(
   call: (signal: AbortSignal) => Promise<T>,
   policy: AwsCallPolicy = DEFAULT_AWS_CALL_POLICY
 ): Promise<T> {
+  const deadline = policy.signal;
   for (let attempt = 1; ; attempt++) {
+    if (deadline?.aborted) throw deadline.reason;
     const controller = new AbortController();
     let timer: NodeJS.Timeout | undefined;
+    let onDeadline: (() => void) | undefined;
     try {
-      return await Promise.race([
+      const racers: Promise<T>[] = [
         call(controller.signal),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => {
@@ -98,12 +113,27 @@ export async function callWithPolicy<T>(
             reject(new AwsCallTimeoutError(policy.timeoutMs));
           }, policy.timeoutMs);
         }),
-      ]);
+      ];
+      if (deadline) {
+        racers.push(
+          new Promise<never>((_resolve, reject) => {
+            onDeadline = () => {
+              controller.abort();
+              reject(deadline.reason);
+            };
+            deadline.addEventListener('abort', onDeadline, { once: true });
+          })
+        );
+      }
+      return await Promise.race(racers);
     } catch (error) {
+      if (isThrottlingError(error)) policy.onThrottle?.();
+      if (deadline?.aborted) throw deadline.reason;
       if (attempt >= policy.maxAttempts || !isThrottlingError(error)) throw error;
       await policy.sleep(backoffDelayMs(attempt, policy));
     } finally {
       if (timer) clearTimeout(timer);
+      if (deadline && onDeadline) deadline.removeEventListener('abort', onDeadline);
     }
   }
 }
@@ -118,7 +148,10 @@ export function withCallPolicy<T extends { send: (...args: any[]) => any }>(clie
   if (!client || typeof client.send !== 'function') return client;
   const wrapped = Object.create(client) as T;
   wrapped.send = ((command: unknown, options?: Record<string, unknown>) =>
-    callWithPolicy((abortSignal) => client.send(command, { ...(options ?? {}), abortSignal }), policy)) as T['send'];
+    callWithPolicy((abortSignal) => {
+      policy.onCall?.(command);
+      return client.send(command, { ...(options ?? {}), abortSignal });
+    }, policy)) as T['send'];
   return wrapped;
 }
 
@@ -239,6 +272,36 @@ export async function mapWithConcurrency<T, R>(
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+  if (errors.length > 0) throw errors[0];
+  return results;
+}
+
+/**
+ * mapWithConcurrency whose limit can fall while it runs (multi-region PR 1, the
+ * region's throttle breaker). `limit()` is read before each item is taken: a worker
+ * numbered at or above it stops taking items, so in-flight work finishes and fewer
+ * units start. Worker 0 always continues, so every item is still processed.
+ */
+export async function mapWithDynamicConcurrency<T, R>(
+  items: readonly T[],
+  limit: () => number,
+  work: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const errors: unknown[] = [];
+  let next = 0;
+  const worker = async (workerIndex: number) => {
+    while (next < items.length && (workerIndex === 0 || workerIndex < limit())) {
+      const index = next++;
+      try {
+        results[index] = await work(items[index], index);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  };
+  const workers = Math.max(1, Math.min(limit(), items.length));
+  await Promise.all(Array.from({ length: workers }, (_unused, workerIndex) => worker(workerIndex)));
   if (errors.length > 0) throw errors[0];
   return results;
 }

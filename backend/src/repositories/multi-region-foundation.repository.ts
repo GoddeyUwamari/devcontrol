@@ -6,9 +6,10 @@
  *   aws_scan_leases, job_leases  leases with fencing tokens
  *   organization_feature_flags   per-organization flags, OFF unless a row says enabled
  *
- * Reads, plus the two writes discovery makes to aws_account_regions: the
- * account's region list (recordRegionList, multi-region M5a) and the home
- * region's scan status (recordHomeRegionScanStatus, M5b). Acquiring,
+ * Reads, plus the writes discovery makes to aws_account_regions: the account's
+ * region list (recordRegionList, multi-region M5a), the home region's scan status
+ * (recordHomeRegionScanStatus, M5b) and, in a multi-region scan, each region's
+ * (recordRegionScanStatus, PR 1). Acquiring,
  * renewing and releasing leases (the fencing-token contract in the migration's
  * header) is implemented with the code that takes them (scan-lease.ts).
  *
@@ -25,7 +26,7 @@ import type { HomeRegionScanResult } from '../services/region-scan-status';
 /** A connection the caller has already tagged with the organization. */
 type Executor = Pick<PoolClient, 'query'>;
 
-/** The flag that will gate multi-region discovery per organization. */
+/** The flag that gates multi-region discovery per organization (multi-region PR 1). */
 export const MULTI_REGION_DISCOVERY_FLAG = 'multi_region_discovery';
 
 export type RegionScanStatus =
@@ -264,7 +265,53 @@ export async function recordHomeRegionScanStatus(
   lease: HeldLease,
   scan: { region: string; jobId: string; result: HomeRegionScanResult }
 ): Promise<number> {
-  if (lease.key.table !== 'aws_scan_leases') throw new Error('recordHomeRegionScanStatus: a scan lease is required');
+  return writeRegionScanStatus('recordHomeRegionScanStatus', client, lease, scan);
+}
+
+/**
+ * Records one region's scan status (multi-region PR 1, A6): the same write as
+ * recordHomeRegionScanStatus, for any region of a multi-region scan, written once at
+ * the end of that region's run. last_scan_started_at and last_scan_finished_at are
+ * written together, in one statement, so the scan_time_order CHECK always holds;
+ * the started time is the job's (a region "done in this scan" is one whose
+ * last_scan_started_at equals the running job's started_at). The result carries the
+ * region's reason code (region-run.ts). Returns the rows written (0: no row for the
+ * region, or a newer scan's status is there).
+ */
+export async function recordRegionScanStatus(
+  client: ClientBase,
+  lease: HeldLease,
+  scan: { region: string; jobId: string; result: HomeRegionScanResult }
+): Promise<number> {
+  return writeRegionScanStatus('recordRegionScanStatus', client, lease, scan);
+}
+
+/**
+ * The regions a multi-region scan scans (multi-region PR 1): the enabled rows of the
+ * account's latest stored region list (every row of one list shares its
+ * last_listed_at), minus any a customer allow-list excluded (scan_enabled = false).
+ * A region that is not enabled (an opt-in region the account has not enabled) is
+ * never returned. Empty when no list was ever stored.
+ */
+export async function listScanRegions(db: Executor, organizationId: string, awsAccountId: string): Promise<string[]> {
+  const { rows } = await db.query(
+    `SELECT region FROM aws_account_regions
+      WHERE organization_id = $1 AND aws_account_id = $2 AND enabled AND scan_enabled
+        AND last_listed_at = (SELECT max(last_listed_at) FROM aws_account_regions
+                               WHERE organization_id = $1 AND aws_account_id = $2)
+      ORDER BY region`,
+    [organizationId, awsAccountId]
+  );
+  return rows.map((row: { region: string }) => row.region);
+}
+
+async function writeRegionScanStatus(
+  caller: string,
+  client: ClientBase,
+  lease: HeldLease,
+  scan: { region: string; jobId: string; result: HomeRegionScanResult }
+): Promise<number> {
+  if (lease.key.table !== 'aws_scan_leases') throw new Error(`${caller}: a scan lease is required`);
   const { organizationId, awsAccountId } = lease.key;
   return withFencedTransaction(client, lease, async () => {
     const result = await client.query(

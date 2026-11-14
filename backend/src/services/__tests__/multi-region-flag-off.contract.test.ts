@@ -395,4 +395,14 @@ describe('flag OFF: the discovery contract before multi-region scanning', () => 
 
     expect({ first, later, failing }).toMatchSnapshot();
   }, 60_000);
+
+  it('a flag row that says OFF (enabled = false) records exactly the scan no row records', async () => {
+    const withoutRow = await insertOrg();
+    const withRow = await insertOrg();
+    await pool.query(
+      `INSERT INTO organization_feature_flags (organization_id, flag, enabled, set_by, note) VALUES ($1, 'multi_region_discovery', false, 'test', 'test')`,
+      [withRow]
+    );
+    expect(await recordScan(withRow, FULL)).toEqual(await recordScan(withoutRow, FULL));
+  }, 60_000);
 });

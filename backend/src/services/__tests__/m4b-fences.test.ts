@@ -463,6 +463,7 @@ const DESTRUCTIVE_METHODS: Record<string, number> = {
   persistResourceEvaluation: 1, // the `lease` property of its input
   recordRegionList: 1, // multi-region M5a, F17
   recordHomeRegionScanStatus: 1, // multi-region M5b, F18
+  recordRegionScanStatus: 1, // multi-region PR 1: each region's status in a multi-region scan
 };
 
 /**
@@ -534,6 +535,11 @@ describe('L3 static: every destructive step of a scan is fenced', () => {
         'services/awsResourceDiscovery.ts recordRegionList',
         'services/awsResourceDiscovery.ts reconcileActiveRecommendations',
         'services/awsResourceDiscovery.ts reconcileScan',
+        // Multi-region PR 1: networking per region and IAM once (multiRegionSecurityScan),
+        // and each region's status (recordRegionStatus).
+        'services/awsResourceDiscovery.ts reconcileScan',
+        'services/awsResourceDiscovery.ts reconcileScan',
+        'services/awsResourceDiscovery.ts recordRegionScanStatus',
         'services/awsResourceDiscovery.ts replaceReservedInstanceRecommendations',
         'services/soc2-evidence.service.ts persistComputation',
       ].sort()

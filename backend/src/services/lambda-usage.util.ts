@@ -65,16 +65,18 @@ const usageCache = new Map<string, CacheEntry>();
  * Keyed by organization AND connection identity (awsConnectionIdentity of the
  * aws_accounts row whose credentials fetched it; aws-connection-fence.ts): an
  * entry from one connection is never read for another, even for a reconnect to
- * the same account. JSON, because a function name may contain any separator.
+ * the same account. And by the function's region (multi-region PR 1): a function
+ * name is unique within a region only, so two regions' functions of the same name
+ * never share an entry. JSON, because a function name may contain any separator.
  */
-function cacheKey(organizationId: string, connection: string, functionName: string, windowDays: number): string {
-  return JSON.stringify([organizationId, connection, functionName, windowDays]);
+function cacheKey(organizationId: string, connection: string, region: string | null, functionName: string, windowDays: number): string {
+  return JSON.stringify([organizationId, connection, region, functionName, windowDays]);
 }
 
 /**
  * Real Invocations (Sum) and Duration (Average) for one Lambda function over
  * the trailing `windowDays`, cached per (organization, connection identity,
- * function, window); `connection` null disables the cache. Returns null only when the CloudWatch API call
+ * region, function, window); `connection` null disables the cache. Returns null only when the CloudWatch API call
  * itself failed -- callers must treat that as "unavailable", never as zero
  * usage or zero cost.
  */
@@ -83,10 +85,13 @@ export async function getLambdaUsageOverWindow(
   organizationId: string,
   connection: string | null,
   functionName: string,
-  windowDays: number = LAMBDA_USAGE_WINDOW_DAYS
+  windowDays: number = LAMBDA_USAGE_WINDOW_DAYS,
+  // The function's region (the client's): part of the cache key. Discovery and the
+  // low-usage detector both pass it, so within one scan they still share entries.
+  region: string | null = null
 ): Promise<LambdaUsage | null> {
   // With no known connection nothing is read from or written to the cache.
-  const key = connection === null ? null : cacheKey(organizationId, connection, functionName, windowDays);
+  const key = connection === null ? null : cacheKey(organizationId, connection, region, functionName, windowDays);
   const cached = key === null ? undefined : usageCache.get(key);
   if (cached && Date.now() - cached.timestamp < LAMBDA_USAGE_CACHE_TTL_MS) {
     return cached.data;

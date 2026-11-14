@@ -990,7 +990,7 @@ class CostOptimizationService {
       for (const func of listing.items) {
         if (!func.FunctionName) continue;
 
-        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, connection, func.FunctionName);
+        const usage = await getLambdaUsageOverWindow(cloudWatchClient, organizationId, connection, func.FunctionName, LAMBDA_USAGE_WINDOW_DAYS, region);
         if (usage === null) {
           // CloudWatch call itself failed -- never assumed zero, and the function is
           // unknown this scan: a stored recommendation for it is kept.

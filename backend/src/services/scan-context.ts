@@ -18,8 +18,12 @@
  * failed refresh is classified exactly as createClients() classifies the
  * first AssumeRole, and is not retried for the rest of the scan.
  *
- * Only the home region is scanned until multi-region scanning (M7):
- * clientsFor() refuses any other region.
+ * clientsFor() hands out the home region's clients, and those of any region the
+ * scan was allowed with allowRegions() (multi-region PR 1: the enabled regions of
+ * the account's region list, when the organization's multi_region_discovery flag is
+ * on). Any other region is refused. Another region's clients are built from the
+ * same credentials object (AWSClientFactory.buildClients), so they need no AssumeRole
+ * of their own and every refresh reaches them too.
  *
  * Every AssumeRole made here (the first and each refresh) is recorded as the
  * connection's health (AWS connect PR D1, connection-health-recorder.ts),
@@ -61,6 +65,8 @@ export class ScanContext {
   /** The role ARN of that row (the policy compare, AWS connect PR D1). */
   readonly roleArn: string;
   private readonly home: AWSClients;
+  /** Regions other than the home region this scan may make calls in, and their clients once built. */
+  private readonly allowed = new Map<string, AWSClients | undefined>();
   private refreshing: Promise<void> | undefined;
   private refreshFailure: unknown;
 
@@ -112,12 +118,28 @@ export class ScanContext {
     return this.home.region;
   }
 
-  /** The clients for `region`. Only the home region is scanned before M7. */
-  clientsFor(region: string): AWSClients {
-    if (region !== this.home.region) {
-      throw new Error(`SCAN_REGION_UNSUPPORTED: org ${this.organizationId} scans only its home region ${this.home.region}, not ${region}`);
+  /**
+   * Lets this scan make calls in `regions` (multi-region PR 1). The caller passes the
+   * enabled regions of the account's own region list, never a static list.
+   */
+  allowRegions(regions: readonly string[]): void {
+    for (const region of regions) {
+      if (region !== this.home.region && !this.allowed.has(region)) this.allowed.set(region, undefined);
     }
-    return this.home;
+  }
+
+  /** The clients for `region`: the home region, or a region allowRegions() allowed. */
+  clientsFor(region: string): AWSClients {
+    if (region === this.home.region) return this.home;
+    if (!this.allowed.has(region)) {
+      throw new Error(`SCAN_REGION_UNSUPPORTED: org ${this.organizationId} is not scanning region ${region}`);
+    }
+    let clients = this.allowed.get(region);
+    if (!clients) {
+      clients = this.withRefresh(AWSClientFactory.buildClients(region, this.source.credentials, this.home.accountId));
+      this.allowed.set(region, clients);
+    }
+    return clients;
   }
 
   /** Assumes the role again when the credentials are within the refresh window of expiring. */

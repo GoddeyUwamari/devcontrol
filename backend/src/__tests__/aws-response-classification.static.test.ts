@@ -127,6 +127,8 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-iam:GetRolePolicyCommand': metadataOnly('the DevControlReadExtras document, compared in memory; only a matches/differs verdict is kept (connect-policy-compare.ts)'),
   'client-cost-explorer:GetCostAndUsageCommand': metadataOnly('cost and usage figures by dimension'),
   'client-resource-explorer-2:SearchCommand': metadataOnly('resource ARNs, types, regions and tags'),
+  // Multi-region PR 1 (A5): asked before every Search; only State and Type are read.
+  'client-resource-explorer-2:GetIndexCommand': metadataOnly('the region\'s index ARN, type and state'),
   'client-securityhub:GetEnabledStandardsCommand': metadataOnly('standards subscription ARNs and status'),
   'client-securityhub:DescribeStandardsCommand': metadataOnly('standard names and descriptions'),
   'client-securityhub:GetFindingsCommand': {
