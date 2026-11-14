@@ -263,6 +263,13 @@ export const UPSERT_BATCH_SIZE = 200;
 /** The own listings made in one region's endpoint (the rest are global: S3, CloudFront, IAM). */
 type RegionalType = 'ec2' | 'ebs' | 'rds' | 'lambda' | 'load-balancer';
 const REGIONAL_TYPES: RegionalType[] = ['ec2', 'ebs', 'rds', 'lambda', 'load-balancer'];
+/**
+ * The home region's listings whose errors a multi-region scan still writes into the
+ * job's error text (R1): the types the Operational Health readiness gate checks
+ * (observability-readiness.service.ts TYPE_ERROR_PREFIX).
+ */
+const HOME_READINESS_PREFIXES = ['EC2: ', 'RDS: '];
+
 /** Each regional listing's log label and error prefix (the job's error text, unchanged from before PR 1). */
 const REGIONAL_LISTINGS: Record<RegionalType, { label: string; prefix: string }> = {
   ec2: { label: 'EC2 instances', prefix: 'EC2' },
@@ -683,12 +690,15 @@ export class AWSResourceDiscoveryService {
     totals: { created: number; updated: number };
     warnings: DiscoveryWarning[];
     scanStartedAt: number;
-  }): Promise<{ records: RegionScanRecord[]; notStarted: string[]; terminated: number }> {
+  }): Promise<{ records: RegionScanRecord[]; notStarted: string[]; terminated: number; homeReadinessErrors: string[] }> {
     const { scan, scanContext, organizationId, jobId } = args;
     const timing = this.multiRegionTiming;
     const records: RegionScanRecord[] = [];
     const notStarted: string[] = [];
     let terminated = 0;
+    // R1 (founder decision Nov 14): the home region's own EC2 and RDS listing errors,
+    // for the job's error text, which the Operational Health readiness gate reads.
+    let homeReadinessErrors: string[] = [];
 
     const scanOneRegion = (region: string) =>
       onTaggedConnection(this.pool, organizationId, (regionClient) =>
@@ -721,6 +731,9 @@ export class AWSResourceDiscoveryService {
               run,
             };
             await this.listRegionTypes(ctx, REGIONAL_TYPES, null);
+            if (region === scanContext.region) {
+              homeReadinessErrors = ctx.errors.filter((message) => HOME_READINESS_PREFIXES.some((prefix) => message.startsWith(prefix)));
+            }
             let explorerOutcome: RegionSourceOutcome | null = null;
             try {
               const explored = await this.inventoryResourceExplorer(ctx, args.allowedGenericTypes);
@@ -770,7 +783,7 @@ export class AWSResourceDiscoveryService {
 
     const order = new Map(args.regions.map((region, index) => [region, index]));
     records.sort((a, b) => (order.get(a.region) ?? 0) - (order.get(b.region) ?? 0));
-    return { records, notStarted, terminated };
+    return { records, notStarted, terminated, homeReadinessErrors };
   }
 
   /**
@@ -1495,7 +1508,7 @@ export class AWSResourceDiscoveryService {
       // The home region's Resource Explorer inventory (inventoryResourceExplorer), or,
       // with the multi-region flag on, every enabled region's whole inventory.
       let resourceExplorerOutcome: RegionSourceOutcome | null = null;
-      let multi: { regions: string[]; records: RegionScanRecord[]; notStarted: string[] } | undefined;
+      let multi: { regions: string[]; records: RegionScanRecord[]; notStarted: string[]; homeReadinessErrors: string[] } | undefined;
       if (!multiRegion) {
         const explored = await this.inventoryResourceExplorer(home, allowedGenericTypes);
         resourceExplorerOutcome = explored.outcome;
@@ -1519,7 +1532,7 @@ export class AWSResourceDiscoveryService {
           scanStartedAt,
         });
         resourcesTerminated += scanned.terminated;
-        multi = { regions, records: scanned.records, notStarted: scanned.notStarted };
+        multi = { regions, records: scanned.records, notStarted: scanned.notStarted, homeReadinessErrors: scanned.homeReadinessErrors };
         if (scanned.notStarted.length > 0 || scanned.records.some((record) => regionFailed(record.result))) {
           warnings.push(DISCOVERY_WARNING_REGION_INCOMPLETE);
         }
@@ -1954,6 +1967,13 @@ export class AWSResourceDiscoveryService {
       // the job's error text, but does not set the job's status, which other pages read
       // as discovery's own. cost_analysis_completed and the run record carry it.
       const discoveryFailed = errors.some((message) => !message.startsWith('Cost analysis: '));
+      // The job's error text (R1, founder decision Nov 14): with the multi-region flag on,
+      // the home region's EC2 and RDS listing errors are added, in the format the
+      // Operational Health readiness gate reads ("EC2: ...", "RDS: ..."), so a home-region
+      // failure blocks that type's readiness as it does without the flag. They do not
+      // fail the job (A3; discoveryFailed above is decided without them). Another region's
+      // errors are never written here.
+      const jobErrors: string[] = multi ? [...errors, ...multi.homeReadinessErrors] : errors;
 
       // Update job status
       console.log(`\n📊 [Discovery] Discovery Summary:`);
@@ -2012,7 +2032,7 @@ export class AWSResourceDiscoveryService {
             totals.created,
             totals.updated,
             resourcesTerminated,
-            joinDiscoveryMessage(errors, jobWarningCodes),
+            joinDiscoveryMessage(jobErrors, jobWarningCodes),
             complianceScanCompleted,
             costAnalysisCompleted,
             jobId
@@ -2058,7 +2078,7 @@ export class AWSResourceDiscoveryService {
         resources_discovered: totals.created,
         resources_updated: totals.updated,
         resources_deleted: resourcesTerminated,
-        errors: errors,
+        errors: jobErrors,
         warnings: jobWarningCodes
       };
     } catch (error: any) {

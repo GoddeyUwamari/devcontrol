@@ -34,6 +34,7 @@ import { DEFAULT_AWS_CALL_POLICY } from '../../utils/awsCallPolicy';
 import { OrphanedResourceDetectorService } from '../orphanedResourceDetector';
 import { ComplianceScannerService } from '../complianceScanner';
 import { DISCOVERY_FAILED_MESSAGE } from '../discovery-job-messages';
+import { ObservabilityReadinessService, evaluateDiscoveryGate } from '../observability-readiness.service';
 import * as foundation from '../../repositories/multi-region-foundation.repository';
 import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 
@@ -599,6 +600,87 @@ describe('security groups per region; findings with no region resolved once, wit
     await service().discoverAllResources(orgId);
     expect(await status(orgId, 'k-unregioned')).toBe('resolved');
   }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+describe('R1: the home region\'s EC2 and RDS failures still reach the Operational Health readiness gate', () => {
+  /** The gate's answer for the organization's latest finished run, read exactly as the service reads it. */
+  async function gate(orgId: string) {
+    // getGatedRun is private: the same read the readiness service makes.
+    const service = new ObservabilityReadinessService() as unknown as { getGatedRun: (id: string) => Promise<Parameters<typeof evaluateDiscoveryGate>[0]> };
+    const latest = await service.getGatedRun(orgId);
+    const shape = (g: ReturnType<typeof evaluateDiscoveryGate>) => (g.kind === 'usable' ? { kind: 'usable' } : g);
+    return { ec2: shape(evaluateDiscoveryGate(latest, 'ec2')), rds: shape(evaluateDiscoveryGate(latest, 'rds')) };
+  }
+  const refused = () => () => { throw accessDenied(); };
+  const segments = (message: string | null) => (message ?? '').split('; ').filter(Boolean);
+
+  it.each([
+    ['EC2', { ec2: { DescribeInstancesCommand: refused() } }, { ec2: { kind: 'error', reason: 'EC2 discovery failed in the latest discovery run' }, rds: { kind: 'usable' } }],
+    ['RDS', { rds: { DescribeDBInstancesCommand: refused() } }, { ec2: { kind: 'usable' }, rds: { kind: 'error', reason: 'RDS discovery failed in the latest discovery run' } }],
+  ])('a home %s failure blocks that type\'s readiness exactly as without the flag; the job still completes', async (type, answers, expected) => {
+    const flagOn = await insertOrg();
+    mockAws({ [HOME]: answers as RegionAnswers });
+    await service().discoverAllResources(flagOn);
+    const onJob = await job(flagOn);
+    expect(onJob.status).toBe('completed');
+    expect(onJob.warnings).toEqual(['region_incomplete']);
+    expect(segments(onJob.error_message)).toEqual([expect.stringMatching(new RegExp(`^${type}: `))]);
+
+    jest.restoreAllMocks();
+    quietConsole();
+    const flagOff = await insertOrg({ flag: false });
+    mockAws({ [HOME]: answers as RegionAnswers });
+    await service().discoverAllResources(flagOff);
+    expect((await job(flagOff)).status).toBe('failed');
+
+    expect(await gate(flagOn)).toEqual(expected);
+    expect(await gate(flagOff)).toEqual(await gate(flagOn));
+  }, 60_000);
+
+  it('a non-home failure (EC2 and RDS in eu-west-1) is not in the error text and blocks nothing', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { ec2: { DescribeInstancesCommand: refused() }, rds: { DescribeDBInstancesCommand: refused() } } });
+    await service().discoverAllResources(orgId);
+    expect(await job(orgId)).toMatchObject({ status: 'completed', error_message: null, warnings: ['region_incomplete'] });
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'denied' });
+    expect(await gate(orgId)).toEqual({ ec2: { kind: 'usable' }, rds: { kind: 'usable' } });
+  }, 60_000);
+
+  it('only EC2 and RDS: another home listing\'s failure (Lambda) is the region\'s, not in the error text', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [HOME]: { fail: (command) => (command === 'ListFunctionsCommand' ? accessDenied() : undefined) } });
+    await service().discoverAllResources(orgId);
+    expect(await job(orgId)).toMatchObject({ status: 'completed', error_message: null, warnings: ['region_incomplete'] });
+  }, 60_000);
+
+  it('flag OFF: a completed job never carries an EC2 or RDS segment (the gate change is a no-op without the flag)', async () => {
+    // Every failure that leaves a flag-off job completed (a cost failure only), and every
+    // EC2/RDS failure (which fails the job): no completed job has an EC2/RDS segment.
+    const cases: Array<{ answers: Record<string, RegionAnswers>; cost?: boolean }> = [
+      { answers: {} },
+      { answers: {}, cost: true },
+      { answers: { [HOME]: { ec2: { DescribeInstancesCommand: refused() } } } },
+      { answers: { [HOME]: { rds: { DescribeDBInstancesCommand: refused() } } } },
+      { answers: { [HOME]: { ec2: { DescribeInstancesCommand: refused() } } }, cost: true },
+      { answers: { [HOME]: { fail: (command) => (command === 'ListFunctionsCommand' ? accessDenied() : undefined) } } },
+    ];
+    const jobs: Array<{ status: string; error_message: string | null }> = [];
+    for (const { answers, cost } of cases) {
+      const orgId = await insertOrg({ flag: false });
+      const mocks = mockAws(answers);
+      if (cost) mocks.cost.mockRejectedValue(new Error('cost boom'));
+      await service().discoverAllResources(orgId);
+      jobs.push(await job(orgId));
+      jest.restoreAllMocks();
+      quietConsole();
+    }
+    expect(jobs.map((j) => j.status)).toEqual(['completed', 'completed', 'failed', 'failed', 'failed', 'failed']);
+    for (const j of jobs.filter((row) => row.status === 'completed')) {
+      expect(segments(j.error_message).filter((segment) => /^(EC2|RDS): /.test(segment))).toEqual([]);
+    }
+    expect(segments(jobs[1].error_message)).toEqual(['Cost analysis: cost boom']);
+  }, 120_000);
 });
 
 // ---------------------------------------------------------------------------

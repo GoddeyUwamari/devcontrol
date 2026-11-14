@@ -114,6 +114,17 @@ export function evaluateDiscoveryGate(
     return { kind: 'tier_excluded', run }
   }
   if (run.status === 'completed') {
+    // Multi-region PR 1 (R1, founder decision Nov 14): a multi-region scan completes
+    // even when the home region's EC2 or RDS listing failed (MR-D6), and records that
+    // failure in its error text under the same prefix. A completed run carrying this
+    // type's own prefix is that type's failure, exactly as on a failed run. Every other
+    // segment of a completed run (a cost failure, a legacy warning) is still ignored.
+    // A completed run without the flag never carries an EC2 or RDS segment: any such
+    // error fails the job.
+    const completedSegments = (run.errorMessage ?? '').split(DISCOVERY_ERROR_SEPARATOR)
+    if (completedSegments.some(segment => segment.startsWith(TYPE_ERROR_PREFIX[type]))) {
+      return { kind: 'error', reason: `${TYPE_LABEL[type]} discovery failed in the latest discovery run` }
+    }
     return { kind: 'usable', run }
   }
 

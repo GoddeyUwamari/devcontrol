@@ -58,7 +58,11 @@ describe('readiness discovery gate -- pinned to runDiscovery() error format', ()
 
   it('segments are joined with the separator the gate splits on', () => {
     expect(DISCOVERY_ERROR_SEPARATOR).toBe('; ');
-    expect(source).toContain('joinDiscoveryMessage(errors, jobWarningCodes)');
+    expect(source).toContain('joinDiscoveryMessage(jobErrors, jobWarningCodes)');
+    // R1: the job's error text is the job's errors, plus (multi-region only) the home
+    // region's EC2/RDS listing errors, which use the same prefixes.
+    expect(source).toContain('const jobErrors: string[] = multi ? [...errors, ...multi.homeReadinessErrors] : errors;');
+    expect(source).toContain("const HOME_READINESS_PREFIXES = ['EC2: ', 'RDS: '];");
     expect(joinDiscoveryMessage(['EC2: a', 'RDS: b'], [])).toBe(['EC2: a', 'RDS: b'].join(DISCOVERY_ERROR_SEPARATOR));
   });
 
