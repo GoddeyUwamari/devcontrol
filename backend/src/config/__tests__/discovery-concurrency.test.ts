@@ -16,12 +16,12 @@ import { DEFAULT_AWS_CALL_POLICY } from '../../utils/awsCallPolicy';
 
 describe('discovery pool sizes', () => {
   it('defaults: region pool 3, resource pool 8 (what discovery has always used)', () => {
-    expect(readDiscoveryConcurrency({})).toEqual({ regionPool: 3, resourcePool: 8 });
+    expect(readDiscoveryConcurrency({} as NodeJS.ProcessEnv)).toEqual({ regionPool: 3, resourcePool: 8 });
     expect(DEFAULT_AWS_CALL_POLICY.concurrency).toBe(RESOURCE_POOL.default);
   });
 
   it('reads both from the environment', () => {
-    expect(readDiscoveryConcurrency({ DISCOVERY_REGION_POOL: '2', DISCOVERY_RESOURCE_POOL: '4' })).toEqual({ regionPool: 2, resourcePool: 4 });
+    expect(readDiscoveryConcurrency({ DISCOVERY_REGION_POOL: '2', DISCOVERY_RESOURCE_POOL: '4' } as unknown as NodeJS.ProcessEnv)).toEqual({ regionPool: 2, resourcePool: 4 });
   });
 
   it.each([
