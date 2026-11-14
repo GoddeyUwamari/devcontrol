@@ -408,6 +408,46 @@ describe('failure isolation: one region fails, the scan completes', () => {
 });
 
 // ---------------------------------------------------------------------------
+describe('L-1: the deleted-resources count across concurrent regions', () => {
+  it('two regions terminating at the same time are both counted (no lost update)', async () => {
+    const orgId = await insertOrg();
+    const homeVolume = `arn:aws:ec2:${HOME}:*:volume/vol-0dddddddddddddddd`;
+    await seedResource(orgId, homeVolume, 'ebs', HOME);
+    await seedResource(orgId, queueArn('ap-south-1'), 'sqs', 'ap-south-1');
+    // Each is one absence away from the termination threshold (MISSING_SCAN_THRESHOLD = 2).
+    await pool.query(`UPDATE aws_resources SET missing_scan_count = 1 WHERE organization_id = $1`, [orgId]);
+    mockAws();
+    const svc = service({ regionPool: 2 });
+
+    // ap-south-1 has finished (its Resource Explorer termination counted, its status
+    // written) only after the home region's EBS reconcile started, and before it ends.
+    let apFinished!: () => void;
+    const apDone = new Promise<void>((resolve) => (apFinished = resolve));
+    const realWrite = foundation.recordRegionScanStatus;
+    jest.spyOn(foundation, 'recordRegionScanStatus').mockImplementation(async (client, lease, scan) => {
+      const written = await realWrite(client, lease, scan);
+      if (scan.region === 'ap-south-1') apFinished();
+      return written;
+    });
+    const reconciliation = (svc as any).reconciliation;
+    const realReconcile = reconciliation.reconcile.bind(reconciliation);
+    jest.spyOn(reconciliation, 'reconcile').mockImplementation(async (...args: any[]) => {
+      const [, , region, , types] = args;
+      if (region === HOME && types.length === 1 && types[0] === 'ebs') await apDone;
+      return realReconcile(...args);
+    });
+
+    const result = await svc.discoverAllResources(orgId);
+
+    expect(await resource(orgId, homeVolume)).toMatchObject({ status: 'terminated' });
+    expect(await resource(orgId, queueArn('ap-south-1'))).toMatchObject({ status: 'terminated' });
+    expect(result.resources_deleted).toBe(2);
+    const { rows } = await pool.query(`SELECT resources_deleted FROM resource_discovery_jobs WHERE organization_id = $1`, [orgId]);
+    expect(rows).toEqual([{ resources_deleted: 2 }]);
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
 describe('the scan budget (A2)', () => {
   it('regions already running finish; regions never started get scan_budget; nothing in them is touched; the job completes', async () => {
     const orgId = await insertOrg();

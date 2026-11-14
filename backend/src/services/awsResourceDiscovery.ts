@@ -754,7 +754,10 @@ export class AWSResourceDiscoveryService {
               // The deadline passed before the search started: the region's status says so.
               if (!isRegionDeadline(error)) throw error;
             }
-            terminated += await this.reconcileEbs(ctx);
+            // Awaited first, then added (review L-1): `terminated += await ...` reads the
+            // total before the await and would lose another region's additions made meanwhile.
+            const ebsTerminated = await this.reconcileEbs(ctx);
+            terminated += ebsTerminated;
             outcomes = [...REGIONAL_TYPES.map((type) => ctx.outcomes[type]), ...(explorerOutcome ? [explorerOutcome] : [])];
             if (outcomes.some((o) => o.status === 'truncated' && o.source !== RESOURCE_EXPLORER_SOURCE)) {
               args.warnings.push(DISCOVERY_WARNING_LISTING_TRUNCATED);
@@ -1589,7 +1592,10 @@ export class AWSResourceDiscoveryService {
       // EBS volumes have their own reconcile (EBS needs real per-volume metadata for the
       // ebs_unattached analyzer, which the generic path's ARN-only presence signal can't
       // provide). A multi-region scan made each region's in scanRegions.
-      if (!multiRegion) resourcesTerminated += await this.reconcileEbs(home);
+      if (!multiRegion) {
+        const ebsTerminated = await this.reconcileEbs(home);
+        resourcesTerminated += ebsTerminated;
+      }
 
       // Compliance scan: evaluate every currently-known resource for this org against
       // real encryption/public-access/backup/tag checks, plus the checks of any framework
