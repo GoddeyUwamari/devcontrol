@@ -639,7 +639,7 @@ function checkedLines(c: ServicesCoverage, i: OverviewInputs): Line[] {
   lines.push({ key: 'iam', parts: [OVERVIEW_COPY.iam] })
   lines.push({ key: 'alarms', parts: [OVERVIEW_COPY.alarms], link: { text: OVERVIEW_COPY.alarmsLink, href: OVERVIEW_COPY.alarmsHref } })
   lines.push({ key: 'other-types', parts: [NOT_CHECKED_COPY.otherTypes] })
-  for (const note of warningNotes(c.last_scan?.warnings ?? [], i.inTabWarnings)) {
+  for (const note of warningNotes(c.last_scan?.warnings ?? [], i.inTabWarnings, home === '—' ? null : home)) {
     lines.push({ key: `warning-${note.key}`, parts: [note.body], tone: 'warn' })
   }
   return lines

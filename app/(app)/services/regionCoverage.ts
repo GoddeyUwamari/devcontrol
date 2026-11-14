@@ -495,7 +495,7 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
   // region's partial note already says (same truncation code, Q8).
   const homeStatus = known ? coverage.region_status!.find((r) => r.home) : undefined
   const saidByHome = homeStatus?.status === 'partial' && homeStatus.last_error_code ? WARNING_NOTE_KEY[homeStatus.last_error_code] : undefined
-  for (const note of warningNotes(jobWarnings, inTabWarnings)) {
+  for (const note of warningNotes(jobWarnings, inTabWarnings, home.region)) {
     if (note.key === saidByHome) continue
     notes.push({ key: `warning-${note.key}`, tone: note.tone, title: note.title, parts: [note.body] })
   }

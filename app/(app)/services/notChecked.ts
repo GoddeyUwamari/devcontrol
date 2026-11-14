@@ -62,7 +62,7 @@ export function notCheckedLines(coverage: ServicesCoverage, stats: AWSServicesSt
   const unknown = stats?.ownership?.unknown ?? 0
   if (unknown > 0) lines.push({ key: 'tags-unknown', text: unknownTagsText(unknown, stats?.unknown_by_type) })
 
-  for (const note of warningNotes(last?.warnings ?? [], inTabWarnings)) lines.push({ key: `warning-${note.key}`, text: note.body })
+  for (const note of warningNotes(last?.warnings ?? [], inTabWarnings, coverage.scope.home_region?.region)) lines.push({ key: `warning-${note.key}`, text: note.body })
 
   const unfinished = leaseRule ? latestAttempt(coverage) === 'unfinished' : last?.status === 'failed' || isScanAbandoned(last, now)
   if (connected && unfinished) {
