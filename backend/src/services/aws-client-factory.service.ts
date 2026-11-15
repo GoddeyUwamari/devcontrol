@@ -116,6 +116,17 @@ export interface AWSClients {
    * that never read a bucket outside the primary region need not provide it.
    */
   getS3ClientForRegion?: (region: string) => S3Client;
+  /**
+   * Multi-region PR 1b (review RR-M1): the same regional escape hatch for the control
+   * planes the Monitoring page reads per resource (EBS volume status, Aurora clusters,
+   * ECS services, EKS clusters), so a resource outside the primary region is read in
+   * its own region. Optional so mocks that never read another region need not provide
+   * them; without one, the primary region's client is used, as before.
+   */
+  getEC2ClientForRegion?: (region: string) => EC2Client;
+  getRDSClientForRegion?: (region: string) => RDSClient;
+  getECSClientForRegion?: (region: string) => ECSClient;
+  getEKSClientForRegion?: (region: string) => EKSClient;
 }
 
 // Defined in utils/awsAccountId.ts (no imports, so the coverage route can use it); re-exported for existing importers.
@@ -289,6 +300,10 @@ export class AWSClientFactory {
       getApplicationAutoScalingClientForRegion: (r: string) => new ApplicationAutoScalingClient({ region: r, credentials }),
       getCloudWatchClientForRegion: (r: string) => new CloudWatchClient({ region: r, credentials }),
       getS3ClientForRegion: (r: string) => new S3Client({ region: r, credentials }),
+      getEC2ClientForRegion: (r: string) => new EC2Client({ region: r, credentials }),
+      getRDSClientForRegion: (r: string) => new RDSClient({ region: r, credentials }),
+      getECSClientForRegion: (r: string) => new ECSClient({ region: r, credentials }),
+      getEKSClientForRegion: (r: string) => new EKSClient({ region: r, credentials }),
     };
   }
 

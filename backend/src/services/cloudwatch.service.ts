@@ -222,7 +222,7 @@ interface InventoryRow {
   // OB2: api-gateway and s3 are read only to be listed as not measured.
   resource_type: 'ec2' | 'rds' | 'load-balancer' | 'lambda' | 'dynamodb' | 'ecs' | 'eks' | 'ebs' | 'cloudfront' | 'aurora' | 'api-gateway' | 's3'
   resource_arn: string
-  // OB2: the region discovery recorded. Absent on the SLO query path, which never reads it.
+  // OB2: the region discovery recorded (RR-M1: each resource is read in it; the SLO path reads it too).
   region?: string | null
   status: string | null
   metadata: Record<string, any> | null
@@ -829,6 +829,58 @@ function describeFailureOutcome(err: unknown): QueryOutcome {
   return 'query_failed'
 }
 
+/**
+ * Multi-region PR 1b (review RR-M1): the Monitoring inventory's rows split by the region
+ * their metrics and control-plane state live in. A row with no recorded region, or in
+ * the clients' own (primary) region, is the home region's and keeps the existing path;
+ * every other row is read through a client for its own region. Region-less types keep
+ * their own rule (CloudFront: us-east-1; S3 / API Gateway: not measured).
+ */
+interface RegionSplit {
+  home: InventoryRow[]
+  /** Other regions, in the order first seen. */
+  others: Map<string, InventoryRow[]>
+}
+
+export function splitByRegion(rows: readonly InventoryRow[], homeRegion: string): RegionSplit {
+  const split: RegionSplit = { home: [], others: new Map() }
+  for (const row of rows) {
+    if (!row.region || row.region === homeRegion) split.home.push(row)
+    else split.others.set(row.region, [...(split.others.get(row.region) ?? []), row])
+  }
+  return split
+}
+
+/** `items` back in the order of `rows` (by aws_resources id), whatever order the regions answered in. */
+function inInventoryOrder<T>(rows: readonly InventoryRow[], items: T[], idOf: (item: T) => string): T[] {
+  const position = new Map(rows.map((row, index) => [row.id, index]))
+  return items
+    .map((item, index) => ({ item, index, at: position.get(idOf(item)) ?? Number.MAX_SAFE_INTEGER }))
+    .sort((a, b) => a.at - b.at || a.index - b.index)
+    .map(({ item }) => item)
+}
+
+type MonitoringClients = Awaited<ReturnType<typeof AWSClientFactory.createClients>>
+
+/** One client per (kind, region) for one computeMetrics() sweep; the primary region's own clients for home rows. */
+function regionalClients(clients: MonitoringClients) {
+  const cache = new Map<string, unknown>()
+  const pick = <T>(kind: string, home: T, factory: ((region: string) => T) | undefined, region: string | null | undefined): T => {
+    // Without a factory (a mock that never reads another region) the primary region's client, as before.
+    if (!region || region === clients.region || !factory) return home
+    const key = `${kind}:${region}`
+    if (!cache.has(key)) cache.set(key, factory(region))
+    return cache.get(key) as T
+  }
+  return {
+    cloudWatch: (region?: string | null) => pick('cloudwatch', clients.cloudWatch, clients.getCloudWatchClientForRegion, region),
+    ec2: (region?: string | null) => pick('ec2', clients.ec2, clients.getEC2ClientForRegion, region),
+    rds: (region?: string | null) => pick('rds', clients.rds, clients.getRDSClientForRegion, region),
+    ecs: (region?: string | null) => pick('ecs', clients.ecs, clients.getECSClientForRegion, region),
+    eks: (region?: string | null) => pick('eks', clients.eks, clients.getEKSClientForRegion, region),
+  }
+}
+
 export class CloudWatchService {
   // One slot per `${organizationId}:${resolvedRange}` -- see metricsCacheKey() -- holding
   // the answer for one connection: getMetrics() serves it only while its identity is the
@@ -979,6 +1031,56 @@ export class CloudWatchService {
    * response-time history today) can reuse an already-fetched query's result instead of
    * issuing a second, duplicate CloudWatch request for the same data.
    */
+  /**
+   * RR-M1: evaluateCapabilityBatch() for rows of any region. Home rows (all of them,
+   * whenever no row is in another region) go through exactly the existing call with the
+   * primary region's client; each other region's rows through that region's CloudWatch
+   * client. Results come back in inventory order.
+   */
+  private async evaluateCapabilityBatchInRegions<TExtra>(
+    clients: MonitoringClients,
+    regional: ReturnType<typeof regionalClients>,
+    capability: ResourceCapability<TExtra>,
+    resources: InventoryRow[],
+    typePrefix: string,
+    currentStart: Date,
+    previousStart: Date,
+    now: Date,
+    periodSeconds: number,
+    lookbackSeconds: number,
+    evidence?: EvidenceSink
+  ): Promise<{
+    evaluations: Array<{ service: CloudWatchServiceHealth; extra: TExtra }>
+    currentSeriesByResource: Array<Record<string, BatchSeriesResult | null>>
+  }> {
+    const split = splitByRegion(resources, clients.region)
+    const batch = (client: CloudWatchClient, rows: InventoryRow[]) =>
+      this.evaluateCapabilityBatch(client, capability, rows, typePrefix, currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence)
+    if (split.others.size === 0) return batch(clients.cloudWatch, resources)
+    const parts = await Promise.all([
+      batch(clients.cloudWatch, split.home),
+      ...[...split.others].map(([region, rows]) => batch(regional.cloudWatch(region), rows)),
+    ])
+    const merged = inInventoryOrder(
+      resources,
+      parts.flatMap((part) => part.evaluations.map((evaluation, index) => ({ evaluation, series: part.currentSeriesByResource[index] }))),
+      (entry) => entry.evaluation.service.resourceDbId
+    )
+    return { evaluations: merged.map((entry) => entry.evaluation), currentSeriesByResource: merged.map((entry) => entry.series) }
+  }
+
+  /** RR-M1: a per-region evaluator over rows of any region; home rows keep the existing call, results in inventory order. */
+  private async evaluateInRegions(
+    clientsRegion: string,
+    rows: InventoryRow[],
+    evaluate: (rows: InventoryRow[], region: string | null) => Promise<CloudWatchServiceHealth[]>
+  ): Promise<CloudWatchServiceHealth[]> {
+    const split = splitByRegion(rows, clientsRegion)
+    if (split.others.size === 0) return evaluate(rows, null)
+    const parts = await Promise.all([evaluate(split.home, null), ...[...split.others].map(([region, regionRows]) => evaluate(regionRows, region))])
+    return inInventoryOrder(rows, parts.flat(), (service) => service.resourceDbId)
+  }
+
   private async evaluateCapabilityBatch<TExtra>(
     client: CloudWatchClient,
     capability: ResourceCapability<TExtra>,
@@ -1899,6 +2001,8 @@ export class CloudWatchService {
       return null
     }
     if (!clients.enabled) return null
+    // RR-M1: each resource is read in its own region (home rows: the existing clients).
+    const regional = regionalClients(clients)
 
     const resolvedRange = resolveRange(range)
     const { lookbackSeconds, periodSeconds } = RANGE_CONFIG[resolvedRange]
@@ -1982,8 +2086,8 @@ export class CloudWatchService {
     // resolves values in input order, not completion order.
     const ec2Task = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const { evaluations } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch, resourceTypeRegistry.ec2, ec2Instances, 'ec2', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
+        const { evaluations } = await this.evaluateCapabilityBatchInRegions(
+          clients, regional, resourceTypeRegistry.ec2, ec2Instances, 'ec2', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
         )
         return evaluations.map((r) => r.service)
       } catch (err) {
@@ -1997,8 +2101,8 @@ export class CloudWatchService {
     // legacy row is still the inventory-only healthRule.
     const rdsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const { evaluations } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch, resourceTypeRegistry.rds, rdsInstances, 'rds', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
+        const { evaluations } = await this.evaluateCapabilityBatchInRegions(
+          clients, regional, resourceTypeRegistry.rds, rdsInstances, 'rds', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
         )
         return evaluations.map((r) => r.service)
       } catch (err) {
@@ -2010,8 +2114,8 @@ export class CloudWatchService {
 
     const lambdaTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const { evaluations } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch, resourceTypeRegistry.lambda, lambdaFunctions, 'lambda', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
+        const { evaluations } = await this.evaluateCapabilityBatchInRegions(
+          clients, regional, resourceTypeRegistry.lambda, lambdaFunctions, 'lambda', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
         )
         return evaluations.map((r) => r.service)
       } catch (err) {
@@ -2023,8 +2127,8 @@ export class CloudWatchService {
 
     const dynamoTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        const { evaluations } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch, resourceTypeRegistry.dynamodb, dynamoTables, 'dynamodb', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
+        const { evaluations } = await this.evaluateCapabilityBatchInRegions(
+          clients, regional, resourceTypeRegistry.dynamodb, dynamoTables, 'dynamodb', currentStart, previousStart, now, periodSeconds, lookbackSeconds, evidence
         )
         return evaluations.map((r) => r.service)
       } catch (err) {
@@ -2037,7 +2141,7 @@ export class CloudWatchService {
     // ECS bypasses evaluateResource() entirely — see evaluateEcsService() doc comment.
     const ecsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await Promise.all(ecsServicesInventory.map((svc) => this.evaluateEcsService(clients.ecs, svc, evidence)))
+        return await Promise.all(ecsServicesInventory.map((svc) => this.evaluateEcsService(regional.ecs(svc.region), svc, evidence)))
       } catch (err) {
         console.error('[CloudWatch] ECS evaluation block failed unexpectedly:', err)
         failedBlocks.add('ecs')
@@ -2048,7 +2152,7 @@ export class CloudWatchService {
     // EKS also bypasses evaluateResource() entirely — see evaluateEksService() doc comment.
     const eksTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await Promise.all(eksClustersInventory.map((cluster) => this.evaluateEksService(clients.eks, cluster, evidence)))
+        return await Promise.all(eksClustersInventory.map((cluster) => this.evaluateEksService(regional.eks(cluster.region), cluster, evidence)))
       } catch (err) {
         console.error('[CloudWatch] EKS evaluation block failed unexpectedly:', err)
         failedBlocks.add('eks')
@@ -2061,7 +2165,7 @@ export class CloudWatchService {
     // isolated inside that method, same failure-isolation guarantee as every other block.
     const ebsTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await this.evaluateEbsVolumes(clients.ec2, ebsVolumes, evidence)
+        return await this.evaluateInRegions(clients.region, ebsVolumes, (rows, region) => this.evaluateEbsVolumes(regional.ec2(region), rows, evidence))
       } catch (err) {
         console.error('[CloudWatch] EBS evaluation block failed unexpectedly:', err)
         failedBlocks.add('ebs')
@@ -2084,11 +2188,14 @@ export class CloudWatchService {
     })()
 
     // Aurora Service Health: DBClusterIdentifier+Role-dimensioned metrics are regional,
-    // same as every other type here — clients.cloudWatch (org's default region), never a
-    // dedicated regional client the way CloudFront's global-service metrics require.
+    // same as every other type here — the cluster's own region's RDS and CloudWatch
+    // clients (RR-M1; the org's default region's for a home cluster), never the
+    // us-east-1 rule CloudFront's global-service metrics require.
     const auroraTask = (async (): Promise<CloudWatchServiceHealth[]> => {
       try {
-        return await this.evaluateAuroraClusters(clients.rds, clients.cloudWatch, auroraClusters, currentStart, now, periodSeconds, evidence)
+        return await this.evaluateInRegions(clients.region, auroraClusters, (rows, region) =>
+          this.evaluateAuroraClusters(regional.rds(region), regional.cloudWatch(region), rows, currentStart, now, periodSeconds, evidence)
+        )
       } catch (err) {
         console.error('[CloudWatch] Aurora evaluation block failed unexpectedly:', err)
         failedBlocks.add('aurora')
@@ -2124,8 +2231,9 @@ export class CloudWatchService {
         responseTimeHistory: [],
       }
       try {
-        const { evaluations: albEvaluations, currentSeriesByResource } = await this.evaluateCapabilityBatch(
-          clients.cloudWatch,
+        const { evaluations: albEvaluations, currentSeriesByResource } = await this.evaluateCapabilityBatchInRegions(
+          clients,
+          regional,
           resourceTypeRegistry['load-balancer'],
           albs,
           'alb',
@@ -2542,7 +2650,7 @@ export class CloudWatchService {
     if (!clients.enabled) return null
 
     const { rows } = await pool.query(
-      `SELECT resource_id, resource_name, resource_type, resource_arn, status, metadata
+      `SELECT resource_id, resource_name, resource_type, resource_arn, region, status, metadata
        FROM aws_resources
        WHERE organization_id = $1 AND resource_id = $2 AND resource_type = $3
          AND status != 'terminated'
@@ -2561,7 +2669,8 @@ export class CloudWatchService {
 
     const capability = resourceTypeRegistry[resourceType]
     const result = await this.evaluateResource(
-      clients.cloudWatch,
+      // RR-M1: the resource's own region's CloudWatch (the default region's for a home resource).
+      regionalClients(clients).cloudWatch(resource.region),
       capability as ResourceCapability<unknown>,
       resource,
       currentStart,
