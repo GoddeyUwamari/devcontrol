@@ -285,6 +285,14 @@ const REGIONAL_TYPES: RegionalType[] = ['ec2', 'ebs', 'rds', 'lambda', 'load-bal
  */
 const HOME_READINESS_PREFIXES = ['EC2: ', 'RDS: '];
 
+/**
+ * PR 1b, review L-4: the readiness text for a home region whose EC2 and RDS listings
+ * never ran on a multi-region scan (never started: scan budget; or failed before them:
+ * its fence probe, its clients). Without it the gate would read EC2 and RDS as usable
+ * on an earlier scan's data. Fixed text, never an AWS message; the gate shows its own.
+ */
+export const HOME_REGION_NOT_LISTED = 'the home region was not listed on this scan';
+
 /** Each regional listing's log label and error prefix (the job's error text, unchanged from before PR 1). */
 const REGIONAL_LISTINGS: Record<RegionalType, { label: string; prefix: string }> = {
   ec2: { label: 'EC2 instances', prefix: 'EC2' },
@@ -750,6 +758,8 @@ export class AWSResourceDiscoveryService {
     // R1 (founder decision Nov 14): the home region's own EC2 and RDS listing errors,
     // for the job's error text, which the Operational Health readiness gate reads.
     let homeReadinessErrors: string[] = [];
+    // L-4: whether the home region's own listings ran at all.
+    let homeListed = false;
     // Review M-4: the security groups of every region started, each read in its own run.
     // Only the home region's completeness reaches the job (compliance_scan_completed).
     const security: RegionalSecurity = { homeNetworkingComplete: false, active: 0, resolved: 0 };
@@ -811,6 +821,7 @@ export class AWSResourceDiscoveryService {
         await this.listRegionTypes(ctx, REGIONAL_TYPES, null);
         if (region === scanContext.region) {
           homeReadinessErrors = ctx.errors.filter((message) => HOME_READINESS_PREFIXES.some((prefix) => message.startsWith(prefix)));
+          homeListed = true;
         }
         let explorerOutcome: RegionSourceOutcome | null = null;
         try {
@@ -877,6 +888,13 @@ export class AWSResourceDiscoveryService {
 
     const order = new Map(args.regions.map((region, index) => [region, index]));
     records.sort((a, b) => (order.get(a.region) ?? 0) - (order.get(b.region) ?? 0));
+    if (!homeListed) {
+      // L-4: the home region's EC2 and RDS were not listed: each allowed one says so.
+      homeReadinessErrors = (['ec2', 'rds'] as const)
+        .filter((type) => this.isResourceTypeAllowed(type, args.allowedTypes))
+        .map((type) => `${REGIONAL_LISTINGS[type].prefix}: ${HOME_REGION_NOT_LISTED}`);
+      console.warn(`⚠️  [Discovery] home_region_not_listed: org ${organizationId}: the home region's own listings did not run on this scan`);
+    }
     return { records, notStarted, terminated, homeReadinessErrors, security, homeLogLine };
   }
 

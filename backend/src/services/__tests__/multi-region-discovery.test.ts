@@ -1386,3 +1386,53 @@ describe('PR 1b L-3: a region run\'s logs carry no AWS message, account ID or re
     expect(searchLine).toEqual([`[ResourceExplorer] Search failed for region us-east-1:`, scpDenied().message]);
   }, 30_000);
 });
+
+// ---------------------------------------------------------------------------
+describe('PR 1b L-4: a home region whose listings never ran still blocks EC2 and RDS readiness', () => {
+  const notListed = 'EC2: the home region was not listed on this scan; RDS: the home region was not listed on this scan';
+  const gate = (row: { status: string; error_message: string | null }) => (type: 'ec2' | 'rds') =>
+    evaluateDiscoveryGate(
+      { id: 'j', status: row.status as 'completed' | 'failed', startedAt: new Date(), completedAt: new Date(), resourceTypes: ['ec2', 'rds'], errorMessage: row.error_message },
+      type
+    ).kind;
+
+  it('home failed before its listings (no connection for its fence probe): fixed EC2/RDS segments; both types blocked; the job completes', async () => {
+    const orgId = await insertOrg();
+    mockAws();
+    const svc = service();
+    const realStep = (svc as any).regionDbStep.bind(svc);
+    let homeCalls = 0;
+    jest.spyOn(svc as any, 'regionDbStep').mockImplementation((org: any, region: any, fn: any) => {
+      if (region === HOME && ++homeCalls === 1) return Promise.reject(new Error('timeout exceeded when trying to connect'));
+      return realStep(org, region, fn);
+    });
+
+    const result = await svc.discoverAllResources(orgId);
+
+    const row = await job(orgId);
+    expect(row).toMatchObject({ status: 'completed', error_message: notListed, warnings: ['region_incomplete'] });
+    expect(result.errors).toEqual(notListed.split('; '));
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'failed', last_error_code: 'error' });
+    expect(gate(row)('ec2')).toBe('error');
+    expect(gate(row)('rds')).toBe('error');
+  }, 60_000);
+
+  it('home never started (the budget was spent before any region): the same fixed segments, beside the failed-scan text', async () => {
+    const orgId = await insertOrg();
+    mockAws();
+    await service({ scanBudgetMs: 0 }).discoverAllResources(orgId);
+    const row = await job(orgId);
+    expect(row.status).toBe('failed');
+    expect(row.error_message).toBe(`${DISCOVERY_FAILED_MESSAGE}; ${notListed}`);
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'scan_budget' });
+  }, 60_000);
+
+  it('control: a home region whose listings ran (even past its deadline) keeps its own listing errors, never the fixed text', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [HOME]: { ec2: { DescribeVolumesCommand: () => new Promise(() => undefined) } } });
+    await service({ regionDeadlineMs: 200 }).discoverAllResources(orgId);
+    const row = await job(orgId);
+    expect(row.error_message).not.toContain('not listed');
+    expect(row.error_message).toBe('RDS: REGION_DEADLINE: region us-east-1 ran past its deadline');
+  }, 60_000);
+});
