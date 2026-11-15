@@ -25,6 +25,7 @@
  * client, exactly as before, no regional client built). No database: the account and
  * inventory reads are stubbed. Placeholders only.
  */
+import { Pool } from 'pg';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { RDSClient } from '@aws-sdk/client-rds';
@@ -33,6 +34,7 @@ import { EKSClient } from '@aws-sdk/client-eks';
 import { CloudWatchService, splitByRegion } from '../cloudwatch.service';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import awsCostService from '../aws-cost.service';
+import { pool as appPool } from '../../config/database';
 
 const HOME = 'us-east-1';
 const EU = 'eu-west-1';
@@ -246,10 +248,6 @@ describe('RR-M1: home resources keep the existing path; type-specific rules are 
 });
 
 describe('RR-M1: the SLO path reads its resource in the resource\'s own region (real Postgres for the row)', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { Pool } = require('pg');
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { pool: appPool } = require('../../config/database');
   const pool = new Pool({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
