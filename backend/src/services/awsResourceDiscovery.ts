@@ -343,8 +343,6 @@ export interface MultiRegionTiming {
   regionDeadlineMs: number;
   scanBudgetMs: number;
   now: () => number;
-  /** Region database steps holding a connection at once (PR 1b, M-1); REGION_DB_STEP_CONNECTIONS unless a test sets it. */
-  regionDbSteps?: number;
 }
 
 function regionalOutcomes(): Record<RegionalType, RegionSourceOutcome> {
@@ -748,7 +746,7 @@ export class AWSResourceDiscoveryService {
     // REGION_DB_STEP_CONNECTIONS of this scan's steps at a time, and returns it before
     // the region's next AWS call. Ambient pool.query() calls stay on the scan's own
     // connection (discoverAllResources' requestContext), which is idle meanwhile.
-    const steps = new StepLimiter(timing.regionDbSteps ?? REGION_DB_STEP_CONNECTIONS);
+    const steps = new StepLimiter(REGION_DB_STEP_CONNECTIONS);
     const onStepConnection = <T>(region: string, fn: (client: PoolClient) => Promise<T>): Promise<T> =>
       steps.run(() => this.regionDbStep(organizationId, region, fn));
 

@@ -456,12 +456,16 @@ describe('L-1: the deleted-resources count across concurrent regions', () => {
     // Each is one absence away from the termination threshold (MISSING_SCAN_THRESHOLD = 2).
     await pool.query(`UPDATE aws_resources SET missing_scan_count = 1 WHERE organization_id = $1`, [orgId]);
     mockAws();
-    // Two step connections: the home region's EBS reconcile step is held open below
-    // until ap-south-1 has written its status, which needs a step of its own.
-    const svc = service({ regionPool: 2, regionDbSteps: 2 });
+    // The production default: one region database step at a time (REGION_DB_STEP_CONNECTIONS).
+    const svc = service({ regionPool: 2 });
 
-    // ap-south-1 has finished (its Resource Explorer termination counted, its status
-    // written) only after the home region's EBS reconcile started, and before it ends.
+    // The home region's EBS reconcile is held, before it takes a step connection,
+    // until ap-south-1 has finished (its Resource Explorer termination counted, its
+    // status written). With `terminated += await this.reconcileEbs(ctx)` the home
+    // region would already have read the total, and ap-south-1's count would be lost.
+    // (PR 1b: the hold used to sit inside the reconcile's database step; with one step
+    // at a time that waited for ap-south-1's status step, which waited for the slot.
+    // No production step waits for another region: see StepLimiter.)
     let apFinished!: () => void;
     const apDone = new Promise<void>((resolve) => (apFinished = resolve));
     const realWrite = foundation.recordRegionScanStatus;
@@ -470,12 +474,10 @@ describe('L-1: the deleted-resources count across concurrent regions', () => {
       if (scan.region === 'ap-south-1') apFinished();
       return written;
     });
-    const reconciliation = (svc as any).reconciliation;
-    const realReconcile = reconciliation.reconcile.bind(reconciliation);
-    jest.spyOn(reconciliation, 'reconcile').mockImplementation(async (...args: any[]) => {
-      const [, , region, , types] = args;
-      if (region === HOME && types.length === 1 && types[0] === 'ebs') await apDone;
-      return realReconcile(...args);
+    const realReconcileEbs = (svc as any).reconcileEbs.bind(svc);
+    jest.spyOn(svc as any, 'reconcileEbs').mockImplementation(async (ctx: any) => {
+      if (ctx.region === HOME) await apDone;
+      return realReconcileEbs(ctx);
     });
 
     const result = await svc.discoverAllResources(orgId);

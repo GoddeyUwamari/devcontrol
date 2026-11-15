@@ -32,6 +32,7 @@
  * AWS's error text is read to tell a service control policy apart and nothing
  * else; it is never stored or logged.
  */
+import { AsyncLocalStorage } from 'async_hooks';
 import { AwsCallPolicy, AwsCallTimeoutError, isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
 import { THROTTLE_BREAKER_FLOOR, THROTTLE_BREAKER_STEP } from '../config/discovery-concurrency';
 import { SourceOutcome, SourceStatus } from './source-outcome';
@@ -288,24 +289,41 @@ export async function runRegionPool(
   if (stopped !== undefined) throw stopped;
 }
 
+/** A region database step asked for another step from inside itself (StepLimiter): a programming error, never retried. */
+export class NestedRegionStepError extends Error {
+  constructor() {
+    super('NESTED_REGION_STEP: a region database step may not start another one');
+    this.name = 'NestedRegionStepError';
+  }
+}
+
 /**
  * At most `size` of a scan's region database steps at a time (multi-region PR 1b,
  * review M-1). A region worker holds no database connection of its own: each of its
  * database steps (a fenced write, its status write, its security-group findings)
  * checks one out for that step only, and this limiter bounds how many such steps of
  * one scan hold a connection at once. Steps run in the order they asked.
+ *
+ * No deadlock: a step's body runs database statements on its own connection only
+ * (it never waits for another region's step), so every holder finishes (statement and
+ * idle-in-transaction timeouts bound it) and hands its slot on in `finally`. A step
+ * started from inside a step is refused (NestedRegionStepError), never queued.
  */
 export class StepLimiter {
   private active = 0;
   private readonly waiting: Array<() => void> = [];
+  // Set inside a step: a step that asked for another step from within itself would
+  // wait for a slot it holds (a deadlock at size 1); it is refused instead.
+  private readonly inStep = new AsyncLocalStorage<true>();
 
   constructor(private readonly size: number) {}
 
   async run<T>(step: () => Promise<T>): Promise<T> {
+    if (this.inStep.getStore()) throw new NestedRegionStepError();
     if (this.active >= this.size) await new Promise<void>((resolve) => this.waiting.push(resolve));
     else this.active++;
     try {
-      return await step();
+      return await this.inStep.run(true, step);
     } finally {
       const next = this.waiting.shift();
       if (next) next();
@@ -313,3 +331,4 @@ export class StepLimiter {
     }
   }
 }
+

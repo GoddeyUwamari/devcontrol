@@ -11,8 +11,10 @@
  */
 import { AwsCallTimeoutError, DEFAULT_AWS_CALL_POLICY, mapWithDynamicConcurrency, withCallPolicy } from '../../utils/awsCallPolicy';
 import {
+  NestedRegionStepError,
   RegionDeadlineError,
   RegionRun,
+  StepLimiter,
   SCAN_BUDGET_RESULT,
   classifyRegionFailure,
   notStartedLogLine,
@@ -258,5 +260,44 @@ describe('the structured log line (A7)', () => {
     run.stop();
     expect(run.getMetricDataMetrics).toBe(4);
     expect(run.calls).toBe(2);
+  });
+});
+
+describe('StepLimiter (PR 1b, M-1): a scan\'s region database steps', () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+  it('runs at most `size` steps at once, in the order they asked, and hands the slot on when a step throws', async () => {
+    const limiter = new StepLimiter(1);
+    const order: string[] = [];
+    let active = 0;
+    let most = 0;
+    const step = (name: string, fail = false) =>
+      limiter.run(async () => {
+        active++;
+        most = Math.max(most, active);
+        order.push(name);
+        await tick();
+        active--;
+        if (fail) throw new Error(`${name} failed`);
+        return name;
+      });
+    const results = await Promise.allSettled([step('a'), step('b', true), step('c'), step('d')]);
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'rejected', 'fulfilled', 'fulfilled']);
+    expect(order).toEqual(['a', 'b', 'c', 'd']);
+    expect(most).toBe(1);
+  });
+
+  it('refuses a step started from inside a step (it would wait for its own slot) instead of deadlocking', async () => {
+    const limiter = new StepLimiter(1);
+    const nested = limiter.run(() => limiter.run(async () => 'inner'));
+    await expect(nested).rejects.toBeInstanceOf(NestedRegionStepError);
+    // The slot was handed back: the next step runs.
+    await expect(limiter.run(async () => 'next')).resolves.toBe('next');
+  });
+
+  it('a step asked for after another step ended (same async chain) is not nested', async () => {
+    const limiter = new StepLimiter(1);
+    await limiter.run(async () => undefined);
+    await expect(limiter.run(async () => 'second')).resolves.toBe('second');
   });
 });
