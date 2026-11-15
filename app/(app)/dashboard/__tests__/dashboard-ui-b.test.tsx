@@ -90,11 +90,11 @@ const NO_MOM: CostSummary['monthOverMonth'] = { state: 'unavailable', source: 'D
  * evidence-based billedThrough. Left out: a response without one (a backend
  * that predates it).
  */
-const billed = (o: { amount: number; endExclusive: string; finishedThrough: string | null; asOf?: string | null; month?: { state: 'month_to_date' | 'no_billed_days_yet'; billedThrough: string | null } }): Spend => {
+const billed = (o: { amount: number; endExclusive: string; finishedThrough: string | null; asOf?: string | null; month?: { state: 'month_to_date' | 'latest_days_updating' | 'no_billed_days_yet'; billedThrough: string | null } }): Spend => {
   const asOf = o.asOf === undefined ? COSTS_FETCHED : o.asOf
   const monthState: CostMonthState | undefined = o.month && {
     version: 1, state: o.month.state, period: { month: '2026-11', start: '2026-11-01', endExclusive: o.endExclusive, calendar: 'UTC' },
-    amount: o.month.state === 'month_to_date' ? o.amount : null, amountUsable: o.month.state === 'month_to_date', costBasis: 'unblended_net_after_credits',
+    amount: o.month.state !== 'no_billed_days_yet' ? o.amount : null, amountUsable: o.month.state !== 'no_billed_days_yet', costBasis: 'unblended_net_after_credits',
     lineItems: o.amount !== 0 ? 1 : 0, finishedThrough: o.finishedThrough ?? '2026-11-10', billedThrough: o.month.billedThrough, ceEstimated: true, asOf,
     reason: null, previousMonth: { month: '2026-10', start: '2026-10-01', endExclusive: '2026-11-01', amount: 412.3, latestDaysUpdating: false },
   }
@@ -257,12 +257,40 @@ describe('data freshness segments', () => {
     // Evidence outside the current period is not shown.
     expect(text(billed({ amount: 0, endExclusive: '2026-11-02', finishedThrough: '2026-10-30', month: { state: 'no_billed_days_yet', billedThrough: '2026-10-31' } })))
       .toBe('AWS Cost Explorer, no billed days yet this month · refreshed today, 6:05 PM')
-    // A month with line items but no billedThrough evidence (the daily trend failed): the founder's rule as written.
-    expect(text(billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', month: { state: 'month_to_date', billedThrough: null } })))
-      .toBe('AWS Cost Explorer, no billed days yet this month · refreshed today, 6:05 PM')
-    // A response with no month state (a backend that predates it): no evidence either.
-    expect(text(billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10' })))
-      .toBe('AWS Cost Explorer, no billed days yet this month · refreshed today, 6:05 PM')
+  })
+
+  // F-1 (founder 2026-11-15): "no billed days yet this month" only in the month
+  // state no_billed_days_yet. Evidence missing for any other reason leaves the
+  // "billed through" part out, as on the Services tile.
+  describe('F-1: missing evidence is not "no billed days yet"', () => {
+    const text = (spend: Spend) => seg({ costSummary: summary(spend) })[0].text
+
+    it('the daily request failed: month to date with line items, no billedThrough → no "billed through" part', () => {
+      expect(text(billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', month: { state: 'month_to_date', billedThrough: null } })))
+        .toBe('AWS Cost Explorer · refreshed today, 6:05 PM')
+    })
+
+    it('an older backend during a rolling deploy (no month state) → no part, even for a day-1-shaped response', () => {
+      expect(text(billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10' })))
+        .toBe('AWS Cost Explorer · refreshed today, 6:05 PM')
+      // Nov 1, $0, one-day period: the frontend's legacy inference would call this
+      // "no billed days yet", but only the backend's month state may say so here.
+      expect(text(billed({ amount: 0, endExclusive: '2026-11-02', finishedThrough: '2026-10-30' })))
+        .toBe('AWS Cost Explorer · refreshed today, 6:05 PM')
+    })
+
+    it('a stale daily cache: charges reported (latest days updating) but the daily trend has no day of this month → no part', () => {
+      // Nothing in the period at all.
+      expect(text(billed({ amount: 13.3, endExclusive: '2026-11-02', finishedThrough: '2026-10-30', month: { state: 'latest_days_updating', billedThrough: null } })))
+        .toBe('AWS Cost Explorer · refreshed today, 6:05 PM')
+      // Its last billed day is still the previous month's.
+      expect(text(billed({ amount: 13.3, endExclusive: '2026-11-03', finishedThrough: '2026-10-31', month: { state: 'latest_days_updating', billedThrough: '2026-10-31' } })))
+        .toBe('AWS Cost Explorer · refreshed today, 6:05 PM')
+    })
+
+    it('without a read time either, there is still no segment', () => {
+      expect(keys({ costSummary: summary(billed({ amount: 13.3, endExclusive: '2026-11-02', finishedThrough: '2026-10-30', asOf: null, month: { state: 'latest_days_updating', billedThrough: null } })) })).not.toContain('costs')
+    })
   })
 
   it('resources: omitted while coverage loads or failed, and when no scan has finished', () => {

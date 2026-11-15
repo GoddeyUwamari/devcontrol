@@ -116,8 +116,9 @@ describe('a month state this code does not know is never shown as a number', () 
 /**
  * The Dashboard's Data freshness row (DAY1-D8 applied to it, founder
  * 2026-11-15; replaces DB-D6): "billed through" is only Cost Explorer's
- * evidence inside the current period, otherwise "no billed days yet this
- * month". The summaries are the backend's own pinned responses
+ * evidence inside the current period; "no billed days yet this month" only in
+ * the month state no_billed_days_yet, any other missing evidence leaves the
+ * part out (F-1; dashboard-ui-b.test.tsx). The summaries are the backend's own pinned responses
  * (backend/src/controllers/__tests__/__fixtures__/day1-month), so the row is
  * checked against what the backend sends.
  */
@@ -150,6 +151,12 @@ describe('Dashboard Data freshness row: "billed through" only from evidence insi
     const s = backendSummary('d3')
     expect(s.spend.data!.finishedThrough).toBe('2026-12-01')
     expect(costs(s)).toBe('AWS Cost Explorer, billed through Dec 2')
+  })
+
+  it('Dec 2 (UTC) with charges whose daily evidence is missing: the part is left out, not "no billed days yet" (F-1)', () => {
+    const s = backendSummary('d2_charge')
+    const noEvidence = { ...s, spend: { ...s.spend, data: { ...s.spend.data!, monthState: { ...s.spend.data!.monthState!, billedThrough: null } } } } as CostSummary
+    expect(costs(noEvidence)).toBe('AWS Cost Explorer')
   })
 
   it('a billedThrough outside the current period is never shown', () => {
