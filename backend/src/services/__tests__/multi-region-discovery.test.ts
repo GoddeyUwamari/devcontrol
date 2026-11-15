@@ -338,7 +338,10 @@ describe('flag on: every enabled region, once each', () => {
       );
       // Five own listings, the Resource Explorer search and (PR 1b, M-4) the security groups.
       expect(line).toMatchObject({ organization_id: orgId, outcome: 'ok', reason: null, listings: 7 });
-      const text = JSON.stringify(line);
+      // The organization's id is checked by value above; every other field must carry
+      // no 12-digit run (an AWS account ID). (A random UUID's last group can be twelve
+      // digits, about 1 in 280: checking the whole line made this test flaky.)
+      const text = JSON.stringify({ ...line, organization_id: undefined });
       expect(text).not.toMatch(/\d{12}/);
       for (const forbidden of ['arn:', INSTANCE, 'placeholder-web', 'vpc-']) expect(text).not.toContain(forbidden);
     }
