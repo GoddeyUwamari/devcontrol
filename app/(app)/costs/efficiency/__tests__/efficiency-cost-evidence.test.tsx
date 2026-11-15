@@ -203,3 +203,24 @@ describe('other KPI cards', () => {
     expect(screen.queryByText('No cost anomalies detected')).not.toBeInTheDocument()
   })
 })
+
+describe('the current month before Cost Explorer reports it (DAY1-D14)', () => {
+  it('Dec 1 (UTC): "December: no billed days yet", no $0 December bar', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, [
+      { date: '2026-11-01', compute: 300, storage: 50, database: 40, network: 5, other: 4, total: 399, lineItems: 2, provisional: true },
+      { date: '2026-12-01', compute: 0, storage: 0, database: 0, network: 0, other: 0, total: 0, lineItems: 0, provisional: true },
+    ]))
+    renderPage()
+    expect(await screen.findByTestId('bars-not-reported')).toHaveTextContent('December: no billed days yet')
+  })
+
+  it('a reported month gets no note', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, [
+      { date: '2026-12-01', compute: 20, storage: 3, database: 2, network: 1, other: 0.6, total: 26.6, lineItems: 2, provisional: true },
+    ]))
+    renderPage()
+    await screen.findByText('Spend breakdown')
+    await waitFor(() => expect(screen.queryByText('No cost trend data available yet')).not.toBeInTheDocument())
+    expect(screen.queryByTestId('bars-not-reported')).toBeNull()
+  })
+})

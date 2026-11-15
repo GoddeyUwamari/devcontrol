@@ -21,7 +21,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
-import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis';
+import { isNotReportedYet, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis';
 
 interface CostServiceAmount {
   service: string;
@@ -43,6 +43,9 @@ interface CostDataPoint {
   // cached/rolling-deploy responses written before this field existed still render
   // via the category fallback below instead of breaking.
   byServiceDisplay?: CostServiceAmount[];
+  /** Cost Explorer line items in the period; with `provisional`, 0 means "not reported yet" (never $0). */
+  lineItems?: number;
+  provisional?: boolean;
 }
 
 interface CostTrendChartProps {
@@ -107,6 +110,15 @@ export function CostTrendChart({
   };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length && isNotReportedYet(payload[0]?.payload ?? {})) {
+      // A period Cost Explorer has not reported yet has no amounts to list (never $0).
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+          <p className="text-ui font-semibold text-ink mb-1">{formatDate(label)}</p>
+          <p className="text-meta text-ink-muted m-0">Not reported yet by AWS Cost Explorer</p>
+        </div>
+      );
+    }
     if (active && payload && payload.length) {
       const isForecast = payload[0]?.payload?.forecast;
       return (
@@ -204,6 +216,8 @@ export function CostTrendChart({
           date: point.date,
           forecast: point.forecast,
           total: point.total,
+          lineItems: point.lineItems,
+          provisional: point.provisional,
         };
         for (const s of serviceSeries) row[s.key] = 0;
         for (const item of point.byServiceDisplay || []) {
@@ -254,8 +268,11 @@ export function CostTrendChart({
   // near-zero-spend account trips the banner.
   const SPIKE_RATIO = 1.5;
   const MIN_SPIKE_DELTA = 20; // dollars above average required to flag
-  const avgTotal = data.length > 0 ? data.reduce((sum, d) => sum + d.total, 0) / data.length : 0;
-  const hasSpike = data.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
+  // Periods Cost Explorer has not reported yet are not $0 days: left out of the average.
+  const reported = data.filter((d) => !isNotReportedYet(d));
+  const avgTotal = reported.length > 0 ? reported.reduce((sum, d) => sum + d.total, 0) / reported.length : 0;
+  const hasSpike = reported.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
+  const notReportedNote = unreportedTrendNote(data, dateRange === '6mo' || dateRange === '1yr' ? 'month' : 'day');
 
   return (
     <Card className="transition-shadow hover:shadow-md">
@@ -436,6 +453,9 @@ export function CostTrendChart({
         </div>
 
         {/* Anomaly Indicators */}
+        {notReportedNote && (
+          <p className="text-meta text-ink-muted mt-2 mb-0" data-testid="cost-trend-not-reported">{notReportedNote}</p>
+        )}
         {hasSpike && (
           <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
             <p className="text-ui text-orange-800">

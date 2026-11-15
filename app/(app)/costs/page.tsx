@@ -27,7 +27,8 @@ import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typograph
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
 import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings } from '@/lib/savings-basis'
 import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, previousMonthLine, roundCents, TODAY_STILL_BILLING } from './cost-display'
-import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
+import { TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
+import { costsTrendChartData } from './trend-chart-data'
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -145,7 +146,7 @@ export default function CostsPage() {
   // The key is this page's own: /costs/efficiency caches a failed request under
   // ['cost-trend', '6mo'] as [], which must never read as "no data" here.
   const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<
-    Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>
+    Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; provisional?: boolean }>
   >({
     queryKey: ['costs-page', 'cost-trend', selectedRangeParam, orgId ?? null, utcDay],
     queryFn: async () => {
@@ -221,12 +222,10 @@ export default function CostsPage() {
   const trendUnit = selectedRangeParam === '6mo' || selectedRangeParam === '1yr' ? 'month' : 'day'
   const chartData = useMemo(() => {
     if (isDemoActive) return DEMO_CHART_DATA
-    return costTrend.slice(-selectedDays).map(p => ({
-      date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      actual: roundCents(p.total),
-      forecast: null as number | null,
-    }))
+    // UTC calendar-date labels; a period Cost Explorer has not reported yet is a gap, never $0 (DAY1-D14, DAY1-D15).
+    return costsTrendChartData(costTrend.slice(-selectedDays))
   }, [isDemoActive, costTrend, selectedDays])
+  const trendNotReportedNote = isDemoActive ? null : unreportedTrendNote(costTrend.slice(-selectedDays), selectedRangeParam === '6mo' || selectedRangeParam === '1yr' ? 'month' : 'day')
   // Whether the trend has real Cost Explorer points to show; an empty or failed series is never drawn as $0.
   const hasTrendData = !isDemoActive && !costTrendLoading && !costTrendError && costTrend.length > 0
 
@@ -773,6 +772,9 @@ export default function CostsPage() {
               <span className="text-label text-ink-muted font-medium">{label}</span>
             </div>
           ))}
+          {trendNotReportedNote && hasTrendData && (
+            <span className="text-meta text-ink-muted" data-testid="trend-not-reported">{trendNotReportedNote}</span>
+          )}
           <span className="text-meta text-ink-muted ml-auto hidden sm:block">
             {isDemoActive ? 'Values shown as monthly equivalent' : trendUnit === 'month' ? 'Values shown as monthly spend' : 'Values shown as daily spend'}
           </span>

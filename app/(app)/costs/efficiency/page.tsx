@@ -28,7 +28,7 @@ import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typograph
 import { CHART_TICK } from '@/lib/chart-theme'
 import { describeSpend, formatUsd, roundCents } from '../cost-display'
 import Link from 'next/link'
-import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
+import { isNotReportedYet, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
 
@@ -267,6 +267,15 @@ const CustomScatterTooltip = ({ active, payload, isDemoActive }: any) => {
 
 const CustomBarTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
+  // A month AWS Cost Explorer has not reported yet has no amounts to list (never $0).
+  if (payload[0]?.payload?.notReported) {
+    return (
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+        <p className="text-label font-semibold text-ink" style={{ marginBottom: '6px' }}>{label}</p>
+        <p className="text-meta text-ink-body" style={{ margin: 0 }}>No billed days yet</p>
+      </div>
+    )
+  }
   const total = payload.reduce((s: number, p: any) => s + (p.value || 0), 0)
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
@@ -329,7 +338,7 @@ export default function EfficiencyPage() {
   // real AWS Cost Explorer data; [] only when the request succeeded with no data
   // (e.g. no connected account). A failed request is an error, not an empty series.
   // Keyed ['cost-trend', '6mo', org, UTC day] -- the Dashboard's 6-month entry, distinct from the Costs page's own key.
-  const { data: realCostTrend = [], isError: realCostTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
+  const { data: realCostTrend = [], isError: realCostTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; provisional?: boolean }>>({
     queryKey: ['cost-trend', '6mo', orgId ?? null, utcDay],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -455,10 +464,14 @@ export default function EfficiencyPage() {
   const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
   const barColors = isDemoActive ? DEMO_SERVICE_COLORS : REAL_SERVICE_COLORS
-  const barData: Array<Record<string, string | number>> = isDemoActive
+  // A month Cost Explorer has not reported yet keeps its label with no bar and
+  // says so (DAY1-D14); its zeros are never a measured $0.
+  const barNotReportedNote = isDemoActive ? null : unreportedTrendNote(realCostTrend, 'month')
+  const barData: Array<Record<string, string | number | boolean>> = isDemoActive
     ? DEMO_BAR_DATA
     : realCostTrend.map(p => ({
         month:    MONTH_LABELS[parseInt(p.date.slice(5, 7), 10) - 1] ?? p.date,
+        notReported: isNotReportedYet(p),
         // Cents, not whole dollars: a sub-dollar month must not read as $0.
         Compute:  roundCents(p.compute),
         Storage:  roundCents(p.storage),
@@ -470,7 +483,7 @@ export default function EfficiencyPage() {
   // Max stacked total across months — decides whether the Y-axis ticks
   // render as "$XK" or plain dollars (see formatAxisDollar).
   const maxBarStack = barData.reduce((max, d) => {
-    const total = Object.entries(d).reduce((sum, [key, val]) => key === 'month' ? sum : sum + (Number(val) || 0), 0)
+    const total = Object.entries(d).reduce((sum, [key, val]) => key === 'month' || key === 'notReported' ? sum : sum + (Number(val) || 0), 0)
     return Math.max(max, total)
   }, 0)
 
@@ -490,7 +503,7 @@ export default function EfficiencyPage() {
     const cols = Object.keys(barColors)
     const rows = [
       ['Month', ...cols, 'Total'],
-      ...barData.map(d => [
+      ...barData.filter(d => !d.notReported).map(d => [
         d.month, ...cols.map(c => d[c] ?? 0),
         cols.reduce((sum, c) => sum + (Number(d[c]) || 0), 0),
       ]),
@@ -585,6 +598,7 @@ export default function EfficiencyPage() {
                   ))}
                 </BarChart>
               </ResponsiveContainer>
+              {barNotReportedNote && <p className="text-meta text-ink-muted" style={{ margin: '8px 0 0' }} data-testid="bars-not-reported">{barNotReportedNote}</p>}
             </>
           ) : (
             <div style={{ padding: '48px 0', textAlign: 'center' }}>
