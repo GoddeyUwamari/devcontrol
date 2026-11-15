@@ -1,0 +1,97 @@
+{
+  "modelSpendSection": {
+    "state": "available",
+    "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete",
+    "data": {
+      "amount": 0,
+      "basis": "billed_month_to_date",
+      "topServices": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 0,
+          "sharePercent": null
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0,
+          "sharePercent": null
+        }
+      ],
+      "lastDayInProgress": true,
+      "finishedThrough": "2026-12-01"
+    }
+  },
+  "summaryFacts": [
+    "AWS Cost Explorer month-to-date billed spend (2026-12-01 through 2026-12-03) is $0.00; the current day is still being billed.",
+    "Month-to-date spend vs the same days last month: a percentage change is undefined because the previous window totals $0.00 ($0.00 vs $0.00, daily charges after credits, each category floored at $0)."
+  ],
+  "chatContext": [
+    "Cost data:",
+    "- Status: Available",
+    "- Source: AWS Cost Explorer (actual billing data)",
+    "- As of: 2026-12-03T00:30:00.000Z",
+    "- AWS Cost Explorer status: Available",
+    "- Scope: the AWS Cost Explorer billing scope of the connected IAM role",
+    "- Connected AWS account: 123456789012",
+    "- Linked-account filter: none (the query is not narrowed to the connected account)",
+    "- Consolidated billing: unknown (DevControl does not detect whether the connected account is a management/payer account, so this figure may or may not include other linked accounts)",
+    "- Regions: all (the query is not region-filtered)",
+    "- Period: month-to-date, 2026-12-01 through 2026-12-03 inclusive (December 1–3, 2026); 2026-12-03 was still in progress when this figure was obtained, so that day's spend is incomplete",
+    "- Month-to-date spend: $0.00 (observed spend for the period above -- not a full-month amount or a monthly rate)",
+    "Top services by month-to-date spend (observed amounts for the period above, not monthly rates. Cost Explorer SERVICE categories for the scope above, NOT per-resource costs: each line is its own category and does not include charges billed under another listed category, and a category total is not proof that any one resource caused that spend):",
+    "- Amazon Elastic Compute Cloud - Compute: $0.00",
+    "- Amazon Simple Storage Service: $0.00"
+  ],
+  "chatFallback": [
+    "**🔍 What's happening**",
+    "",
+    "Your AWS spend is $0.00 month-to-date (AWS Cost Explorer, as of 2026-12-03T00:30:00.000Z; covers your connected role's billing scope across all regions) (no comparison with last month is available).",
+    "",
+    "**💰 Cost / impact**",
+    "",
+    "Your top cost category is Amazon Elastic Compute Cloud - Compute at $0.00 month-to-date.",
+    "",
+    "**✅ Recommended actions**",
+    "",
+    "1. Review your AWS Cost Explorer for detailed service-level breakdown",
+    "2. Consider Reserved Instances or Savings Plans for predictable workloads",
+    "3. Check for underutilized resources that can be rightsized",
+    "",
+    "*Note: AI service temporarily unavailable - this is a simplified analysis.*"
+  ],
+  "reportSentence": "AWS Cost Explorer shows $0.00 of billed spend month-to-date for 2026-12-01 up to 2026-12-04 (exclusive); the current day is still being billed.",
+  "askAi": {
+    "type": "costs",
+    "outcome": "answered",
+    "rows": [
+      {
+        "service": "Amazon Elastic Compute Cloud - Compute",
+        "month_to_date_spend": "$0.00",
+        "share": "—"
+      },
+      {
+        "service": "Amazon Simple Storage Service",
+        "month_to_date_spend": "$0.00",
+        "share": "—"
+      }
+    ],
+    "columns": [
+      "AWS Service",
+      "Month-to-Date Spend",
+      "Share"
+    ],
+    "evidence": {
+      "state": "available",
+      "source": "AWS Cost Explorer",
+      "provenance": "actual",
+      "period": {
+        "kind": "range",
+        "start": "2026-12-01",
+        "endExclusive": "2026-12-04"
+      },
+      "asOf": "2026-12-03T00:30:00.000Z",
+      "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete"
+    },
+    "summary": "AWS Cost Explorer month-to-date spend (2026-12-01 through 2026-12-03): $0.00. The current day is still being billed."
+  }
+}

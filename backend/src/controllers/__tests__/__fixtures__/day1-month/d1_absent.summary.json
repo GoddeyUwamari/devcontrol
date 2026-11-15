@@ -1,0 +1,55 @@
+{
+  "success": true,
+  "data": {
+    "spend": {
+      "state": "error",
+      "source": "AWS Cost Explorer",
+      "provenance": null,
+      "asOf": null,
+      "scope": null,
+      "period": null,
+      "completeness": null,
+      "coverage": null,
+      "reason": "AWS Cost Explorer could not be retrieved.",
+      "derivedFrom": null,
+      "data": null,
+      "retrievedAt": "2026-12-01T00:30:00.000Z",
+      "freshness": null,
+      "classification": null,
+      "untrusted": [],
+      "failure": {
+        "code": "internal",
+        "retryable": false
+      },
+      "truncation": null
+    },
+    "monthOverMonth": {
+      "state": "unavailable",
+      "source": "DevControl month-over-month comparison",
+      "provenance": null,
+      "asOf": null,
+      "scope": null,
+      "period": null,
+      "completeness": null,
+      "coverage": null,
+      "reason": "cannot be calculated: AWS Cost Explorer daily trend: not available",
+      "derivedFrom": [
+        {
+          "source": "AWS Cost Explorer daily trend",
+          "state": "unavailable",
+          "provenance": null,
+          "scope": null,
+          "period": null,
+          "asOf": null
+        }
+      ],
+      "data": null,
+      "retrievedAt": "2026-12-01T00:30:00.000Z",
+      "freshness": null,
+      "classification": null,
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    }
+  }
+}

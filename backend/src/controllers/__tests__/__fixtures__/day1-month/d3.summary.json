@@ -1,0 +1,119 @@
+{
+  "success": true,
+  "data": {
+    "spend": {
+      "state": "available",
+      "source": "AWS Cost Explorer",
+      "provenance": "actual",
+      "asOf": "2026-12-03T00:30:00.000Z",
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": {
+        "kind": "range",
+        "start": "2026-12-01",
+        "endExclusive": "2026-12-04"
+      },
+      "completeness": null,
+      "coverage": null,
+      "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete",
+      "derivedFrom": null,
+      "data": {
+        "amount": 26.6,
+        "basis": "billed_month_to_date",
+        "topServices": [
+          {
+            "service": "Amazon Elastic Compute Cloud - Compute",
+            "amount": 25.26,
+            "sharePercent": 94.96240601503759
+          },
+          {
+            "service": "Amazon Simple Storage Service",
+            "amount": 1.34,
+            "sharePercent": 5.037593984962406
+          }
+        ],
+        "lastDayInProgress": true,
+        "finishedThrough": "2026-12-01",
+        "previousMonth": {
+          "start": "2026-11-01",
+          "endExclusive": "2026-12-01",
+          "amount": 399
+        }
+      },
+      "retrievedAt": "2026-12-03T00:30:00.000Z",
+      "freshness": null,
+      "classification": "billed",
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthOverMonth": {
+      "state": "available",
+      "source": "DevControl month-over-month comparison",
+      "provenance": "derived",
+      "asOf": "2026-12-03T00:30:00.000Z",
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": {
+        "kind": "range",
+        "start": "2026-11-01",
+        "endExclusive": "2026-12-02"
+      },
+      "completeness": null,
+      "coverage": "finished days of this month vs the same days of the previous month; the latest days, still being reported by AWS Cost Explorer, are excluded",
+      "reason": null,
+      "derivedFrom": [
+        {
+          "source": "AWS Cost Explorer daily trend",
+          "state": "available",
+          "provenance": "actual",
+          "scope": {
+            "kind": "cost_explorer",
+            "connectedAccountId": "123456789012",
+            "linkedAccountFilter": "none",
+            "consolidatedBilling": "unknown",
+            "regions": "all"
+          },
+          "period": {
+            "kind": "range",
+            "start": "2026-11-01",
+            "endExclusive": "2026-12-02"
+          },
+          "asOf": "2026-12-03T00:30:00.000Z"
+        }
+      ],
+      "data": {
+        "currentWindow": {
+          "start": "2026-12-01",
+          "end": "2026-12-01"
+        },
+        "previousWindow": {
+          "start": "2026-11-01",
+          "end": "2026-11-01"
+        },
+        "currentWindowTotal": 13.3,
+        "previousWindowTotal": 13.3,
+        "changeAmount": 0,
+        "changePercent": 0,
+        "currentWindowIncludesToday": false,
+        "basis": "sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend"
+      },
+      "retrievedAt": "2026-12-03T00:30:00.000Z",
+      "freshness": null,
+      "classification": "calculated",
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    }
+  }
+}

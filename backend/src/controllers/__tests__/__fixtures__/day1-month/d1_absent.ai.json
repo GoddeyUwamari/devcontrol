@@ -1,0 +1,50 @@
+{
+  "modelSpendSection": {
+    "state": "error",
+    "reason": "AWS Cost Explorer could not be retrieved.",
+    "data": null
+  },
+  "summaryFacts": [
+    "Cloud spend: not available (AWS Cost Explorer could not be retrieved). Do not describe spend as $0 or unchanged."
+  ],
+  "chatContext": [
+    "Cost data:",
+    "- Status: Could not be retrieved",
+    "- Source: none",
+    "- As of: unknown",
+    "- AWS Cost Explorer status: Could not be retrieved (the Cost Explorer request failed)",
+    "- Spend: not available (no Cost Explorer result and no inventory estimate) -- this is missing data, not a zero amount"
+  ],
+  "chatFallback": [
+    "**🔍 What's happening**",
+    "",
+    "I don't have cost data available for this account right now — the AWS Cost Explorer request failed and no resource-inventory estimate could be computed.",
+    "",
+    "**✅ Recommended actions**",
+    "",
+    "1. Confirm an AWS account is connected and Cost Explorer is enabled for it",
+    "2. Try again shortly, or check your AWS Cost Explorer directly for current spend",
+    "",
+    "*Note: AI service temporarily unavailable - this is a simplified analysis.*"
+  ],
+  "reportSentence": "Cloud spend is not available: AWS Cost Explorer could not be retrieved.",
+  "askAi": {
+    "type": "costs",
+    "outcome": "error",
+    "rows": [],
+    "columns": [
+      "AWS Service",
+      "Month-to-Date Spend",
+      "Share"
+    ],
+    "evidence": {
+      "state": "error",
+      "source": "AWS Cost Explorer",
+      "provenance": null,
+      "period": null,
+      "asOf": null,
+      "reason": "AWS Cost Explorer could not be retrieved."
+    },
+    "summary": "Cost data could not be retrieved. Please try again."
+  }
+}
