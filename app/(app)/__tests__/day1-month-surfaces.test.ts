@@ -4,8 +4,11 @@
  * state. Synthetic data only.
  */
 import { describe, it, expect } from 'vitest'
+import * as fs from 'fs'
+import * as path from 'path'
 import type { CostSummary } from '@/lib/types'
 import { computeDashboardSpendCard } from '../dashboard/dashboardSpendCard'
+import { dataFreshnessSegments } from '../dashboard/dashboardFreshness'
 import { describeSpend, previousMonthLine } from '../costs/cost-display'
 import { describeServicesSpend } from '../services/SummaryTiles'
 import { costByService, describeOverview } from '../infrastructure/overview/overviewModel'
@@ -107,5 +110,58 @@ describe('a month state this code does not know is never shown as a number', () 
     const future = { ...s, spend: { ...s.spend, data: { ...s.spend.data!, monthState: { ...s.spend.data!.monthState!, state: 'restated', amountUsable: false, amount: null, reason: { code: 'restated', text: 'Cost Explorer is restating this month' } } } } } as CostSummary
     expect(describeSpend(future.spend, ok)).toMatchObject({ value: '—', sub: 'Cost Explorer is restating this month' })
     expect(describeServicesSpend({ loading: false, error: false, summary: future })).toEqual({ kind: 'unavailable' })
+  })
+})
+
+/**
+ * The Dashboard's Data freshness row (DAY1-D8 applied to it, founder
+ * 2026-11-15; replaces DB-D6): "billed through" is only Cost Explorer's
+ * evidence inside the current period, otherwise "no billed days yet this
+ * month". The summaries are the backend's own pinned responses
+ * (backend/src/controllers/__tests__/__fixtures__/day1-month), so the row is
+ * checked against what the backend sends.
+ */
+describe('Dashboard Data freshness row: "billed through" only from evidence inside the month (DAY1-D8)', () => {
+  const BACKEND = path.resolve(__dirname, '../../../backend/src/controllers/__tests__/__fixtures__/day1-month')
+  const backendSummary = (name: string): CostSummary => JSON.parse(fs.readFileSync(path.join(BACKEND, `${name}.summary.json`), 'utf8')).data
+  /** The Costs segment without its local-time "refreshed" part, which follows the test machine's time zone. */
+  const costs = (s: CostSummary) => {
+    const seg = dataFreshnessSegments({ costSummary: s, costSummaryError: false, coverage: undefined, cloudwatchCapturedAt: null, serviceCheckedAt: null, now: Date.parse(s.spend.asOf!) })
+    expect(seg.map((x) => x.key)).toEqual(['costs'])
+    expect(seg[0].text).toMatch(/ · refreshed .+$/)
+    return seg[0].text.replace(/ · refreshed .+$/, '')
+  }
+
+  it('Dec 1, 00:30 (UTC), nothing reported: no billed days yet, never "billed through Nov 29"', () => {
+    expect(costs(backendSummary('d1_0030'))).toBe('AWS Cost Explorer, no billed days yet this month')
+    expect(costs(backendSummary('d1_absent'))).toBe('AWS Cost Explorer, no billed days yet this month')
+  })
+
+  it('Dec 1, 18:00 (UTC), a Dec 1 charge reported: billed through Dec 1', () => {
+    expect(costs(backendSummary('d1_charge'))).toBe('AWS Cost Explorer, billed through Dec 1')
+  })
+
+  it('Dec 2 (UTC): billed through Dec 1 once Cost Explorer has it, otherwise no billed days yet; never "billed through Nov 30"', () => {
+    expect(costs(backendSummary('d2_charge'))).toBe('AWS Cost Explorer, billed through Dec 1')
+    expect(costs(backendSummary('d2_none'))).toBe('AWS Cost Explorer, no billed days yet this month')
+  })
+
+  it('Dec 3 (UTC): billed through Dec 2 from Cost Explorer evidence, not the calendar Dec 1', () => {
+    const s = backendSummary('d3')
+    expect(s.spend.data!.finishedThrough).toBe('2026-12-01')
+    expect(costs(s)).toBe('AWS Cost Explorer, billed through Dec 2')
+  })
+
+  it('a billedThrough outside the current period is never shown', () => {
+    const s = backendSummary('d1_0030')
+    const leaked = { ...s, spend: { ...s.spend, data: { ...s.spend.data!, monthState: { ...s.spend.data!.monthState!, billedThrough: '2026-11-30' } } } } as CostSummary
+    expect(costs(leaked)).toBe('AWS Cost Explorer, no billed days yet this month')
+  })
+
+  it('the same reading for the synthetic month-state fixtures', () => {
+    expect(costs(DAY1_NONE)).toBe('AWS Cost Explorer, no billed days yet this month')
+    expect(costs(DAY1_CHARGE)).toBe('AWS Cost Explorer, billed through Dec 1')
+    expect(costs(DAY2_CHARGE)).toBe('AWS Cost Explorer, billed through Dec 1')
+    expect(costs(DAY3)).toBe('AWS Cost Explorer, billed through Dec 2')
   })
 })

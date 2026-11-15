@@ -16,7 +16,7 @@ import axios from 'axios'
 import api from '@/lib/api'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { CostSummary, SystemHealth } from '@/lib/types'
+import type { CostMonthState, CostSummary, SystemHealth } from '@/lib/types'
 
 const authState = vi.hoisted(() => ({ user: { id: 'u' } as Record<string, unknown> }))
 
@@ -85,13 +85,28 @@ const COVERAGE = {
 
 type Spend = CostSummary['spend']
 const NO_MOM: CostSummary['monthOverMonth'] = { state: 'unavailable', source: 'DevControl month-over-month comparison', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null }
-const billed = (o: { amount: number; endExclusive: string; finishedThrough: string | null; asOf?: string | null }): Spend => ({
-  state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: o.asOf === undefined ? COSTS_FETCHED : o.asOf,
-  period: { kind: 'range', start: '2026-11-01', endExclusive: o.endExclusive }, coverage: null, reason: null,
-  data: { amount: o.amount, basis: 'billed_month_to_date', lastDayInProgress: true, finishedThrough: o.finishedThrough, topServices: [], previousMonth: { start: '2026-10-01', endExclusive: '2026-11-01', amount: 412.3 } },
-})
+/**
+ * `month`: the backend's month state (cost-month-state.ts) with its
+ * evidence-based billedThrough. Left out: a response without one (a backend
+ * that predates it).
+ */
+const billed = (o: { amount: number; endExclusive: string; finishedThrough: string | null; asOf?: string | null; month?: { state: 'month_to_date' | 'no_billed_days_yet'; billedThrough: string | null } }): Spend => {
+  const asOf = o.asOf === undefined ? COSTS_FETCHED : o.asOf
+  const monthState: CostMonthState | undefined = o.month && {
+    version: 1, state: o.month.state, period: { month: '2026-11', start: '2026-11-01', endExclusive: o.endExclusive, calendar: 'UTC' },
+    amount: o.month.state === 'month_to_date' ? o.amount : null, amountUsable: o.month.state === 'month_to_date', costBasis: 'unblended_net_after_credits',
+    lineItems: o.amount !== 0 ? 1 : 0, finishedThrough: o.finishedThrough ?? '2026-11-10', billedThrough: o.month.billedThrough, ceEstimated: true, asOf,
+    reason: null, previousMonth: { month: '2026-10', start: '2026-10-01', endExclusive: '2026-11-01', amount: 412.3, latestDaysUpdating: false },
+  }
+  return {
+    state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf,
+    period: { kind: 'range', start: '2026-11-01', endExclusive: o.endExclusive }, coverage: null, reason: null,
+    data: { amount: o.amount, basis: 'billed_month_to_date', lastDayInProgress: true, finishedThrough: o.finishedThrough, topServices: [], previousMonth: { start: '2026-10-01', endExclusive: '2026-11-01', amount: 412.3 }, ...(monthState ? { monthState } : {}) },
+  }
+}
 const SPEND = {
-  billed: billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10' }),
+  // Cost Explorer evidence (Nov 12) is later than the calendar rule (Nov 10): the freshness row shows the evidence (DAY1-D8).
+  billed: billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', month: { state: 'month_to_date', billedThrough: '2026-11-12' } }),
   measuredZero: billed({ amount: 0, endExclusive: '2026-11-13', finishedThrough: '2026-11-10' }),
   noDataYet: billed({ amount: 0, endExclusive: '2026-11-02', finishedThrough: '2026-10-30' }),
   estimated: { state: 'available', source: 'DevControl inventory cost estimate', provenance: 'estimated', asOf: COSTS_FETCHED, coverage: null, reason: null, data: { amount: 80, basis: 'estimated_monthly_run_rate', lastDayInProgress: false } } as Spend,
@@ -191,7 +206,7 @@ describe('monitoring.service: Degraded only for a 500 whose database is disconne
   })
 })
 
-// ── 3. Data freshness (§F row 9, DB-D6/D9/D10) ──
+// ── 3. Data freshness (§F row 9, DAY1-D8 (replaces DB-D6), DB-D9/D10) ──
 
 describe('data freshness segments', () => {
   const ALL: Parameters<typeof dataFreshnessSegments>[0] = { costSummary: summary(SPEND.billed), costSummaryError: false, coverage: COVERAGE.finished, cloudwatchCapturedAt: Date.parse(CLOUDWATCH_CAPTURED), serviceCheckedAt: HEALTH_CHECKED, now: NOW }
@@ -200,7 +215,7 @@ describe('data freshness segments', () => {
 
   it('every source: the four segments of the mock, each from real data', () => {
     expect(seg().map((s) => `${s.label}: ${s.text}`)).toEqual([
-      'Costs: AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM',
+      'Costs: AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM',
       'Resources and security: last scan today, 6:02 PM · every 6 hours',
       'Alerts: CloudWatch · checked today, 8:36 PM',
       'DevControl service: checked today, 8:37 PM',
@@ -225,13 +240,29 @@ describe('data freshness segments', () => {
     expect(keys({ costSummary: summary(SPEND.unavailable) })).not.toContain('costs')
     expect(keys({ costSummary: summary(SPEND.notConnected) })).not.toContain('costs')
     expect(keys({ costSummary: undefined, costSummaryError: true })).not.toContain('costs')
-    expect(keys({ costSummary: summary(billed({ amount: 1, endExclusive: '2026-11-13', finishedThrough: null, asOf: null })) })).not.toContain('costs')
-    expect(seg({ costSummary: summary(billed({ amount: 1, endExclusive: '2026-11-13', finishedThrough: null })) })[0].text).toBe('AWS Cost Explorer · refreshed today, 6:05 PM')
-    expect(seg({ costSummary: summary(billed({ amount: 1, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', asOf: null })) })[0].text).toBe('AWS Cost Explorer, billed through Nov 10')
+    // Neither billedThrough evidence nor a Cost Explorer read time: no segment.
+    expect(keys({ costSummary: summary(billed({ amount: 1, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', asOf: null, month: { state: 'month_to_date', billedThrough: null } })) })).not.toContain('costs')
+    expect(keys({ costSummary: summary(billed({ amount: 1, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', asOf: null })) })).not.toContain('costs')
+    // No Cost Explorer read time: the row keeps its format without "refreshed".
+    expect(seg({ costSummary: summary(billed({ amount: 1, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', asOf: null, month: { state: 'month_to_date', billedThrough: '2026-11-12' } })) })[0].text).toBe('AWS Cost Explorer, billed through Nov 12')
   })
 
-  it('DB-D6: on days 1–2 "billed through" is the previous month, shown as-is', () => {
-    expect(seg({ costSummary: summary(SPEND.noDataYet) })[0].text).toBe('AWS Cost Explorer, billed through Oct 30 · refreshed today, 6:05 PM')
+  it('DAY1-D8: "billed through" is Cost Explorer evidence, never the calendar finishedThrough', () => {
+    const text = (spend: Spend) => seg({ costSummary: summary(spend) })[0].text
+    // Evidence Nov 12, calendar Nov 10.
+    expect(text(SPEND.billed)).toBe('AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM')
+    // Nov 1, nothing reported yet: the calendar day (Oct 30) is another month's.
+    expect(text(billed({ amount: 0, endExclusive: '2026-11-02', finishedThrough: '2026-10-30', month: { state: 'no_billed_days_yet', billedThrough: null } })))
+      .toBe('AWS Cost Explorer, no billed days yet this month · refreshed today, 6:05 PM')
+    // Evidence outside the current period is not shown.
+    expect(text(billed({ amount: 0, endExclusive: '2026-11-02', finishedThrough: '2026-10-30', month: { state: 'no_billed_days_yet', billedThrough: '2026-10-31' } })))
+      .toBe('AWS Cost Explorer, no billed days yet this month · refreshed today, 6:05 PM')
+    // A month with line items but no billedThrough evidence (the daily trend failed): the founder's rule as written.
+    expect(text(billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10', month: { state: 'month_to_date', billedThrough: null } })))
+      .toBe('AWS Cost Explorer, no billed days yet this month · refreshed today, 6:05 PM')
+    // A response with no month state (a backend that predates it): no evidence either.
+    expect(text(billed({ amount: 123.45, endExclusive: '2026-11-13', finishedThrough: '2026-11-10' })))
+      .toBe('AWS Cost Explorer, no billed days yet this month · refreshed today, 6:05 PM')
   })
 
   it('resources: omitted while coverage loads or failed, and when no scan has finished', () => {
@@ -467,7 +498,7 @@ describe('page: data freshness row', () => {
     expect(row.className).toContain('text-meta')
     expect(within(row).getByText('Data freshness')).toBeInTheDocument()
     expect(['costs', 'resources', 'alerts', 'service'].map((k) => within(row).getByTestId(`freshness-${k}`).textContent)).toEqual([
-      'Costs: AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM',
+      'Costs: AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM',
       'Resources and security: last scan today, 6:02 PM · every 6 hours',
       'Alerts: CloudWatch · checked today, 8:36 PM',
       'DevControl service: checked today, 8:37 PM',
@@ -695,7 +726,7 @@ describe('PR-ICONS-b page: data freshness block', () => {
     expect(list.style.color).toBe('var(--text-secondary)')
     expect(list.className).not.toMatch(/text-ink-muted/)
     expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
-      'Costs: AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM',
+      'Costs: AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM',
       'Resources and security: last scan today, 6:02 PM · every 6 hours',
       'Alerts: CloudWatch · checked today, 8:36 PM',
       'DevControl service: checked today, 8:37 PM',

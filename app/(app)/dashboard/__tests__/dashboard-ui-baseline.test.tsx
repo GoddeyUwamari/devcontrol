@@ -79,7 +79,16 @@ const SPEND: CostSummary = {
   spend: {
     state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: COSTS_FETCHED,
     period: { kind: 'range', start: '2026-11-01', endExclusive: '2026-11-13' }, coverage: null, reason: null,
-    data: { amount: 123.45, basis: 'billed_month_to_date', lastDayInProgress: true, finishedThrough: '2026-11-10' },
+    data: {
+      amount: 123.45, basis: 'billed_month_to_date', lastDayInProgress: true, finishedThrough: '2026-11-10',
+      // The backend's month state; billedThrough is Cost Explorer evidence (DAY1-D8), the
+      // freshness row's "billed through" (later than the calendar finishedThrough).
+      monthState: {
+        version: 1, state: 'month_to_date', period: { month: '2026-11', start: '2026-11-01', endExclusive: '2026-11-13', calendar: 'UTC' },
+        amount: 123.45, amountUsable: true, costBasis: 'unblended_net_after_credits', lineItems: 1, finishedThrough: '2026-11-10',
+        billedThrough: '2026-11-12', ceEstimated: true, asOf: COSTS_FETCHED, reason: null, previousMonth: null,
+      },
+    },
   },
   monthOverMonth: { state: 'unavailable', source: 'DevControl month-over-month comparison', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
 }
