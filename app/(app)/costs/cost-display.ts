@@ -223,11 +223,6 @@ export function noChargesReportedYet(section: ContextSection<CostSpendEvidence> 
   return noBilledDaysThisMonth(section)
 }
 
-/** Why there is no figure yet, in the words the Dashboard card already uses. */
-export function noChargesYetNote(_section: ContextSection<CostSpendEvidence> | undefined): string {
-  return NO_BILLED_DAYS_YET
-}
-
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
