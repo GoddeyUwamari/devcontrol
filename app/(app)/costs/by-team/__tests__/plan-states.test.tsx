@@ -6,9 +6,9 @@
 import { vi } from 'vitest'
 import { describePlanStates } from '@/lib/contexts/__tests__/org-load-harness'
 
-const getDashboardStats = vi.hoisted(() => vi.fn(async () => ({ monthlyAwsCost: 10, costSource: 'actual' })))
+const getCostSummary = vi.hoisted(() => vi.fn(async () => ({ spend: { state: 'unavailable', source: 'AWS Cost Explorer', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null }, monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null } })))
 const getAccounts = vi.hoisted(() => vi.fn(async () => [{ id: 'acct-1' }]))
-vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getDashboardStats } }))
+vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getCostSummary } }))
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await (getAccounts()); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
@@ -23,8 +23,8 @@ describePlanStates('/costs/by-team', {
   render: () => <CostsByTeamPage />,
   entitledTier: 'starter',
   notEntitledTier: 'free',
-  reset: () => { getDashboardStats.mockClear(); getAccounts.mockClear() },
-  paidCalls: () => getDashboardStats.mock.calls.length + getAccounts.mock.calls.length,
+  reset: () => { getCostSummary.mockClear(); getAccounts.mockClear() },
+  paidCalls: () => getCostSummary.mock.calls.length + getAccounts.mock.calls.length,
   content: 'Cost attribution by team and service is not available yet',
   gate: 'On the Cost Control plan',
 })

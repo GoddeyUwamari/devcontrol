@@ -18,6 +18,8 @@
  * Same mocking harness as infrastructure-canonical-status.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import InfrastructurePage from '../page'
@@ -48,8 +50,14 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
 vi.mock('@/lib/services/platform-stats.service', () => ({
   platformStatsService: {
     getDashboardStats: vi.fn().mockResolvedValue({ monthlyAwsCost: 0, activeDeployments: 0, totalServices: 0 }),
+    getCostSummary: vi.fn().mockResolvedValue({
+      spend: { state: 'unavailable', source: 'AWS Cost Explorer', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
+      monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
+    }),
   },
 }))
+
+import { DAY1_NONE } from '../../costs/__tests__/month-state-fixtures'
 
 const mockServicesStats = vi.fn()
 vi.mock('@/lib/services/aws-services.service', () => ({
@@ -330,12 +338,16 @@ describe('/infrastructure resource table -- no lifecycle status for a type that 
   })
 })
 
-describe('/infrastructure spend card -- labeled by its source', () => {
-  function mockSpend(monthlyAwsCost: number, costSource: 'actual' | 'estimated', totalPotentialSavings = 0) {
-    vi.mocked(platformStatsService.getDashboardStats).mockResolvedValue({
-      totalServices: 0, servicesChange: 0, activeDeployments: 0, deploymentsChange: 0,
-      monthlyAwsCost, costChange: 0, totalTeams: 0, teamsChange: 0, costSource,
-    })
+describe('/infrastructure spend card -- labeled by its source (cost summary, DAY1-D12)', () => {
+  function mockSpend(amount: number, provenance: 'actual' | 'estimated', totalPotentialSavings = 0) {
+    const actual = provenance === 'actual'
+    vi.mocked(platformStatsService.getCostSummary).mockResolvedValue({
+      spend: {
+        state: 'available', source: actual ? 'AWS Cost Explorer' : 'DevControl inventory cost estimate', provenance, asOf: null, coverage: null, reason: null,
+        data: { amount, basis: actual ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false },
+      },
+      monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
+    } as any)
     vi.mocked(costRecommendationsService.getStats).mockResolvedValue({ totalPotentialSavings } as any)
   }
 
@@ -358,9 +370,7 @@ describe('/infrastructure spend card -- labeled by its source', () => {
     expect(document.body.textContent).toContain('not AWS billed spend')
   })
 
-  // The backend never sends 'actual' with $0: Cost Explorer failing, a real $0
-  // month, net credits and no account all arrive as an 'estimated' inventory
-  // sum, which is $0 when nothing is estimated. That is no figure, not $0.00/mo.
+  // An inventory estimate of $0 means nothing was estimated: no figure, not $0.00/mo.
   it('an estimate of $0 (any Cost Explorer fallback with nothing estimated) shows no figure, with the reason', async () => {
     mockSpend(0, 'estimated')
     renderPage()
@@ -369,6 +379,15 @@ describe('/infrastructure spend card -- labeled by its source', () => {
     expect(screen.getByTestId('infrastructure-spend-value').textContent).toBe('—')
     expect(screen.getByTestId('infrastructure-spend-value').parentElement!.textContent).not.toMatch(/\$0/)
     expect(document.body.textContent).not.toContain('Syncing from Cost Explorer')
+  })
+
+  it('Dec 1 (UTC), no billed days yet: "—" and why, never $0.00', async () => {
+    vi.mocked(platformStatsService.getCostSummary).mockResolvedValue(DAY1_NONE as any)
+    vi.mocked(costRecommendationsService.getStats).mockResolvedValue({ totalPotentialSavings: 0 } as any)
+    renderPage()
+    await waitFor(() => expect(document.body.textContent).toContain('Dec 1 (UTC) · AWS Cost Explorer · no billed days yet this month'))
+    expect(screen.getByTestId('infrastructure-spend-value').textContent).toBe('—')
+    expect(screen.getByTestId('infrastructure-spend-value').parentElement!.textContent).not.toMatch(/\$0/)
   })
 
   it('shows no "% of total spend" share of savings in real mode', async () => {

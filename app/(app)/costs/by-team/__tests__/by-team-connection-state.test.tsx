@@ -4,10 +4,12 @@
  * the page say the account is connected.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+// The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const getDashboardStats = vi.hoisted(() => vi.fn())
+const getCostSummary = vi.hoisted(() => vi.fn())
 const getConnection = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/hooks/use-plan', () => ({
@@ -15,7 +17,7 @@ vi.mock('@/lib/hooks/use-plan', () => ({
 }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: () => ({ enabled: false }) }))
-vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getDashboardStats } }))
+vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getCostSummary } }))
 vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService: { getCosts: vi.fn() } }))
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => {
     // FAIL and PENDING are answered here, not by the spy: a spy that itself returns a
@@ -39,10 +41,13 @@ function renderPage() {
 const card = () => screen.getByTestId('by-team-attribution-unavailable')
 
 beforeEach(() => {
-  getDashboardStats.mockReset()
+  getCostSummary.mockReset()
   getConnection.mockReset()
   // Spend from an earlier connection: historical AWS-derived data.
-  getDashboardStats.mockResolvedValue({ totalServices: 9, servicesChange: 0, activeDeployments: 0, deploymentsChange: 0, monthlyAwsCost: 812.25, costChange: 0, totalTeams: 1, teamsChange: 0, costSource: 'actual' })
+  getCostSummary.mockResolvedValue({
+    spend: { state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: null, coverage: null, reason: null, data: { amount: 812.25, basis: 'billed_month_to_date', lastDayInProgress: false } },
+    monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
+  })
 })
 
 describe('/costs/by-team: connected comes from the server connection state only', () => {

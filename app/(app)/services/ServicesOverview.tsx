@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import awsServicesService, { type AWSServicesPage, type ServicesCoverage } from '@/lib/services/aws-services.service'
-import { platformStatsService } from '@/lib/services/platform-stats.service'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
-import type { CostSummary } from '@/lib/types'
+import { useCostSummary } from '@/lib/hooks/useCostSummary'
 import { ServicesHeader } from './ServicesHeader'
 import { scanLine } from '../security/overview/securityModel'
 import { CoverageStrip, type CoverageState } from './CoverageStrip'
@@ -86,12 +85,9 @@ export function ServicesOverview({
     queryFn: () => awsServicesService.getServices({ needs_attention: true, page: 1, limit: ATTENTION_ROWS }),
     enabled: realMode, retry: false, refetchOnWindowFocus: false,
   })
-  // The same query (and cache entry) as the Dashboard's spend card.
-  const costQuery = useQuery<CostSummary>({
-    queryKey: ['platform-cost-summary', orgId],
-    queryFn: platformStatsService.getCostSummary,
-    enabled: realMode, retry: false, refetchOnWindowFocus: false,
-  })
+  // The same query (and cache entry) as the Dashboard's spend card, keyed by
+  // organization and UTC day (DAY1-D10).
+  const costQuery = useCostSummary(orgId, { enabled: realMode, retry: false, refetchOnWindowFocus: false })
   const registeredQuery = useRegisteredServices({ enabled: !demo })
 
   // ── All resources: filters, paging and the list query ──

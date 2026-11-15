@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import type { AWSServicesStats, ServicesCoverage } from '@/lib/services/aws-services.service'
 import type { CostSummary } from '@/lib/types'
-import { formatUsd } from '../costs/cost-display'
+import { billedThroughInPeriod, formatUsd, LATEST_DAYS_REPORTING, monthStateOf, NO_BILLED_DAYS_YET, shortDay } from '../costs/cost-display'
 import { ComingSoonTag } from './ComingSoonTag'
 import { inventoryGap, resourcesScopeCaption } from './coverage'
 
@@ -20,28 +20,34 @@ function kpi(n: number | undefined, { loading, unavailable }: { loading: boolean
   return n.toLocaleString('en-US')
 }
 
-function finishedThroughLabel(day: string): string {
-  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
-}
-
 /**
  * The spend tile (Q17): only billed AWS Cost Explorer month-to-date spend.
  * Anything else (an inventory estimate, unavailable, an error) is "Cost data
- * not available yet": the estimate is never shown here. "billed through" comes
- * from the data and is left out when the data does not say.
+ * not available yet": the estimate is never shown here. The month's state
+ * decides the rest: no billed days yet is "—" (never $0.00); while the latest
+ * days are still updating the tile says so; "billed through" is only Cost
+ * Explorer's own evidence inside this month's period, never a calendar day of
+ * another month (DAY1-D8).
  */
 export function describeServicesSpend({ loading, error, summary }: SpendState):
   | { kind: 'loading' }
   | { kind: 'billed'; value: string; notes: string[] }
+  | { kind: 'no_billed_days'; notes: string[] }
   | { kind: 'unavailable' } {
   if (loading) return { kind: 'loading' }
   const section = summary?.spend
   if (error || !section?.data || (section.state !== 'available' && section.state !== 'partial')) return { kind: 'unavailable' }
   if (section.provenance !== 'actual' || section.data.basis !== 'billed_month_to_date') return { kind: 'unavailable' }
+  const state = monthStateOf(section)
+  if (state === 'no_billed_days_yet') return { kind: 'no_billed_days', notes: ['whole account', 'from Cost Explorer', NO_BILLED_DAYS_YET] }
+  const amount = section.data.amount
+  if (amount === null || (state !== 'latest_days_updating' && state !== 'month_to_date')) return { kind: 'unavailable' }
   const notes = ['whole account', 'billed, from Cost Explorer']
-  if (section.data.finishedThrough) notes.push(`billed through ${finishedThroughLabel(section.data.finishedThrough)}`)
+  const through = billedThroughInPeriod(section)
+  if (state === 'latest_days_updating') notes.push(LATEST_DAYS_REPORTING)
+  else if (through) notes.push(`billed through ${shortDay(through)}`)
   if (section.state === 'partial') notes.push('partial data')
-  return { kind: 'billed', value: formatUsd(section.data.amount), notes }
+  return { kind: 'billed', value: formatUsd(amount), notes }
 }
 
 /**
@@ -141,7 +147,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
       </Tile>
 
       <Tile label="AWS spend, month to date" value={spendView.kind === 'loading' ? '…' : spendView.kind === 'billed' ? spendView.value : '—'}>
-        {spendView.kind === 'billed' && (
+        {(spendView.kind === 'billed' || spendView.kind === 'no_billed_days') && (
           <p className="m-0 text-meta text-slate-600">{spendView.notes.join(' · ')} · per service <ComingSoonTag /></p>
         )}
         {spendView.kind === 'unavailable' && (

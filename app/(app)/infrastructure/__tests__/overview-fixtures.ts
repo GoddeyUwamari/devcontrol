@@ -102,6 +102,13 @@ export function billedSummary(o: { amount?: number; top?: { service: string; amo
           { service: 'AWS Lambda', amount: 50, sharePercent: 5 },
           { service: 'Amazon CloudFront', amount: 25, sharePercent: 2.5 },
         ] : o.top,
+        // The backend's month state for Oct 23: a finished day exists, and Cost
+        // Explorer's own line items run through Oct 21 (billed-through evidence).
+        monthState: {
+          version: 1, state: 'month_to_date', period: { month: '2026-10', start: '2026-10-01', endExclusive: '2026-10-24', calendar: 'UTC' },
+          amount, amountUsable: true, costBasis: 'unblended_net_after_credits', lineItems: o.top === null ? 0 : 5, finishedThrough: '2026-10-21',
+          billedThrough: '2026-10-21', ceEstimated: true, asOf: hoursAgo(1), reason: null, previousMonth: null,
+        },
       },
     },
     monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: null, data: null },

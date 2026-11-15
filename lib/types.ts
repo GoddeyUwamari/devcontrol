@@ -550,10 +550,38 @@ export interface ContextSection<T> {
   data: T | null;
 }
 
+/**
+ * CostMonthState in backend/src/services/cost-month-state.ts: the one backend
+ * truth about the current UTC month's Cost Explorer month-to-date figure.
+ * `state` is an open set: a value this code does not know means the amount
+ * is not usable (show `reason.text`).
+ */
+export interface CostMonthState {
+  version: number;
+  state: 'no_billed_days_yet' | 'latest_days_updating' | 'month_to_date' | 'unavailable' | (string & {});
+  period: { month: string; start: string; endExclusive: string; calendar: 'UTC' };
+  /** USD, net after credits and refunds; null unless amountUsable. */
+  amount: number | null;
+  amountUsable: boolean;
+  costBasis: string;
+  lineItems: number;
+  finishedThrough: string;
+  /** Evidence: the last UTC day of this month with a Cost Explorer line item; null = none or not determined. */
+  billedThrough: string | null;
+  ceEstimated: boolean | null;
+  asOf: string | null;
+  reason: { code: string; text: string } | null;
+  previousMonth: { month: string; start: string; endExclusive: string; amount: number; latestDaysUpdating: boolean } | null;
+}
+
 /** SpendEvidence in backend/src/services/cost-context-sections.ts. */
 export interface CostSpendEvidence {
-  /** USD. May be 0 or negative (credits exceed charges) for billed spend. */
-  amount: number;
+  /**
+   * USD. May be 0 or negative (credits exceed charges) for billed spend; null
+   * when the month's state says there is no usable amount (no billed days
+   * yet). Never 0 as a stand-in.
+   */
+  amount: number | null;
   basis: 'billed_month_to_date' | 'estimated_monthly_run_rate';
   lastDayInProgress: boolean;
   /**
@@ -574,6 +602,8 @@ export interface CostSpendEvidence {
    * none; absent from responses of a backend that predates it.
    */
   previousMonth?: { start: string; endExclusive: string; amount: number } | null;
+  /** The current UTC month's state; absent from responses of a backend that predates it. */
+  monthState?: CostMonthState;
 }
 
 /** MonthOverMonthEvidence in backend/src/services/cost-context-sections.ts. */

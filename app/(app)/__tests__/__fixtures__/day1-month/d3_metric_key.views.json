@@ -19,7 +19,7 @@
   "byTeam": {
     "label": "Month-to-Date Spend",
     "value": "—",
-    "sub": "Not available · no AWS Cost Explorer spend or inventory estimate",
+    "sub": "Not available · no AWS Cost Explorer data or inventory estimate",
     "amount": null,
     "provenance": null
   },

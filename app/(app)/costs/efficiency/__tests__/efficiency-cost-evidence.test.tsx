@@ -13,6 +13,8 @@
  * All figures are test fixtures, not production data.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CostSummary } from '@/lib/types'
@@ -97,10 +99,10 @@ describe('spend breakdown: a failure is not "no data"', () => {
     expect(screen.queryByText(/could not be retrieved from AWS Cost Explorer/)).not.toBeInTheDocument()
   })
 
-  it("stays under ['cost-trend', '6mo'], never the Costs page's key", async () => {
+  it("stays under ['cost-trend', '6mo', org, UTC day], never the Costs page's key", async () => {
     renderPage()
 
-    await waitFor(() => expect(client.getQueryData(['cost-trend', '6mo'])).toBeDefined())
+    await waitFor(() => expect(client.getQueryCache().findAll({ queryKey: ['cost-trend', '6mo'] }).map((q) => q.queryKey)).toEqual([['cost-trend', '6mo', 'org-test', new Date().toISOString().slice(0, 10)]]))
     expect(client.getQueryCache().findAll({ queryKey: ['costs-page'] })).toEqual([])
   })
 })

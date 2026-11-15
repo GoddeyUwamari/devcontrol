@@ -20,6 +20,7 @@ import { RecentActivityCard } from '@/components/dashboard/recent-activity-card'
 import { useSoc2Readiness } from '@/lib/hooks/useSoc2Readiness'
 import { useComplianceFrameworks } from '@/lib/hooks/useComplianceFrameworks'
 import { useAISummary } from '@/lib/hooks/useAISummary'
+import { useCostSummary, useUtcDay } from '@/lib/hooks/useCostSummary'
 import { useSystemIntelligence } from '@/lib/hooks/useSystemIntelligence'
 import { useActivityFeed } from '@/lib/hooks/useActivityFeed'
 import { accountSecurityFindingsService } from '@/lib/services/account-security-findings.service'
@@ -41,7 +42,7 @@ import { EvidenceSection } from '@/components/dashboard/evidence-info'
 import { PostureEvidence } from '@/components/dashboard/posture-evidence'
 import { ResourceChecksSection } from '@/components/dashboard/resource-checks-section'
 import { toneFillClass, toneStatusKind } from '@/components/dashboard/evidence-badge'
-import type { PlatformDashboardStats, CostRecommendation, CostSummary } from '@/lib/types'
+import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
@@ -135,8 +136,11 @@ export default function DashboardPage() {
   // Every tenant-data query below is keyed by organization (same pattern as the
   // two queries above) so one organization's cache entry can never be served to
   // another, and disabled until the organization is known.
+  // Cost data is also keyed by the UTC day (DAY1-D10): after 00:00 UTC a page
+  // left open asks for the new period, never showing yesterday's entry as today's.
+  const utcDay = useUtcDay()
   const { data: stats, isLoading: statsQueryLoading } = useQuery<PlatformDashboardStats>({
-    queryKey: ['platform-dashboard-stats', organization?.id],
+    queryKey: ['platform-dashboard-stats', organization?.id, utcDay],
     queryFn: platformStatsService.getDashboardStats,
     // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
     // (billed per API call) on every render/tab-switch.
@@ -153,9 +157,7 @@ export default function DashboardPage() {
   // (actual Cost Explorer / inventory estimate / unavailable / error) -- the same
   // endpoint the Costs page reads. `stats` above still drives the AWS connection
   // gates and the connection state; this never feeds them.
-  const { data: costSummary, isLoading: costSummaryQueryLoading, isError: costSummaryError } = useQuery<CostSummary>({
-    queryKey: ['platform-cost-summary', organization?.id],
-    queryFn: platformStatsService.getCostSummary,
+  const { data: costSummary, isLoading: costSummaryQueryLoading, isError: costSummaryError } = useCostSummary(organization?.id, {
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && !!organization?.id,
@@ -342,7 +344,7 @@ export default function DashboardPage() {
     computeDashboardAwsGates({ isDemoActive, isAwsConnected, statsLoading, stats })
 
   const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
-    queryKey: ['cost-trend', costDateRange, organization?.id],
+    queryKey: ['cost-trend', costDateRange, organization?.id, utcDay],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${costDateRange}`, {

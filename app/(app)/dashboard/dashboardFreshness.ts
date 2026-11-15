@@ -13,7 +13,7 @@ import { formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso } from '@/lib/scan-time'
 import { scanLine } from '../security/overview/securityModel'
 import { latestAttempt } from '../services/regionCoverage'
-import { describeServicesSpend } from '../services/SummaryTiles'
+import { shortDay } from '../costs/cost-display'
 
 // ── Header ──
 
@@ -106,9 +106,16 @@ export function dataFreshnessSegments(i: {
 }): FreshnessSegment[] {
   const segments: FreshnessSegment[] = []
 
-  const spend = describeServicesSpend({ loading: false, error: i.costSummaryError, summary: i.costSummary })
-  if (spend.kind === 'billed') {
-    const through = spend.notes.find((n) => n.startsWith('billed through')) ?? null
+  // DB-D6 kept as decided: "billed through" here is finishedThrough as-is
+  // (a calendar day, the previous month's on days 1-2), shown for any billed
+  // Cost Explorer section -- independent of the month state the spend tiles
+  // use (see day1-build.md, open question on DB-D6 vs DAY1-D8).
+  const section = i.costSummary?.spend
+  const billed = !i.costSummaryError && !!section?.data && (section.state === 'available' || section.state === 'partial')
+    && section.provenance === 'actual' && section.data.basis === 'billed_month_to_date'
+  if (billed) {
+    const finishedThrough = section?.data?.finishedThrough
+    const through = finishedThrough ? `billed through ${shortDay(finishedThrough)}` : null
     const refreshed = formatLocalWhen(i.costSummary?.spend.asOf, i.now)
     if (through || refreshed) {
       const source = `AWS Cost Explorer${through ? `, ${through}` : ''}`

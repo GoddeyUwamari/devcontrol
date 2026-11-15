@@ -25,6 +25,8 @@ const NOW = vi.hoisted(() => {
 })
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import InfrastructurePage from '../page'
@@ -39,6 +41,7 @@ const m = vi.hoisted(() => ({
   recsGetAll: vi.fn(),
   recsGetStats: vi.fn(),
   getDashboardStats: vi.fn(),
+  getCostSummary: vi.fn(),
   servicesGetStats: vi.fn(),
   discoverServices: vi.fn(),
   intel: undefined as unknown,
@@ -78,7 +81,8 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
 vi.mock('@/lib/services/platform-stats.service', () => ({
   platformStatsService: {
     getDashboardStats: (...a: unknown[]) => logged('platformStatsService.getDashboardStats', m.getDashboardStats)(...a),
-    getCostSummary: (...a: unknown[]) => logged('platformStatsService.getCostSummary', async () => { throw new Error('not expected') })(...a),
+    // Since DAY1-D12 the legacy spend tile reads the cost summary (month state included).
+    getCostSummary: (...a: unknown[]) => logged('platformStatsService.getCostSummary', m.getCostSummary)(...a),
   },
 }))
 vi.mock('@/lib/services/aws-services.service', () => ({
@@ -114,6 +118,14 @@ const SERVICES_STATS = {
   attention_reasons: { failed: 1, stopped_or_degraded: 1, with_finding: 1, with_cost_recommendation: 0 },
 }
 
+// The same Cost Explorer figure DASHBOARD_STATS carried, as the cost summary sends it.
+const COST_SUMMARY = {
+  spend: {
+    state: 'available', source: 'AWS Cost Explorer', provenance: 'actual', asOf: null, coverage: null, reason: null,
+    data: { amount: 1234.56, basis: 'billed_month_to_date', lastDayInProgress: false },
+  },
+  monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
+}
 const DASHBOARD_STATS = {
   totalServices: 3, servicesChange: 0, activeDeployments: 0, deploymentsChange: 0,
   monthlyAwsCost: 1234.56, costChange: 0, totalTeams: 1, teamsChange: 0, costSource: 'actual',
@@ -173,6 +185,7 @@ beforeEach(() => {
   m.recsGetAll.mockReset().mockResolvedValue(RECS)
   m.recsGetStats.mockReset().mockResolvedValue(RECS_STATS)
   m.getDashboardStats.mockReset().mockResolvedValue(DASHBOARD_STATS)
+  m.getCostSummary.mockReset().mockResolvedValue(COST_SUMMARY)
   m.servicesGetStats.mockReset().mockResolvedValue(SERVICES_STATS)
   m.discoverServices.mockReset().mockResolvedValue({ discovered: 7, warnings: [] })
   m.intel = INTEL_READY
@@ -240,6 +253,7 @@ const CASES: Record<string, () => Promise<{ html: string; requests: string }>> =
   'stats-error': () => {
     m.servicesGetStats.mockRejectedValue(new Error('500'))
     m.getDashboardStats.mockRejectedValue(new Error('500'))
+    m.getCostSummary.mockRejectedValue(new Error('500'))
     return capture()
   },
   // 8. Demo mode: fixtures, no requests.

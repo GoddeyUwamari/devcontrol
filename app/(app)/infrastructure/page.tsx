@@ -13,9 +13,10 @@ import {
 import { toast } from 'sonner'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
-import { platformStatsService } from '@/lib/services/platform-stats.service'
+import { useAuth } from '@/lib/contexts/auth-context'
+import { useCostSummary } from '@/lib/hooks/useCostSummary'
 import awsServicesService from '@/lib/services/aws-services.service'
-import type { InfrastructureResource, ResourceType, PlatformDashboardStats } from '@/lib/types'
+import type { InfrastructureResource, ResourceType } from '@/lib/types'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/components/aws/discovery-warning-notice'
@@ -29,7 +30,7 @@ import { formatCalculatedAgo } from './calculatedAgo'
 import { describeAttentionCard } from './attentionCard'
 import { largestEstimatedCosts } from './costByResource'
 import { isRunningOrNormalState, isStoppedOrPendingState, lifecycleStateLabel } from './stateLabel'
-import { describeStatsSpend } from '../costs/cost-display'
+import { describeSpend } from '../costs/cost-display'
 import { INFRASTRUCTURE_POSTURE_LABEL, POSTURE_COMPONENT_LABELS, posturePartialCaption, postureStatusLabel } from '@/lib/infrastructure-posture'
 import { isInfraOverviewV2Enabled } from './infraOverviewV2Flag'
 
@@ -301,9 +302,10 @@ function InfrastructureContent() {
 
   // Source A — same call Dashboard/costs pages use for live spend. Feeds the Monthly
   // Cost KPI so it agrees with Dashboard instead of summing infrastructure_resources (B).
-  const { data: platformStats, isLoading: platformStatsLoading, isError: platformStatsError } = useQuery<PlatformDashboardStats>({
-    queryKey: ['platform-dashboard-stats'],
-    queryFn: platformStatsService.getDashboardStats,
+  // The month-to-date figure with its month state (DAY1-D12): no billed days
+  // yet is "—", never $0.00.
+  const { organization } = useAuth()
+  const { data: costSummary, isLoading: costSummaryLoading, isError: costSummaryError } = useCostSummary(organization?.id, {
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive,
@@ -346,6 +348,7 @@ function InfrastructureContent() {
         queryClient.invalidateQueries({ queryKey: ['system-intelligence'] }),
         queryClient.invalidateQueries({ queryKey: ['top-actions'] }),
         queryClient.invalidateQueries({ queryKey: ['platform-dashboard-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['platform-cost-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
         // A scan can flip compliance_scan_completed, which changes isPreliminary —
         // without this, the security score stays on its pre-scan cached value for
@@ -389,8 +392,8 @@ function InfrastructureContent() {
   const totalResources   = isDemoActive ? demoTotal      : (statsLoading ? null : (apiStats?.total          ?? 0))
   // Source A — the same figure Dashboard/costs pages use, labeled by its costSource:
   // Cost Explorer month-to-date spend, or an inventory run-rate that is never called spend.
-  const totalMonthlyCost = isDemoActive ? demoMonthlyCost: (platformStats?.monthlyAwsCost ?? 0)
-  const spendDisplay = describeStatsSpend(platformStats, { isLoading: platformStatsLoading, isError: platformStatsError })
+  const totalMonthlyCost = demoMonthlyCost
+  const spendDisplay = describeSpend(costSummary?.spend, { isLoading: costSummaryLoading, isError: costSummaryError })
   // A failed stats request is unknown (null -> "—"), never 0.
   const activeCount      = isDemoActive ? demoActive     : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.healthy         ?? 0))
   const warningCount     = isDemoActive ? demoWarning    : (statsLoading || (statsError && !apiStats) ? null : (apiStats?.needs_attention ?? 0))

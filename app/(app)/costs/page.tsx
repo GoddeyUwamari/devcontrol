@@ -12,7 +12,8 @@ import {
   Zap, Lock,
 } from 'lucide-react'
 import { usePlan } from '@/lib/hooks/use-plan'
-import { platformStatsService } from '@/lib/services/platform-stats.service'
+import { useAuth } from '@/lib/contexts/auth-context'
+import { useCostSummary, useUtcDay } from '@/lib/hooks/useCostSummary'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { awsResourcesService } from '@/lib/services/aws-resources.service'
 import { pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
@@ -20,12 +21,12 @@ import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
-import type { CostSummary, CostRecommendation, RecommendationSeverity } from '@/lib/types'
+import type { CostRecommendation, RecommendationSeverity } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
 import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings } from '@/lib/savings-basis'
-import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, roundCents, TODAY_STILL_BILLING } from './cost-display'
+import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, previousMonthLine, roundCents, TODAY_STILL_BILLING } from './cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
 const SERVICE_COLORS: Record<string, string> = {
@@ -128,9 +129,11 @@ export default function CostsPage() {
   // Source A: month-to-date spend and the month-over-month comparison as evidence
   // sections (actual Cost Explorer / inventory estimate / unavailable / error),
   // the same cost path AI Reports and Ask AI use. A missing figure is a state, never 0.
-  const { data: costSummary, isLoading: costSummaryLoading, isError: costSummaryError } = useQuery<CostSummary>({
-    queryKey: ['platform-cost-summary'],
-    queryFn: platformStatsService.getCostSummary,
+  // Keyed by organization and UTC day (DAY1-D10), the Dashboard's entry.
+  const { organization } = useAuth()
+  const orgId = organization?.id
+  const utcDay = useUtcDay()
+  const { data: costSummary, isLoading: costSummaryLoading, isError: costSummaryError } = useCostSummary(orgId, {
     // AWS cost data changes slowly — long staleTime/gcTime avoids re-hitting Cost Explorer
     // (billed per API call) on every render/tab-switch. Matches dashboard/page.tsx.
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
@@ -144,7 +147,7 @@ export default function CostsPage() {
   const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<
     Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>
   >({
-    queryKey: ['costs-page', 'cost-trend', selectedRangeParam],
+    queryKey: ['costs-page', 'cost-trend', selectedRangeParam, orgId ?? null, utcDay],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${selectedRangeParam}`, {
@@ -158,7 +161,7 @@ export default function CostsPage() {
     },
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive,
+    enabled: !isDemoActive && !!orgId,
   })
 
   // Source C: cost_recommendations — same service Cost Optimization page uses.
@@ -372,6 +375,8 @@ export default function CostsPage() {
       key: 'mtd', label: spend.label,
       value: spend.value,
       sub: spend.sub,
+      // While no day of this month has finished: last month's total (the Dashboard's line).
+      previous: isDemoActive ? null : previousMonthLine(costSummary?.spend),
       subColor: 'text-ink-muted', TrendIcon: Minus, trendColor: 'text-ink-muted',
       href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
     },
@@ -493,7 +498,7 @@ export default function CostsPage() {
 
       {/* ── 4 KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        {kpiCards.map(({ key, label, value, sub, subColor, TrendIcon, trendColor, href, borderTop, valueColor }) => (
+        {kpiCards.map(({ key, label, value, sub, subColor, TrendIcon, trendColor, href, borderTop, valueColor, previous }: (typeof kpiCards)[number] & { previous?: string | null }) => (
           <Link key={key} href={href} className="no-underline">
             <div
               className={`bg-white rounded-xl p-4 sm:p-6 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${borderTop}`}
@@ -509,6 +514,7 @@ export default function CostsPage() {
                 <TrendIcon size={12} className={trendColor} />
                 <span className="leading-relaxed">{sub}</span>
               </div>
+              {previous && <p className="text-meta text-ink-muted mt-2 m-0" data-testid="previous-month-line">{previous}</p>}
             </div>
           </Link>
         ))}
@@ -658,7 +664,7 @@ export default function CostsPage() {
             {
               label: 'Month-over-Month', value: mom.value, color: growthRate === null ? 'text-ink-muted' : growthRate > 5 ? 'text-ink-danger' : 'text-ink-success',
               // Fixed basis, stated because this strip sits under the range tabs it does not follow.
-              // Built from the same floored daily trend as the chart, so credits/refunds are excluded.
+              // Built from the same daily trend as the chart: after credits and refunds, each category floored at $0 (TREND_TOTALS_NOTE).
               note: isDemoActive ? undefined : `${MOM_BASIS_LABEL} · ${TREND_TOTALS_NOTE}${mom.includesToday ? ` · ${TODAY_STILL_BILLING}` : ''}`,
             },
             { label: 'Active Recommendations', value: recsUnavailable ? '—' : `${activeRecsCount}`, color: 'text-ink-muted' },

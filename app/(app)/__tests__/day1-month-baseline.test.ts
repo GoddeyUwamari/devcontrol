@@ -10,7 +10,7 @@
  * Each surface is the helper its page calls with that payload:
  *   Dashboard card       computeDashboardSpendCard   (dashboard/page.tsx)
  *   Costs MTD card       describeSpend               (costs/page.tsx; Costs › Efficiency Total Spend calls the same)
- *   Costs › By team      the by-team spend helper    (costs/by-team/page.tsx)
+ *   Costs › By team      describeSpend               (costs/by-team/page.tsx; the stats endpoint before DAY1-D12)
  *   Services tile        describeServicesSpend       (services/SummaryTiles.tsx)
  *   Infrastructure       describeOverview tiles.spend + costByService (infrastructure/overview/overviewModel.ts)
  * Synthetic data only.
@@ -20,7 +20,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import type { CostSummary } from '@/lib/types'
 import { computeDashboardSpendCard } from '../dashboard/dashboardSpendCard'
-import { describeSpend, describeStatsSpend } from '../costs/cost-display'
+import { describeSpend } from '../costs/cost-display'
 import { describeServicesSpend } from '../services/SummaryTiles'
 import { costByService, describeOverview } from '../infrastructure/overview/overviewModel'
 import { inputs, ready, NOW } from '../infrastructure/__tests__/overview-fixtures'
@@ -29,7 +29,6 @@ const BACKEND = path.resolve(__dirname, '../../../backend/src/controllers/__test
 const DIR = path.join(__dirname, '__fixtures__', 'day1-month')
 const WRITE = process.env.DAY1_MONTH_FIXTURES === 'write'
 const CASES = ['d1_0030', 'd1_absent', 'd1_charge', 'd2_none', 'd2_charge', 'd3', 'd3_metric_key'] as const
-const ready_ = { isLoading: false, isError: false }
 
 /** The cost summary response for a case, or undefined when the endpoint answered with an error. */
 function summary(name: string): CostSummary | undefined {
@@ -47,17 +46,9 @@ function pin(name: string, value: unknown): void {
   expect(body).toBe(fs.readFileSync(file, 'utf8'))
 }
 
-/**
- * Costs › By team as the page computes it. At the baseline it reads
- * GET /api/platform/stats/dashboard, whose figure is the same Cost Explorer
- * total (getMonthlySpendWithFallback: any success is 'actual').
- */
-function byTeam(s: CostSummary | undefined) {
-  const spend = s?.spend
-  const stats = spend?.provenance === 'actual' && spend.data
-    ? { monthlyAwsCost: spend.data.amount ?? 0, costSource: 'actual' as const }
-    : { monthlyAwsCost: 0, costSource: 'estimated' as const }
-  return describeStatsSpend(stats, ready_)
+/** Costs › By team as the page computes it: the cost summary, like Costs (DAY1-D12). */
+function byTeam(s: CostSummary | undefined, isError: boolean) {
+  return describeSpend(s?.spend, { isLoading: false, isError })
 }
 
 describe.each(CASES)('%s', (name) => {
@@ -68,7 +59,7 @@ describe.each(CASES)('%s', (name) => {
     pin(`${name}.views.json`, {
       dashboardCard: computeDashboardSpendCard({ costSummary: s, isLoading: false, isError }),
       costsMonthToDate: describeSpend(s?.spend, { isLoading: false, isError }),
-      byTeam: byTeam(s),
+      byTeam: byTeam(s, isError),
       servicesTile: describeServicesSpend({ loading: false, error: isError, summary: s }),
       infrastructureSpendTile: overview.tiles?.spend ?? null,
       infrastructureCostByService: costByService(isError ? { status: 'error' } : ready(s!)),

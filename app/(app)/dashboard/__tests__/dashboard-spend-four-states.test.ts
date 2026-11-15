@@ -51,7 +51,8 @@ describe('four spend states never render the same way', () => {
   })
 
   it('Infrastructure "Spend this month"', () => {
-    expect(tile(STATES.measuredZero)).toMatchObject({ value: '$0.00', captions: [['whole account · billed, from Cost Explorer · billed through Nov 10'], expect.anything()] })
+    // No month state in this pre-month-state payload: no billed-through evidence, so none is shown (DAY1-D8).
+    expect(tile(STATES.measuredZero)).toMatchObject({ value: '$0.00', captions: [['whole account · billed, from Cost Explorer'], expect.anything()] })
     expect(tile(STATES.noDataYet)).toMatchObject({ value: '—', captions: [['whole account · billed, from Cost Explorer · no billed days yet this month'], expect.anything()] })
     const faces = Object.values(STATES).map((s) => JSON.stringify(tile(s)))
     expect(new Set(faces).size).toBe(4)
@@ -59,16 +60,16 @@ describe('four spend states never render the same way', () => {
 })
 
 describe('no data yet is only the first days of a month with nothing reported', () => {
-  it('a charge already reported on Nov 1 is shown as is', () => {
+  it('a charge already reported on Nov 1 is shown as is, with "latest days still updating" -- never "no billed days" beside a number (DAY1-D6)', () => {
     const s = billed({ start: '2026-11-01', endExclusive: '2026-11-02', amount: 4.2, finishedThrough: '2026-10-30', topServices: [EC2], previousMonth: OCTOBER })
-    expect(card(s).value).toBe('$4.20')
-    expect(tile(s).value).toBe('$4.20')
+    expect(card(s)).toMatchObject({ value: '$4.20', caption: 'Nov 1 (UTC) · Actual · AWS Cost Explorer · latest days still updating' })
+    expect(tile(s)).toMatchObject({ value: '$4.20', captions: [['whole account · billed, from Cost Explorer · latest days still updating'], expect.anything()] })
   })
 
-  it('Nov 2 (no finished day yet, nothing reported): "—", latest days still being reported; October is finished, so no "still updating"', () => {
+  it('Nov 2 (no finished day yet, nothing reported): "—", still no billed days yet (evidence, not the calendar); October is finished, so no "still updating"', () => {
     const s = billed({ start: '2026-11-01', endExclusive: '2026-11-03', amount: 0, finishedThrough: '2026-10-31', previousMonth: OCTOBER })
-    expect(card(s)).toMatchObject({ value: '—', caption: 'Nov 1–2 (UTC) · Actual · AWS Cost Explorer · latest days still being reported', previousMonth: 'October (UTC): $412.30' })
-    expect(tile(s)).toMatchObject({ value: '—', captions: [['whole account · billed, from Cost Explorer · latest days still being reported'], expect.anything()] })
+    expect(card(s)).toMatchObject({ value: '—', caption: 'Nov 1–2 (UTC) · Actual · AWS Cost Explorer · no billed days yet this month', previousMonth: 'October (UTC): $412.30' })
+    expect(tile(s)).toMatchObject({ value: '—', captions: [['whole account · billed, from Cost Explorer · no billed days yet this month'], expect.anything()] })
   })
 
   it('Nov 3 (Nov 1 finished): the previous-month line is gone', () => {

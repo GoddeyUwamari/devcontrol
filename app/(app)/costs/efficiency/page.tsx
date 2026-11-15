@@ -16,10 +16,11 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
-import { platformStatsService } from '@/lib/services/platform-stats.service'
+import { useAuth } from '@/lib/contexts/auth-context'
+import { useCostSummary, useUtcDay } from '@/lib/hooks/useCostSummary'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { anomalyService } from '@/lib/services/anomaly.service'
-import type { InfrastructureResource, CostSummary } from '@/lib/types'
+import type { InfrastructureResource } from '@/lib/types'
 import { isNotRunning } from './idle'
 import type { AnomalyDetection } from '@/types/anomaly.types'
 import { formatSavingsCurrency } from '@/lib/utils'
@@ -314,9 +315,11 @@ export default function EfficiencyPage() {
   // Source A — month-to-date spend as an evidence section (actual Cost Explorer /
   // inventory estimate / unavailable / error), the same endpoint and cache entry
   // costs/page.tsx reads. A missing figure is a state, never $0.
-  const { data: costSummary, isLoading: costSummaryLoading, isError: costSummaryError } = useQuery<CostSummary>({
-    queryKey: ['platform-cost-summary'],
-    queryFn: platformStatsService.getCostSummary,
+  // Keyed by organization and UTC day (DAY1-D10): the Dashboard's and Costs' entry.
+  const { organization } = useAuth()
+  const orgId = organization?.id
+  const utcDay = useUtcDay()
+  const { data: costSummary, isLoading: costSummaryLoading, isError: costSummaryError } = useCostSummary(orgId, {
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && planKnown,
@@ -325,9 +328,9 @@ export default function EfficiencyPage() {
   // Same endpoint app/(app)/dashboard/page.tsx uses for its cost trend chart —
   // real AWS Cost Explorer data; [] only when the request succeeded with no data
   // (e.g. no connected account). A failed request is an error, not an empty series.
-  // Keyed ['cost-trend', '6mo'] -- distinct from the Costs page's own key.
+  // Keyed ['cost-trend', '6mo', org, UTC day] -- the Dashboard's 6-month entry, distinct from the Costs page's own key.
   const { data: realCostTrend = [], isError: realCostTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
-    queryKey: ['cost-trend', '6mo'],
+    queryKey: ['cost-trend', '6mo', orgId ?? null, utcDay],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=6mo`, {
@@ -340,7 +343,7 @@ export default function EfficiencyPage() {
     },
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
-    enabled: !isDemoActive && planKnown,
+    enabled: !isDemoActive && planKnown && !!orgId,
   })
 
   // Same anomalyService the Security and Anomalies pages already use.

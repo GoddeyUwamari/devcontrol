@@ -194,7 +194,7 @@ describe('finished-day comparison wording', () => {
 
   it('the KPI says why there is no comparison yet, without a percentage', () => {
     const unavailable = { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'x', data: null } as ContextSection<CostMonthOverMonthEvidence>
-    expect(describeMonthOverMonth(unavailable, { isLoading: false, isError: false }, { noFinishedDay: true })).toMatchObject({ value: '—', sub: 'No comparison yet · latest days still being reported', changePercent: null })
+    expect(describeMonthOverMonth(unavailable, { isLoading: false, isError: false }, { noFinishedDay: true })).toMatchObject({ value: '—', sub: 'No comparison yet · latest days still updating', changePercent: null })
     expect(describeMonthOverMonth(unavailable, { isLoading: false, isError: false }).sub).toBe('Comparison not available · not enough comparable AWS Cost Explorer data')
   })
 
