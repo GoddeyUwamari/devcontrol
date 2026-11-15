@@ -14,7 +14,11 @@ import {
   NestedRegionStepError,
   RegionDeadlineError,
   RegionRun,
+  ScanDeadline,
+  ScanDeadlineError,
   StepLimiter,
+  isRegionDeadline,
+  isScanDeadline,
   SCAN_BUDGET_RESULT,
   classifyRegionFailure,
   notStartedLogLine,
@@ -299,5 +303,42 @@ describe('StepLimiter (PR 1b, M-1): a scan\'s region database steps', () => {
     const limiter = new StepLimiter(1);
     await limiter.run(async () => undefined);
     await expect(limiter.run(async () => 'second')).resolves.toBe('second');
+  });
+});
+
+describe('ScanDeadline (PR 1b, M-2): the whole scan\'s deadline', () => {
+  it('by the clock: a step may start before it and not after; one that ran across it is stopped; each recorded once, in order', () => {
+    let now = 0;
+    const deadline = new ScanDeadline(50 * 60_000, 0, () => now);
+    expect(deadline.mayStart('compliance')).toBe(true);
+    now = 49 * 60_000;
+    expect(deadline.stoppedDuring('compliance')).toBe(false);
+    expect(deadline.remainingMs()).toBe(60_000);
+    expect(deadline.mayStart('iam')).toBe(true);
+    now = 50 * 60_000;
+    expect(deadline.stoppedDuring('iam')).toBe(true);
+    expect(deadline.mayStart('cost')).toBe(false);
+    expect(deadline.remainingMs()).toBe(0);
+    expect(deadline.timeouts).toEqual([{ step: 'iam', phase: 'not_finished' }, { step: 'cost', phase: 'not_started' }]);
+    // Passing by the clock aborts the signal too: calls made under policy() stop.
+    expect(deadline.signal.aborted).toBe(true);
+    deadline.stop();
+  });
+
+  it('by the timer: the signal is aborted with ScanDeadlineError, and a call under its policy stops', async () => {
+    const deadline = new ScanDeadline(30, Date.now());
+    const client = withCallPolicy({ send: (_command: unknown) => new Promise(() => undefined) }, deadline.policy({ ...DEFAULT_AWS_CALL_POLICY, timeoutMs: 10_000 }));
+    const error = await client.send({}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ScanDeadlineError);
+    expect(deadline.expired()).toBe(true);
+    deadline.stop();
+  });
+
+  it('is its own outcome: never a region deadline, a region failure code or a lost lease', () => {
+    const error = new ScanDeadlineError('cost');
+    expect(isScanDeadline(error)).toBe(true);
+    expect(isRegionDeadline(error)).toBe(false);
+    expect(isScanDeadline(new RegionDeadlineError('eu-west-1'))).toBe(false);
+    expect(error.name).toBe('ScanDeadlineError');
   });
 });

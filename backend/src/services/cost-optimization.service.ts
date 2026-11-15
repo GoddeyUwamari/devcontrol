@@ -305,7 +305,18 @@ class CostOptimizationService {
      * ConnectionChangedError is thrown before any detector's AWS call, so a lease
      * and clients from two different connections never meet.
      */
-    { expectedConnection }: { expectedConnection?: string } = {}
+    {
+      expectedConnection,
+      signal,
+    }: {
+      expectedConnection?: string;
+      /**
+       * Multi-region PR 1b (review M-2): the discovery scan's deadline. Once aborted, no
+       * detector call starts and one in flight is abandoned (utils/awsCallPolicy.ts).
+       * Unset (every other caller, and a scan without the multi-region flag): no change.
+       */
+      signal?: AbortSignal;
+    } = {}
   ): Promise<{
     observations: DetectorObservation[];
     riRecommendations: CreateRecommendationRequest[];
@@ -337,7 +348,10 @@ class CostOptimizationService {
     if (expectedConnection !== undefined && connection !== expectedConnection) {
       throw new ConnectionChangedError(organizationId);
     }
-    const clients = withCallPolicyOnClients(connectedClients, this.callPolicy);
+    const clients = withCallPolicyOnClients(
+      connectedClients,
+      signal ? { ...this.callPolicy, signal } : this.callPolicy
+    );
 
     if (!clients.enabled) {
       console.log(`AWS not connected for org ${organizationId}, skipping cost analysis`);

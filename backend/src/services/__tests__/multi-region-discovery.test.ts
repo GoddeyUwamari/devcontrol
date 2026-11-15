@@ -34,6 +34,7 @@ import { DEFAULT_AWS_CALL_POLICY } from '../../utils/awsCallPolicy';
 import { OrphanedResourceDetectorService } from '../orphanedResourceDetector';
 import { ComplianceScannerService } from '../complianceScanner';
 import { DISCOVERY_FAILED_MESSAGE } from '../discovery-job-messages';
+import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { ObservabilityReadinessService, evaluateDiscoveryGate } from '../observability-readiness.service';
 import * as foundation from '../../repositories/multi-region-foundation.repository';
 import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
@@ -85,6 +86,8 @@ interface RegionAnswers {
   dynamodb?: Record<string, Answer>;
   explorer?: Record<string, Answer>;
   backup?: Record<string, Answer>;
+  s3?: Record<string, Answer>;
+  iam?: Record<string, Answer>;
   /** Every call of the region's clients throws what this returns for the command (nothing: answered). */
   fail?: (command: string) => Error | undefined;
 }
@@ -104,7 +107,8 @@ function fake(log: Call[], region: string, client: string, answers: Record<strin
       log.push({ region, client, command: command.constructor.name });
       const failure = fail?.(command.constructor.name);
       if (failure) throw failure;
-      const answer = answers[command.constructor.name];
+      // '*': the answer to any command not named (a test's slow client).
+      const answer = answers[command.constructor.name] ?? answers['*'];
       if (!answer) throw awsError('Unexpected', `Unexpected ${command.constructor.name}`);
       return answer(command.input ?? {});
     }),
@@ -134,7 +138,7 @@ function regionClients(log: Call[], region: string, answers: RegionAnswers = {})
     costExplorer: {},
     ec2,
     rds: fake(log, region, 'rds', { DescribeDBInstancesCommand: () => ({ DBInstances: [] }), DescribeDBClustersCommand: () => ({ DBClusters: [] }), ...answers.rds }, f),
-    s3: fake(log, region, 's3', { ListBucketsCommand: () => ({ Buckets: [] }) }),
+    s3: fake(log, region, 's3', { ListBucketsCommand: () => ({ Buckets: [] }), ...answers.s3 }),
     s3Control: {},
     cloudWatch,
     lambda: fake(log, region, 'lambda', { ListFunctionsCommand: () => ({ Functions: [] }) }, f),
@@ -147,7 +151,7 @@ function regionClients(log: Call[], region: string, answers: RegionAnswers = {})
     elastiCache: {},
     sqs: {},
     sns: {},
-    iam: fake(log, 'us-east-1', 'iam', { ListUsersCommand: () => ({ Users: [] }) }),
+    iam: fake(log, 'us-east-1', 'iam', { ListUsersCommand: () => ({ Users: [] }), ...answers.iam }),
     backup: fake(log, region, 'backup', { ListRecoveryPointsByResourceCommand: () => ({ RecoveryPoints: [] }), ...answers.backup }, f),
     securityHub: {},
     resourceExplorer: explorer,
@@ -193,7 +197,14 @@ function service(timing: Partial<MultiRegionTiming> = {}): AWSResourceDiscoveryS
   const svc = new AWSResourceDiscoveryService(pool);
   (svc as any).leaseTiming = FAST;
   (svc as any).callPolicy = { ...DEFAULT_AWS_CALL_POLICY, sleep: async () => undefined };
-  (svc as any).multiRegionTiming = { regionPool: 3, regionDeadlineMs: 60_000, scanBudgetMs: 60 * 60_000, now: Date.now, ...timing };
+  (svc as any).multiRegionTiming = {
+    regionPool: 3,
+    regionDeadlineMs: 60_000,
+    scanBudgetMs: 60 * 60_000,
+    scanDeadlineMs: 2 * 60 * 60_000,
+    now: Date.now,
+    ...timing,
+  };
   return svc;
 }
 
@@ -502,7 +513,8 @@ describe('the scan budget (A2)', () => {
     });
     const statusSpy = jest.spyOn(foundation, 'recordRegionScanStatus');
 
-    const result = await service({ regionPool: 2, scanBudgetMs: 45 * 60_000, now: () => now }).discoverAllResources(orgId);
+    // The scan deadline (PR 1b) is set past the clock's jump: this test is the budget's alone.
+    const result = await service({ regionPool: 2, scanBudgetMs: 30 * 60_000, scanDeadlineMs: 3 * 60 * 60_000, now: () => now }).discoverAllResources(orgId);
 
     const rows = await regionRows(orgId);
     // The two running when the budget ran out finished.
@@ -1026,5 +1038,189 @@ describe('M-1 (PR 1b): a region worker holds no database connection while it wai
     for (const region of SCAN_ORDER.filter((r) => r !== EU)) expect(rows[region]).toMatchObject({ last_scan_status: 'ok' });
     expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['region_incomplete'], regions: SCAN_ORDER });
     expect(result.errors).toEqual([]);
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+describe('M-2 (PR 1b): the whole-scan deadline bounds the steps after the regions', () => {
+  const DEADLINE_MIN = 50;
+  /** A call that answers only when its region's or the scan's deadline aborts it. */
+  const never = () => new Promise(() => undefined);
+  const jobRow = async (orgId: string) =>
+    (
+      await pool.query(
+        `SELECT status, error_message, compliance_scan_completed, cost_analysis_completed, to_jsonb(j) -> 'warnings' AS warnings, regions
+           FROM resource_discovery_jobs j WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [orgId]
+      )
+    ).rows[0];
+  const deadlineLog = () =>
+    (console.warn as jest.Mock).mock.calls.map((args) => String(args[0])).filter((line) => line.includes('scan_deadline: org'));
+  const euInstance = {
+    DescribeInstancesCommand: () => ({ Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: 't3.micro', State: { Name: 'running' } }] }] }),
+  };
+  /** The regions' results that must survive whatever happens after them. */
+  async function expectRegionResultsKept(orgId: string) {
+    expect(await resource(orgId, euInstanceArn)).toMatchObject({ region: EU, status: 'running' });
+    const rows = await regionRows(orgId);
+    for (const region of SCAN_ORDER) expect(rows[region]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+  }
+
+  it('the deadline has passed before the first step after the regions: none starts; the job completes with scan_deadline; the regions\' results stay', async () => {
+    const orgId = await insertOrg();
+    let now = 1_000_000;
+    mockAws({ [EU]: { ec2: euInstance } });
+    // When the last region's status is written, 51 minutes have passed by the scan's
+    // clock: every region finished in time, and the deadline passed before the first
+    // step after them.
+    const realWrite = foundation.recordRegionScanStatus;
+    let written = 0;
+    jest.spyOn(foundation, 'recordRegionScanStatus').mockImplementation(async (client, lease, scan) => {
+      const result = await realWrite(client, lease, scan);
+      if (++written === SCAN_ORDER.length) now += (DEADLINE_MIN + 1) * 60_000;
+      return result;
+    });
+    const iam = jest.spyOn(ComplianceScannerService.prototype, 'checkIAMSecurity');
+    const orphans = jest.spyOn(OrphanedResourceDetectorService.prototype, 'detectOrphaned');
+    const evaluate = jest.spyOn(ComplianceScannerService.prototype, 'evaluateResource');
+    const svc = service({ regionPool: 5, scanBudgetMs: 30 * 60_000, scanDeadlineMs: DEADLINE_MIN * 60_000, now: () => now });
+
+    const result = await svc.discoverAllResources(orgId);
+
+    expect(await jobRow(orgId)).toEqual({
+      status: 'completed', error_message: null, compliance_scan_completed: false, cost_analysis_completed: false,
+      warnings: ['scan_deadline'], regions: SCAN_ORDER,
+    });
+    expect(result).toMatchObject({ errors: [], warnings: ['scan_deadline'] });
+    await expectRegionResultsKept(orgId);
+    // Not one post-region step started.
+    expect(evaluate).not.toHaveBeenCalled();
+    expect(iam).not.toHaveBeenCalled();
+    expect(orphans).not.toHaveBeenCalled();
+    expect(costOptimizationService.analyzeAllResources).not.toHaveBeenCalled();
+    expect((await pool.query(`SELECT count(*)::int AS n FROM cost_analysis_runs WHERE organization_id = $1`, [orgId])).rows[0].n).toBe(0);
+    expect(deadlineLog()).toEqual([expect.stringContaining('not started: compliance, iam, orphans, cost; stopped: none')]);
+  }, 60_000);
+
+  it('a step that started but cannot finish (compliance: every bucket call hangs) is stopped at the deadline; nothing of it is stored; the job completes', async () => {
+    const orgId = await insertOrg();
+    const bucketArn = 'arn:aws:s3:::placeholder-bucket';
+    await seedResource(orgId, bucketArn, 's3', HOME);
+    await pool.query(
+      `UPDATE aws_resources SET compliance_issues = '[{"issue":"placeholder earlier finding","severity":"low","category":"tagging","recommendation":"x"}]'::jsonb
+        WHERE organization_id = $1 AND resource_arn = $2`,
+      [orgId, bucketArn]
+    );
+    const before = (await pool.query(`SELECT compliance_issues FROM aws_resources WHERE organization_id = $1 AND resource_arn = $2`, [orgId, bucketArn])).rows[0];
+    mockAws({ [HOME]: { s3: { '*': never } }, [EU]: { ec2: euInstance } });
+    const iam = jest.spyOn(ComplianceScannerService.prototype, 'checkIAMSecurity');
+
+    const started = Date.now();
+    await service({ scanDeadlineMs: 3_000 }).discoverAllResources(orgId);
+
+    expect(Date.now() - started).toBeLessThan(20_000);
+    expect(await jobRow(orgId)).toMatchObject({
+      status: 'completed', error_message: null, compliance_scan_completed: false, cost_analysis_completed: false, warnings: ['scan_deadline'],
+    });
+    await expectRegionResultsKept(orgId);
+    // The bucket's stored findings were not rewritten by a check that did not finish.
+    expect((await pool.query(`SELECT compliance_issues FROM aws_resources WHERE organization_id = $1 AND resource_arn = $2`, [orgId, bucketArn])).rows[0]).toEqual(before);
+    // Its framework run is closed as failed, not left running.
+    expect((await pool.query(`SELECT status FROM framework_evaluation_runs WHERE organization_id = $1`, [orgId])).rows.map((r) => r.status)).not.toContain('running');
+    expect(iam).not.toHaveBeenCalled();
+    expect(deadlineLog()).toEqual([expect.stringContaining('not started: iam, orphans, cost; stopped: compliance')]);
+  }, 60_000);
+
+  it('the cost analysis started but cannot finish: its calls get the deadline\'s signal; nothing it found is stored; its run is interrupted; compliance stays complete', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { ec2: euInstance } });
+    let signal: AbortSignal | undefined;
+    (costOptimizationService.analyzeAllResources as jest.Mock).mockImplementation(async (_org: string, _ctx: unknown, options: { signal?: AbortSignal } = {}) => {
+      signal = options.signal;
+      await new Promise((resolve) => options.signal!.addEventListener('abort', resolve));
+      return { observations: [], riRecommendations: [], riSucceeded: true, homeRegion: HOME };
+    });
+    const reconcile = jest.spyOn(CostRecommendationsRepository.prototype, 'reconcileActiveRecommendations');
+    const replaceRi = jest.spyOn(CostRecommendationsRepository.prototype, 'replaceReservedInstanceRecommendations');
+
+    await service({ scanDeadlineMs: 3_000 }).discoverAllResources(orgId);
+
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(replaceRi).not.toHaveBeenCalled();
+    expect(await jobRow(orgId)).toMatchObject({
+      status: 'completed', error_message: null, compliance_scan_completed: true, cost_analysis_completed: false, warnings: ['scan_deadline'],
+    });
+    expect((await pool.query(`SELECT status FROM cost_analysis_runs WHERE organization_id = $1`, [orgId])).rows).toEqual([{ status: 'interrupted' }]);
+    await expectRegionResultsKept(orgId);
+    expect(deadlineLog()).toEqual([expect.stringContaining('not started: none; stopped: cost')]);
+  }, 60_000);
+
+  it('lease not lost: a hanging step after the regions (IAM) with the lease\'s age limit close behind the deadline: the deadline wins; the job completes and the lease is released', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [HOME]: { iam: { ListUsersCommand: never } }, [EU]: { ec2: euInstance } });
+    const svc = service({ scanDeadlineMs: 3_000 });
+    // The lease ages out 6 s after acquisition (the database clock): without the
+    // deadline, the hanging IAM call would outlive it and the job would read
+    // "another scan took over".
+    (svc as any).leaseTiming = { ...FAST, heartbeat: { intervalMs: 200, maxAgeSeconds: 6 } };
+
+    const result = await svc.discoverAllResources(orgId);
+
+    expect(result.errors).toEqual([]);
+    const row = await jobRow(orgId);
+    expect(row).toMatchObject({ status: 'completed', error_message: null, compliance_scan_completed: false, cost_analysis_completed: false, warnings: ['scan_deadline'] });
+    expect(row.warnings).not.toContain('scan_lease_lost');
+    const lease = (await pool.query(`SELECT released_at FROM aws_scan_leases WHERE organization_id = $1`, [orgId])).rows;
+    expect(lease).toHaveLength(1);
+    expect(lease[0].released_at).not.toBeNull();
+    await expectRegionResultsKept(orgId);
+    expect(deadlineLog()).toEqual([expect.stringContaining('not started: orphans, cost; stopped: iam')]);
+  }, 60_000);
+
+  it('the outcomes stay distinct in one scan: region failure, region_deadline, scan_budget and the post-region timeout each recorded as itself; the job completes', async () => {
+    const orgId = await insertOrg();
+    let now = 1_000_000;
+    const answers = {
+      // home: its volume listing hangs until its own deadline (200 ms, real time). (EBS,
+      // so no EC2/RDS readiness text, R1, joins the job's error text.)
+      [HOME]: { ec2: { DescribeVolumesCommand: never } },
+      // ap-south-1: refused.
+      'ap-south-1': { fail: () => accessDenied() },
+      [EU]: { ec2: euInstance },
+    };
+    const { log, built } = mockAws(answers);
+    // eu-west-1, the third region to start (pool 3), gets its clients after home and
+    // ap-south-1 have started theirs: at that moment the scan's clock passes both the
+    // budget (no more region starts) and the scan deadline (no step after the regions).
+    built.mockImplementation((region: string) => {
+      if (region === EU) now += (DEADLINE_MIN + 1) * 60_000;
+      return regionClients(log, region, (answers as Record<string, RegionAnswers>)[region]);
+    });
+    const svc = service({ regionPool: 3, regionDeadlineMs: 200, scanBudgetMs: 30 * 60_000, scanDeadlineMs: DEADLINE_MIN * 60_000, now: () => now });
+
+    const result = await svc.discoverAllResources(orgId);
+
+    const rows = await regionRows(orgId);
+    expect(rows[HOME]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'region_deadline' });
+    expect(rows['ap-south-1']).toMatchObject({ last_scan_status: 'denied', last_error_code: 'access_denied' });
+    expect(rows[EU]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    for (const region of ['me-central-1', 'us-west-2']) expect(rows[region]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'scan_budget' });
+    // A region's failure, its deadline and the budget are the regions'; the post-region
+    // timeout is the job's warning: none is a job failure, and no lease was lost.
+    // (R1, PR 1: the home region's RDS listing, not reached before its deadline, is in the
+    // error text for the readiness gate; the job is still completed.)
+    const homeRds = 'RDS: REGION_DEADLINE: region us-east-1 ran past its deadline';
+    expect(await jobRow(orgId)).toEqual({
+      status: 'completed', error_message: homeRds, compliance_scan_completed: false, cost_analysis_completed: false,
+      warnings: ['scan_budget', 'region_incomplete', 'scan_deadline'], regions: [HOME, 'ap-south-1', EU],
+    });
+    expect(result.errors).toEqual([homeRds]);
+    expect(await resource(orgId, euInstanceArn)).toMatchObject({ region: EU, status: 'running' });
+    // The other two outcomes keep their own record (tests above): a lost lease or a
+    // changed connection fails the job with DISCOVERY_INTERRUPTED_MESSAGE / the lease-lost
+    // text ("the fence probe at a region boundary"), and a scan with no region checked
+    // fails with DISCOVERY_FAILED_MESSAGE ("every region fails").
+    expect(DISCOVERY_FAILED_MESSAGE).not.toEqual(DISCOVERY_INTERRUPTED_MESSAGE);
   }, 60_000);
 });

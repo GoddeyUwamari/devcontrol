@@ -98,7 +98,10 @@ import {
   RegionSourceOutcome,
   SCAN_BUDGET_RESULT,
   SECURITY_GROUPS_SOURCE,
+  ScanDeadline,
+  ScanDeadlineError,
   StepLimiter,
+  isScanDeadline,
   classifyRegionFailure,
   isRegionDeadline,
   notStartedLogLine,
@@ -106,7 +109,7 @@ import {
   regionScanResult,
   runRegionPool,
 } from './region-run';
-import { REGION_DB_STEP_CONNECTIONS, REGION_DEADLINE_MS, SCAN_BUDGET_MS, discoveryConcurrency } from '../config/discovery-concurrency';
+import { REGION_DB_STEP_CONNECTIONS, REGION_DEADLINE_MS, SCAN_BUDGET_MS, SCAN_DEADLINE_MS, discoveryConcurrency } from '../config/discovery-concurrency';
 import {
   SAVED_SCAN_SOURCES,
   logChecksWriteFailure,
@@ -183,6 +186,7 @@ import {
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
   DISCOVERY_WARNING_SCAN_BUDGET,
+  DISCOVERY_WARNING_SCAN_DEADLINE,
   DISCOVERY_WARNING_SCAN_LEASE_LOST,
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DiscoveryWarning,
@@ -342,6 +346,8 @@ export interface MultiRegionTiming {
   regionPool: number;
   regionDeadlineMs: number;
   scanBudgetMs: number;
+  /** The whole scan's deadline, from the lease's acquisition (PR 1b, M-2). */
+  scanDeadlineMs: number;
   now: () => number;
 }
 
@@ -372,6 +378,7 @@ export class AWSResourceDiscoveryService {
     regionPool: discoveryConcurrency().regionPool,
     regionDeadlineMs: REGION_DEADLINE_MS,
     scanBudgetMs: SCAN_BUDGET_MS,
+    scanDeadlineMs: SCAN_DEADLINE_MS,
     now: Date.now,
   };
 
@@ -722,6 +729,7 @@ export class AWSResourceDiscoveryService {
     totals: { created: number; updated: number };
     warnings: DiscoveryWarning[];
     scanStartedAt: number;
+    scanDeadline: ScanDeadline;
   }): Promise<{
     records: RegionScanRecord[];
     notStarted: string[];
@@ -762,7 +770,9 @@ export class AWSResourceDiscoveryService {
         abortIfLeaseLost(error);
         probeFailure = error;
       }
-      const run = new RegionRun(region, { deadlineMs: timing.regionDeadlineMs, resourcePool: this.callPolicy.concurrency, now: timing.now });
+      // A region never runs past the whole scan's deadline (PR 1b, M-2).
+      const deadlineMs = Math.min(timing.regionDeadlineMs, args.scanDeadline.remainingMs());
+      const run = new RegionRun(region, { deadlineMs, resourcePool: this.callPolicy.concurrency, now: timing.now });
       let result: HomeRegionScanResult | null;
       let outcomes: RegionSourceOutcome[] = [];
       try {
@@ -839,7 +849,7 @@ export class AWSResourceDiscoveryService {
       args.regions,
       timing.regionPool,
       scanOneRegion,
-      () => timing.now() - args.scanStartedAt >= timing.scanBudgetMs,
+      () => timing.now() - args.scanStartedAt >= timing.scanBudgetMs || args.scanDeadline.expired(),
       (region) => notStarted.push(region)
     );
 
@@ -973,18 +983,30 @@ export class AWSResourceDiscoveryService {
     homeClients: AWSClients;
     regional: RegionalSecurity;
     errors: string[];
+    scanDeadline: ScanDeadline;
   }): Promise<{ networkingComplete: boolean; iamComplete: boolean; active: number; resolved: number }> {
-    const { organizationId, scan, scanContext, homeClients } = args;
+    const { organizationId, scan, scanContext, homeClients, scanDeadline } = args;
     const scanner = new ComplianceScannerService();
     const findingsRepo = new AccountSecurityFindingsRepository();
     const { homeNetworkingComplete: networkingComplete, active, resolved } = args.regional;
 
+    // PR 1b, M-2: IAM is a step after the regions. Past the scan deadline it is not
+    // started, or (stopped while it ran) what it read is not stored: not an error.
+    if (!scanDeadline.mayStart('iam')) {
+      console.warn(`⚠️  [Discovery] scan_deadline: IAM security scan not started`);
+      return { networkingComplete, iamComplete: false, active, resolved };
+    }
     const iamStartedAt = new Date();
     const iamObservation = await scanner.checkIAMSecurity(homeClients.iam!).catch((error: any) => {
+      if (isScanDeadline(error)) return { category: 'iam' as const, complete: false, issues: [] };
       console.error(`❌ [Discovery] IAM security scan failed:`, error.message);
       args.errors.push(`IAM security scan: ${error.message}`);
       return { category: 'iam' as const, complete: false, issues: [] };
     });
+    if (scanDeadline.stoppedDuring('iam')) {
+      console.warn(`⚠️  [Discovery] scan_deadline: IAM security scan stopped; nothing it read was stored`);
+      return { networkingComplete, iamComplete: false, active, resolved };
+    }
     scan.checkpoint();
     const iamCounts = await scan.watch(() =>
       findingsRepo.reconcileScan(
@@ -1396,6 +1418,8 @@ export class AWSResourceDiscoveryService {
     let session: LeaseSession | undefined;
     // The framework runs this scan opened, so a lost lease can close them (own rows).
     let openFrameworkScan: FrameworkEvaluationScan | undefined;
+    // A multi-region scan's whole-scan deadline (PR 1b, M-2); none without the flag.
+    let scanDeadline: ScanDeadline | undefined;
 
     try {
       // NOTE: must be session-scoped (is_local = false), not transaction-local.
@@ -1434,6 +1458,9 @@ export class AWSResourceDiscoveryService {
       // written, not even a job row.
       // Its lease carries the scan's connection identity (AWS connect PR B), from the
       // row the context's clients were built from: every fence compares it.
+      // The multi-region scan's clock starts before the lease is acquired, so its
+      // deadlines (PR 1b, M-2) are never later than the lease's own age (database clock).
+      const scanStartedAt = this.multiRegionTiming.now();
       session = (await openScanSession(this.pool, client, organizationId, leaseTargetOf(scanContext), this.leaseTiming)) ?? undefined;
       if (!session) throw new ScanAlreadyRunningError(organizationId, scanContext.awsAccountId);
       console.log(`🔒 [Discovery] Scan lease acquired (token ${session.lease.fencingToken})`);
@@ -1447,8 +1474,6 @@ export class AWSResourceDiscoveryService {
       // creates no job row at all.
       jobId = await this.openDiscoveryJob(client, scan, organizationId, allowedTypes, [scanContext.region]);
       console.log(`📋 [Discovery] Created discovery job: ${jobId}`);
-      // When the scan budget (a multi-region scan's) starts running.
-      const scanStartedAt = this.multiRegionTiming.now();
       const connectedClients = scanContext.clientsFor(scanContext.region);
 
       if (!connectedClients.enabled) {
@@ -1489,6 +1514,11 @@ export class AWSResourceDiscoveryService {
       // scanned (scanRegions below); with it off, the home region only, as before.
       const multiRegion = await this.multiRegionEnabled(client, organizationId);
       console.log(`🌍 [Discovery] Multi-region discovery: ${multiRegion ? 'on' : 'off'}`);
+      // PR 1b, M-2: a multi-region scan's whole-scan deadline (SCAN_DEADLINE_MS), and the
+      // clients its steps after the regions use: their calls stop when it passes. Without
+      // the flag there is none, and those steps use the scan's clients as before.
+      if (multiRegion) scanDeadline = new ScanDeadline(this.multiRegionTiming.scanDeadlineMs, scanStartedAt, this.multiRegionTiming.now);
+      const postRegionClients = scanDeadline ? withCallPolicyOnClients(connectedClients, scanDeadline.policy(this.callPolicy)) : awsClients;
 
       // The home region's inventory, as every scan without the flag has always made it:
       // the scan's own connection, its errors are the job's. Every EC2, RDS, Lambda and
@@ -1651,6 +1681,7 @@ export class AWSResourceDiscoveryService {
           totals,
           warnings,
           scanStartedAt,
+          scanDeadline: scanDeadline!,
         });
         resourcesTerminated += scanned.terminated;
         multi = {
@@ -1720,6 +1751,7 @@ export class AWSResourceDiscoveryService {
       // overwrite its last-known compliance_issues with a scan against a gone resource.
       let complianceScanCompleted = false;
       try {
+        if (scanDeadline && !scanDeadline.mayStart('compliance')) throw new ScanDeadlineError('compliance');
         console.log(`🔎 [Discovery] Running compliance scan...`);
         scan.checkpoint();
         const scanner = new ComplianceScannerService();
@@ -1756,14 +1788,14 @@ export class AWSResourceDiscoveryService {
             // Read in the bucket's own region (its stored region, normalized for rows
             // written before 'EU' was mapped to eu-west-1).
             const bucketClient = this.s3ClientInRegion(
-              awsClients.s3!,
-              awsClients.region,
-              awsClients.getS3ClientForRegion,
+              postRegionClients.s3!,
+              postRegionClients.region,
+              postRegionClients.getS3ClientForRegion,
               regionFromLocationConstraint(resource.region)
             );
             const result = await scanner.evaluateS3Security(resource, bucketClient, {
-              s3Control: awsClients.s3Control,
-              accountId: awsClients.accountId,
+              s3Control: postRegionClients.s3Control,
+              accountId: postRegionClients.accountId,
             });
             s3Outcomes.set(resource.id, { result });
           } catch (error: any) {
@@ -1774,6 +1806,8 @@ export class AWSResourceDiscoveryService {
         const s3Tally = newS3EvaluationTally();
         let scanned = 0;
         try {
+          // Stopped while its bucket checks ran (PR 1b, M-2): nothing of it is stored.
+          if (scanDeadline?.stoppedDuring('compliance')) throw new ScanDeadlineError('compliance');
           for (const resource of allResources as AWSResource[]) {
             const evaluated = evaluation.storageAvailable
               ? await scanner.evaluateResource(resource, frameworkApplicability)
@@ -1802,6 +1836,7 @@ export class AWSResourceDiscoveryService {
             // Checkpoint (plan §4.2): every 25 resources, with the run heartbeat.
             if (scanned % 25 === 0) {
               scan.checkpoint();
+              if (scanDeadline?.stoppedDuring('compliance')) throw new ScanDeadlineError('compliance');
               await this.heartbeatFrameworkEvaluation(client, organizationId, evaluation, fenced);
             }
           }
@@ -1833,8 +1868,13 @@ export class AWSResourceDiscoveryService {
         complianceScanCompleted = true;
       } catch (error: any) {
         abortIfLeaseLost(error);
-        console.error(`❌ [Discovery] Compliance scan failed:`, error.message);
-        errors.push(`Compliance scan: ${error.message}`);
+        if (isScanDeadline(error)) {
+          // PR 1b, M-2: not a failure; compliance_scan_completed stays false.
+          console.warn(`⚠️  [Discovery] scan_deadline: compliance scan ${scanDeadline?.timeouts.at(-1)?.phase ?? 'not finished'}`);
+        } else {
+          console.error(`❌ [Discovery] Compliance scan failed:`, error.message);
+          errors.push(`Compliance scan: ${error.message}`);
+        }
       }
 
       // Account-level security findings: security groups and IAM users aren't rows in
@@ -1865,9 +1905,10 @@ export class AWSResourceDiscoveryService {
             organizationId,
             scan,
             scanContext,
-            homeClients: awsClients,
+            homeClients: postRegionClients,
             regional: multi.security,
             errors,
+            scanDeadline: scanDeadline!,
           }));
         } else {
           const scanner = new ComplianceScannerService();
@@ -1944,6 +1985,7 @@ export class AWSResourceDiscoveryService {
       // already synced, persisting real is_orphaned / orphaned_monthly_savings instead
       // of the stubbed always-0 orphaned_count.
       try {
+        if (scanDeadline && !scanDeadline.mayStart('orphans')) throw new ScanDeadlineError('orphans');
         console.log(`🔎 [Discovery] Running orphaned-resource detection...`);
         scan.checkpoint();
         const detector = new OrphanedResourceDetectorService(client);
@@ -1957,8 +1999,12 @@ export class AWSResourceDiscoveryService {
         console.log(`✅ [Discovery] Orphaned-resource detection complete (${orphaned.length} found)`);
       } catch (error: any) {
         abortIfLeaseLost(error);
-        console.error(`❌ [Discovery] Orphaned-resource detection failed:`, error.message);
-        errors.push(`Orphaned detection: ${error.message}`);
+        if (isScanDeadline(error)) {
+          console.warn(`⚠️  [Discovery] scan_deadline: orphaned-resource detection not started`);
+        } else {
+          console.error(`❌ [Discovery] Orphaned-resource detection failed:`, error.message);
+          errors.push(`Orphaned detection: ${error.message}`);
+        }
         complianceScanCompleted = false;
       }
 
@@ -1968,7 +2014,9 @@ export class AWSResourceDiscoveryService {
       let costAnalysisCompleted = false;
       const costRuns = new CostAnalysisRunsRepository();
       let costRunId: string | undefined;
-      try {
+      // PR 1b, M-2: past the scan deadline the cost analysis is not started (no run row).
+      const costMayStart = !scanDeadline || scanDeadline.mayStart('cost');
+      if (costMayStart) try {
         // Created under the scan lease's fence (AWS connect PR C): a stale worker creates no run row.
         costRunId = (await costRuns.createFenced(organizationId, { source: 'discovery', discoveryJobId: jobId, leaseAcquiredAt: scan.lease.acquiredAt }, { lease: scan.lease })).id;
       } catch (trackingError: any) {
@@ -1976,9 +2024,14 @@ export class AWSResourceDiscoveryService {
         console.error(`[Discovery] Could not create the cost analysis run record (non-fatal):`, trackingError.message);
       }
       try {
+        if (!costMayStart) throw new ScanDeadlineError('cost');
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
         scan.checkpoint();
-        const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(organizationId, scanContext);
+        const { observations, riRecommendations, riSucceeded, homeRegion } = scanDeadline
+          ? await costOptimizationService.analyzeAllResources(organizationId, scanContext, { signal: scanDeadline.signal })
+          : await costOptimizationService.analyzeAllResources(organizationId, scanContext);
+        // Stopped while it ran (PR 1b, M-2): its answers are incomplete, nothing of it is stored.
+        if (scanDeadline?.stoppedDuring('cost')) throw new ScanDeadlineError('cost');
         // The home-listed detectors' rows are reconciled in the region they listed.
         const costScope = { homeRegion: homeRegion ?? awsClients.region };
 
@@ -2071,7 +2124,7 @@ export class AWSResourceDiscoveryService {
         }
       } catch (error: any) {
         if (costRunId) {
-          const closed = isLeaseLost(error)
+          const closed = isLeaseLost(error) || isScanDeadline(error)
             ? costRuns.markInterrupted(costRunId, organizationId)
             : costRuns.markFailed(costRunId, organizationId, error.message);
           await closed.catch((trackingError: any) => {
@@ -2079,8 +2132,22 @@ export class AWSResourceDiscoveryService {
           });
         }
         abortIfLeaseLost(error);
-        console.error(`❌ [Discovery] Cost optimization analysis failed:`, error.message);
-        errors.push(`Cost analysis: ${error.message}`);
+        if (isScanDeadline(error)) {
+          // PR 1b, M-2: not a failure; cost_analysis_completed stays false.
+          console.warn(`⚠️  [Discovery] scan_deadline: cost optimization analysis ${costMayStart ? 'stopped; nothing it found was stored' : 'not started'}`);
+        } else {
+          console.error(`❌ [Discovery] Cost optimization analysis failed:`, error.message);
+          errors.push(`Cost analysis: ${error.message}`);
+        }
+      }
+
+      // PR 1b, M-2: the steps after the regions the scan deadline did not let start or finish.
+      if (scanDeadline && scanDeadline.timeouts.length > 0) {
+        const phase = (wanted: string) => scanDeadline!.timeouts.filter((t) => t.phase === wanted).map((t) => t.step).join(', ') || 'none';
+        console.warn(
+          `⚠️  [Discovery] scan_deadline: org ${organizationId}: not started: ${phase('not_started')}; stopped: ${phase('not_finished')}; the regions' results are kept`
+        );
+        warnings.push(DISCOVERY_WARNING_SCAN_DEADLINE);
       }
 
       // A multi-region scan fails only when a global step failed (below, as before) or
@@ -2245,6 +2312,7 @@ export class AWSResourceDiscoveryService {
       }
       throw error;
     } finally {
+      scanDeadline?.stop();
       // Every path: the heartbeat stops and the lease is released (or expires).
       await session?.end();
       client.release();

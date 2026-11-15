@@ -59,6 +59,24 @@ export function isRegionDeadline(error: unknown): error is RegionDeadlineError {
   return error instanceof RegionDeadlineError;
 }
 
+/**
+ * The whole scan's deadline passed (PR 1b, review M-2): a step after the regions was
+ * not started, or was stopped. Distinct from a region's own deadline
+ * (RegionDeadlineError, region_deadline), the scan budget (scan_budget, a region never
+ * started), a lost lease (LeaseLostError) and a genuine failure: it is recorded as the
+ * warning scan_deadline on a completed job.
+ */
+export class ScanDeadlineError extends Error {
+  constructor(readonly step: string) {
+    super(`SCAN_DEADLINE: the scan deadline passed (${step})`);
+    this.name = 'ScanDeadlineError';
+  }
+}
+
+export function isScanDeadline(error: unknown): error is ScanDeadlineError {
+  return error instanceof ScanDeadlineError;
+}
+
 /** A source outcome inside a region, with why it failed (one of the codes above). */
 export interface RegionSourceOutcome extends SourceOutcome {
   reason?: string;
@@ -332,3 +350,70 @@ export class StepLimiter {
   }
 }
 
+/** How a step after the regions ended against the scan deadline. */
+export interface PostRegionTimeout {
+  step: string;
+  /** not_started: the deadline had passed before it; not_finished: it was stopped. */
+  phase: 'not_started' | 'not_finished';
+}
+
+/**
+ * A multi-region scan's whole-scan deadline (PR 1b, review M-2), measured from the
+ * lease's acquisition: `deadlineMs` after `startedAt` by `now()`, and by a real timer
+ * that aborts `signal` then, so AWS calls made under policy() are stopped. Each step
+ * after the regions asks expired() before it starts and again when it ends; what it
+ * reports is kept in `timeouts`.
+ */
+export class ScanDeadline {
+  private readonly controller = new AbortController();
+  private readonly timer: NodeJS.Timeout;
+  readonly timeouts: PostRegionTimeout[] = [];
+
+  constructor(private readonly deadlineMs: number, private readonly startedAt: number, private readonly now: () => number = Date.now) {
+    const remaining = Math.max(0, deadlineMs - (now() - startedAt));
+    this.timer = setTimeout(() => this.abort('timer'), remaining);
+    this.timer.unref?.();
+  }
+
+  private abort(step: string): void {
+    if (!this.controller.signal.aborted) this.controller.abort(new ScanDeadlineError(step));
+  }
+
+  /** Whether the deadline has passed (by the clock or the timer). */
+  expired(): boolean {
+    if (!this.controller.signal.aborted && this.now() - this.startedAt >= this.deadlineMs) this.abort('clock');
+    return this.controller.signal.aborted;
+  }
+
+  /** Milliseconds left (0 once passed). */
+  remainingMs(): number {
+    return this.expired() ? 0 : Math.max(0, this.deadlineMs - (this.now() - this.startedAt));
+  }
+
+  get signal(): AbortSignal {
+    return this.controller.signal;
+  }
+
+  /** `base` with this deadline: its calls are aborted when it passes. */
+  policy(base: AwsCallPolicy): AwsCallPolicy {
+    return { ...base, signal: this.signal };
+  }
+
+  /** Before a step: false (and recorded as not_started) when the deadline has passed. */
+  mayStart(step: string): boolean {
+    if (!this.expired()) return true;
+    this.timeouts.push({ step, phase: 'not_started' });
+    return false;
+  }
+
+  /** After a step that started: true (and recorded as not_finished) when the deadline passed while it ran. */
+  stoppedDuring(step: string): boolean {
+    if (!this.expired()) return false;
+    this.timeouts.push({ step, phase: 'not_finished' });
+    return true;
+  }
+
+  stop(): void {
+    clearTimeout(this.timer);
+  }
+}

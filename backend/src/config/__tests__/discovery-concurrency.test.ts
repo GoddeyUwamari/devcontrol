@@ -4,10 +4,13 @@
  * outside the bounds -> clamped (warned). The deadlines stay under the lease's hour.
  */
 import {
+  FINAL_WRITE_RESERVE_MS,
+  POST_REGION_RESERVE_MS,
   REGION_DEADLINE_MS,
   REGION_POOL,
   RESOURCE_POOL,
   SCAN_BUDGET_MS,
+  SCAN_DEADLINE_MS,
   readDiscoveryConcurrency,
   readPoolSize,
 } from '../discovery-concurrency';
@@ -47,9 +50,16 @@ describe('discovery pool sizes', () => {
     expect(readPoolSize('DISCOVERY_RESOURCE_POOL', '0', RESOURCE_POOL, warn)).toBe(RESOURCE_POOL.min);
   });
 
-  it('the region deadline (10 min) and scan budget (45 min) stay under the lease\'s one-hour age (MR-D3)', () => {
+  it('PR 1b (M-2, founder-approved change to MR-D2): budget 30 min, region deadline 10 min, scan deadline 50 min, lease age 60 min', () => {
+    expect(SCAN_BUDGET_MS).toBe(30 * 60_000);
     expect(REGION_DEADLINE_MS).toBe(10 * 60_000);
-    expect(SCAN_BUDGET_MS).toBe(45 * 60_000);
-    expect(SCAN_BUDGET_MS + REGION_DEADLINE_MS).toBeLessThan(MAX_LEASE_AGE_SECONDS * 1000);
+    expect(SCAN_DEADLINE_MS).toBe(50 * 60_000);
+    expect(MAX_LEASE_AGE_SECONDS).toBe(60 * 60);
+    // The last region to start ends by 40 min, leaving the steps after the regions their reserve ...
+    expect(SCAN_BUDGET_MS + REGION_DEADLINE_MS + POST_REGION_RESERVE_MS).toBeLessThanOrEqual(SCAN_DEADLINE_MS);
+    expect(POST_REGION_RESERVE_MS).toBe(10 * 60_000);
+    // ... and the final writes theirs, before the lease can age out.
+    expect(SCAN_DEADLINE_MS + FINAL_WRITE_RESERVE_MS).toBeLessThanOrEqual(MAX_LEASE_AGE_SECONDS * 1000);
+    expect(FINAL_WRITE_RESERVE_MS).toBe(10 * 60_000);
   });
 });
