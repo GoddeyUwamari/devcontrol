@@ -640,6 +640,40 @@ describe('Resource Explorer (A4, A5)', () => {
     expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'denied' });
   }, 30_000);
 
+  /** GetIndex itself refused with 401 (not the Search): the "no view" rule (M-3) must not apply. */
+  const getIndex401 = {
+    GetIndexCommand: () => {
+      throw Object.assign(new Error('placeholder unauthorized'), { name: 'UnauthorizedException', $metadata: { httpStatusCode: 401 } });
+    },
+  };
+
+  it('RR-L1 flag off: a GetIndex refused with 401 still fails the source and the job as before (never read as "no view")', async () => {
+    const orgId = await insertOrg({ flag: false });
+    await seedResource(orgId, queueArn(HOME), 'sqs', HOME);
+    const { log } = mockAws({ [HOME]: { explorer: getIndex401 } });
+    const result = await service().discoverAllResources(orgId);
+    const latest = await job(orgId);
+    expect(latest.status).toBe('failed');
+    expect(latest.error_message).toBe('Resource Explorer: placeholder unauthorized');
+    expect(latest.warnings).toBeNull();
+    expect(result.warnings).not.toContain('resource_explorer_no_view');
+    // No Search after a failed GetIndex, nothing reconciled.
+    expect(log.filter((call) => call.command === 'SearchCommand')).toEqual([]);
+    expect(await resource(orgId, queueArn(HOME))).toMatchObject({ status: 'active', missing_scan_count: 0 });
+    expect((await regionRows(orgId))[HOME].last_scan_status).toBe('failed');
+  }, 30_000);
+
+  it('RR-L1 flag on: a GetIndex refused with 401 in eu-west-1 is that region\'s failure (failed, error), not "no view"; the job completes', async () => {
+    const orgId = await insertOrg();
+    await seedResource(orgId, queueArn(EU), 'sqs', EU);
+    mockAws({ [EU]: { explorer: getIndex401 } });
+    const result = await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'failed', last_error_code: 'error' });
+    expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['region_incomplete'], regions: SCAN_ORDER });
+    expect(result.warnings).not.toContain('resource_explorer_no_view');
+    expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
+  }, 60_000);
+
   it('flag on and off: every Search follows a GetIndex in the same region', async () => {
     for (const flag of [true, false]) {
       const orgId = await insertOrg({ flag });
