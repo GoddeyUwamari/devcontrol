@@ -1231,6 +1231,20 @@ describe('M-2 (PR 1b): the whole-scan deadline bounds the steps after the region
     expect(deadlineLog()).toEqual([expect.stringContaining('not started: orphans, cost; stopped: iam')]);
   }, 60_000);
 
+  it('a region never runs past the scan deadline: with its full 10 minutes left but the scan deadline 2 s away, it stops at the scan deadline (region_deadline)', async () => {
+    const orgId = await insertOrg();
+    await seedResource(orgId, queueArn(EU), 'sqs', EU);
+    // eu-west-1's RDS listing never answers; its own deadline is a minute away.
+    mockAws({ [EU]: { rds: { DescribeDBInstancesCommand: never } } });
+    const started = Date.now();
+    await service({ regionDeadlineMs: 60_000, scanDeadlineMs: 2_000 }).discoverAllResources(orgId);
+    // Stopped at the scan deadline, not after its region deadline.
+    expect(Date.now() - started).toBeLessThan(20_000);
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'region_deadline' });
+    expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
+    expect(await jobRow(orgId)).toMatchObject({ status: 'completed', error_message: null, warnings: ['region_incomplete', 'scan_deadline'] });
+  }, 30_000);
+
   it('the outcomes stay distinct in one scan: region failure, region_deadline, scan_budget and the post-region timeout each recorded as itself; the job completes', async () => {
     const orgId = await insertOrg();
     let now = 1_000_000;
