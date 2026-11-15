@@ -16,6 +16,7 @@ import {
   costFinishedThrough,
   costMetricAmount,
   deriveCostMonthState,
+  monthToDatePeriodUtc,
   type CostMonthState,
 } from './cost-month-state'
 
@@ -250,17 +251,8 @@ function utcDate(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-/**
- * The current calendar month to date, in UTC: from the 1st of this UTC month
- * through today, with Cost Explorer's exclusive End set to tomorrow. Computed
- * from UTC fields only, so the window never depends on the server's time zone.
- */
-export function monthToDatePeriodUtc(now: Date): { start: string; end: string } {
-  return {
-    start: utcDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
-    end: utcDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))),
-  }
-}
+/** The current calendar month to date, in UTC (one implementation: cost-month-state.ts). */
+export { monthToDatePeriodUtc }
 
 /**
  * The one MONTHLY Cost Explorer request behind the month to date: from the 1st

@@ -21,10 +21,11 @@ import {
   type InventoryScope,
 } from '../services/ai-chat.service';
 import { collectSection, type ContextSection } from '../services/ai-context-contract';
-import awsCostService, { MonthlyCost, monthToDatePeriodUtc } from '../services/aws-cost.service';
+import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
 import {
   deriveCostMonthState,
   isCostMetricMissingError,
+  monthToDatePeriodUtc,
   unavailableCostMonthState,
   withBilledThrough,
   type CostMonthReasonCode,

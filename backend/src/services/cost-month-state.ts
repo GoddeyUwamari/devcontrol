@@ -32,6 +32,22 @@ export function costFinishedThrough(now: Date = new Date()): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - PROVISIONAL_COST_DAYS)).toISOString().slice(0, 10);
 }
 
+/**
+ * The current calendar month to date, in UTC: from the 1st of this UTC month
+ * through today, with Cost Explorer's exclusive End set to tomorrow. Computed
+ * from UTC fields only, so the window never depends on the server's time zone.
+ * The one implementation (AWSCostService re-exports it), here in the pure
+ * module so every consumer of the month state can compute the period without
+ * the Cost Explorer service.
+ */
+export function monthToDatePeriodUtc(now: Date): { start: string; end: string } {
+  const day = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    start: day(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+    end: day(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))),
+  };
+}
+
 /** The day before an exclusive YYYY-MM-DD end (calendar dates, UTC). */
 function dayBefore(endExclusive: string): string {
   const [y, m, d] = endExclusive.split('-').map(Number);
