@@ -182,3 +182,25 @@ describe.each(Object.keys(DAY1_CASES))('%s', (name) => {
     });
   });
 });
+
+describe('contract assertions (beyond the pinned files)', () => {
+  it('DAY1-D17: a response without the expected cost metric is unavailable with a reason code, never 0', async () => {
+    useCase(DAY1_CASES.d3_metric_key);
+    const { costs } = await new AIChatContextRepository({ query: ambientPool.query } as unknown as Pool).gatherCostContext(ORG);
+    expect(costs.costExplorer).toEqual({ state: 'unavailable', reason: 'the Cost Explorer response did not include the expected cost metric', code: 'cost_metric_missing' });
+    expect(costs.provenance).not.toBe('actual');
+    expect(costs.data?.current ?? null).toBeNull();
+    expect(costs.monthState).toMatchObject({ state: 'unavailable', amount: null, amountUsable: false, reason: { code: 'cost_metric_missing' } });
+    const body = (await costSummary()) as { data: { spend: { state: string; data: unknown } } };
+    expect(body.data.spend.data).toBeNull();
+  });
+
+  it('every case: the cost path carries the month state with the period of the request', async () => {
+    for (const [name, c] of Object.entries(DAY1_CASES)) {
+      clearCostCaches();
+      useCase(c);
+      const { costs } = await new AIChatContextRepository({ query: ambientPool.query } as unknown as Pool).gatherCostContext(ORG);
+      expect({ name, month: costs.monthState?.period.month, start: costs.monthState?.period.start }).toEqual({ name, month: '2026-12', start: '2026-12-01' });
+    }
+  });
+});

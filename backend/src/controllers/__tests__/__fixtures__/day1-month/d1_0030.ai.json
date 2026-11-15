@@ -7,7 +7,36 @@
       "basis": "billed_month_to_date",
       "topServices": [],
       "lastDayInProgress": true,
-      "finishedThrough": "2026-11-29"
+      "finishedThrough": "2026-11-29",
+      "monthState": {
+        "version": 1,
+        "state": "no_billed_days_yet",
+        "period": {
+          "month": "2026-12",
+          "start": "2026-12-01",
+          "endExclusive": "2026-12-02",
+          "calendar": "UTC"
+        },
+        "amount": null,
+        "amountUsable": false,
+        "costBasis": "unblended_net_after_credits",
+        "lineItems": 0,
+        "finishedThrough": "2026-11-29",
+        "billedThrough": null,
+        "ceEstimated": true,
+        "asOf": "2026-12-01T00:30:00.000Z",
+        "reason": {
+          "code": "no_line_items_yet",
+          "text": "AWS Cost Explorer has not reported any charges for this UTC month yet"
+        },
+        "previousMonth": {
+          "month": "2026-11",
+          "start": "2026-11-01",
+          "endExclusive": "2026-12-01",
+          "amount": 399,
+          "latestDaysUpdating": true
+        }
+      }
     }
   },
   "summaryFacts": [

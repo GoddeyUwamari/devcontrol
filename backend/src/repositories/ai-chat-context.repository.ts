@@ -21,7 +21,15 @@ import {
   type InventoryScope,
 } from '../services/ai-chat.service';
 import { collectSection, type ContextSection } from '../services/ai-context-contract';
-import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
+import awsCostService, { MonthlyCost, monthToDatePeriodUtc } from '../services/aws-cost.service';
+import {
+  deriveCostMonthState,
+  isCostMetricMissingError,
+  unavailableCostMonthState,
+  withBilledThrough,
+  type CostMonthReasonCode,
+  type CostMonthState,
+} from '../services/cost-month-state';
 import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { AWSResourcesRepository } from './awsResources.repository';
@@ -391,24 +399,35 @@ export class AIChatContextRepository {
   ): Promise<ChatCostSection> {
     let monthlyCost: MonthlyCost | null = null;
     let costExplorer: ChatCostSection['costExplorer'];
+    const now = new Date();
     try {
       monthlyCost = await awsCostService.fetchMonthlyCosts(organizationId);
       costExplorer = Number.isFinite(monthlyCost?.total)
-        ? { state: 'available', reason: null }
-        : { state: 'error', reason: 'Cost Explorer returned no usable total' };
+        ? { state: 'available', reason: null, code: null }
+        : { state: 'error', reason: 'Cost Explorer returned no usable total', code: 'cost_explorer_failed' };
     } catch (error: any) {
       console.error('[AI Chat Context] Error getting live cost data:', error.message);
       // AWSCostService.createForOrg() throws AWS_NOT_CONNECTED when the org has
-      // no active aws_accounts row -- nothing to query, not a failed query.
+      // no active aws_accounts row -- nothing to query, not a failed query. A
+      // response without the requested cost metric is unavailable, never $0
+      // (DAY1-D17).
       costExplorer = String(error?.message ?? '').startsWith('AWS_NOT_CONNECTED')
-        ? { state: 'unavailable', reason: 'no connected AWS account' }
-        : { state: 'error', reason: 'the Cost Explorer request failed' };
+        ? { state: 'unavailable', reason: 'no connected AWS account', code: 'not_connected' }
+        : isCostMetricMissingError(error)
+          ? { state: 'unavailable', reason: 'the Cost Explorer response did not include the expected cost metric', code: 'cost_metric_missing' }
+          : { state: 'error', reason: 'the Cost Explorer request failed', code: 'cost_explorer_failed' };
     }
+    // No usable Cost Explorer month: the month state says why, never a number.
+    const unusableMonth = (code: CostMonthReasonCode, text: string): CostMonthState =>
+      unavailableCostMonthState(monthToDatePeriodUtc(now), { code, text }, now);
+    const ceUnavailableText = `AWS Cost Explorer has no usable result (${costExplorer.reason ?? 'unknown'})`;
 
     if (monthlyCost && costExplorer.state === 'available') {
       let comparison: CostComparison;
+      let daily: Awaited<ReturnType<typeof awsCostService.fetchCostTrend>> | null = null;
       try {
         const costTrend = await awsCostService.fetchCostTrend(organizationId, '90d');
+        daily = costTrend;
         comparison = this.computeMonthOverMonthComparison(costTrend, await awsCostService.getCostTrendFetchedAt(organizationId, '90d'));
       } catch (error: any) {
         console.error('[AI Chat Context] Error getting cost trend:', error.message);
@@ -434,6 +453,21 @@ export class AIChatContextRepository {
         regions: 'all',
       };
 
+      // The month's state from the one month-to-date result, with the
+      // evidence-based billedThrough from the daily trend fetched above.
+      const monthState = withBilledThrough(
+        monthlyCost.monthState ?? deriveCostMonthState({
+          period: monthlyCost.period,
+          total,
+          lineItems: monthlyCost.byService.length,
+          currentMonthResult: 'present',
+          ceEstimated: null,
+          asOf: monthlyCost.fetchedAt ?? null,
+          previousMonth: monthlyCost.previousMonth ?? null,
+        }, now),
+        daily
+      );
+
       return {
         state: 'available',
         source: COST_EXPLORER_SOURCE,
@@ -448,6 +482,7 @@ export class AIChatContextRepository {
         ...costSectionFields('billed'),
         costExplorer,
         comparison,
+        monthState,
         previousMonth: monthlyCost.previousMonth
           ? { start: monthlyCost.previousMonth.period.start, endExclusive: monthlyCost.previousMonth.period.end, amount: roundCents(monthlyCost.previousMonth.total) }
           : null,
@@ -488,6 +523,7 @@ export class AIChatContextRepository {
           ...costSectionFields('estimated'),
           costExplorer,
           comparison: noCurrentPeriod,
+          monthState: unusableMonth('estimate_only', `${ceUnavailableText}; an inventory estimate is used instead`),
         };
       }
       estimateState = 'unavailable';
@@ -515,6 +551,7 @@ export class AIChatContextRepository {
       failure: failed ? { code: costExplorer.state === 'error' ? 'internal' : 'db_error', retryable: true } : null,
       costExplorer,
       comparison: noCurrentPeriod,
+      monthState: unusableMonth((costExplorer.code as CostMonthReasonCode | null | undefined) ?? 'cost_explorer_failed', ceUnavailableText),
     };
   }
 

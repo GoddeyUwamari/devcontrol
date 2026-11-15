@@ -3,13 +3,15 @@
  *
  * The figures come from AIChatContextRepository.gatherCostContext() -- the AI
  * Chat cost path -- not AWSCostService.getMonthlySpendWithFallback(), which
- * treats a real $0 or net-credit Cost Explorer month as a failure and swaps
- * in the inventory estimate. Here:
+ * returns the bare figure without sections (both treat any Cost Explorer
+ * success as actual). Here:
  *   - a Cost Explorer result is provenance 'actual' with billing scope, whatever
  *     its value (including $0 and a net-negative credit total);
  *   - the inventory estimate is provenance 'estimated' with inventory scope, a
  *     point-in-time monthly run-rate, never billed spend for a period;
- *   - neither is a number when both are missing ('unavailable' / 'error').
+ *   - neither is a number when both are missing ('unavailable' / 'error');
+ *   - the current UTC month's state (cost-month-state.ts) travels with the
+ *     figure as `monthState`, so "no billed days yet" is never read as $0.
  *
  * The month-over-month comparison is AI Chat's computeMonthOverMonthComparison()
  * result (same finished-day windows and coverage threshold), expressed
@@ -25,6 +27,7 @@ import {
   type CostExplorerScope,
   type EvidencePeriod,
 } from './ai-context-contract';
+import type { CostMonthState } from './cost-month-state';
 import { COMPARISON_BASIS, lastIncludedDay, type ChatCostSection } from './ai-chat.service';
 
 export interface SpendEvidence {
@@ -52,6 +55,12 @@ export interface SpendEvidence {
    * the same request as the month to date; null when there is none.
    */
   previousMonth?: { start: string; endExclusive: string; amount: number } | null;
+  /**
+   * The current UTC month's state (cost-month-state.ts): period identity,
+   * whether Cost Explorer has reported anything yet, whether `amount` may be
+   * used, billed-through evidence. Present whenever the cost path produced one.
+   */
+  monthState?: CostMonthState;
 }
 
 export interface MonthOverMonthEvidence {
@@ -104,6 +113,7 @@ export async function spendSection(costs: ChatCostSection, options: { previousMo
         lastDayInProgress,
         finishedThrough: costs.comparison.finishedThrough,
         ...(options.previousMonth ? { previousMonth: costs.previousMonth ?? null } : {}),
+        ...(costs.monthState ? { monthState: costs.monthState } : {}),
       },
       reason: lastDayInProgress ? 'month-to-date; the last day of the period is still being billed, so it is incomplete' : null,
     }));
@@ -123,7 +133,10 @@ export async function spendSection(costs: ChatCostSection, options: { previousMo
       async () => ({
         state: 'available',
         asOf: costs.asOf,
-        data: { amount: current, basis: 'estimated_monthly_run_rate', topServices: null, lastDayInProgress: false, finishedThrough: null },
+        data: {
+          amount: current, basis: 'estimated_monthly_run_rate', topServices: null, lastDayInProgress: false, finishedThrough: null,
+          ...(costs.monthState ? { monthState: costs.monthState } : {}),
+        },
         completeness: coverage
           ? { unit: 'discovered resources with a cost estimate', expected: coverage.totalResources, received: coverage.estimatedResources, missing: null }
           : null,

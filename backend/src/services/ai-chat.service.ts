@@ -20,8 +20,12 @@ import {
   type InventoryScope,
 } from './ai-context-contract';
 
+import type { CostMonthState } from './cost-month-state';
+
 // Defined in ai-context-contract.ts; re-exported so existing imports keep working.
 export type { ContextDataState, ContextSection, CostExplorerScope, InventoryScope } from './ai-context-contract';
+// Defined in cost-month-state.ts (the shared month state); re-exported so existing imports keep working.
+export { PROVISIONAL_COST_DAYS, costFinishedThrough } from './cost-month-state';
 
 /**
  * Month-to-date vs the same days of the previous month, from Cost Explorer's
@@ -69,17 +73,6 @@ export const COMPARISON_BASIS =
 const STATE_LABELS = CONTEXT_STATE_LABELS;
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-/**
- * Cost Explorer keeps filling in a day's charges for 24-48 hours, so today and
- * yesterday (UTC, Cost Explorer's own day boundary) are provisional.
- */
-export const PROVISIONAL_COST_DAYS = 2;
-
-/** The last UTC day whose Cost Explorer charges are treated as finished: today (UTC) minus PROVISIONAL_COST_DAYS. */
-export function costFinishedThrough(now: Date = new Date()): string {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - PROVISIONAL_COST_DAYS)).toISOString().slice(0, 10);
-}
 
 /** The inclusive last day of an exclusive YYYY-MM-DD end boundary (calendar dates, no timezone shift). */
 export function lastIncludedDay(endExclusive: string): string {
@@ -147,7 +140,14 @@ export interface ChatCostFigures {
  * used), and the month-over-month comparison with its own state.
  */
 export type ChatCostSection = ContextSection<ChatCostFigures> & {
-  costExplorer: { state: ContextDataState; reason: string | null };
+  /** `code`: why Cost Explorer gave no usable result, when it did not (cost-month-state.ts reason codes). */
+  costExplorer: { state: ContextDataState; reason: string | null; code?: string | null };
+  /**
+   * The current UTC month's state (cost-month-state.ts): the one truth about
+   * whether the month has billed days and whether the amount may be used.
+   * Absent only in sections built before it existed.
+   */
+  monthState?: CostMonthState;
   comparison: CostComparison;
   /**
    * The previous UTC calendar month's net Cost Explorer total, from the same

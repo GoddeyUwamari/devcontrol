@@ -18,7 +18,33 @@
         }
       ],
       "lastDayInProgress": true,
-      "finishedThrough": "2026-11-29"
+      "finishedThrough": "2026-11-29",
+      "monthState": {
+        "version": 1,
+        "state": "latest_days_updating",
+        "period": {
+          "month": "2026-12",
+          "start": "2026-12-01",
+          "endExclusive": "2026-12-02",
+          "calendar": "UTC"
+        },
+        "amount": 13.3,
+        "amountUsable": true,
+        "costBasis": "unblended_net_after_credits",
+        "lineItems": 2,
+        "finishedThrough": "2026-11-29",
+        "billedThrough": "2026-12-01",
+        "ceEstimated": true,
+        "asOf": "2026-12-01T18:00:00.000Z",
+        "reason": null,
+        "previousMonth": {
+          "month": "2026-11",
+          "start": "2026-11-01",
+          "endExclusive": "2026-12-01",
+          "amount": 399,
+          "latestDaysUpdating": true
+        }
+      }
     }
   },
   "summaryFacts": [

@@ -2,44 +2,56 @@
   "dashboardCard": {
     "label": "Month-to-Date Spend",
     "value": "—",
-    "caption": "Could not be retrieved",
-    "previousMonth": null,
+    "caption": "Dec 1 (UTC) · Actual · AWS Cost Explorer · no billed days yet this month",
+    "previousMonth": "November (UTC): $399.00 · latest days still updating",
     "evidence": {
-      "source": "Could not be retrieved",
-      "comparison": "Month-over-month not available"
+      "source": "Actual · AWS Cost Explorer · today's spend still being billed",
+      "comparison": "No comparison until a day of this month has finished billing"
     }
   },
   "costsMonthToDate": {
     "label": "Month-to-Date Spend",
-    "value": "—",
-    "sub": "Could not be retrieved",
-    "amount": null,
-    "provenance": null
+    "value": "$0.00",
+    "sub": "Actual · AWS Cost Explorer · today's spend still being billed",
+    "amount": 0,
+    "provenance": "actual"
   },
   "byTeam": {
     "label": "Month-to-Date Spend",
-    "value": "—",
-    "sub": "Not available · no AWS Cost Explorer spend or inventory estimate",
-    "amount": null,
-    "provenance": null
+    "value": "$0.00",
+    "sub": "Actual · AWS Cost Explorer",
+    "amount": 0,
+    "provenance": "actual"
   },
   "servicesTile": {
-    "kind": "unavailable"
+    "kind": "billed",
+    "value": "$0.00",
+    "notes": [
+      "whole account",
+      "billed, from Cost Explorer",
+      "billed through Nov 29"
+    ]
   },
   "infrastructureSpendTile": {
     "key": "spend",
     "label": "Spend this month",
-    "value": "Cost data not available yet",
+    "value": "—",
     "captions": [
       [
-        "AWS Cost Explorer could not be retrieved."
+        "whole account · billed, from Cost Explorer · no billed days yet this month"
+      ],
+      [
+        "Cost Explorer, as of ",
+        {
+          "iso": "2026-12-01T00:30:00.000Z"
+        }
       ]
     ]
   },
   "infrastructureCostByService": {
-    "status": "unavailable",
-    "sub": null,
+    "status": "ready",
+    "sub": "This month, billed · billed through Nov 29",
     "rows": [],
-    "unavailable": "Cost by service isn't available: AWS Cost Explorer could not be retrieved."
+    "unavailable": null
   }
 }

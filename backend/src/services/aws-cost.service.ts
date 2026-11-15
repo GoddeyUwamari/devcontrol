@@ -11,6 +11,13 @@ import { pool } from '../config/database'
 import { assumeRoleAsPlatform } from './platform-sts'
 import { AwsAccountRow, awsConnectionIdentity, requireEligibleAwsAccount } from '../repositories/aws-accounts.repository'
 import type { SpendProvenance } from './ai-context-contract'
+import {
+  absentCurrentMonthIsNoDataYet,
+  costFinishedThrough,
+  costMetricAmount,
+  deriveCostMonthState,
+  type CostMonthState,
+} from './cost-month-state'
 
 
 
@@ -39,6 +46,12 @@ export interface MonthlyCost {
   // Explorer returned no result for that month. Optional for the same reason
   // as fetchedAt.
   previousMonth?: { period: { start: string; end: string }; total: number } | null
+  // The month's state (cost-month-state.ts): whether Cost Explorer has
+  // reported anything for it yet and whether `total` may be used as a number.
+  // `total` is 0 whenever there are no line items; a consumer that shows a
+  // month-to-date figure reads monthState.amount (null when not usable), never
+  // a bare 0. Optional for the same reason as fetchedAt.
+  monthState?: CostMonthState
 }
 
 interface MonthlyCostCacheEntry {
@@ -60,7 +73,8 @@ interface CostTrendCacheEntry {
  * fetch then uses that same row, so an entry only ever holds data fetched with
  * its own connection's credentials: a request after a connection change misses
  * every entry of the old connection, including an old in-flight fetch that
- * completes later, and empty results (a $0 month) are scoped the same way.
+ * completes later, and empty results (no line items yet, or a real $0 month)
+ * are scoped the same way.
  * The period is computed once per request and the fetch uses that same period,
  * so after 00:00 UTC on the 1st a request for the new month never receives an
  * entry fetched for the old one. Errors are never stored.
@@ -130,6 +144,13 @@ export interface CostTrendPoint {
   // the top TOP_SERVICE_COUNT services (by total spend across the whole range) plus
   // an "Other" bucket, each with a stable color. Same optionality rationale as byService.
   byServiceDisplay?: { service: string; amount: number; color: string }[]
+  // Cost Explorer SERVICE groups in this period: 0 means Cost Explorer reported
+  // nothing for it. Optional for the same reason as byService.
+  lineItems?: number
+  // The period's last day is after costFinishedThrough(): Cost Explorer is still
+  // reporting it. A provisional period with no line items is "not reported yet",
+  // never a measured $0 (consumers leave it out of a chart).
+  provisional?: boolean
 }
 
 type CostCategory = 'compute' | 'storage' | 'database' | 'network' | 'other'
@@ -519,8 +540,9 @@ class AWSCostService {
 
   /**
    * Fetch current-calendar-month-to-date costs from AWS Cost Explorer.
-   * By design, this reads as a low/partial number for the first 1-3 days of a new month
-   * (Cost Explorer's usage data lags 24-48h) — accepted tradeoff, not a bug.
+   * Early in a UTC month Cost Explorer may have reported nothing yet: monthState
+   * says no_billed_days_yet / latest_days_updating (cost-month-state.ts), and a
+   * consumer never shows that as $0.
    * Always for one organization: assumes that organization's IAM role via STS
    * before calling Cost Explorer. Throws AWS_NOT_CONNECTED when it has no
    * connected account -- there is no other source of credentials.
@@ -545,7 +567,10 @@ class AWSCostService {
 
   private async monthlyCostsFor(organizationId: string, account: AwsAccountRow, connection: string): Promise<MonthlyCost> {
     // The period is fixed here, once: the key and the query below both use it.
-    const period = monthlyCostsRequestPeriodUtc(new Date())
+    // The key includes the UTC day (the period's end), so the month state,
+    // computed at fetch time, never outlives the day it was computed for.
+    const now = new Date()
+    const period = monthlyCostsRequestPeriodUtc(now)
     const key = costCacheKey(organizationId, connection, ['month_to_date', period.start, period.end])
 
     const cached = this.monthlyCostCache.get(key)
@@ -560,10 +585,15 @@ class AWSCostService {
 
     const fetchPromise = (async () => {
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
-      const result = await orgService.queryMonthlyCosts(period)
+      const result = await orgService.queryMonthlyCosts(period, now)
       // Stamped once, right here, at the moment the real Cost Explorer call
       // actually succeeded -- not when a later cache hit happens to be read.
-      const resultWithTimestamp: MonthlyCost = { ...result, fetchedAt: new Date().toISOString() }
+      const fetchedAt = new Date().toISOString()
+      const resultWithTimestamp: MonthlyCost = {
+        ...result,
+        fetchedAt,
+        monthState: result.monthState ? { ...result.monthState, asOf: fetchedAt } : result.monthState,
+      }
       pruneExpired(this.monthlyCostCache, AWSCostService.MONTHLY_COST_CACHE_TTL, Date.now())
       this.monthlyCostCache.set(key, { data: resultWithTimestamp, timestamp: Date.now() })
       return resultWithTimestamp
@@ -580,9 +610,12 @@ class AWSCostService {
    * one MONTHLY request from the 1st of the previous UTC month through today
    * (every page), split into the month to date and the previous month by each
    * result's own TimePeriod. A response without a result for the current month
-   * is an error, never a $0 month.
+   * is "no billed days yet" only while no day of the month is past Cost
+   * Explorer's reporting lag and the previous month's result is there
+   * (DAY1-D4); otherwise it is an error. Never a $0 month. A group without the
+   * requested cost metric fails the read (CostMetricMissingError), never $0.
    */
-  private async queryMonthlyCosts(period: ReturnType<typeof monthlyCostsRequestPeriodUtc>): Promise<MonthlyCost> {
+  private async queryMonthlyCosts(period: ReturnType<typeof monthlyCostsRequestPeriodUtc>, now: Date = new Date()): Promise<MonthlyCost> {
     const costExplorer = this.customerCostExplorer()
 
     try {
@@ -601,29 +634,40 @@ class AWSCostService {
       const serviceAmounts = (result: ResultByTime) =>
         (result.Groups ?? []).map((group) => ({
           service: group.Keys?.[0] || 'Unknown',
-          amount: parseFloat(group.Metrics?.UnblendedCost?.Amount || '0'),
+          amount: costMetricAmount(group),
         }))
 
       const current = results.find((r) => r.TimePeriod?.Start === period.monthToDate.start)
-      if (!current) {
+      const previous = results.find((r) => r.TimePeriod?.Start === period.start)
+      if (!current && !absentCurrentMonthIsNoDataYet(period.monthToDate, previous !== undefined, now)) {
         throw new Error('Cost Explorer returned no result for the current month')
       }
-      const previous = results.find((r) => r.TimePeriod?.Start === period.start)
 
-      const byService = serviceAmounts(current)
+      const byService = current ? serviceAmounts(current) : []
       const total = byService.reduce((sum, item) => sum + item.amount, 0)
+      const fetchedAt = new Date().toISOString()
+      const previousMonth = previous
+        ? {
+            period: { start: period.start, end: period.monthToDate.start },
+            total: serviceAmounts(previous).reduce((sum, item) => sum + item.amount, 0),
+          }
+        : null
 
       return {
         total,
         byService,
         period: period.monthToDate,
-        fetchedAt: new Date().toISOString(),
-        previousMonth: previous
-          ? {
-              period: { start: period.start, end: period.monthToDate.start },
-              total: serviceAmounts(previous).reduce((sum, item) => sum + item.amount, 0),
-            }
-          : null,
+        fetchedAt,
+        previousMonth,
+        monthState: deriveCostMonthState({
+          period: period.monthToDate,
+          total,
+          lineItems: byService.length,
+          currentMonthResult: current ? 'present' : 'absent',
+          ceEstimated: typeof current?.Estimated === 'boolean' ? current.Estimated : null,
+          asOf: fetchedAt,
+          previousMonth,
+        }, now),
       }
     } catch (error) {
       console.error('Error fetching monthly costs:', error)
@@ -640,9 +684,11 @@ class AWSCostService {
    * organization/status filtering are unchanged from both prior call sites.
    *
    * Any successful Cost Explorer result is 'actual', whatever its value: a real
-   * $0 month (including the first hours of a month, before AWS reports any
-   * charge) and a net-negative month (credits exceed charges) are billing data,
-   * not a failure. Only a failed fetch falls back to the inventory estimate.
+   * $0 month and a net-negative month (credits exceed charges) are billing
+   * data, not a failure; the first hours of a month are monthState
+   * no_billed_days_yet, not a $0 month (this bare figure feeds only the
+   * Dashboard's connection gates). Only a failed fetch falls back to the
+   * inventory estimate.
    */
   async getMonthlySpendWithFallback(
     organizationId: string
@@ -707,6 +753,8 @@ class AWSCostService {
     // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
     const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
     // The period is fixed here, once: the key and the query below both use it.
+    // Its end is tomorrow (UTC), so each point's `provisional` flag, computed
+    // at fetch time, never outlives the day it was computed for.
     const period = trendPeriodUtc(range, new Date())
     const cacheKey = AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), range, period)
     const cached = this.costTrendCache.get(cacheKey)
@@ -719,9 +767,10 @@ class AWSCostService {
       return inFlight
     }
 
+    const now = new Date()
     const fetchPromise = (async () => {
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
-      const result = await orgService.queryCostTrend(period)
+      const result = await orgService.queryCostTrend(period, costFinishedThrough(now))
       pruneExpired(this.costTrendCache, AWSCostService.MONTHLY_COST_CACHE_TTL, Date.now())
       this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
       return result
@@ -733,8 +782,13 @@ class AWSCostService {
     return fetchPromise
   }
 
-  /** The Cost Explorer query itself (every page), on this instance's organization credentials. */
-  private async queryCostTrend(period: { start: string; end: string; granularity: Granularity }): Promise<CostTrendPoint[]> {
+  /**
+   * The Cost Explorer query itself (every page), on this instance's organization
+   * credentials. `finishedThrough`: the last UTC day treated as finished; a
+   * period ending after it is provisional. A group without the requested cost
+   * metric fails the read (CostMetricMissingError), never $0.
+   */
+  private async queryCostTrend(period: { start: string; end: string; granularity: Granularity }, finishedThrough: string = costFinishedThrough()): Promise<CostTrendPoint[]> {
     const costExplorer = this.customerCostExplorer()
 
     const { start, end, granularity } = period
@@ -763,7 +817,7 @@ class AWSCostService {
 
       for (const group of result.Groups || []) {
         const serviceName = group.Keys?.[0] || ''
-        const amount = parseFloat(group.Metrics?.UnblendedCost?.Amount || '0')
+        const amount = costMetricAmount(group)
         const category = categorizeAwsService(serviceName)
         raw[category] += amount
         byService.push({ service: serviceName || 'Unknown', amount })
@@ -779,6 +833,10 @@ class AWSCostService {
       const network = Math.max(0, raw.network)
       const other = Math.max(0, raw.other)
 
+      const end = result.TimePeriod?.End || ''
+      const [ey, em, ed] = end.split('-').map(Number)
+      const lastDay = end ? new Date(Date.UTC(ey, em - 1, ed - 1)).toISOString().slice(0, 10) : ''
+
       return {
         date: result.TimePeriod?.Start || '',
         compute,
@@ -788,6 +846,8 @@ class AWSCostService {
         other,
         total: compute + storage + database + network + other,
         byService,
+        lineItems: (result.Groups || []).length,
+        provisional: lastDay !== '' && lastDay > finishedThrough,
       }
     })
 

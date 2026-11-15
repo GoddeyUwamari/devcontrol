@@ -43,6 +43,32 @@
           "start": "2026-11-01",
           "endExclusive": "2026-12-01",
           "amount": 399
+        },
+        "monthState": {
+          "version": 1,
+          "state": "month_to_date",
+          "period": {
+            "month": "2026-12",
+            "start": "2026-12-01",
+            "endExclusive": "2026-12-04",
+            "calendar": "UTC"
+          },
+          "amount": 26.6,
+          "amountUsable": true,
+          "costBasis": "unblended_net_after_credits",
+          "lineItems": 2,
+          "finishedThrough": "2026-12-01",
+          "billedThrough": "2026-12-02",
+          "ceEstimated": true,
+          "asOf": "2026-12-03T00:30:00.000Z",
+          "reason": null,
+          "previousMonth": {
+            "month": "2026-11",
+            "start": "2026-11-01",
+            "endExclusive": "2026-12-01",
+            "amount": 399,
+            "latestDaysUpdating": false
+          }
         }
       },
       "retrievedAt": "2026-12-03T00:30:00.000Z",

@@ -145,10 +145,12 @@ export class StatsController {
    * The Costs page's month-to-date spend and month-over-month comparison, as
    * the shared evidence sections (cost-context-sections.ts over
    * AIChatContextRepository.gatherCostContext() -- the path AI Reports, the
-   * Dashboard AI summary, and Ask AI already use). Unlike
-   * getMonthlySpendWithFallback(), a real $0 or net-credit Cost Explorer
-   * month stays 'actual', the inventory estimate stays 'estimated', and a
-   * missing figure or comparison is a state, never 0 or 0%.
+   * Dashboard AI summary, and Ask AI already use). Like
+   * getMonthlySpendWithFallback(), any Cost Explorer success is 'actual' (a
+   * real $0 or net-credit month included); this endpoint adds the sections and
+   * the month's state (spend.data.monthState, cost-month-state.ts). The
+   * inventory estimate stays 'estimated', and a missing figure or comparison
+   * is a state, never 0 or 0%.
    */
   async getCostSummary(req: Request, res: Response): Promise<void> {
     const organizationId = (req as any).user?.organizationId;
