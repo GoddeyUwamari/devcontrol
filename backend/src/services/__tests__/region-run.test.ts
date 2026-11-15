@@ -11,6 +11,7 @@
  */
 import { AwsCallTimeoutError, DEFAULT_AWS_CALL_POLICY, mapWithDynamicConcurrency, withCallPolicy } from '../../utils/awsCallPolicy';
 import {
+  CloudWatchCallCounter,
   NestedRegionStepError,
   RegionDeadlineError,
   RegionRun,
@@ -250,8 +251,29 @@ describe('the structured log line (A7)', () => {
       reason: 'access_denied',
       get_metric_data_metrics: 3,
       get_metric_statistics_requests: 1,
+      // PR 1b item 7: another region than the home one: the cost pass makes no call there.
+      cost_pass_get_metric_data_metrics: 0,
+      cost_pass_get_metric_statistics_requests: 0,
     });
     expect(JSON.parse(notStartedLogLine('00000000-0000-4000-8000-0000000000c1', 'us-west-2'))).toMatchObject({ outcome: 'timed_out', reason: 'scan_budget', calls: 0 });
+  });
+
+  it('PR 1b item 7: the home line carries the cost pass\'s counts, or null when it did not run', () => {
+    const run = new RegionRun('us-east-1', { deadlineMs: 60_000, resourcePool: 8, now: () => 1_000 });
+    run.stop();
+    const counter = new CloudWatchCallCounter();
+    counter.onCall({ constructor: { name: 'GetMetricDataCommand' }, input: { MetricDataQueries: [{}, {}] } } as unknown);
+    counter.onCall(new (class GetMetricStatisticsCommand {})());
+    counter.onCall(new (class DescribeInstancesCommand {})());
+    expect(JSON.parse(run.logLine('00000000-0000-4000-8000-0000000000c1', null, counter))).toMatchObject({
+      cost_pass_get_metric_data_metrics: 2,
+      cost_pass_get_metric_statistics_requests: 1,
+    });
+    expect(JSON.parse(run.logLine('00000000-0000-4000-8000-0000000000c1', null, null))).toMatchObject({
+      cost_pass_get_metric_data_metrics: null,
+      cost_pass_get_metric_statistics_requests: null,
+    });
+    expect(counter.calls).toBe(3);
   });
 
   it('counts GetMetricData metrics per request', () => {

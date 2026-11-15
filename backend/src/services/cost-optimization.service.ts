@@ -308,6 +308,7 @@ class CostOptimizationService {
     {
       expectedConnection,
       signal,
+      onCall,
     }: {
       expectedConnection?: string;
       /**
@@ -316,6 +317,8 @@ class CostOptimizationService {
        * Unset (every other caller, and a scan without the multi-region flag): no change.
        */
       signal?: AbortSignal;
+      /** Multi-region PR 1b: told of every detector call's command (the cost pass's CloudWatch counts in the home region's log line). */
+      onCall?: (command: unknown) => void;
     } = {}
   ): Promise<{
     observations: DetectorObservation[];
@@ -350,7 +353,7 @@ class CostOptimizationService {
     }
     const clients = withCallPolicyOnClients(
       connectedClients,
-      signal ? { ...this.callPolicy, signal } : this.callPolicy
+      signal || onCall ? { ...this.callPolicy, ...(signal ? { signal } : {}), ...(onCall ? { onCall } : {}) } : this.callPolicy
     );
 
     if (!clients.enabled) {

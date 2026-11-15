@@ -25,6 +25,8 @@
  * Real Postgres; AWS clients are fakes (no AWS call is made). Placeholders only.
  */
 import { Pool } from 'pg';
+import { GetMetricDataCommand, GetMetricStatisticsCommand } from '@aws-sdk/client-cloudwatch';
+import { DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 import { AWSResourceDiscoveryService, MultiRegionTiming } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import costOptimizationService from '../cost-optimization.service';
@@ -332,8 +334,9 @@ describe('flag on: every enabled region, once each', () => {
     for (const line of lines) {
       expect(Object.keys(line).sort()).toEqual(
         [
-          'calls', 'duration_ms', 'event', 'get_metric_data_metrics', 'get_metric_statistics_requests', 'listings', 'organization_id',
-          'outcome', 'reason', 'region', 'resource_pool', 'throttles',
+          'calls', 'cost_pass_get_metric_data_metrics', 'cost_pass_get_metric_statistics_requests', 'duration_ms', 'event',
+          'get_metric_data_metrics', 'get_metric_statistics_requests', 'listings', 'organization_id', 'outcome', 'reason', 'region',
+          'resource_pool', 'throttles',
         ].sort()
       );
       // Five own listings, the Resource Explorer search and (PR 1b, M-4) the security groups.
@@ -992,17 +995,28 @@ describe('M-1 (PR 1b): a region worker holds no database connection while it wai
     // No heartbeat renewal (its own short checkout) during the measurement.
     (svc as any).leaseTiming = { ...FAST, heartbeat: { intervalMs: 60 * 60_000 } };
     const stepRegions: string[] = [];
+    // A region has finished once its status-write step has returned its connection.
+    const statusWritten = new Set<string>();
+    const finished = new Set<string>();
+    const realWrite = foundation.recordRegionScanStatus;
+    jest.spyOn(foundation, 'recordRegionScanStatus').mockImplementation(async (client, lease, scan) => {
+      const written = await realWrite(client, lease, scan);
+      statusWritten.add(scan.region);
+      return written;
+    });
     const realStep = (svc as any).regionDbStep.bind(svc);
-    jest.spyOn(svc as any, 'regionDbStep').mockImplementation((org: any, region: any, fn: any) => {
+    jest.spyOn(svc as any, 'regionDbStep').mockImplementation(async (org: any, region: any, fn: any) => {
       stepRegions.push(region);
-      return realStep(org, region, fn);
+      const result = await realStep(org, region, fn);
+      // realStep resolves after its connection was untagged and released.
+      if (statusWritten.has(region)) finished.add(region);
+      return result;
     });
 
     const scanning = svc.discoverAllResources(orgId);
     await euCalled;
-    // Every other region has finished (its log line comes after its status write and
-    // after that step's connection went back): eu-west-1 is the only region running.
-    await until(() => regionLogLines().filter((line) => line.region !== EU).length === SCAN_ORDER.length - 1);
+    // Every other region has finished: eu-west-1 is the only region running.
+    await until(() => SCAN_ORDER.filter((region) => region !== EU).every((region) => finished.has(region)));
     expect(checkedOut()).toBe(1);
     // eu-west-1 did use the database before its AWS call (its fence probe), on a step connection.
     expect(stepRegions.filter((region) => region === EU)).toEqual([EU]);
@@ -1137,6 +1151,8 @@ describe('M-2 (PR 1b): the whole-scan deadline bounds the steps after the region
     expect(costOptimizationService.analyzeAllResources).not.toHaveBeenCalled();
     expect((await pool.query(`SELECT count(*)::int AS n FROM cost_analysis_runs WHERE organization_id = $1`, [orgId])).rows[0].n).toBe(0);
     expect(deadlineLog()).toEqual([expect.stringContaining('not started: compliance, iam, orphans, cost; stopped: none')]);
+    // Item 7: the cost pass never ran, so the home line says so (null), not 0.
+    expect(regionLogLines().find((line) => line.region === HOME)).toMatchObject({ cost_pass_get_metric_data_metrics: null, cost_pass_get_metric_statistics_requests: null });
   }, 60_000);
 
   it('a step that started but cannot finish (compliance: every bucket call hangs) is stopped at the deadline; nothing of it is stored; the job completes', async () => {
@@ -1260,4 +1276,68 @@ describe('M-2 (PR 1b): the whole-scan deadline bounds the steps after the region
     // fails with DISCOVERY_FAILED_MESSAGE ("every region fails").
     expect(DISCOVERY_FAILED_MESSAGE).not.toEqual(DISCOVERY_INTERRUPTED_MESSAGE);
   }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+describe('PR 1b item 7: the cost pass\'s own CloudWatch counts are in the home region\'s log line', () => {
+  it('the home line (written after the cost pass) carries its GetMetricData metrics and GetMetricStatistics requests; every other region 0', async () => {
+    const orgId = await insertOrg();
+    const { cost } = mockAws();
+    const order: string[] = [];
+    cost.mockImplementation(async (_org: string, _ctx: unknown, options: { onCall?: (command: unknown) => void } = {}) => {
+      order.push('cost pass');
+      // What the cost pass's wrapped clients report for each call (utils/awsCallPolicy.ts onCall).
+      options.onCall!(new GetMetricDataCommand({ MetricDataQueries: [{ Id: 'a' }, { Id: 'b' }, { Id: 'c' }] as any, StartTime: new Date(), EndTime: new Date() }));
+      options.onCall!(new GetMetricDataCommand({ MetricDataQueries: [{ Id: 'd' }] as any, StartTime: new Date(), EndTime: new Date() }));
+      options.onCall!(new GetMetricStatisticsCommand({} as any));
+      options.onCall!(new DescribeInstancesCommand({}));
+      return { observations: [], riRecommendations: [], riSucceeded: true, homeRegion: HOME };
+    });
+    (console.log as jest.Mock).mockImplementation((line: unknown) => {
+      if (String(line).startsWith('{"event":"discovery_region_scan"')) order.push(JSON.parse(String(line)).region);
+    });
+
+    await service().discoverAllResources(orgId);
+
+    const lines = regionLogLines();
+    expect(lines.filter((line) => line.region === HOME)).toHaveLength(1);
+    expect(lines.find((line) => line.region === HOME)).toMatchObject({ cost_pass_get_metric_data_metrics: 4, cost_pass_get_metric_statistics_requests: 1 });
+    for (const line of lines.filter((l) => l.region !== HOME)) {
+      expect(line).toMatchObject({ cost_pass_get_metric_data_metrics: 0, cost_pass_get_metric_statistics_requests: 0 });
+    }
+    // The home line comes after the cost pass; every other region's line before it.
+    expect(order[order.length - 1]).toBe(HOME);
+    expect(order.indexOf('cost pass')).toBe(order.length - 2);
+  }, 60_000);
+
+  it('a scan that stops before its cost pass (a lost lease) still writes the home line, with no cost counts', async () => {
+    const orgId = await insertOrg();
+    mockAws();
+    // The organization's AWS connection changes once the regions are done: the next
+    // fenced write after them stops the scan, before the cost pass.
+    const realWrite = foundation.recordRegionScanStatus;
+    let written = 0;
+    jest.spyOn(foundation, 'recordRegionScanStatus').mockImplementation(async (client, lease, scan) => {
+      const result = await realWrite(client, lease, scan);
+      if (++written === SCAN_ORDER.length) {
+        await pool.query(`UPDATE aws_accounts SET role_arn = 'arn:aws:iam::111122223333:role/devcontrol-readonly' WHERE org_id = $1`, [orgId]);
+      }
+      return result;
+    });
+    const error = await service().discoverAllResources(orgId).catch((err) => err);
+    expect(isLeaseLost(error)).toBe(true);
+    expect(costOptimizationService.analyzeAllResources).not.toHaveBeenCalled();
+    const home = regionLogLines().filter((line) => line.region === HOME);
+    expect(home).toHaveLength(1);
+    expect(home[0]).toMatchObject({ outcome: 'ok', cost_pass_get_metric_data_metrics: null, cost_pass_get_metric_statistics_requests: null });
+  }, 60_000);
+
+  it('flag off: the cost pass is called exactly as before (two arguments) and no region line is written', async () => {
+    const orgId = await insertOrg({ flag: false });
+    const { cost } = mockAws();
+    await service().discoverAllResources(orgId);
+    expect(cost).toHaveBeenCalledTimes(1);
+    expect(cost.mock.calls[0]).toHaveLength(2);
+    expect(regionLogLines()).toEqual([]);
+  }, 30_000);
 });

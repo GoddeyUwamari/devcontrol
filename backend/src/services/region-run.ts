@@ -157,6 +157,37 @@ export function regionFailed(result: HomeRegionScanResult | null): boolean {
   return !!result && result.status !== 'ok' && result.status !== 'partial';
 }
 
+/**
+ * CloudWatch calls counted from a call policy's onCall hook (A7): GetMetricData metrics
+ * (each one is billed) and GetMetricStatistics requests, attempts included. A region's
+ * run counts its own; the cost pass after the regions has one of its own (PR 1b), whose
+ * numbers go into the home region's log line.
+ */
+export class CloudWatchCallCounter {
+  calls = 0;
+  getMetricDataMetrics = 0;
+  getMetricStatisticsRequests = 0;
+
+  readonly onCall = (command: unknown): void => {
+    this.calls++;
+    const name = (command as { constructor?: { name?: string } } | null)?.constructor?.name;
+    if (name === 'GetMetricDataCommand') {
+      const queries = (command as { input?: { MetricDataQueries?: unknown[] } }).input?.MetricDataQueries;
+      this.getMetricDataMetrics += Array.isArray(queries) ? queries.length : 0;
+    } else if (name === 'GetMetricStatisticsCommand') {
+      this.getMetricStatisticsRequests++;
+    }
+  };
+}
+
+/**
+ * The cost pass's CloudWatch counts for the home region's log line (PR 1b): null when the
+ * cost pass did not run (not started, or the scan stopped first); zero for every other
+ * region (cost is home-only, FD-1 / review H-1).
+ */
+export type CostPassCounts = { getMetricDataMetrics: number; getMetricStatisticsRequests: number } | null;
+export const NO_COST_PASS_CALLS: CostPassCounts = { getMetricDataMetrics: 0, getMetricStatisticsRequests: 0 };
+
 export interface RegionRunOptions {
   deadlineMs: number;
   resourcePool: number;
@@ -236,7 +267,7 @@ export class RegionRun {
    * The one structured line logged after the region (A7): the organization's
    * internal id only, never an AWS account ID, ARN, resource or bucket name.
    */
-  logLine(organizationId: string, result: HomeRegionScanResult | null): string {
+  logLine(organizationId: string, result: HomeRegionScanResult | null, costPass: CostPassCounts = NO_COST_PASS_CALLS): string {
     return JSON.stringify({
       event: 'discovery_region_scan',
       organization_id: organizationId,
@@ -250,12 +281,15 @@ export class RegionRun {
       reason: result?.errorCode ?? null,
       get_metric_data_metrics: this.getMetricDataMetrics,
       get_metric_statistics_requests: this.getMetricStatisticsRequests,
+      // PR 1b: the cost pass's own CloudWatch counts (home region; 0 elsewhere; null: it did not run).
+      cost_pass_get_metric_data_metrics: costPass?.getMetricDataMetrics ?? null,
+      cost_pass_get_metric_statistics_requests: costPass?.getMetricStatisticsRequests ?? null,
     });
   }
 }
 
 /** The structured line for a region the scan never started (scan budget). */
-export function notStartedLogLine(organizationId: string, region: string): string {
+export function notStartedLogLine(organizationId: string, region: string, costPass: CostPassCounts = NO_COST_PASS_CALLS): string {
   return JSON.stringify({
     event: 'discovery_region_scan',
     organization_id: organizationId,
@@ -269,6 +303,8 @@ export function notStartedLogLine(organizationId: string, region: string): strin
     reason: SCAN_BUDGET_RESULT.errorCode,
     get_metric_data_metrics: 0,
     get_metric_statistics_requests: 0,
+    cost_pass_get_metric_data_metrics: costPass?.getMetricDataMetrics ?? null,
+    cost_pass_get_metric_statistics_requests: costPass?.getMetricStatisticsRequests ?? null,
   });
 }
 

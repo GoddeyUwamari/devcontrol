@@ -98,6 +98,8 @@ import {
   RegionSourceOutcome,
   SCAN_BUDGET_RESULT,
   SECURITY_GROUPS_SOURCE,
+  CloudWatchCallCounter,
+  CostPassCounts,
   ScanDeadline,
   ScanDeadlineError,
   StepLimiter,
@@ -736,6 +738,8 @@ export class AWSResourceDiscoveryService {
     terminated: number;
     homeReadinessErrors: string[];
     security: RegionalSecurity;
+    /** The home region's log line, written after the cost pass with its counts (PR 1b). */
+    homeLogLine?: (costPass: CostPassCounts) => string;
   }> {
     const { scan, scanContext, organizationId, jobId } = args;
     const timing = this.multiRegionTiming;
@@ -748,6 +752,7 @@ export class AWSResourceDiscoveryService {
     // Review M-4: the security groups of every region started, each read in its own run.
     // Only the home region's completeness reaches the job (compliance_scan_completed).
     const security: RegionalSecurity = { homeNetworkingComplete: false, active: 0, resolved: 0 };
+    let homeLogLine: ((costPass: CostPassCounts) => string) | undefined;
 
     // Review M-1: a region worker holds no database connection. Each of its database
     // steps checks one out for that step only (regionDbStep), at most
@@ -841,7 +846,9 @@ export class AWSResourceDiscoveryService {
         run.stop();
       }
       await this.recordRegionStatus((fn) => onStepConnection(region, fn), scan, jobId, region, organizationId, result);
-      console.log(run.logLine(organizationId, result));
+      // The home region's line waits for the cost pass (PR 1b): its counts are the home region's too.
+      if (region === scanContext.region) homeLogLine = (costPass) => run.logLine(organizationId, result, costPass);
+      else console.log(run.logLine(organizationId, result));
       records.push({ region, result, outcomes });
     };
 
@@ -856,7 +863,8 @@ export class AWSResourceDiscoveryService {
     // A2: the regions the scan budget left unstarted, each with its own status.
     for (const region of notStarted) {
       await this.recordRegionStatus((fn) => fn(args.client), scan, jobId, region, organizationId, SCAN_BUDGET_RESULT);
-      console.log(notStartedLogLine(organizationId, region));
+      if (region === scanContext.region) homeLogLine = (costPass) => notStartedLogLine(organizationId, region, costPass);
+      else console.log(notStartedLogLine(organizationId, region));
     }
     if (notStarted.length > 0) {
       console.warn(`⚠️  [Discovery] scan_budget: org ${organizationId}: ${notStarted.length} region(s) not started; their earlier results are kept`);
@@ -865,7 +873,7 @@ export class AWSResourceDiscoveryService {
 
     const order = new Map(args.regions.map((region, index) => [region, index]));
     records.sort((a, b) => (order.get(a.region) ?? 0) - (order.get(b.region) ?? 0));
-    return { records, notStarted, terminated, homeReadinessErrors, security };
+    return { records, notStarted, terminated, homeReadinessErrors, security, homeLogLine };
   }
 
   /**
@@ -1420,6 +1428,8 @@ export class AWSResourceDiscoveryService {
     let openFrameworkScan: FrameworkEvaluationScan | undefined;
     // A multi-region scan's whole-scan deadline (PR 1b, M-2); none without the flag.
     let scanDeadline: ScanDeadline | undefined;
+    // A multi-region scan's home region log line, written once the cost pass's counts are known (PR 1b).
+    let homeLogLine: ((costPass: CostPassCounts) => string) | undefined;
 
     try {
       // NOTE: must be session-scoped (is_local = false), not transaction-local.
@@ -1684,6 +1694,7 @@ export class AWSResourceDiscoveryService {
           scanDeadline: scanDeadline!,
         });
         resourcesTerminated += scanned.terminated;
+        homeLogLine = scanned.homeLogLine;
         multi = {
           regions,
           records: scanned.records,
@@ -2014,6 +2025,7 @@ export class AWSResourceDiscoveryService {
       let costAnalysisCompleted = false;
       const costRuns = new CostAnalysisRunsRepository();
       let costRunId: string | undefined;
+      let costPassCalls: CloudWatchCallCounter | undefined;
       // PR 1b, M-2: past the scan deadline the cost analysis is not started (no run row).
       const costMayStart = !scanDeadline || scanDeadline.mayStart('cost');
       if (costMayStart) try {
@@ -2027,8 +2039,10 @@ export class AWSResourceDiscoveryService {
         if (!costMayStart) throw new ScanDeadlineError('cost');
         console.log(`🔎 [Discovery] Running cost optimization analysis...`);
         scan.checkpoint();
+        // PR 1b: a multi-region scan counts the cost pass's CloudWatch calls (home region's log line).
+        if (scanDeadline) costPassCalls = new CloudWatchCallCounter();
         const { observations, riRecommendations, riSucceeded, homeRegion } = scanDeadline
-          ? await costOptimizationService.analyzeAllResources(organizationId, scanContext, { signal: scanDeadline.signal })
+          ? await costOptimizationService.analyzeAllResources(organizationId, scanContext, { signal: scanDeadline.signal, onCall: costPassCalls!.onCall })
           : await costOptimizationService.analyzeAllResources(organizationId, scanContext);
         // Stopped while it ran (PR 1b, M-2): its answers are incomplete, nothing of it is stored.
         if (scanDeadline?.stoppedDuring('cost')) throw new ScanDeadlineError('cost');
@@ -2139,6 +2153,12 @@ export class AWSResourceDiscoveryService {
           console.error(`❌ [Discovery] Cost optimization analysis failed:`, error.message);
           errors.push(`Cost analysis: ${error.message}`);
         }
+      }
+
+      // PR 1b: the home region's line, with the cost pass's own CloudWatch counts (null: it did not run).
+      if (homeLogLine) {
+        console.log(homeLogLine(costPassCalls ?? null));
+        homeLogLine = undefined;
       }
 
       // PR 1b, M-2: the steps after the regions the scan deadline did not let start or finish.
@@ -2312,6 +2332,8 @@ export class AWSResourceDiscoveryService {
       }
       throw error;
     } finally {
+      // A scan that stopped before its cost pass still logs its home region (no cost counts).
+      if (homeLogLine) console.log(homeLogLine(null));
       scanDeadline?.stop();
       // Every path: the heartbeat stops and the lease is released (or expires).
       await session?.end();
