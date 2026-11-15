@@ -17,6 +17,7 @@ import { failedSourceStatus, type SourceStatus } from './source-outcome';
 import { GetIndexCommand, ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { ResourceType, TagsState } from '../types/aws-resources.types';
 import { listAllPages } from '../utils/awsCallPolicy';
+import { errorNameOf, regionSafe } from './region-log-context';
 
 /**
  * Resource types whose deep CloudWatch monitoring (see cloudwatch.service.ts's
@@ -212,7 +213,7 @@ export class ResourceExplorerService {
       }
       return { success: true, resources, complete };
     } catch (error: any) {
-      console.error(`[ResourceExplorer] Search failed for region ${region}:`, error.message);
+      console.error(`[ResourceExplorer] Search failed for region ${region}:`, regionSafe(error.message, errorNameOf(error)));
       return { success: false, error: error.message || 'Unknown Resource Explorer error', status: failedSourceStatus(error), cause: error };
     }
   }

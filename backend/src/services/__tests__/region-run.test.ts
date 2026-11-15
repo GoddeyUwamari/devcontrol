@@ -364,3 +364,19 @@ describe('ScanDeadline (PR 1b, M-2): the whole scan\'s deadline', () => {
     expect(error.name).toBe('ScanDeadlineError');
   });
 });
+
+describe('region-log-context (PR 1b, L-3)', () => {
+  it('inside a region run (across awaits) the safe text; outside, the original text unchanged', async () => {
+    const { inRegionLogContext, regionSafe, errorNameOf, inRegionRun } = await import('../region-log-context');
+    const error = Object.assign(new Error('User: arn:aws:sts::123456789012:assumed-role/x is not authorized'), { name: 'AccessDeniedException' });
+    expect(regionSafe(error.message, errorNameOf(error))).toBe(error.message);
+    expect(inRegionRun()).toBe(false);
+    const inside = await inRegionLogContext('eu-west-1', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return regionSafe(error.message, errorNameOf(error));
+    });
+    expect(inside).toBe('AccessDeniedException');
+    expect(errorNameOf('a string')).toBe('Error');
+    expect(inRegionRun()).toBe(false);
+  });
+});

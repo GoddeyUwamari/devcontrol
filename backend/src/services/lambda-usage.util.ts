@@ -44,6 +44,7 @@
  * each other's usage data out of this in-process cache.
  */
 import { CloudWatchClient, GetMetricStatisticsCommand, Statistic } from '@aws-sdk/client-cloudwatch';
+import { errorNameOf, regionSafe } from './region-log-context';
 
 export const LAMBDA_USAGE_WINDOW_DAYS = 30;
 
@@ -135,7 +136,10 @@ export async function getLambdaUsageOverWindow(
     if (key !== null) usageCache.set(key, { data, timestamp: Date.now() });
     return data;
   } catch (error: any) {
-    console.error(`Error fetching CloudWatch usage for Lambda function ${functionName}:`, error?.message || error);
+    console.error(
+      `Error fetching CloudWatch usage for Lambda function ${regionSafe(functionName, 'in this region')}:`,
+      regionSafe(error?.message || error, errorNameOf(error))
+    );
     return null;
   }
 }

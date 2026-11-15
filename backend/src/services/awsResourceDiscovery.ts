@@ -90,6 +90,7 @@ import {
   recordRegionList,
   recordRegionScanStatus,
 } from '../repositories/multi-region-foundation.repository';
+import { errorNameOf, inRegionLogContext, regionSafe } from './region-log-context';
 import { HOME_REGION_SOURCES, HomeRegionScanResult, RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
 import {
   NON_HOME_REGION_SOURCES,
@@ -763,7 +764,10 @@ export class AWSResourceDiscoveryService {
     const onStepConnection = <T>(region: string, fn: (client: PoolClient) => Promise<T>): Promise<T> =>
       steps.run(() => this.regionDbStep(organizationId, region, fn));
 
-    const scanOneRegion = async (region: string) => {
+    // Review L-3: everything a region's run calls logs AWS error names only and no
+    // resource names (region-log-context.ts).
+    const scanOneRegion = (region: string) => inRegionLogContext(region, () => scanRegion(region));
+    const scanRegion = async (region: string) => {
       scan.checkpoint();
       // A6: the fence probe at the region boundary. A lost lease or a changed AWS
       // connection stops the scan; any other failure (e.g. no pool connection within
@@ -3247,7 +3251,7 @@ export class AWSResourceDiscoveryService {
       const result = await describeDynamoDBTable(regionalClient, tableName);
 
       if (result.status !== 'described') {
-        console.error(`[Discovery] DynamoDB DescribeTable unavailable for ${tableName} (${entry.region}): ${result.reason}`);
+        console.error(`[Discovery] DynamoDB DescribeTable unavailable for ${regionSafe(tableName, 'a table')} (${entry.region}): ${regionSafe(result.reason, 'unavailable')}`);
         continue;
       }
 
@@ -3256,7 +3260,7 @@ export class AWSResourceDiscoveryService {
         autoscalingResult.status === 'described' ? autoscalingResult.config.autoscaling_state : 'AUTOSCALING_UNKNOWN';
       if (autoscalingResult.status !== 'described') {
         console.error(
-          `[Discovery] Application Auto Scaling DescribeScalableTargets unavailable for ${tableName} (${entry.region}): ${autoscalingResult.reason}`
+          `[Discovery] Application Auto Scaling DescribeScalableTargets unavailable for ${regionSafe(tableName, 'a table')} (${entry.region}): ${regionSafe(autoscalingResult.reason, 'unavailable')}`
         );
       }
 
@@ -3320,7 +3324,7 @@ export class AWSResourceDiscoveryService {
     // The one AWS call first; the writes below run in one fenced transaction (F6).
     const result = await describeAuroraClusters(rdsClient);
     if (result.status === 'unavailable') {
-      console.error(`[Discovery] Aurora cluster enrichment unavailable this cycle: ${result.reason}`);
+      console.error(`[Discovery] Aurora cluster enrichment unavailable this cycle: ${regionSafe(result.reason, errorNameOf(result.error))}`);
       return { confirmed: 0, reclassified: 0 };
     }
 
@@ -3344,7 +3348,7 @@ export class AWSResourceDiscoveryService {
 
       if (!cluster.isAuroraEngine) {
         console.warn(
-          `[Discovery] Reclassifying ${entry.arn} out of 'aurora': DescribeDBClusters reports Engine=${cluster.engine || 'unknown'}, not an Aurora engine`
+          `[Discovery] Reclassifying ${regionSafe(entry.arn, 'a DB cluster')} out of 'aurora': DescribeDBClusters reports Engine=${cluster.engine || 'unknown'}, not an Aurora engine`
         );
         await client.query(
           `UPDATE aws_resources
@@ -3481,7 +3485,7 @@ export class AWSResourceDiscoveryService {
           }
         }
       } catch (error: any) {
-        console.error(`[Discovery] DescribeVolumes failed for ${chunk.length} volume(s):`, error.message);
+        console.error(`[Discovery] DescribeVolumes failed for ${chunk.length} volume(s):`, regionSafe(error.message, errorNameOf(error)));
       }
     }
 
@@ -3534,7 +3538,7 @@ export class AWSResourceDiscoveryService {
       }
       return groups;
     } catch (error: any) {
-      console.error(`[Discovery] DescribeSecurityGroups failed in ${region}; instance exposure recorded as unknown:`, error.message);
+      console.error(`[Discovery] DescribeSecurityGroups failed in ${region}; instance exposure recorded as unknown:`, regionSafe(error.message, errorNameOf(error)));
       return null;
     }
   }
@@ -3709,7 +3713,7 @@ export class AWSResourceDiscoveryService {
     } catch (error: any) {
       // A failed or partial listing is not the account's list: rethrown so the caller
       // records the failure, upserts nothing from it, and never treats it as complete.
-      console.error('[Lambda Discovery] Error:', error.message);
+      console.error('[Lambda Discovery] Error:', regionSafe(error.message, errorNameOf(error)));
       throw error;
     }
 
@@ -3784,7 +3788,7 @@ export class AWSResourceDiscoveryService {
     } catch (error: any) {
       // A failed or partial listing is not the account's list: rethrown so the caller
       // records the failure, upserts nothing from it, and never treats it as complete.
-      console.error('[Load Balancer Discovery] Error:', error.message);
+      console.error('[Load Balancer Discovery] Error:', regionSafe(error.message, errorNameOf(error)));
       throw error;
     }
 

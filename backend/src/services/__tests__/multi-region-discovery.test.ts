@@ -1341,3 +1341,48 @@ describe('PR 1b item 7: the cost pass\'s own CloudWatch counts are in the home r
     expect(regionLogLines()).toEqual([]);
   }, 30_000);
 });
+
+// ---------------------------------------------------------------------------
+describe('PR 1b L-3: a region run\'s logs carry no AWS message, account ID or resource name', () => {
+  const TABLE = 'placeholder-secret-table';
+  const allLogs = () =>
+    [console.log, console.error, console.warn].flatMap((fn) => (fn as jest.Mock).mock.calls.map((args) => args.map((a: unknown) => (typeof a === 'string' ? a : JSON.stringify(a ?? null))).join(' ')));
+  const answers = (region: string) => ({
+    [region]: {
+      // A Search refused by an organization policy: AWS's text names the role's ARN (with the account ID).
+      explorer: { SearchCommand: () => { throw scpDenied(); } },
+    },
+    // ap-south-1: a table its search found, whose DescribeTable is refused; its security groups refused too.
+    'ap-south-1': {
+      explorer: {
+        SearchCommand: () => ({
+          Resources: [{ Arn: `arn:aws:dynamodb:ap-south-1:${ACCOUNT}:table/${TABLE}`, Region: 'ap-south-1', Service: 'dynamodb', CfnResourceType: 'AWS::DynamoDB::Table', Properties: [] }],
+          Count: { TotalResources: 1, Complete: true },
+        }),
+      },
+      dynamodb: { DescribeTableCommand: () => { throw accessDenied(); } },
+      ec2: { DescribeSecurityGroupsCommand: () => { throw scpDenied(); } },
+      backup: { ListRecoveryPointsByResourceCommand: () => { throw scpDenied(); } },
+    },
+  });
+
+  it('flag on: refusals in eu-west-1 and ap-south-1 (Search, DescribeTable, security groups) are logged by error name only', async () => {
+    const orgId = await insertOrg();
+    mockAws(answers(EU));
+    await service().discoverAllResources(orgId);
+    const logs = allLogs().join('\n');
+    expect(logs).toContain('AccessDeniedException');
+    expect(logs).not.toContain(ACCOUNT);
+    expect(logs).not.toContain('assumed-role');
+    expect(logs).not.toContain(TABLE);
+    expect(logs).not.toContain('service control policy');
+  }, 60_000);
+
+  it('flag off: the same home Search refusal is logged with AWS\'s text, exactly as before (logs unchanged without the flag)', async () => {
+    const orgId = await insertOrg({ flag: false });
+    mockAws(answers(HOME));
+    await service().discoverAllResources(orgId);
+    const searchLine = (console.error as jest.Mock).mock.calls.find((args) => String(args[0]).startsWith('[ResourceExplorer] Search failed for region us-east-1'));
+    expect(searchLine).toEqual([`[ResourceExplorer] Search failed for region us-east-1:`, scpDenied().message]);
+  }, 30_000);
+});

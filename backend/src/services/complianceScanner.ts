@@ -41,6 +41,7 @@ import {
   s3FindingsFromEvaluation,
   carryForwardUnverifiedS3Findings,
 } from './s3-security-evaluation';
+import { errorNameOf, regionSafe } from './region-log-context';
 
 /**
  * The resource types whose is_encrypted discovery reads from AWS. For every other
@@ -663,7 +664,7 @@ export class ComplianceScannerService {
       });
       if (!listing.complete) complete = false;
     } catch (error: any) {
-      console.error('[Compliance] checkSecurityGroups failed (partial results may still be usable):', error.message);
+      console.error('[Compliance] checkSecurityGroups failed (partial results may still be usable):', regionSafe(error.message, errorNameOf(error)));
       complete = false;
       failure = error;
     }
