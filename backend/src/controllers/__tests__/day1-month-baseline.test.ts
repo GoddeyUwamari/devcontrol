@@ -153,37 +153,63 @@ describe.each(Object.keys(DAY1_CASES))('%s', (name) => {
 
   it('AI surfaces: summary facts, chat context and reply, report sentence, Ask AI', async () => {
     useCase(DAY1_CASES[name]);
-    const pool = { query: ambientPool.query } as unknown as Pool;
-    const { costs } = await new AIChatContextRepository(pool).gatherCostContext(ORG);
-    const spend = await spendSection(costs);
-    const mom = await monthOverMonthSection(costs);
-
-    const sections = new Proxy({ spend, monthOverMonth: mom } as Record<string, unknown>, { get: (t, k: string) => (k in t ? t[k] : unavailable) });
-    const summaryFacts = new AISummaryService().buildFactLines(sections as never)
-      .filter((l) => /spend|month-over-month|Month-over-month/i.test(l));
-
-    const chat = new AIChatService(pool) as unknown as {
-      formatCostSection: (c: unknown) => string;
-      getFallbackResponse: (m: unknown, c: unknown) => string;
-    };
-    const chatContext = chat.formatCostSection(costs);
-    const chatFallback = chat.getFallbackResponse([{ role: 'user', content: 'What is my AWS spend this month?' }], { costs });
-
-    const reportSentence = (new AIReportGeneratorService(pool) as unknown as { spendSentence: (s: unknown) => string }).spendSentence(spend);
-    const askAi = await (new NLQueryExecutorService(pool) as unknown as { queryCosts: (o: string) => Promise<unknown> }).queryCosts(ORG);
-
-    pin(`${name}.ai.json`, {
-      modelSpendSection: { state: spend.state, reason: spend.reason, data: spend.data },
-      summaryFacts,
-      chatContext: chatContext.split('\n'),
-      chatFallback: chatFallback.split('\n'),
-      reportSentence,
-      askAi,
-    });
+    pin(`${name}.ai.json`, await aiSurfaces());
   });
 });
 
+/** Every AI surface's cost output for the current case. */
+async function aiSurfaces() {
+  const pool = { query: ambientPool.query } as unknown as Pool;
+  const { costs } = await new AIChatContextRepository(pool).gatherCostContext(ORG);
+  const spend = await spendSection(costs);
+  const mom = await monthOverMonthSection(costs);
+
+  const sections = new Proxy({ spend, monthOverMonth: mom } as Record<string, unknown>, { get: (t, k: string) => (k in t ? t[k] : unavailable) });
+  const summaryFacts = new AISummaryService().buildFactLines(sections as never)
+    .filter((l) => /spend|month-over-month|Month-over-month/i.test(l));
+
+  const chat = new AIChatService(pool) as unknown as {
+    formatCostSection: (c: unknown) => string;
+    getFallbackResponse: (m: unknown, c: unknown) => string;
+  };
+  const chatContext = chat.formatCostSection(costs);
+  const chatFallback = chat.getFallbackResponse([{ role: 'user', content: 'What is my AWS spend this month?' }], { costs });
+
+  const reportSentence = (new AIReportGeneratorService(pool) as unknown as { spendSentence: (s: unknown) => string }).spendSentence(spend);
+  const askAi = await (new NLQueryExecutorService(pool) as unknown as { queryCosts: (o: string) => Promise<unknown> }).queryCosts(ORG);
+
+  return {
+    modelSpendSection: { state: spend.state, reason: spend.reason, data: spend.data },
+    summaryFacts,
+    chatContext: chatContext.split('\n'),
+    chatFallback: chatFallback.split('\n'),
+    reportSentence,
+    askAi,
+  };
+}
+
 describe('contract assertions (beyond the pinned files)', () => {
+  it.each(['d1_0030', 'd1_absent', 'd2_none'])('%s: no AI surface is told or says $0; each says there are no billed days yet', async (name) => {
+    useCase(DAY1_CASES[name]);
+    const out = await aiSurfaces();
+    expect(out.modelSpendSection.data).toMatchObject({ amount: null, monthState: { state: 'no_billed_days_yet', amount: null } });
+    const said = JSON.stringify([out.summaryFacts, out.chatContext, out.chatFallback, out.reportSentence, (out.askAi as { summary: string }).summary]);
+    // The approved wording may say "not $0" / "never say ... $0"; it must never state a $0.00 figure.
+    expect(said).not.toMatch(/\$0\.00/);
+    for (const text of [out.summaryFacts.join(' '), out.chatContext.join(' '), out.chatFallback.join(' '), out.reportSentence, (out.askAi as { summary: string }).summary]) {
+      expect(text).toMatch(/no billed days/i);
+    }
+  });
+
+  it('d2_charge: AI surfaces state the figure and that the latest days are still updating', async () => {
+    useCase(DAY1_CASES.d2_charge);
+    const out = await aiSurfaces();
+    for (const text of [out.summaryFacts.join(' '), out.chatContext.join(' '), out.reportSentence, (out.askAi as { summary: string }).summary]) {
+      expect(text).toContain('$13.30');
+      expect(text).toMatch(/latest days are still updating/);
+    }
+  });
+
   it('DAY1-D17: a response without the expected cost metric is unavailable with a reason code, never 0', async () => {
     useCase(DAY1_CASES.d3_metric_key);
     const { costs } = await new AIChatContextRepository({ query: ambientPool.query } as unknown as Pool).gatherCostContext(ORG);

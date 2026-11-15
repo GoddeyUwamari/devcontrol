@@ -23,7 +23,7 @@
       "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete",
       "derivedFrom": null,
       "data": {
-        "amount": 0,
+        "amount": null,
         "basis": "billed_month_to_date",
         "topServices": [],
         "lastDayInProgress": true,

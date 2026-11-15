@@ -31,8 +31,12 @@ import type { CostMonthState } from './cost-month-state';
 import { COMPARISON_BASIS, lastIncludedDay, type ChatCostSection } from './ai-chat.service';
 
 export interface SpendEvidence {
-  /** USD. May be 0 or negative (credits exceed charges) for billed spend. */
-  amount: number;
+  /**
+   * USD. May be 0 or negative (credits exceed charges) for billed spend; null
+   * when the month's state says the amount is not usable (no billed days yet),
+   * so a model or page never receives 0 for missing billing data (DAY1-D5).
+   */
+  amount: number | null;
   /**
    * billed_month_to_date        = AWS Cost Explorer spend for the section's period
    * estimated_monthly_run_rate  = DevControl list-price estimate for currently

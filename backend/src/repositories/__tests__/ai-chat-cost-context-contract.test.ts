@@ -160,7 +160,7 @@ describe('Cost Explorer success', () => {
     expect(costs.data!.current).toBe(300);
     expect(costs.asOf).toBe(FETCHED_AT);
     expect(costs.period).toEqual({ kind: 'range', start: '2026-09-01', endExclusive: '2026-09-25' });
-    expect(costs.costExplorer).toEqual({ state: 'available', reason: null });
+    expect(costs.costExplorer).toEqual({ state: 'available', reason: null, code: null });
     expect(costs.data!.topSpenders!.map((s: { service: string }) => s.service)).toEqual([
       'Amazon Elastic Compute Cloud - Compute', 'Amazon Simple Storage Service', 'AWS Lambda',
     ]);
@@ -255,7 +255,7 @@ describe('Cost Explorer failure', () => {
     expect(context.costs.state).toBe('error');
     expect(context.costs.provenance).toBeNull();
     expect(context.costs.data).toBeNull();
-    expect(context.costs.costExplorer).toEqual({ state: 'error', reason: 'the Cost Explorer request failed' });
+    expect(context.costs.costExplorer).toEqual({ state: 'error', reason: 'the Cost Explorer request failed', code: 'cost_explorer_failed' });
     expect(context.costs.data?.current ?? null).toBeNull();
     expect(context.costs.data?.topSpenders ?? null).toBeNull();
     expect(context.costs.scope).toBeNull();
@@ -280,7 +280,7 @@ describe('Cost Explorer failure', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('unavailable');
-    expect(context.costs.costExplorer).toEqual({ state: 'unavailable', reason: 'no connected AWS account' });
+    expect(context.costs.costExplorer).toEqual({ state: 'unavailable', reason: 'no connected AWS account', code: 'not_connected' });
     expect(context.costs.data?.current ?? null).toBeNull();
   });
 

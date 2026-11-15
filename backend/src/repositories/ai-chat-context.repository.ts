@@ -478,7 +478,8 @@ export class AIChatContextRepository {
         completeness: null,
         coverage: null,
         reason: null,
-        data: { current: roundCents(total), topSpenders, estimateCoverage: null },
+        // No usable amount (no billed days yet): null, never 0 (DAY1-D5).
+        data: { current: monthState.amountUsable ? roundCents(total) : null, topSpenders, estimateCoverage: null },
         ...costSectionFields('billed'),
         costExplorer,
         comparison,

@@ -20,7 +20,7 @@ import {
   type InventoryScope,
 } from './ai-context-contract';
 
-import type { CostMonthState } from './cost-month-state';
+import { lastDayOf, monthName, periodWords, type CostMonthState } from './cost-month-state';
 
 // Defined in ai-context-contract.ts; re-exported so existing imports keep working.
 export type { ContextDataState, ContextSection, CostExplorerScope, InventoryScope } from './ai-context-contract';
@@ -117,10 +117,12 @@ export interface InventoryResources {
 export interface ChatCostFigures {
   /**
    * provenance 'actual' (classification 'billed'): Cost Explorer month-to-date
-   * spend, including a real $0 or a net-negative credit total;
+   * spend, including a real $0 or a net-negative credit total; null when the
+   * month's state says the amount is not usable (no billed days yet) -- never
+   * 0 as a stand-in;
    * provenance 'estimated': DevControl's list-price monthly run-rate.
    */
-  current: number;
+  current: number | null;
   /** Cost Explorer SERVICE categories; null when no per-service breakdown exists (estimates). [] is a real, empty breakdown. */
   topSpenders: Array<{
     service: string;
@@ -513,7 +515,22 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
           lines.push(`- Period: month-to-date, ${start} through ${last} inclusive (${formatInclusiveRange(start, last)})${lastDayInProgress ? `; ${last} was still in progress when this figure was obtained, so that day's spend is incomplete` : ''}`);
         }
       }
-      lines.push(`- Month-to-date spend: ${this.formatMoney(figures.current)}${figures.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''} (observed spend for the period above -- not a full-month amount or a monthly rate)`);
+      const month = costs.monthState;
+      if (month && !month.amountUsable) {
+        lines.push(month.state === 'no_billed_days_yet'
+          ? `- Month-to-date spend: none reported yet — AWS Cost Explorer has no billed days for the current UTC month (${monthName(month.period.month)}; ${month.period.start} through ${lastDayOf(month.period)}). This is missing data, not $0: never say the spend is $0, that nothing was spent, or that spend is unchanged.`
+          : `- Month-to-date spend: not available (state: ${month.reason?.text ?? month.state}) — this is missing data, not a zero amount.`);
+        lines.push(...this.previousMonthLines(month));
+        return lines.join('\n');
+      }
+      if (month?.state === 'latest_days_updating' && figures.current !== null) {
+        lines.push(`- Month-to-date spend: ${this.formatMoney(figures.current)} for ${month.period.start} through ${lastDayOf(month.period)} (UTC); the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.`);
+        lines.push(...this.previousMonthLines(month));
+      } else if (figures.current !== null) {
+        lines.push(`- Month-to-date spend: ${this.formatMoney(figures.current)}${figures.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''} (observed spend for the period above -- not a full-month amount or a monthly rate)`);
+      } else {
+        lines.push('- Month-to-date spend: not available -- this is missing data, not a zero amount.');
+      }
       lines.push('Top services by month-to-date spend (observed amounts for the period above, not monthly rates. Cost Explorer SERVICE categories for the scope above, NOT per-resource costs: each line is its own category and does not include charges billed under another listed category, and a category total is not proof that any one resource caused that spend):');
       if (figures.topSpenders && figures.topSpenders.length > 0) {
         lines.push(...figures.topSpenders.map(s => `- ${s.service}: ${this.formatMoney(s.cost)}${s.percentage !== null ? ` (${s.percentage.toFixed(1)}%)` : ''}`));
@@ -528,11 +545,22 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       if (figures.estimateCoverage) {
         lines.push(`- Coverage: ${figures.estimateCoverage.estimatedResources} of ${figures.estimateCoverage.totalResources} discovered resources have a cost estimate`);
       }
-      lines.push(`- Estimated monthly cost: ${this.formatMoney(figures.current)}`);
+      lines.push(`- Estimated monthly cost: ${figures.current !== null ? this.formatMoney(figures.current) : 'not available'}`);
       lines.push('- Per-service breakdown: not available for estimates');
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * While no day of the month has finished: the previous UTC month's net total
+   * (the Dashboard's previous-month line), so a question about last month is
+   * answered from billing data and never by inventing this month's figure.
+   */
+  private previousMonthLines(month: CostMonthState): string[] {
+    const previous = month.previousMonth;
+    if (!previous) return [];
+    return [`- Previous UTC month (${monthName(previous.month)}): ${this.formatMoney(previous.amount)}${previous.latestDaysUpdating ? ' (latest days still updating)' : ''}`];
   }
 
   /**
@@ -721,7 +749,11 @@ ${renderEvidence(context.evidence, { except: CHAT_FORMATTED_PROVIDERS, style: 'p
     // shared by the cost and generic branches so neither can print an
     // unqualified number.
     const figures = costs.data;
-    const spendPhrase = figures === null
+    // The month has no billed days yet: there is no month-to-date figure, and
+    // nothing here may present one (never $0).
+    const month = costs.provenance === 'actual' ? costs.monthState : undefined;
+    const noBilledDays = month?.state === 'no_billed_days_yet';
+    const spendPhrase = figures === null || figures.current === null
       ? null
       : costs.provenance === 'estimated'
         ? `an estimated ${this.formatMoney(figures.current)}/month (estimated from your last synced resource inventory as of ${costs.asOf ?? 'unknown'}, not a Cost Explorer billing figure)`
@@ -733,6 +765,17 @@ ${renderEvidence(context.evidence, { except: CHAT_FORMATTED_PROVIDERS, style: 'p
 
     // Basic pattern matching for common questions
     if (lastMessage.includes('cost') || lastMessage.includes('spend') || lastMessage.includes('bill')) {
+      if (noBilledDays && month) {
+        const previous = month.previousMonth;
+        const previousSentence = previous
+          ? ` ${monthName(previous.month).split(' ')[0]} (UTC) totalled ${this.formatMoney(previous.amount)}${previous.latestDaysUpdating ? '; its latest days are still updating' : ''}.`
+          : '';
+        return `**🔍 What's happening**
+
+There are no billed days yet for the current UTC month (${periodWords(month.period)}), so there is no month-to-date figure yet — this is not $0.${previousSentence}
+
+*Note: AI service temporarily unavailable - this is a simplified analysis.*`;
+      }
       if (spendPhrase === null) {
         return `**🔍 What's happening**
 
@@ -809,11 +852,11 @@ Underutilized resources typically represent 20-40% potential savings when rights
 
     return `**🔍 What's happening**
 
-${inventoryPhrase}${spendPhrase ? `, with spend of ${spendPhrase}` : '; cost data is not available right now'}.
+${inventoryPhrase}${spendPhrase ? `, with spend of ${spendPhrase}` : noBilledDays ? '; there are no billed days yet for the current UTC month' : '; cost data is not available right now'}.
 
 **💰 Cost / impact**
 
-- Spend: ${spendPhrase ?? 'not available'}
+- Spend: ${spendPhrase ?? (noBilledDays ? 'no billed days yet for the current UTC month (not $0)' : 'not available')}
 - Change: ${changePhrase ?? 'no comparison with last month is available'}
 - Active alerts: ${alertsPhrase}
 
