@@ -9,10 +9,15 @@
  *                 a gap, never $0.00. A series with no line items at all has
  *                 no not_reported periods (its $0 periods are real).
  *   updating      the most recent period with line items, when its last day is
- *                 within the last UPDATING_WINDOW_DAYS UTC days of today; or
- *                 any period whose Cost Explorer result has Estimated = true.
- *                 Its amount is "so far": Cost Explorer may still add charges.
+ *                 within the last UPDATING_WINDOW_DAYS UTC days of today. Its
+ *                 amount is "so far": Cost Explorer may still add charges.
  *   final         everything else.
+ *
+ * ResultByTime.Estimated is recorded on every point (`estimated`) but does NOT
+ * decide the state (founder decision R-1, 2026-11-16): its day-level meaning
+ * is unverified, and if Cost Explorer marks every day of the open month as
+ * estimated it would make the whole month "updating". Revisit after a
+ * production 30d response shows what it does.
  *
  * Production evidence (GET trend?range=7d, 2026-11-16 ~11:30 UTC): Nov 13 had
  * 8 line items but ~1 hour of EC2 compute, and Nov 14 had none, while the old
@@ -35,7 +40,7 @@ export interface ReportStateInput {
   lastDay: string;
   /** Cost Explorer SERVICE groups in the period. */
   lineItems: number;
-  /** ResultByTime.Estimated; null when Cost Explorer did not send it. */
+  /** ResultByTime.Estimated; null when Cost Explorer did not send it. Recorded only: never decides the state (R-1). */
   estimated: boolean | null;
 }
 
@@ -56,7 +61,6 @@ export function costReportStates(periods: ReadonlyArray<ReportStateInput>, now: 
   const recentFrom = updatingWindowStart(now);
   return periods.map((p, i) => {
     if (lastWithLineItems >= 0 && i > lastWithLineItems) return 'not_reported';
-    if (p.estimated === true) return 'updating';
     if (i === lastWithLineItems && p.lastDay >= recentFrom) return 'updating';
     return 'final';
   });

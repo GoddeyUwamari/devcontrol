@@ -60,8 +60,8 @@
           "finishedThrough": "2026-12-13",
           "billedThrough": "2026-12-14",
           "reportDays": {
-            "final": 12,
-            "updating": 2,
+            "final": 13,
+            "updating": 1,
             "notReported": 1
           },
           "ceEstimated": true,
@@ -98,7 +98,7 @@
       "period": {
         "kind": "range",
         "start": "2026-11-01",
-        "endExclusive": "2026-12-13"
+        "endExclusive": "2026-12-14"
       },
       "completeness": null,
       "coverage": "finished days of this month vs the same days of the previous month; the latest days, still being reported by AWS Cost Explorer, are excluded",
@@ -118,7 +118,7 @@
           "period": {
             "kind": "range",
             "start": "2026-11-01",
-            "endExclusive": "2026-12-13"
+            "endExclusive": "2026-12-14"
           },
           "asOf": "2026-12-15T18:00:00.000Z"
         }
@@ -126,14 +126,14 @@
       "data": {
         "currentWindow": {
           "start": "2026-12-01",
-          "end": "2026-12-12"
+          "end": "2026-12-13"
         },
         "previousWindow": {
           "start": "2026-11-01",
-          "end": "2026-11-12"
+          "end": "2026-11-13"
         },
-        "currentWindowTotal": 159.6,
-        "previousWindowTotal": 159.6,
+        "currentWindowTotal": 172.9,
+        "previousWindowTotal": 172.9,
         "changeAmount": 0,
         "changePercent": 0,
         "currentWindowIncludesToday": false,

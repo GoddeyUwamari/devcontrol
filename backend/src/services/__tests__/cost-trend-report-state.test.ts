@@ -23,13 +23,18 @@ describe('costReportStates', () => {
     expect(costReportStates([day('2026-11-10', 8), day('2026-11-11', 0), day('2026-11-12', 8)], NOW)).toEqual(['final', 'final', 'final']);
   });
 
-  it('no line items anywhere: every day final (real $0), unless Cost Explorer marks it Estimated', () => {
+  it('no line items anywhere: every day final (real $0), Estimated or not', () => {
     expect(costReportStates([day('2026-11-15', 0), day('2026-11-16', 0)], NOW)).toEqual(['final', 'final']);
-    expect(costReportStates([day('2026-11-15', 0), day('2026-11-16', 0, true)], NOW)).toEqual(['final', 'updating']);
+    expect(costReportStates([day('2026-11-15', 0, true), day('2026-11-16', 0, true)], NOW)).toEqual(['final', 'final']);
   });
 
-  it('Estimated = true makes any older day updating; Estimated = false changes nothing', () => {
-    expect(costReportStates([day('2026-10-01', 8, true), day('2026-10-02', 8, false), day('2026-11-16', 8)], NOW)).toEqual(['updating', 'final', 'updating']);
+  it('R-1: Estimated = true does not change any state (recorded only)', () => {
+    const periods = [day('2026-10-01', 8), day('2026-10-02', 8), day('2026-11-12', 8), day('2026-11-13', 8), day('2026-11-14', 0)];
+    const flagged = periods.map((p) => ({ ...p, estimated: true }));
+    const without = costReportStates(periods, NOW);
+    expect(without).toEqual(['final', 'final', 'final', 'updating', 'not_reported']);
+    expect(costReportStates(flagged, NOW)).toEqual(without);
+    expect(costReportStates(periods.map((p) => ({ ...p, estimated: false })), NOW)).toEqual(without);
   });
 
   it('not_reported wins over Estimated: a day with no line items after the last reported one has no amount to update', () => {

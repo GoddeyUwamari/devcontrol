@@ -266,22 +266,30 @@ describe('month-over-month compares final days only (rule 5)', () => {
     expect(mom.data).toMatchObject({ currentWindow: { end: '2026-11-12' }, previousWindow: { end: '2026-10-12' } });
   });
 
-  it('Estimated = true on an older day (Nov 5): that day is updating and the windows stop before it on both sides', async () => {
-    useLedger(NOW, { estimated: (s, g) => (g === 'DAILY' && s === '2026-11-05' ? true : undefined) });
+  it('R-1: Estimated = true is recorded on the point but changes no state and no window', async () => {
+    // Every day of both months flagged Estimated, as Cost Explorer might do for an open month.
+    const everyDay = { estimated: () => true };
+    useLedger(NOW, everyDay);
     const { data } = await trendEndpoint('30d');
-    expect(byDate(data)['2026-11-05']).toMatchObject({ reportState: 'updating', estimated: true, provisional: true });
-    expect(byDate(data)['2026-11-04']).toMatchObject({ reportState: 'final', estimated: null });
-    useLedger(NOW, { estimated: (s, g) => (g === 'DAILY' && s === '2026-11-05' ? true : undefined) });
+    expect(data.every((p) => p.estimated === true)).toBe(true);
+    expect(statesOf(data, FIRST_REAL)).toEqual(EVIDENCE_STATES);
+    expect(data.filter((p) => p.date < FIRST_REAL).every((p) => p.reportState === 'final' && p.provisional === false)).toBe(true);
+    useLedger(NOW, everyDay);
     const mom = (await costSummary()).data.monthOverMonth;
-    expect(mom.data.currentWindow).toEqual({ start: '2026-11-01', end: '2026-11-04' });
-    expect(mom.data.previousWindow).toEqual({ start: '2026-10-01', end: '2026-10-04' });
+    expect(mom.data.currentWindow).toEqual({ start: '2026-11-01', end: '2026-11-12' });
+    expect(mom.data.previousWindow).toEqual({ start: '2026-10-01', end: '2026-10-12' });
   });
 
-  it('an updating day in the previous month (Oct 3, Estimated) is excluded on both sides too', async () => {
-    useLedger(NOW, { estimated: (s, g) => (g === 'DAILY' && s === '2026-10-03' ? true : undefined) });
-    const mom = (await costSummary()).data.monthOverMonth;
-    expect(mom.data.currentWindow).toEqual({ start: '2026-11-01', end: '2026-11-02' });
-    expect(mom.data.previousWindow).toEqual({ start: '2026-10-01', end: '2026-10-02' });
+  it('an unfinished day on the previous-month side (Oct 3) cuts both windows (the comparison reads each point\'s reportState)', async () => {
+    // Since R-1 only the series' tail can be unfinished, so this case is built directly: Oct 3 marked updating by hand.
+    useLedger(NOW);
+    const trend = (await trendEndpoint('90d')).data.map((p) => (p.date === '2026-10-03' ? { ...p, reportState: 'updating' as const } : p));
+    const repo = new AIChatContextRepository({ query: ambientPool.query } as unknown as Pool) as unknown as {
+      computeMonthOverMonthComparison(t: CostTrendPoint[], asOf: string | null, now: Date): { currentWindow: unknown; previousWindow: unknown };
+    };
+    const c = repo.computeMonthOverMonthComparison(trend, null, new Date(NOW));
+    expect(c.currentWindow).toEqual({ start: '2026-11-01', end: '2026-11-02' });
+    expect(c.previousWindow).toEqual({ start: '2026-10-01', end: '2026-10-02' });
   });
 });
 

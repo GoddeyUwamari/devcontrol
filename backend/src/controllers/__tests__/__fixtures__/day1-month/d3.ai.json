@@ -35,8 +35,8 @@
         "finishedThrough": "2026-12-01",
         "billedThrough": "2026-12-02",
         "reportDays": {
-          "final": 0,
-          "updating": 2,
+          "final": 1,
+          "updating": 1,
           "notReported": 1
         },
         "ceEstimated": true,
@@ -48,7 +48,7 @@
   },
   "summaryFacts": [
     "AWS Cost Explorer month-to-date billed spend (2026-12-01 through 2026-12-03) is $26.60; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.",
-    "Month-over-month change: not available (cannot be calculated: AWS Cost Explorer daily trend: not available). Do not describe spend as up, down, flat, or unchanged."
+    "Month-to-date spend vs the same days last month: unchanged at 0.0% ($13.30 vs $13.30, daily charges after credits, each category floored at $0)."
   ],
   "chatContext": [
     "Cost data:",
@@ -70,7 +70,7 @@
   "chatFallback": [
     "**🔍 What's happening**",
     "",
-    "Your AWS spend is $26.60 month-to-date (AWS Cost Explorer, as of 2026-12-03T00:30:00.000Z; covers your connected role's billing scope across all regions) (no comparison with last month is available).",
+    "Your AWS spend is $26.60 month-to-date (AWS Cost Explorer, as of 2026-12-03T00:30:00.000Z; covers your connected role's billing scope across all regions), flat 0.0% vs the same days of last month.",
     "",
     "**💰 Cost / impact**",
     "",

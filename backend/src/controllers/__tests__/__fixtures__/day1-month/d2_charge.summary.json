@@ -72,7 +72,7 @@
             "start": "2026-11-01",
             "endExclusive": "2026-12-01",
             "amount": 399,
-            "latestDaysUpdating": true
+            "latestDaysUpdating": false
           }
         }
       },
