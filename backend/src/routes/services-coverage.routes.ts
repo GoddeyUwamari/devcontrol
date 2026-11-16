@@ -202,9 +202,11 @@ export interface MultiRegionCoverage {
   region_warnings_complete: boolean;
   /**
    * PR 3a (G11). The Resource Explorer codes (no_index, no_view) the newest scan reported
-   * (last_scan.warnings) that no region_warnings entry carries: the scan saw them, but this
-   * response cannot say in which region (a non-ok region keeps its own outcome's code).
-   * [] when every such code is named in region_warnings. Codes only, in last_scan order.
+   * (last_scan.warnings) that no region_warnings entry from a region THIS scan wrote carries
+   * (result_of latest_scan or running_scan, G6's rule; review L-3): the scan saw them, but this
+   * response cannot say in which region (a non-ok region keeps its own outcome's code). An
+   * earlier-scan region carrying the same code does not attribute it. [] when every such code
+   * is carried by a region this scan wrote. Codes only, in last_scan order.
    */
   region_warnings_unattributed: string[];
 }
@@ -832,7 +834,11 @@ export async function readMultiRegionCoverage(
   const regionWarnings = regions
     .filter((entry) => entry.error_code !== null && REGION_WARNING_CODES.includes(entry.error_code))
     .map((entry) => ({ code: entry.error_code!, region: entry.region }));
-  const attributed = new Set(regionWarnings.map((warning) => warning.code));
+  // G11 / review L-3 (founder decision): a code counts as attributed only when a region whose
+  // result THIS scan wrote carries it (result_of latest_scan or running_scan: G6's rule). A
+  // region still carrying the code from an earlier scan is not this scan's source.
+  const writtenByScan = new Set(regions.filter((entry) => entry.result_of === 'latest_scan' || entry.result_of === 'running_scan').map((entry) => entry.region));
+  const attributed = new Set(regionWarnings.filter((warning) => writtenByScan.has(warning.region)).map((warning) => warning.code));
   const newestWarnings = row.newest_job === null ? [] : lastScanWarnings(row.newest_warnings, row.newest_error_message);
   return {
     scan,

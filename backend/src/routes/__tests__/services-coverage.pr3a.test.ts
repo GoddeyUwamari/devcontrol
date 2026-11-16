@@ -11,6 +11,8 @@
  *       counts. null with no account or no list.
  *   G11 multi_region.region_warnings_unattributed: [] with no job and while a scan runs
  *       (the running job has no warnings yet); the attributed case is the doc example.
+ *       Attribution only by a region THIS scan wrote (review L-3), and [] when every code is
+ *       attributed (review L-2).
  *   RR-L1 a home row with scan_enabled = false is never 'excluded'.
  *
  * The flag-off example blocks in docs/SERVICES_COVERAGE_MULTI_REGION.md §15 are this
@@ -148,6 +150,9 @@ describe('G8 home_only_coverage (flag off): 1 only when the CURRENT home region 
     ['denied', 'access_denied', 0],
     ['timed_out', 'call_timeout', 0],
     ['never_scanned', null, 0],
+    // Review L-1: the two other statuses the DB CHECK allows; never a successful check.
+    ['skipped_locked', null, 0],
+    ['not_enabled', null, 0],
   ] as const)('home %s (code %s) → regions_checked %d', async (status, code, checked) => {
     const org = await orgWith('us-east-1', [{ name: 'us-east-1', status, code }, ...OTHERS]);
     const coverage = await coverageOf(org);
@@ -387,5 +392,68 @@ describe('G6: a region\'s earlier-scan resources never count for the scan descri
     expect(mr.coverage_status).toBe('in_progress');
     expect(mr.regions.find((r: any) => r.region === 'eu-west-1')).toMatchObject({ resources_from: 'earlier_success', resources: 2 });
     expect(mr.scan).toMatchObject({ regions_checked: 1, regions_with_resources: 0, regions_empty: 1, regions_zero_with_warnings: 0 });
+  });
+});
+
+/**
+ * G11 attribution (review L-2, L-3; L-3 founder decision): a code is attributed only by a region
+ * whose result THIS scan wrote (result_of latest_scan / running_scan), G6's rule.
+ */
+describe('G11: attribution by a region this scan wrote', () => {
+  const EARLIER = '2026-11-15T04:00:00.000Z';
+
+  async function insertJob(orgId: string, started: string, regions: string[], warnings: string[]): Promise<void> {
+    await pool.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, created_at, resource_types, regions, warnings)
+       VALUES ($1, 'completed', $2, $3, $2, '{}', $4, $5::jsonb)`,
+      [orgId, started, new Date(Date.parse(started) + 20 * 60_000).toISOString(), regions, JSON.stringify(warnings)]
+    );
+  }
+
+  it('L-2: every code carried by a region the newest scan wrote → []', async () => {
+    const org = await orgWith('us-east-1', [
+      { name: 'us-east-1', status: 'ok', code: 'resource_explorer_no_view' },
+      { name: 'eu-west-1', status: 'ok', code: 'resource_explorer_no_index' },
+    ], { flag: true });
+    await insertJob(org.orgId, STARTED, ['us-east-1', 'eu-west-1'], ['resource_explorer_no_view', 'resource_explorer_no_index', 'region_incomplete']);
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.regions.map((r: any) => r.result_of)).toEqual(['latest_scan', 'latest_scan']);
+    expect(mr.region_warnings).toEqual([
+      { code: 'resource_explorer_no_view', region: 'us-east-1' },
+      { code: 'resource_explorer_no_index', region: 'eu-west-1' },
+    ]);
+    expect(mr.region_warnings_unattributed).toEqual([]);
+  });
+
+  it('L-3: a code carried only by an EARLIER-scan region is listed as unattributed; region_warnings still names that region', async () => {
+    const org = await orgWith('us-east-1', [
+      { name: 'us-east-1', status: 'ok' },
+      // eu-west-1 keeps no_view from the earlier scan; the newest scan never wrote it.
+      { name: 'eu-west-1', status: 'ok', code: 'resource_explorer_no_view', started: EARLIER },
+    ], { flag: true });
+    await insertJob(org.orgId, EARLIER, ['us-east-1', 'eu-west-1'], ['resource_explorer_no_view']);
+    await insertJob(org.orgId, STARTED, ['us-east-1', 'eu-west-1'], ['resource_explorer_no_view']);
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.regions.find((r: any) => r.region === 'eu-west-1').result_of).toBe('earlier_scan');
+    expect(mr.region_warnings).toEqual([{ code: 'resource_explorer_no_view', region: 'eu-west-1' }]);
+    expect(mr.region_warnings_unattributed).toEqual(['resource_explorer_no_view']);
+  });
+
+  it('while a scan runs: a region done in it attributes the code (running_scan)', async () => {
+    const org = await orgWith('us-east-1', [{ name: 'us-east-1', status: 'ok', code: 'resource_explorer_no_index' }], { flag: true });
+    // The running job is the newest; give it the code so the attribution path is exercised.
+    const { rows } = await pool.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, created_at, resource_types, regions, warnings)
+       VALUES ($1, 'running', $2, $2, '{}', $3, $4::jsonb) RETURNING id`,
+      [org.orgId, STARTED, ['us-east-1'], JSON.stringify(['resource_explorer_no_index'])]
+    );
+    await pool.query(
+      `INSERT INTO aws_scan_leases (organization_id, aws_account_id, scan_kind, holder, job_id, acquired_at, heartbeat_at, expires_at)
+       VALUES ($1, $2, $3, 'pr3a', $4, $5, $5, '2099-01-01T00:00:00Z')`,
+      [org.orgId, ACCOUNT, SCAN_KIND_DISCOVERY, rows[0].id, STARTED]
+    );
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.regions[0]).toMatchObject({ region: 'us-east-1', result_of: 'running_scan' });
+    expect(mr.region_warnings_unattributed).toEqual([]);
   });
 });

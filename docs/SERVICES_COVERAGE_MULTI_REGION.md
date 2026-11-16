@@ -173,8 +173,11 @@ The rows counted are the Services list's: this organization's, not terminated, a
   - `scan_deadline` is a scan-level stop after the regions, reported in `last_scan.warnings` / `last_completed_scan.warnings` (it has no region).
 - **`region_warnings_complete`** is false when any scanned region's last result is not `ok`. Such a region's one code column holds its own outcome, so a Resource Explorer warning in it cannot be named. The job's `warnings` still lists every code. Full provenance needs a second column (optional PR 4).
 - **`region_warnings_unattributed`** (PR 3a, G11):
-  - It lists the Resource Explorer codes (`resource_explorer_no_index`, `resource_explorer_no_view`) that the newest job reported (`last_scan.warnings`, the same job and the same reader) but that no `region_warnings` entry carries. The scan saw them, but this response can't say in which region.
-  - It is `[]` when every such code is named. Codes only, in `last_scan.warnings` order.
+  - It lists the Resource Explorer codes (`resource_explorer_no_index`, `resource_explorer_no_view`) that the newest job reported (`last_scan.warnings`, the same job and the same reader) but that no region **whose result this scan wrote** carries in `region_warnings`. The scan saw them, but this response can't say in which region.
+  - **Attribution follows G6's "written by this scan" rule** (founder decision, PR 3a review L-3): only regions with `result_of` `latest_scan` or `running_scan` attribute a code.
+    - A region that still carries the same code from an **earlier** scan does not, so the code is listed.
+    - `region_warnings` itself is unchanged and still names that earlier region.
+  - It is `[]` when every such code is carried by a region this scan wrote. Codes only, in `last_scan.warnings` order.
   - A page shows its region-neutral line exactly when the array is non-empty.
   - Example: `unattributed_warning`.
 
@@ -1200,7 +1203,7 @@ home_only_coverage: { regions_total, regions_checked: 0 | 1 } | null
 ```
 
 - `regions_total` is the enabled regions of the latest stored list, the same as `scope.enabled_regions.count`.
-- `regions_checked` is **1 only when the current home region's last recorded status is `ok` or `partial`**, and 0 for `failed`, `denied`, `timed_out` and `never_scanned`.
+- `regions_checked` is **1 only when the current home region's last recorded status is `ok` or `partial`**, and 0 for every other status (`failed`, `denied`, `timed_out`, `never_scanned`, `skipped_locked`, `not_enabled`, …).
   - No other region ever counts.
   - **A former home region's old `ok` result is never "checked".**
 - `null` when no account is connected or no region list is stored.
