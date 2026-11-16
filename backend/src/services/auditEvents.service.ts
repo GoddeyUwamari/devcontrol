@@ -31,6 +31,8 @@ export type AuditEventAction =
   | 'api_key.revoked'
   | 'aws_account.connected'
   | 'aws_account.checked'
+  | 'aws_account.home_region_changed'
+  | 'aws_account.home_region_proposal_dismissed'
   | 'cost_recommendation.resolved'
   | 'cost_recommendation.dismissed'
   | 'cost_recommendation.reopened'

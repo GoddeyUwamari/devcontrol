@@ -95,8 +95,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202611091200_add_trial_used_at.sql`**,
 **`202611091300_harden_database_ownership.sql`**,
 **`202611101200_transfer_tenant_table_ownership.sql`**,
-**`202611111200_create_aws_connection_checks.sql`**, and
-**`202611121200_add_users_previous_login_at.sql`**.
+**`202611111200_create_aws_connection_checks.sql`**,
+**`202611121200_add_users_previous_login_at.sql`**, and
+**`202611161200_add_aws_connection_checks_home_region_proposal.sql`**.
 
 `202611111200_create_aws_connection_checks.sql` (AWS connect PR D1a) creates
 the tenant table `aws_connection_checks`, one row per AWS connection: health
@@ -1193,3 +1194,39 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 
 It loses each user's previous sign-in time (display only). It drops the column
 only if it carries the migration's marker, and its `schema_migrations` row.
+
+## Classification -- `202611161200_add_aws_connection_checks_home_region_proposal.sql`
+
+Adds four nullable columns with no default to `aws_connection_checks`, for the
+home-region proposal a NEW AWS connection gets at connect (home region HR-0):
+`home_region_proposal` (jsonb: the proposed region and its evidence: region
+codes, rounded shares and USD usage amounts rounded to cents), `home_region_proposal_state` (proposed,
+split, accepted, dismissed, superseded, no_signal or unavailable),
+`home_region_proposed_at` and `home_region_decided_at`, plus three named CHECK
+constraints that tie them together. It is administrative because
+`aws_connection_checks` is `postgres`-owned (row level security forced).
+
+It is additive and safe under the release already running: that release never
+reads or writes the columns, no row is rewritten (catalog-only `ADD COLUMN`),
+and existing rows read NULL, which means "never proposed". No backfill:
+existing connections never get a proposal. It raises an exception, with nothing
+applied, when not run as a superuser, when `aws_connection_checks` is missing or
+not owned by the role running it, or when any of its columns or constraints
+already exists. The application role reaches the columns through its existing
+table-level `SELECT`, `INSERT` and `UPDATE`; no grant changes.
+
+### Rollback
+
+`202611161200_add_aws_connection_checks_home_region_proposal_rollback.sql`,
+manual only, as `postgres`, in one transaction, **after** reverting the
+application to a release before home region HR-1:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611161200_add_aws_connection_checks_home_region_proposal_rollback.sql
+```
+
+It loses every connection's home-region proposal and its state. It drops the
+three constraints and four columns only if every one carries the migration's
+marker, and its `schema_migrations` row. The home region itself
+(`aws_accounts.region`) and its change history (`audit_logs`) are not touched.

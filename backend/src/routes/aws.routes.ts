@@ -6,6 +6,7 @@ import {
   AWS_ACCOUNT_AMBIGUOUS_MESSAGE,
   awsConnectionIdentity,
   findEligibleAwsAccount,
+  homeRegionOf,
   isAwsAccountAmbiguous,
   type AwsAccountRow,
 } from '../repositories/aws-accounts.repository'
@@ -18,6 +19,10 @@ import {
   logChecksWriteFailure,
   readConnectionChecksOrNull,
   saveCheckResults,
+  saveHomeRegionProposal,
+  isHomeRegionProposalUnavailable,
+  readHomeRegionProposal,
+  dismissHomeRegionProposal,
 } from '../repositories/aws-connection-checks.repository'
 import { isConnectionChanged } from '../services/aws-connection-fence'
 import { AWS_NOT_CONNECTED_CODE, AWS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages'
@@ -31,7 +36,7 @@ import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEve
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 import { checkNewConnectionRoleArn, DEVCONTROL_ROLE_NAME_PREFIX } from '../utils/devcontrolRoleArn'
-import { parseAwsAccountId } from '../utils/awsAccountId'
+import { parseAccountIdFromArn, parseAwsAccountId } from '../utils/awsAccountId'
 import { PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 import { checkConnectRole, type RoleCheckFailure, type RoleCheckPolicy } from '../services/connect-role-check'
 import { runPermissionCheck, type ProbeClients } from '../services/connect-permission-check'
@@ -40,6 +45,23 @@ import { ConnectCheckSlots, type ConnectSlotRefusal } from '../services/connect-
 import { releaseRequestConnection } from '../middleware/request-lifecycle'
 import { buildTrustPolicy } from '../services/customer-role-trust-policy'
 import { launchStackFor } from '../services/launch-stack'
+import { CostExplorerClient } from '@aws-sdk/client-cost-explorer'
+import {
+  evaluateHomeRegionProposal,
+  homeRegionProposalView,
+  type CostExplorerSender,
+  type EvaluatedProposal,
+  type HomeRegionProposalView,
+} from '../services/home-region-proposal'
+import { listAccountRegions } from '../repositories/multi-region-foundation.repository'
+import {
+  REFUSAL_RESPONSES as HOME_REGION_REFUSALS,
+  changeHomeRegion,
+  isHomeRegionChangeRefused,
+  previewHomeRegionChange,
+  readHomeRegionChange,
+} from '../services/home-region.service'
+import { invalidateNLQueryCacheForOrganization } from '../services/nl-query.service'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -74,6 +96,10 @@ function requireCurrentOwnerWith(forbiddenMessage: string) {
 }
 
 const requireCurrentOwner = requireCurrentOwnerWith('Only an organization owner can connect an AWS account')
+
+/** The home region is changed by the owner only (home region HR-D4; wording HR-S15). */
+export const HOME_REGION_FORBIDDEN_MESSAGE = 'Only an organization owner can change the home region.'
+const requireCurrentOwnerForHomeRegion = requireCurrentOwnerWith(HOME_REGION_FORBIDDEN_MESSAGE)
 
 /** Check again is owner-only too (B4, approved copy). */
 export const CHECK_AGAIN_FORBIDDEN_MESSAGE = 'Only an organization owner can check the AWS connection again.'
@@ -151,12 +177,47 @@ export const CONNECT_STATE_UNAVAILABLE_MESSAGE = "We couldn't start the connecti
  * Test seams for the connect flow's AWS calls. Production uses the defaults;
  * a suite sets them and restores them with resetConnectTestHooks().
  */
-export const connectTestHooks: { roleCheckPolicy?: RoleCheckPolicy; probeClients?: ProbeClients; slots?: ConnectCheckSlots; iam?: IamSender } = {}
+export const connectTestHooks: {
+  roleCheckPolicy?: RoleCheckPolicy
+  probeClients?: ProbeClients
+  slots?: ConnectCheckSlots
+  iam?: IamSender
+  costExplorer?: CostExplorerSender
+} = {}
 export function resetConnectTestHooks(): void {
   delete connectTestHooks.roleCheckPolicy
   delete connectTestHooks.probeClients
   delete connectTestHooks.slots
   delete connectTestHooks.iam
+  delete connectTestHooks.costExplorer
+}
+
+/**
+ * The Cost Explorer the home-region proposal reads with (us-east-1, the connect
+ * check's credentials, one attempt), or null for none (no request, no proposal).
+ * A suite that stubs the probes stubs AWS: it never reaches Cost Explorer either,
+ * unless it sets its own.
+ */
+function costExplorerFor(credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string } | null): CostExplorerSender | null {
+  if (connectTestHooks.costExplorer) return connectTestHooks.costExplorer
+  if (connectTestHooks.probeClients || !credentials) return null
+  return new CostExplorerClient({ region: 'us-east-1', credentials, maxAttempts: 1 })
+}
+
+/**
+ * The home region proposed to a new connection (home region HR-1,
+ * home-region-proposal.ts): one Cost Explorer request, run beside the probes.
+ * Never throws; without credentials there is no request and no proposal.
+ */
+async function proposeHomeRegion(
+  credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string } | null,
+  connected: { role_arn: string; account_id: string | null; region: string | null },
+  at: Date
+): Promise<EvaluatedProposal | null> {
+  const ce = costExplorerFor(credentials)
+  const accountId = parseAccountIdFromArn(connected.role_arn ?? '') ?? null
+  if (!ce || !accountId) return null
+  return evaluateHomeRegionProposal(ce, accountId, homeRegionOf(connected), at)
 }
 
 /** What the owner is told when the organization already has a connection (B1, approved copy). */
@@ -465,7 +526,7 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
     // credentials, then are saved for the connection (CP-D3, CP-D4), fail-soft.
     const connected = result.rows[0]
     const checkedAt = new Date()
-    const [permissionCheck, policyResult] = await Promise.all([
+    const [permissionCheck, policyResult, proposal] = await Promise.all([
       runPermissionCheck({
         credentials: roleCheck.credentials,
         region: connected.region ?? 'us-east-1',
@@ -473,7 +534,20 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
         clients: connectTestHooks.probeClients,
       }),
       comparePoliciesWith(roleCheck.credentials, connected, `Connect AWS org ${orgId}`),
+      proposeHomeRegion(roleCheck.credentials, connected, checkedAt),
     ])
+    // The home-region proposal (HR-D6): saved once for this new connection, fenced on it, fail-soft.
+    if (proposal) {
+      if (proposal.state === 'unavailable') {
+        console.warn(`[HomeRegion] proposal unavailable for org ${orgId} (${proposal.reason}${proposal.errorName ? `, ${proposal.errorName}` : ''})`)
+      }
+      try {
+        await saveHomeRegionProposal(orgId, awsConnectionIdentity(connected), connected.id, { state: proposal.state, proposal: proposal.proposal, at: checkedAt })
+      } catch (proposalError: unknown) {
+        if (isHomeRegionProposalUnavailable(proposalError)) console.warn(`[HomeRegion] proposal not recorded for org ${orgId} (columns not there yet)`)
+        else logChecksWriteFailure('home region proposal', orgId, proposalError)
+      }
+    }
     let checks = null
     try {
       await saveCheckResults(orgId, awsConnectionIdentity(connected), connected.id, {
@@ -755,6 +829,164 @@ async function checkAgainAdmitted(req: Request, res: Response, orgId: string) {
   })
 }
 
+/**
+ * Home region (HR-1, home-region-step1.md §D). Owner only (HR-D4). Codes only in
+ * every answer: the change dialog (multi-region PR 3) owns the words.
+ *
+ * GET /accounts/home-region[?region=<code>]: what the dialog shows. The current
+ * home region, the stored region list with what can be chosen, whether a scan is
+ * running, and for `region`: whether a change would be accepted now, how many
+ * cost findings of the old home region would leave the totals (per issue), and,
+ * with multi-region off, how many resources stay listed there, no longer scanned.
+ * Reads only.
+ *
+ * PUT /accounts/home-region { region }: the change, in one transaction under the
+ * connection lock (home-region.service.ts). 200 with { from, to, source,
+ * cost_findings_removed, scan_started }; every refusal changes nothing. A scan of
+ * the new home region starts after commit; scan_started is true only when it took
+ * the scan lease (review L-6).
+ */
+router.get('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
+  const region = typeof req.query.region === 'string' ? req.query.region : undefined
+  try {
+    const preview = await previewHomeRegionChange(req.user!.organizationId, region)
+    return res.json({ success: true, data: preview })
+  } catch (err: unknown) {
+    if (isHomeRegionChangeRefused(err)) {
+      const response = HOME_REGION_REFUSALS[err.refusal]
+      return res.status(response.status).json({ success: false, code: response.code })
+    }
+    console.error(`[aws/accounts/home-region GET] org ${req.user!.organizationId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_UNAVAILABLE' })
+  }
+})
+
+router.put('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
+  const orgId = req.user!.organizationId
+  const region = req.body?.region
+  if (typeof region !== 'string') {
+    return res.status(400).json({ success: false, code: HOME_REGION_REFUSALS.invalid_region.code })
+  }
+  // The change uses connections of its own (it may wait up to 15 s for the connection lock).
+  releaseRequestConnection(res)
+  let changed: Awaited<ReturnType<typeof changeHomeRegion>>
+  try {
+    changed = await changeHomeRegion({ organizationId: orgId, actorId: req.user!.userId, to: region, request: auditRequestContext(req) })
+  } catch (err: unknown) {
+    if (isHomeRegionChangeRefused(err)) {
+      const response = HOME_REGION_REFUSALS[err.refusal]
+      return res.status(response.status).json({ success: false, code: response.code })
+    }
+    console.error(`[aws/accounts/home-region PUT] org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_CHANGE_FAILED' })
+  }
+  // No cached parse of this organization's questions outlives the change (review L-5).
+  invalidateNLQueryCacheForOrganization(orgId)
+  // A scan of the new home region, as after a connect (HR-D15). scan_started says
+  // whether it actually took the scan lease (review L-6).
+  const scanStarted = await startFollowUpScan(orgId)
+  return res.json({ success: true, data: { ...changed, scan_started: scanStarted } })
+})
+
+/** How long the PUT waits to learn whether its follow-up scan took the lease (review L-6). */
+export const HOME_REGION_SCAN_ADMISSION_WAIT_MS = 10_000
+
+/**
+ * Test seam (re-check RR-L1): the wait above, so a suite can exercise the
+ * "not confirmed within the wait" path without waiting 10 s. Production uses the
+ * default; a suite restores it with resetHomeRegionTestHooks().
+ */
+export const homeRegionTestHooks: { scanAdmissionWaitMs?: number } = {}
+export function resetHomeRegionTestHooks(): void {
+  delete homeRegionTestHooks.scanAdmissionWaitMs
+}
+
+/**
+ * Starts the scan after a home region change and resolves, at the latest after
+ * `waitMs`, with whether it actually started: true once it took the scan lease
+ * (or finished), false when another scan held the lease (skipped), when it failed
+ * before the lease (e.g. AssumeRole), or when that was not known within `waitMs`
+ * (logged; the scan itself goes on). The scan is never awaited to its end.
+ */
+function startFollowUpScan(orgId: string, waitMs = homeRegionTestHooks.scanAdmissionWaitMs ?? HOME_REGION_SCAN_ADMISSION_WAIT_MS): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const settle = (started: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(started)
+    }
+    const timer = setTimeout(() => {
+      console.warn(`[HomeRegion] scan after the change for org ${orgId}: not confirmed started within ${waitMs} ms`)
+      settle(false)
+    }, waitMs)
+    discoveryService
+      .discoverAllResources(orgId, { onLeaseOutcome: (outcome) => settle(outcome === 'started') })
+      .then(() => settle(true))
+      .catch((err) => {
+        if (isScanAlreadyRunning(err)) {
+          console.log(`[HomeRegion] scan after the change skipped for org ${orgId}: a scan for this account is already running`)
+        } else {
+          console.error(`[HomeRegion] scan after the change failed for org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+        }
+        settle(false)
+      })
+  })
+}
+
+/**
+ * POST /accounts/home-region/proposal/dismiss: the owner keeps the current home
+ * region (HR-S3 "Keep", HR-D16). The open proposal becomes dismissed for good,
+ * with its audit event, fenced on the current connection. 409 NO_OPEN_PROPOSAL
+ * when there is none to dismiss.
+ */
+router.post('/accounts/home-region/proposal/dismiss', requireCurrentOwnerForHomeRegion, async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
+  const orgId = req.user!.organizationId
+  let account: AwsAccountRow | null
+  try {
+    account = await findEligibleAwsAccount(pool, orgId)
+  } catch (err: unknown) {
+    if (isAwsAccountAmbiguous(err)) return res.status(409).json({ success: false, code: HOME_REGION_REFUSALS.ambiguous.code })
+    console.error(`[aws/accounts/home-region/proposal/dismiss] org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_PROPOSAL_FAILED' })
+  }
+  if (!account) return res.status(409).json({ success: false, code: HOME_REGION_REFUSALS.not_connected.code })
+  try {
+    const dismissed = await dismissHomeRegionProposal(orgId, awsConnectionIdentity(account), account.id, { userId: req.user!.userId, request: auditRequestContext(req) })
+    if (!dismissed) return res.status(409).json({ success: false, code: 'NO_OPEN_PROPOSAL' })
+    return res.json({ success: true, data: { state: 'dismissed' } })
+  } catch (err: unknown) {
+    if (isConnectionChanged(err)) return res.status(409).json({ success: false, code: HOME_REGION_REFUSALS.connection_changed.code })
+    if (isHomeRegionProposalUnavailable(err)) return res.status(503).json({ success: false, code: 'HOME_REGION_PROPOSAL_UNAVAILABLE' })
+    console.error(`[aws/accounts/home-region/proposal/dismiss] org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_PROPOSAL_FAILED' })
+  }
+})
+
+/**
+ * The eligible connection's home-region proposal for GET /api/aws/accounts
+ * (home-region-proposal.ts homeRegionProposalView), or null: no eligible
+ * connection, no proposal, or the HR-0 columns not there yet. Fail-soft: a
+ * failed read is logged by name and reads null, never failing the response.
+ */
+async function readProposalView(orgId: string, account: AwsAccountRow | null): Promise<HomeRegionProposalView | null> {
+  if (!account) return null
+  try {
+    const stored = await readHomeRegionProposal(pool, orgId, account.id)
+    if (!stored || stored.state === null) return null
+    const awsAccountId = parseAccountIdFromArn(account.role_arn ?? '')
+    const regions = awsAccountId ? await listAccountRegions(pool, orgId, awsAccountId) : []
+    return homeRegionProposalView(stored, homeRegionOf(account), regions)
+  } catch (err: unknown) {
+    if (!isHomeRegionProposalUnavailable(err)) console.error(`[aws/accounts GET] home region proposal for org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return null
+  }
+}
+
 // GET /api/aws/accounts
 // Returns only the accounts belonging to the calling org. external_id is
 // included for the owner only; for every other role the field is absent.
@@ -778,7 +1010,18 @@ router.get('/accounts', async (req: Request, res: Response) => {
     const { state, account } = await readConnectionState(req.user!.organizationId)
     const health = state === 'connected' && account ? await readHealthSummary(req.user!.organizationId, account) : undefined
     const connection = health ? { state, health } : { state }
-    return res.json({ success: true, data, connection })
+    // Home region HR-1: the eligible connection's proposal (state, region and its evidence: shares, other regions, amounts), or null.
+    const home_region_proposal = state === 'connected' ? await readProposalView(req.user!.organizationId, account ?? null) : null
+    // Home region HR-1: the former home region and when it changed (latest audit event of this connection), or null.
+    const change = state === 'connected' && account ? await readHomeRegionChange(pool, req.user!.organizationId, account) : null
+    return res.json({
+      success: true,
+      data,
+      connection,
+      home_region_proposal,
+      previous_home_region: change?.previous_home_region ?? null,
+      home_region_changed_at: change?.home_region_changed_at ?? null,
+    })
   } catch (err: any) {
     console.error('[aws/accounts GET]', err)
     return res.status(500).json({ success: false, message: 'Failed to retrieve AWS accounts.' })

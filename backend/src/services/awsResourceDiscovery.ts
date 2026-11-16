@@ -1320,8 +1320,17 @@ export class AWSResourceDiscoveryService {
    * M4b, §4.2). When another worker holds it -- in this process or any other --
    * nothing is written and ScanAlreadyRunningError is thrown: the caller skips
    * (cron, legacy discover, connect) or joins the running scan (discoverOrJoin).
+   *
+   * `onLeaseOutcome` (home region review L-6), told once whether this scan took the
+   * lease ('started') or found it held ('skipped'), so a caller that does not await
+   * the whole scan can say truthfully whether it started. Never called when the
+   * scan fails before it reaches the lease (e.g. AssumeRole): the returned promise
+   * rejects then.
    */
-  async discoverAllResources(organizationId: string): Promise<DiscoveryResult> {
+  async discoverAllResources(
+    organizationId: string,
+    options: { onLeaseOutcome?: (outcome: 'started' | 'skipped') => void } = {}
+  ): Promise<DiscoveryResult> {
     console.log(`\n🔍 [Discovery] Starting AWS resource discovery for organization: ${organizationId}`);
 
     // Discovery always runs on its own connection and binds it as the ambient
@@ -1332,7 +1341,7 @@ export class AWSResourceDiscoveryService {
     // AWSClientFactory) would keep running on that released connection,
     // which the pool may by then have handed to another org's request.
     const client = await this.pool.connect();
-    return requestContext.run(client, () => this.runDiscovery(organizationId, client));
+    return requestContext.run(client, () => this.runDiscovery(organizationId, client, options.onLeaseOutcome));
   }
 
   /**
@@ -1464,7 +1473,11 @@ export class AWSResourceDiscoveryService {
     }
   }
 
-  private async runDiscovery(organizationId: string, client: PoolClient): Promise<DiscoveryResult> {
+  private async runDiscovery(
+    organizationId: string,
+    client: PoolClient,
+    onLeaseOutcome?: (outcome: 'started' | 'skipped') => void
+  ): Promise<DiscoveryResult> {
     let jobId: string;
     let session: LeaseSession | undefined;
     // The framework runs this scan opened, so a lost lease can close them (own rows).
@@ -1515,7 +1528,11 @@ export class AWSResourceDiscoveryService {
       // deadlines (PR 1b, M-2) are never later than the lease's own age (database clock).
       const scanStartedAt = this.multiRegionTiming.now();
       session = (await openScanSession(this.pool, client, organizationId, leaseTargetOf(scanContext), this.leaseTiming)) ?? undefined;
-      if (!session) throw new ScanAlreadyRunningError(organizationId, scanContext.awsAccountId);
+      if (!session) {
+        onLeaseOutcome?.('skipped');
+        throw new ScanAlreadyRunningError(organizationId, scanContext.awsAccountId);
+      }
+      onLeaseOutcome?.('started');
       console.log(`🔒 [Discovery] Scan lease acquired (token ${session.lease.fencingToken})`);
       const scan = session;
       const fenced: Fenced = (fn) => scan.fenced(client, () => fn(client));

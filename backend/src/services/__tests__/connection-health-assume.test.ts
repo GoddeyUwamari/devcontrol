@@ -98,7 +98,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
       Credentials: { AccessKeyId: 'ASIAEXAMPLE', SecretAccessKey: 'secret-example', SessionToken: 'token-example', Expiration: new Date(Date.now() + 3600e3) },
       AssumedRoleUser: { AssumedRoleId: `${ROLE_ID}:devcontrol-00000000`, Arn: 'arn:aws:sts::123456789012:assumed-role/DevControlRole/devcontrol-00000000' },
     } as any);
-    const out = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1');
+    const out = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT);
     expect(out.roleUniqueId).toBe(ROLE_ID);
     expect(out.attemptedAt.getTime()).toBeGreaterThanOrEqual(before);
   });
@@ -108,7 +108,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
       Credentials: { AccessKeyId: 'ASIAEXAMPLE', SecretAccessKey: 'secret-example', SessionToken: 'token-example' },
       AssumedRoleUser: assumedRoleId === undefined ? undefined : { AssumedRoleId: assumedRoleId, Arn: 'x' },
     } as any);
-    expect((await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1')).roleUniqueId).toBeNull();
+    expect((await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT)).roleUniqueId).toBeNull();
   });
 
   it.each([
@@ -118,7 +118,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
     ['ValidationError', 'permanent'],
   ])('%s throws AwsAssumeRoleFailedError(%s) with when it started; the account it tried only beside it', async (name, kind) => {
     jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockRejectedValue(awsError(name, { $metadata: { httpStatusCode: 400 } }));
-    const err = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1').catch((e) => e);
+    const err = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT).catch((e) => e);
     expect(isAwsAssumeRoleFailed(err)).toBe(true);
     expect(err).toMatchObject({ kind, message: OLD_MESSAGE(ORG) });
     // The connection it was made for is beside the error, never on it (review H-1).
@@ -132,7 +132,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
   it('a platform failure is rethrown unchanged (never AWS_NOT_CONNECTED)', async () => {
     const platform = new PlatformAwsCredentialsUnavailableError(awsError('CredentialsProviderError'));
     jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockRejectedValue(platform);
-    await expect(AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1')).rejects.toBe(platform);
+    await expect(AWSClientFactory.assumeAccountRole(ORG, ACCOUNT)).rejects.toBe(platform);
   });
 });
 
@@ -304,8 +304,12 @@ function nonTestSources(): Array<{ file: string; text: string }> {
 describe('static', () => {
   const sources = nonTestSources();
 
-  it('no non-test backend code writes aws_accounts with UPDATE (D1 never auto-disconnects)', () => {
-    expect(sources.filter((s) => /UPDATE\s+(public\.)?aws_accounts\b/i.test(s.text)).map((s) => s.file)).toEqual([]);
+  it('no non-test backend code writes aws_accounts with UPDATE (D1 never auto-disconnects), except the owner\'s home region change, which sets region alone', () => {
+    const writers = sources.filter((s) => /UPDATE\s+(public\.)?aws_accounts\b/i.test(s.text));
+    expect(writers.map((s) => s.file)).toEqual(['services/home-region.service.ts']);
+    // Home region HR-1: one statement, and it sets the region only (never status).
+    const sets = [...writers[0].text.matchAll(/UPDATE\s+(?:public\.)?aws_accounts\s+SET\s+([^`]*?)\s+WHERE/gi)].map((m) => m[1].trim());
+    expect(sets).toEqual(['region = $4']);
   });
 
   it('every AWS_NOT_CONNECTED matcher is a prefix or substring match on the message', () => {

@@ -233,6 +233,19 @@ export function assumedRoleSourceOf(clients: AWSClients): AssumedRoleSource | un
   return assumedRoleSources.get(clients);
 }
 
+/**
+ * The STS endpoint every AssumeRole into a customer's role is sent to (home region
+ * HR-D10): us-east-1, whatever the account's home region. STS is called from
+ * DevControl's own account, so a home region DevControl's account has not enabled
+ * (an opt-in region) would otherwise make every AssumeRole fail, and the
+ * connection's health would read as a role failure. Regional STS endpoints issue
+ * session tokens valid in every enabled region, and us-east-1 is the region every
+ * account's AssumeRole used before a home region could be chosen, so nothing
+ * changes for an account in us-east-1. Remediation pins the same endpoint
+ * (remediation.service.ts).
+ */
+export const ACCOUNT_STS_REGION = 'us-east-1';
+
 export class AWSClientFactory {
   static async createClients(organizationId: string): Promise<AWSClients> {
     // The org's one eligible account (aws-accounts.repository.ts). None means no
@@ -246,7 +259,7 @@ export class AWSClientFactory {
     }
 
     const awsRegion = homeRegionOf(account);
-    const { credentials: tempCredentials, expiration, attemptedAt, roleUniqueId } = await this.assumeAccountRole(organizationId, account, awsRegion);
+    const { credentials: tempCredentials, expiration, attemptedAt, roleUniqueId } = await this.assumeAccountRole(organizationId, account);
 
     const config = {
       region: awsRegion,
@@ -311,16 +324,16 @@ export class AWSClientFactory {
    * Assumes the account's role as the platform's own identity, resolved by
    * the SDK's default credential chain (the instance role in production).
    * The platform identity being unavailable is rethrown as is; any other
-   * failure is the organization's connection, AWS_NOT_CONNECTED.
+   * failure is the organization's connection, AWS_NOT_CONNECTED. Always at
+   * ACCOUNT_STS_REGION, never the account's home region (HR-D10).
    */
   static async assumeAccountRole(
     organizationId: string,
-    account: Pick<AwsAccountRow, 'role_arn' | 'external_id'> & Partial<AwsAccountRow>,
-    region: string
+    account: Pick<AwsAccountRow, 'role_arn' | 'external_id'> & Partial<AwsAccountRow>
   ): Promise<{ credentials: TemporaryCredentials; expiration: Date | undefined; attemptedAt: Date; roleUniqueId: string | null }> {
     const attemptedAt = new Date();
     try {
-      const assumed = await assumeRoleAsPlatform(region, {
+      const assumed = await assumeRoleAsPlatform(ACCOUNT_STS_REGION, {
         RoleArn: account.role_arn,
         RoleSessionName: `devcontrol-${organizationId.slice(0, 8)}`,
         ExternalId: account.external_id ?? undefined,

@@ -54,12 +54,30 @@ interface CacheEntry {
   timestamp: number;
 }
 
+/** Every live service in this process, so a change elsewhere can drop an organization's entries. */
+const liveServices = new Set<NLQueryService>();
+
+/**
+ * Drops every cached parse of `organizationId` in this process (home region
+ * review L-5: called after the organization's home region changes). The cache
+ * holds parsed intents only, never results (every answer is re-executed against
+ * the database), so this is belt and braces: no cached entry outlives the
+ * connection it was parsed under. Another process keeps its own entries until
+ * their 5-minute TTL. Returns how many entries were dropped.
+ */
+export function invalidateNLQueryCacheForOrganization(organizationId: string): number {
+  let dropped = 0;
+  for (const service of liveServices) dropped += service.invalidateOrganization(organizationId);
+  return dropped;
+}
+
 export class NLQueryService {
   private cache: Map<string, CacheEntry> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
   private analytics: NLQueryAnalyticsService;
 
   constructor(private pool: Pool) {
+    liveServices.add(this);
     if (!getModelClient()) {
       console.warn('[NL Query] ANTHROPIC_API_KEY not found - Ask AI will answer "temporarily unavailable"');
     }
@@ -88,6 +106,19 @@ export class NLQueryService {
     if (cleaned > 0) {
       console.log(`[NL Query] Cleaned ${cleaned} expired cache entries`);
     }
+  }
+
+  /** Drops this organization's cached parses; returns how many. */
+  invalidateOrganization(organizationId: string): number {
+    const prefix = `${organizationId}:`;
+    let dropped = 0;
+    for (const key of [...this.cache.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
+        dropped++;
+      }
+    }
+    return dropped;
   }
 
   private getCacheKey(query: string, organizationId: string): string {

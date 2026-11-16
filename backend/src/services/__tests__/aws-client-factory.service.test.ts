@@ -240,12 +240,13 @@ describe('the platform STS client', () => {
     await AWSClientFactory.createClients('org-connected');
 
     expect(stsSend).toHaveBeenCalledTimes(4);
-    // One STS client per AssumeRole -- each with a region and no credentials.
+    // One STS client per AssumeRole -- each with a region and no credentials. Home region
+    // HR-D10: always us-east-1 STS, whatever the account's region (eu-west-1, ap-southeast-2).
     expect(constructed.filter((c) => c.client === 'STSClient').map((c) => c.config)).toEqual([
-      { region: 'eu-west-1' },
-      { region: 'eu-west-1' },
-      { region: 'ap-southeast-2' },
-      { region: 'ap-southeast-2' },
+      { region: 'us-east-1' },
+      { region: 'us-east-1' },
+      { region: 'us-east-1' },
+      { region: 'us-east-1' },
     ]);
   });
 });
@@ -263,7 +264,8 @@ describe('a connected organization', () => {
     const sts = constructed.filter((c) => c.client === 'STSClient');
     expect(sts).toHaveLength(1);
     // Region only: no credentials key, so the SDK's default chain supplies the identity.
-    expect(sts[0].config).toEqual({ region: 'eu-west-1' });
+    // Home region HR-D10: us-east-1 STS for an eu-west-1 account.
+    expect(sts[0].config).toEqual({ region: 'us-east-1' });
     expect(sts[0].config).not.toHaveProperty('credentials');
     expect(stsSend).toHaveBeenCalledTimes(1);
     expect(stsSend.mock.calls[0][0].input).toMatchObject({

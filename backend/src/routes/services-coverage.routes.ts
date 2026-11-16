@@ -10,6 +10,7 @@ import {
 } from '../repositories/aws-accounts.repository';
 import type { RegionScanStatus } from '../repositories/multi-region-foundation.repository';
 import { isMultiRegionDiscoveryOn } from '../repositories/multi-region-coverage.repository';
+import { readHomeRegionChange } from '../services/home-region.service';
 import {
   DISCOVERY_WARNING_LISTING_TRUNCATED,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
@@ -63,7 +64,14 @@ const router = Router();
  * tags_unknown_by_type is /stats' unknown_by_type, from the same ownership rule.
  */
 export interface ServicesCoverage {
-  account: { connected: boolean; status: string | null; home_region: string | null };
+  /**
+   * previous_home_region / home_region_changed_at (home region HR-1, for PR 3's
+   * "no longer scanned since {date}"): present only when this connection's home
+   * region was changed (its latest aws_account.home_region_changed audit event);
+   * absent means never changed, so the response of every account that never
+   * changed stays byte-identical (the flag-off and flag-on contracts).
+   */
+  account: { connected: boolean; status: string | null; home_region: string | null; previous_home_region?: string; home_region_changed_at?: Date };
   scope: {
     home_region: { region: string; count: number } | null;
     s3: { in_last_scan: boolean; regions: RegionCount[] };
@@ -899,9 +907,12 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
     ? { multi_region: await readMultiRegionCoverage(db, orgId, homeRegion, awsAccountId) }
     : { home_only_coverage: homeOnlyCoverage(account !== null, row.regions_listed_at !== null ? row.enabled_region_count : null, regionStatus) };
 
+  // Home region HR-1: the latest change of this connection's home region, if any (absent otherwise).
+  const change = account ? await readHomeRegionChange(db, orgId, account) : null;
+
   return {
     account: account
-      ? { connected: true, status: account.status, home_region: homeRegion }
+      ? { connected: true, status: account.status, home_region: homeRegion, ...(change ?? {}) }
       : { connected: false, status: null, home_region: null },
     scope: {
       home_region: homeRegion === null ? null : { region: homeRegion, count: row.home_count },
