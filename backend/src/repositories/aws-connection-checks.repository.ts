@@ -35,6 +35,7 @@ import {
 import type { PolicyCompareResult } from '../services/connect-policy-compare';
 import type { PermissionCheckEntry } from '../services/connect-permission-check';
 import type { SourceStatus } from '../services/source-outcome';
+import { insertAuditEventInTransaction, type AuditRequestContext } from '../services/auditEvents.service';
 
 export const AWS_CONNECTION_CHECKS_TABLE = 'aws_connection_checks';
 
@@ -426,4 +427,124 @@ export function connectionChecksView(row: ConnectionChecksRow | null, now: Date)
         }
       : null;
   return { health, roleReplacedAt: iso(row?.role_replaced_at ?? null), permissionCheck, policyCheck, refusedSources };
+}
+
+// ---------------------------------------------------------------------------
+// Home-region proposal (home region HR-1; columns from admin migration
+// 202611161200_add_aws_connection_checks_home_region_proposal, HR-0).
+// ---------------------------------------------------------------------------
+
+export type HomeRegionProposalState = 'proposed' | 'split' | 'accepted' | 'dismissed' | 'superseded' | 'no_signal' | 'unavailable';
+
+/**
+ * What is stored in home_region_proposal (home-region-proposal.ts): region codes,
+ * shares in percent (one decimal) and USD amounts rounded to cents, of usage
+ * charges only. Never an AWS message or a credential.
+ */
+export interface StoredHomeRegionProposal {
+  rule_version: number;
+  basis: 'cost_explorer_30d_usage';
+  period: { start: string; end: string };
+  /** The proposed region; null when no region was proposed. */
+  region: string | null;
+  /** The home region when the evidence was evaluated. */
+  current: string;
+  /** Why the rule ended where it did (home-region-proposal.ts). */
+  outcome: string;
+  /** The regional usage over the period (the 100% the shares divide). */
+  total_amount: number;
+  /** The 5 leading regions, highest first. */
+  top: Array<{ region: string; share: number; amount: number }>;
+  /** Every other region, summed; null when there are 5 or fewer. top + other_regions shares = 100. */
+  other_regions: { count: number; share: number; amount: number } | null;
+  /** The home region's share and amount (0 when it had no usage). */
+  current_share: number;
+  current_amount: number;
+  /** Usage under keys that are not regions (global, NoRegion), apart from the percentages. */
+  non_region_amount: number;
+}
+
+export interface HomeRegionProposalRow {
+  state: HomeRegionProposalState | null;
+  proposal: StoredHomeRegionProposal | null;
+  proposed_at: Date | null;
+  decided_at: Date | null;
+}
+
+/** The HR-0 columns (42703) or the table (42P01) are not there yet. */
+export function isHomeRegionProposalUnavailable(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === '42703' || code === '42P01';
+}
+
+/** The connection's proposal columns, or null when it has no row. Throws when the columns are missing (callers decide). */
+export async function readHomeRegionProposal(db: Db, organizationId: string, awsAccountRowId: string): Promise<HomeRegionProposalRow | null> {
+  const { rows } = await db.query(
+    `SELECT home_region_proposal_state AS state, home_region_proposal AS proposal,
+            home_region_proposed_at AS proposed_at, home_region_decided_at AS decided_at
+       FROM aws_connection_checks WHERE organization_id = $1 AND aws_account_id = $2`,
+    [organizationId, awsAccountRowId]
+  );
+  return (rows[0] as HomeRegionProposalRow | undefined) ?? null;
+}
+
+/**
+ * Saves the proposal evaluated for a NEW connection, fenced on that connection,
+ * only if none was ever saved for it (one proposal per connection row: never
+ * replaced, never re-proposed). True when it was saved.
+ */
+export async function saveHomeRegionProposal(
+  organizationId: string,
+  identity: string,
+  awsAccountRowId: string,
+  saved: { state: 'proposed' | 'split' | 'no_signal' | 'unavailable'; proposal: StoredHomeRegionProposal | null; at: Date },
+  source: FenceConnectionSource = defaultPool
+): Promise<boolean> {
+  return withConnectionFence(source, organizationId, identity, async (client) => {
+    await ensureRow(client, organizationId, awsAccountRowId);
+    const result = await client.query(
+      `UPDATE aws_connection_checks
+          SET home_region_proposal_state = $3, home_region_proposal = $4::jsonb, home_region_proposed_at = $5, updated_at = now()
+        WHERE organization_id = $1 AND aws_account_id = $2 AND home_region_proposal_state IS NULL`,
+      [organizationId, awsAccountRowId, saved.state, saved.proposal === null ? null : JSON.stringify(saved.proposal), saved.at]
+    );
+    return (result.rowCount ?? 0) > 0;
+  });
+}
+
+/**
+ * The owner keeps the current home region (HR-S3 "Keep", HR-D16): an open
+ * proposal, or an open split-spend prompt, becomes dismissed, for good, with its
+ * audit event in the same fenced transaction. False (nothing written) when there
+ * is nothing open.
+ */
+export async function dismissHomeRegionProposal(
+  organizationId: string,
+  identity: string,
+  awsAccountRowId: string,
+  actor: { userId: string; request: AuditRequestContext | null },
+  source: FenceConnectionSource = defaultPool
+): Promise<boolean> {
+  return withConnectionFence(source, organizationId, identity, async (client) => {
+    const { rows } = await client.query(
+      `UPDATE aws_connection_checks
+          SET home_region_proposal_state = 'dismissed', home_region_decided_at = now(), updated_at = now()
+        WHERE organization_id = $1 AND aws_account_id = $2 AND home_region_proposal_state IN ('proposed', 'split')
+        RETURNING home_region_proposal->>'region' AS region, home_region_proposal->>'current' AS current,
+                  home_region_proposal->>'outcome' AS outcome`,
+      [organizationId, awsAccountRowId]
+    );
+    if (rows.length === 0) return false;
+    await insertAuditEventInTransaction(client, {
+      organizationId,
+      actorId: actor.userId,
+      action: 'aws_account.home_region_proposal_dismissed',
+      resourceType: 'aws_account',
+      resourceId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(awsAccountRowId) ? awsAccountRowId : null,
+      changes: null,
+      metadata: { proposed_region: rows[0].region, kept_region: rows[0].current, split: rows[0].region === null },
+      request: actor.request,
+    });
+    return true;
+  });
 }

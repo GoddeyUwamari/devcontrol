@@ -6,6 +6,7 @@ import {
   AWS_ACCOUNT_AMBIGUOUS_MESSAGE,
   awsConnectionIdentity,
   findEligibleAwsAccount,
+  homeRegionOf,
   isAwsAccountAmbiguous,
   type AwsAccountRow,
 } from '../repositories/aws-accounts.repository'
@@ -18,6 +19,9 @@ import {
   logChecksWriteFailure,
   readConnectionChecksOrNull,
   saveCheckResults,
+  saveHomeRegionProposal,
+  isHomeRegionProposalUnavailable,
+  dismissHomeRegionProposal,
 } from '../repositories/aws-connection-checks.repository'
 import { isConnectionChanged } from '../services/aws-connection-fence'
 import { AWS_NOT_CONNECTED_CODE, AWS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages'
@@ -31,7 +35,7 @@ import { trackFunnelEvent, trackFunnelEventOnce } from '../services/analyticsEve
 import { OrganizationAccessError, requireCurrentRole } from '../services/organization-authorization'
 import { auditEvents, auditRequestContext } from '../services/auditEvents.service'
 import { checkNewConnectionRoleArn, DEVCONTROL_ROLE_NAME_PREFIX } from '../utils/devcontrolRoleArn'
-import { parseAwsAccountId } from '../utils/awsAccountId'
+import { parseAccountIdFromArn, parseAwsAccountId } from '../utils/awsAccountId'
 import { PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts'
 import { checkConnectRole, type RoleCheckFailure, type RoleCheckPolicy } from '../services/connect-role-check'
 import { runPermissionCheck, type ProbeClients } from '../services/connect-permission-check'
@@ -40,6 +44,12 @@ import { ConnectCheckSlots, type ConnectSlotRefusal } from '../services/connect-
 import { releaseRequestConnection } from '../middleware/request-lifecycle'
 import { buildTrustPolicy } from '../services/customer-role-trust-policy'
 import { launchStackFor } from '../services/launch-stack'
+import { CostExplorerClient } from '@aws-sdk/client-cost-explorer'
+import {
+  evaluateHomeRegionProposal,
+  type CostExplorerSender,
+  type EvaluatedProposal,
+} from '../services/home-region-proposal'
 import {
   REFUSAL_RESPONSES as HOME_REGION_REFUSALS,
   changeHomeRegion,
@@ -161,12 +171,47 @@ export const CONNECT_STATE_UNAVAILABLE_MESSAGE = "We couldn't start the connecti
  * Test seams for the connect flow's AWS calls. Production uses the defaults;
  * a suite sets them and restores them with resetConnectTestHooks().
  */
-export const connectTestHooks: { roleCheckPolicy?: RoleCheckPolicy; probeClients?: ProbeClients; slots?: ConnectCheckSlots; iam?: IamSender } = {}
+export const connectTestHooks: {
+  roleCheckPolicy?: RoleCheckPolicy
+  probeClients?: ProbeClients
+  slots?: ConnectCheckSlots
+  iam?: IamSender
+  costExplorer?: CostExplorerSender
+} = {}
 export function resetConnectTestHooks(): void {
   delete connectTestHooks.roleCheckPolicy
   delete connectTestHooks.probeClients
   delete connectTestHooks.slots
   delete connectTestHooks.iam
+  delete connectTestHooks.costExplorer
+}
+
+/**
+ * The Cost Explorer the home-region proposal reads with (us-east-1, the connect
+ * check's credentials, one attempt), or null for none (no request, no proposal).
+ * A suite that stubs the probes stubs AWS: it never reaches Cost Explorer either,
+ * unless it sets its own.
+ */
+function costExplorerFor(credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string } | null): CostExplorerSender | null {
+  if (connectTestHooks.costExplorer) return connectTestHooks.costExplorer
+  if (connectTestHooks.probeClients || !credentials) return null
+  return new CostExplorerClient({ region: 'us-east-1', credentials, maxAttempts: 1 })
+}
+
+/**
+ * The home region proposed to a new connection (home region HR-1,
+ * home-region-proposal.ts): one Cost Explorer request, run beside the probes.
+ * Never throws; without credentials there is no request and no proposal.
+ */
+async function proposeHomeRegion(
+  credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string } | null,
+  connected: { role_arn: string; account_id: string | null; region: string | null },
+  at: Date
+): Promise<EvaluatedProposal | null> {
+  const ce = costExplorerFor(credentials)
+  const accountId = parseAccountIdFromArn(connected.role_arn ?? '') ?? null
+  if (!ce || !accountId) return null
+  return evaluateHomeRegionProposal(ce, accountId, homeRegionOf(connected), at)
 }
 
 /** What the owner is told when the organization already has a connection (B1, approved copy). */
@@ -475,7 +520,7 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
     // credentials, then are saved for the connection (CP-D3, CP-D4), fail-soft.
     const connected = result.rows[0]
     const checkedAt = new Date()
-    const [permissionCheck, policyResult] = await Promise.all([
+    const [permissionCheck, policyResult, proposal] = await Promise.all([
       runPermissionCheck({
         credentials: roleCheck.credentials,
         region: connected.region ?? 'us-east-1',
@@ -483,7 +528,20 @@ async function connectAdmitted(req: Request, res: Response, orgId: string, decod
         clients: connectTestHooks.probeClients,
       }),
       comparePoliciesWith(roleCheck.credentials, connected, `Connect AWS org ${orgId}`),
+      proposeHomeRegion(roleCheck.credentials, connected, checkedAt),
     ])
+    // The home-region proposal (HR-D6): saved once for this new connection, fenced on it, fail-soft.
+    if (proposal) {
+      if (proposal.state === 'unavailable') {
+        console.warn(`[HomeRegion] proposal unavailable for org ${orgId} (${proposal.reason}${proposal.errorName ? `, ${proposal.errorName}` : ''})`)
+      }
+      try {
+        await saveHomeRegionProposal(orgId, awsConnectionIdentity(connected), connected.id, { state: proposal.state, proposal: proposal.proposal, at: checkedAt })
+      } catch (proposalError: unknown) {
+        if (isHomeRegionProposalUnavailable(proposalError)) console.warn(`[HomeRegion] proposal not recorded for org ${orgId} (columns not there yet)`)
+        else logChecksWriteFailure('home region proposal', orgId, proposalError)
+      }
+    }
     let checks = null
     try {
       await saveCheckResults(orgId, awsConnectionIdentity(connected), connected.id, {
@@ -826,6 +884,36 @@ router.put('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req
     console.error(`[HomeRegion] scan after the change failed for org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
   })
   return res.json({ success: true, data: { ...changed, scan_started: true } })
+})
+
+/**
+ * POST /accounts/home-region/proposal/dismiss: the owner keeps the current home
+ * region (HR-S3 "Keep", HR-D16). The open proposal becomes dismissed for good,
+ * with its audit event, fenced on the current connection. 409 NO_OPEN_PROPOSAL
+ * when there is none to dismiss.
+ */
+router.post('/accounts/home-region/proposal/dismiss', requireCurrentOwnerForHomeRegion, async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
+  const orgId = req.user!.organizationId
+  let account: AwsAccountRow | null
+  try {
+    account = await findEligibleAwsAccount(pool, orgId)
+  } catch (err: unknown) {
+    if (isAwsAccountAmbiguous(err)) return res.status(409).json({ success: false, code: HOME_REGION_REFUSALS.ambiguous.code })
+    console.error(`[aws/accounts/home-region/proposal/dismiss] org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_PROPOSAL_FAILED' })
+  }
+  if (!account) return res.status(409).json({ success: false, code: HOME_REGION_REFUSALS.not_connected.code })
+  try {
+    const dismissed = await dismissHomeRegionProposal(orgId, awsConnectionIdentity(account), account.id, { userId: req.user!.userId, request: auditRequestContext(req) })
+    if (!dismissed) return res.status(409).json({ success: false, code: 'NO_OPEN_PROPOSAL' })
+    return res.json({ success: true, data: { state: 'dismissed' } })
+  } catch (err: unknown) {
+    if (isConnectionChanged(err)) return res.status(409).json({ success: false, code: HOME_REGION_REFUSALS.connection_changed.code })
+    if (isHomeRegionProposalUnavailable(err)) return res.status(503).json({ success: false, code: 'HOME_REGION_PROPOSAL_UNAVAILABLE' })
+    console.error(`[aws/accounts/home-region/proposal/dismiss] org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_PROPOSAL_FAILED' })
+  }
 })
 
 // GET /api/aws/accounts

@@ -247,5 +247,7 @@ describe('T6: no scan path writes the home region', () => {
       'routes/aws.routes.ts: INSERT INTO aws_accounts (org_id, role_arn, account_id, nick',
       'services/home-region.service.ts: UPDATE aws_accounts SET region = $4 WHERE id = $1 AND org_id',
     ]);
+    // The proposal code never writes the account row.
+    expect(fs.readFileSync(path.join(SRC, 'services/home-region-proposal.ts'), 'utf8')).not.toMatch(/aws_accounts/i);
   });
 });
