@@ -8,7 +8,8 @@ import {
   homeRegionOf,
   isAwsAccountAmbiguous,
 } from '../repositories/aws-accounts.repository';
-import { MULTI_REGION_DISCOVERY_FLAG, RegionScanStatus } from '../repositories/multi-region-foundation.repository';
+import type { RegionScanStatus } from '../repositories/multi-region-foundation.repository';
+import { isMultiRegionDiscoveryOn } from '../repositories/multi-region-coverage.repository';
 import {
   DISCOVERY_WARNING_LISTING_TRUNCATED,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
@@ -518,24 +519,6 @@ interface MultiRegionRowJson {
 
 const NOT_CHECKED_STATUSES: readonly string[] = ['denied', 'failed', 'timed_out'];
 
-/**
- * Whether multi-region discovery is on for the organization (fail-safe OFF, as the
- * scanner reads it): a flag that cannot be read leaves the response as it was.
- */
-async function multiRegionFlagOn(db: AwsAccountsQueryable, orgId: string): Promise<boolean> {
-  try {
-    // isOrganizationFeatureEnabled's statement, on this route's executor type.
-    const { rows } = await db.query(
-      `SELECT enabled FROM organization_feature_flags WHERE organization_id = $1 AND flag = $2`,
-      [orgId, MULTI_REGION_DISCOVERY_FLAG]
-    );
-    return rows[0]?.enabled === true;
-  } catch (error: unknown) {
-    console.warn(`[Services/coverage] multi_region_flag_unreadable: org ${orgId} (${error instanceof Error ? error.name : 'unknown error'})`);
-    return false;
-  }
-}
-
 /** The multi_region key (PR 2) for a flagged organization. */
 export async function readMultiRegionCoverage(
   db: AwsAccountsQueryable,
@@ -639,7 +622,7 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
 
   // PR 2: only a flagged organization gets the multi_region key; for every other the
   // object below is built exactly as before.
-  const multiRegion = (await multiRegionFlagOn(db, orgId))
+  const multiRegion = (await isMultiRegionDiscoveryOn(db, orgId, '[Services/coverage]'))
     ? { multi_region: await readMultiRegionCoverage(db, orgId, homeRegion, awsAccountId) }
     : {};
 
