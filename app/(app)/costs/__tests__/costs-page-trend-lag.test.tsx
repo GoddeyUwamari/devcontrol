@@ -26,7 +26,7 @@ vi.mock('recharts', async (importOriginal) => {
       charts.index >= 0 ? <actual.Tooltip {...props} active defaultIndex={charts.index} /> : <actual.Tooltip {...props} />,
   }
 })
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostsPage from '../page'
 
@@ -93,5 +93,49 @@ describe('Spend Trend on the real evidence', () => {
     renderPage()
     expect(await screen.findByText(/Nov 1–16 \(UTC\) · Actual · AWS Cost Explorer · latest days still updating/)).toBeInTheDocument()
     expect(screen.queryByText(/today's spend still being billed/)).toBeNull()
+  })
+})
+
+describe('Export CSV on the real evidence: a day not reported yet is marked, never a $0 row', () => {
+  const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL }
+  afterEach(() => { URL.createObjectURL = original.create; URL.revokeObjectURL = original.revoke })
+
+  /** Clicks Export CSV and returns the file's text (the Blob handed to URL.createObjectURL). */
+  async function exportCsv(): Promise<string> {
+    let blob: Blob | null = null
+    // jsdom has no object URLs: stub only the two static methods (restored in afterEach below).
+    URL.createObjectURL = (b: Blob) => { blob = b; return 'blob:test' }
+    URL.revokeObjectURL = () => {}
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    renderPage()
+    await screen.findByText('Latest days still updating') // the trend has loaded
+    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(blob).not.toBeNull()
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(blob as unknown as Blob)
+    })
+  }
+  const parse = (csv: string) => csv.split('\n').map((line) => line.slice(1, -1).split('","'))
+
+  it.each(['2026-11-14', '2026-11-15', '2026-11-16'])('%s: one row "Total" = "Not reported yet by AWS Cost Explorer", no amounts', async (date) => {
+    const rows = parse(await exportCsv())
+    expect(rows.filter((r) => r[0] === date)).toEqual([[date, 'Total', 'Not reported yet by AWS Cost Explorer']])
+  })
+
+  it('Nov 13 (updating): its amounts so far, its total row says it is still updating', async () => {
+    const rows = parse(await exportCsv()).filter((r) => r[0] === '2026-11-13')
+    expect(rows).toHaveLength(6)
+    expect(rows.at(-1)).toEqual(['2026-11-13', 'Total (still updating; AWS Cost Explorer may still add charges)', '0.06'])
+  })
+
+  it('Nov 9-12 (final): unchanged rows; no row anywhere carries a $0 for a not-reported day', async () => {
+    const rows = parse(await exportCsv())
+    expect(rows.filter((r) => r[0] === '2026-11-12').at(-1)).toEqual(['2026-11-12', 'Total', '0.83'])
+    const notReported = new Set(['2026-11-14', '2026-11-15', '2026-11-16'])
+    expect(rows.filter((r) => notReported.has(r[0]) && /^-?\d+(\.\d+)?$/.test(r[2] ?? ''))).toEqual([])
   })
 })
