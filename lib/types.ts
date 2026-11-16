@@ -568,6 +568,12 @@ export interface CostMonthState {
   finishedThrough: string;
   /** Evidence: the last UTC day of this month with a Cost Explorer line item; null = none or not determined. */
   billedThrough: string | null;
+  /**
+   * Evidence: this month's days by the daily trend's reportState. Any updating
+   * or not-reported day means "latest days still updating" (trend-lag-build.md
+   * rule 6). null or absent = not determined.
+   */
+  reportDays?: { final: number; updating: number; notReported: number } | null;
   ceEstimated: boolean | null;
   asOf: string | null;
   reason: { code: string; text: string } | null;

@@ -27,6 +27,8 @@ vi.mock('recharts', async (importOriginal) => {
       charts.open ? cloneElement(props.children as React.ReactElement<{ width?: number; height?: number }>, { width: 600, height: 240 }) : <actual.ResponsiveContainer {...props} />,
     Tooltip: (props: React.ComponentProps<typeof actual.Tooltip>) =>
       charts.open ? <actual.Tooltip {...props} active defaultIndex={charts.index} /> : <actual.Tooltip {...props} />,
+    // Unanimated, so an opened chart draws its bars at their height in jsdom.
+    Bar: (props: React.ComponentProps<typeof actual.Bar>) => <actual.Bar {...props} isAnimationActive={false} />,
   }
 })
 // The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
@@ -262,5 +264,60 @@ describe('the current month before Cost Explorer reports it (DAY1-D14)', () => {
     await screen.findByText('Spend breakdown')
     await waitFor(() => expect(screen.queryByText('No cost trend data available yet')).not.toBeInTheDocument())
     expect(screen.queryByTestId('bars-not-reported')).toBeNull()
+  })
+})
+
+describe('a month AWS Cost Explorer is still updating (trend-lag-build.md)', () => {
+  const months = [
+    { date: '2026-10-01', compute: 8, storage: 3, database: 0, network: 3.6, other: 2, total: 16.6, lineItems: 8, reportState: 'final', estimated: null, provisional: false },
+    { date: '2026-11-01', compute: 3.4, storage: 1.1, database: 0, network: 1.5, other: 1.3, total: 7.3, lineItems: 8, reportState: 'updating', estimated: null, provisional: true },
+  ]
+
+  it('the updating month\'s tooltip: "Still updating · $7.30 so far. AWS Cost Explorer may still add charges.", no list', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, months))
+    charts.open = true
+    charts.index = 1
+    renderPage()
+    const tip = await screen.findByText('Still updating · $7.30 so far. AWS Cost Explorer may still add charges.')
+    expect(tip.parentElement!.textContent).toBe('NovStill updating · $7.30 so far. AWS Cost Explorer may still add charges.')
+  })
+
+  it('a final month keeps its amounts', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, months))
+    charts.open = true
+    charts.index = 0
+    renderPage()
+    expect(await screen.findByText('Total: $16.6')).toBeInTheDocument()
+    expect(screen.queryByText(/Still updating/)).toBeNull()
+  })
+
+  it('legend "Latest days still updating"; the updating month\'s bars are lighter, the final month\'s are not', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, months))
+    charts.open = true
+    charts.index = 0
+    const { container } = renderPage()
+    expect(await screen.findByTestId('bars-updating-legend')).toHaveTextContent('Latest days still updating')
+    await waitFor(() => expect(container.querySelectorAll('.recharts-bar-rectangle path').length).toBeGreaterThan(0))
+    const opacities = [...container.querySelectorAll('.recharts-bar-rectangle path')].map((p) => p.getAttribute('fill-opacity'))
+    expect(opacities).toContain('0.45')
+    expect(opacities).toContain('1')
+  })
+
+  it('a not_reported month (reportState) keeps the Day-1 tooltip "No billed days yet"', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, [
+      { ...months[1], reportState: 'updating' },
+      { date: '2026-12-01', compute: 0, storage: 0, database: 0, network: 0, other: 0, total: 0, lineItems: 0, reportState: 'not_reported', estimated: null, provisional: true },
+    ]))
+    charts.open = true
+    charts.index = 1
+    renderPage()
+    const tip = await screen.findByText('No billed days yet')
+    expect(tip.parentElement!.textContent).toBe('DecNo billed days yet')
+  })
+
+  it('no updating month: no legend entry', async () => {
+    renderPage()
+    await screen.findByText('Spend breakdown')
+    expect(screen.queryByTestId('bars-updating-legend')).toBeNull()
   })
 })

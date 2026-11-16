@@ -19,7 +19,10 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
-import { isNotReportedYet, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis';
+import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
+
+/** Fill opacity of a period AWS Cost Explorer is still updating: the same colors, lighter. */
+export const UPDATING_BAR_OPACITY = 0.45;
 
 interface CostServiceAmount {
   service: string;
@@ -41,8 +44,11 @@ interface CostDataPoint {
   // cached/rolling-deploy responses written before this field existed still render
   // via the category fallback below instead of breaking.
   byServiceDisplay?: CostServiceAmount[];
-  /** Cost Explorer line items in the period; with `provisional`, 0 means "not reported yet" (never $0). */
+  /** Cost Explorer line items in the period. */
   lineItems?: number;
+  /** The backend's report state: not_reported is a gap (never $0), updating is drawn lighter. */
+  reportState?: CostReportState;
+  /** Kept for a backend that predates reportState (with lineItems 0: not reported yet). */
   provisional?: boolean;
 }
 
@@ -113,7 +119,17 @@ export function CostTrendChart({
       return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
           <p className="text-ui font-semibold text-ink mb-1">{formatDate(label)}</p>
-          <p className="text-meta text-ink-muted m-0">Not reported yet by AWS Cost Explorer</p>
+          <p className="text-meta text-ink-muted m-0">{NOT_REPORTED_TOOLTIP}</p>
+        </div>
+      );
+    }
+    if (active && payload && payload.length && isStillUpdating(payload[0]?.payload ?? {})) {
+      // The amount so far, once: Cost Explorer may still add charges to this period.
+      const soFar = Number(payload[0]?.payload?.total ?? 0);
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+          <p className="text-ui font-semibold text-ink mb-1">{formatDate(label)}</p>
+          <p className="text-meta text-ink-muted m-0">{stillUpdatingTooltip(`$${soFar.toFixed(2)}`)}</p>
         </div>
       );
     }
@@ -217,6 +233,7 @@ export function CostTrendChart({
       forecast: point.forecast,
       total: point.total,
       lineItems: point.lineItems,
+      reportState: point.reportState,
       provisional: point.provisional,
     };
     if (hasServiceBreakdown) {
@@ -245,6 +262,8 @@ export function CostTrendChart({
   // segments touch with no gap/seam between them, matching a single rounded column.
   const StackedBarSegment = (props: any) => {
     const { x, y, width, height, fill, payload, dataKey } = props;
+    // A period Cost Explorer is still updating: the same color, lighter.
+    const fillOpacity = isStillUpdating(payload ?? {}) ? UPDATING_BAR_OPACITY : undefined;
     if (!(height > 0) || !(width > 0)) {
       // Recharts' shape prop requires a ReactElement, not null, even for a
       // zero-amount day — render nothing visible instead of skipping output.
@@ -252,7 +271,7 @@ export function CostTrendChart({
     }
 
     if (payload.__topKey !== dataKey) {
-      return <rect x={x} y={y} width={width} height={height} fill={fill} />;
+      return <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={fillOpacity} />;
     }
 
     const r = Math.min(3, height, width / 2);
@@ -263,7 +282,7 @@ export function CostTrendChart({
       L ${x + width},${y + height}
       L ${x},${y + height}
       Z`;
-    return <path d={path} fill={fill} />;
+    return <path d={path} fill={fill} fillOpacity={fillOpacity} />;
   };
 
   // A "spike" must be both proportionally large (1.5x the average day) AND a
@@ -271,8 +290,10 @@ export function CostTrendChart({
   // near-zero-spend account trips the banner.
   const SPIKE_RATIO = 1.5;
   const MIN_SPIKE_DELTA = 20; // dollars above average required to flag
-  // Periods Cost Explorer has not reported yet are not $0 days: left out of the average.
-  const reported = data.filter((d) => !isNotReportedYet(d));
+  // Periods Cost Explorer has not reported yet are not $0 days, and a period it
+  // is still updating is a partial amount: both are left out of the average.
+  const reported = data.filter((d) => !isNotReportedYet(d) && !isStillUpdating(d));
+  const hasUpdating = data.some((d) => isStillUpdating(d));
   const avgTotal = reported.length > 0 ? reported.reduce((sum, d) => sum + d.total, 0) / reported.length : 0;
   const hasSpike = reported.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
   const notReportedNote = unreportedTrendNote(data, dateRange === '6mo' || dateRange === '1yr' ? 'month' : 'day');
@@ -401,6 +422,15 @@ export function CostTrendChart({
               <span>{s.name}</span>
             </button>
           ))}
+          {hasUpdating && (
+            <span
+              className="flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 text-label font-medium whitespace-nowrap shrink-0 text-ink-muted"
+              data-testid="cost-trend-updating-legend"
+            >
+              <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 bg-gray-400" style={{ opacity: UPDATING_BAR_OPACITY }} />
+              <span>{STILL_UPDATING_LEGEND}</span>
+            </span>
+          )}
         </div>
 
         {/* Anomaly Indicators */}

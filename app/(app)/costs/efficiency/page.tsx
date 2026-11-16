@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ScatterChart, Scatter, ZAxis,
-  ReferenceLine,
+  ReferenceLine, Cell,
 } from 'recharts'
 import {
   TrendingUp, TrendingDown, Zap, Download, ArrowRight,
@@ -28,7 +28,12 @@ import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typograph
 import { CHART_TICK } from '@/lib/chart-theme'
 import { describeSpend, formatUsd, roundCents } from '../cost-display'
 import Link from 'next/link'
-import { isNotReportedYet, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
+import { isNotReportedYet, isStillUpdating, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis'
+
+/** Fill opacity of a month AWS Cost Explorer is still updating: the same colors, lighter. */
+const UPDATING_BAR_OPACITY = 0.45
+/** Row flags in barData that are not amounts. */
+const BAR_FLAG_KEYS: ReadonlySet<string> = new Set(['month', 'notReported', 'updating'])
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
 
@@ -277,6 +282,15 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
     )
   }
   const total = payload.reduce((s: number, p: any) => s + (p.value || 0), 0)
+  // A month Cost Explorer is still updating: its amount so far, once.
+  if (payload[0]?.payload?.updating) {
+    return (
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+        <p className="text-label font-semibold text-ink" style={{ marginBottom: '6px' }}>{label}</p>
+        <p className="text-meta text-ink-body" style={{ margin: 0 }}>{stillUpdatingTooltip(formatUsd(roundCents(total)))}</p>
+      </div>
+    )
+  }
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
       <p className="text-label font-semibold text-ink" style={{ marginBottom: '6px' }}>{label}</p>
@@ -338,7 +352,7 @@ export default function EfficiencyPage() {
   // real AWS Cost Explorer data; [] only when the request succeeded with no data
   // (e.g. no connected account). A failed request is an error, not an empty series.
   // Keyed ['cost-trend', '6mo', org, UTC day] -- the Dashboard's 6-month entry, distinct from the Costs page's own key.
-  const { data: realCostTrend = [], isError: realCostTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; provisional?: boolean }>>({
+  const { data: realCostTrend = [], isError: realCostTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; reportState?: CostReportState; provisional?: boolean }>>({
     queryKey: ['cost-trend', '6mo', orgId ?? null, utcDay],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -467,11 +481,13 @@ export default function EfficiencyPage() {
   // A month Cost Explorer has not reported yet keeps its label with no bar and
   // says so (DAY1-D14); its zeros are never a measured $0.
   const barNotReportedNote = isDemoActive ? null : unreportedTrendNote(realCostTrend, 'month')
+  const barHasUpdating = !isDemoActive && realCostTrend.some(isStillUpdating)
   const barData: Array<Record<string, string | number | boolean>> = isDemoActive
     ? DEMO_BAR_DATA
     : realCostTrend.map(p => ({
         month:    MONTH_LABELS[parseInt(p.date.slice(5, 7), 10) - 1] ?? p.date,
         notReported: isNotReportedYet(p),
+        updating: isStillUpdating(p),
         // Cents, not whole dollars: a sub-dollar month must not read as $0.
         Compute:  roundCents(p.compute),
         Storage:  roundCents(p.storage),
@@ -483,7 +499,7 @@ export default function EfficiencyPage() {
   // Max stacked total across months — decides whether the Y-axis ticks
   // render as "$XK" or plain dollars (see formatAxisDollar).
   const maxBarStack = barData.reduce((max, d) => {
-    const total = Object.entries(d).reduce((sum, [key, val]) => key === 'month' || key === 'notReported' ? sum : sum + (Number(val) || 0), 0)
+    const total = Object.entries(d).reduce((sum, [key, val]) => BAR_FLAG_KEYS.has(key) ? sum : sum + (Number(val) || 0), 0)
     return Math.max(max, total)
   }, 0)
 
@@ -586,6 +602,11 @@ export default function EfficiencyPage() {
                     <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: color, display: 'inline-block' }} />{name}
                   </span>
                 ))}
+                {barHasUpdating && (
+                  <span className="text-meta text-ink-muted" style={{ display: 'flex', alignItems: 'center', gap: '5px' }} data-testid="bars-updating-legend">
+                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#9ca3af', opacity: UPDATING_BAR_OPACITY, display: 'inline-block' }} />{STILL_UPDATING_LEGEND}
+                  </span>
+                )}
               </div>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={barData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
@@ -594,7 +615,10 @@ export default function EfficiencyPage() {
                   <YAxis tick={CHART_TICK} axisLine={false} tickLine={false} tickFormatter={v => formatAxisDollar(v, maxBarStack)} />
                   <Tooltip content={<CustomBarTooltip />} />
                   {Object.entries(barColors).map(([name, color]) => (
-                    <Bar key={name} dataKey={name} stackId="a" fill={color} radius={name === 'Other' ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
+                    <Bar key={name} dataKey={name} stackId="a" fill={color} radius={name === 'Other' ? [3, 3, 0, 0] : [0, 0, 0, 0]}>
+                      {/* A month Cost Explorer is still updating: the same color, lighter. */}
+                      {barData.map((row, i) => <Cell key={`${name}-${i}`} fillOpacity={row.updating === true ? UPDATING_BAR_OPACITY : 1} />)}
+                    </Bar>
                   ))}
                 </BarChart>
               </ResponsiveContainer>

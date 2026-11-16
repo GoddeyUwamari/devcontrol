@@ -108,7 +108,7 @@ export function describeSpend(section: ContextSection<CostSpendEvidence> | undef
   }
   const notes = [...(period ? [period] : []), 'Actual · AWS Cost Explorer']
   if (amount < 0) notes.push('net of credits')
-  if (state === 'latest_days_updating') notes.push(LATEST_DAYS_REPORTING)
+  if (monthHasUnfinishedDays(section)) notes.push(LATEST_DAYS_REPORTING)
   else if (lastDayInProgress) notes.push(TODAY_STILL_BILLING)
   if (section.state === 'partial') notes.push('partial data')
   return { label: ACTUAL_SPEND_LABEL, value: formatUsd(amount), sub: notes.join(' · '), amount, provenance: 'actual' }
@@ -207,6 +207,29 @@ function legacyNoBilledDays(section: ContextSection<CostSpendEvidence> | undefin
 export function noFinishedDayThisMonth(section: ContextSection<CostSpendEvidence> | undefined): boolean {
   const state = monthStateOf(section)
   return state === 'no_billed_days_yet' || state === 'latest_days_updating'
+}
+
+/**
+ * Rule 6 (trend-lag-build.md): the month's state is latest_days_updating, or
+ * the backend's per-day evidence (monthState.reportDays) has a day of this
+ * month that AWS Cost Explorer is still updating or has not reported yet. Then
+ * a caption says "latest days still updating", never "today still billing".
+ */
+export function monthHasUnfinishedDays(section: ContextSection<CostSpendEvidence> | undefined): boolean {
+  if (monthStateOf(section) === 'latest_days_updating') return true
+  const days = section?.data?.monthState?.reportDays
+  return !!days && days.updating + days.notReported > 0
+}
+
+/**
+ * No day of this month is final yet: noFinishedDayThisMonth (the month's
+ * state), or the per-day evidence has days of this month and none of them is
+ * final. The month-over-month comparison needs a final day (rule 5).
+ */
+export function noFinalDayThisMonth(section: ContextSection<CostSpendEvidence> | undefined): boolean {
+  if (noFinishedDayThisMonth(section)) return true
+  const days = section?.data?.monthState?.reportDays
+  return !!days && days.final === 0 && days.updating + days.notReported > 0
 }
 
 /** AWS Cost Explorer has no billed days for this month yet (the month's state). */

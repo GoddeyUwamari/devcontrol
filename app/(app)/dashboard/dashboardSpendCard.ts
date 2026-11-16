@@ -14,7 +14,7 @@
  * Router only permits a fixed set of named exports from a page file.
  */
 import type { CostSummary } from '@/lib/types'
-import { describeComparisonWindows, describeMonthOverMonth, describeSpend, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinishedDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
+import { describeComparisonWindows, describeMonthOverMonth, describeSpend, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthHasUnfinishedDays, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinalDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
 export interface DashboardSpendCard {
@@ -52,7 +52,9 @@ function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: Retu
   // A charge already reported on day 1 is "latest days still updating", never
   // "no billed days" next to a number (DAY1-D6).
   if (state === 'no_billed_days_yet') notes.push(NO_BILLED_DAYS_YET)
-  else if (state === 'latest_days_updating') notes.push(LATEST_DAYS_REPORTING)
+  // Rule 6: an updating or not-reported day this month (the backend's
+  // per-day evidence) is "latest days still updating", not "today still billing".
+  else if (monthHasUnfinishedDays(section)) notes.push(LATEST_DAYS_REPORTING)
   else if (section.data.lastDayInProgress) notes.push('today still billing')
   if (section.state === 'partial') notes.push('partial data')
   return notes.join(' · ')
@@ -66,7 +68,7 @@ export function computeDashboardSpendCard(params: {
   const { costSummary, isLoading, isError } = params
   const status = { isLoading, isError }
   const spend = describeSpend(costSummary?.spend, status)
-  const noFinishedDay = noFinishedDayThisMonth(costSummary?.spend)
+  const noFinishedDay = noFinalDayThisMonth(costSummary?.spend)
   const mom = describeMonthOverMonth(costSummary?.monthOverMonth, status, { noFinishedDay })
 
   if (isLoading) return { label: spend.label, value: spend.value, caption: null, previousMonth: null, evidence: null }

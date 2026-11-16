@@ -11,16 +11,48 @@
  */
 export const TREND_TOTALS_NOTE = 'After credits and refunds; amounts below $0 count as $0'
 
+/** The backend's per-point report state (cost-trend-report-state.ts). */
+export type CostReportState = 'final' | 'updating' | 'not_reported'
+
+/** The trend point fields this module reads. */
+export interface TrendReportFields {
+  reportState?: CostReportState | (string & {})
+  provisional?: boolean
+  lineItems?: number
+}
+
 /**
- * A trend period AWS Cost Explorer has not reported yet: still inside its
- * reporting lag (`provisional`, AWSCostService queryCostTrend) and no line
- * item at all. Its 0 is "nothing reported yet", never a measured $0, so a chart
- * leaves it out (DAY1-D14). Points from a backend that predates the flags are
- * never treated as unreported.
+ * A trend period AWS Cost Explorer has not reported yet: the backend's
+ * reportState 'not_reported' (a period after the series' last one with line
+ * items). Its 0 is "nothing reported yet", never a measured $0, so a chart
+ * leaves it out (DAY1-D14). A backend that predates reportState: still inside
+ * the reporting lag (`provisional`) with no line item at all. Points from a
+ * backend that predates both flags are never treated as unreported.
  */
-export function isNotReportedYet(point: { provisional?: boolean; lineItems?: number }): boolean {
+export function isNotReportedYet(point: TrendReportFields): boolean {
+  if (point.reportState !== undefined) return point.reportState === 'not_reported'
   return point.provisional === true && point.lineItems === 0
 }
+
+/**
+ * A trend period AWS Cost Explorer is still updating (reportState
+ * 'updating'): drawn lighter, its amount is "so far". Only the backend's
+ * reportState says so; nothing is inferred from the calendar here.
+ */
+export function isStillUpdating(point: TrendReportFields): boolean {
+  return point.reportState === 'updating'
+}
+
+/** The tooltip for a period Cost Explorer has not reported yet: no amounts, never $0.00. */
+export const NOT_REPORTED_TOOLTIP = 'Not reported yet by AWS Cost Explorer'
+
+/** The tooltip for a period Cost Explorer is still updating, with its amount so far (already formatted). */
+export function stillUpdatingTooltip(amountSoFar: string): string {
+  return `Still updating · ${amountSoFar} so far. AWS Cost Explorer may still add charges.`
+}
+
+/** The legend entry for the lighter, still-updating bars (DAY1-D7's string, capitalized). */
+export const STILL_UPDATING_LEGEND = 'Latest days still updating'
 
 /** Shown under a daily trend that leaves out days Cost Explorer has not reported yet. */
 export const NOT_REPORTED_DAYS_NOTE = "Days AWS Cost Explorer hasn't reported yet are not drawn"
@@ -32,7 +64,7 @@ const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'Jul
  * daily trends say days are not drawn; a monthly trend names the month with
  * no billed days yet ("December: no billed days yet").
  */
-export function unreportedTrendNote(points: ReadonlyArray<{ date: string; provisional?: boolean; lineItems?: number }>, unit: 'day' | 'month'): string | null {
+export function unreportedTrendNote(points: ReadonlyArray<{ date: string } & TrendReportFields>, unit: 'day' | 'month'): string | null {
   const unreported = points.filter(isNotReportedYet)
   if (unreported.length === 0) return null
   if (unit === 'day') return NOT_REPORTED_DAYS_NOTE

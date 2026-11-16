@@ -26,9 +26,27 @@ import { formatSavingsCurrency } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
 import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings } from '@/lib/savings-basis'
-import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinishedDayThisMonth, previousMonthLine, roundCents, TODAY_STILL_BILLING } from './cost-display'
-import { TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
-import { costsTrendChartData } from './trend-chart-data'
+import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinalDayThisMonth, previousMonthLine, roundCents, TODAY_STILL_BILLING } from './cost-display'
+import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis'
+import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
+
+/** The lighter stroke of the periods AWS Cost Explorer is still updating. */
+const UPDATING_STROKE = '#94A3B8'
+
+/** The Spend Trend tooltip: no amount for a period not reported yet, "so far" for one still updating. */
+function SpendTrendTooltip({ active, payload, label, unit, rows }: { active?: boolean; payload?: Array<{ payload?: CostsTrendRow }>; label?: string; unit: 'day' | 'month'; rows: CostsTrendRow[] }) {
+  if (!active) return null
+  // A gap has no drawn value; fall back to the row by its label.
+  const row = payload?.find((entry) => entry?.payload)?.payload ?? rows.find((r) => r.date === label)
+  const lines = costsTrendTooltipLines(row, unit)
+  if (lines.length === 0) return null
+  return (
+    <div style={CHART_TOOLTIP.contentStyle} data-testid="spend-trend-tooltip">
+      <p style={{ ...CHART_TOOLTIP.labelStyle, margin: 0 }}>{label}</p>
+      {lines.map((line) => <p key={line} className="text-meta text-ink-body" style={{ margin: '4px 0 0' }}>{line}</p>)}
+    </div>
+  )
+}
 
 const SERVICE_COLORS: Record<string, string> = {
   'Compute (EC2, Lambda, ECS)': '#3B82F6',
@@ -146,7 +164,7 @@ export default function CostsPage() {
   // The key is this page's own: /costs/efficiency caches a failed request under
   // ['cost-trend', '6mo'] as [], which must never read as "no data" here.
   const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<
-    Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; provisional?: boolean }>
+    Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; reportState?: CostReportState; provisional?: boolean }>
   >({
     queryKey: ['costs-page', 'cost-trend', selectedRangeParam, orgId ?? null, utcDay],
     queryFn: async () => {
@@ -226,6 +244,7 @@ export default function CostsPage() {
     return costsTrendChartData(costTrend.slice(-selectedDays))
   }, [isDemoActive, costTrend, selectedDays])
   const trendNotReportedNote = isDemoActive ? null : unreportedTrendNote(costTrend.slice(-selectedDays), selectedRangeParam === '6mo' || selectedRangeParam === '1yr' ? 'month' : 'day')
+  const trendHasUpdating = !isDemoActive && costTrend.slice(-selectedDays).some(isStillUpdating)
   // Whether the trend has real Cost Explorer points to show; an empty or failed series is never drawn as $0.
   const hasTrendData = !isDemoActive && !costTrendLoading && !costTrendError && costTrend.length > 0
 
@@ -237,7 +256,7 @@ export default function CostsPage() {
   // independent of the chart range: selectedRange changes only the Spend Trend data.
   const mom = isDemoActive
     ? { value: `+${DEMO_GROWTH_RATE}%`, sub: 'Spend trending up vs last month', changePercent: DEMO_GROWTH_RATE, direction: 'up' as const, includesToday: false }
-    : describeMonthOverMonth(costSummary?.monthOverMonth, { isLoading: costSummaryLoading, isError: costSummaryError }, { noFinishedDay: noFinishedDayThisMonth(costSummary?.spend) })
+    : describeMonthOverMonth(costSummary?.monthOverMonth, { isLoading: costSummaryLoading, isError: costSummaryError }, { noFinishedDay: noFinalDayThisMonth(costSummary?.spend) })
   // Only a real percentage drives colors and the spike banner; a missing comparison is neither up nor down.
   const growthRate = mom.changePercent
 
@@ -305,12 +324,17 @@ export default function CostsPage() {
     } else {
       // Cents, not whole dollars: a sub-dollar day must not export as 0.
       for (const p of costTrend) {
+        // A day Cost Explorer has not reported yet has no amounts, never $0.
+        if (isNotReportedYet(p)) {
+          rows.push([p.date, 'Total', NOT_REPORTED_TOOLTIP])
+          continue
+        }
         rows.push([p.date, 'Compute (EC2, Lambda, ECS)', roundCents(p.compute)])
         rows.push([p.date, 'Storage (S3, EBS)',          roundCents(p.storage)])
         rows.push([p.date, 'Database (RDS, DynamoDB)',   roundCents(p.database)])
         rows.push([p.date, 'Network (Data Transfer)',    roundCents(p.network)])
         rows.push([p.date, 'Other Services',              roundCents(p.other)])
-        rows.push([p.date, 'Total',                       roundCents(p.total)])
+        rows.push([p.date, isStillUpdating(p) ? 'Total (still updating; AWS Cost Explorer may still add charges)' : 'Total', roundCents(p.total)])
       }
     }
     // Quote every field: the service names contain commas.
@@ -747,8 +771,16 @@ export default function CostsPage() {
                 <CartesianGrid vertical={false} stroke="#F1F5F9" />
                 <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
-                <Tooltip contentStyle={CHART_TOOLTIP.contentStyle} labelStyle={CHART_TOOLTIP.labelStyle} formatter={(v: any) => [`${typeof v === 'number' ? formatUsd(v) : v}/${trendUnit}`, 'Actual Spend']} />
+                <Tooltip filterNull={false} content={<SpendTrendTooltip unit={trendUnit} rows={chartData as CostsTrendRow[]} />} />
                 <Area type="monotone" dataKey="actual" stroke="#0F172A" strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
+                {/* Periods Cost Explorer is still updating: the same line, lighter and dashed, joined to the last final point. */}
+                {trendHasUpdating && (
+                  <Area type="monotone" dataKey="updating" stroke={UPDATING_STROKE} strokeWidth={2} strokeDasharray="4 3" fill="none" connectNulls={false} isAnimationActive={false}
+                    dot={(props: any) => props?.payload?.reportState === 'updating'
+                      ? <circle key={props.key ?? `u-${props.index}`} cx={props.cx} cy={props.cy} r={3} fill={UPDATING_STROKE} stroke="none" data-testid="spend-trend-updating-dot" />
+                      : <g key={props.key ?? `u-${props.index}`} />}
+                    activeDot={{ r: 4, fill: UPDATING_STROKE, strokeWidth: 0 }} />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -763,6 +795,7 @@ export default function CostsPage() {
               ]
             : [
                 { color: '#0F172A', dash: false, label: 'Actual spend' },
+                ...(trendHasUpdating && hasTrendData ? [{ color: UPDATING_STROKE, dash: true, label: STILL_UPDATING_LEGEND }] : []),
               ]
           ).map(({ color, dash, label }) => (
             <div key={label} className="flex items-center gap-2">

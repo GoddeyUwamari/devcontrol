@@ -49,6 +49,7 @@ import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
 import { NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
 import { deriveAnalysisStatus, pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { roundCents } from '../costs/cost-display'
+import { isNotReportedYet, type CostReportState } from '@/lib/cost-trend-basis'
 import type { OpportunityEvaluationState, SavingsFigure } from '@/components/dashboard/savings-opportunities'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
@@ -343,7 +344,7 @@ export default function DashboardPage() {
   const { hasBillingData, hasServicesOnly, isBillingSyncing, showRecommendationSections } =
     computeDashboardAwsGates({ isDemoActive, isAwsConnected, statsLoading, stats })
 
-  const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>>({
+  const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; reportState?: CostReportState; provisional?: boolean }>>({
     queryKey: ['cost-trend', costDateRange, organization?.id, utcDay],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
@@ -675,7 +676,7 @@ export default function DashboardPage() {
               }
               caption={spendCard?.caption}
               secondaryCaption={spendCard?.previousMonth}
-              sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.map(d => ({ value: d.total }))) : undefined}
+              sparkline={hasBillingData || isDemoActive ? (isDemoActive ? generateCostBreakdownData().map((_, i) => ({ value: 8000 + i * 900 })) : costTrend.filter(d => !isNotReportedYet(d)).map(d => ({ value: d.total }))) : undefined}
               info={spendCard?.evidence ? {
                 align: 'start',
                 content: (

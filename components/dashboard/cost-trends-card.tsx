@@ -2,13 +2,15 @@ import { MoreHorizontal } from 'lucide-react'
 import { DASHBOARD_ICON_STROKE } from './icon-stroke'
 import { CostTrendChart } from './cost-trend-chart'
 import { CostBreakdownBarList } from './cost-breakdown-barlist'
+import type { CostReportState } from '@/lib/cost-trend-basis'
 
 type DateRange = '7d' | '30d' | '90d' | '6mo' | '1yr'
 
 interface CostTrendsCardProps {
   isDemoActive: boolean
   hasBillingData: boolean
-  costTrend: Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number }>
+  /** Passed through to CostTrendChart, report state included (not_reported is a gap, updating is lighter). */
+  costTrend: Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; reportState?: CostReportState; provisional?: boolean }>
   costTrendLoading: boolean
   /** The trend request failed -- shown as such, never as an empty (zero-spend) chart. */
   costTrendError?: boolean
