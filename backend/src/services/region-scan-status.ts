@@ -26,7 +26,11 @@ export type HomeRegionScanStatus = 'ok' | 'partial' | 'failed' | 'denied' | 'tim
 
 export interface HomeRegionScanResult {
   status: HomeRegionScanStatus;
-  /** Set for `partial` only: which listing was cut off. */
+  /**
+   * The home region's status (M5b): set for `partial` only, which listing was cut off.
+   * A multi-region scan's region (region-run.ts) also sets it for a failure (its reason
+   * code) and, on an `ok` region, for its Resource Explorer warning (PR 2, RR-M2).
+   */
   errorCode: string | null;
 }
 

@@ -587,13 +587,15 @@ describe('concurrency (A1)', () => {
 describe('Resource Explorer (A4, A5)', () => {
   const noIndex = { GetIndexCommand: () => { throw awsError('ResourceNotFoundException', 'no index'); } };
 
-  it('flag on: a region with no index gets no Search, the warning, an ok status; the job completes', async () => {
+  it('flag on: a region with no index gets no Search, the warning, an ok status (its code: the warning, PR 2 RR-M2); the job completes', async () => {
     const orgId = await insertOrg();
     const { log } = mockAws({ [EU]: { explorer: noIndex } });
     await service().discoverAllResources(orgId);
     expect(log.filter((call) => call.region === EU && call.command === 'SearchCommand')).toEqual([]);
     expect(log.filter((call) => call.region === EU && call.command === 'GetIndexCommand')).toHaveLength(1);
-    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    // PR 2 (RR-M2): the warning is recorded as that region's code; the status stays ok.
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'ok', last_error_code: 'resource_explorer_no_index', consecutive_failures: 0 });
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
     expect(await job(orgId)).toMatchObject({ status: 'completed', error_message: null, warnings: ['resource_explorer_no_index'] });
   }, 60_000);
 
@@ -619,13 +621,14 @@ describe('Resource Explorer (A4, A5)', () => {
     await seedResource(orgId, queueArn(EU), 'sqs', EU);
     const { log } = mockAws({ [EU]: { explorer: noView } });
     await service().discoverAllResources(orgId);
-    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    // PR 2 (RR-M2): the warning is recorded as that region's code; the status stays ok.
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'ok', last_error_code: 'resource_explorer_no_view' });
     for (const command of ['DescribeInstancesCommand', 'DescribeVolumesCommand', 'DescribeDBInstancesCommand', 'ListFunctionsCommand', 'DescribeLoadBalancersCommand']) {
       expect(log.filter((call) => call.region === EU && call.command === command)).toHaveLength(1);
     }
     expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['resource_explorer_no_view'], regions: SCAN_ORDER });
     expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
-    expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ outcome: 'ok', reason: null });
+    expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ outcome: 'ok', reason: 'resource_explorer_no_view' });
   }, 60_000);
 
   it('M-3 flag off: a home Search 401 (no default view) no longer fails the job: the warning, an ok status, own listings ran', async () => {
@@ -1737,4 +1740,163 @@ describe('PR 1b L-4: a home region whose listings never ran still blocks EC2 and
     expect(row.error_message).not.toContain('not listed');
     expect(row.error_message).toBe('RDS: REGION_DEADLINE: region us-east-1 ran past its deadline');
   }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+describe('PR 2: what a scan records for the coverage API (RR-M2 and scan progress)', () => {
+  /** The coverage API's read, on this suite's (superuser) pool: the route's own code. */
+  async function coverage(orgId: string) {
+    const { readServicesCoverage } = await import('../../routes/services-coverage.routes');
+    return readServicesCoverage({ query: (text: string, values?: unknown[]) => pool.query(text, values as any[]) }, orgId);
+  }
+  const noIndex = { GetIndexCommand: () => { throw awsError('ResourceNotFoundException', 'no index'); } };
+  const noView = {
+    SearchCommand: () => {
+      throw Object.assign(new Error('placeholder unauthorized'), { name: 'UnauthorizedException', $metadata: { httpStatusCode: 401 } });
+    },
+  };
+
+  it('RR-M2: each Resource Explorer warning is recorded on the region it came from; the coverage API names that region, never the home region', async () => {
+    const orgId = await insertOrg();
+    mockAws({
+      [EU]: { explorer: noIndex },
+      'ap-south-1': { explorer: noView },
+      // No index AND an EC2 listing cut off: the region is partial, and its one code column
+      // holds the truncation; the API must not claim it named every region.
+      'me-central-1': { explorer: noIndex, ec2: { DescribeInstancesCommand: () => ({ Reservations: [], NextToken: 'more' }) } },
+    });
+    await service().discoverAllResources(orgId);
+
+    const rows = await regionRows(orgId);
+    expect(rows[HOME]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    expect(rows[EU]).toMatchObject({ last_scan_status: 'ok', last_error_code: 'resource_explorer_no_index' });
+    expect(rows['ap-south-1']).toMatchObject({ last_scan_status: 'ok', last_error_code: 'resource_explorer_no_view' });
+    expect(rows['me-central-1']).toMatchObject({ last_scan_status: 'partial', last_error_code: 'discovery_listing_truncated' });
+    expect([...(await job(orgId)).warnings].sort()).toEqual(['discovery_listing_truncated', 'resource_explorer_no_index', 'resource_explorer_no_view']);
+
+    const mr = (await coverage(orgId)).multi_region!;
+    expect(mr.region_warnings).toEqual([
+      { code: 'resource_explorer_no_view', region: 'ap-south-1' },
+      { code: 'resource_explorer_no_index', region: EU },
+      { code: 'discovery_listing_truncated', region: 'me-central-1' },
+    ]);
+    expect(mr.region_warnings_complete).toBe(false);
+    expect(mr.region_warnings.some((w) => w.region === HOME)).toBe(false);
+  }, 60_000);
+
+  it('RR-M2: a region that failed keeps its own failure code (a Resource Explorer warning never replaces it)', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { explorer: noIndex, rds: { DescribeDBInstancesCommand: () => { throw accessDenied(); } } } });
+    await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'denied', last_error_code: 'access_denied' });
+  }, 60_000);
+
+  it('progress from a real scan (one region at a time): home done, ap-south-1 running, the other three waiting; earlier results shown for them', async () => {
+    const orgId = await insertOrg();
+    // ap-south-1's earlier result: one instance stored before this scan.
+    await seedResource(orgId, `arn:aws:ec2:ap-south-1:*:instance/${INSTANCE}`, 'ec2', 'ap-south-1');
+    await pool.query(`UPDATE aws_resources SET first_discovered_at = now() - interval '2 days' WHERE organization_id = $1`, [orgId]);
+    let apCalled!: () => void;
+    const apWaiting = new Promise<void>((resolve) => (apCalled = resolve));
+    let releaseAp!: () => void;
+    const apReleased = new Promise<void>((resolve) => (releaseAp = resolve));
+    mockAws({
+      'ap-south-1': {
+        ec2: {
+          DescribeInstancesCommand: async () => {
+            apCalled();
+            await apReleased;
+            return { Reservations: [] };
+          },
+        },
+      },
+    });
+    const scanning = service({ regionPool: 1 }).discoverAllResources(orgId);
+    await apWaiting;
+
+    const during = (await coverage(orgId)).multi_region!;
+    expect(during.progress).toMatchObject({ regions_total: 5, regions_done: 1, regions_running: 1, regions_waiting: 3 });
+    const state = Object.fromEntries(during.regions.map((r) => [r.region, [r.scan_state, r.result_of]]));
+    expect(state).toEqual({
+      [HOME]: ['done', 'running_scan'],
+      'ap-south-1': ['running', null],
+      [EU]: ['waiting', null],
+      'me-central-1': ['waiting', null],
+      'us-west-2': ['waiting', null],
+    });
+    // Never scanned before this scan: no result yet, so no count (never a 0).
+    expect(during.regions.find((r) => r.region === 'ap-south-1')!.resources).toBeNull();
+    // The job's started regions so far.
+    expect((await job(orgId)).regions).toEqual([HOME, 'ap-south-1']);
+
+    releaseAp();
+    await scanning;
+    const after = (await coverage(orgId)).multi_region!;
+    expect(after.progress).toBeNull();
+    expect(after.regions.map((r) => [r.region, r.scan_state, r.result_of])).toEqual(
+      [HOME, ...SCAN_ORDER.filter((r) => r !== HOME).sort()].map((region) => [region, null, 'earlier_scan'])
+    );
+    // At its end the job lists the regions it started, as before PR 2.
+    expect((await job(orgId)).regions).toEqual(SCAN_ORDER);
+  }, 60_000);
+
+  it('a second scan: a region waiting shows its earlier result and count, not what the running scan has written', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { ec2: { DescribeInstancesCommand: () => ({ Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: 't3.micro', State: { Name: 'running' } }] }] }) } } });
+    await service().discoverAllResources(orgId);
+    expect((await coverage(orgId)).multi_region!.regions.find((r) => r.region === EU)).toMatchObject({ status: 'ok', resources: 1 });
+    jest.restoreAllMocks();
+    quietConsole();
+
+    // Second scan, one region at a time, held at home's EC2 listing: every other region waits.
+    let homeCalled!: () => void;
+    const homeWaiting = new Promise<void>((resolve) => (homeCalled = resolve));
+    let releaseHome!: () => void;
+    const homeReleased = new Promise<void>((resolve) => (releaseHome = resolve));
+    mockAws({
+      [HOME]: { ec2: { DescribeInstancesCommand: async () => { homeCalled(); await homeReleased; return { Reservations: [] }; } } },
+      [EU]: { ec2: { DescribeInstancesCommand: () => ({ Reservations: [] }) } },
+    });
+    const scanning = service({ regionPool: 1 }).discoverAllResources(orgId);
+    await homeWaiting;
+    const during = (await coverage(orgId)).multi_region!;
+    expect(during.progress).toMatchObject({ regions_total: 5, regions_done: 0, regions_running: 1, regions_waiting: 4 });
+    expect(during.regions.find((r) => r.region === EU)).toMatchObject({ scan_state: 'waiting', result_of: 'earlier_scan', status: 'ok', resources: 1 });
+    releaseHome();
+    await scanning;
+  }, 60_000);
+
+  it('before any region starts (the S3 listing runs first): every region waiting, none running', async () => {
+    const orgId = await insertOrg();
+    let s3Called!: () => void;
+    const s3Waiting = new Promise<void>((resolve) => (s3Called = resolve));
+    let releaseS3!: () => void;
+    const s3Released = new Promise<void>((resolve) => (releaseS3 = resolve));
+    mockAws({ [HOME]: { s3: { ListBucketsCommand: async () => { s3Called(); await s3Released; return { Buckets: [] }; } } } });
+    const scanning = service().discoverAllResources(orgId);
+    await s3Waiting;
+    // The scan's region list is read during the scan (M5a): stored before S3 runs.
+    const during = (await coverage(orgId)).multi_region!;
+    expect(during.progress).toMatchObject({ regions_total: 5, regions_done: 0, regions_running: 0, regions_waiting: 5 });
+    expect((await job(orgId)).regions).toEqual([]);
+    releaseS3();
+    await scanning;
+    expect((await job(orgId)).regions).toEqual(SCAN_ORDER);
+  }, 60_000);
+
+  it('flag off: the job\'s regions are written as before (the home region, at open and at the end); no multi_region key', async () => {
+    const orgId = await insertOrg({ flag: false });
+    let s3Called!: () => void;
+    const s3Waiting = new Promise<void>((resolve) => (s3Called = resolve));
+    let releaseS3!: () => void;
+    const s3Released = new Promise<void>((resolve) => (releaseS3 = resolve));
+    mockAws({ [HOME]: { s3: { ListBucketsCommand: async () => { s3Called(); await s3Released; return { Buckets: [] }; } } } });
+    const scanning = service().discoverAllResources(orgId);
+    await s3Waiting;
+    expect((await job(orgId)).regions).toEqual([HOME]);
+    expect(await coverage(orgId)).not.toHaveProperty('multi_region');
+    releaseS3();
+    await scanning;
+    expect((await job(orgId)).regions).toEqual([HOME]);
+  }, 30_000);
 });
