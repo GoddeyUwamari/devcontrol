@@ -146,7 +146,9 @@ export interface MultiRegionCoverage {
   /**
    * Region-scoped warning codes, each with its region, from each region's last
    * recorded result (aws_account_regions.last_error_code): Resource Explorer
-   * no_index / no_view, the truncation codes and scan_budget. Codes only, never text.
+   * no_index / no_view and the truncation codes. Codes only, never text. Not
+   * scan_budget (a region never started: its state) and not scan_deadline (a scan-level
+   * stop after the regions, in last_scan.warnings; it has no region).
    */
   region_warnings: Array<{ code: string; region: string }>;
   /**
@@ -173,8 +175,17 @@ export interface MultiRegionRegion {
   stale: boolean;
   /** null: never scanned. 'running_scan': done in the scan running now. 'earlier_scan': any earlier scan. */
   result_of: 'running_scan' | 'earlier_scan' | null;
-  /** Only while a scan runs (else null): done in it, started and not done, or not started yet. */
-  scan_state: 'done' | 'running' | 'waiting' | null;
+  /**
+   * Only while a scan runs (else null): done in it, started and not done, not started
+   * yet, or excluded (a region the account's allow-list keeps out of scans,
+   * scan_enabled = false: the scan never covers it, review L-1).
+   */
+  scan_state: 'done' | 'running' | 'waiting' | 'excluded' | null;
+  /**
+   * The region's state in one field (review M-2), so a page never combines status,
+   * error_code, scan_state and result_of itself. See RegionState.
+   */
+  state: RegionState;
   /**
    * Resources stored for the region (the Services list's rows: this organization, not
    * terminated), returned ONLY when a successful check backs the count (PR 2 fix round,
@@ -201,17 +212,56 @@ export interface MultiRegionRegion {
   empty: boolean;
 }
 
+/**
+ * One region's state (review M-2), derived on the server from the existing codes:
+ *
+ *   not_started            no result yet: waiting in the running scan, or never scanned
+ *   in_progress            running in the running scan
+ *   checked                last result ok, no warning code
+ *   checked_with_warnings  last result ok with a Resource Explorer code, or partial
+ *   failed                 failed (error), or timed out on throttling / one call's limit
+ *                          (throttled, call_timeout): the check did not complete
+ *   not_checked_budget     never started: the scan budget ran out (timed_out, scan_budget)
+ *   not_checked_deadline   started, ran past its deadline (timed_out, region_deadline)
+ *   denied                 refused (access_denied, access_denied_scp)
+ *   not_ready              enabled but not usable yet (failed, region_not_ready)
+ *   excluded               kept out of scans by the account's allow-list (scan_enabled = false)
+ *
+ * The running scan decides in_progress / not_started for a region not done in it;
+ * otherwise the region's last recorded result does (status and error_code keep the detail).
+ */
+export type RegionState =
+  | 'not_started'
+  | 'in_progress'
+  | 'checked'
+  | 'checked_with_warnings'
+  | 'failed'
+  | 'not_checked_budget'
+  | 'not_checked_deadline'
+  | 'denied'
+  | 'not_ready'
+  | 'excluded';
+
+export const REGION_STATES: readonly RegionState[] = [
+  'not_started', 'in_progress', 'checked', 'checked_with_warnings', 'failed',
+  'not_checked_budget', 'not_checked_deadline', 'denied', 'not_ready', 'excluded',
+];
+
 export interface RegionsChecked {
   /** enabled_regions.count; null while no list is stored. */
   enabled: number | null;
-  /** Last result ok: checked completely. */
+  /** Last result ok: checked completely (a Resource Explorer code included). */
   complete: number;
   /** Last result partial: checked, a listing cut off. */
   partial: number;
-  /** Last result denied, failed or timed_out: not checked completely. */
+  /** Last result denied, failed or timed_out, the scan budget excepted: started, not checked completely. */
   not_checked: number;
+  /** Last result timed_out with scan_budget: never started, the scan budget ran out (review M-2: never counted as failed). */
+  not_reached: number;
   /** Never scanned. */
   never_scanned: number;
+  /** Every enabled region of the latest list by its current state (every state present, 0 when none). */
+  by_state: Record<RegionState, number>;
 }
 
 export interface MultiRegionProgress {
@@ -293,7 +343,8 @@ export const MULTI_REGION_ERROR_CODES: readonly string[] = [
 export const REGION_WARNING_CODES: readonly string[] = [
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
-  REGION_CODE_SCAN_BUDGET,
+  // scan_budget is not here (review L-2): a region never started is not checked, not a
+  // warning on a check; it is its state (not_checked_budget) and its error_code.
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
 ];
@@ -537,6 +588,9 @@ interface MultiRegionRowJson {
 
 const NOT_CHECKED_STATUSES: readonly string[] = ['denied', 'failed', 'timed_out'];
 
+/** A last result that is the scan budget: the region was never started (not a failure). */
+const notReached = (entry: { status: string; error_code: string | null }) => entry.status === 'timed_out' && entry.error_code === REGION_CODE_SCAN_BUDGET;
+
 /** A recorded region result that is a successful check (founder decision H-1): ok, or partial (checked, a listing cut off). */
 const SUCCESSFUL_STATUSES: readonly string[] = ['ok', 'partial'];
 
@@ -570,6 +624,30 @@ export function regionResources(entry: {
   return { resources: null, resources_from: null, empty: false };
 }
 
+/** A region's single state (review M-2): see RegionState. */
+export function regionState(status: string, errorCode: string | null, scanState: MultiRegionRegion['scan_state'], scanEnabled: boolean): RegionState {
+  if (!scanEnabled) return 'excluded';
+  if (scanState === 'running') return 'in_progress';
+  if (scanState === 'waiting') return 'not_started';
+  switch (status) {
+    case 'ok':
+      return errorCode === null ? 'checked' : 'checked_with_warnings';
+    case 'partial':
+      return 'checked_with_warnings';
+    case 'denied':
+      return 'denied';
+    case 'failed':
+      return errorCode === REGION_CODE_NOT_READY ? 'not_ready' : 'failed';
+    case 'timed_out':
+      if (errorCode === REGION_CODE_SCAN_BUDGET) return 'not_checked_budget';
+      if (errorCode === REGION_CODE_DEADLINE) return 'not_checked_deadline';
+      return 'failed';
+    default:
+      // never_scanned, and the statuses no scan writes (skipped_locked, not_enabled): nothing checked.
+      return 'not_started';
+  }
+}
+
 /** The multi_region key (PR 2) for a flagged organization. */
 export async function readMultiRegionCoverage(
   db: AwsAccountsQueryable,
@@ -588,7 +666,15 @@ export async function readMultiRegionCoverage(
   const regions = listed.map((entry): MultiRegionRegion => {
     const done = scanning && entry.done_in_running_scan;
     const neverScanned = entry.status === 'never_scanned';
-    const scanState: MultiRegionRegion['scan_state'] = !scanning ? null : done ? 'done' : started.has(entry.region) ? 'running' : 'waiting';
+    const scanState: MultiRegionRegion['scan_state'] = !scanning
+      ? null
+      : !entry.scan_enabled
+        ? 'excluded'
+        : done
+          ? 'done'
+          : started.has(entry.region)
+            ? 'running'
+            : 'waiting';
     const errorCode = multiRegionErrorCode(entry.last_error_code);
     // Review H-1: a count only when a successful check backs it; empty only for a
     // successful check that found nothing.
@@ -604,6 +690,7 @@ export async function readMultiRegionCoverage(
       stale: entry.stale,
       result_of: neverScanned ? null : done ? 'running_scan' : 'earlier_scan',
       scan_state: scanState,
+      state: regionState(entry.status, errorCode, scanState, entry.scan_enabled),
       ...counted,
     };
   });
@@ -641,8 +728,10 @@ export async function readMultiRegionCoverage(
       enabled: listed.length > 0 ? listed.length : null,
       complete: regions.filter((entry) => entry.status === 'ok').length,
       partial: regions.filter((entry) => entry.status === 'partial').length,
-      not_checked: regions.filter((entry) => NOT_CHECKED_STATUSES.includes(entry.status)).length,
+      not_checked: regions.filter((entry) => NOT_CHECKED_STATUSES.includes(entry.status) && !notReached(entry)).length,
+      not_reached: regions.filter(notReached).length,
       never_scanned: regions.filter((entry) => entry.status === 'never_scanned').length,
+      by_state: Object.fromEntries(REGION_STATES.map((state) => [state, regions.filter((entry) => entry.state === state).length])) as Record<RegionState, number>,
     },
     progress,
     region_warnings: regions

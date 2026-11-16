@@ -141,7 +141,8 @@ describe('POST /api/services/discover: regions_checked', () => {
     expect(body).toEqual({
       ...BEFORE_PR2,
       jobId,
-      regions_checked: { enabled: 5, recorded: 4, complete: 1, partial: 1, not_checked: 2 },
+      // us-west-2 never started (scan_budget): not reached, never counted as not checked (review M-2).
+      regions_checked: { enabled: 5, recorded: 4, complete: 1, partial: 1, not_checked: 1, not_reached: 1 },
     });
   });
 
@@ -155,7 +156,7 @@ describe('POST /api/services/discover: regions_checked', () => {
     await seedScan(other.orgId);
     await flag(org.orgId, true);
     stubScan(jobId);
-    expect((await discover(org)).body.regions_checked).toEqual({ enabled: 1, recorded: 1, complete: 1, partial: 0, not_checked: 0 });
+    expect((await discover(org)).body.regions_checked).toEqual({ enabled: 1, recorded: 1, complete: 1, partial: 0, not_checked: 0, not_reached: 0 });
   });
 
   it('flag on, a job that is not this organization\'s: no regions_checked', async () => {

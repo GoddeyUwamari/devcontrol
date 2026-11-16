@@ -138,6 +138,10 @@ async function coverageOf(org: RoleGateOrg) {
   return (await res.json()).coverage;
 }
 
+/** A by_state record: every state, 0 unless given (review M-2). */
+const byState = (counts: Partial<Record<string, number>> = {}) =>
+  Object.fromEntries(['not_started', 'in_progress', 'checked', 'checked_with_warnings', 'failed', 'not_checked_budget', 'not_checked_deadline', 'denied', 'not_ready', 'excluded'].map((s) => [s, counts[s] ?? 0]));
+
 /** The flagged organization's regions by name. */
 const byRegion = (coverage: any) => Object.fromEntries(coverage.multi_region.regions.map((r: any) => [r.region, r]));
 
@@ -256,7 +260,10 @@ describe('no scan running: the latest scan', () => {
 
   it('regions_checked, savings_regions (home only) and region-scoped warnings with their region', async () => {
     const mr = (await coverageOf(org)).multi_region;
-    expect(mr.regions_checked).toEqual({ enabled: 6, complete: 2, partial: 1, not_checked: 2, never_scanned: 1 });
+    expect(mr.regions_checked).toEqual({
+      enabled: 6, complete: 2, partial: 1, not_checked: 2, not_reached: 0, never_scanned: 1,
+      by_state: byState({ checked: 1, checked_with_warnings: 2, denied: 1, failed: 1, not_started: 1 }),
+    });
     expect(mr.home_region).toBe(HOME);
     expect(mr.savings_regions).toEqual([HOME]);
     expect(mr.region_warnings).toEqual([
@@ -374,7 +381,7 @@ describe('a scan in progress (mock state (d)): its progress, and each region\'s 
     const mr = (await coverageOf(unlisted)).multi_region;
     expect(mr.regions).toEqual([]);
     expect(mr.not_enabled_regions).toEqual([]);
-    expect(mr.regions_checked).toEqual({ enabled: null, complete: 0, partial: 0, not_checked: 0, never_scanned: 0 });
+    expect(mr.regions_checked).toEqual({ enabled: null, complete: 0, partial: 0, not_checked: 0, not_reached: 0, never_scanned: 0, by_state: byState() });
     expect(mr.progress).toMatchObject({ regions_total: 1, regions_done: 0, regions_running: 1, regions_waiting: 0 });
   });
 });
@@ -470,6 +477,83 @@ describe('review H-1: a count (including 0) only when a successful check backs i
 });
 
 // ---------------------------------------------------------------------------
+describe('review M-2: one state per region; the scan budget is never counted as a failure', () => {
+  it('every recorded outcome maps to its own state; status and error_code keep the detail', async () => {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId);
+    await setFlag(org.orgId, true);
+    const cases: Array<[string, RegionRow, string]> = [
+      [HOME, { status: 'ok' }, 'checked'],
+      ['eu-west-1', { status: 'ok', code: 'resource_explorer_no_index' }, 'checked_with_warnings'],
+      ['eu-west-2', { status: 'partial', code: 'discovery_listing_truncated' }, 'checked_with_warnings'],
+      ['eu-west-3', { status: 'failed', code: REGION_CODE_ERROR }, 'failed'],
+      ['eu-north-1', { status: 'timed_out', code: REGION_CODE_THROTTLED }, 'failed'],
+      ['eu-south-1', { status: 'timed_out', code: REGION_CODE_CALL_TIMEOUT }, 'failed'],
+      ['ap-south-1', { status: 'timed_out', code: REGION_CODE_SCAN_BUDGET }, 'not_checked_budget'],
+      ['ap-south-2', { status: 'timed_out', code: REGION_CODE_DEADLINE }, 'not_checked_deadline'],
+      ['ca-central-1', { status: 'denied', code: REGION_CODE_ACCESS_DENIED }, 'denied'],
+      ['ca-west-1', { status: 'denied', code: REGION_CODE_ACCESS_DENIED_SCP }, 'denied'],
+      ['me-central-1', { status: 'failed', code: REGION_CODE_NOT_READY }, 'not_ready'],
+      ['us-west-2', {}, 'not_started'],
+    ];
+    for (const [name, row] of cases) await insertRegion(org.orgId, name, row);
+    const regions = byRegion(await coverageOf(org));
+    for (const [name, row, state] of cases) {
+      expect([name, regions[name].state, regions[name].status, regions[name].error_code]).toEqual([name, state, row.status ?? 'never_scanned', row.code ?? null]);
+    }
+  });
+
+  it('a scan-budget region through the API: timed_out / scan_budget / not_checked_budget, no count, counted as not reached (never as not checked or failed), never a warning', async () => {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId);
+    await setFlag(org.orgId, true);
+    await insertJob(org.orgId, 'completed', EARLIER_START, [HOME], '2026-03-01T10:05:00Z');
+    await insertRegion(org.orgId, HOME, { status: 'ok' });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'timed_out', code: REGION_CODE_SCAN_BUDGET });
+    await insertRegion(org.orgId, 'ap-south-1', { status: 'failed', code: REGION_CODE_ERROR });
+    const mr = (await coverageOf(org)).multi_region;
+    expect(byRegion({ multi_region: mr })['eu-west-1']).toMatchObject({
+      status: 'timed_out', error_code: REGION_CODE_SCAN_BUDGET, state: 'not_checked_budget', resources: null, empty: false,
+    });
+    expect(mr.regions_checked).toEqual({
+      enabled: 3, complete: 1, partial: 0, not_checked: 1, not_reached: 1, never_scanned: 0,
+      by_state: byState({ checked: 1, not_checked_budget: 1, failed: 1 }),
+    });
+    expect(mr.region_warnings).toEqual([]);
+  });
+
+  it('while a scan runs: running is in_progress, waiting is not_started (whatever its earlier result), done is its new result', async () => {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId);
+    await setFlag(org.orgId, true);
+    const running = await insertJob(org.orgId, 'running', SCAN_START, [HOME, 'eu-west-1']);
+    await insertLease(org.orgId, running);
+    await insertRegion(org.orgId, HOME, { status: 'partial', code: 'discovery_listing_truncated', started: SCAN_START });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'denied', code: REGION_CODE_ACCESS_DENIED });
+    await insertRegion(org.orgId, 'ap-south-1', { status: 'ok' });
+    const mr = (await coverageOf(org)).multi_region;
+    const regions = byRegion({ multi_region: mr });
+    expect([regions[HOME].state, regions['eu-west-1'].state, regions['ap-south-1'].state]).toEqual(['checked_with_warnings', 'in_progress', 'not_started']);
+    expect(mr.regions_checked.by_state).toEqual(byState({ checked_with_warnings: 1, in_progress: 1, not_started: 1 }));
+  });
+
+  it('review L-1: a region the allow-list excludes (scan_enabled = false) is excluded, never waiting, and outside the scan\'s progress', async () => {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId);
+    await setFlag(org.orgId, true);
+    const running = await insertJob(org.orgId, 'running', SCAN_START, [HOME]);
+    await insertLease(org.orgId, running);
+    await insertRegion(org.orgId, HOME, { status: 'ok', started: SCAN_START });
+    await insertRegion(org.orgId, 'eu-west-1', {});
+    await pool.query(`UPDATE aws_account_regions SET scan_enabled = false WHERE organization_id = $1 AND region = 'eu-west-1'`, [org.orgId]);
+    const mr = (await coverageOf(org)).multi_region;
+    expect(byRegion({ multi_region: mr })['eu-west-1']).toMatchObject({ scan_state: 'excluded', state: 'excluded' });
+    expect(mr.progress).toMatchObject({ regions_total: 1, regions_done: 1, regions_waiting: 0 });
+    expect(mr.regions_checked.by_state.excluded).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe('a scan is in progress only while the lease is held AND names a running or pending job', () => {
   async function orgWith(lease: (orgId: string, jobId: string) => Promise<void>, jobStatus = 'running') {
     const org = await harness.buildOrg();
@@ -534,7 +618,7 @@ describe('tenant isolation', () => {
     savings_regions: [HOME],
     not_enabled_regions: [],
     regions: [],
-    regions_checked: { enabled: null, complete: 0, partial: 0, not_checked: 0, never_scanned: 0 },
+    regions_checked: { enabled: null, complete: 0, partial: 0, not_checked: 0, not_reached: 0, never_scanned: 0, by_state: byState() },
     progress: null,
     region_warnings: [],
     region_warnings_complete: true,

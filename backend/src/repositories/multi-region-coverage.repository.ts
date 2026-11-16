@@ -50,8 +50,10 @@ export interface ScanRegionsChecked {
   complete: number;
   /** partial: checked, a listing cut off. */
   partial: number;
-  /** denied, failed or timed_out (scan_budget included): not checked completely. */
+  /** denied, failed or timed_out, the scan budget excepted: started, not checked completely. */
   not_checked: number;
+  /** timed_out with scan_budget: never started, the scan budget ran out (review M-2: never counted as failed). */
+  not_reached: number;
 }
 
 /**
@@ -66,7 +68,7 @@ export async function readScanRegionsChecked(db: AwsAccountsQueryable, organizat
        SELECT started_at FROM resource_discovery_jobs WHERE id = $2 AND organization_id = $1 AND started_at IS NOT NULL
      ),
      regions AS (
-       SELECT ar.region, ar.enabled, ar.last_listed_at, ar.last_scan_status, ar.last_scan_started_at
+       SELECT ar.region, ar.enabled, ar.last_listed_at, ar.last_scan_status, ar.last_scan_started_at, ar.last_error_code
          FROM aws_account_regions ar
         WHERE ar.organization_id = $1 AND ar.aws_account_id = $3::text
      ),
@@ -79,7 +81,12 @@ export async function readScanRegionsChecked(db: AwsAccountsQueryable, organizat
        (SELECT COUNT(*) FROM regions, j WHERE regions.last_scan_started_at = j.started_at AND regions.last_scan_status = 'ok')::int AS complete,
        (SELECT COUNT(*) FROM regions, j WHERE regions.last_scan_started_at = j.started_at AND regions.last_scan_status = 'partial')::int AS partial,
        (SELECT COUNT(*) FROM regions, j WHERE regions.last_scan_started_at = j.started_at
-                                          AND regions.last_scan_status IN ('denied', 'failed', 'timed_out'))::int AS not_checked`,
+                                          AND regions.last_scan_status IN ('denied', 'failed', 'timed_out')
+                                          AND NOT (regions.last_scan_status = 'timed_out'
+                                                   AND regions.last_error_code IS NOT DISTINCT FROM 'scan_budget'))::int AS not_checked,
+       (SELECT COUNT(*) FROM regions, j WHERE regions.last_scan_started_at = j.started_at
+                                          AND regions.last_scan_status = 'timed_out'
+                                          AND regions.last_error_code = 'scan_budget')::int AS not_reached`,
     [organizationId, jobId, awsAccountId]
   );
   const row = rows[0];
@@ -90,5 +97,6 @@ export async function readScanRegionsChecked(db: AwsAccountsQueryable, organizat
     complete: row.complete,
     partial: row.partial,
     not_checked: row.not_checked,
+    not_reached: row.not_reached,
   };
 }

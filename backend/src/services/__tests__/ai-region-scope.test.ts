@@ -52,7 +52,7 @@ function coverageWith(multi: Partial<NonNullable<ServicesCoverage['multi_region'
       savings_regions: [HOME],
       not_enabled_regions: ['ap-east-1'],
       regions: [],
-      regions_checked: { enabled: null, complete: 0, partial: 0, not_checked: 0, never_scanned: 0 },
+      regions_checked: { enabled: null, complete: 0, partial: 0, not_checked: 0, not_reached: 0, never_scanned: 0, by_state: {} as any },
       progress: null,
       region_warnings: [],
       region_warnings_complete: true,
@@ -73,7 +73,7 @@ describe('regionScanFromCoverage', () => {
     const scan = regionScanFromCoverage(coverageWith({
       regions: [region(HOME, 'ok'), region('ap-south-1', 'denied', 'access_denied'), region('eu-west-1', 'partial', 'discovery_listing_truncated'),
         region('us-west-2', 'never_scanned'), region('ca-central-1', 'timed_out', 'scan_budget')],
-      regions_checked: { enabled: 5, complete: 1, partial: 1, not_checked: 2, never_scanned: 1 },
+      regions_checked: { enabled: 5, complete: 1, partial: 1, not_checked: 1, not_reached: 1, never_scanned: 1, by_state: {} as any },
       progress: { scan_started_at: null, regions_total: 5, regions_done: 1, regions_running: 1, regions_waiting: 3 },
     }));
     expect(scan).toEqual({
