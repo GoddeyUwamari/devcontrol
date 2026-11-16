@@ -8,8 +8,12 @@ Every example below is a real response. `backend/src/routes/__tests__/services-c
 
 - **Database only.** The route makes no AWS call (tested), and a GET writes nothing (tested; the auth middleware's own `api_usage` meter is the only write, as on every route).
 - **Present only for a flagged organization.** `multi_region` appears only when `organization_feature_flags.multi_region_discovery` is on.
-  - Without the flag, the response is byte-identical to the one before PR 2 (contract snapshot `services-coverage.multi-region-flag-off.contract.test.ts`).
   - A flag that cannot be read counts as off.
+- **Flag-off contract (PR 2), superseded on purpose by PR 3a.** PR 2 kept the flag-off response byte-identical to the one before it. PR 3a adds exactly two keys for every organization without changing any other:
+  - `not_enabled_regions` (G7), for every organization;
+  - `home_only_coverage` (G8), only when `multi_region` is absent.
+
+  Every key that existed before keeps its value. `services-coverage.multi-region-flag-off.contract.test.ts` pins this: the response with those two keys removed deep-equals the text recorded before PR 2, and the snapshot changed in one hunk. See §15.
 - **Additive.** No other key of `coverage` changes, for any organization. For example, `region_status[].last_error_code` keeps its two-code allow-list.
 
 ## 2. Auth and tenancy
@@ -24,7 +28,8 @@ Every example below is a real response. `backend/src/routes/__tests__/services-c
 
 ```text
 multi_region: {
-  scan: { id, status, started_at, completed_at, regions_total, regions_checked } | null
+  scan: { id, status, started_at, completed_at, regions_total, regions_checked,
+          regions_with_resources, regions_empty, regions_zero_with_warnings } | null   // the last three: PR 3a
   coverage_status: 'in_progress' | 'all_checked' | 'completed_with_regions_not_checked' | 'latest_scan_failed' | 'unavailable'
   home_region: string | null
   savings_regions: string[]                       // the home region only
@@ -34,6 +39,7 @@ multi_region: {
   progress: { scan_started_at, regions_total, regions_done, regions_running, regions_waiting } | null
   region_warnings: { code, region }[]
   region_warnings_complete: boolean
+  region_warnings_unattributed: string[]          // PR 3a
 }
 
 Region: {
@@ -79,7 +85,7 @@ A region counts as done in a scan when its status write carries that job's `star
 | `not_checked_deadline` | started, ran past its deadline | `timed_out` / `region_deadline` |
 | `denied` | refused | `denied` / `access_denied`, `access_denied_scp` |
 | `not_ready` | enabled but not usable yet | `failed` / `region_not_ready` |
-| `excluded` | kept out of scans by the account's allow-list (`scan_enabled = false`; nothing writes this today) | any |
+| `excluded` | kept out of scans by the account's allow-list (`scan_enabled = false`; nothing writes this today). **Never the home region** (PR 3a, RR-L1): the scanner always scans home, so a home row with `scan_enabled = false` reads its own result | any |
 
 `error_code` is one of the codes above, or null. A stored value that is not on the list is null, and the stored message never leaves the database. A not-enabled region is never in `regions`; it is in `not_enabled_regions`.
 
@@ -103,6 +109,8 @@ A partial result, a Resource Explorer warning, a failure, the scan budget, a run
 
 The rows counted are the Services list's: this organization's, not terminated, any resource type stored at that region (S3 buckets at their own region included).
 
+**A partial result does not count as an earlier success (RR-L3).** `last_success_at` is written only for `ok`. So a region whose only success was `partial`, and whose later result failed, reads `resources: null`, although its rows are still stored. A region that was `ok` and then failed reads `earlier_success`. This is conservative: it never reports a wrong number. One consequence: the `resources` column can add up to less than `total`. A page shows `total` as the total and never sums the column to make one.
+
 **Known limits for a region that is running or waiting** (small, transient; exact counts need a stored per-region count, the optional PR 4):
 - a row the scan already terminated in it is not counted before its status write;
 - a terminated row the scan found again is counted;
@@ -117,6 +125,20 @@ The rows counted are the Services list's: this organization's, not terminated, a
 - `regions_waiting` is the rest.
 
 `scan.regions_total` is the same set. `scan.regions_checked` counts only regions with a `checked` / `checked_with_warnings` result written **by that scan**. So "N of M checked" for a scan is `scan.regions_checked` of `scan.regions_total`, and an older scan's results never make it look complete.
+
+**With `latest_scan_failed`, `regions_checked` can equal `regions_total` (RR-L2).** A scan can check every region and then fail in a later step. Never show "N of N checked" without the failure next to it: `coverage_status` carries it.
+
+**The checked regions, split (PR 3a, G6).** The same "written by that scan" rule splits `scan.regions_checked` three ways, so a page never combines `result_of`, `state` and `resources` itself:
+
+| Field | The regions this scan checked that … |
+|---|---|
+| `regions_with_resources` | found at least one resource |
+| `regions_empty` | found nothing in a clean check (`regions[].empty`: `ok`, no warning code) |
+| `regions_zero_with_warnings` | found nothing but carry a warning (`partial`, or a Resource Explorer code). Never "empty" (founder rule H-1): resources there may have been missed |
+
+- **Invariant (tested in every example):** `regions_with_resources + regions_empty + regions_zero_with_warnings = regions_checked`.
+- **While a scan runs,** these cover only the regions done in it (`in_progress` example: 1 of 4).
+- **When the newest scan failed,** a region whose result came from an earlier scan is in none of them (`latest_scan_failed` example: eu-west-1).
 
 `regions_checked` describes each enabled region's **last** result, which may come from different scans:
 - `complete` (ok), `partial`;
@@ -150,6 +172,11 @@ The rows counted are the Services list's: this organization's, not terminated, a
   - `scan_budget` is a state (`not_checked_budget`);
   - `scan_deadline` is a scan-level stop after the regions, reported in `last_scan.warnings` / `last_completed_scan.warnings` (it has no region).
 - **`region_warnings_complete`** is false when any scanned region's last result is not `ok`. Such a region's one code column holds its own outcome, so a Resource Explorer warning in it cannot be named. The job's `warnings` still lists every code. Full provenance needs a second column (optional PR 4).
+- **`region_warnings_unattributed`** (PR 3a, G11):
+  - It lists the Resource Explorer codes (`resource_explorer_no_index`, `resource_explorer_no_view`) that the newest job reported (`last_scan.warnings`, the same job and the same reader) but that no `region_warnings` entry carries. The scan saw them, but this response can't say in which region.
+  - It is `[]` when every such code is named. Codes only, in `last_scan.warnings` order.
+  - A page shows its region-neutral line exactly when the array is non-empty.
+  - Example: `unattributed_warning`.
 
 ## 11. Home-only cost and global listings
 
@@ -183,7 +210,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:20:00.000Z",
     "regions_total": 3,
-    "regions_checked": 3
+    "regions_checked": 3,
+    "regions_with_resources": 3,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "all_checked",
   "home_region": "us-east-1",
@@ -268,7 +298,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
       "region": "ap-south-1"
     }
   ],
-  "region_warnings_complete": true
+  "region_warnings_complete": true,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -282,7 +313,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": null,
     "regions_total": 4,
-    "regions_checked": 1
+    "regions_checked": 1,
+    "regions_with_resources": 1,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "in_progress",
   "home_region": "us-east-1",
@@ -384,7 +418,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "regions_waiting": 2
   },
   "region_warnings": [],
-  "region_warnings_complete": true
+  "region_warnings_complete": true,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -398,7 +433,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:20:00.000Z",
     "regions_total": 4,
-    "regions_checked": 2
+    "regions_checked": 2,
+    "regions_with_resources": 2,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "completed_with_regions_not_checked",
   "home_region": "us-east-1",
@@ -494,7 +532,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
   },
   "progress": null,
   "region_warnings": [],
-  "region_warnings_complete": false
+  "region_warnings_complete": false,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -508,7 +547,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:20:00.000Z",
     "regions_total": 4,
-    "regions_checked": 1
+    "regions_checked": 1,
+    "regions_with_resources": 1,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "completed_with_regions_not_checked",
   "home_region": "us-east-1",
@@ -604,7 +646,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
   },
   "progress": null,
   "region_warnings": [],
-  "region_warnings_complete": false
+  "region_warnings_complete": false,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -618,7 +661,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:20:00.000Z",
     "regions_total": 3,
-    "regions_checked": 3
+    "regions_checked": 3,
+    "regions_with_resources": 1,
+    "regions_empty": 1,
+    "regions_zero_with_warnings": 1
   },
   "coverage_status": "all_checked",
   "home_region": "us-east-1",
@@ -703,7 +749,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
       "region": "ap-south-1"
     }
   ],
-  "region_warnings_complete": false
+  "region_warnings_complete": false,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -717,7 +764,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:20:00.000Z",
     "regions_total": 2,
-    "regions_checked": 2
+    "regions_checked": 2,
+    "regions_with_resources": 2,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "all_checked",
   "home_region": "us-east-1",
@@ -785,7 +835,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
   },
   "progress": null,
   "region_warnings": [],
-  "region_warnings_complete": true
+  "region_warnings_complete": true,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -799,7 +850,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:21:00.000Z",
     "regions_total": 2,
-    "regions_checked": 1
+    "regions_checked": 1,
+    "regions_with_resources": 1,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "latest_scan_failed",
   "home_region": "us-east-1",
@@ -863,7 +917,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
   },
   "progress": null,
   "region_warnings": [],
-  "region_warnings_complete": true
+  "region_warnings_complete": true,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -877,7 +932,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:20:00.000Z",
     "regions_total": 2,
-    "regions_checked": 2
+    "regions_checked": 2,
+    "regions_with_resources": 1,
+    "regions_empty": 1,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "all_checked",
   "home_region": "eu-central-1",
@@ -941,7 +999,8 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
   },
   "progress": null,
   "region_warnings": [],
-  "region_warnings_complete": true
+  "region_warnings_complete": true,
+  "region_warnings_unattributed": []
 }
 ```
 
@@ -955,7 +1014,10 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
     "started_at": "2026-11-15T10:00:00.000Z",
     "completed_at": "2026-11-15T10:20:00.000Z",
     "regions_total": 1,
-    "regions_checked": 1
+    "regions_checked": 1,
+    "regions_with_resources": 1,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 0
   },
   "coverage_status": "all_checked",
   "home_region": "eu-west-1",
@@ -1003,6 +1065,187 @@ Scenario inputs are in the examples test. Job ids are shown as a placeholder.
   },
   "progress": null,
   "region_warnings": [],
-  "region_warnings_complete": true
+  "region_warnings_complete": true,
+  "region_warnings_unattributed": []
+}
+```
+
+### A Resource Explorer warning no region can carry (PR 3a, G11)
+<!-- example: unattributed_warning -->
+```json
+{
+  "scan": {
+    "id": "00000000-0000-4000-8000-00000000a001",
+    "status": "completed",
+    "started_at": "2026-11-15T10:00:00.000Z",
+    "completed_at": "2026-11-15T10:20:00.000Z",
+    "regions_total": 3,
+    "regions_checked": 3,
+    "regions_with_resources": 2,
+    "regions_empty": 0,
+    "regions_zero_with_warnings": 1
+  },
+  "coverage_status": "all_checked",
+  "home_region": "us-east-1",
+  "savings_regions": [
+    "us-east-1"
+  ],
+  "not_enabled_regions": [],
+  "regions": [
+    {
+      "region": "us-east-1",
+      "home": true,
+      "opt_in": false,
+      "status": "ok",
+      "error_code": null,
+      "last_scan_finished_at": "2026-11-15T10:03:00.000Z",
+      "last_success_at": "2026-11-15T10:03:00.000Z",
+      "stale": true,
+      "result_of": "latest_scan",
+      "scan_state": null,
+      "state": "checked",
+      "resources": 4,
+      "resources_from": "last_result",
+      "empty": false
+    },
+    {
+      "region": "ap-south-1",
+      "home": false,
+      "opt_in": false,
+      "status": "ok",
+      "error_code": "resource_explorer_no_view",
+      "last_scan_finished_at": "2026-11-15T10:03:00.000Z",
+      "last_success_at": "2026-11-15T10:03:00.000Z",
+      "stale": true,
+      "result_of": "latest_scan",
+      "scan_state": null,
+      "state": "checked_with_warnings",
+      "resources": 0,
+      "resources_from": "last_result",
+      "empty": false
+    },
+    {
+      "region": "eu-west-1",
+      "home": false,
+      "opt_in": false,
+      "status": "partial",
+      "error_code": "discovery_listing_truncated",
+      "last_scan_finished_at": "2026-11-15T10:03:00.000Z",
+      "last_success_at": null,
+      "stale": true,
+      "result_of": "latest_scan",
+      "scan_state": null,
+      "state": "checked_with_warnings",
+      "resources": 2,
+      "resources_from": "last_result",
+      "empty": false
+    }
+  ],
+  "regions_checked": {
+    "enabled": 3,
+    "complete": 2,
+    "partial": 1,
+    "not_checked": 0,
+    "not_reached": 0,
+    "never_scanned": 0,
+    "by_state": {
+      "not_started": 0,
+      "in_progress": 0,
+      "checked": 1,
+      "checked_with_warnings": 2,
+      "failed": 0,
+      "not_checked_budget": 0,
+      "not_checked_deadline": 0,
+      "denied": 0,
+      "not_ready": 0,
+      "excluded": 0
+    }
+  },
+  "progress": null,
+  "region_warnings": [
+    {
+      "code": "resource_explorer_no_view",
+      "region": "ap-south-1"
+    },
+    {
+      "code": "discovery_listing_truncated",
+      "region": "eu-west-1"
+    }
+  ],
+  "region_warnings_complete": false,
+  "region_warnings_unattributed": [
+    "resource_explorer_no_index"
+  ]
+}
+```
+
+## 15. Outside `multi_region` (PR 3a)
+
+These fields are tested against the route like the examples above. The flag-off blocks are checked by `services-coverage.pr3a.test.ts` (the `example-flag-off` markers), and the `/stats` block by `services.routes.attention-scope.test.ts` (the `example-stats` marker). Placeholders only.
+
+### 15.1 `coverage.not_enabled_regions` (G7): every organization
+
+- **What it lists:** the regions of the account's latest stored region list with `enabled = false` (opt-in regions it has not enabled), by name.
+- **Same reader as `multi_region.not_enabled_regions`.** For a flagged organization the two are equal (tested).
+- **`[]`** when no account is connected or no list is stored.
+- **Never counted:** these regions are never scanned and never in a denominator or a count.
+- **A region missing from the latest list** is reported nowhere.
+
+### 15.2 `coverage.home_only_coverage` (G8): only when `multi_region` is absent
+
+With multi-region discovery off, only the home region is scanned. This field is that scan's "N of M", worked out here so the page never computes it:
+
+```text
+home_only_coverage: { regions_total, regions_checked: 0 | 1 } | null
+```
+
+- `regions_total` is the enabled regions of the latest stored list, the same as `scope.enabled_regions.count`.
+- `regions_checked` is **1 only when the current home region's last recorded status is `ok` or `partial`**, and 0 for `failed`, `denied`, `timed_out` and `never_scanned`.
+  - No other region ever counts.
+  - **A former home region's old `ok` result is never "checked".**
+- `null` when no account is connected or no region list is stored.
+- **Absent** for a flagged organization: use `multi_region.scan` there.
+
+<!-- example-flag-off: home_ok -->
+```json
+{
+  "not_enabled_regions": [
+    "af-south-1",
+    "ap-east-1"
+  ],
+  "home_only_coverage": {
+    "regions_total": 3,
+    "regions_checked": 1
+  }
+}
+```
+
+The home region moved from us-east-1 to us-west-2, and us-west-2 has not been scanned yet. us-east-1's earlier `ok` result doesn't count:
+
+<!-- example-flag-off: former_home_ok -->
+```json
+{
+  "not_enabled_regions": [],
+  "home_only_coverage": {
+    "regions_total": 3,
+    "regions_checked": 0
+  }
+}
+```
+
+### 15.3 `GET /api/services/stats` → `attention_scope` (G1)
+
+- **What it measures:** where the needs-attention resources are. It reads the same rows and applies the same predicate (`attentionOf`) as `needs_attention`, in the same statement, so the two can never disagree (parity with `?needs_attention=true` is tested).
+- `regions` is the distinct regions holding at least one needs-attention resource.
+- `global` is how many needs-attention resources are global (CloudFront, stored at `global`). Global is never counted as a region.
+
+<!-- example-stats: attention_scope -->
+```json
+{
+  "needs_attention": 4,
+  "attention_scope": {
+    "regions": 2,
+    "global": 1
+  }
 }
 ```

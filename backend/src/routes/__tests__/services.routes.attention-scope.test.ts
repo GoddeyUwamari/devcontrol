@@ -18,6 +18,8 @@
  * Real routes over an in-process HTTP server against live Postgres; only
  * authService.verifyToken is stubbed (role-gate harness). Placeholders only.
  */
+import fs from 'fs';
+import path from 'path';
 import { Client } from 'pg';
 import servicesRoutes, { serviceStatsFrom } from '../services.routes';
 import { createRoleGateHarness, RoleGateOrg } from './role-gate-harness';
@@ -137,6 +139,14 @@ describe('GET /api/services/stats attention_scope', () => {
     const { stats } = await getJson(orgA, '/services/stats');
     expect(stats.needs_attention).toBe(4);
     expect(stats.attention_scope).toEqual({ regions: 2, global: 1 });
+  });
+
+  it('docs §15.3: the example-stats block is org A\'s real answer', async () => {
+    const doc = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'docs', 'SERVICES_COVERAGE_MULTI_REGION.md'), 'utf8');
+    const match = /<!-- example-stats: attention_scope -->\s*```json\n([\s\S]*?)\n```/.exec(doc);
+    expect(match).not.toBeNull();
+    const { stats } = await getJson(orgA, '/services/stats');
+    expect({ needs_attention: stats.needs_attention, attention_scope: stats.attention_scope }).toEqual(JSON.parse(match![1]));
   });
 
   it('parity: the same numbers as the ?needs_attention=true list (same rows, same predicate)', async () => {

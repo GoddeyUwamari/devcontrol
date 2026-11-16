@@ -1,5 +1,5 @@
 /**
- * Multi-region PR 2 (review M-3): the synthetic examples in
+ * Multi-region PR 2 (review M-3), extended by PR 3a (G6, G11): the synthetic examples in
  * docs/SERVICES_COVERAGE_MULTI_REGION.md are real responses. Each scenario below is
  * built in Postgres, read through GET /api/services/coverage, and its multi_region
  * key is compared with the document's block for that example (the job id normalized to
@@ -40,8 +40,8 @@ interface Region {
 
 interface Scenario {
   home: string;
-  /** The jobs, oldest first: [status, started_at, regions]. */
-  jobs: Array<[string, string, string[]]>;
+  /** The jobs, oldest first: [status, started_at, regions, warnings?]. */
+  jobs: Array<[string, string, string[], string[]?]>;
   /** Index of the job a held lease names (a running scan), if any. */
   running?: number;
   regions: Region[];
@@ -138,6 +138,20 @@ const SCENARIOS: Record<string, Scenario> = {
     jobs: [['completed', LATEST, ['eu-west-1']]],
     regions: [{ name: 'eu-west-1', status: 'ok', started: LATEST, success: true, resources: 3 }],
   },
+  // PR 3a (G11): the scan reported resource_explorer_no_index, but the region it came from
+  // ended partial (its one code column holds the truncation code), so no region_warnings
+  // entry names it: region_warnings_unattributed carries it. resource_explorer_no_view is
+  // named (ap-south-1's own ok result), so it is not repeated there.
+  unattributed_warning: {
+    home: 'us-east-1',
+    jobs: [['completed', LATEST, ['us-east-1', 'eu-west-1', 'ap-south-1'],
+      ['resource_explorer_no_index', 'resource_explorer_no_view', 'discovery_listing_truncated', 'region_incomplete']]],
+    regions: [
+      { name: 'us-east-1', status: 'ok', started: LATEST, success: true, resources: 4 },
+      { name: 'eu-west-1', status: 'partial', started: LATEST, code: 'discovery_listing_truncated', resources: 2 },
+      { name: 'ap-south-1', status: 'ok', started: LATEST, success: true, code: 'resource_explorer_no_view', resources: 0 },
+    ],
+  },
 };
 
 let seq = 0;
@@ -155,11 +169,11 @@ async function build(scenario: Scenario): Promise<{ orgId: string; viewer: strin
     [org.orgId]
   );
   const jobIds: string[] = [];
-  for (const [i, [status, started, regions]] of scenario.jobs.entries()) {
+  for (const [i, [status, started, regions, warnings]] of scenario.jobs.entries()) {
     const { rows } = await pool.query(
-      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, created_at, resource_types, regions)
-       VALUES ($1, $2, $3, $4, $3, $5, $6) RETURNING id`,
-      [org.orgId, status, started, status === 'running' ? null : plusMinutes(started, 20 + i), TYPES, regions]
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, created_at, resource_types, regions, warnings)
+       VALUES ($1, $2, $3, $4, $3, $5, $6, $7::jsonb) RETURNING id`,
+      [org.orgId, status, started, status === 'running' ? null : plusMinutes(started, 20 + i), TYPES, regions, JSON.stringify(warnings ?? [])]
     );
     jobIds.push(rows[0].id);
   }
@@ -249,5 +263,42 @@ describe('docs/SERVICES_COVERAGE_MULTI_REGION.md: every example is the API\'s re
 
   it.each(Object.keys(SCENARIOS))('%s', async (name) => {
     expect(JSON.parse(JSON.stringify(await exampleOf(name)))).toEqual(documentExamples()[name]);
+  });
+});
+
+/**
+ * PR 3a (G6): the scan's checked regions split into with resources, empty and zero with
+ * warnings, by the same "written by this scan" rule as regions_checked, in every example.
+ */
+describe('G6: scan.regions_with_resources + regions_empty + regions_zero_with_warnings = regions_checked', () => {
+  // [with resources, empty, zero with warnings, checked] per example.
+  const EXPECTED: Record<string, [number, number, number, number]> = {
+    all_checked: [3, 0, 0, 3],
+    // Only us-east-1 is done in the running scan: eu-west-1 (2, earlier) and ap-south-1 (0, earlier) never count.
+    in_progress: [1, 0, 0, 1],
+    budget_incomplete: [2, 0, 0, 2],
+    regional_failure: [1, 0, 0, 1],
+    // eu-west-1 ok and 0: empty; ap-south-1 partial and 0: zero with warnings, never empty (H-1).
+    empty_regions: [1, 1, 1, 3],
+    not_enabled: [2, 0, 0, 2],
+    // eu-west-1's 2 come from the earlier scan (result_of earlier_scan): not this scan's.
+    latest_scan_failed: [1, 0, 0, 1],
+    // us-east-1 is ok and 0: empty.
+    home_not_us_east_1: [1, 1, 0, 2],
+    single_region: [1, 0, 0, 1],
+    // ap-south-1 is ok with a Resource Explorer code and 0: zero with warnings.
+    unattributed_warning: [2, 0, 1, 3],
+  };
+
+  it('covers every example', () => {
+    expect(Object.keys(EXPECTED).sort()).toEqual(Object.keys(SCENARIOS).sort());
+  });
+
+  it.each(Object.keys(SCENARIOS))('%s', async (name) => {
+    const { scan, regions } = await exampleOf(name);
+    expect(scan.regions_with_resources + scan.regions_empty + scan.regions_zero_with_warnings).toBe(scan.regions_checked);
+    expect([scan.regions_with_resources, scan.regions_empty, scan.regions_zero_with_warnings, scan.regions_checked]).toEqual(EXPECTED[name]);
+    // regions_empty never counts more than the regions[].empty flags (the same strict rule).
+    expect(scan.regions_empty).toBeLessThanOrEqual(regions.filter((r: { empty: boolean }) => r.empty).length);
   });
 });

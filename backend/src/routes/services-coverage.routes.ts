@@ -111,11 +111,40 @@ export interface ServicesCoverage {
   regions: RegionCount[];
   total: number;
   /**
+   * Multi-region PR 3a (G7), for EVERY organization: the regions of the latest stored
+   * region list the account has NOT enabled (opt-in regions), by name; [] when no list
+   * is stored or no account is connected. The same reader as multi_region.not_enabled_regions.
+   * Never scanned, never in a denominator or a count.
+   */
+  not_enabled_regions: string[];
+  /**
+   * Multi-region PR 3a (G8): present ONLY when multi_region is absent (the organization's
+   * multi_region_discovery flag is off), where discovery scans the home region only.
+   * null when no AWS account is connected or no region list is stored (no "N of M").
+   */
+  home_only_coverage?: HomeOnlyCoverage | null;
+  /**
    * Multi-region PR 2: present ONLY for an organization whose multi_region_discovery
-   * flag is on (organization_feature_flags). Without the flag the key is absent and
-   * the response is byte-identical to the one before PR 2 (a contract test pins it).
+   * flag is on (organization_feature_flags). PR 3a superseded PR 2's "flag-off response
+   * byte-identical" contract on purpose, by the additive not_enabled_regions and
+   * home_only_coverage only: every key that existed before keeps its value (a test pins it).
    */
   multi_region?: MultiRegionCoverage;
+}
+
+/**
+ * "N of M regions checked" for an organization without multi-region discovery (PR 3a, G8),
+ * computed here so the Services page never works it out:
+ *   regions_total    the enabled regions of the latest stored list (scope.enabled_regions.count);
+ *   regions_checked  1 only when the CURRENT home region's last recorded status in that list is
+ *                    ok or partial (a successful check), else 0. Only the home region is scanned
+ *                    with the flag off, so no other region ever counts: a former home region's
+ *                    old ok result, or any region's failed / denied / timed_out / never_scanned
+ *                    result, is never "checked".
+ */
+export interface HomeOnlyCoverage {
+  regions_total: number;
+  regions_checked: 0 | 1;
 }
 
 /**
@@ -171,7 +200,20 @@ export interface MultiRegionCoverage {
    * code column, so a Resource Explorer warning in it would not be named.
    */
   region_warnings_complete: boolean;
+  /**
+   * PR 3a (G11). The Resource Explorer codes (no_index, no_view) the newest scan reported
+   * (last_scan.warnings) that no region_warnings entry carries: the scan saw them, but this
+   * response cannot say in which region (a non-ok region keeps its own outcome's code).
+   * [] when every such code is named in region_warnings. Codes only, in last_scan order.
+   */
+  region_warnings_unattributed: string[];
 }
+
+/** The region-scoped Resource Explorer codes G11 checks for attribution. */
+export const RESOURCE_EXPLORER_WARNING_CODES: readonly string[] = [
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
+];
 
 /**
  * The overall coverage status (review M-1):
@@ -202,6 +244,21 @@ export interface MultiRegionScan {
   regions_total: number;
   /** Of those, the regions with a checked or checked_with_warnings result written by THIS scan. */
   regions_checked: number;
+  /**
+   * PR 3a (G6). The regions_checked regions split three ways, by the same "written by this
+   * scan" rule, so a page never combines result_of, state and resources itself:
+   *   regions_with_resources      the check found at least one resource;
+   *   regions_empty               the check found nothing and is a clean check (regions[].empty:
+   *                               ok with no warning code);
+   *   regions_zero_with_warnings  the check found nothing but carries a warning (partial, or a
+   *                               Resource Explorer code): never "empty" (PR 2 founder rule H-1),
+   *                               because resources there may have been missed.
+   * Invariant (tested): regions_with_resources + regions_empty + regions_zero_with_warnings
+   * = regions_checked. While a scan runs these cover only the regions done in it.
+   */
+  regions_with_resources: number;
+  regions_empty: number;
+  regions_zero_with_warnings: number;
 }
 
 export interface MultiRegionRegion {
@@ -479,6 +536,11 @@ function coverageStatement(orgId: string, homeRegion: string | null, awsAccountI
                  FROM (SELECT type, COUNT(*)::int AS n FROM inv WHERE ownership = 'unknown' GROUP BY type) u),
               '{}'::json) AS tags_unknown_by_type,
             (SELECT listed_at FROM latest_list) AS regions_listed_at,
+            COALESCE(
+              (SELECT json_agg(regions.region ORDER BY regions.region COLLATE "C")
+                 FROM regions, latest_list
+                WHERE NOT regions.enabled AND regions.last_listed_at = latest_list.listed_at),
+              '[]'::json) AS not_enabled_regions,
             (SELECT COUNT(*) FROM listed)::int AS enabled_region_count,
             COALESCE((SELECT listed_at < now() - make_interval(secs => $${staleAfter}) FROM latest_list), false) AS regions_list_stale,
             COALESCE(
@@ -550,7 +612,7 @@ function multiRegionStatement(orgId: string, homeRegion: string | null, awsAccou
      ),
      newest AS (
        -- The organization's newest job, whatever its status (last_scan's rule).
-       SELECT j.id, j.status, j.started_at, j.completed_at
+       SELECT j.id, j.status, j.started_at, j.completed_at, j.error_message, to_jsonb(j) -> 'warnings' AS warnings
          FROM resource_discovery_jobs j
         WHERE j.organization_id = $1
         ORDER BY j.created_at DESC, j.id DESC
@@ -572,6 +634,9 @@ function multiRegionStatement(orgId: string, homeRegion: string | null, awsAccou
        (SELECT started_regions FROM running) AS running_started_regions,
        (SELECT json_build_object('id', id, 'status', status, 'started_at', started_at, 'completed_at', completed_at) FROM running) AS running_job,
        (SELECT json_build_object('id', id, 'status', status, 'started_at', started_at, 'completed_at', completed_at) FROM newest) AS newest_job,
+       -- PR 3a (G11): the newest job's warning codes (last_scan's), read as last_scan reads them.
+       (SELECT warnings FROM newest) AS newest_warnings,
+       (SELECT error_message FROM newest) AS newest_error_message,
        COALESCE((SELECT json_agg(listed.region ORDER BY listed.region COLLATE "C") FROM listed WHERE NOT listed.enabled), '[]'::json) AS not_enabled,
        COALESCE((SELECT json_agg(json_build_object(
                   'region', listed.region,
@@ -672,9 +737,12 @@ export async function readMultiRegionCoverage(
   const regions = listed.map((entry): MultiRegionRegion => {
     const done = scanning && entry.done_in_running_scan;
     const neverScanned = entry.status === 'never_scanned';
+    // RR-L1: the scanner always scans the home region (regionsToScan puts it first), so an
+    // allow-list row saying otherwise never makes home excluded.
+    const scanEnabled = entry.scan_enabled || entry.region === homeRegion;
     const scanState: MultiRegionRegion['scan_state'] = !scanning
       ? null
-      : !entry.scan_enabled
+      : !scanEnabled
         ? 'excluded'
         : done
           ? 'done'
@@ -696,7 +764,7 @@ export async function readMultiRegionCoverage(
       stale: entry.stale,
       result_of: neverScanned ? null : done ? 'running_scan' : !scanning && entry.in_newest_scan ? 'latest_scan' : 'earlier_scan',
       scan_state: scanState,
-      state: regionState(entry.status, errorCode, scanState, entry.scan_enabled),
+      state: regionState(entry.status, errorCode, scanState, scanEnabled),
       ...counted,
     };
   });
@@ -729,11 +797,17 @@ export async function readMultiRegionCoverage(
   // partial newest scan never reads as "N of N" from older results.
   const job: { id: string; status: string; started_at: string | null; completed_at: string | null } | null =
     scanning ? row.running_job : row.newest_job;
-  const checkedByScan = [...scanList].filter((region) => {
-    const entry = byRegion.get(region);
-    if (!entry || !CHECKED_STATES.includes(entry.state)) return false;
-    return scanning ? entry.scan_state === 'done' : entry.result_of === 'latest_scan';
-  }).length;
+  const checkedRegions = [...scanList]
+    .map((region) => byRegion.get(region))
+    .filter((entry): entry is MultiRegionRegion => {
+      if (!entry || !CHECKED_STATES.includes(entry.state)) return false;
+      return scanning ? entry.scan_state === 'done' : entry.result_of === 'latest_scan';
+    });
+  const checkedByScan = checkedRegions.length;
+  // PR 3a (G6): a checked region's count is its last result's (resources_from 'last_result',
+  // never null), so the three groups below cover every checked region exactly once.
+  const withResources = checkedRegions.filter((entry) => (entry.resources ?? 0) > 0).length;
+  const emptyChecked = checkedRegions.filter((entry) => entry.empty).length;
   const scan: MultiRegionScan | null = job
     ? {
         id: job.id,
@@ -742,6 +816,9 @@ export async function readMultiRegionCoverage(
         completed_at: toDate(job.completed_at),
         regions_total: scanList.size,
         regions_checked: checkedByScan,
+        regions_with_resources: withResources,
+        regions_empty: emptyChecked,
+        regions_zero_with_warnings: checkedByScan - withResources - emptyChecked,
       }
     : null;
   let coverageStatus: CoverageStatus;
@@ -752,6 +829,11 @@ export async function readMultiRegionCoverage(
   else coverageStatus = 'latest_scan_failed';
 
   const scanned = regions.filter((entry) => entry.status !== 'never_scanned');
+  const regionWarnings = regions
+    .filter((entry) => entry.error_code !== null && REGION_WARNING_CODES.includes(entry.error_code))
+    .map((entry) => ({ code: entry.error_code!, region: entry.region }));
+  const attributed = new Set(regionWarnings.map((warning) => warning.code));
+  const newestWarnings = row.newest_job === null ? [] : lastScanWarnings(row.newest_warnings, row.newest_error_message);
   return {
     scan,
     coverage_status: coverageStatus,
@@ -769,10 +851,9 @@ export async function readMultiRegionCoverage(
       by_state: Object.fromEntries(REGION_STATES.map((state) => [state, regions.filter((entry) => entry.state === state).length])) as Record<RegionState, number>,
     },
     progress,
-    region_warnings: regions
-      .filter((entry) => entry.error_code !== null && REGION_WARNING_CODES.includes(entry.error_code))
-      .map((entry) => ({ code: entry.error_code!, region: entry.region })),
+    region_warnings: regionWarnings,
     region_warnings_complete: scanned.every((entry) => entry.status === 'ok'),
+    region_warnings_unattributed: newestWarnings.filter((code) => RESOURCE_EXPLORER_WARNING_CODES.includes(code) && !attributed.has(code)),
   };
 }
 
@@ -795,11 +876,22 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
   const resourceTypes: string[] | null = row.status === null ? null : row.resource_types ?? [];
   const inLastScan = (type: string) => resourceTypes?.includes(type) ?? false;
 
-  // PR 2: only a flagged organization gets the multi_region key; for every other the
-  // object below is built exactly as before.
-  const multiRegion = (await isMultiRegionDiscoveryOn(db, orgId, '[Services/coverage]'))
+  const regionStatus: RegionCoverage[] = row.region_status.map((entry: RegionStatusJson): RegionCoverage => ({
+    region: entry.region,
+    home: entry.region === homeRegion,
+    status: entry.status,
+    last_scan_finished_at: toDate(entry.last_scan_finished_at),
+    last_success_at: toDate(entry.last_success_at),
+    last_error_code: regionErrorCode(entry.last_error_code),
+    consecutive_failures: entry.consecutive_failures,
+    stale: entry.stale,
+  }));
+
+  // PR 2: only a flagged organization gets the multi_region key. PR 3a (G8): every other
+  // gets home_only_coverage instead, its "N of M" for the home-only scan.
+  const extension = (await isMultiRegionDiscoveryOn(db, orgId, '[Services/coverage]'))
     ? { multi_region: await readMultiRegionCoverage(db, orgId, homeRegion, awsAccountId) }
-    : {};
+    : { home_only_coverage: homeOnlyCoverage(account !== null, row.regions_listed_at !== null ? row.enabled_region_count : null, regionStatus) };
 
   return {
     account: account
@@ -816,16 +908,7 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
         stale: row.regions_list_stale,
       },
     },
-    region_status: row.region_status.map((entry: RegionStatusJson): RegionCoverage => ({
-      region: entry.region,
-      home: entry.region === homeRegion,
-      status: entry.status,
-      last_scan_finished_at: toDate(entry.last_scan_finished_at),
-      last_success_at: toDate(entry.last_success_at),
-      last_error_code: regionErrorCode(entry.last_error_code),
-      consecutive_failures: entry.consecutive_failures,
-      stale: entry.stale,
-    })),
+    region_status: regionStatus,
     scan_in_progress: row.scan_in_progress_since === null ? null : { since: row.scan_in_progress_since },
     last_completed_scan: row.last_completed_completed_at === null
       ? null
@@ -848,8 +931,20 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
     tags_unknown_by_type: row.tags_unknown_by_type,
     regions: row.regions,
     total: row.total,
-    ...multiRegion,
+    // PR 3a (G7): the account's latest list ([] with no account or no list: the list is keyed by the account).
+    not_enabled_regions: row.not_enabled_regions,
+    ...extension,
   };
+}
+
+/**
+ * The flag-off "N of M" (PR 3a, G8): see HomeOnlyCoverage. `enabledCount` is null while no
+ * region list is stored; `regionStatus` is the latest list's enabled regions, home flagged.
+ */
+export function homeOnlyCoverage(connected: boolean, enabledCount: number | null, regionStatus: readonly Pick<RegionCoverage, 'home' | 'status'>[]): HomeOnlyCoverage | null {
+  if (!connected || enabledCount === null) return null;
+  const home = regionStatus.find((entry) => entry.home);
+  return { regions_total: enabledCount, regions_checked: home !== undefined && SUCCESSFUL_STATUSES.includes(home.status) ? 1 : 0 };
 }
 
 // ─── GET /api/services/coverage ──────────────────────────────────────────────
