@@ -236,15 +236,17 @@ describe('no scan running: the latest scan', () => {
     expect(mr.regions.map((r: any) => r.region)).toEqual([HOME, 'ap-south-1', 'ca-central-1', 'eu-west-1', 'me-central-1', 'us-west-2']);
     expect(mr.progress).toBeNull();
     const regions = byRegion(coverage);
-    expect(regions[HOME]).toMatchObject({ home: true, opt_in: false, status: 'ok', error_code: null, result_of: 'earlier_scan', scan_state: null, resources: 2 });
-    expect(regions['eu-west-1']).toMatchObject({ home: false, status: 'ok', error_code: 'resource_explorer_no_view', resources: 1 });
-    expect(regions['ap-south-1']).toMatchObject({ status: 'denied', error_code: REGION_CODE_ACCESS_DENIED_SCP, resources: 0 });
-    expect(regions['me-central-1']).toMatchObject({ opt_in: true, status: 'partial', error_code: 'discovery_listing_truncated' });
+    expect(regions[HOME]).toMatchObject({ home: true, opt_in: false, status: 'ok', error_code: null, result_of: 'earlier_scan', scan_state: null, resources: 2, resources_from: 'last_result', empty: false });
+    expect(regions['eu-west-1']).toMatchObject({ home: false, status: 'ok', error_code: 'resource_explorer_no_view', resources: 1, resources_from: 'last_result' });
+    // Review H-1 (fixed): denied by an SCP with no earlier success: never checked, so no count (was 0).
+    expect(regions['ap-south-1']).toMatchObject({ status: 'denied', error_code: REGION_CODE_ACCESS_DENIED_SCP, resources: null, resources_from: null, empty: false });
+    // partial is a successful check: its rows are counted, but it is never "empty".
+    expect(regions['me-central-1']).toMatchObject({ opt_in: true, status: 'partial', error_code: 'discovery_listing_truncated', resources: 0, resources_from: 'last_result', empty: false });
     // A code outside the allow-list is null; the stored message never leaves the database.
     expect(regions['ca-central-1']).toMatchObject({ status: 'failed', error_code: null });
     expect(JSON.stringify(coverage)).not.toContain('stored text');
     // Never scanned: no result, no count (its S3 bucket is in the top-level regions counts).
-    expect(regions['us-west-2']).toMatchObject({ status: 'never_scanned', result_of: null, resources: null, last_scan_finished_at: null });
+    expect(regions['us-west-2']).toMatchObject({ status: 'never_scanned', result_of: null, resources: null, resources_from: null, empty: false, last_scan_finished_at: null });
     expect(coverage.regions).toContainEqual({ region: 'us-west-2', count: 1 });
   });
 
@@ -319,12 +321,13 @@ describe('a scan in progress (mock state (d)): its progress, and each region\'s 
 
   it('per region: done shows the running scan\'s result; running and waiting show the earlier one, marked, never its partial writes', async () => {
     const regions = byRegion(await coverageOf(org));
-    expect(regions[HOME]).toMatchObject({ scan_state: 'done', result_of: 'running_scan', status: 'ok', resources: 2 });
-    expect(regions['eu-west-1']).toMatchObject({ scan_state: 'running', result_of: 'earlier_scan', status: 'ok', resources: 2 });
-    expect(regions['ap-south-1']).toMatchObject({ scan_state: 'waiting', result_of: 'earlier_scan', resources: 1 });
-    // Its earlier result was 0: that is the result shown, not a 0 from the running scan.
-    expect(regions['ap-northeast-1']).toMatchObject({ scan_state: 'waiting', result_of: 'earlier_scan', resources: 0 });
-    expect(regions['us-west-2']).toMatchObject({ scan_state: 'waiting', result_of: null, resources: null });
+    expect(regions[HOME]).toMatchObject({ scan_state: 'done', result_of: 'running_scan', status: 'ok', resources: 2, resources_from: 'last_result' });
+    expect(regions['eu-west-1']).toMatchObject({ scan_state: 'running', result_of: 'earlier_scan', status: 'ok', resources: 2, resources_from: 'earlier_success', empty: false });
+    expect(regions['ap-south-1']).toMatchObject({ scan_state: 'waiting', result_of: 'earlier_scan', resources: 1, resources_from: 'earlier_success' });
+    // Its last SUCCESSFUL check found nothing: that 0 is shown, marked as the earlier
+    // success, and never "empty" while the region waits (founder decision H-1).
+    expect(regions['ap-northeast-1']).toMatchObject({ scan_state: 'waiting', result_of: 'earlier_scan', resources: 0, resources_from: 'earlier_success', empty: false });
+    expect(regions['us-west-2']).toMatchObject({ scan_state: 'waiting', result_of: null, resources: null, resources_from: null, empty: false });
   });
 
   it('a running or waiting region never reads the 0 a per-scan count would give it', async () => {
@@ -373,6 +376,96 @@ describe('a scan in progress (mock state (d)): its progress, and each region\'s 
     expect(mr.not_enabled_regions).toEqual([]);
     expect(mr.regions_checked).toEqual({ enabled: null, complete: 0, partial: 0, not_checked: 0, never_scanned: 0 });
     expect(mr.progress).toMatchObject({ regions_total: 1, regions_done: 0, regions_running: 1, regions_waiting: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('review H-1: a count (including 0) only when a successful check backs it; empty only for a successful check that found nothing', () => {
+  /** A flagged organization, a home region checked ok with one resource, and `regions` as given. */
+  async function orgWithRegions(regions: Array<[string, RegionRow]>, scan?: { started: string[] }) {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId);
+    await setFlag(org.orgId, true);
+    if (scan) {
+      const running = await insertJob(org.orgId, 'running', SCAN_START, scan.started);
+      await insertLease(org.orgId, running);
+      await insertRegion(org.orgId, HOME, { status: 'ok', started: SCAN_START });
+    } else {
+      await insertJob(org.orgId, 'completed', EARLIER_START, [HOME], '2026-03-01T10:05:00Z');
+      await insertRegion(org.orgId, HOME, { status: 'ok' });
+    }
+    await insertResource(org.orgId, 'home-1', 'ec2', HOME, BEFORE_SCAN);
+    for (const [name, row] of regions) await insertRegion(org.orgId, name, row);
+    return org;
+  }
+  const view = (r: any) => ({ resources: r.resources, resources_from: r.resources_from, empty: r.empty });
+  const NONE = { resources: null, resources_from: null, empty: false };
+
+  it('no scan running (PB1): never reached (scan budget), not ready, denied, failed and timed out with no earlier success read null, never 0', async () => {
+    const org = await orgWithRegions([
+      ['eu-west-1', { status: 'timed_out', code: REGION_CODE_SCAN_BUDGET }],
+      ['ap-south-1', { status: 'failed', code: REGION_CODE_NOT_READY }],
+      ['me-central-1', { status: 'denied', code: REGION_CODE_ACCESS_DENIED }],
+      ['ca-central-1', { status: 'failed', code: REGION_CODE_ERROR }],
+      ['sa-east-1', { status: 'timed_out', code: REGION_CODE_DEADLINE }],
+    ]);
+    const regions = byRegion(await coverageOf(org));
+    for (const name of ['eu-west-1', 'ap-south-1', 'me-central-1', 'ca-central-1', 'sa-east-1']) expect([name, view(regions[name])]).toEqual([name, NONE]);
+  });
+
+  it('terminal empty: an ok region (no warning) checked with nothing found, no scan running: 0 and empty', async () => {
+    const org = await orgWithRegions([['us-west-2', { status: 'ok' }]]);
+    expect(view(byRegion(await coverageOf(org))['us-west-2'])).toEqual({ resources: 0, resources_from: 'last_result', empty: true });
+  });
+
+  it('ok with a Resource Explorer warning and 0 rows: counted, but not empty (the generic types were not listed)', async () => {
+    const org = await orgWithRegions([['us-west-2', { status: 'ok', code: 'resource_explorer_no_index' }]]);
+    expect(view(byRegion(await coverageOf(org))['us-west-2'])).toEqual({ resources: 0, resources_from: 'last_result', empty: false });
+  });
+
+  it('failed, not empty: a failed region with no earlier success and stored rows (e.g. S3) still reads null; with an earlier success, the rows kept from it', async () => {
+    const org = await orgWithRegions([
+      ['eu-west-1', { status: 'failed', code: REGION_CODE_ERROR }],
+      ['ap-south-1', { status: 'denied', code: REGION_CODE_ACCESS_DENIED, success: '2026-02-25T10:00:00.000Z' }],
+    ]);
+    await insertResource(org.orgId, 'eu-bucket', 's3', 'eu-west-1', BEFORE_SCAN, 'active');
+    await insertResource(org.orgId, 'ap-db', 'rds', 'ap-south-1', BEFORE_SCAN, 'available');
+    const regions = byRegion(await coverageOf(org));
+    expect(view(regions['eu-west-1'])).toEqual(NONE);
+    expect(view(regions['ap-south-1'])).toEqual({ resources: 1, resources_from: 'earlier_success', empty: false });
+  });
+
+  it('an earlier success that found nothing, then a failure: 0 from the earlier success, never empty', async () => {
+    const org = await orgWithRegions([['eu-west-1', { status: 'timed_out', code: REGION_CODE_DEADLINE, success: '2026-02-25T10:00:00.000Z' }]]);
+    expect(view(byRegion(await coverageOf(org))['eu-west-1'])).toEqual({ resources: 0, resources_from: 'earlier_success', empty: false });
+  });
+
+  it('scan running (PB2): a waiting region whose earlier result was the scan budget or a failure reads null, never 0', async () => {
+    const org = await orgWithRegions(
+      [
+        ['eu-west-1', { status: 'timed_out', code: REGION_CODE_SCAN_BUDGET }],
+        ['ap-south-1', { status: 'failed', code: REGION_CODE_ERROR }],
+        ['me-central-1', { status: 'never_scanned' }],
+      ],
+      { started: [HOME] }
+    );
+    const regions = byRegion(await coverageOf(org));
+    for (const name of ['eu-west-1', 'ap-south-1', 'me-central-1']) {
+      expect([name, regions[name].scan_state, view(regions[name])]).toEqual([name, 'waiting', NONE]);
+    }
+  });
+
+  it('scan running: a region done in it with nothing found is empty; a running region never is', async () => {
+    const org = await orgWithRegions(
+      [
+        ['eu-west-1', { status: 'ok', started: SCAN_START }],
+        ['ap-south-1', { status: 'ok' }],
+      ],
+      { started: [HOME, 'eu-west-1', 'ap-south-1'] }
+    );
+    const regions = byRegion(await coverageOf(org));
+    expect([regions['eu-west-1'].scan_state, view(regions['eu-west-1'])]).toEqual(['done', { resources: 0, resources_from: 'last_result', empty: true }]);
+    expect([regions['ap-south-1'].scan_state, view(regions['ap-south-1'])]).toEqual(['running', { resources: 0, resources_from: 'earlier_success', empty: false }]);
   });
 });
 

@@ -122,8 +122,10 @@ export interface ServicesCoverage {
  * last recorded result: the running scan's when the region is done in it
  * (result_of = 'running_scan'), otherwise the result of the last scan that finished
  * that region (result_of = 'earlier_scan'). With no scan running, `progress` is null
- * and every result is the latest scan's. A region running or waiting never reads 0
- * resources: its count is what was stored before the running scan began, or null.
+ * and every result is the latest scan's. A count (0 included) is returned only when a
+ * successful check backs it (review H-1): never for a region that was never checked
+ * successfully, and for a running or waiting region only its earlier successful count,
+ * marked as such (resources_from).
  */
 export interface MultiRegionCoverage {
   home_region: string | null;
@@ -175,12 +177,28 @@ export interface MultiRegionRegion {
   scan_state: 'done' | 'running' | 'waiting' | null;
   /**
    * Resources stored for the region (the Services list's rows: this organization, not
-   * terminated). Done (or no scan running): every such row now. Running or waiting:
-   * the rows first stored before the running scan began, i.e. the earlier result,
-   * never what the running scan has written so far. null when the region was never
-   * scanned (a never-scanned region's rows, e.g. S3 buckets, are in `regions` above).
+   * terminated), returned ONLY when a successful check backs the count (PR 2 fix round,
+   * review H-1, founder decision); otherwise null, never 0:
+   *   - the region's last recorded result is ok or partial: its rows now
+   *     (resources_from = 'last_result');
+   *   - its last result is not (denied, failed, not ready, timed out, scan budget) but
+   *     an earlier scan of it succeeded (last_success_at): the rows kept from that
+   *     success (resources_from = 'earlier_success');
+   *   - running or waiting in the running scan: the rows stored before that scan began,
+   *     only when its earlier result was ok/partial or it has an earlier success
+   *     (resources_from = 'earlier_success'); never what the running scan wrote so far;
+   *   - otherwise (never scanned, or never successfully checked): null.
    */
   resources: number | null;
+  /** What backs `resources`: see above. null exactly when `resources` is null. */
+  resources_from: 'last_result' | 'earlier_success' | null;
+  /**
+   * True ONLY when a successful check found nothing: the region's last recorded result
+   * is ok with no warning code, it is not running or waiting, and it has 0 resources.
+   * A partial result, a Resource Explorer warning, a failure, the scan budget, a
+   * running or waiting region, or a count kept from an earlier success is never empty.
+   */
+  empty: boolean;
 }
 
 export interface RegionsChecked {
@@ -519,6 +537,39 @@ interface MultiRegionRowJson {
 
 const NOT_CHECKED_STATUSES: readonly string[] = ['denied', 'failed', 'timed_out'];
 
+/** A recorded region result that is a successful check (founder decision H-1): ok, or partial (checked, a listing cut off). */
+const SUCCESSFUL_STATUSES: readonly string[] = ['ok', 'partial'];
+
+/**
+ * A region's resource count, what backs it, and whether it is a successful empty
+ * check (review H-1). `notDone`: running or waiting in the running scan.
+ */
+export function regionResources(entry: {
+  status: string;
+  error_code: string | null;
+  last_success_at: unknown;
+  now_count: number;
+  before_count: number;
+}, notDone: boolean): Pick<MultiRegionRegion, 'resources' | 'resources_from' | 'empty'> {
+  const lastResultSuccessful = SUCCESSFUL_STATUSES.includes(entry.status);
+  const earlierSuccess = entry.last_success_at !== null && entry.last_success_at !== undefined;
+  if (notDone) {
+    // The earlier result, and only if a check ever succeeded; never the running scan's writes.
+    return lastResultSuccessful || earlierSuccess
+      ? { resources: entry.before_count, resources_from: 'earlier_success', empty: false }
+      : { resources: null, resources_from: null, empty: false };
+  }
+  if (lastResultSuccessful) {
+    return {
+      resources: entry.now_count,
+      resources_from: 'last_result',
+      empty: entry.now_count === 0 && entry.status === 'ok' && entry.error_code === null,
+    };
+  }
+  if (earlierSuccess) return { resources: entry.now_count, resources_from: 'earlier_success', empty: false };
+  return { resources: null, resources_from: null, empty: false };
+}
+
 /** The multi_region key (PR 2) for a flagged organization. */
 export async function readMultiRegionCoverage(
   db: AwsAccountsQueryable,
@@ -538,22 +589,22 @@ export async function readMultiRegionCoverage(
     const done = scanning && entry.done_in_running_scan;
     const neverScanned = entry.status === 'never_scanned';
     const scanState: MultiRegionRegion['scan_state'] = !scanning ? null : done ? 'done' : started.has(entry.region) ? 'running' : 'waiting';
-    // A region not done in the running scan shows its earlier result: the rows stored
-    // before the scan began, never the running scan's partial writes and never a 0 it
-    // has not yet had the chance to fill.
-    const resources = neverScanned && !done ? null : scanning && !done ? entry.before_count : entry.now_count;
+    const errorCode = multiRegionErrorCode(entry.last_error_code);
+    // Review H-1: a count only when a successful check backs it; empty only for a
+    // successful check that found nothing.
+    const counted = regionResources({ ...entry, error_code: errorCode }, scanning && !done);
     return {
       region: entry.region,
       home: entry.region === homeRegion,
       opt_in: entry.opt_in_status === 'opted-in',
       status: entry.status,
-      error_code: multiRegionErrorCode(entry.last_error_code),
+      error_code: errorCode,
       last_scan_finished_at: toDate(entry.last_scan_finished_at),
       last_success_at: toDate(entry.last_success_at),
       stale: entry.stale,
       result_of: neverScanned ? null : done ? 'running_scan' : 'earlier_scan',
       scan_state: scanState,
-      resources,
+      ...counted,
     };
   });
 
