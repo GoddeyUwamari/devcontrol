@@ -1816,6 +1816,9 @@ describe('PR 2: what a scan records for the coverage API (RR-M2 and scan progres
 
     const during = (await coverage(orgId)).multi_region!;
     expect(during.progress).toMatchObject({ regions_total: 5, regions_done: 1, regions_running: 1, regions_waiting: 3 });
+    expect(during.coverage_status).toBe('in_progress');
+    expect(during.scan).toMatchObject({ status: 'running', regions_total: 5, regions_checked: 1 });
+    expect(during.regions.map((r) => r.state)).toEqual(['checked', 'in_progress', 'not_started', 'not_started', 'not_started']);
     const state = Object.fromEntries(during.regions.map((r) => [r.region, [r.scan_state, r.result_of]]));
     expect(state).toEqual({
       [HOME]: ['done', 'running_scan'],
@@ -1834,8 +1837,11 @@ describe('PR 2: what a scan records for the coverage API (RR-M2 and scan progres
     const after = (await coverage(orgId)).multi_region!;
     expect(after.progress).toBeNull();
     expect(after.regions.map((r) => [r.region, r.scan_state, r.result_of])).toEqual(
-      [HOME, ...SCAN_ORDER.filter((r) => r !== HOME).sort()].map((region) => [region, null, 'earlier_scan'])
+      [HOME, ...SCAN_ORDER.filter((r) => r !== HOME).sort()].map((region) => [region, null, 'latest_scan'])
     );
+    // Review M-1: the completed scan wrote a checked result for every region it covers.
+    expect(after.coverage_status).toBe('all_checked');
+    expect(after.scan).toMatchObject({ status: 'completed', regions_total: 5, regions_checked: 5 });
     // At its end the job lists the regions it started, as before PR 2.
     expect((await job(orgId)).regions).toEqual(SCAN_ORDER);
   }, 60_000);

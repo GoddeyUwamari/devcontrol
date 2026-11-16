@@ -240,7 +240,8 @@ describe('no scan running: the latest scan', () => {
     expect(mr.regions.map((r: any) => r.region)).toEqual([HOME, 'ap-south-1', 'ca-central-1', 'eu-west-1', 'me-central-1', 'us-west-2']);
     expect(mr.progress).toBeNull();
     const regions = byRegion(coverage);
-    expect(regions[HOME]).toMatchObject({ home: true, opt_in: false, status: 'ok', error_code: null, result_of: 'earlier_scan', scan_state: null, resources: 2, resources_from: 'last_result', empty: false });
+    // Written by the newest scan (review M-1): 'latest_scan'.
+    expect(regions[HOME]).toMatchObject({ home: true, opt_in: false, status: 'ok', error_code: null, result_of: 'latest_scan', scan_state: null, resources: 2, resources_from: 'last_result', empty: false });
     expect(regions['eu-west-1']).toMatchObject({ home: false, status: 'ok', error_code: 'resource_explorer_no_view', resources: 1, resources_from: 'last_result' });
     // Review H-1 (fixed): denied by an SCP with no earlier success: never checked, so no count (was 0).
     expect(regions['ap-south-1']).toMatchObject({ status: 'denied', error_code: REGION_CODE_ACCESS_DENIED_SCP, resources: null, resources_from: null, empty: false });
@@ -554,6 +555,84 @@ describe('review M-2: one state per region; the scan budget is never counted as 
 });
 
 // ---------------------------------------------------------------------------
+describe('review M-1: the scan described (id, status, times) and one overall coverage status', () => {
+  async function flagged() {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId);
+    await setFlag(org.orgId, true);
+    return org;
+  }
+
+  it('PB6: a newer attempt failed after one region: latest_scan_failed, 1 of 3 checked by it, never "3 of 3"; the others are marked earlier_scan', async () => {
+    const org = await flagged();
+    await insertJob(org.orgId, 'completed', EARLIER_START, [HOME, 'eu-west-1', 'ap-south-1'], '2026-03-01T10:30:00Z');
+    const failed = await insertJob(org.orgId, 'failed', SCAN_START, [HOME], '2026-03-02T10:10:00Z');
+    await insertRegion(org.orgId, HOME, { status: 'ok', started: SCAN_START });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'ok' });
+    await insertRegion(org.orgId, 'ap-south-1', { status: 'ok' });
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.coverage_status).toBe('latest_scan_failed');
+    expect(mr.scan).toEqual({ id: failed, status: 'failed', started_at: SCAN_START, completed_at: '2026-03-02T10:10:00.000Z', regions_total: 3, regions_checked: 1 });
+    expect(mr.regions.map((r: any) => [r.region, r.result_of])).toEqual([[HOME, 'latest_scan'], ['ap-south-1', 'earlier_scan'], ['eu-west-1', 'earlier_scan']]);
+  });
+
+  it('all_checked: the newest scan completed and wrote a checked result (warnings included) for every region it covers', async () => {
+    const org = await flagged();
+    const done = await insertJob(org.orgId, 'completed', EARLIER_START, [HOME, 'eu-west-1', 'ap-south-1'], '2026-03-01T10:30:00Z');
+    await insertRegion(org.orgId, HOME, { status: 'ok' });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'ok', code: 'resource_explorer_no_view' });
+    await insertRegion(org.orgId, 'ap-south-1', { status: 'partial', code: 'discovery_listing_truncated' });
+    await insertRegion(org.orgId, 'ap-east-1', { enabled: false });
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.coverage_status).toBe('all_checked');
+    expect(mr.scan).toMatchObject({ id: done, status: 'completed', regions_total: 3, regions_checked: 3 });
+  });
+
+  it.each([
+    ['the scan budget', { status: 'timed_out', code: REGION_CODE_SCAN_BUDGET }],
+    ['a regional failure', { status: 'denied', code: REGION_CODE_ACCESS_DENIED }],
+    ['a deadline', { status: 'timed_out', code: REGION_CODE_DEADLINE }],
+  ] as Array<[string, RegionRow]>)('completed_with_regions_not_checked: the newest scan completed, one region not checked by it (%s)', async (_label, row) => {
+    const org = await flagged();
+    await insertJob(org.orgId, 'completed', EARLIER_START, [HOME, 'eu-west-1'], '2026-03-01T10:30:00Z');
+    await insertRegion(org.orgId, HOME, { status: 'ok' });
+    await insertRegion(org.orgId, 'eu-west-1', row);
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.coverage_status).toBe('completed_with_regions_not_checked');
+    expect(mr.scan).toMatchObject({ regions_total: 2, regions_checked: 1 });
+  });
+
+  it('a completed scan that never wrote a region\'s result (an older ok stays): not all checked by it', async () => {
+    const org = await flagged();
+    await insertJob(org.orgId, 'completed', SCAN_START, [HOME], '2026-03-02T10:30:00Z');
+    await insertRegion(org.orgId, HOME, { status: 'ok', started: SCAN_START });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'ok' });
+    expect((await coverageOf(org)).multi_region).toMatchObject({ coverage_status: 'completed_with_regions_not_checked', scan: { regions_total: 2, regions_checked: 1 } });
+  });
+
+  it('in_progress: the running job is the scan described (its id), counted by the regions done in it', async () => {
+    const org = await flagged();
+    await insertJob(org.orgId, 'completed', EARLIER_START, [HOME, 'eu-west-1'], '2026-03-01T10:30:00Z');
+    const running = await insertJob(org.orgId, 'running', SCAN_START, [HOME, 'eu-west-1']);
+    await insertLease(org.orgId, running);
+    await insertRegion(org.orgId, HOME, { status: 'ok', started: SCAN_START });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'ok' });
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.coverage_status).toBe('in_progress');
+    expect(mr.scan).toEqual({ id: running, status: 'running', started_at: SCAN_START, completed_at: null, regions_total: 2, regions_checked: 1 });
+  });
+
+  it('unavailable: no scan has run, or no region list is stored', async () => {
+    const none = await flagged();
+    await insertRegion(none.orgId, HOME, {});
+    expect((await coverageOf(none)).multi_region).toMatchObject({ scan: null, coverage_status: 'unavailable' });
+    const unlisted = await flagged();
+    await insertJob(unlisted.orgId, 'completed', EARLIER_START, [HOME], '2026-03-01T10:30:00Z');
+    expect((await coverageOf(unlisted)).multi_region).toMatchObject({ coverage_status: 'unavailable', scan: { status: 'completed', regions_total: 1, regions_checked: 0 } });
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe('a scan is in progress only while the lease is held AND names a running or pending job', () => {
   async function orgWith(lease: (orgId: string, jobId: string) => Promise<void>, jobStatus = 'running') {
     const org = await harness.buildOrg();
@@ -567,14 +646,17 @@ describe('a scan is in progress only while the lease is held AND names a running
   }
 
   it.each([
-    ['the lease was released', (orgId: string, job: string) => insertLease(orgId, job, { released: true }), 'running'],
-    ['the lease expired', (orgId: string, job: string) => insertLease(orgId, job, { expired: true }), 'running'],
-    ['the lease names a finished job', (orgId: string, job: string) => insertLease(orgId, job), 'completed'],
-    ['a lease with no job (a cost Analyze)', (orgId: string) => insertLease(orgId, null), 'running'],
-  ])('%s: no progress; every region shows its latest result with no scan state', async (_label, lease, jobStatus) => {
+    // A running job with no held lease was abandoned: the newest scan did not finish.
+    ['the lease was released', (orgId: string, job: string) => insertLease(orgId, job, { released: true }), 'running', 'latest_scan_failed'],
+    ['the lease expired', (orgId: string, job: string) => insertLease(orgId, job, { expired: true }), 'running', 'latest_scan_failed'],
+    // Completed, but eu-west-1's result is an older scan's: not every region checked by it.
+    ['the lease names a finished job', (orgId: string, job: string) => insertLease(orgId, job), 'completed', 'completed_with_regions_not_checked'],
+    ['a lease with no job (a cost Analyze)', (orgId: string) => insertLease(orgId, null), 'running', 'latest_scan_failed'],
+  ])('%s: no progress; every region shows its last result with no scan state; never in_progress', async (_label, lease, jobStatus, coverageStatus) => {
     const coverage = await orgWith(lease as any, jobStatus as string);
     expect(coverage.multi_region.progress).toBeNull();
-    expect(coverage.multi_region.regions.map((r: any) => [r.scan_state, r.result_of])).toEqual([[null, 'earlier_scan'], [null, 'earlier_scan']]);
+    expect(coverage.multi_region.coverage_status).toBe(coverageStatus);
+    expect(coverage.multi_region.regions.map((r: any) => [r.scan_state, r.result_of])).toEqual([[null, 'latest_scan'], [null, 'earlier_scan']]);
   });
 });
 
@@ -614,6 +696,8 @@ describe('tenant isolation', () => {
   });
 
   const EMPTY = {
+    scan: null,
+    coverage_status: 'unavailable',
     home_region: HOME,
     savings_regions: [HOME],
     not_enabled_regions: [],
@@ -641,6 +725,7 @@ describe('tenant isolation', () => {
       .split('ar.organization_id = $1').join('$1::uuid IS NOT NULL')
       .split('sl.organization_id = $1').join('$1::uuid IS NOT NULL')
       .split('lj.organization_id = $1').join('$1::uuid IS NOT NULL')
+      .split(' j.organization_id = $1').join(' $1::uuid IS NOT NULL')
       .split(' l.organization_id = $1').join(' $1::uuid IS NOT NULL')
       .split('r.organization_id = $1').join('$1::uuid IS NOT NULL');
     expect(stripped).not.toMatch(/organization_id = \$1/);
@@ -658,19 +743,21 @@ describe('tenant isolation', () => {
       // Tagged for A, asking for B: nothing of B's.
       await client.query("SELECT set_config('app.current_organization_id', $1, true)", [a.orgId]);
       const [rowA] = (await client.query(stripped, paramsFor(b.orgId))).rows;
-      expect(rowA).toMatchObject({ scanning: false, running_started_at: null, not_enabled: [], regions: [] });
+      expect(rowA).toMatchObject({ scanning: false, running_started_at: null, running_job: null, newest_job: null, not_enabled: [], regions: [] });
 
       // Tagged for B, asking for A: B's.
       await client.query("SELECT set_config('app.current_organization_id', $1, true)", [b.orgId]);
       const [rowB] = (await client.query(stripped, paramsFor(a.orgId))).rows;
       expect(rowB.scanning).toBe(true);
+      expect(rowB.running_job).toMatchObject({ status: 'running' });
+      expect(rowB.newest_job).toMatchObject({ status: 'running' });
       expect(rowB.not_enabled).toEqual(['ap-east-1']);
       expect(rowB.regions.map((r: any) => [r.region, r.now_count])).toEqual([[HOME, 0], ['eu-west-1', 1]]);
 
       // No tag: nothing at all.
       await client.query("SELECT set_config('app.current_organization_id', '', true)");
       const [untagged] = (await client.query(stripped, paramsFor(a.orgId))).rows;
-      expect(untagged).toMatchObject({ scanning: false, not_enabled: [], regions: [] });
+      expect(untagged).toMatchObject({ scanning: false, running_job: null, newest_job: null, not_enabled: [], regions: [] });
     } finally {
       await client.query('ROLLBACK');
       client.release();

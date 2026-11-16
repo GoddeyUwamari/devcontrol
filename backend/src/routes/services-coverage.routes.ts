@@ -128,6 +128,14 @@ export interface ServicesCoverage {
  * marked as such (resources_from).
  */
 export interface MultiRegionCoverage {
+  /**
+   * The scan this response describes (review M-1): the running discovery job while one
+   * runs, otherwise the organization's newest job, whatever its status; null when no
+   * job exists. The id is the organization's own job id (POST /discover returns it as jobId).
+   */
+  scan: MultiRegionScan | null;
+  /** One overall coverage status, computed here (review M-1). See CoverageStatus. */
+  coverage_status: CoverageStatus;
   home_region: string | null;
   /**
    * The regions savings (cost recommendations) are checked in: the home region only
@@ -160,6 +168,37 @@ export interface MultiRegionCoverage {
   region_warnings_complete: boolean;
 }
 
+/**
+ * The overall coverage status (review M-1):
+ *
+ *   in_progress                         a discovery scan is running now
+ *   all_checked                         the newest scan completed, and every region it covers
+ *                                       (home + the enabled, allow-listed regions of the latest
+ *                                       list) has a checked / checked_with_warnings result
+ *                                       written by that scan
+ *   completed_with_regions_not_checked  the newest scan completed, but at least one of those
+ *                                       regions has no checked result from it (failed, denied,
+ *                                       not ready, deadline, scan budget, or no result written)
+ *   latest_scan_failed                  the newest scan failed, or was abandoned (running or
+ *                                       pending with no held lease): regions it did not reach
+ *                                       show earlier results (result_of = 'earlier_scan')
+ *   unavailable                         no scan has run, or no region list is stored yet (no
+ *                                       "N of M" can be stated)
+ */
+export type CoverageStatus = 'in_progress' | 'all_checked' | 'completed_with_regions_not_checked' | 'latest_scan_failed' | 'unavailable';
+
+export interface MultiRegionScan {
+  id: string;
+  /** resource_discovery_jobs.status: running, pending, completed, failed. */
+  status: string;
+  started_at: Date | null;
+  completed_at: Date | null;
+  /** The regions this scan covers (home + the enabled, allow-listed regions of the latest list). */
+  regions_total: number;
+  /** Of those, the regions with a checked or checked_with_warnings result written by THIS scan. */
+  regions_checked: number;
+}
+
 export interface MultiRegionRegion {
   region: string;
   home: boolean;
@@ -173,8 +212,13 @@ export interface MultiRegionRegion {
   last_success_at: Date | null;
   /** As region_status[].stale: a status was written and is older than STALE_AFTER_SECONDS (database clock). */
   stale: boolean;
-  /** null: never scanned. 'running_scan': done in the scan running now. 'earlier_scan': any earlier scan. */
-  result_of: 'running_scan' | 'earlier_scan' | null;
+  /**
+   * Which scan wrote the region's last result: 'running_scan' (done in the scan running
+   * now), 'latest_scan' (no scan running; written by the newest scan, `scan`),
+   * 'earlier_scan' (any older scan, e.g. a region the newest scan never reached), null
+   * (never scanned).
+   */
+  result_of: 'running_scan' | 'latest_scan' | 'earlier_scan' | null;
   /**
    * Only while a scan runs (else null): done in it, started and not done, not started
    * yet, or excluded (a region the account's allow-list keeps out of scans,
@@ -526,12 +570,20 @@ function multiRegionStatement(orgId: string, homeRegion: string | null, awsAccou
                                     WHERE l.organization_id = $1 AND l.aws_account_id = $${account}::text)
      ),
      running AS (
-       SELECT true AS present, lj.started_at, COALESCE(lj.regions, '{}') AS started_regions
+       SELECT true AS present, lj.id, lj.status, lj.started_at, lj.completed_at, COALESCE(lj.regions, '{}') AS started_regions
          FROM aws_scan_leases sl
          JOIN resource_discovery_jobs lj ON lj.id = sl.job_id AND lj.organization_id = $1
         WHERE sl.organization_id = $1 AND sl.aws_account_id = $${account}::text AND sl.scan_kind = $${scanKind}::text
           AND sl.released_at IS NULL AND sl.expires_at > clock_timestamp()
           AND lj.status IN ('running', 'pending')
+        LIMIT 1
+     ),
+     newest AS (
+       -- The organization's newest job, whatever its status (last_scan's rule).
+       SELECT j.id, j.status, j.started_at, j.completed_at
+         FROM resource_discovery_jobs j
+        WHERE j.organization_id = $1
+        ORDER BY j.created_at DESC, j.id DESC
         LIMIT 1
      ),
      counts AS (
@@ -548,6 +600,8 @@ function multiRegionStatement(orgId: string, homeRegion: string | null, awsAccou
        COALESCE((SELECT present FROM running), false) AS scanning,
        (SELECT started_at FROM running) AS running_started_at,
        (SELECT started_regions FROM running) AS running_started_regions,
+       (SELECT json_build_object('id', id, 'status', status, 'started_at', started_at, 'completed_at', completed_at) FROM running) AS running_job,
+       (SELECT json_build_object('id', id, 'status', status, 'started_at', started_at, 'completed_at', completed_at) FROM newest) AS newest_job,
        COALESCE((SELECT json_agg(listed.region ORDER BY listed.region COLLATE "C") FROM listed WHERE NOT listed.enabled), '[]'::json) AS not_enabled,
        COALESCE((SELECT json_agg(json_build_object(
                   'region', listed.region,
@@ -562,6 +616,8 @@ function multiRegionStatement(orgId: string, homeRegion: string | null, awsAccou
                            AND COALESCE(listed.last_scan_finished_at < now() - make_interval(secs => $${staleAfter}), false),
                   'done_in_running_scan', listed.last_scan_started_at IS NOT NULL
                            AND listed.last_scan_started_at = (SELECT started_at FROM running),
+                  'in_newest_scan', listed.last_scan_started_at IS NOT NULL
+                           AND listed.last_scan_started_at = (SELECT started_at FROM newest),
                   'now_count', COALESCE(counts.now_count, 0),
                   'before_count', COALESCE(counts.before_count, 0))
                 ORDER BY (listed.region = $${home}::text) DESC, listed.region COLLATE "C")
@@ -582,11 +638,15 @@ interface MultiRegionRowJson {
   last_error_code: string | null;
   stale: boolean;
   done_in_running_scan: boolean;
+  in_newest_scan: boolean;
   now_count: number;
   before_count: number;
 }
 
 const NOT_CHECKED_STATUSES: readonly string[] = ['denied', 'failed', 'timed_out'];
+
+/** The states that are a check (review M-1): the region was looked at and its result stands. */
+const CHECKED_STATES: readonly RegionState[] = ['checked', 'checked_with_warnings'];
 
 /** A last result that is the scan budget: the region was never started (not a failure). */
 const notReached = (entry: { status: string; error_code: string | null }) => entry.status === 'timed_out' && entry.error_code === REGION_CODE_SCAN_BUDGET;
@@ -688,7 +748,7 @@ export async function readMultiRegionCoverage(
       last_scan_finished_at: toDate(entry.last_scan_finished_at),
       last_success_at: toDate(entry.last_success_at),
       stale: entry.stale,
-      result_of: neverScanned ? null : done ? 'running_scan' : 'earlier_scan',
+      result_of: neverScanned ? null : done ? 'running_scan' : !scanning && entry.in_newest_scan ? 'latest_scan' : 'earlier_scan',
       scan_state: scanState,
       state: regionState(entry.status, errorCode, scanState, entry.scan_enabled),
       ...counted,
@@ -697,11 +757,11 @@ export async function readMultiRegionCoverage(
 
   // The scan's own region list (regionsToScan): home first, then every enabled and
   // allow-listed region of the latest list; home only when no list is stored.
+  const scanList = new Set(listed.filter((entry) => entry.scan_enabled).map((entry) => entry.region));
+  if (homeRegion !== null) scanList.add(homeRegion);
+  const byRegion = new Map(regions.map((entry) => [entry.region, entry]));
   let progress: MultiRegionProgress | null = null;
   if (scanning) {
-    const scanList = new Set(listed.filter((entry) => entry.scan_enabled).map((entry) => entry.region));
-    if (homeRegion !== null) scanList.add(homeRegion);
-    const byRegion = new Map(regions.map((entry) => [entry.region, entry]));
     let done = 0;
     let running = 0;
     for (const region of scanList) {
@@ -718,8 +778,37 @@ export async function readMultiRegionCoverage(
     };
   }
 
+  // Review M-1: the scan described, and one overall coverage status. A region counts as
+  // checked by that scan only when THAT scan wrote a checked result for it, so a failed or
+  // partial newest scan never reads as "N of N" from older results.
+  const job: { id: string; status: string; started_at: string | null; completed_at: string | null } | null =
+    scanning ? row.running_job : row.newest_job;
+  const checkedByScan = [...scanList].filter((region) => {
+    const entry = byRegion.get(region);
+    if (!entry || !CHECKED_STATES.includes(entry.state)) return false;
+    return scanning ? entry.scan_state === 'done' : entry.result_of === 'latest_scan';
+  }).length;
+  const scan: MultiRegionScan | null = job
+    ? {
+        id: job.id,
+        status: job.status,
+        started_at: toDate(job.started_at),
+        completed_at: toDate(job.completed_at),
+        regions_total: scanList.size,
+        regions_checked: checkedByScan,
+      }
+    : null;
+  let coverageStatus: CoverageStatus;
+  if (scanning) coverageStatus = 'in_progress';
+  else if (!job || listed.length === 0) coverageStatus = 'unavailable';
+  else if (job.status === 'completed') coverageStatus = checkedByScan === scanList.size ? 'all_checked' : 'completed_with_regions_not_checked';
+  // failed, or running/pending with no held lease (abandoned: scan_in_progress's rule).
+  else coverageStatus = 'latest_scan_failed';
+
   const scanned = regions.filter((entry) => entry.status !== 'never_scanned');
   return {
+    scan,
+    coverage_status: coverageStatus,
     home_region: homeRegion,
     savings_regions: homeRegion === null ? [] : [homeRegion],
     not_enabled_regions: row.not_enabled,
