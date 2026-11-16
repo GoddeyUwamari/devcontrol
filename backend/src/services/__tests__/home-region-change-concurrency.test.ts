@@ -66,6 +66,8 @@ const refusal = (error: unknown) => (isHomeRegionChangeRefused(error) ? error.re
 /** A fenced transaction for the organization's current connection, left open (SHARED connection lock held). */
 async function holdShared(f: Fixture): Promise<{ client: PoolClient; finish: () => Promise<void> }> {
   const client = await pool.connect();
+  // A test that fails while holding the lock must fail cleanly, never crash on a server-side timeout.
+  client.on('error', () => undefined);
   let release!: () => void;
   const released = new Promise<void>((resolve) => { release = resolve; });
   let entered!: () => void;
@@ -128,11 +130,14 @@ describe('the change and the connection lock (T5)', () => {
     const f = await fixture();
     const before = await account(f);
     const holder = await holdShared(f);
-    const pending = change(f, { lockTimeoutMs: 10_000 });
-    await waitForLockWaiter(f);
-    expect((await account(f)).region).toBe('us-east-1');
-    await holder.finish();
-    await expect(pending).resolves.toMatchObject({ to: 'us-west-2' });
+    const pending = change(f, { lockTimeoutMs: 10_000 }).catch((e) => e);
+    try {
+      await waitForLockWaiter(f);
+      expect((await account(f)).region).toBe('us-east-1');
+    } finally {
+      await holder.finish();
+    }
+    expect(await pending).toMatchObject({ to: 'us-west-2' });
     expect(await account(f)).toEqual({ ...before, region: 'us-west-2' });
   });
 
@@ -154,9 +159,12 @@ describe('validated, then checked again under the lock', () => {
     const f = await fixture();
     const holder = await holdShared(f);
     const pending = change(f, { lockTimeoutMs: 10_000 }).catch((e) => e);
-    await waitForLockWaiter(f);
-    await pool.query(`UPDATE aws_accounts SET region = 'eu-west-1' WHERE id = $1`, [f.rowId]);
-    await holder.finish();
+    try {
+      await waitForLockWaiter(f);
+      await pool.query(`UPDATE aws_accounts SET region = 'eu-west-1' WHERE id = $1`, [f.rowId]);
+    } finally {
+      await holder.finish();
+    }
     expect(refusal(await pending)).toBe('connection_changed');
     expect((await account(f)).region).toBe('eu-west-1');
     expect(await activeRecs(f)).toBe(1);
@@ -168,16 +176,46 @@ describe('validated, then checked again under the lock', () => {
     const before = await account(f);
     const holder = await holdShared(f);
     const pending = change(f, { lockTimeoutMs: 10_000 }).catch((e) => e);
-    await waitForLockWaiter(f);
-    await pool.query(
-      `INSERT INTO aws_scan_leases (organization_id, aws_account_id, scan_kind, holder, acquired_at, heartbeat_at, expires_at)
-       VALUES ($1, $2, $3, 'racing-scan', NOW(), NOW(), NOW() + interval '1 hour')`,
-      [f.orgId, f.accountId, SCAN_KIND_DISCOVERY]
-    );
-    await holder.finish();
+    try {
+      await waitForLockWaiter(f);
+      await pool.query(
+        `INSERT INTO aws_scan_leases (organization_id, aws_account_id, scan_kind, holder, acquired_at, heartbeat_at, expires_at)
+         VALUES ($1, $2, $3, 'racing-scan', NOW(), NOW(), NOW() + interval '1 hour')`,
+        [f.orgId, f.accountId, SCAN_KIND_DISCOVERY]
+      );
+    } finally {
+      await holder.finish();
+    }
     expect(refusal(await pending)).toBe('scan_in_progress');
     expect(await account(f)).toEqual(before);
     expect(await activeRecs(f)).toBe(1);
+  });
+
+  it('compare-and-set: a hand edit between the in-transaction re-read and the UPDATE refuses the change, nothing changed', async () => {
+    const f = await fixture();
+    // The change's own connections: just before its UPDATE of aws_accounts, the row is edited by hand
+    // (autocommit, another connection, no connection lock), so the re-read passed and only the
+    // compare-and-set can see the difference.
+    const source = {
+      connect: async () => {
+        const client = await pool.connect();
+        const query = client.query.bind(client) as (...args: any[]) => any;
+        (client as any).query = async (...args: any[]) => {
+          if (typeof args[0] === 'string' && /^\s*UPDATE aws_accounts SET region/.test(args[0])) {
+            await pool.query(`UPDATE aws_accounts SET region = 'eu-west-1' WHERE id = $1`, [f.rowId]);
+          }
+          return query(...args);
+        };
+        const release = client.release.bind(client);
+        (client as any).release = (err?: Error) => { (client as any).query = query; release(err); };
+        return client;
+      },
+    };
+    const result = await changeHomeRegion({ organizationId: f.orgId, actorId: f.userId, to: 'us-west-2', request: null }, source).catch((e) => e);
+    expect(refusal(result)).toBe('connection_changed');
+    expect((await account(f)).region).toBe('eu-west-1');
+    expect(await activeRecs(f)).toBe(1);
+    expect(await auditRows(f)).toBe(0);
   });
 
   it('a failure after the region moved (the audit insert) rolls everything back', async () => {
