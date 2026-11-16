@@ -13,6 +13,7 @@
  *   d2_charge        2026-12-02T18:00Z, Dec 1 has charges
  *   d3               2026-12-03T00:30Z, Dec 1-2 have charges
  *   d3_metric_key    2026-12-03T00:30Z, groups carry the amount under another metric key
+ *   d15              2026-12-15T18:00Z, mid-month (review M-2: no previous-month total for the model)
  *
  * Surfaces: the cost summary (GET /api/platform/costs/summary), the AI
  * summary's spend facts, AI chat's cost context and its no-model reply, the
@@ -47,6 +48,7 @@ import { AIReportGeneratorService } from '../../services/ai-report-generator.ser
 import { NLQueryExecutorService } from '../../services/nl-query-executor.service';
 import { collectSection } from '../../services/ai-context-contract';
 import { monthOverMonthSection, spendSection } from '../../services/cost-context-sections';
+import { spendProvider } from '../../services/ai/evidence/providers/cost';
 import { ceLedgerResponse, ACCOUNT_ROW, type CeInput } from './dashboard-money-fixtures';
 
 import * as database from '../../config/database';
@@ -86,6 +88,7 @@ const DAY1_CASES: Record<string, Case> = {
       })),
     }),
   },
+  d15: { at: '2026-12-15T18:00:00.000Z', dataThrough: '2026-12-14' },
 };
 
 function pin(name: string, value: unknown): void {
@@ -208,6 +211,45 @@ describe('contract assertions (beyond the pinned files)', () => {
       expect(text).toContain('$13.30');
       expect(text).toMatch(/latest days are still updating/);
     }
+  });
+
+  describe('review M-2: the AI report model gets the previous month only while no day of this month has finished', () => {
+    /** The report's model-facing request with the spend section its provider builds (as AI reports do). */
+    async function reportPrompt(): Promise<{ prompt: string; spend: Awaited<ReturnType<typeof spendSection>> }> {
+      const pool = { query: ambientPool.query } as unknown as Pool;
+      const { costs } = await new AIChatContextRepository(pool).gatherCostContext(ORG);
+      const spend = await spendProvider.collect({ basis: { costs: async () => costs } } as never);
+      const prompt = new AIReportGeneratorService(pool).buildUserPrompt(
+        { organizationId: ORG, reportType: 'cost', dateRange: { from: '2026-12-01', to: '2026-12-16' }, sections: { spend } } as never,
+        'cost'
+      );
+      return { prompt, spend };
+    }
+
+    it('Dec 15 (month_to_date): no previous-month total in the report request; the cost summary endpoint still has it', async () => {
+      useCase(DAY1_CASES.d15);
+      const { prompt, spend } = await reportPrompt();
+      expect(spend.data?.monthState).toMatchObject({ state: 'month_to_date', previousMonth: null });
+      expect(prompt).toContain('"previousMonth":null');
+      expect(prompt).not.toMatch(/"previousMonth":\{/);
+      expect(prompt).not.toContain('399');
+      clearCostCaches();
+      const body = (await costSummary()) as { data: { spend: { data: { monthState: { previousMonth: unknown } } } } };
+      expect(body.data.spend.data.monthState.previousMonth).toMatchObject({ month: '2026-11', amount: 399 });
+    });
+
+    it('Dec 3 (month_to_date): none either', async () => {
+      useCase(DAY1_CASES.d3);
+      const { prompt } = await reportPrompt();
+      expect(prompt).not.toMatch(/"previousMonth":\{/);
+    });
+
+    it.each(['d1_0030', 'd1_absent', 'd1_charge', 'd2_none', 'd2_charge'])('%s (no day finished yet): the report request keeps the previous month', async (name) => {
+      useCase(DAY1_CASES[name]);
+      const { prompt, spend } = await reportPrompt();
+      expect(spend.data?.monthState?.previousMonth).toMatchObject({ month: '2026-11', amount: 399 });
+      expect(prompt).toMatch(/"previousMonth":\{"month":"2026-11"/);
+    });
   });
 
   it('DAY1-D17: a response without the expected cost metric is unavailable with a reason code, never 0', async () => {

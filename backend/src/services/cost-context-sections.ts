@@ -63,6 +63,8 @@ export interface SpendEvidence {
    * The current UTC month's state (cost-month-state.ts): period identity,
    * whether Cost Explorer has reported anything yet, whether `amount` may be
    * used, billed-through evidence. Present whenever the cost path produced one.
+   * In the model-facing section its previousMonth is null once a day of this
+   * month has finished (modelFacingMonthState).
    */
   monthState?: CostMonthState;
 }
@@ -101,7 +103,25 @@ function nextDay(date: string): string {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
+/**
+ * The month state as a model reads it (AI reports, the evidence registry, Ask
+ * AI): the previous month's total only while no day of this month has
+ * finished (no_billed_days_yet / latest_days_updating), as the AI summary and
+ * chat prose give it. Later in the month a model would set a whole month
+ * beside a partial one ("down 50% vs last month" on Dec 15), which the
+ * same-days month-over-month comparison exists to prevent (review M-2).
+ */
+export function modelFacingMonthState(state: CostMonthState): CostMonthState {
+  return state.state === 'no_billed_days_yet' || state.state === 'latest_days_updating' ? state : { ...state, previousMonth: null };
+}
+
 export async function spendSection(costs: ChatCostSection, options: { previousMonth?: boolean } = {}): Promise<ContextSection<SpendEvidence>> {
+  // { previousMonth: true } is the cost summary endpoint's view for pages, which
+  // decide themselves when to show the previous month; without it the section
+  // is model-facing evidence.
+  const monthState = costs.monthState
+    ? { monthState: options.previousMonth ? costs.monthState : modelFacingMonthState(costs.monthState) }
+    : {};
   if (costs.provenance === 'actual' && costs.data) {
     const period: EvidencePeriod | null = costs.period?.kind === 'range' ? costs.period : null;
     const lastDay = period?.kind === 'range' ? lastIncludedDay(period.endExclusive) : null;
@@ -117,7 +137,7 @@ export async function spendSection(costs: ChatCostSection, options: { previousMo
         lastDayInProgress,
         finishedThrough: costs.comparison.finishedThrough,
         ...(options.previousMonth ? { previousMonth: costs.previousMonth ?? null } : {}),
-        ...(costs.monthState ? { monthState: costs.monthState } : {}),
+        ...monthState,
       },
       reason: lastDayInProgress ? 'month-to-date; the last day of the period is still being billed, so it is incomplete' : null,
     }));
@@ -139,7 +159,7 @@ export async function spendSection(costs: ChatCostSection, options: { previousMo
         asOf: costs.asOf,
         data: {
           amount: current, basis: 'estimated_monthly_run_rate', topServices: null, lastDayInProgress: false, finishedThrough: null,
-          ...(costs.monthState ? { monthState: costs.monthState } : {}),
+          ...monthState,
         },
         completeness: coverage
           ? { unit: 'discovered resources with a cost estimate', expected: coverage.totalResources, received: coverage.estimatedResources, missing: null }

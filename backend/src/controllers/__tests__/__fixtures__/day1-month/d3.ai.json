@@ -37,13 +37,7 @@
         "ceEstimated": true,
         "asOf": "2026-12-03T00:30:00.000Z",
         "reason": null,
-        "previousMonth": {
-          "month": "2026-11",
-          "start": "2026-11-01",
-          "endExclusive": "2026-12-01",
-          "amount": 399,
-          "latestDaysUpdating": false
-        }
+        "previousMonth": null
       }
     }
   },
