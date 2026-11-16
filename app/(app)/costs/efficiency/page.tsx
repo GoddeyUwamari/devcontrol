@@ -604,7 +604,7 @@ export default function EfficiencyPage() {
                 ))}
                 {barHasUpdating && (
                   <span className="text-meta text-ink-muted" style={{ display: 'flex', alignItems: 'center', gap: '5px' }} data-testid="bars-updating-legend">
-                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#9ca3af', opacity: UPDATING_BAR_OPACITY, display: 'inline-block' }} />{STILL_UPDATING_LEGEND}
+                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: `rgba(156, 163, 175, ${UPDATING_BAR_OPACITY})`, display: 'inline-block' }} />{STILL_UPDATING_LEGEND}
                   </span>
                 )}
               </div>

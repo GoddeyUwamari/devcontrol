@@ -795,7 +795,6 @@ export default function CostsPage() {
               ]
             : [
                 { color: '#0F172A', dash: false, label: 'Actual spend' },
-                ...(trendHasUpdating && hasTrendData ? [{ color: UPDATING_STROKE, dash: true, label: STILL_UPDATING_LEGEND }] : []),
               ]
           ).map(({ color, dash, label }) => (
             <div key={label} className="flex items-center gap-2">
@@ -805,6 +804,15 @@ export default function CostsPage() {
               <span className="text-label text-ink-muted font-medium">{label}</span>
             </div>
           ))}
+          {/* The lighter, dashed line of the periods AWS Cost Explorer is still updating. */}
+          {trendHasUpdating && hasTrendData && (
+            <div className="flex items-center gap-2" data-testid="trend-updating-legend">
+              <svg width="24" height="2" className="shrink-0">
+                <line x1="0" y1="1" x2="24" y2="1" stroke={UPDATING_STROKE} strokeWidth="2" strokeDasharray="4 3" />
+              </svg>
+              <span className="text-label text-ink-muted font-medium">{STILL_UPDATING_LEGEND}</span>
+            </div>
+          )}
           {trendNotReportedNote && hasTrendData && (
             <span className="text-meta text-ink-muted" data-testid="trend-not-reported">{trendNotReportedNote}</span>
           )}

@@ -427,7 +427,8 @@ export function CostTrendChart({
               className="flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 text-label font-medium whitespace-nowrap shrink-0 text-ink-muted"
               data-testid="cost-trend-updating-legend"
             >
-              <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 bg-gray-400" style={{ opacity: UPDATING_BAR_OPACITY }} />
+              {/* A swatch, not text: gray-400 (#9ca3af) as light as the updating bars. */}
+              <span className="w-2.5 h-2.5 rounded-[2px] shrink-0" style={{ backgroundColor: `rgba(156, 163, 175, ${UPDATING_BAR_OPACITY})` }} />
               <span>{STILL_UPDATING_LEGEND}</span>
             </span>
           )}
