@@ -118,7 +118,7 @@ describe('GET /api/aws/accounts: home_region_proposal (state, region and the sto
     const org = await connectedOrg();
     const none = await (await accounts(org)).json();
     expect(none.home_region_proposal).toBeNull();
-    expect(Object.keys(none).sort()).toEqual(['connection', 'data', 'home_region_proposal', 'success']);
+    expect(Object.keys(none).sort()).toEqual(['connection', 'data', 'home_region_changed_at', 'home_region_proposal', 'previous_home_region', 'success']);
     await setProposal(org, 'unavailable', null);
     expect((await (await accounts(org)).json()).home_region_proposal).toEqual({
       state: 'unavailable', region: null, period: null, shares: [], other_regions: null, current: null, non_region_amount: null,

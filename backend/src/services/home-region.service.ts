@@ -51,6 +51,7 @@ import type { PoolClient } from 'pg';
 import { pool as defaultPool } from '../config/database';
 import {
   AwsAccountRow,
+  type AwsAccountsQueryable,
   findEligibleAwsAccount,
   homeRegionOf,
   isAwsAccountAmbiguous,
@@ -410,5 +411,43 @@ export async function changeHomeRegion(
   } catch (error: unknown) {
     if ((error as { code?: unknown } | null)?.code === LOCK_NOT_AVAILABLE) throw new HomeRegionChangeRefusedError('busy');
     throw error;
+  }
+}
+
+/** The connection's latest home region change, as PR 3 labels a former home region's data. */
+export interface HomeRegionChange {
+  previous_home_region: string;
+  home_region_changed_at: Date;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The latest aws_account.home_region_changed audit event of THIS connection row
+ * (founder addition, Nov 16; no new column): its `from` and its time. Null when
+ * the home region was never changed for this connection, when the latest event
+ * does not lead to the current home region (it was edited by hand since: the
+ * event no longer explains the current state), or when it cannot be read
+ * (logged by name; never fails the caller). Organization and connection are
+ * named explicitly; another organization's or an earlier connection's events
+ * never count.
+ */
+export async function readHomeRegionChange(db: AwsAccountsQueryable, organizationId: string, account: AwsAccountRow): Promise<HomeRegionChange | null> {
+  if (!UUID_PATTERN.test(account.id)) return null;
+  try {
+    const { rows } = await db.query(
+      `SELECT changes->>'from' AS previous, changes->>'to' AS current, created_at
+         FROM audit_logs
+        WHERE organization_id = $1 AND resource_id = $2::uuid AND action = 'aws_account.home_region_changed'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+      [organizationId, account.id]
+    );
+    const row = rows[0] as { previous: string | null; current: string | null; created_at: Date } | undefined;
+    if (!row || row.current !== homeRegionOf(account) || !isRegionCode(row.previous)) return null;
+    return { previous_home_region: row.previous, home_region_changed_at: row.created_at };
+  } catch (error: unknown) {
+    console.error(`[HomeRegion] change history unreadable for org ${organizationId}:`, error instanceof Error ? error.name : 'unknown error');
+    return null;
   }
 }

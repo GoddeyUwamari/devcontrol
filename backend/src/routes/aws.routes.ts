@@ -59,6 +59,7 @@ import {
   changeHomeRegion,
   isHomeRegionChangeRefused,
   previewHomeRegionChange,
+  readHomeRegionChange,
 } from '../services/home-region.service'
 
 const router = Router()
@@ -965,7 +966,16 @@ router.get('/accounts', async (req: Request, res: Response) => {
     const connection = health ? { state, health } : { state }
     // Home region HR-1: the eligible connection's proposal (state, region and its evidence: shares, other regions, amounts), or null.
     const home_region_proposal = state === 'connected' ? await readProposalView(req.user!.organizationId, account ?? null) : null
-    return res.json({ success: true, data, connection, home_region_proposal })
+    // Home region HR-1: the former home region and when it changed (latest audit event of this connection), or null.
+    const change = state === 'connected' && account ? await readHomeRegionChange(pool, req.user!.organizationId, account) : null
+    return res.json({
+      success: true,
+      data,
+      connection,
+      home_region_proposal,
+      previous_home_region: change?.previous_home_region ?? null,
+      home_region_changed_at: change?.home_region_changed_at ?? null,
+    })
   } catch (err: any) {
     console.error('[aws/accounts GET]', err)
     return res.status(500).json({ success: false, message: 'Failed to retrieve AWS accounts.' })

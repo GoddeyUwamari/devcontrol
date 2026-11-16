@@ -13,9 +13,10 @@
  *   - the Reserved Instance replacement in the same organization;
  *   - the savings totals and counts the Dashboard and the weekly email read
  *     (getStats);
- *   - GET /api/aws/accounts for the owner (ids and times normalized). HR-1 adds one
- *     key, home_region_proposal, which for such an account must be null; with it
- *     removed the response is the recorded one.
+ *   - GET /api/aws/accounts for the owner (ids and times normalized). HR-1 adds
+ *     keys (home_region_proposal, previous_home_region, home_region_changed_at)
+ *     which for such an account must be null; with them removed the response is
+ *     the recorded one.
  *
  * Real routes and repositories against live Postgres; only authService.verifyToken
  * is stubbed (role-gate harness). Placeholders only.
@@ -144,8 +145,11 @@ describe('an existing us-east-1 account is unchanged by HR-1 (T7)', () => {
     const res = await harness.sendAs(org.orgId, org.owner, 'GET', '/aws/accounts');
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.home_region_proposal ?? null).toBeNull();
-    delete body.home_region_proposal;
+    // HR-1's added keys: null for an account that never had a proposal or a home region change.
+    for (const added of ['home_region_proposal', 'previous_home_region', 'home_region_changed_at']) {
+      expect(body[added] ?? null).toBeNull();
+      delete body[added];
+    }
     for (const account of body.data) {
       for (const volatile of ['id', 'org_id', 'account_id', 'connected_at']) {
         if (account[volatile] !== null && account[volatile] !== undefined) account[volatile] = `<${volatile}>`;
