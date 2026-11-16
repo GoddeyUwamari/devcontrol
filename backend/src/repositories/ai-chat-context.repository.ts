@@ -35,6 +35,8 @@ import { DORAMetricsRepository } from './dora-metrics.repository';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { AWSResourcesRepository } from './awsResources.repository';
 import { findEligibleAwsAccount } from './aws-accounts.repository';
+import { isMultiRegionDiscoveryOn } from './multi-region-coverage.repository';
+import { InventoryRegionScan, regionScanFromCoverage } from '../services/ai-region-scope';
 import { createEvidenceBasis, defaultBasisSources } from '../services/ai/evidence/basis';
 import { collectEvidence, sectionOf } from '../services/ai/evidence/registry';
 import { defaultEvidenceRegistry } from '../services/ai/evidence/providers';
@@ -159,9 +161,10 @@ export class AIChatContextRepository {
    * the same discovery state without also calling Cost Explorer.
    */
   async gatherInventoryBasis(organizationId: string): Promise<Pick<ChatContext, 'discovery' | 'account' | 'inventoryScope'>> {
-    const [discovery, account] = await Promise.all([
+    const [discovery, account, regionScan] = await Promise.all([
       this.getDiscoveryFreshness(organizationId),
       this.getConnectedAccount(organizationId),
+      this.getRegionScan(organizationId),
     ]);
 
     // Discovery's real scope: AWSClientFactory.createClients() reads this same
@@ -173,8 +176,28 @@ export class AIChatContextRepository {
       kind: 'resource_inventory',
       connectedAccountId: connectedAccount?.accountId ?? null,
       discoveryRegion: connectedAccount ? (connectedAccount.region ?? 'us-east-1') : null,
+      // Multi-region PR 2: only with the flag on; without it the scope is exactly as before.
+      ...(regionScan ? { regionScan } : {}),
     };
     return { discovery, account, inventoryScope };
+  }
+
+  /**
+   * The inventory's region scan (multi-region PR 2), read from the Services coverage
+   * API's own read: undefined without the multi_region_discovery flag (the scope is
+   * then discoveryRegion, as before); 'unavailable' when the flag is on but the
+   * coverage cannot be read, so the AI never falls back to "home region only".
+   */
+  private async getRegionScan(organizationId: string): Promise<InventoryRegionScan | undefined> {
+    if (!(await isMultiRegionDiscoveryOn(this.pool, organizationId, '[AI context]'))) return undefined;
+    try {
+      // Loaded on first use, as the evidence basis loads it: the read lives beside its route.
+      const { readServicesCoverage } = await import('../routes/services-coverage.routes');
+      return regionScanFromCoverage(await readServicesCoverage(this.pool, organizationId)) ?? { state: 'unavailable' };
+    } catch (error: unknown) {
+      console.warn(`[AI context] region_scan_unreadable: org ${organizationId} (${error instanceof Error ? error.name : 'unknown error'})`);
+      return { state: 'unavailable' };
+    }
   }
 
   /**

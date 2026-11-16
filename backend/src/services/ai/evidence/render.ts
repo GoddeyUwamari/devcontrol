@@ -22,6 +22,7 @@ import {
   type UntrustedText,
 } from '../../ai-context-contract';
 import type { EvidenceBundle, ProviderResult } from './types';
+import { regionScopeText } from '../../ai-region-scope';
 
 /** For a system prompt: how the fenced text must be read. */
 export const UNTRUSTED_TEXT_RULE =
@@ -197,7 +198,11 @@ function scopeProse(scope: ContextScope): string {
   switch (scope.kind) {
     case 'organization': return `this DevControl organization, ${scope.window}`;
     case 'cost_explorer': return `the AWS Cost Explorer billing scope of the connected IAM role (account ${account}); consolidated billing unknown; all regions`;
-    case 'resource_inventory': return `AWS resources DevControl discovered in account ${account}, region ${scope.discoveryRegion ?? 'unknown'} (S3 account-wide, CloudFront global)`;
+    case 'resource_inventory':
+      // Multi-region PR 2: with the flag on, the regions the scan covered; without it, as before.
+      return scope.regionScan
+        ? `AWS resources DevControl discovered in account ${account}; regions: ${regionScopeText(scope.regionScan)}`
+        : `AWS resources DevControl discovered in account ${account}, region ${scope.discoveryRegion ?? 'unknown'} (S3 account-wide, CloudFront global)`;
     case 'account_level': return `account-level, connected AWS account ${account}`;
     case 'aws_account_region': return `connected AWS account ${account}, region ${scope.region ?? 'unknown'}`;
     case 'aws_account_regions': return `connected AWS account ${account}, home region ${scope.homeRegion ?? 'unknown'}, ${scope.regions.length} regions recorded`;

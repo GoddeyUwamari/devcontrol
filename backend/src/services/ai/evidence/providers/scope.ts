@@ -8,6 +8,7 @@
 import { collectSection, notConnected, type AccountRegionsScope } from '../../../ai-context-contract';
 import { isAwsAccountAmbiguous } from '../../../../repositories/aws-accounts.repository';
 import { defineProvider, iso, ref, summarizeItems, TWO_SCANS_SECONDS } from './shared';
+import { regionScanFromCoverage, regionScopeText } from '../../../ai-region-scope';
 
 const MULTIPLE_ACCOUNTS_REASON = 'more than one AWS account is connected; DevControl reads one account per organization';
 
@@ -119,13 +120,18 @@ export const regionCoverageProvider = defineProvider<RegionCoverageEvidence>({
       homeRegion: coverage.account.home_region,
       regions: items.map((r) => ({ region: r.region, status: r.status })),
     };
+    const regionScan = regionScanFromCoverage(coverage);
     const known = coverage.scope.enabled_regions.known;
     const asOf = iso(coverage.scope.enabled_regions.listed_at) ?? iso(coverage.last_successful_scan_at);
     return collectSection<RegionCoverageEvidence>({ ...meta, scope }, async () => ({
       state: known ? 'available' : 'partial',
       asOf,
       reason: known ? null : "the account's region list has not been recorded yet, so its enabled regions are unknown (not zero)",
-      coverage: 'discovery scans every inventoried type in the home region only; S3 buckets are listed account-wide and CloudFront is global; other regions are listed but not scanned yet',
+      // Multi-region PR 2: with the flag on (the coverage has multi_region), what the scan
+      // covered; without it, exactly the home-region sentence as before.
+      coverage: regionScan
+        ? `discovery scans every inventoried type in each enabled region of the account's region list; ${regionScopeText(regionScan)}`
+        : 'discovery scans every inventoried type in the home region only; S3 buckets are listed account-wide and CloudFront is global; other regions are listed but not scanned yet',
       data: {
         homeRegion: coverage.account.home_region,
         scanScope: { homeRegionTypes: 'all inventoried types', s3: 'account-wide', cloudfront: 'global' },

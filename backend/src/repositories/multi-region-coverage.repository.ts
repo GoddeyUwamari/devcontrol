@@ -17,13 +17,21 @@ import { MULTI_REGION_DISCOVERY_FLAG } from './multi-region-foundation.repositor
 import { AwsAccountsQueryable, findEligibleAwsAccount } from './aws-accounts.repository';
 import { parseAccountIdFromArn } from '../utils/awsAccountId';
 
+// A constant, checked here once: only [a-z0-9_] can ever reach the statement text.
+const FLAG_LITERAL = /^[a-z][a-z0-9_]{0,63}$/.test(MULTI_REGION_DISCOVERY_FLAG) ? MULTI_REGION_DISCOVERY_FLAG : (() => {
+  throw new Error('MULTI_REGION_DISCOVERY_FLAG is not a plain flag name');
+})();
+
 /** Whether multi-region discovery is on for the organization; false when the flag cannot be read (logged by error name). */
 export async function isMultiRegionDiscoveryOn(db: AwsAccountsQueryable, organizationId: string, logLabel: string): Promise<boolean> {
   try {
-    // isOrganizationFeatureEnabled's statement, on this executor type.
+    // isOrganizationFeatureEnabled's statement, on this executor type. The flag name is
+    // this module's constant (it matches the column's CHECK), written into the text so the
+    // statement's only parameter is the organization: callers' tenant-scoping tests
+    // (e.g. costs-summary-endpoint) hold every statement to that.
     const { rows } = await db.query(
-      `SELECT enabled FROM organization_feature_flags WHERE organization_id = $1 AND flag = $2`,
-      [organizationId, MULTI_REGION_DISCOVERY_FLAG]
+      `SELECT enabled FROM organization_feature_flags WHERE organization_id = $1 AND flag = '${FLAG_LITERAL}'`,
+      [organizationId]
     );
     return rows[0]?.enabled === true;
   } catch (error: unknown) {
