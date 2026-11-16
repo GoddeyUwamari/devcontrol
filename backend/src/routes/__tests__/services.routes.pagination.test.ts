@@ -394,6 +394,8 @@ describe('GET /api/services/stats -- one read of the inventory, the same numbers
       aws_accounts_connected: 0,
       // Added for the Services page (services.routes.inventory-facets.test.ts); every number above is unchanged.
       attention_by_severity: { critical: 2, high: 3, medium: 1, low: 0 },
+      // Added by multi-region PR 3a (G1): every resource here is in us-east-1.
+      attention_scope: { regions: 1, global: 0 },
       ownership: { owned: 0, unowned: 10, unknown: 0 },
       unknown_by_type: {},
       regions: [{ region: 'us-east-1', count: 10 }],
