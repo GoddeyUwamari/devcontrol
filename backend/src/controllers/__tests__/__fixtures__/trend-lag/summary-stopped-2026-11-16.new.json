@@ -1,0 +1,141 @@
+{
+  "success": true,
+  "data": {
+    "spend": {
+      "state": "available",
+      "source": "AWS Cost Explorer",
+      "provenance": "actual",
+      "asOf": "2026-11-16T11:30:00.000Z",
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": {
+        "kind": "range",
+        "start": "2026-11-01",
+        "endExclusive": "2026-11-17"
+      },
+      "completeness": null,
+      "coverage": null,
+      "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete",
+      "derivedFrom": null,
+      "data": {
+        "amount": 0,
+        "basis": "billed_month_to_date",
+        "topServices": [],
+        "lastDayInProgress": true,
+        "finishedThrough": "2026-11-14",
+        "previousMonth": {
+          "start": "2026-10-01",
+          "endExclusive": "2026-11-01",
+          "amount": 11.53
+        },
+        "monthState": {
+          "version": 1,
+          "state": "month_to_date",
+          "period": {
+            "month": "2026-11",
+            "start": "2026-11-01",
+            "endExclusive": "2026-11-17",
+            "calendar": "UTC"
+          },
+          "amount": 0,
+          "amountUsable": true,
+          "costBasis": "unblended_net_after_credits",
+          "lineItems": 0,
+          "finishedThrough": "2026-11-14",
+          "billedThrough": null,
+          "reportDays": {
+            "final": 8,
+            "updating": 0,
+            "notReported": 8,
+            "afterRecentCharge": false
+          },
+          "ceEstimated": null,
+          "asOf": "2026-11-16T11:30:00.000Z",
+          "reason": null,
+          "previousMonth": {
+            "month": "2026-10",
+            "start": "2026-10-01",
+            "endExclusive": "2026-11-01",
+            "amount": 11.534246362,
+            "latestDaysUpdating": false
+          }
+        }
+      },
+      "retrievedAt": "2026-11-16T11:30:00.000Z",
+      "freshness": null,
+      "classification": "billed",
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthOverMonth": {
+      "state": "available",
+      "source": "DevControl month-over-month comparison",
+      "provenance": "derived",
+      "asOf": "2026-11-16T11:30:00.000Z",
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": {
+        "kind": "range",
+        "start": "2026-10-01",
+        "endExclusive": "2026-11-09"
+      },
+      "completeness": null,
+      "coverage": "finished days of this month vs the same days of the previous month; the latest days, still being reported by AWS Cost Explorer, are excluded",
+      "reason": null,
+      "derivedFrom": [
+        {
+          "source": "AWS Cost Explorer daily trend",
+          "state": "available",
+          "provenance": "actual",
+          "scope": {
+            "kind": "cost_explorer",
+            "connectedAccountId": "123456789012",
+            "linkedAccountFilter": "none",
+            "consolidatedBilling": "unknown",
+            "regions": "all"
+          },
+          "period": {
+            "kind": "range",
+            "start": "2026-10-01",
+            "endExclusive": "2026-11-09"
+          },
+          "asOf": "2026-11-16T11:30:00.000Z"
+        }
+      ],
+      "data": {
+        "currentWindow": {
+          "start": "2026-11-01",
+          "end": "2026-11-08"
+        },
+        "previousWindow": {
+          "start": "2026-10-01",
+          "end": "2026-10-08"
+        },
+        "currentWindowTotal": 0,
+        "previousWindowTotal": 4.61,
+        "changeAmount": -4.61,
+        "changePercent": -100,
+        "currentWindowIncludesToday": false,
+        "basis": "sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend"
+      },
+      "retrievedAt": "2026-11-16T11:30:00.000Z",
+      "freshness": null,
+      "classification": "calculated",
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthStateReason": null
+  }
+}

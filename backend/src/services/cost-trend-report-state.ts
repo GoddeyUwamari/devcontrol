@@ -5,12 +5,17 @@
  *
  *   not_reported  a period AFTER the last period with at least one Cost
  *                 Explorer line item, when the series has line items on some
- *                 earlier period. Cost Explorer has not reported it yet: it is
- *                 a gap, never $0.00. A series with no line items at all has
- *                 no not_reported periods (its $0 periods are real).
+ *                 earlier period, AND whose last day is within
+ *                 NOT_REPORTED_WINDOW_DAYS of today (today-7 .. today, review
+ *                 M-1). Cost Explorer has not reported it yet: it is a gap,
+ *                 never $0.00. An older empty period is a real $0 (an account
+ *                 that stopped spending), and a series with no line items at
+ *                 all has no not_reported periods.
  *   updating      the most recent period with line items, when its last day is
- *                 within the last UPDATING_WINDOW_DAYS UTC days of today. Its
- *                 amount is "so far": Cost Explorer may still add charges.
+ *                 on or after today-3 (UPDATING_WINDOW_DAYS): today-3, today-2,
+ *                 today-1 and today, four UTC dates (review L-4). Today-3 must
+ *                 be in it: the evidence's Nov 13 at 2026-11-16 was partial.
+ *                 Its amount is "so far": Cost Explorer may still add charges.
  *   final         everything else.
  *
  * ResultByTime.Estimated is recorded on every point (`estimated`) but does NOT
@@ -44,9 +49,26 @@ export interface ReportStateInput {
   estimated: boolean | null;
 }
 
+/**
+ * A period with no line items after the last charged one is "not reported"
+ * only while its last day is on or after today (UTC) minus this many days:
+ * today-7 .. today. Above the ~3-day lag seen in production (review M-1).
+ */
+export const NOT_REPORTED_WINDOW_DAYS = 7;
+
+/** today (UTC) minus `days`, as YYYY-MM-DD. */
+function daysBefore(now: Date, days: number): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days)).toISOString().slice(0, 10);
+}
+
 /** today (UTC) minus UPDATING_WINDOW_DAYS, as YYYY-MM-DD. */
 export function updatingWindowStart(now: Date): string {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - UPDATING_WINDOW_DAYS)).toISOString().slice(0, 10);
+  return daysBefore(now, UPDATING_WINDOW_DAYS);
+}
+
+/** today (UTC) minus NOT_REPORTED_WINDOW_DAYS, as YYYY-MM-DD. */
+export function notReportedWindowStart(now: Date): string {
+  return daysBefore(now, NOT_REPORTED_WINDOW_DAYS);
 }
 
 /**
@@ -59,8 +81,9 @@ export function costReportStates(periods: ReadonlyArray<ReportStateInput>, now: 
     if (p.lineItems > 0) lastWithLineItems = i;
   });
   const recentFrom = updatingWindowStart(now);
+  const notReportedFrom = notReportedWindowStart(now);
   return periods.map((p, i) => {
-    if (lastWithLineItems >= 0 && i > lastWithLineItems) return 'not_reported';
+    if (lastWithLineItems >= 0 && i > lastWithLineItems && p.lastDay >= notReportedFrom) return 'not_reported';
     if (i === lastWithLineItems && p.lastDay >= recentFrom) return 'updating';
     return 'final';
   });

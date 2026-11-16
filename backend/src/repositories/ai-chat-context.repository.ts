@@ -494,7 +494,8 @@ export class AIChatContextRepository {
           asOf: monthlyCost.fetchedAt ?? null,
           previousMonth: monthlyCost.previousMonth ?? null,
         }, now),
-        daily
+        daily,
+        now
       );
 
       return {

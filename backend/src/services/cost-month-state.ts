@@ -21,7 +21,7 @@
  * Pure: no AWS, database or clock reads beyond the `now` it is given.
  */
 
-import { reportStateCounts, type CostReportState } from './cost-trend-report-state';
+import { notReportedWindowStart, reportStateCounts, type CostReportState } from './cost-trend-report-state';
 
 /**
  * Cost Explorer keeps filling in a day's charges for 24-48 hours, so today and
@@ -109,9 +109,13 @@ export interface CostMonthState {
    * still updating, or not reported yet by Cost Explorer. Any updating or
    * not-reported day makes a caption say "latest days still updating", not
    * "today still billing" (rule 6). null = not determined (no daily trend).
-   * It never changes `state` or `amount`.
+   * It never changes `state` or `amount`. afterRecentCharge: the series' last
+   * day with line items is within today-7 .. today, so not-reported days
+   * are plausibly reporting lag; false = the account stopped spending
+   * earlier (review M-1), and its not-reported days do not make a caption
+   * say "latest days still updating".
    */
-  reportDays: { final: number; updating: number; notReported: number } | null;
+  reportDays: { final: number; updating: number; notReported: number; afterRecentCharge: boolean } | null;
   /** ResultByTime.Estimated of the month result, recorded only. null = not returned. */
   ceEstimated: boolean | null;
   /** When Cost Explorer answered. */
@@ -229,30 +233,36 @@ export function unavailableCostMonthState(
  *   - billedThrough: the last day inside the month's period on which the
  *     daily trend has at least one Cost Explorer line item (points without a
  *     lineItems count fall back to their byService breakdown);
- *   - reportDays: the month's days by report state;
+ *   - reportDays: the month's days by report state, and whether the
+ *     series' last charge is recent (afterRecentCharge, review M-1);
  *   - previousMonth.latestDaysUpdating also turns true when a day of the
- *     previous month is updating or not reported yet (never turns false).
+ *     previous month is unfinished by the same test (never turns false).
  * The state and the amount are unchanged.
  */
 export function withBilledThrough(
   state: CostMonthState,
-  daily: ReadonlyArray<{ date: string; lineItems?: number; byService?: unknown[]; reportState?: CostReportState }> | null
+  daily: ReadonlyArray<{ date: string; lineItems?: number; byService?: unknown[]; reportState?: CostReportState }> | null,
+  now: Date = new Date()
 ): CostMonthState {
   if (!daily) return state;
   let last: string | null = null;
+  let lastCharge: string | null = null;
   for (const point of daily) {
     const day = point.date.slice(0, 10);
-    if (day < state.period.start || day >= state.period.endExclusive) continue;
     const items = point.lineItems ?? point.byService?.length ?? 0;
+    if (items > 0 && (lastCharge === null || day > lastCharge)) lastCharge = day;
+    if (day < state.period.start || day >= state.period.endExclusive) continue;
     if (items > 0 && (last === null || day > last)) last = day;
   }
+  const afterRecentCharge = lastCharge !== null && lastCharge >= notReportedWindowStart(now);
+  const withRecency = (c: { final: number; updating: number; notReported: number } | null) => (c ? { ...c, afterRecentCharge } : null);
   const previous = state.previousMonth;
-  const previousDays = previous ? reportStateCounts(daily, previous.start, previous.endExclusive) : null;
-  const previousUnfinished = previousDays !== null && previousDays.updating + previousDays.notReported > 0;
+  const previousDays = withRecency(previous ? reportStateCounts(daily, previous.start, previous.endExclusive) : null);
+  const previousUnfinished = unfinished(previousDays);
   return {
     ...state,
     billedThrough: last,
-    reportDays: reportStateCounts(daily, state.period.start, state.period.endExclusive),
+    reportDays: withRecency(reportStateCounts(daily, state.period.start, state.period.endExclusive)),
     previousMonth: previous && previousUnfinished && !previous.latestDaysUpdating ? { ...previous, latestDaysUpdating: true } : previous,
   };
 }
@@ -265,8 +275,16 @@ export function withBilledThrough(
 export function monthHasUnfinishedDays(state: CostMonthState | null | undefined): boolean {
   if (!state) return false;
   if (state.state === 'latest_days_updating') return true;
-  const days = state.reportDays;
-  return !!days && days.updating + days.notReported > 0;
+  return unfinished(state.reportDays);
+}
+
+/**
+ * An updating day, or a not-reported day after a recent charge (M-1: a
+ * long-stopped account's not-reported days are not "still updating").
+ */
+function unfinished(days: CostMonthState['reportDays']): boolean {
+  if (!days) return false;
+  return days.updating > 0 || (days.notReported > 0 && days.afterRecentCharge);
 }
 
 /** The month as a reader writes it, from 'YYYY-MM': "December 2026". */

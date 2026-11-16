@@ -41,7 +41,8 @@ import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
  */
 // 4: monthState.reportDays and the month-over-month window ending before the
 // first day Cost Explorer has not finished (trend-lag-build.md).
-export const AI_CONTEXT_CONTRACT_VERSION = 4;
+// 5: not_reported bounded to today-7 .. today and reportDays.afterRecentCharge (review M-1).
+export const AI_CONTEXT_CONTRACT_VERSION = 5;
 // 3: spend evidence `amount` may be null (no billed days yet) and carries the
 //    current UTC month's state, `monthState` (cost-month-state.ts; review L-5).
 

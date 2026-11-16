@@ -300,7 +300,7 @@ describe('the month state carries the per-day evidence; amounts unchanged (rule 
     expect(spend.data.monthState).toMatchObject({
       state: 'month_to_date',
       billedThrough: '2026-11-13',
-      reportDays: { final: 12, updating: 1, notReported: 3 },
+      reportDays: { final: 12, updating: 1, notReported: 3, afterRecentCharge: true },
       previousMonth: { month: '2026-10', latestDaysUpdating: false },
     });
     useLedger(NOW);
@@ -337,7 +337,7 @@ describe('edge cases', () => {
     expect(summary.data.monthOverMonth.data).toMatchObject({
       currentWindow: { start: '2026-11-01', end: '2026-11-14' }, currentWindowTotal: 0, previousWindowTotal: 0, changePercent: null,
     });
-    expect(summary.data.spend.data.monthState.reportDays).toEqual({ final: 16, updating: 0, notReported: 0 });
+    expect(summary.data.spend.data.monthState.reportDays).toEqual({ final: 16, updating: 0, notReported: 0, afterRecentCharge: false });
   });
 
   it('today has line items: today is updating, yesterday final, nothing not reported', async () => {
@@ -354,6 +354,53 @@ describe('edge cases', () => {
       '2026-11-11': 'final', '2026-11-12': 'final',
       '2026-11-13': 'not_reported', '2026-11-14': 'not_reported', '2026-11-15': 'not_reported', '2026-11-16': 'not_reported',
     });
+  });
+});
+
+describe('M-1: an account that stopped spending (last charge Oct 20, now Nov 16)', () => {
+  const STOPPED: Ledger = { through: '2026-10-20' };
+
+  it('90d: Oct 21..Nov 8 are real $0 days (final); only Nov 9..16 (within today-7, after the last charge) are not reported', async () => {
+    useLedger(NOW, STOPPED);
+    const { data } = await trendEndpoint('90d');
+    const after = data.filter((p) => p.date > '2026-10-20');
+    expect(after.filter((p) => p.date <= '2026-11-08').every((p) => p.reportState === 'final' && p.total === 0 && p.provisional === false)).toBe(true);
+    expect(after.filter((p) => p.reportState === 'not_reported').map((p) => p.date)).toEqual(
+      ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15', '2026-11-16']);
+    expect(data.some((p) => p.reportState === 'updating')).toBe(false);
+  });
+
+  it('the month state: Nov 9-16 not reported but not after a recent charge; month-over-month compares Nov 1-8 vs Oct 1-8', async () => {
+    useLedger(NOW, STOPPED);
+    const summary = await costSummary();
+    expect(summary.data.spend.data.monthState).toMatchObject({
+      state: 'month_to_date', amount: 0, billedThrough: null,
+      reportDays: { final: 8, updating: 0, notReported: 8, afterRecentCharge: false },
+      previousMonth: { month: '2026-10', latestDaysUpdating: false },
+    });
+    expect(summary.data.monthOverMonth.data).toMatchObject({
+      currentWindow: { start: '2026-11-01', end: '2026-11-08' }, previousWindow: { start: '2026-10-01', end: '2026-10-08' }, currentWindowTotal: 0,
+    });
+  });
+
+  it('pins its cost summary (read by the frontend caption test)', async () => {
+    useLedger(NOW, STOPPED);
+    const body = `${JSON.stringify(await costSummary(), null, 2)}\n`;
+    const file = path.join(DIR, 'summary-stopped-2026-11-16.new.json');
+    if (WRITE) fs.writeFileSync(file, body);
+    expect(body).toBe(fs.readFileSync(file, 'utf8'));
+  });
+
+  it('no AI path says the latest days are still updating for a long-stopped account', async () => {
+    useLedger(NOW, STOPPED);
+    const out = await aiSurfaces();
+    const said = JSON.stringify([out.summaryFacts, out.chatContext, out.reportSentence, out.askAi]);
+    expect(said).not.toMatch(/latest days are still updating/i);
+  });
+
+  it('the real evidence (charge on Nov 13) still has afterRecentCharge true', async () => {
+    useLedger(NOW);
+    expect((await costSummary()).data.spend.data.monthState.reportDays).toEqual({ final: 12, updating: 1, notReported: 3, afterRecentCharge: true });
   });
 });
 

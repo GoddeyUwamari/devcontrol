@@ -467,16 +467,16 @@ describe('truth/provenance foundation', () => {
       expect(isCurrentContractVersion(undefined)).toBe(false);
     });
 
-    it('is 4 since the per-day report state (trend-lag-build.md; 3 was the day-1 month state, review L-5): AI output fingerprinted under 3 is a cache miss', async () => {
+    it('is 5 since the bounded not_reported window (review M-1; 4 was the per-day report state, 3 the day-1 month state): AI output fingerprinted under 4 is a cache miss', async () => {
       const section = await collectSection(CE_META, async () => ({ state: 'available', data: { amount: null, monthState: { state: 'no_billed_days_yet' } } }));
-      const underThree = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section }, contractVersion: 3 });
+      const underFour = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section }, contractVersion: 4 });
       const current = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section } });
 
-      expect(AI_CONTEXT_CONTRACT_VERSION).toBe(4);
-      expect(toModelEvidence(section).contractVersion).toBe(4);
-      expect(current.startsWith('v4:')).toBe(true);
-      expect(current).not.toBe(underThree);
-      expect(isCurrentContractVersion(3)).toBe(false);
+      expect(AI_CONTEXT_CONTRACT_VERSION).toBe(5);
+      expect(toModelEvidence(section).contractVersion).toBe(5);
+      expect(current.startsWith('v5:')).toBe(true);
+      expect(current).not.toBe(underFour);
+      expect(isCurrentContractVersion(4)).toBe(false);
     });
 
     it('the fingerprint is stable for equal evidence (key order irrelevant) and changes with evidence, prompt version, or freshness', async () => {

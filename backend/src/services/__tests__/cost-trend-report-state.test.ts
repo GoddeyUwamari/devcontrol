@@ -3,7 +3,7 @@
  * own. The real production series is in
  * controllers/__tests__/trend-lag-real-evidence.test.ts; these are synthetic.
  */
-import { costReportStates, isProvisional, reportStateCounts, updatingWindowStart, UPDATING_WINDOW_DAYS } from '../cost-trend-report-state';
+import { costReportStates, isProvisional, notReportedWindowStart, NOT_REPORTED_WINDOW_DAYS, reportStateCounts, updatingWindowStart, UPDATING_WINDOW_DAYS } from '../cost-trend-report-state';
 
 const NOW = new Date('2026-11-16T11:30:00.000Z');
 const day = (lastDay: string, lineItems: number, estimated: boolean | null = null) => ({ lastDay, lineItems, estimated });
@@ -39,6 +39,22 @@ describe('costReportStates', () => {
 
   it('not_reported wins over Estimated: a day with no line items after the last reported one has no amount to update', () => {
     expect(costReportStates([day('2026-11-15', 8), day('2026-11-16', 0, true)], NOW)).toEqual(['updating', 'not_reported']);
+  });
+
+  it('M-1: not_reported only within today-7 .. today; last charge Oct 20, today Nov 16 -> Oct 21..Nov 8 real $0, Nov 9..16 not reported', () => {
+    expect(NOT_REPORTED_WINDOW_DAYS).toBe(7);
+    expect(notReportedWindowStart(NOW)).toBe('2026-11-09');
+    const days: string[] = [];
+    for (let t = Date.parse('2026-10-15T00:00:00Z'); t <= Date.parse('2026-11-16T00:00:00Z'); t += 86_400_000) days.push(new Date(t).toISOString().slice(0, 10));
+    const states = costReportStates(days.map((d) => day(d, d <= '2026-10-20' ? 8 : 0)), NOW);
+    const byDay = Object.fromEntries(days.map((d, i) => [d, states[i]]));
+    expect(days.filter((d) => d <= '2026-10-20').every((d) => byDay[d] === 'final')).toBe(true);
+    expect(days.filter((d) => d >= '2026-10-21' && d <= '2026-11-08').every((d) => byDay[d] === 'final')).toBe(true);
+    expect(days.filter((d) => byDay[d] === 'not_reported')).toEqual(['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15', '2026-11-16']);
+  });
+
+  it('M-1 monthly: an empty month that ended before today-7 is a real $0; the current empty month is not reported', () => {
+    expect(costReportStates([day('2026-09-30', 5), day('2026-10-31', 0), day('2026-11-30', 0)], NOW)).toEqual(['final', 'final', 'not_reported']);
   });
 
   it('monthly points use the month\'s last day', () => {

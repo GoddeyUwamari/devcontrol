@@ -62,7 +62,8 @@
           "reportDays": {
             "final": 0,
             "updating": 1,
-            "notReported": 1
+            "notReported": 1,
+            "afterRecentCharge": true
           },
           "ceEstimated": true,
           "asOf": "2026-12-02T18:00:00.000Z",

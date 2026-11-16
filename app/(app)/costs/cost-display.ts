@@ -8,7 +8,7 @@
  * (spend.data.monthState, cost-month-state.ts): "no billed days yet" is never
  * shown as $0.
  */
-import type { ContextSection, CostMonthOverMonthEvidence, CostSpendEvidence } from '@/lib/types'
+import type { ContextSection, CostMonthOverMonthEvidence, CostMonthState, CostSpendEvidence } from '@/lib/types'
 import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
 
 const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -217,8 +217,17 @@ export function noFinishedDayThisMonth(section: ContextSection<CostSpendEvidence
  */
 export function monthHasUnfinishedDays(section: ContextSection<CostSpendEvidence> | undefined): boolean {
   if (monthStateOf(section) === 'latest_days_updating') return true
-  const days = section?.data?.monthState?.reportDays
-  return !!days && days.updating + days.notReported > 0
+  return unfinishedReportDays(section?.data?.monthState?.reportDays)
+}
+
+/**
+ * An updating day, or a not-reported day after a recent charge. A
+ * long-stopped account's not-reported days (afterRecentCharge false, review
+ * M-1) are not "still updating". A backend without the flag counts them.
+ */
+function unfinishedReportDays(days: CostMonthState['reportDays']): boolean {
+  if (!days) return false
+  return days.updating > 0 || (days.notReported > 0 && days.afterRecentCharge !== false)
 }
 
 /**
@@ -229,7 +238,7 @@ export function monthHasUnfinishedDays(section: ContextSection<CostSpendEvidence
 export function noFinalDayThisMonth(section: ContextSection<CostSpendEvidence> | undefined): boolean {
   if (noFinishedDayThisMonth(section)) return true
   const days = section?.data?.monthState?.reportDays
-  return !!days && days.final === 0 && days.updating + days.notReported > 0
+  return !!days && days.final === 0 && unfinishedReportDays(days)
 }
 
 /** AWS Cost Explorer has no billed days for this month yet (the month's state). */

@@ -46,6 +46,41 @@ describe('real evidence 2026-11-16', () => {
   })
 })
 
+describe('M-1: an account that stopped spending (backend summary, last charge Oct 20, now Nov 16)', () => {
+  const STOPPED: CostSummary = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, '../../../../backend/src/controllers/__tests__/__fixtures__/trend-lag/summary-stopped-2026-11-16.new.json'), 'utf8',
+  )).data
+
+  it('the backend says Nov 9-16 are not reported but not after a recent charge', () => {
+    expect(STOPPED.spend.data?.monthState?.reportDays).toEqual({ final: 8, updating: 0, notReported: 8, afterRecentCharge: false })
+  })
+
+  it('captions never say "latest days still updating" (Dashboard tile, Costs card)', () => {
+    expect(monthHasUnfinishedDays(STOPPED.spend)).toBe(false)
+    const card = computeDashboardSpendCard({ costSummary: STOPPED, ...ok })
+    expect(card.caption).toBe('Nov 1–16 (UTC) · Actual · AWS Cost Explorer · today still billing')
+    expect(describeSpend(STOPPED.spend, ok).sub).not.toContain(LATEST_DAYS_REPORTING)
+    expect(card.previousMonth).toBeNull()
+  })
+
+  it('month-over-month: Nov 1–8 vs Oct 1–8, a real comparison (not "No comparison yet · latest days still updating")', () => {
+    expect(noFinalDayThisMonth(STOPPED.spend)).toBe(false)
+    const mom = describeMonthOverMonth(STOPPED.monthOverMonth, ok, { noFinishedDay: noFinalDayThisMonth(STOPPED.spend) })
+    expect(mom.direction).toBe('down')
+    expect(computeDashboardSpendCard({ costSummary: STOPPED, ...ok }).evidence!.comparison).toContain('Nov 1–8 vs Oct 1–8')
+  })
+
+  it('synthetic: no final day yet, not-reported days only, no recent charge -> not "No comparison yet · latest days still updating"', () => {
+    const s = billedSummary({ state: 'month_to_date', endExclusive: '2026-12-04', amount: 0, finishedThrough: '2026-12-01' })
+    const stopped = { ...s, spend: { ...s.spend, data: { ...s.spend.data!, monthState: { ...s.spend.data!.monthState!, reportDays: { final: 0, updating: 0, notReported: 3, afterRecentCharge: false } } } } }
+    expect(noFinalDayThisMonth(stopped.spend)).toBe(false)
+    expect(monthHasUnfinishedDays(stopped.spend)).toBe(false)
+    const recent = { ...stopped, spend: { ...stopped.spend, data: { ...stopped.spend.data, monthState: { ...stopped.spend.data.monthState, reportDays: { final: 0, updating: 0, notReported: 3, afterRecentCharge: true } } } } }
+    expect(noFinalDayThisMonth(recent.spend)).toBe(true)
+    expect(monthHasUnfinishedDays(recent.spend)).toBe(true)
+  })
+})
+
 describe('rule 6 helpers (synthetic)', () => {
   const withDays = (s: CostSummary, reportDays: { final: number; updating: number; notReported: number } | null): CostSummary =>
     ({ ...s, spend: { ...s.spend, data: { ...s.spend.data!, monthState: { ...s.spend.data!.monthState!, reportDays } } } })
