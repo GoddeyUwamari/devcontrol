@@ -43,6 +43,10 @@ interface RegionRow {
   status?: string;
   code?: string | null;
   scanEnabled?: boolean;
+  /** When its last result was started (default STARTED, the scan the test inserts). */
+  started?: string;
+  /** ec2 rows stored in the region (first discovered before any scan here). */
+  resources?: number;
 }
 
 interface Recorded { text: string; values: unknown[] }
@@ -71,13 +75,22 @@ async function orgWith(home: string | null, regions: RegionRow[] | null, { flag 
   for (const r of regions ?? []) {
     const status = r.status ?? 'never_scanned';
     const scanned = status !== 'never_scanned';
+    const started = r.started ?? STARTED;
+    const finished = new Date(Date.parse(started) + 3 * 60_000).toISOString();
     await pool.query(
       `INSERT INTO aws_account_regions (organization_id, aws_account_id, region, opt_in_status, enabled, scan_enabled, last_listed_at, last_scan_status,
                                         last_scan_started_at, last_scan_finished_at, last_success_at, last_error_code)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [org.orgId, ACCOUNT, r.name, r.enabled === false ? 'not-opted-in' : 'opt-in-not-required', r.enabled ?? true, r.scanEnabled ?? true, LISTED, status,
-        scanned ? STARTED : null, scanned ? FINISHED : null, status === 'ok' ? FINISHED : null, r.code ?? null]
+        scanned ? started : null, scanned ? finished : null, status === 'ok' ? finished : null, r.code ?? null]
     );
+    for (let i = 0; i < (r.resources ?? 0); i++) {
+      await pool.query(
+        `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_name, resource_type, region, status, tags, metadata, first_discovered_at, created_at)
+         VALUES ($1, $2, $3, $3, 'ec2', $4, 'running', '{}', '{}', '2026-11-01T08:00:00Z', '2026-11-01T08:00:00Z')`,
+        [org.orgId, `arn:aws:ec2:${r.name}:${ACCOUNT}:instance/p3a-${i}-${org.orgId.slice(0, 8)}`, `p3a-${i}-${org.orgId.slice(0, 8)}`, r.name]
+      );
+    }
   }
   return org;
 }
@@ -135,7 +148,7 @@ describe('G8 home_only_coverage (flag off): 1 only when the CURRENT home region 
     ['denied', 'access_denied', 0],
     ['timed_out', 'call_timeout', 0],
     ['never_scanned', null, 0],
-  ] as const)('home %s → regions_checked %i', async (status, code, checked) => {
+  ] as const)('home %s (code %s) → regions_checked %d', async (status, code, checked) => {
     const org = await orgWith('us-east-1', [{ name: 'us-east-1', status, code }, ...OTHERS]);
     const coverage = await coverageOf(org);
     expect(coverage.multi_region).toBeUndefined();
@@ -325,5 +338,54 @@ describe('RR-L1: the home region is never excluded', () => {
     expect(other).toMatchObject({ scan_state: 'excluded', state: 'excluded' });
     // The running job has no warnings yet: nothing unattributed.
     expect(mr.region_warnings_unattributed).toEqual([]);
+  });
+});
+
+/**
+ * G6 beyond the doc examples (review of PR 3a's own negative control N3): a region this
+ * scan checked and found empty, beside a region whose resources come from an EARLIER scan.
+ * The earlier region must never make the scan's regions_with_resources larger.
+ */
+describe('G6: a region\'s earlier-scan resources never count for the scan described', () => {
+  const EARLIER = '2026-11-15T04:00:00.000Z';
+
+  async function insertJob(orgId: string, status: string, started: string, regions: string[]): Promise<string> {
+    const { rows } = await pool.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, created_at, resource_types, regions)
+       VALUES ($1, $2, $3, $4, $3, '{}', $5) RETURNING id`,
+      [orgId, status, started, status === 'running' ? null : new Date(Date.parse(started) + 20 * 60_000).toISOString(), regions]
+    );
+    return rows[0].id;
+  }
+
+  it('latest_scan_failed: home checked by it and empty; eu-west-1\'s 2 are from the earlier scan → 0 with resources, 1 empty', async () => {
+    const org = await orgWith('us-east-1', [
+      { name: 'us-east-1', status: 'ok', resources: 0 },
+      { name: 'eu-west-1', status: 'ok', started: EARLIER, resources: 2 },
+    ], { flag: true });
+    await insertJob(org.orgId, 'completed', EARLIER, ['us-east-1', 'eu-west-1']);
+    await insertJob(org.orgId, 'failed', STARTED, ['us-east-1']);
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.coverage_status).toBe('latest_scan_failed');
+    expect(mr.regions.find((r: any) => r.region === 'eu-west-1')).toMatchObject({ result_of: 'earlier_scan', resources: 2 });
+    expect(mr.scan).toMatchObject({ regions_checked: 1, regions_with_resources: 0, regions_empty: 1, regions_zero_with_warnings: 0 });
+  });
+
+  it('in_progress: home done in the running scan and empty; eu-west-1 waits with 2 from earlier → 0 with resources, 1 empty', async () => {
+    const org = await orgWith('us-east-1', [
+      { name: 'us-east-1', status: 'ok', resources: 0 },
+      { name: 'eu-west-1', status: 'ok', started: EARLIER, resources: 2 },
+    ], { flag: true });
+    await insertJob(org.orgId, 'completed', EARLIER, ['us-east-1', 'eu-west-1']);
+    const running = await insertJob(org.orgId, 'running', STARTED, ['us-east-1']);
+    await pool.query(
+      `INSERT INTO aws_scan_leases (organization_id, aws_account_id, scan_kind, holder, job_id, acquired_at, heartbeat_at, expires_at)
+       VALUES ($1, $2, $3, 'pr3a', $4, $5, $5, '2099-01-01T00:00:00Z')`,
+      [org.orgId, ACCOUNT, SCAN_KIND_DISCOVERY, running, STARTED]
+    );
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.coverage_status).toBe('in_progress');
+    expect(mr.regions.find((r: any) => r.region === 'eu-west-1')).toMatchObject({ resources_from: 'earlier_success', resources: 2 });
+    expect(mr.scan).toMatchObject({ regions_checked: 1, regions_with_resources: 0, regions_empty: 1, regions_zero_with_warnings: 0 });
   });
 });
