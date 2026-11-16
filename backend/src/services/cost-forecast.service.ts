@@ -107,15 +107,17 @@ export class CostForecastService {
     try {
       const trend = await awsCostService.fetchCostTrend(organizationId, range);
 
-      // A day Cost Explorer has not reported yet is not a $0 day of history (trend-lag-build.md).
-      const dataPoints: TimeSeriesPoint[] = trend.filter(point => point.reportState !== 'not_reported').map(point => ({
+      // Final days only (review L-2): a day Cost Explorer has not reported yet
+      // is not a $0 day of history, and a day it is still updating is a partial
+      // amount. Points from a backend without reportState count as final.
+      const dataPoints: TimeSeriesPoint[] = trend.filter(point => (point.reportState ?? 'final') === 'final').map(point => ({
         date: new Date(point.date),
         value: point.total,
         actual: true,
       }));
 
-      // If Cost Explorer returned fewer days than requested (e.g. account newly connected),
-      // fill gaps with interpolation rather than forecasting off a sparse series.
+      // Fewer final days than requested (e.g. account newly connected): fill
+      // the gaps BETWEEN real days only, labelled as estimates (fillGaps).
       if (dataPoints.length < days && dataPoints.length > 0) {
         return this.fillGaps(dataPoints, days);
       }
@@ -128,25 +130,25 @@ export class CostForecastService {
   }
 
   /**
-   * Fill gaps in time series data
+   * Fill the missing UTC days between the first and the last real day with the
+   * real days' average, labelled `actual: false` (an estimate, never actual
+   * spend: review L-2). Never extends past the last real day, so the days
+   * Cost Explorer has not finished (dropped above) are not invented.
    */
   private fillGaps(data: TimeSeriesPoint[], targetDays: number): TimeSeriesPoint[] {
     if (data.length === 0) return [];
 
-    const filled: TimeSeriesPoint[] = [];
-    const startDate = new Date(data[0].date);
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    const byDay = new Map(data.map(p => [dayKey(p.date), p]));
     const avgValue = data.reduce((sum, p) => sum + p.value, 0) / data.length;
+    const first = data[0].date.getTime();
+    const last = data[data.length - 1].date.getTime();
 
+    const filled: TimeSeriesPoint[] = [];
     for (let i = 0; i < targetDays; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-
-      // Find actual data for this date
-      const actual = data.find(p =>
-        p.date.toDateString() === date.toDateString()
-      );
-
-      filled.push(actual || { date, value: avgValue, actual: true });
+      const date = new Date(first + i * 86_400_000);
+      if (date.getTime() > last) break;
+      filled.push(byDay.get(dayKey(date)) ?? { date, value: avgValue, actual: false });
     }
 
     return filled;
