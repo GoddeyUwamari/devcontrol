@@ -36,9 +36,11 @@ const KNOWN: InventoryRegionScan = {
   checked: [HOME, 'eu-west-1'],
   partial: ['me-central-1'],
   notChecked: [{ region: 'ap-south-1', status: 'denied', code: 'access_denied_scp' }, { region: 'ca-central-1', status: 'failed', code: null }],
+  notReached: ['sa-east-1'],
   notScannedYet: ['us-west-2'],
   notEnabled: 2,
   scanInProgress: false,
+  latestScanFailed: false,
   savingsRegions: [HOME],
 };
 
@@ -48,6 +50,8 @@ function coverageWith(multi: Partial<NonNullable<ServicesCoverage['multi_region'
   return {
     ...base,
     multi_region: {
+      scan: null,
+      coverage_status: 'all_checked',
       home_region: HOME,
       savings_regions: [HOME],
       not_enabled_regions: ['ap-east-1'],
@@ -57,7 +61,7 @@ function coverageWith(multi: Partial<NonNullable<ServicesCoverage['multi_region'
       region_warnings: [],
       region_warnings_complete: true,
       ...multi,
-    },
+    } as NonNullable<ServicesCoverage['multi_region']>,
   };
 }
 
@@ -75,6 +79,7 @@ describe('regionScanFromCoverage', () => {
         region('us-west-2', 'never_scanned'), region('ca-central-1', 'timed_out', 'scan_budget')],
       regions_checked: { enabled: 5, complete: 1, partial: 1, not_checked: 1, not_reached: 1, never_scanned: 1, by_state: {} as any },
       progress: { scan_started_at: null, regions_total: 5, regions_done: 1, regions_running: 1, regions_waiting: 3 },
+      coverage_status: 'in_progress',
     }));
     expect(scan).toEqual({
       state: 'known',
@@ -82,10 +87,13 @@ describe('regionScanFromCoverage', () => {
       enabledRegions: 5,
       checked: [HOME],
       partial: ['eu-west-1'],
-      notChecked: [{ region: 'ap-south-1', status: 'denied', code: 'access_denied' }, { region: 'ca-central-1', status: 'timed_out', code: 'scan_budget' }],
+      // The scan budget is not a failure (review M-2): not reached, listed apart.
+      notChecked: [{ region: 'ap-south-1', status: 'denied', code: 'access_denied' }],
+      notReached: ['ca-central-1'],
       notScannedYet: ['us-west-2'],
       notEnabled: 1,
       scanInProgress: true,
+      latestScanFailed: false,
       savingsRegions: [HOME],
     });
   });
@@ -97,6 +105,7 @@ describe('regionScopeText', () => {
       `2 of 6 enabled regions checked completely on their last scan (home ${HOME}); ` +
         'checked in part (a listing was cut off): me-central-1; ' +
         'not checked completely on their last scan: ap-south-1 (denied, access_denied_scp), ca-central-1 (failed); ' +
+        "not reached on their last scan (the scan's time budget ran out): sa-east-1; " +
         'not scanned yet: us-west-2; ' +
         '2 opt-in region(s) not enabled in this account (never scanned); ' +
         'S3 buckets are listed account-wide and CloudFront is global; ' +
@@ -105,14 +114,20 @@ describe('regionScopeText', () => {
   });
 
   it('every region checked: no empty lists; a running scan is said', () => {
-    expect(regionScopeText({ ...KNOWN, checked: ['a', 'b'], enabledRegions: 2, partial: [], notChecked: [], notScannedYet: [], notEnabled: 0, scanInProgress: true })).toBe(
+    expect(regionScopeText({ ...KNOWN, checked: ['a', 'b'], enabledRegions: 2, partial: [], notChecked: [], notReached: [], notScannedYet: [], notEnabled: 0, scanInProgress: true } as InventoryRegionScan)).toBe(
       `2 of 2 enabled regions checked completely on their last scan (home ${HOME}); a scan is running now, so these results may change; ` +
         `S3 buckets are listed account-wide and CloudFront is global; savings (cost recommendations) are checked in ${HOME} only`
     );
   });
 
+  it('the latest scan failed (review M-1): said, so earlier results are never read as the latest scan\'s', () => {
+    expect(regionScopeText({ ...KNOWN, latestScanFailed: true } as InventoryRegionScan)).toContain(
+      'the latest scan did not finish, so regions it did not reach show results from earlier scans'
+    );
+  });
+
   it('no region list stored yet: the home region only so far, said as such', () => {
-    expect(regionScopeText({ ...KNOWN, enabledRegions: null })).toMatch(/^us-east-1 only so far \(the account's region list has not been recorded yet/);
+    expect(regionScopeText({ ...KNOWN, enabledRegions: null } as InventoryRegionScan)).toMatch(/^us-east-1 only so far \(the account's region list has not been recorded yet/);
   });
 
   it('unavailable: unknown, never "home region only"', () => {
@@ -210,7 +225,7 @@ describe('AIChatContextRepository.gatherInventoryBasis (Postgres)', () => {
     expect(inventoryScope.regionScan).toEqual({
       state: 'known', homeRegion: HOME, enabledRegions: 2, checked: [HOME], partial: [],
       notChecked: [{ region: 'ap-south-1', status: 'denied', code: 'access_denied' }],
-      notScannedYet: [], notEnabled: 0, scanInProgress: false, savingsRegions: [HOME],
+      notReached: [], notScannedYet: [], notEnabled: 0, scanInProgress: false, latestScanFailed: false, savingsRegions: [HOME],
     });
   }, 30_000);
 

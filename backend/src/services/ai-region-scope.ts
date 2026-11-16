@@ -12,6 +12,10 @@
  * recommendations) are checked in the home region only (FD-1).
  */
 import type { ServicesCoverage } from '../routes/services-coverage.routes';
+import { regionState } from './region-state';
+
+/** A region's state from its LAST RESULT (not the running scan's view): what "on their last scan" means here. */
+const regionStateOf = (r: { status: string; error_code: string | null }) => regionState(r.status, r.error_code, null, true);
 
 /** One region whose last scan did not check it completely. Codes only, never AWS text. */
 export interface RegionNotChecked {
@@ -31,13 +35,17 @@ export type InventoryRegionScan =
       checked: string[];
       /** Last result partial (a listing cut off). */
       partial: string[];
-      /** Last result denied, failed or timed_out. */
+      /** Last result denied, failed, not ready or timed out (the scan budget excepted). */
       notChecked: RegionNotChecked[];
+      /** Never started: the scan budget ran out (PR 2 review M-2: never counted as a failure). */
+      notReached: string[];
       /** Enabled, never scanned. */
       notScannedYet: string[];
       /** Opt-in regions the account has not enabled: never scanned. */
       notEnabled: number;
       scanInProgress: boolean;
+      /** The newest scan failed or was abandoned: regions it did not reach show earlier results (review M-1). */
+      latestScanFailed: boolean;
       /** Where savings are checked: the home region only. */
       savingsRegions: string[];
     }
@@ -46,7 +54,7 @@ export type InventoryRegionScan =
       state: 'unavailable';
     };
 
-const NOT_CHECKED: readonly string[] = ['denied', 'failed', 'timed_out'];
+const NOT_CHECKED_STATES: readonly string[] = ['failed', 'denied', 'not_ready', 'not_checked_deadline'];
 
 /** The region scan from a coverage response; undefined when it has no multi_region key (the flag is off). */
 export function regionScanFromCoverage(coverage: ServicesCoverage): InventoryRegionScan | undefined {
@@ -59,10 +67,14 @@ export function regionScanFromCoverage(coverage: ServicesCoverage): InventoryReg
     enabledRegions: mr.regions_checked.enabled,
     checked: named('ok'),
     partial: named('partial'),
-    notChecked: mr.regions.filter((r) => NOT_CHECKED.includes(r.status)).map((r) => ({ region: r.region, status: r.status, code: r.error_code })),
+    notChecked: mr.regions
+      .filter((r) => r.status !== 'never_scanned' && NOT_CHECKED_STATES.includes(regionStateOf(r)))
+      .map((r) => ({ region: r.region, status: r.status, code: r.error_code })),
+    notReached: mr.regions.filter((r) => r.status === 'timed_out' && r.error_code === 'scan_budget').map((r) => r.region),
     notScannedYet: named('never_scanned'),
     notEnabled: mr.not_enabled_regions.length,
     scanInProgress: mr.progress !== null,
+    latestScanFailed: mr.coverage_status === 'latest_scan_failed',
     savingsRegions: mr.savings_regions,
   };
 }
@@ -87,9 +99,11 @@ export function regionScopeText(scan: InventoryRegionScan): string {
   if (scan.notChecked.length > 0) {
     parts.push(`not checked completely on their last scan: ${scan.notChecked.map((r) => `${r.region} (${r.status}${r.code ? `, ${r.code}` : ''})`).join(', ')}`);
   }
+  if (scan.notReached.length > 0) parts.push(`not reached on their last scan (the scan's time budget ran out): ${scan.notReached.join(', ')}`);
   if (scan.notScannedYet.length > 0) parts.push(`not scanned yet: ${scan.notScannedYet.join(', ')}`);
   if (scan.notEnabled > 0) parts.push(`${scan.notEnabled} opt-in region(s) not enabled in this account (never scanned)`);
   if (scan.scanInProgress) parts.push('a scan is running now, so these results may change');
+  if (scan.latestScanFailed) parts.push('the latest scan did not finish, so regions it did not reach show results from earlier scans');
   parts.push(GLOBAL_LISTINGS, savings);
   return parts.join('; ');
 }

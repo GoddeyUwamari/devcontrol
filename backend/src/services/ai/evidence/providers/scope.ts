@@ -62,7 +62,14 @@ export const connectionScopeProvider = defineProvider<ConnectionScopeEvidence>({
 export interface RegionCoverageEvidence {
   homeRegion: string | null;
   /** What discovery scans: every inventoried type in the home region; S3 account-wide; CloudFront global. */
-  scanScope: { homeRegionTypes: 'all inventoried types'; s3: 'account-wide'; cloudfront: 'global' };
+  /**
+   * What discovery scans. Without the multi-region flag: every inventoried type in the
+   * home region (homeRegionTypes). With it (PR 2 review L-4): every inventoried type in
+   * each enabled region of the account's list (enabledRegionTypes), never "home only".
+   */
+  scanScope:
+    | { homeRegionTypes: 'all inventoried types'; s3: 'account-wide'; cloudfront: 'global' }
+    | { enabledRegionTypes: 'all inventoried types'; s3: 'account-wide'; cloudfront: 'global' };
   enabledRegions: { known: boolean; count: number | null; listedAt: string | null };
   scanInProgress: boolean;
   lastSuccessfulScanAt: string | null;
@@ -134,7 +141,9 @@ export const regionCoverageProvider = defineProvider<RegionCoverageEvidence>({
         : 'discovery scans every inventoried type in the home region only; S3 buckets are listed account-wide and CloudFront is global; other regions are listed but not scanned yet',
       data: {
         homeRegion: coverage.account.home_region,
-        scanScope: { homeRegionTypes: 'all inventoried types', s3: 'account-wide', cloudfront: 'global' },
+        scanScope: regionScan
+          ? { enabledRegionTypes: 'all inventoried types', s3: 'account-wide', cloudfront: 'global' }
+          : { homeRegionTypes: 'all inventoried types', s3: 'account-wide', cloudfront: 'global' },
         enabledRegions: { known, count: coverage.scope.enabled_regions.count, listedAt: iso(coverage.scope.enabled_regions.listed_at) },
         scanInProgress: coverage.scan_in_progress !== null,
         lastSuccessfulScanAt: iso(coverage.last_successful_scan_at),

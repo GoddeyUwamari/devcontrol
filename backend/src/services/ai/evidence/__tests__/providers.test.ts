@@ -312,6 +312,25 @@ describe('connection.scope and coverage.regions', () => {
     const unknown = await collectProvider(regionCoverageProvider, ctx(sources({ coverage: coverage(true, null) })));
     expect(unknown.state).toBe('partial');
   });
+
+  it('multi-region PR 2 (review L-4): flag off keeps the home-region scope datum; flag on (multi_region present) says every enabled region, never "home only"', async () => {
+    const listedAt = new Date('2026-11-06T09:00:00.000Z');
+    const off = await collectProvider(regionCoverageProvider, ctx(sources({ coverage: coverage(true, listedAt) })));
+    expect((off.data as any).scanScope).toEqual({ homeRegionTypes: 'all inventoried types', s3: 'account-wide', cloudfront: 'global' });
+    expect(off.coverage).toBe('discovery scans every inventoried type in the home region only; S3 buckets are listed account-wide and CloudFront is global; other regions are listed but not scanned yet');
+    const flagged = async () => ({
+      ...(await coverage(true, listedAt)()),
+      multi_region: {
+        scan: null, coverage_status: 'all_checked', home_region: 'us-east-1', savings_regions: ['us-east-1'], not_enabled_regions: [],
+        regions: [{ region: 'us-east-1', status: 'ok', error_code: null }, { region: 'eu-west-1', status: 'ok', error_code: null }],
+        regions_checked: { enabled: 2 }, progress: null, region_warnings: [], region_warnings_complete: true,
+      },
+    });
+    const on = await collectProvider(regionCoverageProvider, ctx(sources({ coverage: flagged })));
+    expect((on.data as any).scanScope).toEqual({ enabledRegionTypes: 'all inventoried types', s3: 'account-wide', cloudfront: 'global' });
+    expect(JSON.stringify(on.data)).not.toContain('homeRegionTypes');
+    expect(on.coverage).toMatch(/^discovery scans every inventoried type in each enabled region of the account's region list; 2 of 2 enabled regions checked completely/);
+  });
 });
 
 describe('security', () => {
