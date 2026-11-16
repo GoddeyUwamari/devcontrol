@@ -41,6 +41,7 @@ import {
   s3FindingsFromEvaluation,
   carryForwardUnverifiedS3Findings,
 } from './s3-security-evaluation';
+import { errorNameOf, regionSafe } from './region-log-context';
 
 /**
  * The resource types whose is_encrypted discovery reads from AWS. For every other
@@ -77,6 +78,12 @@ export interface CategoryObservation {
   category: 'networking' | 'iam';
   complete: boolean;
   issues: ComplianceIssue[];
+  /**
+   * The error that stopped the listing, when one did (checkSecurityGroups only).
+   * Read by a multi-region scan to classify a region's security-group failure
+   * (region-run.ts); never stored or shown.
+   */
+  failure?: unknown;
 }
 
 /** A resource's baseline findings, plus every framework check outcome. */
@@ -617,6 +624,7 @@ export class ComplianceScannerService {
   async checkSecurityGroups(ec2Client: EC2Client, region: string, accountId?: string): Promise<CategoryObservation> {
     const issues: ComplianceIssue[] = [];
     let complete = true;
+    let failure: unknown;
 
     try {
       // Each page is evaluated as it is read, so the findings of the pages read before
@@ -656,11 +664,12 @@ export class ComplianceScannerService {
       });
       if (!listing.complete) complete = false;
     } catch (error: any) {
-      console.error('[Compliance] checkSecurityGroups failed (partial results may still be usable):', error.message);
+      console.error('[Compliance] checkSecurityGroups failed (partial results may still be usable):', regionSafe(error.message, errorNameOf(error)));
       complete = false;
+      failure = error;
     }
 
-    return { category: 'networking', complete, issues };
+    return failure === undefined ? { category: 'networking', complete, issues } : { category: 'networking', complete, issues, failure };
   }
 
   /**

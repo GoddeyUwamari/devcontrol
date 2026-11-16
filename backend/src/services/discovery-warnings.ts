@@ -81,6 +81,16 @@ export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX = 'resource_explorer_n
  */
 export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW = 'resource_explorer_no_view';
 
+/**
+ * Multi-region PR 1b (review M-2): the whole scan's deadline (50 minutes after the
+ * scan lease was acquired) passed, so at least one step after the regions (IAM,
+ * compliance, orphan detection, cost analysis) was not started or was stopped. What
+ * the regions found is kept; the job still completed; the step's own completeness
+ * flag (compliance_scan_completed, cost_analysis_completed) says false. Distinct from
+ * scan_budget (a region never started) and from a lost lease.
+ */
+export const DISCOVERY_WARNING_SCAN_DEADLINE = 'scan_deadline';
+
 export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
@@ -90,6 +100,7 @@ export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_SCAN_BUDGET,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
+  DISCOVERY_WARNING_SCAN_DEADLINE,
 ] as const;
 
 export type DiscoveryWarning = (typeof DISCOVERY_WARNINGS)[number];

@@ -14,9 +14,23 @@
  * clamped to the nearest bound. Either way one warning names the variable and the
  * value used, never anything else.
  *
- * The deadlines are fixed (A2): a region that started has 10 minutes; a scan
- * starts no new region after 45 minutes. Both stay under the scan lease's one-hour
- * age limit (scan-lease.ts MAX_LEASE_AGE_SECONDS, MR-D3).
+ * The deadlines are fixed (A2, PR 1b review M-2, founder decision Nov 14), all
+ * measured from the scan lease's acquisition:
+ *
+ *   0 ............ 30 min   regions may start (SCAN_BUDGET_MS); the rest get scan_budget
+ *   start + 10 min          a region that started stops (REGION_DEADLINE_MS, region_deadline),
+ *                           and never later than the scan deadline
+ *   30 + 10 = 40 .. 50 min  at least 10 minutes for the steps after the regions
+ *                           (IAM, compliance, orphans, cost)
+ *   50 min                  the scan deadline (SCAN_DEADLINE_MS): no post-region step
+ *                           starts after it, and one still running is stopped (its AWS
+ *                           calls are aborted). The job still completes, with the
+ *                           warning scan_deadline: never failed for time alone, never
+ *                           "another scan took over".
+ *   50 .. 60 min            the final writes (sources, the job row)
+ *   60 min                  the scan lease's age limit (scan-lease.ts MAX_LEASE_AGE_SECONDS)
+ *
+ * They apply to a multi-region scan only; a scan without the flag is unchanged.
  */
 
 export interface PoolBounds {
@@ -30,8 +44,30 @@ export const RESOURCE_POOL: PoolBounds = { default: 8, min: 1, max: 16 };
 
 /** How long a region that started may run before it is stopped as region_deadline. */
 export const REGION_DEADLINE_MS = 10 * 60 * 1000;
-/** After this long, a multi-region scan starts no new region (the rest get scan_budget). */
-export const SCAN_BUDGET_MS = 45 * 60 * 1000;
+/** After this long, a multi-region scan starts no new region (the rest get scan_budget). Was 45 min before PR 1b (M-2). */
+export const SCAN_BUDGET_MS = 30 * 60 * 1000;
+
+/**
+ * The whole multi-region scan's deadline (PR 1b, review M-2): after it no step after
+ * the regions starts, and one still running is stopped. Leaves FINAL_WRITE_RESERVE_MS
+ * for the final writes before the lease's age limit.
+ */
+export const SCAN_DEADLINE_MS = 50 * 60 * 1000;
+
+/** Time kept for the steps after the regions: SCAN_DEADLINE_MS - (SCAN_BUDGET_MS + REGION_DEADLINE_MS). */
+export const POST_REGION_RESERVE_MS = 10 * 60 * 1000;
+
+/** Time kept after the scan deadline for the final writes, before the lease's 60-minute age limit. */
+export const FINAL_WRITE_RESERVE_MS = 10 * 60 * 1000;
+
+/**
+ * How many of one multi-region scan's region database steps hold a pool connection
+ * at the same time (multi-region PR 1b, review M-1). A region worker holds no
+ * connection while it waits on AWS; each database step checks one out and returns
+ * it. One: the regions' steps take turns, so a flagged scan never holds more than
+ * one connection beyond its own (and a manual Sync's request connection).
+ */
+export const REGION_DB_STEP_CONNECTIONS = 1;
 
 /**
  * The throttle breaker (Step 1 §A2): every THROTTLE_BREAKER_STEP throttled calls in

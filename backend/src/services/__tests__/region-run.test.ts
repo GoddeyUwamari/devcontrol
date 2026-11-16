@@ -11,8 +11,15 @@
  */
 import { AwsCallTimeoutError, DEFAULT_AWS_CALL_POLICY, mapWithDynamicConcurrency, withCallPolicy } from '../../utils/awsCallPolicy';
 import {
+  CloudWatchCallCounter,
+  NestedRegionStepError,
   RegionDeadlineError,
   RegionRun,
+  ScanDeadline,
+  ScanDeadlineError,
+  StepLimiter,
+  isRegionDeadline,
+  isScanDeadline,
   SCAN_BUDGET_RESULT,
   classifyRegionFailure,
   notStartedLogLine,
@@ -244,8 +251,29 @@ describe('the structured log line (A7)', () => {
       reason: 'access_denied',
       get_metric_data_metrics: 3,
       get_metric_statistics_requests: 1,
+      // PR 1b item 7: another region than the home one: the cost pass makes no call there.
+      cost_pass_get_metric_data_metrics: 0,
+      cost_pass_get_metric_statistics_requests: 0,
     });
     expect(JSON.parse(notStartedLogLine('00000000-0000-4000-8000-0000000000c1', 'us-west-2'))).toMatchObject({ outcome: 'timed_out', reason: 'scan_budget', calls: 0 });
+  });
+
+  it('PR 1b item 7: the home line carries the cost pass\'s counts, or null when it did not run', () => {
+    const run = new RegionRun('us-east-1', { deadlineMs: 60_000, resourcePool: 8, now: () => 1_000 });
+    run.stop();
+    const counter = new CloudWatchCallCounter();
+    counter.onCall({ constructor: { name: 'GetMetricDataCommand' }, input: { MetricDataQueries: [{}, {}] } } as unknown);
+    counter.onCall(new (class GetMetricStatisticsCommand {})());
+    counter.onCall(new (class DescribeInstancesCommand {})());
+    expect(JSON.parse(run.logLine('00000000-0000-4000-8000-0000000000c1', null, counter))).toMatchObject({
+      cost_pass_get_metric_data_metrics: 2,
+      cost_pass_get_metric_statistics_requests: 1,
+    });
+    expect(JSON.parse(run.logLine('00000000-0000-4000-8000-0000000000c1', null, null))).toMatchObject({
+      cost_pass_get_metric_data_metrics: null,
+      cost_pass_get_metric_statistics_requests: null,
+    });
+    expect(counter.calls).toBe(3);
   });
 
   it('counts GetMetricData metrics per request', () => {
@@ -258,5 +286,97 @@ describe('the structured log line (A7)', () => {
     run.stop();
     expect(run.getMetricDataMetrics).toBe(4);
     expect(run.calls).toBe(2);
+  });
+});
+
+describe('StepLimiter (PR 1b, M-1): a scan\'s region database steps', () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+  it('runs at most `size` steps at once, in the order they asked, and hands the slot on when a step throws', async () => {
+    const limiter = new StepLimiter(1);
+    const order: string[] = [];
+    let active = 0;
+    let most = 0;
+    const step = (name: string, fail = false) =>
+      limiter.run(async () => {
+        active++;
+        most = Math.max(most, active);
+        order.push(name);
+        await tick();
+        active--;
+        if (fail) throw new Error(`${name} failed`);
+        return name;
+      });
+    const results = await Promise.allSettled([step('a'), step('b', true), step('c'), step('d')]);
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'rejected', 'fulfilled', 'fulfilled']);
+    expect(order).toEqual(['a', 'b', 'c', 'd']);
+    expect(most).toBe(1);
+  });
+
+  it('refuses a step started from inside a step (it would wait for its own slot) instead of deadlocking', async () => {
+    const limiter = new StepLimiter(1);
+    const nested = limiter.run(() => limiter.run(async () => 'inner'));
+    await expect(nested).rejects.toBeInstanceOf(NestedRegionStepError);
+    // The slot was handed back: the next step runs.
+    await expect(limiter.run(async () => 'next')).resolves.toBe('next');
+  });
+
+  it('a step asked for after another step ended (same async chain) is not nested', async () => {
+    const limiter = new StepLimiter(1);
+    await limiter.run(async () => undefined);
+    await expect(limiter.run(async () => 'second')).resolves.toBe('second');
+  });
+});
+
+describe('ScanDeadline (PR 1b, M-2): the whole scan\'s deadline', () => {
+  it('by the clock: a step may start before it and not after; one that ran across it is stopped; each recorded once, in order', () => {
+    let now = 0;
+    const deadline = new ScanDeadline(50 * 60_000, 0, () => now);
+    expect(deadline.mayStart('compliance')).toBe(true);
+    now = 49 * 60_000;
+    expect(deadline.stoppedDuring('compliance')).toBe(false);
+    expect(deadline.remainingMs()).toBe(60_000);
+    expect(deadline.mayStart('iam')).toBe(true);
+    now = 50 * 60_000;
+    expect(deadline.stoppedDuring('iam')).toBe(true);
+    expect(deadline.mayStart('cost')).toBe(false);
+    expect(deadline.remainingMs()).toBe(0);
+    expect(deadline.timeouts).toEqual([{ step: 'iam', phase: 'not_finished' }, { step: 'cost', phase: 'not_started' }]);
+    // Passing by the clock aborts the signal too: calls made under policy() stop.
+    expect(deadline.signal.aborted).toBe(true);
+    deadline.stop();
+  });
+
+  it('by the timer: the signal is aborted with ScanDeadlineError, and a call under its policy stops', async () => {
+    const deadline = new ScanDeadline(30, Date.now());
+    const client = withCallPolicy({ send: (_command: unknown) => new Promise(() => undefined) }, deadline.policy({ ...DEFAULT_AWS_CALL_POLICY, timeoutMs: 10_000 }));
+    const error = await client.send({}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ScanDeadlineError);
+    expect(deadline.expired()).toBe(true);
+    deadline.stop();
+  });
+
+  it('is its own outcome: never a region deadline, a region failure code or a lost lease', () => {
+    const error = new ScanDeadlineError('cost');
+    expect(isScanDeadline(error)).toBe(true);
+    expect(isRegionDeadline(error)).toBe(false);
+    expect(isScanDeadline(new RegionDeadlineError('eu-west-1'))).toBe(false);
+    expect(error.name).toBe('ScanDeadlineError');
+  });
+});
+
+describe('region-log-context (PR 1b, L-3)', () => {
+  it('inside a region run (across awaits) the safe text; outside, the original text unchanged', async () => {
+    const { inRegionLogContext, regionSafe, errorNameOf, inRegionRun } = await import('../region-log-context');
+    const error = Object.assign(new Error('User: arn:aws:sts::123456789012:assumed-role/x is not authorized'), { name: 'AccessDeniedException' });
+    expect(regionSafe(error.message, errorNameOf(error))).toBe(error.message);
+    expect(inRegionRun()).toBe(false);
+    const inside = await inRegionLogContext('eu-west-1', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return regionSafe(error.message, errorNameOf(error));
+    });
+    expect(inside).toBe('AccessDeniedException');
+    expect(errorNameOf('a string')).toBe('Error');
+    expect(inRegionRun()).toBe(false);
   });
 });

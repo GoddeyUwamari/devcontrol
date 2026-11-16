@@ -32,6 +32,7 @@
  * AWS's error text is read to tell a service control policy apart and nothing
  * else; it is never stored or logged.
  */
+import { AsyncLocalStorage } from 'async_hooks';
 import { AwsCallPolicy, AwsCallTimeoutError, isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
 import { THROTTLE_BREAKER_FLOOR, THROTTLE_BREAKER_STEP } from '../config/discovery-concurrency';
 import { SourceOutcome, SourceStatus } from './source-outcome';
@@ -56,6 +57,24 @@ export class RegionDeadlineError extends Error {
 
 export function isRegionDeadline(error: unknown): error is RegionDeadlineError {
   return error instanceof RegionDeadlineError;
+}
+
+/**
+ * The whole scan's deadline passed (PR 1b, review M-2): a step after the regions was
+ * not started, or was stopped. Distinct from a region's own deadline
+ * (RegionDeadlineError, region_deadline), the scan budget (scan_budget, a region never
+ * started), a lost lease (LeaseLostError) and a genuine failure: it is recorded as the
+ * warning scan_deadline on a completed job.
+ */
+export class ScanDeadlineError extends Error {
+  constructor(readonly step: string) {
+    super(`SCAN_DEADLINE: the scan deadline passed (${step})`);
+    this.name = 'ScanDeadlineError';
+  }
+}
+
+export function isScanDeadline(error: unknown): error is ScanDeadlineError {
+  return error instanceof ScanDeadlineError;
 }
 
 /** A source outcome inside a region, with why it failed (one of the codes above). */
@@ -96,11 +115,15 @@ export function classifyRegionFailure(error: unknown): { status: SourceStatus; r
  * region whose deadline passed is timed_out with region_deadline whatever else
  * happened in it: it did not finish. Null when no source counts.
  */
-export function regionScanResult(outcomes: readonly RegionSourceOutcome[], deadlineHit: boolean): HomeRegionScanResult | null {
+export function regionScanResult(
+  outcomes: readonly RegionSourceOutcome[],
+  deadlineHit: boolean,
+  sources: readonly string[] = HOME_REGION_SOURCES
+): HomeRegionScanResult | null {
   if (deadlineHit) return { status: 'timed_out', errorCode: REGION_CODE_DEADLINE };
-  const base = homeRegionScanStatus(outcomes);
+  const base = homeRegionScanStatus(outcomes, sources);
   if (!base || base.status === 'ok' || base.status === 'partial') return base;
-  const counted = outcomes.filter((o) => HOME_REGION_SOURCES.includes(o.source) && o.status === base.status);
+  const counted = outcomes.filter((o) => sources.includes(o.source) && o.status === base.status);
   // An organization policy refusing the region explains every other refusal in it.
   const reasons = counted.map((o) => o.reason).filter((reason): reason is string => !!reason);
   const reason = reasons.includes(REGION_CODE_ACCESS_DENIED_SCP) ? REGION_CODE_ACCESS_DENIED_SCP : reasons[0];
@@ -113,6 +136,19 @@ function defaultCode(status: HomeRegionScanResult['status']): string {
   return REGION_CODE_ERROR;
 }
 
+/** The source name of a region's security-group listing (DescribeSecurityGroups). */
+export const SECURITY_GROUPS_SOURCE = 'security-groups';
+
+/**
+ * The sources a NON-home region's status is made of (PR 1b, review M-4): the home
+ * region's sources plus its security-group listing, so a region whose security groups
+ * could not be read is not checked completely (region_incomplete) and its networking
+ * findings are not resolved. The home region's status keeps the M5b sources
+ * (region-scan-status.ts): a home security-group failure is the job's
+ * (compliance_scan_completed = false), as before.
+ */
+export const NON_HOME_REGION_SOURCES: readonly string[] = [...HOME_REGION_SOURCES, SECURITY_GROUPS_SOURCE];
+
 /** The status of an enabled region the scan never started (the scan budget ran out). */
 export const SCAN_BUDGET_RESULT: HomeRegionScanResult = { status: 'timed_out', errorCode: REGION_CODE_SCAN_BUDGET };
 
@@ -120,6 +156,37 @@ export const SCAN_BUDGET_RESULT: HomeRegionScanResult = { status: 'timed_out', e
 export function regionFailed(result: HomeRegionScanResult | null): boolean {
   return !!result && result.status !== 'ok' && result.status !== 'partial';
 }
+
+/**
+ * CloudWatch calls counted from a call policy's onCall hook (A7): GetMetricData metrics
+ * (each one is billed) and GetMetricStatistics requests, attempts included. A region's
+ * run counts its own; the cost pass after the regions has one of its own (PR 1b), whose
+ * numbers go into the home region's log line.
+ */
+export class CloudWatchCallCounter {
+  calls = 0;
+  getMetricDataMetrics = 0;
+  getMetricStatisticsRequests = 0;
+
+  readonly onCall = (command: unknown): void => {
+    this.calls++;
+    const name = (command as { constructor?: { name?: string } } | null)?.constructor?.name;
+    if (name === 'GetMetricDataCommand') {
+      const queries = (command as { input?: { MetricDataQueries?: unknown[] } }).input?.MetricDataQueries;
+      this.getMetricDataMetrics += Array.isArray(queries) ? queries.length : 0;
+    } else if (name === 'GetMetricStatisticsCommand') {
+      this.getMetricStatisticsRequests++;
+    }
+  };
+}
+
+/**
+ * The cost pass's CloudWatch counts for the home region's log line (PR 1b): null when the
+ * cost pass did not run (not started, or the scan stopped first); zero for every other
+ * region (cost is home-only, FD-1 / review H-1).
+ */
+export type CostPassCounts = { getMetricDataMetrics: number; getMetricStatisticsRequests: number } | null;
+export const NO_COST_PASS_CALLS: CostPassCounts = { getMetricDataMetrics: 0, getMetricStatisticsRequests: 0 };
 
 export interface RegionRunOptions {
   deadlineMs: number;
@@ -200,7 +267,7 @@ export class RegionRun {
    * The one structured line logged after the region (A7): the organization's
    * internal id only, never an AWS account ID, ARN, resource or bucket name.
    */
-  logLine(organizationId: string, result: HomeRegionScanResult | null): string {
+  logLine(organizationId: string, result: HomeRegionScanResult | null, costPass: CostPassCounts = NO_COST_PASS_CALLS): string {
     return JSON.stringify({
       event: 'discovery_region_scan',
       organization_id: organizationId,
@@ -214,12 +281,15 @@ export class RegionRun {
       reason: result?.errorCode ?? null,
       get_metric_data_metrics: this.getMetricDataMetrics,
       get_metric_statistics_requests: this.getMetricStatisticsRequests,
+      // PR 1b: the cost pass's own CloudWatch counts (home region; 0 elsewhere; null: it did not run).
+      cost_pass_get_metric_data_metrics: costPass?.getMetricDataMetrics ?? null,
+      cost_pass_get_metric_statistics_requests: costPass?.getMetricStatisticsRequests ?? null,
     });
   }
 }
 
 /** The structured line for a region the scan never started (scan budget). */
-export function notStartedLogLine(organizationId: string, region: string): string {
+export function notStartedLogLine(organizationId: string, region: string, costPass: CostPassCounts = NO_COST_PASS_CALLS): string {
   return JSON.stringify({
     event: 'discovery_region_scan',
     organization_id: organizationId,
@@ -233,6 +303,8 @@ export function notStartedLogLine(organizationId: string, region: string): strin
     reason: SCAN_BUDGET_RESULT.errorCode,
     get_metric_data_metrics: 0,
     get_metric_statistics_requests: 0,
+    cost_pass_get_metric_data_metrics: costPass?.getMetricDataMetrics ?? null,
+    cost_pass_get_metric_statistics_requests: costPass?.getMetricStatisticsRequests ?? null,
   });
 }
 
@@ -269,4 +341,115 @@ export async function runRegionPool(
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(size, regions.length)) }, worker));
   if (stopped !== undefined) throw stopped;
+}
+
+/** A region database step asked for another step from inside itself (StepLimiter): a programming error, never retried. */
+export class NestedRegionStepError extends Error {
+  constructor() {
+    super('NESTED_REGION_STEP: a region database step may not start another one');
+    this.name = 'NestedRegionStepError';
+  }
+}
+
+/**
+ * At most `size` of a scan's region database steps at a time (multi-region PR 1b,
+ * review M-1). A region worker holds no database connection of its own: each of its
+ * database steps (a fenced write, its status write, its security-group findings)
+ * checks one out for that step only, and this limiter bounds how many such steps of
+ * one scan hold a connection at once. Steps run in the order they asked.
+ *
+ * No deadlock: a step's body runs database statements on its own connection only
+ * (it never waits for another region's step), so every holder finishes (statement and
+ * idle-in-transaction timeouts bound it) and hands its slot on in `finally`. A step
+ * started from inside a step is refused (NestedRegionStepError), never queued.
+ */
+export class StepLimiter {
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+  // Set inside a step: a step that asked for another step from within itself would
+  // wait for a slot it holds (a deadlock at size 1); it is refused instead.
+  private readonly inStep = new AsyncLocalStorage<true>();
+
+  constructor(private readonly size: number) {}
+
+  async run<T>(step: () => Promise<T>): Promise<T> {
+    if (this.inStep.getStore()) throw new NestedRegionStepError();
+    if (this.active >= this.size) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    else this.active++;
+    try {
+      return await this.inStep.run(true, step);
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.active--;
+    }
+  }
+}
+
+/** How a step after the regions ended against the scan deadline. */
+export interface PostRegionTimeout {
+  step: string;
+  /** not_started: the deadline had passed before it; not_finished: it was stopped. */
+  phase: 'not_started' | 'not_finished';
+}
+
+/**
+ * A multi-region scan's whole-scan deadline (PR 1b, review M-2), measured from the
+ * lease's acquisition: `deadlineMs` after `startedAt` by `now()`, and by a real timer
+ * that aborts `signal` then, so AWS calls made under policy() are stopped. Each step
+ * after the regions asks expired() before it starts and again when it ends; what it
+ * reports is kept in `timeouts`.
+ */
+export class ScanDeadline {
+  private readonly controller = new AbortController();
+  private readonly timer: NodeJS.Timeout;
+  readonly timeouts: PostRegionTimeout[] = [];
+
+  constructor(private readonly deadlineMs: number, private readonly startedAt: number, private readonly now: () => number = Date.now) {
+    const remaining = Math.max(0, deadlineMs - (now() - startedAt));
+    this.timer = setTimeout(() => this.abort('timer'), remaining);
+    this.timer.unref?.();
+  }
+
+  private abort(step: string): void {
+    if (!this.controller.signal.aborted) this.controller.abort(new ScanDeadlineError(step));
+  }
+
+  /** Whether the deadline has passed (by the clock or the timer). */
+  expired(): boolean {
+    if (!this.controller.signal.aborted && this.now() - this.startedAt >= this.deadlineMs) this.abort('clock');
+    return this.controller.signal.aborted;
+  }
+
+  /** Milliseconds left (0 once passed). */
+  remainingMs(): number {
+    return this.expired() ? 0 : Math.max(0, this.deadlineMs - (this.now() - this.startedAt));
+  }
+
+  get signal(): AbortSignal {
+    return this.controller.signal;
+  }
+
+  /** `base` with this deadline: its calls are aborted when it passes. */
+  policy(base: AwsCallPolicy): AwsCallPolicy {
+    return { ...base, signal: this.signal };
+  }
+
+  /** Before a step: false (and recorded as not_started) when the deadline has passed. */
+  mayStart(step: string): boolean {
+    if (!this.expired()) return true;
+    this.timeouts.push({ step, phase: 'not_started' });
+    return false;
+  }
+
+  /** After a step that started: true (and recorded as not_finished) when the deadline passed while it ran. */
+  stoppedDuring(step: string): boolean {
+    if (!this.expired()) return false;
+    this.timeouts.push({ step, phase: 'not_finished' });
+    return true;
+  }
+
+  stop(): void {
+    clearTimeout(this.timer);
+  }
 }

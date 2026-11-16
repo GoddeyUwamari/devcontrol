@@ -29,6 +29,7 @@
  */
 import { BackupClient, ListRecoveryPointsByResourceCommand } from '@aws-sdk/client-backup';
 import { listAllPages } from '../utils/awsCallPolicy';
+import { errorNameOf, regionSafe } from './region-log-context';
 
 // AWS Backup's RecoveryPointStatus values that represent a real, usable backup -- see
 // RecoveryPointStatus in @aws-sdk/client-backup: AVAILABLE and COMPLETED are the only
@@ -64,16 +65,19 @@ export async function checkAwsBackupRecoveryPoints(
     });
     if (qualifying) return true;
     if (!listing.complete) {
-      console.error(`[AWS Backup] Recovery points for ${resourceArn} not fully read (page limit); recorded as unknown`);
+      console.error(`[AWS Backup] Recovery points for ${regionSafe(resourceArn, 'a resource')} not fully read (page limit); recorded as unknown`);
       return null;
     }
     return false;
   } catch (err: any) {
     const isAccessDenied = err?.name === 'AccessDeniedException' || err?.$metadata?.httpStatusCode === 403;
     if (isAccessDenied) {
-      console.error(`[AWS Backup] Access denied checking recovery points for ${resourceArn} -- IAM permission likely missing:`, err?.message || err);
+      console.error(
+        `[AWS Backup] Access denied checking recovery points for ${regionSafe(resourceArn, 'a resource')} -- IAM permission likely missing:`,
+        regionSafe(err?.message || err, errorNameOf(err))
+      );
     } else {
-      console.error(`[AWS Backup] Failed to check recovery points for ${resourceArn}:`, err?.message || err);
+      console.error(`[AWS Backup] Failed to check recovery points for ${regionSafe(resourceArn, 'a resource')}:`, regionSafe(err?.message || err, errorNameOf(err)));
     }
     return null;
   }
