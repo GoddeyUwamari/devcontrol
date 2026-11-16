@@ -208,6 +208,9 @@ describe('split spend: the owner chooses through PUT (founder addition to HR-D5)
     const org = await connectedOrg();
     await setProposal(org, 'split', SPLIT);
     const before = await stateOf(org);
+    for (const role of ['owner', 'viewer'] as const) {
+      expect((await (await accounts(org, org[role])).json()).home_region_proposal).toMatchObject({ state: 'split', region: null });
+    }
     expect((await (await preview(org, 'us-west-2')).json()).data).toMatchObject({ current_home_region: 'us-east-1', target: { refusal: null } });
     expect(await stateOf(org)).toEqual(before);
     expect(discover).not.toHaveBeenCalled();

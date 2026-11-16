@@ -224,6 +224,22 @@ describe('POST /api/aws/accounts: the home-region proposal (HR-D5, HR-D6)', () =
       },
     });
     expect(await regionOf(orgId)).toBe('us-east-1');
+    // No region list is stored until the first scan: the GET says waiting, not proposed.
+    const accounts = await call('GET', '/accounts');
+    expect(accounts.body.home_region_proposal).toEqual({
+      state: 'waiting',
+      region: 'us-west-2',
+      period,
+      shares: [
+        { region: 'us-west-2', share: 84, amount: 1284.1 },
+        { region: 'eu-west-1', share: 7.9, amount: 120.33 },
+        { region: 'us-east-2', share: 5.1, amount: 78.4 },
+        { region: 'us-east-1', share: 3, amount: 45.92 },
+      ],
+      other_regions: null,
+      current: { region: 'us-east-1', share: 3, amount: 45.92 },
+      non_region_amount: 912,
+    });
   });
 
   it('a near tie (split spend): split is stored with the top regions, nothing is selected, the home region stays', async () => {
@@ -234,6 +250,8 @@ describe('POST /api/aws/accounts: the home-region proposal (HR-D5, HR-D6)', () =
     expect(row).toMatchObject({ state: 'split', evaluated: true, decided: null, proposal: { region: null, outcome: 'near_tie' } });
     expect(row.proposal.top.map((t: { region: string }) => t.region)).toEqual(['us-west-2', 'eu-west-1', 'us-east-1']);
     expect(await regionOf(orgId)).toBe('us-east-1');
+    // No region list yet: nothing to choose from until the first scan stores one.
+    expect((await call('GET', '/accounts')).body.home_region_proposal).toMatchObject({ state: 'split_waiting', region: null });
   });
 
   it('the current home region leads: no_signal, no prompt, the home region stays', async () => {
@@ -242,6 +260,7 @@ describe('POST /api/aws/accounts: the home-region proposal (HR-D5, HR-D6)', () =
     expect((await call('POST', '/accounts', { roleArn: roleArnFor(uniqueAccountId()) })).status).toBe(201);
     expect(await proposalRow(orgId)).toMatchObject({ state: 'no_signal', proposal: { region: null } });
     expect(await regionOf(orgId)).toBe('us-east-1');
+    expect((await call('GET', '/accounts')).body.home_region_proposal).toMatchObject({ state: 'no_signal', region: null });
   });
 
   it.each([

@@ -90,12 +90,62 @@ describe('POST /api/aws/accounts/home-region/proposal/dismiss (HR-D16)', () => {
   });
 });
 
+describe('GET /api/aws/accounts: home_region_proposal (state, region and the stored evidence)', () => {
+  it.each([
+    ['proposed, enabled, not the home region', 'proposed', PROPOSAL('us-west-2'), REGIONS, 'proposed'],
+    ['proposed, no stored list yet', 'proposed', PROPOSAL('us-west-2'), [], 'waiting'],
+    ['proposed, region not enabled', 'proposed', PROPOSAL('ap-east-1'), REGIONS, 'not_applicable'],
+    ['proposed, region excluded', 'proposed', PROPOSAL('eu-west-1'), REGIONS, 'not_applicable'],
+    ['dismissed', 'dismissed', PROPOSAL('us-west-2'), REGIONS, 'dismissed'],
+    ['split spend, region list stored', 'split', { ...PROPOSAL('us-west-2'), region: null, outcome: 'near_tie' }, REGIONS, 'split'],
+    ['split spend, no stored list yet', 'split', { ...PROPOSAL('us-west-2'), region: null, outcome: 'near_tie' }, [], 'split_waiting'],
+  ] as const)('%s → %s', async (_name, state, proposal, regions, expected) => {
+    const org = await connectedOrg({ regions: regions as any });
+    await setProposal(org, state, proposal, state === 'dismissed');
+    for (const role of ['owner', 'viewer'] as const) {
+      const body = await (await accounts(org, org[role])).json();
+      expect(body.home_region_proposal).toEqual({ state: expected, region: proposal.region, ...VIEW_EVIDENCE(proposal) });
+    }
+  });
+
+  it('proposed, and the home region is already that region: not_applicable', async () => {
+    const org = await connectedOrg({ region: 'us-west-2' });
+    await setProposal(org, 'proposed', PROPOSAL('us-west-2'));
+    expect((await (await accounts(org)).json()).home_region_proposal.state).toBe('not_applicable');
+  });
+
+  it('no_signal and unavailable: no region; null when never proposed or not connected; nothing else changes in the response', async () => {
+    const org = await connectedOrg();
+    const none = await (await accounts(org)).json();
+    expect(none.home_region_proposal).toBeNull();
+    expect(Object.keys(none).sort()).toEqual(['connection', 'data', 'home_region_proposal', 'success']);
+    await setProposal(org, 'unavailable', null);
+    expect((await (await accounts(org)).json()).home_region_proposal).toEqual({
+      state: 'unavailable', region: null, period: null, shares: [], other_regions: null, current: null, non_region_amount: null,
+    });
+    const noSignal = { ...PROPOSAL('us-west-2'), region: null, outcome: 'near_tie' };
+    await setProposal(org, 'no_signal', noSignal);
+    expect((await (await accounts(org)).json()).home_region_proposal).toEqual({ state: 'no_signal', region: null, ...VIEW_EVIDENCE(noSignal as any) });
+    const bare = await harness.buildOrg();
+    expect((await (await harness.sendAs(bare.orgId, bare.owner, 'GET', '/aws/accounts')).json()).home_region_proposal).toBeNull();
+  });
+
+  it('the view carries exactly its keys; the top 5 and the other regions add up to 100%', async () => {
+    const org = await connectedOrg();
+    await setProposal(org, 'proposed', PROPOSAL('us-west-2'));
+    const view = (await (await accounts(org)).json()).home_region_proposal;
+    expect(Object.keys(view).sort()).toEqual(['current', 'non_region_amount', 'other_regions', 'period', 'region', 'shares', 'state']);
+    expect([...view.shares.map((s: any) => s.share), view.other_regions.share].reduce((a: number, b: number) => a + b, 0)).toBe(100);
+  });
+});
+
 describe('tenant isolation (T8)', () => {
   it("another organization's dismiss and GET never reach this organization's proposal", async () => {
     const a = await connectedOrg();
     const b = await connectedOrg();
     await setProposal(b, 'proposed', PROPOSAL('us-west-2'));
     expect((await dismiss(a)).status).toBe(409);
+    expect((await (await accounts(a)).json()).home_region_proposal).toBeNull();
     expect((await stateOf(b)).proposal).toEqual({ state: 'proposed', decided: false });
   });
 

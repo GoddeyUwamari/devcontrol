@@ -16,6 +16,7 @@ import {
   decideProposal,
   evaluateHomeRegionProposal,
   fetchRegionSpend,
+  homeRegionProposalView,
   proposalPeriod,
   proposalRequest,
   reconciledShares,
@@ -227,5 +228,51 @@ describe('the request (§B.1)', () => {
       .toMatchObject({ state: 'proposed', proposal: { region: 'us-west-2', period: PERIOD } });
     expect(await evaluateHomeRegionProposal(ce(Object.assign(new Error('x'), { name: 'AccessDeniedException' })), '123456789012', 'us-east-1', NOW))
       .toEqual({ state: 'unavailable', proposal: null, reason: 'denied', errorName: 'AccessDeniedException' });
+  });
+});
+
+describe('the view (GET /api/aws/accounts)', () => {
+  const stored = { state: 'proposed', proposal: decide({ 'us-west-2': 84, 'eu-west-1': 13, 'us-east-1': 3 }).proposal };
+  const list = (rows: Array<[string, boolean, boolean]>) => rows.map(([region, enabled, scanEnabled]) => ({ region, enabled, scanEnabled }));
+  const evidence = {
+    period: PERIOD,
+    shares: [{ region: 'us-west-2', share: 84, amount: 84 }, { region: 'eu-west-1', share: 13, amount: 13 }, { region: 'us-east-1', share: 3, amount: 3 }],
+    other_regions: null,
+    current: { region: 'us-east-1', share: 3, amount: 3 },
+    non_region_amount: 0,
+  };
+
+  it.each([
+    ['enabled, not excluded, not the home region', list([['us-west-2', true, true], ['us-east-1', true, true]]), 'us-east-1', 'proposed'],
+    ['no stored list yet', [], 'us-east-1', 'waiting'],
+    ['not enabled', list([['us-west-2', false, true]]), 'us-east-1', 'not_applicable'],
+    ['excluded', list([['us-west-2', true, false]]), 'us-east-1', 'not_applicable'],
+    ['missing from the list', list([['us-east-1', true, true]]), 'us-east-1', 'not_applicable'],
+    ['already the home region', list([['us-west-2', true, true]]), 'us-west-2', 'not_applicable'],
+  ])('proposed and %s: %s', (_name, regions, home, state) => {
+    expect(homeRegionProposalView(stored, home, regions)).toEqual({ state, region: 'us-west-2', ...evidence });
+  });
+
+  it('split: shown when the region list exists (split_waiting before), never with a region', () => {
+    const split = { state: 'split', proposal: decide({ 'us-west-2': 50, 'eu-west-1': 45, 'us-east-1': 5 }).proposal };
+    expect(homeRegionProposalView(split, 'us-east-1', list([['us-west-2', true, true]]))).toMatchObject({ state: 'split', region: null });
+    expect(homeRegionProposalView(split, 'us-east-1', [])).toMatchObject({ state: 'split_waiting', region: null });
+    expect(homeRegionProposalView(split, 'us-east-1', list([['us-west-2', true, true]]))!.shares.map((s) => s.region)).toEqual(['us-west-2', 'eu-west-1', 'us-east-1']);
+  });
+
+  it('never proposed: null; decided states pass through; other regions and the current region come from the stored evidence', () => {
+    expect(homeRegionProposalView(null, 'us-east-1', [])).toBeNull();
+    expect(homeRegionProposalView({ state: null, proposal: null }, 'us-east-1', [])).toBeNull();
+    for (const state of ['accepted', 'dismissed', 'superseded']) {
+      expect(homeRegionProposalView({ ...stored, state }, 'us-east-1', [])!.state).toBe(state);
+    }
+    const many = decide({ 'us-west-2': 50, 'eu-west-1': 10, 'ap-south-1': 10, 'us-east-2': 10, 'sa-east-1': 10, 'ca-central-1': 10, 'us-east-1': 0.5 }).proposal;
+    const view = homeRegionProposalView({ state: 'proposed', proposal: many }, 'us-east-1', [])!;
+    expect(view.shares).toHaveLength(5);
+    expect(view.other_regions).toEqual({ count: 2, share: 10.4, amount: 10.5 });
+    expect(view.current).toEqual({ region: 'us-east-1', share: 0.5, amount: 0.5 });
+    expect(homeRegionProposalView({ state: 'unavailable', proposal: null }, 'us-east-1', [])).toEqual({
+      state: 'unavailable', region: null, period: null, shares: [], other_regions: null, current: null, non_region_amount: null,
+    });
   });
 });

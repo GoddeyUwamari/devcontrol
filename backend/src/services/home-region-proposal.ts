@@ -236,3 +236,61 @@ export async function evaluateHomeRegionProposal(
   return decideProposal(fetched.spend, currentHome, fetched.period);
 }
 
+/**
+ * The proposal as GET /api/aws/accounts reports it (HR-1 item 4). `state`:
+ *   proposed        show it: the region is enabled in the account's stored list,
+ *                   not excluded, and not the home region already;
+ *   waiting         proposed, but the region list is not stored yet (the first
+ *                   scan records it): not shown yet;
+ *   not_applicable  proposed, but the region is not enabled, is excluded, or is
+ *                   already the home region: never shown;
+ *   split           no clear home region (split spend): the owner is prompted to
+ *                   choose one (owner-only prompt, PR 3); `region` is null and
+ *                   nothing is selected until the owner changes the home region;
+ *   split_waiting   split, but the region list is not stored yet, so there is
+ *                   nothing to choose from: not shown yet;
+ *   accepted | dismissed | superseded | no_signal | unavailable: as stored.
+ * The evidence, for the banner (founder addition, Nov 16): `shares` the top 5
+ * regions (share in percent, amount in USD), `other_regions` the rest summed
+ * (null when there are 5 regions or fewer), so `shares` plus `other_regions`
+ * add up to exactly 100%; `current` the home region at evaluation time (it may be
+ * one of the top 5 or inside the other regions); `non_region_amount` the
+ * global/non-region usage, outside the percentages. Usage charges only, over the
+ * stored period.
+ */
+export interface HomeRegionProposalView {
+  state: 'proposed' | 'waiting' | 'not_applicable' | 'split' | 'split_waiting' | 'accepted' | 'dismissed' | 'superseded' | 'no_signal' | 'unavailable';
+  region: string | null;
+  period: { start: string; end: string } | null;
+  shares: Array<{ region: string; share: number; amount: number }>;
+  other_regions: { count: number; share: number; amount: number } | null;
+  current: { region: string; share: number; amount: number } | null;
+  non_region_amount: number | null;
+}
+
+export function homeRegionProposalView(
+  stored: { state: string | null; proposal: StoredHomeRegionProposal | null } | null,
+  currentHome: string,
+  regions: ReadonlyArray<{ region: string; enabled: boolean; scanEnabled: boolean }>
+): HomeRegionProposalView | null {
+  if (!stored || stored.state === null) return null;
+  const proposal = stored.proposal;
+  const region = proposal?.region ?? null;
+  let state = stored.state as HomeRegionProposalView['state'];
+  if (state === 'proposed') {
+    const row = regions.find((r) => r.region === region);
+    if (regions.length === 0) state = 'waiting';
+    else if (!region || region === currentHome || !row || !row.enabled || !row.scanEnabled) state = 'not_applicable';
+  } else if (state === 'split' && regions.length === 0) {
+    state = 'split_waiting';
+  }
+  return {
+    state,
+    region,
+    period: proposal?.period ?? null,
+    shares: proposal ? proposal.top.map(({ region: r, share, amount }) => ({ region: r, share, amount })) : [],
+    other_regions: proposal?.other_regions ?? null,
+    current: proposal ? { region: proposal.current, share: proposal.current_share, amount: proposal.current_amount } : null,
+    non_region_amount: proposal ? proposal.non_region_amount : null,
+  };
+}

@@ -21,6 +21,7 @@ import {
   saveCheckResults,
   saveHomeRegionProposal,
   isHomeRegionProposalUnavailable,
+  readHomeRegionProposal,
   dismissHomeRegionProposal,
 } from '../repositories/aws-connection-checks.repository'
 import { isConnectionChanged } from '../services/aws-connection-fence'
@@ -47,9 +48,12 @@ import { launchStackFor } from '../services/launch-stack'
 import { CostExplorerClient } from '@aws-sdk/client-cost-explorer'
 import {
   evaluateHomeRegionProposal,
+  homeRegionProposalView,
   type CostExplorerSender,
   type EvaluatedProposal,
+  type HomeRegionProposalView,
 } from '../services/home-region-proposal'
+import { listAccountRegions } from '../repositories/multi-region-foundation.repository'
 import {
   REFUSAL_RESPONSES as HOME_REGION_REFUSALS,
   changeHomeRegion,
@@ -916,6 +920,26 @@ router.post('/accounts/home-region/proposal/dismiss', requireCurrentOwnerForHome
   }
 })
 
+/**
+ * The eligible connection's home-region proposal for GET /api/aws/accounts
+ * (home-region-proposal.ts homeRegionProposalView), or null: no eligible
+ * connection, no proposal, or the HR-0 columns not there yet. Fail-soft: a
+ * failed read is logged by name and reads null, never failing the response.
+ */
+async function readProposalView(orgId: string, account: AwsAccountRow | null): Promise<HomeRegionProposalView | null> {
+  if (!account) return null
+  try {
+    const stored = await readHomeRegionProposal(pool, orgId, account.id)
+    if (!stored || stored.state === null) return null
+    const awsAccountId = parseAccountIdFromArn(account.role_arn ?? '')
+    const regions = awsAccountId ? await listAccountRegions(pool, orgId, awsAccountId) : []
+    return homeRegionProposalView(stored, homeRegionOf(account), regions)
+  } catch (err: unknown) {
+    if (!isHomeRegionProposalUnavailable(err)) console.error(`[aws/accounts GET] home region proposal for org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return null
+  }
+}
+
 // GET /api/aws/accounts
 // Returns only the accounts belonging to the calling org. external_id is
 // included for the owner only; for every other role the field is absent.
@@ -939,7 +963,9 @@ router.get('/accounts', async (req: Request, res: Response) => {
     const { state, account } = await readConnectionState(req.user!.organizationId)
     const health = state === 'connected' && account ? await readHealthSummary(req.user!.organizationId, account) : undefined
     const connection = health ? { state, health } : { state }
-    return res.json({ success: true, data, connection })
+    // Home region HR-1: the eligible connection's proposal (state, region and its evidence: shares, other regions, amounts), or null.
+    const home_region_proposal = state === 'connected' ? await readProposalView(req.user!.organizationId, account ?? null) : null
+    return res.json({ success: true, data, connection, home_region_proposal })
   } catch (err: any) {
     console.error('[aws/accounts GET]', err)
     return res.status(500).json({ success: false, message: 'Failed to retrieve AWS accounts.' })
