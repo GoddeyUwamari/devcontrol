@@ -148,7 +148,8 @@ export class StatsController {
    * Dashboard AI summary, and Ask AI already use). Like
    * getMonthlySpendWithFallback(), any Cost Explorer success is 'actual' (a
    * real $0 or net-credit month included); this endpoint adds the sections and
-   * the month's state (spend.data.monthState, cost-month-state.ts). The
+   * the month's state (spend.data.monthState, cost-month-state.ts) and the
+   * state's reason code (monthStateReason, also when spend has no data). The
    * inventory estimate stays 'estimated', and a missing figure or comparison
    * is a state, never 0 or 0%.
    */
@@ -162,7 +163,10 @@ export class StatsController {
     try {
       const { costs } = await this.costContext.gatherCostContext(organizationId);
       const [spend, monthOverMonth] = await Promise.all([spendSection(costs, { previousMonth: true }), monthOverMonthSection(costs)]);
-      res.json({ success: true, data: { spend, monthOverMonth } });
+      // The month state's reason as a code and words, in every state. A section
+      // without data (e.g. DAY1-D17 cost_metric_missing) keeps only its words.
+      const monthStateReason = costs.monthState?.reason ?? null;
+      res.json({ success: true, data: { spend, monthOverMonth, monthStateReason } });
     } catch (error: any) {
       // The raw failure can carry SQL or AWS detail: server log only.
       console.error('[Stats Controller] Cost summary error:', error?.message ?? error);

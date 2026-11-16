@@ -259,8 +259,21 @@ describe('contract assertions (beyond the pinned files)', () => {
     expect(costs.provenance).not.toBe('actual');
     expect(costs.data?.current ?? null).toBeNull();
     expect(costs.monthState).toMatchObject({ state: 'unavailable', amount: null, amountUsable: false, reason: { code: 'cost_metric_missing' } });
-    const body = (await costSummary()) as { data: { spend: { state: string; data: unknown } } };
+    const body = (await costSummary()) as { data: { spend: { state: string; data: unknown }; monthStateReason: unknown } };
     expect(body.data.spend.data).toBeNull();
+    // review L-4: the API carries the reason code, not only the words.
+    expect(body.data.monthStateReason).toEqual({ code: 'cost_metric_missing', text: 'AWS Cost Explorer has no usable result (the Cost Explorer response did not include the expected cost metric)' });
+  });
+
+  it.each([
+    ['d1_0030', { code: 'no_line_items_yet', text: 'AWS Cost Explorer has not reported any charges for this UTC month yet' }],
+    ['d1_absent', { code: 'no_current_month_result', text: 'AWS Cost Explorer has not reported any charges for this UTC month yet' }],
+    ['d2_charge', null],
+    ['d15', null],
+  ])('review L-4: %s cost summary carries the month state reason code', async (name, reason) => {
+    useCase(DAY1_CASES[name]);
+    const body = (await costSummary()) as { data: { monthStateReason: unknown } };
+    expect(body.data.monthStateReason).toEqual(reason);
   });
 
   it('every case: the cost path carries the month state with the period of the request', async () => {

@@ -47,6 +47,10 @@
       "untrusted": [],
       "failure": null,
       "truncation": null
+    },
+    "monthStateReason": {
+      "code": "cost_metric_missing",
+      "text": "AWS Cost Explorer has no usable result (the Cost Explorer response did not include the expected cost metric)"
     }
   }
 }

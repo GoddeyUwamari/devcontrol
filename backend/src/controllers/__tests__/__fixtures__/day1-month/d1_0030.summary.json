@@ -109,6 +109,10 @@
       "untrusted": [],
       "failure": null,
       "truncation": null
+    },
+    "monthStateReason": {
+      "code": "no_line_items_yet",
+      "text": "AWS Cost Explorer has not reported any charges for this UTC month yet"
     }
   }
 }
