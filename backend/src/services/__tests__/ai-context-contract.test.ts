@@ -467,6 +467,18 @@ describe('truth/provenance foundation', () => {
       expect(isCurrentContractVersion(undefined)).toBe(false);
     });
 
+    it('is 3 since the day-1 month state (review L-5): AI output fingerprinted under 2 is a cache miss', async () => {
+      const section = await collectSection(CE_META, async () => ({ state: 'available', data: { amount: null, monthState: { state: 'no_billed_days_yet' } } }));
+      const underTwo = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section }, contractVersion: 2 });
+      const current = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section } });
+
+      expect(AI_CONTEXT_CONTRACT_VERSION).toBe(3);
+      expect(toModelEvidence(section).contractVersion).toBe(3);
+      expect(current.startsWith('v3:')).toBe(true);
+      expect(current).not.toBe(underTwo);
+      expect(isCurrentContractVersion(2)).toBe(false);
+    });
+
     it('the fingerprint is stable for equal evidence (key order irrelevant) and changes with evidence, prompt version, or freshness', async () => {
       const a = await collectSection(CE_META, async () => ({ state: 'available', data: { total: 1, currency: 'USD' }, asOf: 't1' }));
       const reordered = await collectSection(CE_META, async () => ({ state: 'available', data: { currency: 'USD', total: 1 }, asOf: 't1' }));
