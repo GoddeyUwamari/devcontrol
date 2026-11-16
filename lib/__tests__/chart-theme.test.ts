@@ -15,8 +15,17 @@ describe('chart text (D4)', () => {
 
   it("the Dashboard's cost chart takes its axis ticks and Forecast labels from CHART_TICK, with no sizes of its own", () => {
     const source = readFileSync(join(process.cwd(), 'components/dashboard/cost-trend-chart.tsx'), 'utf8')
-    expect(source.match(/tick=\{CHART_TICK\}/g)).toHaveLength(4)
-    expect(source.match(/label=\{\{ value: 'Forecast', position: 'top', \.\.\.CHART_TICK \}\}/g)).toHaveLength(2)
+    // One bar chart since L-7 removed the area-chart fallback: one XAxis, one YAxis,
+    // one Forecast line. Each axis element is checked on its own, so an axis that
+    // loses CHART_TICK or gets a tick object / size of its own fails here.
+    const axes = source.match(/<(XAxis|YAxis)\b[^>]*?\/>/g) ?? []
+    expect(axes.map((a) => a.match(/^<(\w+)/)![1])).toEqual(['XAxis', 'YAxis'])
+    for (const axis of axes) {
+      expect(axis).toMatch(/\btick=\{CHART_TICK\}/)
+      expect(axis).not.toMatch(/tick=\{\{|fontSize/)
+    }
+    expect(source.match(/tick=\{CHART_TICK\}/g)).toHaveLength(2)
+    expect(source.match(/label=\{\{ value: 'Forecast', position: 'top', \.\.\.CHART_TICK \}\}/g)).toHaveLength(1)
     expect(source).not.toMatch(/fontSize/)
   })
 })
