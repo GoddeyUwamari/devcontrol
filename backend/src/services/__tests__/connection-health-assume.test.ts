@@ -98,7 +98,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
       Credentials: { AccessKeyId: 'ASIAEXAMPLE', SecretAccessKey: 'secret-example', SessionToken: 'token-example', Expiration: new Date(Date.now() + 3600e3) },
       AssumedRoleUser: { AssumedRoleId: `${ROLE_ID}:devcontrol-00000000`, Arn: 'arn:aws:sts::123456789012:assumed-role/DevControlRole/devcontrol-00000000' },
     } as any);
-    const out = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1');
+    const out = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT);
     expect(out.roleUniqueId).toBe(ROLE_ID);
     expect(out.attemptedAt.getTime()).toBeGreaterThanOrEqual(before);
   });
@@ -108,7 +108,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
       Credentials: { AccessKeyId: 'ASIAEXAMPLE', SecretAccessKey: 'secret-example', SessionToken: 'token-example' },
       AssumedRoleUser: assumedRoleId === undefined ? undefined : { AssumedRoleId: assumedRoleId, Arn: 'x' },
     } as any);
-    expect((await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1')).roleUniqueId).toBeNull();
+    expect((await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT)).roleUniqueId).toBeNull();
   });
 
   it.each([
@@ -118,7 +118,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
     ['ValidationError', 'permanent'],
   ])('%s throws AwsAssumeRoleFailedError(%s) with when it started; the account it tried only beside it', async (name, kind) => {
     jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockRejectedValue(awsError(name, { $metadata: { httpStatusCode: 400 } }));
-    const err = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1').catch((e) => e);
+    const err = await AWSClientFactory.assumeAccountRole(ORG, ACCOUNT).catch((e) => e);
     expect(isAwsAssumeRoleFailed(err)).toBe(true);
     expect(err).toMatchObject({ kind, message: OLD_MESSAGE(ORG) });
     // The connection it was made for is beside the error, never on it (review H-1).
@@ -132,7 +132,7 @@ describe('AWSClientFactory.assumeAccountRole', () => {
   it('a platform failure is rethrown unchanged (never AWS_NOT_CONNECTED)', async () => {
     const platform = new PlatformAwsCredentialsUnavailableError(awsError('CredentialsProviderError'));
     jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockRejectedValue(platform);
-    await expect(AWSClientFactory.assumeAccountRole(ORG, ACCOUNT, 'us-east-1')).rejects.toBe(platform);
+    await expect(AWSClientFactory.assumeAccountRole(ORG, ACCOUNT)).rejects.toBe(platform);
   });
 });
 

@@ -213,6 +213,36 @@ describe('the context fails closed before any call with its clients', () => {
   });
 });
 
+describe('home region HR-D10: the AssumeRole goes to us-east-1 STS whatever the home region', () => {
+  it('createClients assumes at us-east-1 for an eu-west-1 home and builds every regional client in eu-west-1', async () => {
+    const assumeRole = jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockResolvedValue(credentials('ASIAFIRST', start + HOUR));
+
+    const clients = await AWSClientFactory.createClients('org-scan');
+
+    expect(assumeRole).toHaveBeenCalledTimes(1);
+    expect(assumeRole.mock.calls[0][0]).toBe('us-east-1');
+    expect(clients.region).toBe('eu-west-1');
+    expect(await clients.ec2!.config.region()).toBe('eu-west-1');
+    expect(await clients.s3!.config.region()).toBe('eu-west-1');
+  });
+
+  it('the scan context and its credential refresh both assume at us-east-1; the scan stays in the home region', async () => {
+    const assumeRole = jest.spyOn(platformSts, 'assumeRoleAsPlatform')
+      .mockResolvedValueOnce(credentials('ASIAFIRST', start + HOUR))
+      .mockResolvedValue(credentials('ASIASECOND', start + 2 * HOUR));
+    const context = await ScanContext.forOrg('org-scan');
+    const s3 = context.clientsFor('eu-west-1').s3;
+    const keys = signedKeys(s3);
+
+    at(HOUR - CREDENTIAL_REFRESH_WINDOW_MS + 60_000);
+    await send(s3);
+
+    expect(assumeRole.mock.calls.map((call) => call[0])).toEqual(['us-east-1', 'us-east-1']);
+    expect(keys).toEqual(['ASIASECOND']);
+    expect(context.region).toBe('eu-west-1');
+  });
+});
+
 describe('T17: credentials are refreshed before they expire', () => {
   it('before the refresh window: no second AssumeRole, signed with the first credentials', async () => {
     const assumeRole = jest.spyOn(platformSts, 'assumeRoleAsPlatform').mockResolvedValue(credentials('ASIAFIRST', start + HOUR));

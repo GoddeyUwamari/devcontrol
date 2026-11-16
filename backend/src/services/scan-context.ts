@@ -153,7 +153,7 @@ export class ScanContext {
         try {
           let fresh: Awaited<ReturnType<typeof AWSClientFactory.assumeAccountRole>>;
           try {
-            fresh = await AWSClientFactory.assumeAccountRole(source.organizationId, source.account, source.region);
+            fresh = await AWSClientFactory.assumeAccountRole(source.organizationId, source.account);
           } catch (error: unknown) {
             await healthRecorder.recordScanAssumeFailure(source.organizationId, error);
             throw error;

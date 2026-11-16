@@ -176,7 +176,8 @@ describe('AWSClientFactory.createClients goes through the lookup', () => {
 
     expect(clients.region).toBe('ap-southeast-2');
     expect(assumeRole).toHaveBeenCalledTimes(1);
-    expect(assumeRole.mock.calls[0][0]).toBe('ap-southeast-2');
+    // HR-D10: AssumeRole always at us-east-1 STS; the clients stay in the account's region.
+    expect(assumeRole.mock.calls[0][0]).toBe('us-east-1');
     expect(assumeRole.mock.calls[0][1]).toMatchObject({
       RoleArn: 'arn:aws:iam::123456789012:role/devcontrol-readonly',
       ExternalId: 'external-id-1',
