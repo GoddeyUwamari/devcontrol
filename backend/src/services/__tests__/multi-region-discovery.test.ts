@@ -1216,6 +1216,14 @@ describe('M-2 (PR 1b): the whole-scan deadline bounds the steps after the region
     expect(costOptimizationService.analyzeAllResources).not.toHaveBeenCalled();
     expect((await pool.query(`SELECT count(*)::int AS n FROM cost_analysis_runs WHERE organization_id = $1`, [orgId])).rows[0].n).toBe(0);
     expect(deadlineLog()).toEqual([expect.stringContaining('not started: compliance, iam, orphans, cost; stopped: none')]);
+    // PR 2 review M-4: read back through the coverage API, scan_deadline stays the scan's
+    // (last_scan.warnings), never a region's; every region was checked by the scan.
+    const { readServicesCoverage } = await import('../../routes/services-coverage.routes');
+    const coverage = await readServicesCoverage({ query: (text: string, values?: unknown[]) => pool.query(text, values as any[]) }, orgId);
+    expect(coverage.last_scan!.warnings).toEqual(['scan_deadline']);
+    expect(coverage.multi_region!.region_warnings).toEqual([]);
+    expect(coverage.multi_region!.regions.every((r) => r.state === 'checked')).toBe(true);
+    expect(coverage.multi_region!.coverage_status).toBe('all_checked');
     // Item 7: the cost pass never ran, so the home line says so (null), not 0.
     expect(regionLogLines().find((line) => line.region === HOME)).toMatchObject({ cost_pass_get_metric_data_metrics: null, cost_pass_get_metric_statistics_requests: null });
   }, 60_000);

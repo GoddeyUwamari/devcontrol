@@ -26,6 +26,9 @@
  * authService.verifyToken is stubbed. Placeholders only.
  */
 import { Client } from 'pg';
+import { EC2Client } from '@aws-sdk/client-ec2';
+import { AWSClientFactory } from '../../services/aws-client-factory.service';
+import { ScanContext } from '../../services/scan-context';
 import servicesCoverageRoutes, { MULTI_REGION_ERROR_CODES, REGION_WARNING_CODES, readServicesCoverage } from '../services-coverage.routes';
 import servicesRoutes from '../services.routes';
 import { SCAN_KIND_DISCOVERY } from '../../services/scan-session';
@@ -629,6 +632,86 @@ describe('review M-1: the scan described (id, status, times) and one overall cov
     const unlisted = await flagged();
     await insertJob(unlisted.orgId, 'completed', EARLIER_START, [HOME], '2026-03-01T10:30:00Z');
     expect((await coverageOf(unlisted)).multi_region).toMatchObject({ coverage_status: 'unavailable', scan: { status: 'completed', regions_total: 1, regions_checked: 0 } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('review M-4: the remaining required tests', () => {
+  async function flagged() {
+    const org = await harness.buildOrg();
+    await insertAccount(org.orgId);
+    await setFlag(org.orgId, true);
+    return org;
+  }
+
+  it('scan_deadline stays scan-level: in last_scan.warnings, never a region warning, no region state changed by it', async () => {
+    const org = await flagged();
+    const { rows } = await pool.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, created_at, resource_types, regions, warnings)
+       VALUES ($1, 'completed', $2, '2026-03-01T10:55:00Z', $2, $3, $4, '["scan_deadline"]'::jsonb) RETURNING id`,
+      [org.orgId, EARLIER_START, TYPES, [HOME, 'eu-west-1']]
+    );
+    await insertRegion(org.orgId, HOME, { status: 'ok' });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'ok', code: 'resource_explorer_no_index' });
+    const coverage = await coverageOf(org);
+    expect(coverage.last_scan.warnings).toEqual(['scan_deadline']);
+    const mr = coverage.multi_region;
+    expect(mr.region_warnings).toEqual([{ code: 'resource_explorer_no_index', region: 'eu-west-1' }]);
+    expect(JSON.stringify(mr.region_warnings)).not.toContain('scan_deadline');
+    expect(mr.regions.map((r: any) => r.state)).toEqual(['checked', 'checked_with_warnings']);
+    // The regions were all checked by the scan; the post-region stop is the job's warning.
+    expect(mr).toMatchObject({ coverage_status: 'all_checked', scan: { id: rows[0].id, regions_checked: 2 } });
+  });
+
+  it('no mutation on GET: a flagged read with a running scan writes nothing (the auth meter api_usage aside, as on every route)', async () => {
+    const org = await flagged();
+    const running = await insertJob(org.orgId, 'running', SCAN_START, [HOME, 'eu-west-1']);
+    await insertLease(org.orgId, running);
+    await insertRegion(org.orgId, HOME, { status: 'ok', started: SCAN_START });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'denied', code: REGION_CODE_ACCESS_DENIED });
+    const start = recorded.length;
+    const coverage = await coverageOf(org);
+    expect(coverage.multi_region.progress).not.toBeNull();
+    const statements = recorded.slice(start).map((r) => r.text);
+    expect(statements.some((t) => /WITH listed AS/.test(t))).toBe(true);
+    const writes = statements.filter((t) => /\b(INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|MERGE\s+INTO|TRUNCATE|ALTER\s+TABLE|CREATE\s+TABLE)\b/i.test(t));
+    expect(writes.filter((t) => !/INSERT INTO api_usage/i.test(t))).toEqual([]);
+  });
+
+  it('no AWS call on the flagged path: no SDK send, no client, no scan context', async () => {
+    const org = await flagged();
+    const running = await insertJob(org.orgId, 'running', SCAN_START, [HOME]);
+    await insertLease(org.orgId, running);
+    await insertRegion(org.orgId, HOME, { status: 'ok', started: SCAN_START });
+    const sdkClientPrototype = Object.getPrototypeOf(EC2Client.prototype);
+    const send = jest.spyOn(sdkClientPrototype, 'send');
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients');
+    const buildClients = jest.spyOn(AWSClientFactory, 'buildClients');
+    const forOrg = jest.spyOn(ScanContext, 'forOrg');
+    const coverage = await coverageOf(org);
+    expect(coverage).toHaveProperty('multi_region');
+    for (const spy of [send, createClients, buildClients, forOrg]) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a partial region only', { status: 'partial', code: 'discovery_listing_truncated' }],
+    ['a denied region only', { status: 'denied', code: REGION_CODE_ACCESS_DENIED }],
+    ['a timed-out region only', { status: 'timed_out', code: REGION_CODE_DEADLINE }],
+  ] as Array<[string, RegionRow]>)('R10: region_warnings_complete is false with %s (its one code column could hide a Resource Explorer code)', async (_label, row) => {
+    const org = await flagged();
+    await insertRegion(org.orgId, HOME, { status: 'ok' });
+    await insertRegion(org.orgId, 'eu-west-1', row);
+    expect((await coverageOf(org)).multi_region.region_warnings_complete).toBe(false);
+  });
+
+  it('R13: stale per region: a result older than 13 hours is stale, a recent one is not, a never-scanned one never is', async () => {
+    const org = await flagged();
+    const recent = new Date(Date.now() - 10 * 60_000).toISOString();
+    await insertRegion(org.orgId, HOME, { status: 'ok', started: recent, finished: recent });
+    await insertRegion(org.orgId, 'eu-west-1', { status: 'ok' });
+    await insertRegion(org.orgId, 'ap-south-1', {});
+    const regions = byRegion(await coverageOf(org));
+    expect([regions[HOME].stale, regions['eu-west-1'].stale, regions['ap-south-1'].stale]).toEqual([false, true, false]);
   });
 });
 
