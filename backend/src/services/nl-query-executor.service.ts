@@ -36,7 +36,7 @@ import {
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import { spendSection, type SpendEvidence } from './cost-context-sections';
 import { lastIncludedDay } from './ai-chat.service';
-import { monthOnly } from './cost-month-state';
+import { monthHasUnfinishedDays, monthOnly } from './cost-month-state';
 import { describeIntent, validateIntent, type ValidatedIntent } from './nl-query-guard';
 import type { NLQueryIntent } from './nl-query.service';
 
@@ -400,7 +400,7 @@ export class NLQueryExecutorService {
       ? ` (${section.period.start} through ${lastIncludedDay(section.period.endExclusive)})`
       : '';
     const credit = d.amount < 0 ? ' (net negative: credits and refunds exceed charges)' : '';
-    const inProgress = month?.state === 'latest_days_updating'
+    const inProgress = monthHasUnfinishedDays(month)
       ? ' The latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.'
       : d.lastDayInProgress ? ' The current day is still being billed.' : '';
     const rows = (d.topServices ?? []).map(s => ({

@@ -59,6 +59,11 @@
           "lineItems": 2,
           "finishedThrough": "2026-12-01",
           "billedThrough": "2026-12-02",
+          "reportDays": {
+            "final": 0,
+            "updating": 2,
+            "notReported": 1
+          },
           "ceEstimated": true,
           "asOf": "2026-12-03T00:30:00.000Z",
           "reason": null,
@@ -79,10 +84,10 @@
       "truncation": null
     },
     "monthOverMonth": {
-      "state": "available",
+      "state": "unavailable",
       "source": "DevControl month-over-month comparison",
-      "provenance": "derived",
-      "asOf": "2026-12-03T00:30:00.000Z",
+      "provenance": null,
+      "asOf": null,
       "scope": {
         "kind": "cost_explorer",
         "connectedAccountId": "123456789012",
@@ -90,19 +95,15 @@
         "consolidatedBilling": "unknown",
         "regions": "all"
       },
-      "period": {
-        "kind": "range",
-        "start": "2026-11-01",
-        "endExclusive": "2026-12-02"
-      },
+      "period": null,
       "completeness": null,
-      "coverage": "finished days of this month vs the same days of the previous month; the latest days, still being reported by AWS Cost Explorer, are excluded",
-      "reason": null,
+      "coverage": null,
+      "reason": "cannot be calculated: AWS Cost Explorer daily trend: not available",
       "derivedFrom": [
         {
           "source": "AWS Cost Explorer daily trend",
-          "state": "available",
-          "provenance": "actual",
+          "state": "unavailable",
+          "provenance": null,
           "scope": {
             "kind": "cost_explorer",
             "connectedAccountId": "123456789012",
@@ -110,33 +111,14 @@
             "consolidatedBilling": "unknown",
             "regions": "all"
           },
-          "period": {
-            "kind": "range",
-            "start": "2026-11-01",
-            "endExclusive": "2026-12-02"
-          },
-          "asOf": "2026-12-03T00:30:00.000Z"
+          "period": null,
+          "asOf": null
         }
       ],
-      "data": {
-        "currentWindow": {
-          "start": "2026-12-01",
-          "end": "2026-12-01"
-        },
-        "previousWindow": {
-          "start": "2026-11-01",
-          "end": "2026-11-01"
-        },
-        "currentWindowTotal": 13.3,
-        "previousWindowTotal": 13.3,
-        "changeAmount": 0,
-        "changePercent": 0,
-        "currentWindowIncludesToday": false,
-        "basis": "sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend"
-      },
+      "data": null,
       "retrievedAt": "2026-12-03T00:30:00.000Z",
       "freshness": null,
-      "classification": "calculated",
+      "classification": null,
       "untrusted": [],
       "failure": null,
       "truncation": null

@@ -22,6 +22,7 @@ import {
 } from '../services/ai-chat.service';
 import { collectSection, type ContextSection } from '../services/ai-context-contract';
 import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
+import type { CostReportState } from '../services/cost-trend-report-state';
 import {
   deriveCostMonthState,
   isCostMetricMissingError,
@@ -92,6 +93,8 @@ function toCents(amount: number): number {
 function roundCents(amount: number): number {
   return toCents(amount) / 100;
 }
+
+const NO_FINAL_DAY_NOTE = 'no day of this month has finished reporting in AWS Cost Explorer yet (the latest days are still being reported)';
 
 /** A comparison with no figures -- its state and note say why. */
 function emptyComparison(state: ContextDataState, note: string): CostComparison {
@@ -286,16 +289,20 @@ export class AIChatContextRepository {
    * cents), not from the unrounded sums -- otherwise e.g. $14.83 vs $14.33
    * could report a $0.51 change the reader can't reproduce from the figures.
    *
-   * Finished days only: Cost Explorer keeps filling in a day for 24-48 hours,
-   * so the current window runs from day 1 of this month through
-   * finishedThrough (today minus PROVISIONAL_COST_DAYS), never into the
-   * provisional days. The previous window is the same day numbers of the
-   * previous month, capped at that month's last day. While no day of this
-   * month has finished, there is no comparison. All date math is UTC, Cost
-   * Explorer's own day boundary.
+   * Final days only (rule 5, trend-lag-build.md): the current window runs
+   * from day 1 of this month up to the day before the first day that is not
+   * 'final' (its trend reportState is updating or not_reported) on EITHER
+   * side -- that day of this month or the same day number of the previous
+   * month -- so an unfinished day is left out of both windows. It also never
+   * runs past finishedThrough (today minus PROVISIONAL_COST_DAYS), the
+   * calendar guard the month state uses on days 1-2. The previous window is
+   * the same day numbers of the previous month, capped at that month's last
+   * day. While no day of this month qualifies, there is no comparison. All
+   * date math is UTC, Cost Explorer's own day boundary. Points without a
+   * reportState (an older backend's cache) count as final.
    */
   private computeMonthOverMonthComparison(
-    costTrend: Array<{ date: string; total: number }>,
+    costTrend: Array<{ date: string; total: number; reportState?: CostReportState }>,
     asOf: string | null = null,
     now: Date = new Date()
   ): CostComparison {
@@ -305,7 +312,7 @@ export class AIChatContextRepository {
     const [finishedYear, finishedMonth, finishedDay] = finishedThrough.split('-').map(Number);
     if (finishedYear !== curYear || finishedMonth - 1 !== curMonth) {
       return {
-        ...emptyComparison('unavailable', 'no day of this month has finished reporting in AWS Cost Explorer yet (the latest days are still being reported)'),
+        ...emptyComparison('unavailable', NO_FINAL_DAY_NOTE),
         finishedThrough,
         asOf,
       };
@@ -317,8 +324,29 @@ export class AIChatContextRepository {
 
     const isoDate = (year: number, monthIndex: number, day: number) =>
       `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const expectedCurrentDays = finishedDay;
-    const expectedPreviousDays = Math.min(finishedDay, daysInLastMonth);
+
+    // The first day number, on either side, that Cost Explorer has not finished.
+    const unfinished = new Set<string>();
+    for (const entry of costTrend ?? []) {
+      if (entry.reportState !== undefined && entry.reportState !== 'final') unfinished.add(entry.date.slice(0, 10));
+    }
+    let comparableDays = finishedDay;
+    for (let day = 1; day <= finishedDay; day++) {
+      if (unfinished.has(isoDate(curYear, curMonth, day)) || (day <= daysInLastMonth && unfinished.has(isoDate(lastMonthYear, lastMonth, day)))) {
+        comparableDays = day - 1;
+        break;
+      }
+    }
+    if (comparableDays === 0) {
+      return {
+        ...emptyComparison('unavailable', NO_FINAL_DAY_NOTE),
+        finishedThrough,
+        asOf,
+      };
+    }
+
+    const expectedCurrentDays = comparableDays;
+    const expectedPreviousDays = Math.min(comparableDays, daysInLastMonth);
     const currentWindow = { start: isoDate(curYear, curMonth, 1), end: isoDate(curYear, curMonth, expectedCurrentDays) };
     const previousWindow = { start: isoDate(lastMonthYear, lastMonth, 1), end: isoDate(lastMonthYear, lastMonth, expectedPreviousDays) };
 

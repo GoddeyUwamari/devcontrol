@@ -34,6 +34,11 @@
         "lineItems": 2,
         "finishedThrough": "2026-11-30",
         "billedThrough": "2026-12-01",
+        "reportDays": {
+          "final": 0,
+          "updating": 1,
+          "notReported": 1
+        },
         "ceEstimated": true,
         "asOf": "2026-12-02T18:00:00.000Z",
         "reason": null,
@@ -42,13 +47,13 @@
           "start": "2026-11-01",
           "endExclusive": "2026-12-01",
           "amount": 399,
-          "latestDaysUpdating": false
+          "latestDaysUpdating": true
         }
       }
     }
   },
   "summaryFacts": [
-    "AWS Cost Explorer month-to-date billed spend (2026-12-01 through 2026-12-02) is $13.30; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change. The previous UTC month (November 2026) totalled $399.00.",
+    "AWS Cost Explorer month-to-date billed spend (2026-12-01 through 2026-12-02) is $13.30; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change. The previous UTC month (November 2026) totalled $399.00; its latest days are still updating.",
     "Month-over-month change: not available (cannot be calculated: AWS Cost Explorer daily trend: not available). Do not describe spend as up, down, flat, or unchanged."
   ],
   "chatContext": [
@@ -64,7 +69,7 @@
     "- Regions: all (the query is not region-filtered)",
     "- Period: month-to-date, 2026-12-01 through 2026-12-02 inclusive (December 1–2, 2026); 2026-12-02 was still in progress when this figure was obtained, so that day's spend is incomplete",
     "- Month-to-date spend: $13.30 for 2026-12-01 through 2026-12-02 (UTC); the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.",
-    "- Previous UTC month (November 2026): $399.00",
+    "- Previous UTC month (November 2026): $399.00 (latest days still updating)",
     "Top services by month-to-date spend (observed amounts for the period above, not monthly rates. Cost Explorer SERVICE categories for the scope above, NOT per-resource costs: each line is its own category and does not include charges billed under another listed category, and a category total is not proof that any one resource caused that spend):",
     "- Amazon Elastic Compute Cloud - Compute: $12.63 (95.0%)",
     "- Amazon Simple Storage Service: $0.67 (5.0%)"

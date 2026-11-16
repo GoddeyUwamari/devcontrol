@@ -107,7 +107,8 @@ export class CostForecastService {
     try {
       const trend = await awsCostService.fetchCostTrend(organizationId, range);
 
-      const dataPoints: TimeSeriesPoint[] = trend.map(point => ({
+      // A day Cost Explorer has not reported yet is not a $0 day of history (trend-lag-build.md).
+      const dataPoints: TimeSeriesPoint[] = trend.filter(point => point.reportState !== 'not_reported').map(point => ({
         date: new Date(point.date),
         value: point.total,
         actual: true,

@@ -59,6 +59,11 @@
           "lineItems": 2,
           "finishedThrough": "2026-11-30",
           "billedThrough": "2026-12-01",
+          "reportDays": {
+            "final": 0,
+            "updating": 1,
+            "notReported": 1
+          },
           "ceEstimated": true,
           "asOf": "2026-12-02T18:00:00.000Z",
           "reason": null,
@@ -67,7 +72,7 @@
             "start": "2026-11-01",
             "endExclusive": "2026-12-01",
             "amount": 399,
-            "latestDaysUpdating": false
+            "latestDaysUpdating": true
           }
         }
       },

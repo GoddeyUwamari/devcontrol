@@ -266,14 +266,19 @@ describe('the month state (day1-step1.md, cost-month-state.ts)', () => {
     expect(mockCostExplorerSend).toHaveBeenCalledTimes(2);
   });
 
-  it('trend points carry lineItems and provisional: an unreported provisional day is not a measured $0', async () => {
+  it('trend points carry lineItems, reportState and provisional: an unreported day is not a measured $0', async () => {
     at('2026-12-03T00:30:00Z');
     mockCostExplorerSend.mockImplementation(async (command: Sent) => ceLedgerResponse(command.input, '2026-12-01'));
     const points = await service.fetchCostTrend(ORG, '7d');
-    const byDate = Object.fromEntries(points.map((p) => [p.date, { lineItems: p.lineItems, provisional: p.provisional }]));
-    expect(byDate['2026-12-01']).toEqual({ lineItems: 2, provisional: false });
-    expect(byDate['2026-12-02']).toEqual({ lineItems: 0, provisional: true });
-    expect(byDate['2026-12-03']).toEqual({ lineItems: 0, provisional: true });
+    const byDate = Object.fromEntries(points.map((p) => [p.date, { lineItems: p.lineItems, reportState: p.reportState, provisional: p.provisional }]));
+    // trend-lag-build.md: Dec 1 is the last day with line items and inside today-3 .. today, so it is
+    // still updating (the 2-day calendar rule called it finished); the days after it are not reported.
+    // The synthetic ledger marks Nov 30 onward Estimated, so Nov 30 is updating too; Nov 29 is final.
+    expect(byDate['2026-11-29']).toEqual({ lineItems: 2, reportState: 'final', provisional: false });
+    expect(byDate['2026-11-30']).toEqual({ lineItems: 2, reportState: 'updating', provisional: true });
+    expect(byDate['2026-12-01']).toEqual({ lineItems: 2, reportState: 'updating', provisional: true });
+    expect(byDate['2026-12-02']).toEqual({ lineItems: 0, reportState: 'not_reported', provisional: true });
+    expect(byDate['2026-12-03']).toEqual({ lineItems: 0, reportState: 'not_reported', provisional: true });
   });
 
   it('6mo on day 1: the current month point has no line items and is provisional', async () => {

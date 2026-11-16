@@ -39,7 +39,9 @@ import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
  * field changes, so cached AI output or cached context produced under an
  * older shape is detectably stale instead of being read under the new one.
  */
-export const AI_CONTEXT_CONTRACT_VERSION = 3;
+// 4: monthState.reportDays and the month-over-month window ending before the
+// first day Cost Explorer has not finished (trend-lag-build.md).
+export const AI_CONTEXT_CONTRACT_VERSION = 4;
 // 3: spend evidence `amount` may be null (no billed days yet) and carries the
 //    current UTC month's state, `monthState` (cost-month-state.ts; review L-5).
 

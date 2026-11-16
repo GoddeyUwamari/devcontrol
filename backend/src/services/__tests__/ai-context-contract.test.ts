@@ -467,16 +467,16 @@ describe('truth/provenance foundation', () => {
       expect(isCurrentContractVersion(undefined)).toBe(false);
     });
 
-    it('is 3 since the day-1 month state (review L-5): AI output fingerprinted under 2 is a cache miss', async () => {
+    it('is 4 since the per-day report state (trend-lag-build.md; 3 was the day-1 month state, review L-5): AI output fingerprinted under 3 is a cache miss', async () => {
       const section = await collectSection(CE_META, async () => ({ state: 'available', data: { amount: null, monthState: { state: 'no_billed_days_yet' } } }));
-      const underTwo = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section }, contractVersion: 2 });
+      const underThree = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section }, contractVersion: 3 });
       const current = evidenceFingerprint({ organizationId: 'org-a', sections: { cost: section } });
 
-      expect(AI_CONTEXT_CONTRACT_VERSION).toBe(3);
-      expect(toModelEvidence(section).contractVersion).toBe(3);
-      expect(current.startsWith('v3:')).toBe(true);
-      expect(current).not.toBe(underTwo);
-      expect(isCurrentContractVersion(2)).toBe(false);
+      expect(AI_CONTEXT_CONTRACT_VERSION).toBe(4);
+      expect(toModelEvidence(section).contractVersion).toBe(4);
+      expect(current.startsWith('v4:')).toBe(true);
+      expect(current).not.toBe(underThree);
+      expect(isCurrentContractVersion(3)).toBe(false);
     });
 
     it('the fingerprint is stable for equal evidence (key order irrelevant) and changes with evidence, prompt version, or freshness', async () => {

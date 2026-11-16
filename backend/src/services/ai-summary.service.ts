@@ -38,7 +38,7 @@ import {
 } from './ai-context-contract';
 import { lastIncludedDay } from './ai-chat.service';
 import type { MonthOverMonthEvidence, SpendEvidence } from './cost-context-sections';
-import { monthName, monthOnly, periodWords, type CostMonthState } from './cost-month-state';
+import { monthHasUnfinishedDays, monthName, monthOnly, periodWords, type CostMonthState } from './cost-month-state';
 import { noUrgentFindingsLine, reviewedFindingsLine } from './top-risk-selection';
 import { collectEvidence, fingerprintSections, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
@@ -369,7 +369,7 @@ export class AISummaryService {
           ? ` (${s.spend.period.start} through ${lastIncludedDay(s.spend.period.endExclusive)})`
           : '';
         const credit = d.amount < 0 ? ' (net negative: credits and refunds exceed charges)' : '';
-        const freshness = month?.state === 'latest_days_updating'
+        const freshness = monthHasUnfinishedDays(month)
           ? '; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change'
           : d.lastDayInProgress ? '; the current day is still being billed' : '';
         facts.push(`AWS Cost Explorer month-to-date billed spend${period} is ${money(d.amount)}${credit}${freshness}.${month?.state === 'latest_days_updating' ? previousMonthSentence(month) : ''}`);

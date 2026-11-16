@@ -20,7 +20,7 @@ import {
   type InventoryScope,
 } from './ai-context-contract';
 
-import { lastDayOf, monthName, periodWords, type CostMonthState } from './cost-month-state';
+import { lastDayOf, monthHasUnfinishedDays, monthName, periodWords, type CostMonthState } from './cost-month-state';
 
 // Defined in ai-context-contract.ts; re-exported so existing imports keep working.
 export type { ContextDataState, ContextSection, CostExplorerScope, InventoryScope } from './ai-context-contract';
@@ -527,7 +527,7 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
         lines.push(`- Month-to-date spend: ${this.formatMoney(figures.current)} for ${month.period.start} through ${lastDayOf(month.period)} (UTC); the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.`);
         lines.push(...this.previousMonthLines(month));
       } else if (figures.current !== null) {
-        lines.push(`- Month-to-date spend: ${this.formatMoney(figures.current)}${figures.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''} (observed spend for the period above -- not a full-month amount or a monthly rate)`);
+        lines.push(`- Month-to-date spend: ${this.formatMoney(figures.current)}${figures.current < 0 ? ' (net negative: credits/refunds exceed charges)' : ''} (observed spend for the period above -- not a full-month amount or a monthly rate)${monthHasUnfinishedDays(month) ? '; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change' : ''}`);
       } else {
         lines.push('- Month-to-date spend: not available -- this is missing data, not a zero amount.');
       }
