@@ -263,15 +263,35 @@ describe('POST /api/aws/accounts: the home-region proposal (HR-D5, HR-D6)', () =
     expect((await call('GET', '/accounts')).body.home_region_proposal).toMatchObject({ state: 'no_signal', region: null });
   });
 
-  it.each([
-    ['throttled', Object.assign(new Error('Rate exceeded'), { name: 'ThrottlingException' })],
-    ['an empty answer', null],
-  ])('%s: no prompt (unavailable or no_signal), never split', async (_name, answer) => {
+  it('throttled: unavailable, no prompt', async () => {
     const { orgId } = await ownerOrg();
-    connectTestHooks.costExplorer = answer instanceof Error ? costExplorer(answer) : costExplorer({});
+    connectTestHooks.costExplorer = costExplorer(Object.assign(new Error('Rate exceeded'), { name: 'ThrottlingException' }));
     expect((await call('POST', '/accounts', { roleArn: roleArnFor(uniqueAccountId()) })).status).toBe(201);
-    expect(['unavailable', 'no_signal']).toContain((await proposalRow(orgId)).state);
+    expect(await proposalRow(orgId)).toMatchObject({ state: 'unavailable', proposal: null });
   });
+
+  it('an empty answer (no regional usage): no_signal exactly, no prompt (review L-1)', async () => {
+    const { orgId } = await ownerOrg();
+    connectTestHooks.costExplorer = costExplorer({});
+    expect((await call('POST', '/accounts', { roleArn: roleArnFor(uniqueAccountId()) })).status).toBe(201);
+    expect(await proposalRow(orgId)).toMatchObject({ state: 'no_signal', proposal: { region: null, outcome: 'below_minimum', top: [] } });
+  });
+
+  it('a Cost Explorer that never answers: the connect still succeeds within the 5 s probe bound and stores unavailable (review M-1)', async () => {
+    const { orgId } = await ownerOrg();
+    const send = jest.fn((_command: unknown, options?: { abortSignal?: AbortSignal }) => new Promise((_resolve, reject) => {
+      options?.abortSignal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }));
+    connectTestHooks.costExplorer = { send } as any;
+    const started = Date.now();
+    const res = await call('POST', '/accounts', { roleArn: roleArnFor(uniqueAccountId()) });
+    const elapsed = Date.now() - started;
+    expect(res.status).toBe(201);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeGreaterThanOrEqual(4_900);
+    expect(elapsed).toBeLessThan(6_500);
+    expect(await proposalRow(orgId)).toMatchObject({ state: 'unavailable', proposal: null });
+  }, 20_000);
 
   it('Cost Explorer refused: unavailable is stored; the log names the error only, never AWS\'s message; the connect succeeds', async () => {
     const { orgId } = await ownerOrg();

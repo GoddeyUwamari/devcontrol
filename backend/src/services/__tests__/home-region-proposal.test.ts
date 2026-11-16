@@ -123,7 +123,7 @@ describe('the rule (HR-D5)', () => {
   });
 
   it('the constants are the approved ones', () => {
-    expect(PROPOSAL_RULE).toMatchObject({ windowDays: 30, minTotalUsd: 5, runnerUpRatio: 1.25, currentHomeRatio: 2, maxPages: 2, topRegions: 5 });
+    expect(PROPOSAL_RULE).toMatchObject({ windowDays: 30, minTotalUsd: 5, runnerUpRatio: 1.25, currentHomeRatio: 2, maxPages: 2, topRegions: 5, timeoutMs: 5_000 });
   });
 });
 
@@ -221,6 +221,31 @@ describe('the request (§B.1)', () => {
     expect(decideProposal(spend({ 'us-west-2': 80, 'eu-west-1': 50, 'us-east-1': 10 }), 'us-east-1', PERIOD).proposal).toEqual(evaluated.proposal);
     // A credit that came through as its own negative line in a region would not count either.
     expect(decideProposal(spend({ 'us-west-2': 80, 'eu-west-1': 50, 'us-east-1': 10, 'ap-south-1': -200 }), 'us-east-1', PERIOD).proposal).toEqual(evaluated.proposal);
+  });
+
+  it('an empty answer (no regional usage at all) is no_signal, not unavailable (review L-1)', async () => {
+    expect(await evaluateHomeRegionProposal(ce({ $metadata: {}, ResultsByTime: [] }), '123456789012', 'us-east-1', NOW))
+      .toMatchObject({ state: 'no_signal', proposal: { region: null, outcome: 'below_minimum', top: [], total_amount: 0 } });
+    expect(await evaluateHomeRegionProposal(ce({ $metadata: {} }), '123456789012', 'us-east-1', NOW))
+      .toMatchObject({ state: 'no_signal', proposal: { outcome: 'below_minimum' } });
+  });
+
+  it('a Cost Explorer that never answers is cut off at the default 5 s bound (review M-1)', async () => {
+    jest.useFakeTimers();
+    try {
+      const client = { send: jest.fn((_command: unknown, options?: { abortSignal?: AbortSignal }) => new Promise((_resolve, reject) => {
+        options?.abortSignal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+      })) } as any;
+      let settled: unknown;
+      const pending = fetchRegionSpend(client, '123456789012', NOW).then((r) => { settled = r; });
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(settled).toBeUndefined();
+      await jest.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(settled).toEqual({ ok: false, reason: 'timed_out', errorName: 'AbortError' });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('evaluate: the request, then the rule; unavailable carries no proposal', async () => {

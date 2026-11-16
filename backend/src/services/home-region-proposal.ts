@@ -28,9 +28,10 @@
  * shares are stored, and the owner is prompted to choose a home region (PR 3).
  * Nothing is selected: the owner's choice goes through the change endpoint.
  * Anything else is no_signal (under USD 5.00, or the current home region leads):
- * the current home region is kept and nothing is shown. A failed, refused,
- * empty-handed, throttled, malformed or too-long answer is unavailable (HR-D22:
- * no fallback evidence; no prompt either). The rule never changes the home region: only the
+ * the current home region is kept and nothing is shown. An empty answer (no
+ * regional usage at all) is no_signal too: it means no spend (founder decision,
+ * review L-1). A failed, refused, throttled, timed-out, malformed or too-long
+ * answer is unavailable (HR-D22: no fallback evidence; no prompt either). The rule never changes the home region: only the
  * owner does (the change endpoint), and whether R is enabled in the account is
  * checked when the proposal is shown (rule 4, the GET /api/aws/accounts read).
  *
@@ -57,7 +58,8 @@ export const PROPOSAL_RULE = {
   currentHomeRatio: 2,
   maxPages: 2,
   topRegions: 5,
-  timeoutMs: 10_000,
+  // The connect probes' own bound (connect-permission-check.ts): the proposal never lengthens a connect (review M-1).
+  timeoutMs: 5_000,
 } as const;
 
 /** Anything with Cost Explorer's send (the SDK client, or a test double). */
