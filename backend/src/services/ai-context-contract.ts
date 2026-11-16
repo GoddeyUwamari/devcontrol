@@ -30,6 +30,7 @@
  * (services/ai/evidence/) builds every AI surface's sections on this file.
  */
 
+import type { InventoryRegionScan } from './ai-region-scope';
 import { createHash } from 'crypto';
 import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
 
@@ -310,6 +311,12 @@ export interface InventoryScope {
   connectedAccountId: string | null;
   /** aws_accounts.region -- the one region discovery runs in; null if it couldn't be read. */
   discoveryRegion: string | null;
+  /**
+   * Multi-region PR 2: present ONLY when the organization's multi_region_discovery flag
+   * is on. Discovery then covers every enabled region of the account's list, and this
+   * says which were checked (ai-region-scope.ts). Absent: discoveryRegion is the scope.
+   */
+  regionScan?: InventoryRegionScan;
 }
 
 /** Data about one organization over a rolling window (e.g. deployment records). */

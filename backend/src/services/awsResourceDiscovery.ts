@@ -546,13 +546,14 @@ export class AWSResourceDiscoveryService {
    *     so they are reconciled in their own region, and only when that region's
    *     search was complete.
    *
-   * Returns the source's outcome (null: not searched, no index) and how many
-   * resources its reconcile terminated.
+   * Returns the source's outcome (null: not searched, no index), how many
+   * resources its reconcile terminated, and the Resource Explorer warning it recorded
+   * for this region, if any (multi-region PR 2, RR-M2: the region's own code).
    */
   private async inventoryResourceExplorer(
     ctx: RegionInventory,
     allowedGenericTypes: ResourceType[]
-  ): Promise<{ outcome: RegionSourceOutcome | null; terminated: number }> {
+  ): Promise<{ outcome: RegionSourceOutcome | null; terminated: number; warning?: DiscoveryWarning }> {
     const { clients, fenced, organizationId, region } = ctx;
     let terminated = 0;
     console.log(`🔎 [Discovery] Searching AWS Resource Explorer for generic inventory + reconciliation...`);
@@ -567,7 +568,7 @@ export class AWSResourceDiscoveryService {
           `the generic types were not listed or reconciled in this region`
       );
       ctx.warnings.push(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX);
-      return { outcome: null, terminated };
+      return { outcome: null, terminated, warning: DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX };
     }
     const searchResult: SearchResult =
       index.state === 'failed'
@@ -586,7 +587,7 @@ export class AWSResourceDiscoveryService {
           `the generic types were not listed or reconciled in this region`
       );
       ctx.warnings.push(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW);
-      return { outcome: null, terminated };
+      return { outcome: null, terminated, warning: DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW };
     }
     // How the search fared, for the region's scan status only (M5b). Nothing below
     // reads it: the reconcile still follows searchResult.
@@ -782,9 +783,20 @@ export class AWSResourceDiscoveryService {
       // A6: the fence probe at the region boundary. A lost lease or a changed AWS
       // connection stops the scan; any other failure (e.g. no pool connection within
       // its timeout) is this region's failure (code error), never the job's.
+      // PR 2: in the same fenced transaction, the region is added to the job's regions
+      // (the regions this scan has started), so the coverage API can tell a region
+      // running from one still waiting. Nothing else is written.
       let probeFailure: unknown;
       try {
-        await onStepConnection(region, (client) => scan.fenced(client, async () => undefined));
+        await onStepConnection(region, (client) =>
+          scan.fenced(client, async () => {
+            await client.query(
+              `UPDATE resource_discovery_jobs SET regions = array_append(regions, $1::varchar)
+                WHERE id = $2 AND organization_id = $3 AND NOT ($1::varchar = ANY(COALESCE(regions, '{}')))`,
+              [region, jobId, organizationId]
+            );
+          })
+        );
       } catch (error: unknown) {
         abortIfLeaseLost(error);
         probeFailure = error;
@@ -824,9 +836,11 @@ export class AWSResourceDiscoveryService {
           homeListed = true;
         }
         let explorerOutcome: RegionSourceOutcome | null = null;
+        let explorerWarning: DiscoveryWarning | undefined;
         try {
           const explored = await this.inventoryResourceExplorer(ctx, args.allowedGenericTypes);
           explorerOutcome = explored.outcome;
+          explorerWarning = explored.warning;
           terminated += explored.terminated;
         } catch (error: unknown) {
           // The deadline passed before the search started: the region's status says so.
@@ -852,6 +866,13 @@ export class AWSResourceDiscoveryService {
           args.warnings.push(DISCOVERY_WARNING_LISTING_TRUNCATED);
         }
         result = regionScanResult(outcomes, run.deadlineHit, home ? HOME_REGION_SOURCES : NON_HOME_REGION_SOURCES);
+        // RR-M2 (PR 2): the Resource Explorer warning is this region's. A region whose own
+        // result is ok records it as its code, so the coverage API names the region it came
+        // from. Any other result keeps its own code (the one column holds one code); the
+        // API then says the warnings' regions may be incomplete (region_warnings_complete).
+        if (explorerWarning && result?.status === 'ok' && result.errorCode === null) {
+          result = { status: 'ok', errorCode: explorerWarning };
+        }
       } catch (error: unknown) {
         abortIfLeaseLost(error);
         // Anything else that escaped the region's own steps is the region's failure only.
@@ -1546,6 +1567,23 @@ export class AWSResourceDiscoveryService {
       // scanned (scanRegions below); with it off, the home region only, as before.
       const multiRegion = await this.multiRegionEnabled(client, organizationId);
       console.log(`🌍 [Discovery] Multi-region discovery: ${multiRegion ? 'on' : 'off'}`);
+      if (multiRegion) {
+        // PR 2 (scan progress): a multi-region job's regions are the regions it has
+        // STARTED, as the column already says at the job's end. Emptied here, before any
+        // region starts (the job opens with the home region), and extended by each
+        // region's fence probe. Fail-soft: progress is never worth a scan; a lost lease
+        // still stops it.
+        try {
+          await fenced(async (c) => {
+            await c.query(`UPDATE resource_discovery_jobs SET regions = '{}' WHERE id = $1 AND organization_id = $2`, [jobId, organizationId]);
+          });
+        } catch (error: unknown) {
+          abortIfLeaseLost(error);
+          console.warn(
+            `⚠️  [Discovery] scan_progress_not_recorded: org ${organizationId} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
+          );
+        }
+      }
       // PR 1b, M-2: a multi-region scan's whole-scan deadline (SCAN_DEADLINE_MS), and the
       // clients its steps after the regions use: their calls stop when it passes. Without
       // the flag there is none, and those steps use the scan's clients as before.

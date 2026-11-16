@@ -5,6 +5,7 @@
  */
 
 import { Pool } from 'pg';
+import { regionScopeText } from './ai-region-scope';
 import { getModelClient, streamModelText } from './ai/model-client';
 import type { EvidenceBundle } from './ai/evidence/types';
 import { collectedSectionOf } from './ai/evidence/budget';
@@ -431,7 +432,11 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
     return [
       `- Scope: AWS resources DevControl discovered under the connected IAM role`,
       `- Connected AWS account: ${account}`,
-      `- Regions: ${scope.discoveryRegion ?? 'unknown'} only (resources in other regions are not discovered, except S3 buckets, which are listed account-wide, and CloudFront, which is global; the region list and scan status are in the evidence sources below)`,
+      // Multi-region PR 2 (MR-D15): with the flag on, the regions the scan covered, from
+      // the coverage API; without it, exactly the home-region line as before.
+      scope.regionScan
+        ? `- Regions: ${regionScopeText(scope.regionScan)} (the region list and scan status are in the evidence sources below)`
+        : `- Regions: ${scope.discoveryRegion ?? 'unknown'} only (resources in other regions are not discovered, except S3 buckets, which are listed account-wide, and CloudFront, which is global; the region list and scan status are in the evidence sources below)`,
     ];
   }
 

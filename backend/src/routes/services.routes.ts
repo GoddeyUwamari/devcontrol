@@ -15,6 +15,7 @@ import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/fr
 import { lifecycleStateFor } from '../utils/resourceLifecycle';
 import { countEligibleAwsAccounts } from '../repositories/aws-accounts.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
+import { ScanRegionsChecked, isMultiRegionDiscoveryOn, readScanRegionsChecked } from '../repositories/multi-region-coverage.repository';
 import { INLINE_TAG_TYPES } from '../services/complianceScanner';
 import { displayIssue } from '../services/finding-display';
 
@@ -773,6 +774,22 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
 
 // ─── POST /api/services/discover ─────────────────────────────────────────────
 
+/**
+ * The discover result's regions_checked (multi-region PR 2): present only when the
+ * organization's multi_region_discovery flag is on; counts, no copy (PR 3 words them).
+ * Fail-soft: a read that fails leaves the key out (logged by error name), never the scan's answer.
+ */
+async function discoverRegionsChecked(orgId: string, jobId: string): Promise<{ regions_checked?: ScanRegionsChecked }> {
+  try {
+    if (!(await isMultiRegionDiscoveryOn(pool, orgId, '[Services/discover]'))) return {};
+    const checked = await readScanRegionsChecked(pool, orgId, jobId);
+    return checked ? { regions_checked: checked } : {};
+  } catch (error: unknown) {
+    console.warn(`[Services/discover] regions_checked_unreadable: org ${orgId} (${error instanceof Error ? error.name : 'unknown error'})`);
+    return {};
+  }
+}
+
 router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, discoveryRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const orgId = req.organizationId;
@@ -791,6 +808,9 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
       errors:     result.errors,
       warnings:   result.warnings ?? [],
       jobId:      result.job_id,
+      // Multi-region PR 2: how this scan's regions came out, for a flagged organization
+      // only; without the flag the response is exactly as before.
+      ...(await discoverRegionsChecked(orgId, result.job_id)),
     });
   } catch (err: any) {
     console.error('[Services/discover]', err);
