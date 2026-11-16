@@ -23,6 +23,12 @@
         "lineItems": 0,
         "finishedThrough": "2026-11-30",
         "billedThrough": null,
+        "reportDays": {
+          "final": 0,
+          "updating": 0,
+          "notReported": 2,
+          "afterRecentCharge": true
+        },
         "ceEstimated": true,
         "asOf": "2026-12-02T00:30:00.000Z",
         "reason": {
@@ -34,13 +40,13 @@
           "start": "2026-11-01",
           "endExclusive": "2026-12-01",
           "amount": 399,
-          "latestDaysUpdating": false
+          "latestDaysUpdating": true
         }
       }
     }
   },
   "summaryFacts": [
-    "There are no billed days yet for the current UTC month (December 1–2, 2026): AWS Cost Explorer has not reported any December charges. Do not describe spend as $0 or unchanged. The previous UTC month (November 2026) totalled $399.00.",
+    "There are no billed days yet for the current UTC month (December 1–2, 2026): AWS Cost Explorer has not reported any December charges. Do not describe spend as $0 or unchanged. The previous UTC month (November 2026) totalled $399.00; its latest days are still updating.",
     "Month-over-month change: not available (cannot be calculated: AWS Cost Explorer daily trend: not available). Do not describe spend as up, down, flat, or unchanged."
   ],
   "chatContext": [
@@ -56,12 +62,12 @@
     "- Regions: all (the query is not region-filtered)",
     "- Period: month-to-date, 2026-12-01 through 2026-12-02 inclusive (December 1–2, 2026); 2026-12-02 was still in progress when this figure was obtained, so that day's spend is incomplete",
     "- Month-to-date spend: none reported yet — AWS Cost Explorer has no billed days for the current UTC month (December 2026; 2026-12-01 through 2026-12-02). This is missing data, not $0: never say the spend is $0, that nothing was spent, or that spend is unchanged.",
-    "- Previous UTC month (November 2026): $399.00"
+    "- Previous UTC month (November 2026): $399.00 (latest days still updating)"
   ],
   "chatFallback": [
     "**🔍 What's happening**",
     "",
-    "There are no billed days yet for the current UTC month (December 1–2, 2026), so there is no month-to-date figure yet — this is not $0. November (UTC) totalled $399.00.",
+    "There are no billed days yet for the current UTC month (December 1–2, 2026), so there is no month-to-date figure yet — this is not $0. November (UTC) totalled $399.00; its latest days are still updating.",
     "",
     "*Note: AI service temporarily unavailable - this is a simplified analysis.*"
   ],

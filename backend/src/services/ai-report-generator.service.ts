@@ -32,7 +32,7 @@ import {
   type EvidencePeriod,
 } from './ai-context-contract';
 import type { MonthOverMonthEvidence, SpendEvidence } from './cost-context-sections';
-import { periodWords } from './cost-month-state';
+import { monthHasUnfinishedDays, periodWords } from './cost-month-state';
 import { runModel, type Interpretation } from './ai/model-client';
 import type { FallbackReason } from './ai/model-response';
 import { collectEvidence, sectionOf } from './ai/evidence/registry';
@@ -621,7 +621,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     }
     const period = section.period?.kind === 'range' ? ` for ${section.period.start} up to ${section.period.endExclusive} (exclusive)` : '';
     const credit = d.amount < 0 ? ' (net credit: credits and refunds exceed charges)' : '';
-    const freshness = month?.state === 'latest_days_updating'
+    const freshness = monthHasUnfinishedDays(month)
       ? '; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change'
       : d.lastDayInProgress ? '; the current day is still being billed' : '';
     return `AWS Cost Explorer shows ${money(d.amount)} of billed spend month-to-date${period}${credit}${freshness}.`;

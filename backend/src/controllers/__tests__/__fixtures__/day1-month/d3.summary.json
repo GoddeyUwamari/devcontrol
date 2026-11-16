@@ -59,6 +59,12 @@
           "lineItems": 2,
           "finishedThrough": "2026-12-01",
           "billedThrough": "2026-12-02",
+          "reportDays": {
+            "final": 1,
+            "updating": 1,
+            "notReported": 1,
+            "afterRecentCharge": true
+          },
           "ceEstimated": true,
           "asOf": "2026-12-03T00:30:00.000Z",
           "reason": null,

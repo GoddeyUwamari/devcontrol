@@ -3,7 +3,7 @@
     "label": "Month-to-Date Spend",
     "value": "—",
     "caption": "Dec 1–2 (UTC) · Actual · AWS Cost Explorer · no billed days yet this month",
-    "previousMonth": "November (UTC): $399.00",
+    "previousMonth": "November (UTC): $399.00 · latest days still updating",
     "evidence": {
       "source": "Dec 1–2 (UTC) · AWS Cost Explorer · no billed days yet this month",
       "comparison": "No comparison until a day of this month has finished billing"

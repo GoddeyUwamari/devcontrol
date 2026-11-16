@@ -13,12 +13,12 @@ import { AwsAccountRow, awsConnectionIdentity, requireEligibleAwsAccount } from 
 import type { SpendProvenance } from './ai-context-contract'
 import {
   absentCurrentMonthIsNoDataYet,
-  costFinishedThrough,
   costMetricAmount,
   deriveCostMonthState,
   monthToDatePeriodUtc,
   type CostMonthState,
 } from './cost-month-state'
+import { costReportStates, isProvisional, type CostReportState } from './cost-trend-report-state'
 
 
 
@@ -148,9 +148,15 @@ export interface CostTrendPoint {
   // Cost Explorer SERVICE groups in this period: 0 means Cost Explorer reported
   // nothing for it. Optional for the same reason as byService.
   lineItems?: number
-  // The period's last day is after costFinishedThrough(): Cost Explorer is still
-  // reporting it. A provisional period with no line items is "not reported yet",
-  // never a measured $0 (consumers leave it out of a chart).
+  // How far Cost Explorer has reported the period (cost-trend-report-state.ts):
+  // 'not_reported' is a gap, never $0.00; 'updating' is an amount so far that
+  // Cost Explorer may still add to; 'final' is everything else. Optional for the
+  // same reason as byService.
+  reportState?: CostReportState
+  // ResultByTime.Estimated for the period; null when Cost Explorer did not send it.
+  estimated?: boolean | null
+  // Kept for older consumers: true unless reportState is 'final' (so a
+  // not_reported period, which has no line items, still reads as a gap there).
   provisional?: boolean
 }
 
@@ -745,8 +751,8 @@ class AWSCostService {
     // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
     const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
     // The period is fixed here, once: the key and the query below both use it.
-    // Its end is tomorrow (UTC), so each point's `provisional` flag, computed
-    // at fetch time, never outlives the day it was computed for.
+    // Its end is tomorrow (UTC), so each point's reportState (and `provisional`),
+    // computed at fetch time, never outlives the day it was computed for.
     const period = trendPeriodUtc(range, new Date())
     const cacheKey = AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), range, period)
     const cached = this.costTrendCache.get(cacheKey)
@@ -762,7 +768,7 @@ class AWSCostService {
     const now = new Date()
     const fetchPromise = (async () => {
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
-      const result = await orgService.queryCostTrend(period, costFinishedThrough(now))
+      const result = await orgService.queryCostTrend(period, now)
       pruneExpired(this.costTrendCache, AWSCostService.MONTHLY_COST_CACHE_TTL, Date.now())
       this.costTrendCache.set(cacheKey, { data: result, timestamp: Date.now() })
       return result
@@ -776,11 +782,11 @@ class AWSCostService {
 
   /**
    * The Cost Explorer query itself (every page), on this instance's organization
-   * credentials. `finishedThrough`: the last UTC day treated as finished; a
-   * period ending after it is provisional. A group without the requested cost
-   * metric fails the read (CostMetricMissingError), never $0.
+   * credentials. Each point's reportState comes from the series' own line items
+   * and Estimated flags, relative to `now` (costReportStates). A group without
+   * the requested cost metric fails the read (CostMetricMissingError), never $0.
    */
-  private async queryCostTrend(period: { start: string; end: string; granularity: Granularity }, finishedThrough: string = costFinishedThrough()): Promise<CostTrendPoint[]> {
+  private async queryCostTrend(period: { start: string; end: string; granularity: Granularity }, now: Date = new Date()): Promise<CostTrendPoint[]> {
     const costExplorer = this.customerCostExplorer()
 
     const { start, end, granularity } = period
@@ -797,6 +803,7 @@ class AWSCostService {
       ],
     })
 
+    const lastDays: string[] = []
     const points: CostTrendPoint[] = results.map((result) => {
       const raw: Record<CostCategory, number> = {
         compute: 0,
@@ -828,6 +835,7 @@ class AWSCostService {
       const end = result.TimePeriod?.End || ''
       const [ey, em, ed] = end.split('-').map(Number)
       const lastDay = end ? new Date(Date.UTC(ey, em - 1, ed - 1)).toISOString().slice(0, 10) : ''
+      lastDays.push(lastDay)
 
       return {
         date: result.TimePeriod?.Start || '',
@@ -839,8 +847,17 @@ class AWSCostService {
         total: compute + storage + database + network + other,
         byService,
         lineItems: (result.Groups || []).length,
-        provisional: lastDay !== '' && lastDay > finishedThrough,
+        estimated: typeof result.Estimated === 'boolean' ? result.Estimated : null,
       }
+    })
+
+    const states = costReportStates(
+      points.map((p, i) => ({ lastDay: lastDays[i], lineItems: p.lineItems ?? 0, estimated: p.estimated ?? null })),
+      now
+    )
+    points.forEach((p, i) => {
+      p.reportState = states[i]
+      p.provisional = isProvisional(states[i])
     })
 
     attachServiceDisplayBreakdown(points)

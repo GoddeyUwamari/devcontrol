@@ -1,0 +1,618 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2026-11-09",
+      "compute": 0.2784,
+      "storage": 0.1048589845,
+      "database": 0,
+      "network": 0.12,
+      "other": 0.07345333359999999,
+      "total": 0.5767123180999999,
+      "byService": [
+        {
+          "service": "AWS Cost Explorer",
+          "amount": 0.04
+        },
+        {
+          "service": "AWS Glue",
+          "amount": 0
+        },
+        {
+          "service": "AWS Key Management Service",
+          "amount": 0.0333333336
+        },
+        {
+          "service": "EC2 - Other",
+          "amount": 0.1043038267
+        },
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 0.2784
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.0005551578
+        },
+        {
+          "service": "Amazon Virtual Private Cloud",
+          "amount": 0.12
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.00012
+        }
+      ],
+      "lineItems": 8,
+      "estimated": null,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0.2784,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0.04,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0.12,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 0.1043038267,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0.0333333336,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0.0005551578,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.00012,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-10",
+      "compute": 0.2784,
+      "storage": 0.1080255115,
+      "database": 0,
+      "network": 0.12,
+      "other": 0.10353333360000001,
+      "total": 0.6099588451000001,
+      "byService": [
+        {
+          "service": "AWS Cost Explorer",
+          "amount": 0.07
+        },
+        {
+          "service": "AWS Glue",
+          "amount": 0
+        },
+        {
+          "service": "AWS Key Management Service",
+          "amount": 0.0333333336
+        },
+        {
+          "service": "EC2 - Other",
+          "amount": 0.1073955139
+        },
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 0.2784
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.0006299976
+        },
+        {
+          "service": "Amazon Virtual Private Cloud",
+          "amount": 0.12
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.0002
+        }
+      ],
+      "lineItems": 8,
+      "estimated": null,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0.2784,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0.07,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0.12,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 0.1073955139,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0.0333333336,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0.0006299976,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.0002,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-11",
+      "compute": 0.2784,
+      "storage": 0.1118150133,
+      "database": 0,
+      "network": 0.12,
+      "other": 0.26358333359999997,
+      "total": 0.7737983468999999,
+      "byService": [
+        {
+          "service": "AWS Cost Explorer",
+          "amount": 0.23
+        },
+        {
+          "service": "AWS Glue",
+          "amount": 0
+        },
+        {
+          "service": "AWS Key Management Service",
+          "amount": 0.0333333336
+        },
+        {
+          "service": "EC2 - Other",
+          "amount": 0.1110070633
+        },
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 0.2784
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.00080795
+        },
+        {
+          "service": "Amazon Virtual Private Cloud",
+          "amount": 0.12
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.00025
+        }
+      ],
+      "lineItems": 8,
+      "estimated": null,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0.2784,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0.23,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0.12,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 0.1110070633,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0.0333333336,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0.00080795,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.00025,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-12",
+      "compute": 0.2784,
+      "storage": 0.049818155999999995,
+      "database": 0,
+      "network": 0.12,
+      "other": 0.3836733336,
+      "total": 0.8318914896,
+      "byService": [
+        {
+          "service": "AWS Cost Explorer",
+          "amount": 0.35
+        },
+        {
+          "service": "AWS Glue",
+          "amount": 0
+        },
+        {
+          "service": "AWS Key Management Service",
+          "amount": 0.0333333336
+        },
+        {
+          "service": "EC2 - Other",
+          "amount": 0.0488926075
+        },
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 0.2784
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.0009255485
+        },
+        {
+          "service": "Amazon Virtual Private Cloud",
+          "amount": 0.12
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.00034
+        }
+      ],
+      "lineItems": 8,
+      "estimated": null,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0.2784,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0.35,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0.12,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 0.0488926075,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0.0333333336,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0.0009255485,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.00034,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-13",
+      "compute": 0.0142228876,
+      "storage": 0.000059808699999999995,
+      "database": 0,
+      "network": 0.015,
+      "other": 0.03008,
+      "total": 0.059362696300000004,
+      "byService": [
+        {
+          "service": "AWS Cost Explorer",
+          "amount": 0.03
+        },
+        {
+          "service": "AWS Glue",
+          "amount": 0
+        },
+        {
+          "service": "AWS Key Management Service",
+          "amount": 0
+        },
+        {
+          "service": "EC2 - Other",
+          "amount": 2.087e-7
+        },
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 0.0142228876
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.0000596
+        },
+        {
+          "service": "Amazon Virtual Private Cloud",
+          "amount": 0.015
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.00008
+        }
+      ],
+      "lineItems": 8,
+      "estimated": null,
+      "reportState": "updating",
+      "provisional": true,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0.0142228876,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0.03,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0.015,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 2.087e-7,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0.0000596,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.00008,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-14",
+      "compute": 0,
+      "storage": 0,
+      "database": 0,
+      "network": 0,
+      "other": 0,
+      "total": 0,
+      "byService": [],
+      "lineItems": 0,
+      "estimated": null,
+      "reportState": "not_reported",
+      "provisional": true,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 0,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-15",
+      "compute": 0,
+      "storage": 0,
+      "database": 0,
+      "network": 0,
+      "other": 0,
+      "total": 0,
+      "byService": [],
+      "lineItems": 0,
+      "estimated": null,
+      "reportState": "not_reported",
+      "provisional": true,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 0,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-16",
+      "compute": 0,
+      "storage": 0,
+      "database": 0,
+      "network": 0,
+      "other": 0,
+      "total": 0,
+      "byService": [],
+      "lineItems": 0,
+      "estimated": null,
+      "reportState": "not_reported",
+      "provisional": true,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "Cost Explorer",
+          "amount": 0,
+          "color": "#eda100"
+        },
+        {
+          "service": "VPC",
+          "amount": 0,
+          "color": "#008300"
+        },
+        {
+          "service": "EC2 (Other)",
+          "amount": 0,
+          "color": "#eb6834"
+        },
+        {
+          "service": "KMS",
+          "amount": 0,
+          "color": "#e87ba4"
+        },
+        {
+          "service": "S3",
+          "amount": 0,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0,
+          "color": "#4a3aa7"
+        },
+        {
+          "service": "Other",
+          "amount": 0,
+          "color": "#94A3B8"
+        }
+      ]
+    }
+  ]
+}

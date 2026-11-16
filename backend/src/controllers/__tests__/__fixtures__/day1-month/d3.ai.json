@@ -34,6 +34,12 @@
         "lineItems": 2,
         "finishedThrough": "2026-12-01",
         "billedThrough": "2026-12-02",
+        "reportDays": {
+          "final": 1,
+          "updating": 1,
+          "notReported": 1,
+          "afterRecentCharge": true
+        },
         "ceEstimated": true,
         "asOf": "2026-12-03T00:30:00.000Z",
         "reason": null,
@@ -42,7 +48,7 @@
     }
   },
   "summaryFacts": [
-    "AWS Cost Explorer month-to-date billed spend (2026-12-01 through 2026-12-03) is $26.60; the current day is still being billed.",
+    "AWS Cost Explorer month-to-date billed spend (2026-12-01 through 2026-12-03) is $26.60; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.",
     "Month-to-date spend vs the same days last month: unchanged at 0.0% ($13.30 vs $13.30, daily charges after credits, each category floored at $0)."
   ],
   "chatContext": [
@@ -57,7 +63,7 @@
     "- Consolidated billing: unknown (DevControl does not detect whether the connected account is a management/payer account, so this figure may or may not include other linked accounts)",
     "- Regions: all (the query is not region-filtered)",
     "- Period: month-to-date, 2026-12-01 through 2026-12-03 inclusive (December 1–3, 2026); 2026-12-03 was still in progress when this figure was obtained, so that day's spend is incomplete",
-    "- Month-to-date spend: $26.60 (observed spend for the period above -- not a full-month amount or a monthly rate)",
+    "- Month-to-date spend: $26.60 (observed spend for the period above -- not a full-month amount or a monthly rate); the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change",
     "Top services by month-to-date spend (observed amounts for the period above, not monthly rates. Cost Explorer SERVICE categories for the scope above, NOT per-resource costs: each line is its own category and does not include charges billed under another listed category, and a category total is not proof that any one resource caused that spend):",
     "- Amazon Elastic Compute Cloud - Compute: $25.26 (95.0%)",
     "- Amazon Simple Storage Service: $1.34 (5.0%)"
@@ -79,7 +85,7 @@
     "",
     "*Note: AI service temporarily unavailable - this is a simplified analysis.*"
   ],
-  "reportSentence": "AWS Cost Explorer shows $26.60 of billed spend month-to-date for 2026-12-01 up to 2026-12-04 (exclusive); the current day is still being billed.",
+  "reportSentence": "AWS Cost Explorer shows $26.60 of billed spend month-to-date for 2026-12-01 up to 2026-12-04 (exclusive); the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.",
   "askAi": {
     "type": "costs",
     "outcome": "answered",
@@ -112,6 +118,6 @@
       "asOf": "2026-12-03T00:30:00.000Z",
       "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete"
     },
-    "summary": "AWS Cost Explorer month-to-date spend (2026-12-01 through 2026-12-03): $26.60. The current day is still being billed."
+    "summary": "AWS Cost Explorer month-to-date spend (2026-12-01 through 2026-12-03): $26.60. The latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change."
   }
 }

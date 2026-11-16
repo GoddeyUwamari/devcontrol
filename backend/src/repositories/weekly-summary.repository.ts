@@ -524,7 +524,9 @@ export class WeeklySummaryRepository {
    * The trend is AWSCostService.fetchCostTrend() (the dashboard's source):
    * UnblendedCost by service, so credits and refunds are netted in, with each
    * category floored at $0 per day -- neither gross charges nor the net bill.
-   * A day Cost Explorer did not return is reported missing, never filled.
+   * A day Cost Explorer did not return, or has not reported yet (reportState
+   * 'not_reported', trend-lag-build.md), is reported missing, never filled
+   * and never $0.
    * No AWS connection makes every cost section not_connected and skips the
    * inventory estimate.
    */
@@ -538,7 +540,7 @@ export class WeeklySummaryRepository {
     let failure: unknown = null;
     try {
       const trend = await awsCostService.fetchCostTrend(organizationId, '30d');
-      trendByDay = new Map(trend.map(point => [point.date.slice(0, 10), point.total]));
+      trendByDay = new Map(trend.filter(point => point.reportState !== 'not_reported').map(point => [point.date.slice(0, 10), point.total]));
     } catch (error: any) {
       // AWSCostService.createForOrg() throws AWS_NOT_CONNECTED when the org has
       // no active AWS connection: nothing to query, not a failure.

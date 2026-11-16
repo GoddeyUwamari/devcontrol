@@ -453,7 +453,7 @@ describe('AI Reports prompt grounding', () => {
 
     expect(prompt).toContain('"provenance":"estimated"');
     expect(prompt).toContain('"basis":"estimated_monthly_run_rate"');
-    expect(prompt).toMatch(/### Month-over-month cost comparison\n\{"contractVersion":3,"state":"unavailable"[^\n]*"evidencePresent":false/);
+    expect(prompt).toMatch(/### Month-over-month cost comparison\n\{"contractVersion":5,"state":"unavailable"[^\n]*"evidencePresent":false/);
     expect(prompt).toMatch(/### Alert history \(past alerts\)\n[^\n]*"state":"not_built"/);
     expect(prompt).toMatch(/### CloudWatch alarms \(current state\)\n[^\n]*"state":"error"/);
     expect(prompt).toMatch(/never say there were no alerts during the period/);
