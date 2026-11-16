@@ -93,3 +93,17 @@ describe('a backend without reportState (rolling deploy): unchanged', () => {
     expect(screen.queryByTestId('cost-trend-updating-legend')).toBeNull()
   })
 })
+
+describe('review L-1: the "so far" amount has a thousands separator, as on Costs and Efficiency', () => {
+  it('an updating day of $1,234.50: "Still updating · $1,234.50 so far. …", the same string the Costs Spend Trend builds', async () => {
+    const { costsTrendTooltipLines } = await import('../../../app/(app)/costs/trend-chart-data')
+    open.index = 1
+    render(<CostTrendChart data={[
+      { date: '2026-11-12', compute: 900, storage: 0, database: 0, network: 0, other: 0, total: 900, lineItems: 8, reportState: 'final', provisional: false },
+      { date: '2026-11-13', compute: 1234.5, storage: 0, database: 0, network: 0, other: 0, total: 1234.5, lineItems: 8, reportState: 'updating', provisional: true },
+    ]} dateRange="7d" onDateRangeChange={() => {}} />)
+    const tip = await screen.findByText('Still updating · $1,234.50 so far. AWS Cost Explorer may still add charges.')
+    expect(tip).toBeInTheDocument()
+    expect(costsTrendTooltipLines({ reportState: 'updating', total: 1234.5 }, 'day')).toEqual([tip.textContent])
+  })
+})

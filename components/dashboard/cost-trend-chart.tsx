@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CHART_TICK } from '@/lib/chart-theme';
+import { formatUsdCents } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
@@ -129,7 +130,7 @@ export function CostTrendChart({
       return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
           <p className="text-ui font-semibold text-ink mb-1">{formatDate(label)}</p>
-          <p className="text-meta text-ink-muted m-0">{stillUpdatingTooltip(`$${soFar.toFixed(2)}`)}</p>
+          <p className="text-meta text-ink-muted m-0">{stillUpdatingTooltip(formatUsdCents(soFar))}</p>
         </div>
       );
     }

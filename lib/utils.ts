@@ -95,3 +95,12 @@ export function formatFullTimestamp(date: Date | string): string {
     hour12: true,
   });
 }
+
+/**
+ * US dollars to the cent with a thousands separator: "$1,234.56", "$0.06",
+ * "-$1.05" (the same USD_CENTS as formatSavingsCents). The one formatter behind the Costs pages' formatUsd and the
+ * Dashboard cost trend's "so far" amount (trend-lag review L-1).
+ */
+export function formatUsdCents(amount: number): string {
+  return USD_CENTS.format(amount)
+}

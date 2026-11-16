@@ -9,13 +9,11 @@
  * shown as $0.
  */
 import type { ContextSection, CostMonthOverMonthEvidence, CostMonthState, CostSpendEvidence } from '@/lib/types'
-import { annualizeMonthly, formatSavingsCurrency } from '@/lib/utils'
-
-const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+import { annualizeMonthly, formatSavingsCurrency, formatUsdCents } from '@/lib/utils'
 
 /** Cents precision, so a real sub-dollar amount never reads as "$0"; negatives (credits) keep their sign. */
 export function formatUsd(amount: number): string {
-  return USD.format(amount)
+  return formatUsdCents(amount)
 }
 
 /** A change amount with an explicit sign: "+$3.20", "-$1.05", "$0.00". */
