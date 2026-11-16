@@ -22,6 +22,9 @@
  * Placeholders only.
  */
 import awsRoutes, { HOME_REGION_FORBIDDEN_MESSAGE } from '../aws.routes';
+import nlQueryRoutes from '../nl-query.routes';
+import { NLQueryService } from '../../services/nl-query.service';
+import { ScanAlreadyRunningError } from '../../services/scan-session';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
 import { HOME_REGION_SCOPED_ISSUE_LIST } from '../../repositories/cost-recommendations.repository';
 import {
@@ -43,7 +46,10 @@ let discover: jest.SpyInstance;
 
 beforeAll(async () => {
   await ensureSharedFixtureTable(pool, 'aws_accounts');
-  await harness.listen((app) => app.use('/api/aws', awsRoutes));
+  await harness.listen((app) => {
+    app.use('/api/aws', awsRoutes);
+    app.use('/api/nl-query', nlQueryRoutes);
+  });
 });
 
 beforeEach(() => {
@@ -128,7 +134,7 @@ describe('PUT /api/aws/accounts/home-region: the change (T2)', () => {
       },
     }]);
     expect(discover).toHaveBeenCalledTimes(1);
-    expect(discover).toHaveBeenCalledWith(org.orgId);
+    expect(discover).toHaveBeenCalledWith(org.orgId, { onLeaseOutcome: expect.any(Function) });
   });
 
   it('every home-scoped issue is removed in the old region, and only those', async () => {
@@ -176,6 +182,61 @@ describe('PUT /api/aws/accounts/home-region: the change (T2)', () => {
     expect(metadata.removed_findings).toHaveLength(500);
     expect(metadata.removed_findings_truncated).toBe(true);
     expect(metadata.cost_findings_removed.total).toBe(503);
+  });
+});
+
+describe('scan_started says whether the follow-up scan actually started (review L-6)', () => {
+  it('another scan holds the lease: the change is made, scan_started is false', async () => {
+    const org = await connectedOrg();
+    discover.mockImplementation(async (orgId: string, options?: { onLeaseOutcome?: (o: 'started' | 'skipped') => void }) => {
+      options?.onLeaseOutcome?.('skipped');
+      throw new ScanAlreadyRunningError(orgId, org.accountId);
+    });
+    const res = await put(org, { region: 'us-west-2' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toMatchObject({ to: 'us-west-2', scan_started: false });
+    expect((await stateOf(org)).region).toBe('us-west-2');
+  });
+
+  it('the scan fails before its lease (e.g. AssumeRole): scan_started is false', async () => {
+    const org = await connectedOrg();
+    discover.mockRejectedValue(Object.assign(new Error('placeholder'), { name: 'AwsAssumeRoleFailedError' }));
+    expect((await (await put(org, { region: 'us-west-2' })).json()).data.scan_started).toBe(false);
+  });
+
+  it('the scan took the lease and is still running: scan_started is true, without waiting for the scan to end', async () => {
+    const org = await connectedOrg();
+    discover.mockImplementation((_orgId: string, options?: { onLeaseOutcome?: (o: 'started' | 'skipped') => void }) => {
+      options?.onLeaseOutcome?.('started');
+      return new Promise(() => undefined) as any;
+    });
+    const started = Date.now();
+    expect((await (await put(org, { region: 'us-west-2' })).json()).data.scan_started).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
+describe('Ask AI after a change (review L-5)', () => {
+  it("the organization's cached question parses are dropped on a change (every live NL service), and never on a refusal", async () => {
+    const org = await connectedOrg();
+    const invalidate = jest.spyOn(NLQueryService.prototype, 'invalidateOrganization');
+    expect((await put(org, { region: 'us-east-1' })).status).toBe(400);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect((await put(org, { region: 'us-west-2' })).status).toBe(200);
+    expect(invalidate).toHaveBeenCalledWith(org.orgId);
+    expect(invalidate.mock.calls.every(([orgId]) => orgId === org.orgId)).toBe(true);
+  });
+
+  it('a question after a change never returns the removed old-home findings', async () => {
+    const org = await connectedOrg();
+    await insertRec(org.orgId, { resource: 'i-hr-a1', issue: ISSUE_EC2_IDLE_INSTANCE, region: 'us-east-1', savings: 99 });
+    expect((await put(org, { region: 'us-west-2' })).status).toBe(200);
+    const res = await harness.sendAs(org.orgId, org.owner, 'POST', '/nl-query/execute', { query: 'how much can we save on idle instances?' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.data).toMatchObject({ outcome: 'not_supported', rows: [] });
+    expect(JSON.stringify(body)).not.toContain('i-hr-a1');
+    expect((await stateOf(org)).recs).toEqual([]);
   });
 });
 

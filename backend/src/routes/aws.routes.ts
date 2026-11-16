@@ -61,6 +61,7 @@ import {
   previewHomeRegionChange,
   readHomeRegionChange,
 } from '../services/home-region.service'
+import { invalidateNLQueryCacheForOrganization } from '../services/nl-query.service'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -842,7 +843,8 @@ async function checkAgainAdmitted(req: Request, res: Response, orgId: string) {
  * PUT /accounts/home-region { region }: the change, in one transaction under the
  * connection lock (home-region.service.ts). 200 with { from, to, source,
  * cost_findings_removed, scan_started }; every refusal changes nothing. A scan of
- * the new home region starts after commit.
+ * the new home region starts after commit; scan_started is true only when it took
+ * the scan lease (review L-6).
  */
 router.get('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req: Request, res: Response) => {
   res.set('Cache-Control', 'private, no-store')
@@ -880,16 +882,50 @@ router.put('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req
     console.error(`[aws/accounts/home-region PUT] org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
     return res.status(500).json({ success: false, code: 'HOME_REGION_CHANGE_FAILED' })
   }
-  // A scan of the new home region, as after a connect (HR-D15). Never awaited.
-  discoveryService.discoverAllResources(orgId).catch((err) => {
-    if (isScanAlreadyRunning(err)) {
-      console.log(`[HomeRegion] scan after the change skipped for org ${orgId}: a scan for this account is already running`)
-      return
-    }
-    console.error(`[HomeRegion] scan after the change failed for org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
-  })
-  return res.json({ success: true, data: { ...changed, scan_started: true } })
+  // No cached parse of this organization's questions outlives the change (review L-5).
+  invalidateNLQueryCacheForOrganization(orgId)
+  // A scan of the new home region, as after a connect (HR-D15). scan_started says
+  // whether it actually took the scan lease (review L-6).
+  const scanStarted = await startFollowUpScan(orgId)
+  return res.json({ success: true, data: { ...changed, scan_started: scanStarted } })
 })
+
+/** How long the PUT waits to learn whether its follow-up scan took the lease (review L-6). */
+export const HOME_REGION_SCAN_ADMISSION_WAIT_MS = 10_000
+
+/**
+ * Starts the scan after a home region change and resolves, at the latest after
+ * `waitMs`, with whether it actually started: true once it took the scan lease
+ * (or finished), false when another scan held the lease (skipped), when it failed
+ * before the lease (e.g. AssumeRole), or when that was not known within `waitMs`
+ * (logged; the scan itself goes on). The scan is never awaited to its end.
+ */
+function startFollowUpScan(orgId: string, waitMs = HOME_REGION_SCAN_ADMISSION_WAIT_MS): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const settle = (started: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(started)
+    }
+    const timer = setTimeout(() => {
+      console.warn(`[HomeRegion] scan after the change for org ${orgId}: not confirmed started within ${waitMs} ms`)
+      settle(false)
+    }, waitMs)
+    discoveryService
+      .discoverAllResources(orgId, { onLeaseOutcome: (outcome) => settle(outcome === 'started') })
+      .then(() => settle(true))
+      .catch((err) => {
+        if (isScanAlreadyRunning(err)) {
+          console.log(`[HomeRegion] scan after the change skipped for org ${orgId}: a scan for this account is already running`)
+        } else {
+          console.error(`[HomeRegion] scan after the change failed for org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+        }
+        settle(false)
+      })
+  })
+}
 
 /**
  * POST /accounts/home-region/proposal/dismiss: the owner keeps the current home

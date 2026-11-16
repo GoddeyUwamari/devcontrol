@@ -26,7 +26,7 @@ import { Pool } from 'pg';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import costOptimizationService from '../cost-optimization.service';
-import { LeaseTiming } from '../scan-session';
+import { LeaseTiming, isScanAlreadyRunning } from '../scan-session';
 import { DEFAULT_AWS_CALL_POLICY } from '../../utils/awsCallPolicy';
 import { ISSUE_EC2_IDLE_INSTANCE } from '../../config/optimization-rules';
 import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, refreshPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
@@ -162,7 +162,7 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 afterAll(async () => {
-  for (const table of ['cost_recommendations', 'aws_resources', 'aws_account_regions', 'resource_discovery_jobs', 'organization_feature_flags', 'account_security_findings', 'cost_analysis_runs']) {
+  for (const table of ['cost_recommendations', 'aws_resources', 'aws_account_regions', 'resource_discovery_jobs', 'organization_feature_flags', 'account_security_findings', 'cost_analysis_runs', 'aws_scan_leases']) {
     await pool.query(`DELETE FROM ${table} WHERE organization_id = ANY($1)`, [createdOrgIds]).catch(() => undefined);
   }
   await removePlaceholderAccounts(pool, createdOrgIds);
@@ -210,6 +210,31 @@ describe('T1: a us-west-2 home region, end to end through a scan (flag off)', ()
       // us-west-2: the scan's answer replaced its old row.
       { resource_id: 'i-hr-b2', aws_region: HOME },
     ]);
+  });
+});
+
+describe('the lease outcome a caller can wait for (review L-6)', () => {
+  it("a scan that takes the lease says 'started' once, before it ends", async () => {
+    const orgId = await insertOrg();
+    mockAws(HOME);
+    const outcomes: string[] = [];
+    await service().discoverAllResources(orgId, { onLeaseOutcome: (o) => outcomes.push(o) });
+    expect(outcomes).toEqual(['started']);
+  });
+
+  it("a scan that finds the lease held says 'skipped' and rejects with ScanAlreadyRunningError, writing nothing", async () => {
+    const orgId = await insertOrg();
+    mockAws(HOME);
+    await pool.query(
+      `INSERT INTO aws_scan_leases (organization_id, aws_account_id, scan_kind, holder, acquired_at, heartbeat_at, expires_at)
+       VALUES ($1, $2, 'discovery', 'other-worker', NOW(), NOW(), NOW() + interval '1 hour')`,
+      [orgId, ACCOUNT]
+    );
+    const outcomes: string[] = [];
+    const error = await service().discoverAllResources(orgId, { onLeaseOutcome: (o) => outcomes.push(o) }).catch((e) => e);
+    expect(isScanAlreadyRunning(error)).toBe(true);
+    expect(outcomes).toEqual(['skipped']);
+    expect((await pool.query(`SELECT count(*)::int AS n FROM resource_discovery_jobs WHERE organization_id = $1`, [orgId])).rows[0].n).toBe(0);
   });
 });
 
