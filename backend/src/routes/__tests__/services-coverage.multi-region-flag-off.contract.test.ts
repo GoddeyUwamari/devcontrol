@@ -1,10 +1,17 @@
 /**
- * Multi-region PR 2 contract: with multi_region_discovery OFF, GET /api/services/coverage
- * answers byte for byte what it answered before PR 2.
+ * Multi-region PR 2 contract, superseded ON PURPOSE by PR 3a for two additive keys only.
  *
- * The snapshot was recorded against the route as it was before PR 2 (commit 6252fe4e,
- * the PR 1b code), in a temporary worktree, and is never re-recorded by PR 2: a flag-off
- * difference fails it. The fixtures exercise everything PR 2 reads or adds: a region
+ * PR 2: with multi_region_discovery OFF, GET /api/services/coverage answered byte for byte
+ * what it answered before PR 2. That text (recorded against the PR 1b code, commit
+ * 6252fe4e, in a temporary worktree) is frozen in
+ * __fixtures__/services-coverage-flag-off.pr2.json and never re-recorded.
+ *
+ * PR 3a (founder decision, pr3-step1.md §C G7/G8) adds exactly two keys:
+ * not_enabled_regions (every organization) and home_only_coverage (only without
+ * multi_region). This suite proves that removing those two keys gives back the frozen
+ * PR 2 text exactly (deep-equal AND the same bytes, key order included), so every key and
+ * value that existed before is unchanged. The snapshot was re-recorded once, in one hunk,
+ * for the two keys. The fixtures exercise everything PR 2 reads or adds: a region
  * list with every status, codes outside the old allow-list (an access_denied_scp and a
  * Resource Explorer code a multi-region scan writes), a not-enabled opt-in region, a
  * region missing from the latest list, a scan in progress (held lease naming a running
@@ -20,6 +27,8 @@
  * Real route over an in-process HTTP server against live Postgres; only
  * authService.verifyToken is stubbed (role-gate harness). Placeholders only.
  */
+import fs from 'fs';
+import path from 'path';
 import servicesCoverageRoutes from '../services-coverage.routes';
 import servicesRoutes from '../services.routes';
 import { SCAN_KIND_DISCOVERY } from '../../services/scan-session';
@@ -144,18 +153,47 @@ afterAll(async () => {
   });
 });
 
-describe('GET /api/services/coverage with multi_region_discovery OFF is byte-identical to before PR 2', () => {
+/** The PR 2 flag-off response text for these fixtures, frozen (never re-recorded). */
+const PR2_TEXT = fs.readFileSync(path.join(__dirname, '__fixtures__', 'services-coverage-flag-off.pr2.json'), 'utf8');
+
+/** The keys PR 3a adds (the only exception to the PR 2 contract). */
+const PR3A_KEYS = ['not_enabled_regions', 'home_only_coverage'] as const;
+
+function withoutPr3aKeys(text: string): any {
+  const body = JSON.parse(text);
+  for (const key of PR3A_KEYS) delete body.coverage[key];
+  return body;
+}
+
+describe('GET /api/services/coverage with multi_region_discovery OFF: PR 2\'s text plus PR 3a\'s two additive keys only', () => {
   it('no flag row: the response text is the recorded one, byte for byte', async () => {
     expect(await coverageText(noRow)).toMatchSnapshot();
+  });
+
+  it('removing PR 3a\'s two keys gives back the frozen PR 2 text: every pre-existing key and value unchanged', async () => {
+    const body = withoutPr3aKeys(await coverageText(noRow));
+    expect(body).toEqual(JSON.parse(PR2_TEXT));
+    // The same bytes too: key order and number formatting unchanged.
+    expect(JSON.stringify(body)).toBe(PR2_TEXT);
+  });
+
+  it('the two keys, for these fixtures: the not-enabled ap-east-1 (not the region missing from the latest list), and home ok → 1 of 5', async () => {
+    const { coverage } = JSON.parse(await coverageText(noRow));
+    expect(coverage.not_enabled_regions).toEqual(['ap-east-1']);
+    expect(coverage.home_only_coverage).toEqual({ regions_total: 5, regions_checked: 1 });
+    expect(Object.keys(coverage).slice(-2)).toEqual([...PR3A_KEYS]);
   });
 
   it('a flag row that says OFF: exactly the same text as no row', async () => {
     expect(await coverageText(flagOff)).toBe(await coverageText(noRow));
   });
 
-  it('flag ON: removing its multi_region key leaves exactly the same text (additive only)', async () => {
+  it('flag ON: no home_only_coverage; removing multi_region and not_enabled_regions gives the PR 2 text (additive only)', async () => {
     const body = JSON.parse(await coverageText(flagOn));
+    expect('home_only_coverage' in body.coverage).toBe(false);
+    expect(body.coverage.not_enabled_regions).toEqual(body.coverage.multi_region.not_enabled_regions);
     delete body.coverage.multi_region;
-    expect(JSON.stringify(body)).toBe(await coverageText(noRow));
+    delete body.coverage.not_enabled_regions;
+    expect(JSON.stringify(body)).toBe(PR2_TEXT);
   });
 });

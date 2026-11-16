@@ -575,7 +575,9 @@ describe('review M-1: the scan described (id, status, times) and one overall cov
     await insertRegion(org.orgId, 'ap-south-1', { status: 'ok' });
     const mr = (await coverageOf(org)).multi_region;
     expect(mr.coverage_status).toBe('latest_scan_failed');
-    expect(mr.scan).toEqual({ id: failed, status: 'failed', started_at: SCAN_START, completed_at: '2026-03-02T10:10:00.000Z', regions_total: 3, regions_checked: 1 });
+    expect(mr.scan).toEqual({ id: failed, status: 'failed', started_at: SCAN_START, completed_at: '2026-03-02T10:10:00.000Z', regions_total: 3, regions_checked: 1,
+      // PR 3a (G6): the one region this scan checked (home, ok, no resources) is empty.
+      regions_with_resources: 0, regions_empty: 1, regions_zero_with_warnings: 0 });
     expect(mr.regions.map((r: any) => [r.region, r.result_of])).toEqual([[HOME, 'latest_scan'], ['ap-south-1', 'earlier_scan'], ['eu-west-1', 'earlier_scan']]);
   });
 
@@ -622,7 +624,9 @@ describe('review M-1: the scan described (id, status, times) and one overall cov
     await insertRegion(org.orgId, 'eu-west-1', { status: 'ok' });
     const mr = (await coverageOf(org)).multi_region;
     expect(mr.coverage_status).toBe('in_progress');
-    expect(mr.scan).toEqual({ id: running, status: 'running', started_at: SCAN_START, completed_at: null, regions_total: 2, regions_checked: 1 });
+    expect(mr.scan).toEqual({ id: running, status: 'running', started_at: SCAN_START, completed_at: null, regions_total: 2, regions_checked: 1,
+      // PR 3a (G6): only the region done in the running scan (home, ok, no resources) is split.
+      regions_with_resources: 0, regions_empty: 1, regions_zero_with_warnings: 0 });
   });
 
   it('unavailable: no scan has run, or no region list is stored', async () => {
@@ -789,6 +793,7 @@ describe('tenant isolation', () => {
     progress: null,
     region_warnings: [],
     region_warnings_complete: true,
+    region_warnings_unattributed: [],
   };
 
   it('by the explicit predicates (superuser): A sees none of B\'s regions, scan or resources', async () => {

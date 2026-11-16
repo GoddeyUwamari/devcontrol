@@ -597,19 +597,42 @@ async function listServices(
   };
 }
 
+/** aws_resources.region of a global resource (CloudFront): not a region. */
+export const GLOBAL_REGION = 'global';
+
+/**
+ * Where the needs-attention resources are (multi-region PR 3a, G1): over the SAME rows
+ * and the SAME predicate (attentionOf) as needs_attention, so the scope can never
+ * disagree with the count.
+ *   regions  how many distinct regions hold at least one needs-attention resource
+ *            ('global' and a null region are not regions);
+ *   global   how many needs-attention resources are global (CloudFront).
+ * A needs-attention resource with no recorded region is in neither number.
+ */
+export interface AttentionScope {
+  regions: number;
+  global: number;
+}
+
 /** /stats' numbers from one read of the inventory. Pure, so its parity can be tested. */
-export function serviceStatsFrom(rows: AttentionInputs[]) {
+export function serviceStatsFrom(rows: Array<AttentionInputs & { region?: string | null }>) {
   const findingsBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
   // The resources that need attention, by their priority_severity (resources, not findings).
   const attentionBySeverity: Record<PrioritySeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
   const attentionReasons = { with_finding: 0, with_cost_recommendation: 0, stopped_or_degraded: 0, failed: 0 };
   let needsAttention = 0;
+  const attentionRegions = new Set<string>();
+  let attentionGlobal = 0;
   for (const row of rows) {
     for (const finding of activeComplianceFindings(row.compliance_issues)) {
       if (finding.severity in findingsBySeverity) findingsBySeverity[finding.severity]++;
     }
     const { needs_attention, priority_severity, causes } = attentionOf(row);
-    if (needs_attention) needsAttention++;
+    if (needs_attention) {
+      needsAttention++;
+      if (row.region === GLOBAL_REGION) attentionGlobal++;
+      else if (typeof row.region === 'string' && row.region !== '') attentionRegions.add(row.region);
+    }
     if (needs_attention && priority_severity) attentionBySeverity[priority_severity]++;
     if (causes.finding) attentionReasons.with_finding++;
     if (causes.cost_recommendation) attentionReasons.with_cost_recommendation++;
@@ -624,6 +647,7 @@ export function serviceStatsFrom(rows: AttentionInputs[]) {
     findings_by_severity: findingsBySeverity,
     attention_reasons: attentionReasons,
     attention_by_severity: attentionBySeverity,
+    attention_scope: { regions: attentionRegions.size, global: attentionGlobal } as AttentionScope,
   };
 }
 
@@ -734,7 +758,7 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
          ) AS facets
        )
        SELECT CASE WHEN inv.rn IS NULL OR inv.rn = 1 THEN facets.facets END AS facets,
-              inv.id, inv.type, inv.raw_status, inv.compliance_issues, inv.cost_recommendations
+              inv.id, inv.type, inv.raw_status, inv.compliance_issues, inv.cost_recommendations, inv.region
          FROM facets LEFT JOIN inv ON true`,
       values
     );
@@ -759,6 +783,7 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response): Pro
         attention_reasons: stats.attention_reasons,
         aws_accounts_connected: awsAccountsConnected,
         attention_by_severity: stats.attention_by_severity,
+        attention_scope: stats.attention_scope,
         ownership: facets.ownership,
         unknown_by_type: facets.unknown_by_type,
         regions: facets.regions,

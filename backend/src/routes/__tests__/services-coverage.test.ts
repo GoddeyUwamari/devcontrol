@@ -236,6 +236,8 @@ const M5C_REGIONS_UNKNOWN = { listed_at: null, stale: false };
 // with them removed (and is byte-identical to its c8b6a1c form); they are
 // asserted on their own.
 const M5C_KEYS = ['region_status', 'scan_in_progress', 'last_completed_scan'] as const;
+/** The keys multi-region PR 3a adds (G7, G8): checked on their own (services-coverage.pr3a.test.ts and below). */
+const PR3A_KEYS = ['not_enabled_regions', 'home_only_coverage'] as const;
 const NO_REGION_DATA = { region_status: [], scan_in_progress: null };
 
 /** A coverage response body, as JSON. */
@@ -247,7 +249,7 @@ interface RegionJson { region: string; home: boolean; status: string; stale: boo
 /** The response as it was before M5c: the added keys removed. */
 function preM5c(coverage: CoverageJson) {
   const old: CoverageJson = { ...coverage, scope: { ...coverage.scope, enabled_regions: { ...coverage.scope.enabled_regions } } };
-  for (const key of M5C_KEYS) delete old[key];
+  for (const key of [...M5C_KEYS, ...PR3A_KEYS]) delete old[key];
   delete old.scope.enabled_regions.listed_at;
   delete old.scope.enabled_regions.stale;
   return old;
@@ -356,6 +358,8 @@ describe('no AWS account', () => {
     const org = await harness.buildOrg();
     const coverage = await coverageOf(org);
     expect(m5c(coverage)).toEqual({ enabled_regions: M5C_REGIONS_UNKNOWN, ...NO_REGION_DATA, last_completed_scan: null });
+    // PR 3a: no account, so no list and no "N of M".
+    expect({ not_enabled_regions: coverage.not_enabled_regions, home_only_coverage: coverage.home_only_coverage }).toEqual({ not_enabled_regions: [], home_only_coverage: null });
     expect(preM5c(coverage)).toEqual({
       account: NOT_CONNECTED,
       scope: {
@@ -396,6 +400,8 @@ describe('an account but no scan yet', () => {
     await insertAccount(org.orgId, 'eu-west-1');
     const coverage = await coverageOf(org);
     expect(m5c(coverage)).toEqual({ enabled_regions: M5C_REGIONS_UNKNOWN, ...NO_REGION_DATA, last_completed_scan: null });
+    // PR 3a: connected, but no region list stored yet: no "N of M".
+    expect({ not_enabled_regions: coverage.not_enabled_regions, home_only_coverage: coverage.home_only_coverage }).toEqual({ not_enabled_regions: [], home_only_coverage: null });
     expect(preM5c(coverage)).toEqual({
       account: { connected: true, status: 'active', home_region: 'eu-west-1' },
       scope: {
