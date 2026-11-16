@@ -96,6 +96,9 @@ const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
   ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
 ]);
 
+/** The same issues as a list, for statements that take them as an array (home region change, HR-D11). */
+export const HOME_REGION_SCOPED_ISSUE_LIST: readonly string[] = [...HOME_REGION_SCOPED_ISSUES].sort();
+
 /**
  * Inserts one ACTIVE recommendation, unconditionally (no occurrence-lifecycle
  * suppression), and returns how many rows it inserted. ON CONFLICT DO NOTHING

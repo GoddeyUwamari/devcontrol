@@ -304,8 +304,12 @@ function nonTestSources(): Array<{ file: string; text: string }> {
 describe('static', () => {
   const sources = nonTestSources();
 
-  it('no non-test backend code writes aws_accounts with UPDATE (D1 never auto-disconnects)', () => {
-    expect(sources.filter((s) => /UPDATE\s+(public\.)?aws_accounts\b/i.test(s.text)).map((s) => s.file)).toEqual([]);
+  it('no non-test backend code writes aws_accounts with UPDATE (D1 never auto-disconnects), except the owner\'s home region change, which sets region alone', () => {
+    const writers = sources.filter((s) => /UPDATE\s+(public\.)?aws_accounts\b/i.test(s.text));
+    expect(writers.map((s) => s.file)).toEqual(['services/home-region.service.ts']);
+    // Home region HR-1: one statement, and it sets the region only (never status).
+    const sets = [...writers[0].text.matchAll(/UPDATE\s+(?:public\.)?aws_accounts\s+SET\s+([^`]*?)\s+WHERE/gi)].map((m) => m[1].trim());
+    expect(sets).toEqual(['region = $4']);
   });
 
   it('every AWS_NOT_CONNECTED matcher is a prefix or substring match on the message', () => {

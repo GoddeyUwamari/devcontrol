@@ -40,6 +40,12 @@ import { ConnectCheckSlots, type ConnectSlotRefusal } from '../services/connect-
 import { releaseRequestConnection } from '../middleware/request-lifecycle'
 import { buildTrustPolicy } from '../services/customer-role-trust-policy'
 import { launchStackFor } from '../services/launch-stack'
+import {
+  REFUSAL_RESPONSES as HOME_REGION_REFUSALS,
+  changeHomeRegion,
+  isHomeRegionChangeRefused,
+  previewHomeRegionChange,
+} from '../services/home-region.service'
 
 const router = Router()
 const discoveryService = new AWSResourceDiscoveryService(pool)
@@ -74,6 +80,10 @@ function requireCurrentOwnerWith(forbiddenMessage: string) {
 }
 
 const requireCurrentOwner = requireCurrentOwnerWith('Only an organization owner can connect an AWS account')
+
+/** The home region is changed by the owner only (home region HR-D4; wording HR-S15). */
+export const HOME_REGION_FORBIDDEN_MESSAGE = 'Only an organization owner can change the home region.'
+const requireCurrentOwnerForHomeRegion = requireCurrentOwnerWith(HOME_REGION_FORBIDDEN_MESSAGE)
 
 /** Check again is owner-only too (B4, approved copy). */
 export const CHECK_AGAIN_FORBIDDEN_MESSAGE = 'Only an organization owner can check the AWS connection again.'
@@ -754,6 +764,69 @@ async function checkAgainAdmitted(req: Request, res: Response, orgId: string) {
     data: { ...connectionChecksView(row, now), checkAgain: { availableAt: checkAgainAvailableAt(row?.check_again_started_at, now) } },
   })
 }
+
+/**
+ * Home region (HR-1, home-region-step1.md §D). Owner only (HR-D4). Codes only in
+ * every answer: the change dialog (multi-region PR 3) owns the words.
+ *
+ * GET /accounts/home-region[?region=<code>]: what the dialog shows. The current
+ * home region, the stored region list with what can be chosen, whether a scan is
+ * running, and for `region`: whether a change would be accepted now, how many
+ * cost findings of the old home region would leave the totals (per issue), and,
+ * with multi-region off, how many resources stay listed there, no longer scanned.
+ * Reads only.
+ *
+ * PUT /accounts/home-region { region }: the change, in one transaction under the
+ * connection lock (home-region.service.ts). 200 with { from, to, source,
+ * cost_findings_removed, scan_started }; every refusal changes nothing. A scan of
+ * the new home region starts after commit.
+ */
+router.get('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
+  const region = typeof req.query.region === 'string' ? req.query.region : undefined
+  try {
+    const preview = await previewHomeRegionChange(req.user!.organizationId, region)
+    return res.json({ success: true, data: preview })
+  } catch (err: unknown) {
+    if (isHomeRegionChangeRefused(err)) {
+      const response = HOME_REGION_REFUSALS[err.refusal]
+      return res.status(response.status).json({ success: false, code: response.code })
+    }
+    console.error(`[aws/accounts/home-region GET] org ${req.user!.organizationId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_UNAVAILABLE' })
+  }
+})
+
+router.put('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'private, no-store')
+  const orgId = req.user!.organizationId
+  const region = req.body?.region
+  if (typeof region !== 'string') {
+    return res.status(400).json({ success: false, code: HOME_REGION_REFUSALS.invalid_region.code })
+  }
+  // The change uses connections of its own (it may wait up to 15 s for the connection lock).
+  releaseRequestConnection(res)
+  let changed: Awaited<ReturnType<typeof changeHomeRegion>>
+  try {
+    changed = await changeHomeRegion({ organizationId: orgId, actorId: req.user!.userId, to: region, request: auditRequestContext(req) })
+  } catch (err: unknown) {
+    if (isHomeRegionChangeRefused(err)) {
+      const response = HOME_REGION_REFUSALS[err.refusal]
+      return res.status(response.status).json({ success: false, code: response.code })
+    }
+    console.error(`[aws/accounts/home-region PUT] org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+    return res.status(500).json({ success: false, code: 'HOME_REGION_CHANGE_FAILED' })
+  }
+  // A scan of the new home region, as after a connect (HR-D15). Never awaited.
+  discoveryService.discoverAllResources(orgId).catch((err) => {
+    if (isScanAlreadyRunning(err)) {
+      console.log(`[HomeRegion] scan after the change skipped for org ${orgId}: a scan for this account is already running`)
+      return
+    }
+    console.error(`[HomeRegion] scan after the change failed for org ${orgId}:`, err instanceof Error ? err.name : 'unknown error')
+  })
+  return res.json({ success: true, data: { ...changed, scan_started: true } })
+})
 
 // GET /api/aws/accounts
 // Returns only the accounts belonging to the calling org. external_id is
