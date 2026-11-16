@@ -1,0 +1,45 @@
+{
+  "dashboardCard": {
+    "label": "Month-to-Date Spend",
+    "value": "—",
+    "caption": "Not available · no AWS Cost Explorer data or inventory estimate",
+    "previousMonth": null,
+    "evidence": {
+      "source": "Not available · no AWS Cost Explorer data or inventory estimate",
+      "comparison": "Month-over-month not available"
+    }
+  },
+  "costsMonthToDate": {
+    "label": "Month-to-Date Spend",
+    "value": "—",
+    "sub": "Not available · no AWS Cost Explorer data or inventory estimate",
+    "amount": null,
+    "provenance": null
+  },
+  "byTeam": {
+    "label": "Month-to-Date Spend",
+    "value": "—",
+    "sub": "Not available · no AWS Cost Explorer data or inventory estimate",
+    "amount": null,
+    "provenance": null
+  },
+  "servicesTile": {
+    "kind": "unavailable"
+  },
+  "infrastructureSpendTile": {
+    "key": "spend",
+    "label": "Spend this month",
+    "value": "Cost data not available yet",
+    "captions": [
+      [
+        "no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate"
+      ]
+    ]
+  },
+  "infrastructureCostByService": {
+    "status": "unavailable",
+    "sub": null,
+    "rows": [],
+    "unavailable": "Cost by service isn't available: no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate"
+  }
+}

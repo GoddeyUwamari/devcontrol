@@ -13,7 +13,7 @@ import { formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso } from '@/lib/scan-time'
 import { scanLine } from '../security/overview/securityModel'
 import { latestAttempt } from '../services/regionCoverage'
-import { describeServicesSpend } from '../services/SummaryTiles'
+import { billedThroughInPeriod, NO_BILLED_DAYS_YET, shortDay } from '../costs/cost-display'
 
 // ── Header ──
 
@@ -79,7 +79,7 @@ export function serviceStatusView(health: Pick<SystemHealth, 'status' | 'lastUpd
   return { state: 'checking', value: 'Checking…', caption: SERVICE_STATUS_COPY.checking, color: 'var(--text-secondary)' }
 }
 
-// ── Data freshness (DB-D6, DB-D9, DB-D10) ──
+// ── Data freshness (DAY1-D8, DB-D9, DB-D10) ──
 
 export interface FreshnessSegment { key: 'costs' | 'resources' | 'alerts' | 'service'; label: string; text: string }
 
@@ -89,8 +89,12 @@ export const SCAN_CADENCE = 'every 6 hours'
 /**
  * One segment per source that has a time:
  * - Costs: billed AWS Cost Explorer month to date only; "billed through" is
- *   finishedThrough as-is (DB-D6), "refreshed" the Cost Explorer read (asOf).
- *   No cadence: the 4-hour cache is not a schedule.
+ *   Cost Explorer's own evidence (monthState.billedThrough) inside the current
+ *   period (DAY1-D8, which replaces DB-D6's calendar finishedThrough); "no
+ *   billed days yet this month" only in the month state no_billed_days_yet;
+ *   any other missing evidence leaves the part out (F-1, as the Services
+ *   tile). "refreshed" is the Cost Explorer read (asOf). No cadence: the
+ *   4-hour cache is not a schedule.
  * - Resources and security: the last finished scan, plus "every 6 hours"
  *   unless the region list is stale or the latest attempt didn't finish (DB-D10).
  * - Alerts: Resource checks' CloudWatch capturedAt, once that section has loaded (DB-D9).
@@ -106,12 +110,24 @@ export function dataFreshnessSegments(i: {
 }): FreshnessSegment[] {
   const segments: FreshnessSegment[] = []
 
-  const spend = describeServicesSpend({ loading: false, error: i.costSummaryError, summary: i.costSummary })
-  if (spend.kind === 'billed') {
-    const through = spend.notes.find((n) => n.startsWith('billed through')) ?? null
+  // DAY1-D8 (founder, 2026-11-15; replaces DB-D6): "billed through" is only
+  // Cost Explorer's evidence inside the current period, never the calendar
+  // finishedThrough (a day of the previous month on days 1-2). "No billed days
+  // yet this month" only when the backend's month state says so (F-1,
+  // founder 2026-11-15). Evidence missing for any other reason (the daily
+  // request failed, a backend without a month state, a stale daily cache) is
+  // not "no billed days": the part is left out, as on the Services tile.
+  const section = i.costSummary?.spend
+  const billed = !i.costSummaryError && !!section?.data && (section.state === 'available' || section.state === 'partial')
+    && section.provenance === 'actual' && section.data.basis === 'billed_month_to_date'
+  if (billed) {
+    const billedThrough = billedThroughInPeriod(section)
+    const noBilledDays = section?.data?.monthState?.state === 'no_billed_days_yet'
+    const part = billedThrough ? `billed through ${shortDay(billedThrough)}` : noBilledDays ? NO_BILLED_DAYS_YET : null
     const refreshed = formatLocalWhen(i.costSummary?.spend.asOf, i.now)
-    if (through || refreshed) {
-      const source = `AWS Cost Explorer${through ? `, ${through}` : ''}`
+    // A source with no time at all (no evidence, no Cost Explorer read time) still has no segment.
+    if (billedThrough || refreshed) {
+      const source = `AWS Cost Explorer${part ? `, ${part}` : ''}`
       segments.push({ key: 'costs', label: 'Costs', text: refreshed ? `${source} · refreshed ${refreshed}` : source })
     }
   }

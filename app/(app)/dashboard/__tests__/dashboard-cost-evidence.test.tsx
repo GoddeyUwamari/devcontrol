@@ -162,8 +162,8 @@ async function spendCardEvidenceText(expectedValue: string) {
 async function gateInputsSettled() {
   await waitFor(() => {
     expect(client.getQueryState(['aws-accounts', 'org-test'])?.status).not.toBe('pending')
-    expect(client.getQueryState(['platform-dashboard-stats', 'org-test'])?.status).toBe('success')
-    expect(client.getQueryState(['platform-cost-summary', 'org-test'])?.status).not.toBe('pending')
+    expect(client.getQueryState(['platform-dashboard-stats', 'org-test', new Date().toISOString().slice(0, 10)])?.status).toBe('success')
+    expect(client.getQueryState(['platform-cost-summary', 'org-test', new Date().toISOString().slice(0, 10)])?.status).not.toBe('pending')
   })
 }
 
@@ -559,8 +559,8 @@ describe('while the accounts request is unresolved', () => {
 
     // The stats and the cost evidence have settled; only the accounts are outstanding.
     await waitFor(() => {
-      expect(client.getQueryState(['platform-dashboard-stats', 'org-test'])?.status).toBe('success')
-      expect(client.getQueryState(['platform-cost-summary', 'org-test'])?.status).not.toBe('pending')
+      expect(client.getQueryState(['platform-dashboard-stats', 'org-test', new Date().toISOString().slice(0, 10)])?.status).toBe('success')
+      expect(client.getQueryState(['platform-cost-summary', 'org-test', new Date().toISOString().slice(0, 10)])?.status).not.toBe('pending')
     })
     expect(client.getQueryState(['aws-accounts', 'org-test'])?.status).toBe('pending')
     expect(screen.queryByTestId('aws-connection-line')).not.toBeInTheDocument()

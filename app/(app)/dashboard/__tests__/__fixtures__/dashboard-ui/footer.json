@@ -2,7 +2,7 @@
   "every source": [
     "Data freshness {class=text-label text-ink}",
     "Costs: {color=var(--text-secondary) class=text-ink}",
-    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
+    "AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
     "Resources and security: {color=var(--text-secondary) class=text-ink}",
     "last scan today, 6:02 PM · every 6 hours {color=var(--text-secondary) class=text-meta}",
     "Alerts: {color=var(--text-secondary) class=text-ink}",
@@ -13,7 +13,7 @@
   "coverage stale": [
     "Data freshness {class=text-label text-ink}",
     "Costs: {color=var(--text-secondary) class=text-ink}",
-    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
+    "AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
     "Resources and security: {color=var(--text-secondary) class=text-ink}",
     "last scan today, 6:02 PM {color=var(--text-secondary) class=text-meta}",
     "Alerts: {color=var(--text-secondary) class=text-ink}",
@@ -24,7 +24,7 @@
   "last scan attempt failed": [
     "Data freshness {class=text-label text-ink}",
     "Costs: {color=var(--text-secondary) class=text-ink}",
-    "AWS Cost Explorer, billed through Nov 10 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
+    "AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM {color=var(--text-secondary) class=text-meta}",
     "Resources and security: {color=var(--text-secondary) class=text-ink}",
     "last scan today, 6:02 PM {color=var(--text-secondary) class=text-meta}",
     "Alerts: {color=var(--text-secondary) class=text-ink}",

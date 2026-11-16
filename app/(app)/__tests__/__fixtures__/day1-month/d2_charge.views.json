@@ -1,0 +1,68 @@
+{
+  "dashboardCard": {
+    "label": "Month-to-Date Spend",
+    "value": "$13.30",
+    "caption": "Dec 1–2 (UTC) · Actual · AWS Cost Explorer · latest days still updating",
+    "previousMonth": "November (UTC): $399.00",
+    "evidence": {
+      "source": "Dec 1–2 (UTC) · Actual · AWS Cost Explorer · latest days still updating",
+      "comparison": "No comparison until a day of this month has finished reporting · AWS Cost Explorer is still reporting the latest days"
+    }
+  },
+  "costsMonthToDate": {
+    "label": "Month-to-Date Spend",
+    "value": "$13.30",
+    "sub": "Dec 1–2 (UTC) · Actual · AWS Cost Explorer · latest days still updating",
+    "amount": 13.3,
+    "provenance": "actual"
+  },
+  "byTeam": {
+    "label": "Month-to-Date Spend",
+    "value": "$13.30",
+    "sub": "Dec 1–2 (UTC) · Actual · AWS Cost Explorer · latest days still updating",
+    "amount": 13.3,
+    "provenance": "actual"
+  },
+  "servicesTile": {
+    "kind": "billed",
+    "value": "$13.30",
+    "notes": [
+      "whole account",
+      "billed, from Cost Explorer",
+      "latest days still updating"
+    ]
+  },
+  "infrastructureSpendTile": {
+    "key": "spend",
+    "label": "Spend this month",
+    "value": "$13.30",
+    "captions": [
+      [
+        "whole account · billed, from Cost Explorer · latest days still updating"
+      ],
+      [
+        "Cost Explorer, as of ",
+        {
+          "iso": "2026-12-02T18:00:00.000Z"
+        }
+      ]
+    ]
+  },
+  "infrastructureCostByService": {
+    "status": "ready",
+    "sub": "This month, billed",
+    "rows": [
+      {
+        "service": "Amazon Elastic Compute Cloud - Compute",
+        "amount": "$12.63",
+        "share": 94.96240601503759
+      },
+      {
+        "service": "Amazon Simple Storage Service",
+        "amount": "$0.67",
+        "share": 5.037593984962406
+      }
+    ],
+    "unavailable": null
+  }
+}

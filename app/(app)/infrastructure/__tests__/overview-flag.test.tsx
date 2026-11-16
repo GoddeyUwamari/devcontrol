@@ -25,7 +25,15 @@ vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService:
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: { getAll: vi.fn().mockResolvedValue([]), getStats: vi.fn().mockResolvedValue({ totalPotentialSavings: 0 }), getActiveCount: vi.fn().mockResolvedValue(0) },
 }))
-vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getDashboardStats: vi.fn().mockResolvedValue({ monthlyAwsCost: 0 }) } }))
+vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: {
+  getDashboardStats: vi.fn().mockResolvedValue({ monthlyAwsCost: 0 }),
+  getCostSummary: vi.fn().mockResolvedValue({
+    spend: { state: 'unavailable', source: 'AWS Cost Explorer', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
+    monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
+  }),
+} }))
+// The legacy page reads the organization for its org- and UTC-day-keyed cost cache (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 vi.mock('@/lib/services/aws-services.service', () => ({ default: { getStats: vi.fn().mockResolvedValue({ total: 0, healthy: 0, needs_attention: 0 }), discoverServices: vi.fn() } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 

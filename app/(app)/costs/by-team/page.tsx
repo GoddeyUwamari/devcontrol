@@ -11,15 +11,16 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
-import { platformStatsService } from '@/lib/services/platform-stats.service'
+import { useAuth } from '@/lib/contexts/auth-context'
+import { useCostSummary } from '@/lib/hooks/useCostSummary'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
-import type { PlatformDashboardStats } from '@/lib/types'
+
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK } from '@/lib/chart-theme'
 import { annualizeMonthly } from '@/lib/utils'
-import { describeStatsSpend } from '../cost-display'
+import { describeSpend } from '../cost-display'
 import { demoAttributionCsv, demoAttributionCsvFilename } from './demo-attribution-csv'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
@@ -90,11 +91,11 @@ export default function CostsByTeamPage() {
   // infrastructure_resources, which discovery never fills, so every team read $0
   // next to a real total. The breakdown below is demo data only.
   //
-  // The spend card reads the same figure Dashboard/costs/efficiency use for live
-  // spend, labeled by its costSource: an inventory estimate is never called spend.
-  const { data: platformStats, isLoading: statsLoading, isError: statsError } = useQuery<PlatformDashboardStats>({
-    queryKey: ['platform-dashboard-stats'],
-    queryFn: platformStatsService.getDashboardStats,
+  // The spend card reads the same cost summary the Dashboard, Costs and
+  // Efficiency use (month-to-date spend with its month state, DAY1-D12): an
+  // inventory estimate is never called spend, and no billed days yet is never $0.
+  const { organization } = useAuth()
+  const { data: costSummary, isLoading: summaryLoading, isError: summaryError } = useCostSummary(organization?.id, {
     staleTime: 4 * 60 * 60 * 1000, gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false, refetchOnMount: false, retry: false,
     enabled: !isDemoActive && entitled,
@@ -113,7 +114,7 @@ export default function CostsByTeamPage() {
   const data = isDemoActive ? DEMO_DATA : null
   const totalCost = data?.total_monthly_cost ?? 0
   const isAwsConnected = isDemoActive || awsConnection?.connection === 'connected'
-  const spend = describeStatsSpend(platformStats, { isLoading: statsLoading, isError: statsError })
+  const spend = describeSpend(costSummary?.spend, { isLoading: summaryLoading, isError: summaryError })
 
   if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
   if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />

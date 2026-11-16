@@ -9,6 +9,8 @@
  * Same mocking harness as infrastructure-demo-fallback.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 import { render, screen, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { readFileSync } from 'node:fs'

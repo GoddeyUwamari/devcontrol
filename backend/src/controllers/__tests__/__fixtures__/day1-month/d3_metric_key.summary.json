@@ -1,0 +1,56 @@
+{
+  "success": true,
+  "data": {
+    "spend": {
+      "state": "unavailable",
+      "source": "AWS Cost Explorer",
+      "provenance": null,
+      "asOf": null,
+      "scope": null,
+      "period": null,
+      "completeness": null,
+      "coverage": null,
+      "reason": "no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate",
+      "derivedFrom": null,
+      "data": null,
+      "retrievedAt": "2026-12-03T00:30:00.000Z",
+      "freshness": null,
+      "classification": null,
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthOverMonth": {
+      "state": "unavailable",
+      "source": "DevControl month-over-month comparison",
+      "provenance": null,
+      "asOf": null,
+      "scope": null,
+      "period": null,
+      "completeness": null,
+      "coverage": null,
+      "reason": "cannot be calculated: AWS Cost Explorer daily trend: not available",
+      "derivedFrom": [
+        {
+          "source": "AWS Cost Explorer daily trend",
+          "state": "unavailable",
+          "provenance": null,
+          "scope": null,
+          "period": null,
+          "asOf": null
+        }
+      ],
+      "data": null,
+      "retrievedAt": "2026-12-03T00:30:00.000Z",
+      "freshness": null,
+      "classification": null,
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthStateReason": {
+      "code": "cost_metric_missing",
+      "text": "AWS Cost Explorer has no usable result (the Cost Explorer response did not include the expected cost metric)"
+    }
+  }
+}

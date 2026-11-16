@@ -227,3 +227,88 @@ describe('getMonthlySpendWithFallback: any Cost Explorer success is actual', () 
     await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated' });
   });
 });
+
+describe('the month state (day1-step1.md, cost-month-state.ts)', () => {
+  it('2026-12-01T00:30Z, nothing reported: monthState no_billed_days_yet with a null amount', async () => {
+    at('2026-12-01T00:30:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => ceLedgerResponse(command.input, '2026-11-30'));
+    const costs = await service.fetchMonthlyCosts(ORG);
+    expect(costs.total).toBe(0);
+    expect(costs.monthState).toMatchObject({
+      state: 'no_billed_days_yet', amount: null, amountUsable: false, lineItems: 0,
+      period: { month: '2026-12', start: '2026-12-01', endExclusive: '2026-12-02', calendar: 'UTC' },
+      asOf: costs.fetchedAt, previousMonth: { month: '2026-11', amount: expect.closeTo(13.3 * 30, 6) },
+    });
+  });
+
+  it('day 1, Cost Explorer leaves out the empty month but answers the previous one: no billed days yet, not an error', async () => {
+    at('2026-12-01T00:30:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => {
+      const r = ceLedgerResponse(command.input, '2026-11-30');
+      return { ...r, ResultsByTime: r.ResultsByTime.filter((x) => x.TimePeriod.Start !== '2026-12-01') };
+    });
+    const costs = await service.fetchMonthlyCosts(ORG);
+    expect(costs.monthState).toMatchObject({ state: 'no_billed_days_yet', amount: null, reason: { code: 'no_current_month_result' } });
+  });
+
+  it('day 1, Cost Explorer answers neither month: an error, never $0', async () => {
+    at('2026-12-01T00:30:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => ({ ...ceLedgerResponse(command.input, '2026-11-30'), ResultsByTime: [] }));
+    await expect(service.fetchMonthlyCosts(ORG)).rejects.toThrow('no result for the current month');
+  });
+
+  it('day 3: month to date, and the month state never outlives its UTC day (the cache key rolls)', async () => {
+    at('2026-12-02T23:59:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => ceLedgerResponse(command.input, '2026-12-01'));
+    expect((await service.fetchMonthlyCosts(ORG)).monthState?.state).toBe('latest_days_updating');
+    at('2026-12-03T00:01:00Z');
+    expect((await service.fetchMonthlyCosts(ORG)).monthState).toMatchObject({ state: 'month_to_date', amount: expect.closeTo(13.3, 6) });
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(2);
+  });
+
+  it('trend points carry lineItems and provisional: an unreported provisional day is not a measured $0', async () => {
+    at('2026-12-03T00:30:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => ceLedgerResponse(command.input, '2026-12-01'));
+    const points = await service.fetchCostTrend(ORG, '7d');
+    const byDate = Object.fromEntries(points.map((p) => [p.date, { lineItems: p.lineItems, provisional: p.provisional }]));
+    expect(byDate['2026-12-01']).toEqual({ lineItems: 2, provisional: false });
+    expect(byDate['2026-12-02']).toEqual({ lineItems: 0, provisional: true });
+    expect(byDate['2026-12-03']).toEqual({ lineItems: 0, provisional: true });
+  });
+
+  it('6mo on day 1: the current month point has no line items and is provisional', async () => {
+    at('2026-12-01T00:30:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => ceLedgerResponse(command.input, '2026-11-30'));
+    const points = await service.fetchCostTrend(ORG, '6mo');
+    expect(points.at(-1)).toMatchObject({ date: '2026-12-01', lineItems: 0, provisional: true });
+    expect(points.at(-2)).toMatchObject({ date: '2026-11-01', lineItems: 2, provisional: true });
+    expect(points.at(-3)).toMatchObject({ date: '2026-10-01', provisional: false });
+  });
+});
+
+describe('a Cost Explorer group without the requested metric is never $0 (DAY1-D17)', () => {
+  const renamedMetric = (command: Sent) => {
+    const r = ceLedgerResponse(command.input, '2026-11-11');
+    return { ...r, ResultsByTime: r.ResultsByTime.map((x) => ({ ...x, Groups: x.Groups.map((g) => ({ ...g, Metrics: { UNBLENDED_COST: g.Metrics.UnblendedCost } })) })) };
+  };
+
+  it('month to date: the read fails with cost_metric_missing, and nothing is cached', async () => {
+    at('2026-11-12T12:00:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => renamedMetric(command));
+    await expect(service.fetchMonthlyCosts(ORG)).rejects.toMatchObject({ code: 'cost_metric_missing' });
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => ceLedgerResponse(command.input, '2026-11-11'));
+    await expect(service.fetchMonthlyCosts(ORG)).resolves.toMatchObject({ total: expect.closeTo(13.3 * 11, 6) });
+  });
+
+  it('trend: the read fails with cost_metric_missing', async () => {
+    at('2026-11-12T12:00:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => renamedMetric(command));
+    await expect(service.fetchCostTrend(ORG, '7d')).rejects.toMatchObject({ code: 'cost_metric_missing' });
+  });
+
+  it('getMonthlySpendWithFallback: falls back to the estimate, never "$0 actual"', async () => {
+    at('2026-11-12T12:00:00Z');
+    mockCostExplorerSend.mockImplementation(async (command: Sent) => renamedMetric(command));
+    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated' });
+  });
+});

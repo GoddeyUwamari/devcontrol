@@ -1,0 +1,50 @@
+{
+  "modelSpendSection": {
+    "state": "unavailable",
+    "reason": "no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate",
+    "data": null
+  },
+  "summaryFacts": [
+    "Cloud spend: not available (no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate). Do not describe spend as $0 or unchanged."
+  ],
+  "chatContext": [
+    "Cost data:",
+    "- Status: Not available",
+    "- Source: none",
+    "- As of: unknown",
+    "- AWS Cost Explorer status: Not available (the Cost Explorer response did not include the expected cost metric)",
+    "- Spend: not available (no Cost Explorer result and no inventory estimate) -- this is missing data, not a zero amount"
+  ],
+  "chatFallback": [
+    "**🔍 What's happening**",
+    "",
+    "I don't have cost data available for this account right now — there's no AWS Cost Explorer result and no resource-inventory estimate could be computed.",
+    "",
+    "**✅ Recommended actions**",
+    "",
+    "1. Confirm an AWS account is connected and Cost Explorer is enabled for it",
+    "2. Try again shortly, or check your AWS Cost Explorer directly for current spend",
+    "",
+    "*Note: AI service temporarily unavailable - this is a simplified analysis.*"
+  ],
+  "reportSentence": "Cloud spend is not available: no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate.",
+  "askAi": {
+    "type": "costs",
+    "outcome": "unavailable",
+    "rows": [],
+    "columns": [
+      "AWS Service",
+      "Month-to-Date Spend",
+      "Share"
+    ],
+    "evidence": {
+      "state": "unavailable",
+      "source": "AWS Cost Explorer",
+      "provenance": null,
+      "period": null,
+      "asOf": null,
+      "reason": "no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate"
+    },
+    "summary": "Cost data is not available: no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate. This is missing data, not a $0 spend."
+  }
+}

@@ -11,10 +11,13 @@
  * All figures are test fixtures, not production data.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CostSummary } from '@/lib/types'
 import CostsPage from '../page'
+import { DAY1_NONE, DAY2_CHARGE } from './month-state-fixtures'
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: any) => <a href={href} {...rest}>{children}</a>,
@@ -158,6 +161,27 @@ describe('Costs page -- month-over-month', () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(-6.5, -0.65) })
     renderPage()
     expect(await within(await card('Month-over-Month Change')).findByText('-6.5%')).toBeInTheDocument()
+  })
+})
+
+describe('Costs page -- the first days of a UTC month (DAY1)', () => {
+  it('Dec 1, no billed days yet: "—", the UTC period, and November\'s total -- never $0.00', async () => {
+    mockGetCostSummary.mockResolvedValue(DAY1_NONE)
+    renderPage()
+    const spendCard = await card('Month-to-Date Spend')
+    expect(await within(spendCard).findByText('Dec 1 (UTC) · AWS Cost Explorer · no billed days yet this month')).toBeInTheDocument()
+    expect(within(spendCard).getByText('—')).toBeInTheDocument()
+    expect(within(spendCard).getByTestId('previous-month-line')).toHaveTextContent('November (UTC): $399.00 · latest days still updating')
+    expect(spendCard.textContent).not.toContain('$0.00')
+  })
+
+  it('Dec 2 with a charge: the amount and "latest days still updating"', async () => {
+    mockGetCostSummary.mockResolvedValue(DAY2_CHARGE)
+    renderPage()
+    const spendCard = await card('Month-to-Date Spend')
+    expect(await within(spendCard).findByText('$13.30')).toBeInTheDocument()
+    expect(within(spendCard).getByText('Dec 1–2 (UTC) · Actual · AWS Cost Explorer · latest days still updating')).toBeInTheDocument()
+    expect(within(spendCard).getByTestId('previous-month-line')).toHaveTextContent('November (UTC): $399.00')
   })
 })
 
@@ -418,7 +442,7 @@ describe('Costs page -- month-over-month basis', () => {
     renderPage()
 
     const momCard = await card('Month-over-Month Change')
-    expect(await within(momCard).findByText('No comparison yet · latest days still being reported')).toBeInTheDocument()
+    expect(await within(momCard).findByText('No comparison yet · latest days still updating')).toBeInTheDocument()
     expect(momCard.textContent).not.toMatch(/\d%/)
   })
 

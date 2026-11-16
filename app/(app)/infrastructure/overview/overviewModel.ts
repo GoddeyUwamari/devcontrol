@@ -27,7 +27,7 @@ import type { AccountSecurityFinding, ComplianceSeverity } from '@/lib/services/
 import type { CostSummary, RecommendationStats } from '@/lib/types'
 import type { SeverityLevel } from '@/lib/utils/severity-colors'
 import { describeCeilings, describeCeilingsWithoutEstimate, NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
-import { formatUsd, noChargesReportedYet, noChargesYetNote } from '../../costs/cost-display'
+import { formatUsd, NO_BILLED_DAYS_YET, spendDaysLabel } from '../../costs/cost-display'
 import { describeServicesSpend, SPEND_UNAVAILABLE_TEXT } from '../../services/SummaryTiles'
 import { SEVERITY_LABEL, STATUS_LABEL, typeLabel } from '../../services/AttentionTable'
 import { footerText, hasRegionCoverage, latestAttempt, regionCounts, type Rich } from '../../services/regionCoverage'
@@ -474,11 +474,9 @@ function spendTile(i: OverviewInputs): Tile {
   }
   const asOf = summary?.spend.asOf
   const asOfCaption: Rich[] = asOf ? [['Cost Explorer, as of ', { iso: asOf }]] : []
-  // Nothing reported yet this month is "no data yet", not a measured $0.00 --
-  // and a "billed through" day from the previous month would contradict the label.
-  if (noChargesReportedYet(summary?.spend)) {
-    const notes = spend.notes.filter((n) => !n.startsWith('billed through'))
-    return { key: 'spend', label: 'Spend this month', value: '—', captions: [[[...notes, noChargesYetNote(summary?.spend)].join(' · ')], ...asOfCaption] }
+  // Nothing reported yet this month is "no data yet", not a measured $0.00.
+  if (spend.kind === 'no_billed_days') {
+    return { key: 'spend', label: 'Spend this month', value: '—', captions: [[['whole account', 'billed, from Cost Explorer', NO_BILLED_DAYS_YET].join(' · ')], ...asOfCaption] }
   }
   return {
     key: 'spend', label: 'Spend this month', value: spend.value,
@@ -650,14 +648,20 @@ export function costByService(cost: Loadable<CostSummary>): CostByServiceView {
   const summary = cost.status === 'ready' ? cost.data : undefined
   const spend = describeServicesSpend({ loading: false, error: cost.status === 'error', summary })
   const top = summary?.spend?.data?.topServices
+  if (spend.kind === 'no_billed_days') {
+    // An empty table would read as "nothing billed"; say what it is instead.
+    const days = spendDaysLabel(summary?.spend)
+    return { status: 'unavailable', sub: null, rows: [], unavailable: `No billed days yet this month${days ? ` (${days}, UTC)` : ''}. Services appear here once AWS Cost Explorer reports them.` }
+  }
   if (spend.kind !== 'billed' || !Array.isArray(top)) {
     const reason = summary?.spend?.reason || OVERVIEW_COPY.costExplorerNotYet
     return { status: 'unavailable', sub: null, rows: [], unavailable: `${OVERVIEW_COPY.costByServiceUnavailable}${reason}` }
   }
   const data = summary!.spend.data!
+  const amount = data.amount ?? 0
   const rows = top.map((s) => ({ service: s.service, amount: formatUsd(s.amount), share: typeof s.sharePercent === 'number' && Number.isFinite(s.sharePercent) ? s.sharePercent : null }))
   const cents = (n: number) => Math.round(n * 100)
-  const rest = (cents(data.amount) - top.reduce((sum, s) => sum + cents(s.amount), 0)) / 100
+  const rest = (cents(amount) - top.reduce((sum, s) => sum + cents(s.amount), 0)) / 100
   if (Math.abs(rest) >= 0.01) rows.push({ service: rest < 0 ? 'All other services and credits' : 'All other services', amount: formatUsd(rest), share: null })
   const through = spend.notes.find((n) => n.startsWith('billed through'))
   return { status: 'ready', sub: `This month, billed${through ? ` · ${through}` : ''}`, rows, unavailable: null }

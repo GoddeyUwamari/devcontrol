@@ -272,10 +272,11 @@ describe('3. one derived caption per face; long evidence stays in the panels', (
   })
 
   it('day 1 with no billed days: the caption says so and no percentage is shown', async () => {
-    costSummarySpy.mockResolvedValue({ spend: actualSpend(0.37, true, { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-02' }), monthOverMonth: mom(-80, -8, true) })
+    costSummarySpy.mockResolvedValue({ spend: actualSpend(0, true, { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-02' }), monthOverMonth: mom(-80, -8, true) })
     renderDashboard()
-    await settled()
-    expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent('Actual · AWS Cost Explorer · no billed days yet this month')
+    // "—" is this card's settled value here (no billed days yet), so wait for the caption, not for the dash to go.
+    await waitFor(() => expect(within(kpi('/costs')).getByTestId('kpi-caption')).toHaveTextContent('Actual · AWS Cost Explorer · no billed days yet this month'))
+    expect(within(kpi('/costs')).getByText('—')).toBeInTheDocument()
     expect(within(kpi('/costs')).queryByTestId('spend-change')).toBeNull()
     expect(kpi('/costs').textContent).not.toMatch(/\d%/)
     expect(openInfo(kpi('/costs'), 'About Month-to-Date Spend')).toHaveTextContent('No comparison until a day of this month has finished billing')

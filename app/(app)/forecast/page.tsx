@@ -107,12 +107,12 @@ export default function ForecastPage() {
     const combined: { date: string; fullDate: Date; historical: number | null; predicted: number | null; upper: number | null; lower: number | null }[] = [];
 
     forecast.historicalData.forEach((p) => {
-      combined.push({ date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), fullDate: new Date(p.date), historical: Math.round((p.value || 0) * 30), predicted: null, upper: null, lower: null });
+      combined.push({ date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), fullDate: new Date(p.date), historical: Math.round((p.value || 0) * 30), predicted: null, upper: null, lower: null });
     });
 
     const lastHistorical = forecast.historicalData[forecast.historicalData.length - 1];
     const lastMonthly = Math.round((lastHistorical.value || 0) * 30);
-    combined.push({ date: new Date(lastHistorical.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), fullDate: new Date(lastHistorical.date), historical: lastMonthly, predicted: lastMonthly, upper: null, lower: null });
+    combined.push({ date: new Date(lastHistorical.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), fullDate: new Date(lastHistorical.date), historical: lastMonthly, predicted: lastMonthly, upper: null, lower: null });
 
     const isDemo = forecast.organizationId === 'demo';
     const confidenceRange = isDemo ? 0 : (forecast.confidenceInterval.upper - forecast.confidenceInterval.lower) / 90;
@@ -120,7 +120,7 @@ export default function ForecastPage() {
     forecast.predictions.forEach((p, i) => {
       const monthly = Math.round((p.value || 0) * 30);
       const bandOffset = isDemo ? (12 + (i % 4)) : (confidenceRange * 30) / 2;
-      combined.push({ date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), fullDate: new Date(p.date), historical: null, predicted: monthly, upper: Math.round(monthly + bandOffset), lower: Math.round(monthly - bandOffset) });
+      combined.push({ date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), fullDate: new Date(p.date), historical: null, predicted: monthly, upper: Math.round(monthly + bandOffset), lower: Math.round(monthly - bandOffset) });
     });
 
     return combined;

@@ -12,7 +12,25 @@
  *     Costs page's ['costs-page', 'cost-trend', range].
  * All figures are test fixtures, not production data.
  */
+import { cloneElement } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// Charts stay unrendered (jsdom gives ResponsiveContainer no size) unless a
+// test opens one: then the container gets a size and the real Recharts
+// Tooltip opens on bar `index` (active + defaultIndex), so the page's own
+// tooltip content gets the chart's payload for that bar.
+const charts = vi.hoisted(() => ({ open: false, index: 0 }))
+vi.mock('recharts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('recharts')>()
+  return {
+    ...actual,
+    ResponsiveContainer: (props: React.ComponentProps<typeof actual.ResponsiveContainer>) =>
+      charts.open ? cloneElement(props.children as React.ReactElement<{ width?: number; height?: number }>, { width: 600, height: 240 }) : <actual.ResponsiveContainer {...props} />,
+    Tooltip: (props: React.ComponentProps<typeof actual.Tooltip>) =>
+      charts.open ? <actual.Tooltip {...props} active defaultIndex={charts.index} /> : <actual.Tooltip {...props} />,
+  }
+})
+// The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CostSummary } from '@/lib/types'
@@ -73,7 +91,7 @@ beforeEach(() => {
     { date: '2026-09-01', compute: 0.3, storage: 0.1, database: 0, network: 0, other: 0, total: 0.4 },
   ]))
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); charts.open = false; charts.index = 0 })
 
 describe('spend breakdown: a failure is not "no data"', () => {
   it('says its totals are after credits and refunds, floored at $0', async () => {
@@ -97,10 +115,10 @@ describe('spend breakdown: a failure is not "no data"', () => {
     expect(screen.queryByText(/could not be retrieved from AWS Cost Explorer/)).not.toBeInTheDocument()
   })
 
-  it("stays under ['cost-trend', '6mo'], never the Costs page's key", async () => {
+  it("stays under ['cost-trend', '6mo', org, UTC day], never the Costs page's key", async () => {
     renderPage()
 
-    await waitFor(() => expect(client.getQueryData(['cost-trend', '6mo'])).toBeDefined())
+    await waitFor(() => expect(client.getQueryCache().findAll({ queryKey: ['cost-trend', '6mo'] }).map((q) => q.queryKey)).toEqual([['cost-trend', '6mo', 'org-test', new Date().toISOString().slice(0, 10)]]))
     expect(client.getQueryCache().findAll({ queryKey: ['costs-page'] })).toEqual([])
   })
 })
@@ -199,5 +217,50 @@ describe('other KPI cards', () => {
 
     expect(await screen.findByText('Anomalies could not be retrieved.')).toBeInTheDocument()
     expect(screen.queryByText('No cost anomalies detected')).not.toBeInTheDocument()
+  })
+})
+
+describe('the current month before Cost Explorer reports it (DAY1-D14)', () => {
+  it('Dec 1 (UTC): "December: no billed days yet", no $0 December bar', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, [
+      { date: '2026-11-01', compute: 300, storage: 50, database: 40, network: 5, other: 4, total: 399, lineItems: 2, provisional: true },
+      { date: '2026-12-01', compute: 0, storage: 0, database: 0, network: 0, other: 0, total: 0, lineItems: 0, provisional: true },
+    ]))
+    renderPage()
+    expect(await screen.findByTestId('bars-not-reported')).toHaveTextContent('December: no billed days yet')
+  })
+
+  it('the December bar\'s tooltip says "No billed days yet" (approved string), with no amounts', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, [
+      { date: '2026-11-01', compute: 300, storage: 50, database: 40, network: 5, other: 4, total: 399, lineItems: 2, provisional: true },
+      { date: '2026-12-01', compute: 0, storage: 0, database: 0, network: 0, other: 0, total: 0, lineItems: 0, provisional: true },
+    ]))
+    charts.open = true
+    charts.index = 1
+    renderPage()
+    const tip = await screen.findByText('No billed days yet')
+    expect(tip.parentElement!.textContent).toBe('DecNo billed days yet')
+  })
+
+  it('a reported month\'s bar tooltip lists its amounts, not the unreported string', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, [
+      { date: '2026-11-01', compute: 300, storage: 50, database: 40, network: 5, other: 4, total: 399, lineItems: 2, provisional: true },
+      { date: '2026-12-01', compute: 0, storage: 0, database: 0, network: 0, other: 0, total: 0, lineItems: 0, provisional: true },
+    ]))
+    charts.open = true
+    charts.index = 0
+    renderPage()
+    expect(await screen.findByText('Total: $399')).toBeInTheDocument()
+    expect(screen.queryByText('No billed days yet')).toBeNull()
+  })
+
+  it('a reported month gets no note', async () => {
+    vi.stubGlobal('fetch', trendFetch(true, [
+      { date: '2026-12-01', compute: 20, storage: 3, database: 2, network: 1, other: 0.6, total: 26.6, lineItems: 2, provisional: true },
+    ]))
+    renderPage()
+    await screen.findByText('Spend breakdown')
+    await waitFor(() => expect(screen.queryByText('No cost trend data available yet')).not.toBeInTheDocument())
+    expect(screen.queryByTestId('bars-not-reported')).toBeNull()
   })
 })

@@ -1,0 +1,56 @@
+{
+  "dashboardCard": {
+    "label": "Month-to-Date Spend",
+    "value": "—",
+    "caption": "Dec 1–2 (UTC) · Actual · AWS Cost Explorer · no billed days yet this month",
+    "previousMonth": "November (UTC): $399.00",
+    "evidence": {
+      "source": "Dec 1–2 (UTC) · AWS Cost Explorer · no billed days yet this month",
+      "comparison": "No comparison until a day of this month has finished billing"
+    }
+  },
+  "costsMonthToDate": {
+    "label": "Month-to-Date Spend",
+    "value": "—",
+    "sub": "Dec 1–2 (UTC) · AWS Cost Explorer · no billed days yet this month",
+    "amount": null,
+    "provenance": "actual"
+  },
+  "byTeam": {
+    "label": "Month-to-Date Spend",
+    "value": "—",
+    "sub": "Dec 1–2 (UTC) · AWS Cost Explorer · no billed days yet this month",
+    "amount": null,
+    "provenance": "actual"
+  },
+  "servicesTile": {
+    "kind": "no_billed_days",
+    "notes": [
+      "whole account",
+      "from Cost Explorer",
+      "no billed days yet this month"
+    ]
+  },
+  "infrastructureSpendTile": {
+    "key": "spend",
+    "label": "Spend this month",
+    "value": "—",
+    "captions": [
+      [
+        "whole account · billed, from Cost Explorer · no billed days yet this month"
+      ],
+      [
+        "Cost Explorer, as of ",
+        {
+          "iso": "2026-12-02T00:30:00.000Z"
+        }
+      ]
+    ]
+  },
+  "infrastructureCostByService": {
+    "status": "unavailable",
+    "sub": null,
+    "rows": [],
+    "unavailable": "No billed days yet this month (Dec 1–2, UTC). Services appear here once AWS Cost Explorer reports them."
+  }
+}

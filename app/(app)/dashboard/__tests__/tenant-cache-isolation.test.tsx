@@ -89,10 +89,12 @@ const SEVEN_PREFIXES = [
   ['aws-accounts'],
   ['soc2-readiness'],
 ] as const
+// Cost data is also keyed by the UTC day (DAY1-D10), after the organization.
+const utcDay = () => new Date().toISOString().slice(0, 10)
 const scopedKeys = (orgId: string) => [
-  ['platform-dashboard-stats', orgId],
-  ['platform-cost-summary', orgId],
-  ['cost-trend', '7d', orgId],
+  ['platform-dashboard-stats', orgId, utcDay()],
+  ['platform-cost-summary', orgId, utcDay()],
+  ['cost-trend', '7d', orgId, utcDay()],
   ['cost-recommendations', orgId],
   ['cost-recommendations-stats', orgId],
   ['cost-analysis-runs', orgId],
@@ -384,19 +386,21 @@ describe('each identity transition resets the cache on its own (not relying on l
 })
 
 describe('defense in depth: the seven tenant queries are keyed by organization', () => {
-  it('uses [existingKey..., organizationId] for all seven, and never the legacy unscoped keys', async () => {
+  it('uses [existingKey..., organizationId] (cost keys: then the UTC day) for all seven, and never the legacy unscoped keys', async () => {
     await loadDashboardAs('a')
     for (const key of scopedKeys(ORG.a.id)) expect(client.getQueryData(key)).toBeDefined()
     for (const [name] of SEVEN_PREFIXES) {
       expect(client.getQueryCache().find({ queryKey: [name], exact: true })).toBeUndefined()
       for (const q of client.getQueryCache().findAll({ queryKey: [name] })) {
-        if (q.queryKey.at(-1) === undefined) {
+        // The organization is the last element, or the one before the UTC day on cost keys (DAY1-D10).
+        const org = q.queryKey.at(-1) === utcDay() ? q.queryKey.at(-2) : q.queryKey.at(-1)
+        if (org === undefined || org === null) {
           // The disabled placeholder observed before the organization was known:
           // never fetched, never holds data.
           expect(q.state.data).toBeUndefined()
           expect(q.state.dataUpdateCount).toBe(0)
         } else {
-          expect(q.queryKey.at(-1)).toBe(ORG.a.id)
+          expect(org).toBe(ORG.a.id)
         }
       }
     }
@@ -420,8 +424,8 @@ describe('defense in depth: the seven tenant queries are keyed by organization',
     await act(async () => { bGates.forEach((g) => g.open()) })
     await waitFor(() => expect(screen.getByText(money('b'))).toBeInTheDocument())
     for (const key of scopedKeys(ORG.b.id)) expect((client.getQueryData(key) as never as { owner?: string }[] | { owner?: string })).toBeDefined()
-    expect((client.getQueryData(['platform-dashboard-stats', ORG.a.id]) as { owner: string }).owner).toBe(ORG.a.id)
-    expect((client.getQueryData(['platform-dashboard-stats', ORG.b.id]) as { owner: string }).owner).toBe(ORG.b.id)
+    expect((client.getQueryData(['platform-dashboard-stats', ORG.a.id, utcDay()]) as { owner: string }).owner).toBe(ORG.a.id)
+    expect((client.getQueryData(['platform-dashboard-stats', ORG.b.id, utcDay()]) as { owner: string }).owner).toBe(ORG.b.id)
   })
 
   it('none of the seven queries runs until the organization is known', async () => {

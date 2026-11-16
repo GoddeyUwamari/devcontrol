@@ -36,6 +36,7 @@ import {
 import { AIChatContextRepository } from '../repositories/ai-chat-context.repository';
 import { spendSection, type SpendEvidence } from './cost-context-sections';
 import { lastIncludedDay } from './ai-chat.service';
+import { monthOnly } from './cost-month-state';
 import { describeIntent, validateIntent, type ValidatedIntent } from './nl-query-guard';
 import type { NLQueryIntent } from './nl-query.service';
 
@@ -364,6 +365,21 @@ export class NLQueryExecutorService {
     }
 
     const d = section.data;
+    const month = d.monthState;
+    if (d.basis === 'billed_month_to_date' && month?.state === 'no_billed_days_yet') {
+      const last = lastIncludedDay(month.period.endExclusive);
+      return {
+        type: 'costs',
+        outcome: 'unavailable',
+        rows: [],
+        columns,
+        evidence,
+        summary: `No billed days yet for the current UTC month (${month.period.start}${last !== month.period.start ? ` through ${last}` : ''}): AWS Cost Explorer has not reported any ${monthOnly(month.period.month)} charges. This is missing data, not a $0 spend.`,
+      };
+    }
+    if (d.amount === null) {
+      return { type: 'costs', outcome: 'unavailable', rows: [], columns, evidence, summary: `Cost data is not available: ${month?.reason?.text ?? 'no usable amount'}. This is missing data, not a $0 spend.` };
+    }
     if (d.basis === 'estimated_monthly_run_rate') {
       const coverage = section.state === 'partial' && section.completeness
         ? ` Only ${section.completeness.received} of ${section.completeness.expected} discovered resources have a cost estimate.`
@@ -384,7 +400,9 @@ export class NLQueryExecutorService {
       ? ` (${section.period.start} through ${lastIncludedDay(section.period.endExclusive)})`
       : '';
     const credit = d.amount < 0 ? ' (net negative: credits and refunds exceed charges)' : '';
-    const inProgress = d.lastDayInProgress ? ' The current day is still being billed.' : '';
+    const inProgress = month?.state === 'latest_days_updating'
+      ? ' The latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.'
+      : d.lastDayInProgress ? ' The current day is still being billed.' : '';
     const rows = (d.topServices ?? []).map(s => ({
       service: s.service,
       month_to_date_spend: money(s.amount),

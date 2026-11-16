@@ -9,9 +9,9 @@ import awsServicesService, { type AWSServicesPage, type AWSServicesStats, type S
 import { accountSecurityFindingsService, type AccountSecurityFinding } from '@/lib/services/account-security-findings.service'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { infrastructureService } from '@/lib/services/infrastructure.service'
-import { platformStatsService } from '@/lib/services/platform-stats.service'
-import type { CostSummary, RecommendationStats } from '@/lib/types'
+import type { RecommendationStats } from '@/lib/types'
 import { useAuth } from '@/lib/contexts/auth-context'
+import { useCostSummary } from '@/lib/hooks/useCostSummary'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { Download } from 'lucide-react'
 import { ExportReportsDialog } from '@/components/aws-resources/ExportReportsDialog'
@@ -97,12 +97,9 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
     queryFn: () => accountSecurityFindingsService.getActive(),
     enabled: realMode, ...QUERY_OPTIONS,
   })
-  // The same query (and cache entry) as the Dashboard's and Services' spend.
-  const costQuery = useQuery<CostSummary>({
-    queryKey: ['platform-cost-summary', orgId],
-    queryFn: platformStatsService.getCostSummary,
-    enabled: realMode, ...QUERY_OPTIONS,
-  })
+  // The same query (and cache entry) as the Dashboard's and Services' spend,
+  // keyed by organization and UTC day (DAY1-D10).
+  const costQuery = useCostSummary(orgId, { enabled: realMode, ...QUERY_OPTIONS })
   const savingsQuery = useQuery<RecommendationStats>({
     queryKey: ['cost-recommendations-stats', orgId],
     queryFn: () => costRecommendationsService.getStats(),

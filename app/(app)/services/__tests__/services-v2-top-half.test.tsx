@@ -115,7 +115,16 @@ function coverage(o: Record<string, any> = {}) {
 function billed(o: Record<string, any> = {}, section: Record<string, any> = {}) {
   return {
     spend: { state: 'available', source: 'cost_explorer', provenance: 'actual', asOf: null, coverage: null, reason: null,
-      data: { amount: 4321.5, basis: 'billed_month_to_date', lastDayInProgress: true, finishedThrough: '2026-10-18', ...o }, ...section },
+      data: {
+        amount: 4321.5, basis: 'billed_month_to_date', lastDayInProgress: true, finishedThrough: '2026-10-18',
+        // The backend's month state: Cost Explorer's own line items run through Oct 18.
+        monthState: {
+          version: 1, state: 'month_to_date', period: { month: '2026-10', start: '2026-10-01', endExclusive: '2026-10-21', calendar: 'UTC' },
+          amount: 4321.5, amountUsable: true, costBasis: 'unblended_net_after_credits', lineItems: 3, finishedThrough: '2026-10-18',
+          billedThrough: '2026-10-18', ceEstimated: true, asOf: null, reason: null, previousMonth: null,
+        },
+        ...o,
+      }, ...section },
     monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: null, data: null },
   }
 }
@@ -459,8 +468,8 @@ describe('tiles', () => {
     expect(t).toHaveTextContent('whole account · billed, from Cost Explorer · billed through Oct 18 · per service Coming soon')
   })
 
-  it('spend: without finishedThrough the "billed through" part is left out, never guessed', async () => {
-    mockGetCostSummary.mockResolvedValue(billed({ finishedThrough: null }))
+  it('spend: without Cost Explorer billed-through evidence the "billed through" part is left out, never guessed from the calendar (DAY1-D8)', async () => {
+    mockGetCostSummary.mockResolvedValue(billed({ monthState: undefined }))
     renderPage()
     await settled()
     const t = tile('AWS spend, month to date')

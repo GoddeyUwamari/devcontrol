@@ -32,6 +32,7 @@ import {
   type EvidencePeriod,
 } from './ai-context-contract';
 import type { MonthOverMonthEvidence, SpendEvidence } from './cost-context-sections';
+import { periodWords } from './cost-month-state';
 import { runModel, type Interpretation } from './ai/model-client';
 import type { FallbackReason } from './ai/model-response';
 import { collectEvidence, sectionOf } from './ai/evidence/registry';
@@ -607,14 +608,23 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   private spendSentence(section: ContextSection<SpendEvidence>): string {
     if (!hasEvidence(section)) return missingSentence('Cloud spend', section, `Cloud spend is not available: ${unavailablePhrase(section)}.`);
     const d = section.data;
+    const month = d.monthState;
+    if (d.basis === 'billed_month_to_date' && month?.state === 'no_billed_days_yet') {
+      return `AWS Cost Explorer has no billed days yet for the current UTC month (${periodWords(month.period)}); there is no month-to-date figure yet.`;
+    }
+    if (d.amount === null) {
+      return `Cloud spend is not available: ${month?.reason?.text ?? 'no usable amount'}.`;
+    }
     if (d.basis === 'estimated_monthly_run_rate') {
       const partial = section.state === 'partial' && section.reason ? `; ${section.reason}` : '';
       return `DevControl estimates the monthly run-rate of discovered resources at ${money(d.amount)} (a list-price estimate, not AWS billing data${partial}).`;
     }
     const period = section.period?.kind === 'range' ? ` for ${section.period.start} up to ${section.period.endExclusive} (exclusive)` : '';
     const credit = d.amount < 0 ? ' (net credit: credits and refunds exceed charges)' : '';
-    const inProgress = d.lastDayInProgress ? '; the current day is still being billed' : '';
-    return `AWS Cost Explorer shows ${money(d.amount)} of billed spend month-to-date${period}${credit}${inProgress}.`;
+    const freshness = month?.state === 'latest_days_updating'
+      ? '; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change'
+      : d.lastDayInProgress ? '; the current day is still being billed' : '';
+    return `AWS Cost Explorer shows ${money(d.amount)} of billed spend month-to-date${period}${credit}${freshness}.`;
   }
 
   private monthOverMonthSentence(section: ContextSection<MonthOverMonthEvidence>): string {

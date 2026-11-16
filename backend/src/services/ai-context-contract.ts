@@ -39,7 +39,9 @@ import { isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
  * field changes, so cached AI output or cached context produced under an
  * older shape is detectably stale instead of being read under the new one.
  */
-export const AI_CONTEXT_CONTRACT_VERSION = 2;
+export const AI_CONTEXT_CONTRACT_VERSION = 3;
+// 3: spend evidence `amount` may be null (no billed days yet) and carries the
+//    current UTC month's state, `monthState` (cost-month-state.ts; review L-5).
 
 export function isCurrentContractVersion(version: unknown): boolean {
   return version === AI_CONTEXT_CONTRACT_VERSION;

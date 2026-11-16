@@ -14,7 +14,7 @@
  * Router only permits a fixed set of named exports from a page file.
  */
 import type { CostSummary } from '@/lib/types'
-import { describeComparisonWindows, describeMonthOverMonth, describeSpend, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, noBilledDaysThisMonth, noChargesReportedYet, noFinishedDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
+import { describeComparisonWindows, describeMonthOverMonth, describeSpend, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinishedDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
 export interface DashboardSpendCard {
@@ -34,11 +34,12 @@ export interface DashboardSpendCard {
 }
 
 /**
- * The face caption, from the same evidence fields describeSpend reads. The
- * month-over-month window's own "includes today" note stays in the panel, so
- * the still-billing day is mentioned once on the face.
+ * The face caption, from the same evidence fields describeSpend reads and the
+ * month's state (spend.data.monthState). The month-over-month window's own
+ * "includes today" note stays in the panel, so the still-billing day is
+ * mentioned once on the face.
  */
-function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: ReturnType<typeof describeSpend>, noBilledDays: boolean, noFinishedDay: boolean): string {
+function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: ReturnType<typeof describeSpend>): string {
   if (spend.provenance === 'estimated') {
     return `Estimated from inventory · not AWS billed spend${section?.state === 'partial' ? ' · some resources have no estimate' : ''}`
   }
@@ -46,9 +47,12 @@ function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: Retu
   // The month-to-date period, in UTC (Cost Explorer's own day boundary).
   const period = spendPeriodLabel(section)
   const notes = [...(period ? [period] : []), 'Actual · AWS Cost Explorer']
-  if (section.data.amount < 0) notes.push('net of credits')
-  if (noBilledDays) notes.push('no billed days yet this month')
-  else if (noFinishedDay) notes.push(LATEST_DAYS_REPORTING)
+  const state = monthStateOf(section)
+  if ((section.data.amount ?? 0) < 0) notes.push('net of credits')
+  // A charge already reported on day 1 is "latest days still updating", never
+  // "no billed days" next to a number (DAY1-D6).
+  if (state === 'no_billed_days_yet') notes.push(NO_BILLED_DAYS_YET)
+  else if (state === 'latest_days_updating') notes.push(LATEST_DAYS_REPORTING)
   else if (section.data.lastDayInProgress) notes.push('today still billing')
   if (section.state === 'partial') notes.push('partial data')
   return notes.join(' · ')
@@ -70,14 +74,15 @@ export function computeDashboardSpendCard(params: {
   const noBilledDays = noBilledDaysThisMonth(costSummary?.spend)
   // Nothing reported yet this month is "no data yet", not a measured $0.00.
   const value = noChargesReportedYet(costSummary?.spend) ? '—' : spend.value
-  const caption = spendFaceCaption(costSummary?.spend, spend, noBilledDays, noFinishedDay)
+  const caption = spendFaceCaption(costSummary?.spend, spend)
   let trend: DashboardSpendCard['trend']
   let comparison: string
   if (noBilledDays) {
     // Today's partial day against a fully billed day last month is not a comparison.
     comparison = 'No comparison until a day of this month has finished billing'
-  } else if (noFinishedDay && mom.direction === null) {
-    // Days of this month are billed, but AWS Cost Explorer is still reporting them.
+  } else if (noFinishedDay) {
+    // Days of this month are billed, but AWS Cost Explorer is still reporting
+    // them: no day has finished, so there is nothing like-for-like to compare.
     comparison = 'No comparison until a day of this month has finished reporting · AWS Cost Explorer is still reporting the latest days'
   } else if (mom.direction !== null) {
     // A window that includes today compares against a day Cost Explorer is

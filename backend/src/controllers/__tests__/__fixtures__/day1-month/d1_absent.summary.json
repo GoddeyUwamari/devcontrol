@@ -1,0 +1,118 @@
+{
+  "success": true,
+  "data": {
+    "spend": {
+      "state": "available",
+      "source": "AWS Cost Explorer",
+      "provenance": "actual",
+      "asOf": "2026-12-01T00:30:00.000Z",
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": {
+        "kind": "range",
+        "start": "2026-12-01",
+        "endExclusive": "2026-12-02"
+      },
+      "completeness": null,
+      "coverage": null,
+      "reason": "month-to-date; the last day of the period is still being billed, so it is incomplete",
+      "derivedFrom": null,
+      "data": {
+        "amount": null,
+        "basis": "billed_month_to_date",
+        "topServices": [],
+        "lastDayInProgress": true,
+        "finishedThrough": "2026-11-29",
+        "previousMonth": {
+          "start": "2026-11-01",
+          "endExclusive": "2026-12-01",
+          "amount": 399
+        },
+        "monthState": {
+          "version": 1,
+          "state": "no_billed_days_yet",
+          "period": {
+            "month": "2026-12",
+            "start": "2026-12-01",
+            "endExclusive": "2026-12-02",
+            "calendar": "UTC"
+          },
+          "amount": null,
+          "amountUsable": false,
+          "costBasis": "unblended_net_after_credits",
+          "lineItems": 0,
+          "finishedThrough": "2026-11-29",
+          "billedThrough": null,
+          "ceEstimated": null,
+          "asOf": "2026-12-01T00:30:00.000Z",
+          "reason": {
+            "code": "no_current_month_result",
+            "text": "AWS Cost Explorer has not reported any charges for this UTC month yet"
+          },
+          "previousMonth": {
+            "month": "2026-11",
+            "start": "2026-11-01",
+            "endExclusive": "2026-12-01",
+            "amount": 399,
+            "latestDaysUpdating": true
+          }
+        }
+      },
+      "retrievedAt": "2026-12-01T00:30:00.000Z",
+      "freshness": null,
+      "classification": "billed",
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthOverMonth": {
+      "state": "unavailable",
+      "source": "DevControl month-over-month comparison",
+      "provenance": null,
+      "asOf": null,
+      "scope": {
+        "kind": "cost_explorer",
+        "connectedAccountId": "123456789012",
+        "linkedAccountFilter": "none",
+        "consolidatedBilling": "unknown",
+        "regions": "all"
+      },
+      "period": null,
+      "completeness": null,
+      "coverage": null,
+      "reason": "cannot be calculated: AWS Cost Explorer daily trend: not available",
+      "derivedFrom": [
+        {
+          "source": "AWS Cost Explorer daily trend",
+          "state": "unavailable",
+          "provenance": null,
+          "scope": {
+            "kind": "cost_explorer",
+            "connectedAccountId": "123456789012",
+            "linkedAccountFilter": "none",
+            "consolidatedBilling": "unknown",
+            "regions": "all"
+          },
+          "period": null,
+          "asOf": null
+        }
+      ],
+      "data": null,
+      "retrievedAt": "2026-12-01T00:30:00.000Z",
+      "freshness": null,
+      "classification": null,
+      "untrusted": [],
+      "failure": null,
+      "truncation": null
+    },
+    "monthStateReason": {
+      "code": "no_current_month_result",
+      "text": "AWS Cost Explorer has not reported any charges for this UTC month yet"
+    }
+  }
+}

@@ -5,7 +5,7 @@
     "caption": "Nov 1 (UTC) · Actual · AWS Cost Explorer · no billed days yet this month",
     "previousMonth": "October (UTC): $412.30 · latest days still updating",
     "evidence": {
-      "source": "Actual · AWS Cost Explorer · today's spend still being billed",
+      "source": "Nov 1 (UTC) · AWS Cost Explorer · no billed days yet this month",
       "comparison": "No comparison until a day of this month has finished billing"
     }
   },

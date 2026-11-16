@@ -38,6 +38,7 @@ import {
 } from './ai-context-contract';
 import { lastIncludedDay } from './ai-chat.service';
 import type { MonthOverMonthEvidence, SpendEvidence } from './cost-context-sections';
+import { monthName, monthOnly, periodWords, type CostMonthState } from './cost-month-state';
 import { noUrgentFindingsLine, reviewedFindingsLine } from './top-risk-selection';
 import { collectEvidence, fingerprintSections, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
@@ -56,7 +57,7 @@ const EMPTY_FIELDS: StructuredDashboardSummary = {
 };
 
 /** Bump when the prompt or the facts it is built from change, so cached prose is not reused. */
-const PROMPT_VERSION = 'dashboard-summary-v4';
+const PROMPT_VERSION = 'dashboard-summary-v5';
 
 /** Evidence budget for the summary prompt, in estimated tokens. */
 export const SUMMARY_EVIDENCE_BUDGET_TOKENS = 6_000;
@@ -177,6 +178,13 @@ export interface DashboardSections {
 function money(amount: number): string {
   const abs = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return amount < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+/** " The previous UTC month (November 2026) totalled $X; its latest days are still updating." or "". */
+function previousMonthSentence(month: CostMonthState): string {
+  const previous = month.previousMonth;
+  if (!previous) return '';
+  return ` The previous UTC month (${monthName(previous.month)}) totalled ${money(previous.amount)}${previous.latestDaysUpdating ? '; its latest days are still updating' : ''}.`;
 }
 
 function missing(section: ContextSection<unknown>): string {
@@ -349,13 +357,24 @@ export class AISummaryService {
 
     if (hasEvidence(s.spend)) {
       const d = s.spend.data;
-      if (d.basis === 'billed_month_to_date') {
+      const month = d.monthState;
+      if (d.basis === 'billed_month_to_date' && month?.state === 'no_billed_days_yet') {
+        // The month has no billed days yet: no month-to-date amount exists (never $0).
+        facts.push(
+          `There are no billed days yet for the current UTC month (${periodWords(month.period)}): AWS Cost Explorer has not reported any ${monthOnly(month.period.month)} charges. ` +
+          `Do not describe spend as $0 or unchanged.${previousMonthSentence(month)}`
+        );
+      } else if (d.basis === 'billed_month_to_date' && d.amount !== null) {
         const period = s.spend.period?.kind === 'range'
           ? ` (${s.spend.period.start} through ${lastIncludedDay(s.spend.period.endExclusive)})`
           : '';
         const credit = d.amount < 0 ? ' (net negative: credits and refunds exceed charges)' : '';
-        const inProgress = d.lastDayInProgress ? '; the current day is still being billed' : '';
-        facts.push(`AWS Cost Explorer month-to-date billed spend${period} is ${money(d.amount)}${credit}${inProgress}.`);
+        const freshness = month?.state === 'latest_days_updating'
+          ? '; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change'
+          : d.lastDayInProgress ? '; the current day is still being billed' : '';
+        facts.push(`AWS Cost Explorer month-to-date billed spend${period} is ${money(d.amount)}${credit}${freshness}.${month?.state === 'latest_days_updating' ? previousMonthSentence(month) : ''}`);
+      } else if (d.basis === 'billed_month_to_date' || d.amount === null) {
+        facts.push(`Cloud spend: not available (${month?.reason?.text ?? month?.state ?? 'no usable amount'}). Do not describe spend as $0 or unchanged.`);
       } else {
         const partial = s.spend.state === 'partial' && s.spend.reason ? `; ${s.spend.reason}` : '';
         facts.push(
