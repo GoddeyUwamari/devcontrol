@@ -94,6 +94,20 @@ describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
     expect(client.query).not.toHaveBeenCalled();
   });
 
+  it('trend-lag-build.md: a day Cost Explorer has not reported yet (reportState not_reported) is missing, never $0', async () => {
+    // Sep 25-27 not reported (the lag); every other day $10, final.
+    const lagged = trend(() => 10).map(p => (p.date >= '2026-09-25'
+      ? { ...p, compute: 0, total: 0, reportState: 'not_reported' }
+      : { ...p, reportState: 'final' }));
+    fetchCostTrend.mockResolvedValue(lagged);
+
+    const s = await repository.getWeeklySpendSections(ORG, period, fakeClient({}));
+
+    expect(s.currentWeekSpend.data?.amount).toBe(40);
+    expect(s.currentWeekSpend.completeness).toMatchObject({ expected: 7, received: 4, missing: ['2026-09-25', '2026-09-26', '2026-09-27'] });
+    expect(s.previousWeekSpend.completeness).toMatchObject({ expected: 7, received: 7, missing: null });
+  });
+
   it('B: a real $0 Cost Explorer week stays actual $0 -- not unavailable, not an inventory estimate', async () => {
     fetchCostTrend.mockResolvedValue(trend(() => 0));
     const client = fakeClient({ total_resources: '5', priced_resources: '5', total_cost: '300' });
