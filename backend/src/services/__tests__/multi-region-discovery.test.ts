@@ -90,6 +90,10 @@ interface RegionAnswers {
   backup?: Record<string, Answer>;
   s3?: Record<string, Answer>;
   iam?: Record<string, Answer>;
+  lambda?: Record<string, Answer>;
+  elb?: Record<string, Answer>;
+  cloudwatch?: Record<string, Answer>;
+  autoscaling?: Record<string, Answer>;
   /** Every call of the region's clients throws what this returns for the command (nothing: answered). */
   fail?: (command: string) => Error | undefined;
 }
@@ -131,8 +135,11 @@ function regionClients(log: Call[], region: string, answers: RegionAnswers = {})
     SearchCommand: () => ({ Resources: [], Count: { TotalResources: 0, Complete: true } }),
     ...answers.explorer,
   }, f);
-  const cloudWatch = fake(log, region, 'cloudwatch', { GetMetricStatisticsCommand: () => ({ Datapoints: [] }) }, f);
+  const cloudWatch = fake(log, region, 'cloudwatch', { GetMetricStatisticsCommand: () => ({ Datapoints: [] }), ...answers.cloudwatch }, f);
   const dynamodb = fake(log, region, 'dynamodb', { ...answers.dynamodb }, f);
+  // Only a test that answers Auto Scaling gets a client that records calls; otherwise the
+  // empty object every earlier test was written against.
+  const autoscaling = answers.autoscaling ? fake(log, region, 'application-autoscaling', answers.autoscaling, f) : {};
   return {
     enabled: true,
     region,
@@ -143,9 +150,9 @@ function regionClients(log: Call[], region: string, answers: RegionAnswers = {})
     s3: fake(log, region, 's3', { ListBucketsCommand: () => ({ Buckets: [] }), ...answers.s3 }),
     s3Control: {},
     cloudWatch,
-    lambda: fake(log, region, 'lambda', { ListFunctionsCommand: () => ({ Functions: [] }) }, f),
+    lambda: fake(log, region, 'lambda', { ListFunctionsCommand: () => ({ Functions: [] }), ...answers.lambda }, f),
     ecs: {},
-    elb: fake(log, region, 'elbv2', { DescribeLoadBalancersCommand: () => ({ LoadBalancers: [] }) }, f),
+    elb: fake(log, region, 'elbv2', { DescribeLoadBalancersCommand: () => ({ LoadBalancers: [] }), ...answers.elb }, f),
     eks: {},
     dynamodb: {},
     cloudFront: fake(log, 'us-east-1', 'cloudfront', { ListDistributionsCommand: () => ({ DistributionList: { Items: [] } }) }),
@@ -158,7 +165,7 @@ function regionClients(log: Call[], region: string, answers: RegionAnswers = {})
     securityHub: {},
     resourceExplorer: explorer,
     getDynamoDBClientForRegion: () => dynamodb,
-    getApplicationAutoScalingClientForRegion: () => ({}),
+    getApplicationAutoScalingClientForRegion: () => autoscaling,
     getCloudWatchClientForRegion: () => cloudWatch,
     getS3ClientForRegion: () => ({}),
   };
@@ -843,6 +850,23 @@ describe('security groups per region; findings with no region resolved once, wit
     expect(await jobCompliance(orgId)).toMatchObject({ status: 'completed', compliance_scan_completed: true });
   }, 60_000);
 
+  // PR 1b review RV-L2 (the reviewer's probe): the home SG outcome is kept out of the
+  // region's outcome list (awsResourceDiscovery.ts `...(home ? [] : [groups.outcome])`),
+  // which is what keeps a home truncation from adding discovery_listing_truncated to the
+  // job. Mutant M4e (the home outcome added to the list) must fail here.
+  it('RV-L2: a HOME security-group listing cut off at its page limit keeps today\'s behaviour: no discovery_listing_truncated warning, every region ok, compliance false', async () => {
+    const orgId = await insertOrg();
+    await seedFinding(orgId, 'k-home', HOME);
+    mockAws({ [HOME]: { ec2: { DescribeSecurityGroupsCommand: () => ({ SecurityGroups: [], NextToken: 'more' }) } } });
+    const result = await service().discoverAllResources(orgId);
+    expect(await jobCompliance(orgId)).toEqual({ status: 'completed', error_message: null, compliance_scan_completed: false, warnings: null });
+    expect(result.warnings ?? []).toEqual([]);
+    const rows = await regionRows(orgId);
+    for (const region of SCAN_ORDER) expect(rows[region]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
+    // A listing cut off is not complete: the home region's networking findings are not resolved.
+    expect(await status(orgId, 'k-home')).toBe('active');
+  }, 60_000);
+
   it('the home security-group scan complete: no-region findings are resolved', async () => {
     const orgId = await insertOrg();
     await seedFinding(orgId, 'k-unregioned', null);
@@ -1062,6 +1086,44 @@ describe('M-1 (PR 1b): a region worker holds no database connection while it wai
     expect(most).toBe(1);
   }, 60_000);
 
+  // PR 1b review RV-L4: the security-group findings write checks out its own connection
+  // inside AccountSecurityFindingsRepository.reconcileScan, not through regionDbStep, so
+  // the "take turns" count above cannot see it. Here every StepLimiter step is marked
+  // (an AsyncLocalStorage of the test's own), and each region's reconcileScan must run
+  // inside one. Control V1 (the write called outside the limiter, `(step) => step()`)
+  // must fail here.
+  it('RV-L4: every region\'s security-group findings write runs inside a region database step (the step limiter)', async () => {
+    const orgId = await insertOrg();
+    mockAws();
+    const { AsyncLocalStorage } = await import('async_hooks');
+    const { StepLimiter } = await import('../region-run');
+    const { AccountSecurityFindingsRepository } = await import('../../repositories/account-security-findings.repository');
+    const marked = new AsyncLocalStorage<true>();
+    const realRun = StepLimiter.prototype.run;
+    jest.spyOn(StepLimiter.prototype, 'run').mockImplementation(function (this: InstanceType<typeof StepLimiter>, step: () => Promise<unknown>) {
+      return realRun.call(this, () => marked.run(true, step));
+    } as any);
+    const { inRegionRun } = await import('../region-log-context');
+    const insideStep: Array<[string | null | undefined, boolean]> = [];
+    let outsideRegions = 0;
+    const realReconcile = AccountSecurityFindingsRepository.prototype.reconcileScan;
+    jest.spyOn(AccountSecurityFindingsRepository.prototype, 'reconcileScan').mockImplementation(function (this: any, ...args: any[]) {
+      // The region worker sets the region log context (L-3); the IAM write after the
+      // regions runs outside any region run, and outside the limiter by design.
+      if (inRegionRun()) insideStep.push([args[4], marked.getStore() === true]);
+      else outsideRegions++;
+      return (realReconcile as any).apply(this, args);
+    } as any);
+
+    await service().discoverAllResources(orgId);
+
+    // One write per region, each region's own, each inside a step.
+    expect(insideStep.map(([region]) => region).sort()).toEqual([...SCAN_ORDER].sort());
+    expect(insideStep.filter(([, inside]) => !inside)).toEqual([]);
+    // And the IAM write, once, after the regions.
+    expect(outsideRegions).toBe(1);
+  }, 60_000);
+
   it.each([
     ['its fence probe', 1],
     ['its EC2 upsert', 2],
@@ -1182,6 +1244,57 @@ describe('M-2 (PR 1b): the whole-scan deadline bounds the steps after the region
     expect((await pool.query(`SELECT status FROM framework_evaluation_runs WHERE organization_id = $1`, [orgId])).rows.map((r) => r.status)).not.toContain('running');
     expect(iam).not.toHaveBeenCalled();
     expect(deadlineLog()).toEqual([expect.stringContaining('not started: iam, orphans, cost; stopped: compliance')]);
+  }, 60_000);
+
+  // PR 1b review RV-L3: the deadline passes INSIDE compliance's per-resource loop (its
+  // S3 reads are done). The loop checks the deadline every 25 resources (with its
+  // checkpoint), so the resources it had evaluated keep the results committed for them
+  // (one fenced commit each, "its stored results stand", as for any mid-loop failure);
+  // the stop falls between two resources, so no resource is left half-written, and
+  // nothing after the stop is written. Control V2 (the in-loop check removed) must fail.
+  it('RV-L3: the deadline passes inside compliance\'s per-resource loop: results already committed for earlier resources stay; none for the resources after the stop; the job completes', async () => {
+    const orgId = await insertOrg();
+    // Rows in a region no scan lists (not reconciled by anyone), so exactly these are evaluated.
+    const OUTSIDE = 'sa-east-1';
+    const MARKER = '[{"issue":"placeholder earlier finding","severity":"low","category":"tagging","recommendation":"x"}]';
+    const COUNT = 60;
+    for (let i = 0; i < COUNT; i++) {
+      await seedResource(orgId, `arn:aws:sqs:${OUTSIDE}:${ACCOUNT}:placeholder-queue-${i}`, 'sqs', OUTSIDE);
+    }
+    await pool.query(`UPDATE aws_resources SET compliance_issues = $2::jsonb WHERE organization_id = $1`, [orgId, MARKER]);
+    // No region lists anything: the 60 rows are the whole inventory the loop evaluates.
+    mockAws();
+    let now = 1_000_000;
+    const realEvaluate = ComplianceScannerService.prototype.evaluateResource;
+    let evaluated = 0;
+    jest.spyOn(ComplianceScannerService.prototype, 'evaluateResource').mockImplementation(function (this: any, ...args: any[]) {
+      // Between the loop's check at 25 resources and its check at 50: the deadline passes.
+      if (++evaluated === 30) now += (DEADLINE_MIN + 1) * 60_000;
+      return (realEvaluate as any).apply(this, args);
+    } as any);
+    const iam = jest.spyOn(ComplianceScannerService.prototype, 'checkIAMSecurity');
+    const svc = service({ regionPool: 5, scanBudgetMs: 30 * 60_000, scanDeadlineMs: DEADLINE_MIN * 60_000, now: () => now });
+
+    await svc.discoverAllResources(orgId);
+
+    // The loop stopped at its check after the 50th resource: 50 evaluated, none after.
+    const { rows } = await pool.query(
+      `SELECT count(*) FILTER (WHERE compliance_issues = $2::jsonb)::int AS untouched,
+              count(*) FILTER (WHERE compliance_issues <> $2::jsonb)::int AS rewritten
+         FROM aws_resources WHERE organization_id = $1 AND status <> 'terminated'`,
+      [orgId, MARKER]
+    );
+    expect(evaluated).toBe(50);
+    expect(rows[0]).toEqual({ rewritten: 50, untouched: COUNT - 50 });
+    expect(await jobRow(orgId)).toMatchObject({
+      status: 'completed', error_message: null, compliance_scan_completed: false, cost_analysis_completed: false, warnings: ['scan_deadline'],
+    });
+    // The framework run is closed as failed, not left running.
+    expect((await pool.query(`SELECT status FROM framework_evaluation_runs WHERE organization_id = $1`, [orgId])).rows.map((r) => r.status)).not.toContain('running');
+    expect(iam).not.toHaveBeenCalled();
+    expect(deadlineLog()).toEqual([expect.stringContaining('not started: iam, orphans, cost; stopped: compliance')]);
+    const regions = await regionRows(orgId);
+    for (const region of SCAN_ORDER) expect(regions[region]).toMatchObject({ last_scan_status: 'ok', last_error_code: null });
   }, 60_000);
 
   it('the cost analysis started but cannot finish: its calls get the deadline\'s signal; nothing it found is stored; its run is interrupted; compliance stays complete', async () => {
@@ -1391,6 +1504,181 @@ describe('PR 1b L-3: a region run\'s logs carry no AWS message, account ID or re
     expect(logs).not.toContain(TABLE);
     expect(logs).not.toContain('service control policy');
   }, 60_000);
+
+  // PR 1b review RV-L5: every log site L-3 made region-safe, each provoked in eu-west-1
+  // (a non-home region run) with an AWS error whose text names the role's ARN (the account
+  // ID) and an organization policy, and a resource with a name. The site's own line must
+  // be logged (so the case really reaches it), must carry the safe text, and must carry
+  // neither the AWS text nor the resource name. Control V4 (the AWS Backup failure line
+  // logs the ARN and AWS's text again inside a region run) must fail here.
+  describe('RV-L5: every L-3 log site, one at a time', () => {
+    const FN = 'placeholder-secret-fn';
+    const CLUSTER = 'placeholder-secret-cluster';
+    const SG = 'sg-0123456789abcdef0';
+    const VOLUME = 'vol-0cccccccccccccccc';
+    /** A refusal whose name is not an AccessDenied one: the "any other failure" branches. */
+    const otherFailure = () => awsError('InternalFailure', scpDenied().message);
+    const instanceWith = (extra: Record<string, unknown> = {}) => ({
+      DescribeInstancesCommand: () => ({
+        Reservations: [{ Instances: [{ InstanceId: INSTANCE, InstanceType: 't3.micro', State: { Name: 'running' }, ...extra }] }],
+      }),
+    });
+    const found = (arn: string, service: string, cfn: string) => ({
+      SearchCommand: () => ({
+        Resources: [{ Arn: arn, Region: EU, Service: service, CfnResourceType: cfn, Properties: [] }],
+        Count: { TotalResources: 1, Complete: true },
+      }),
+    });
+    const tableArn = `arn:aws:dynamodb:${EU}:${ACCOUNT}:table/${TABLE}`;
+    const clusterArn = `arn:aws:rds:${EU}:${ACCOUNT}:cluster:${CLUSTER}`;
+    const provisionedTable = {
+      DescribeTableCommand: () => ({
+        Table: { TableName: TABLE, TableStatus: 'ACTIVE', BillingModeSummary: { BillingMode: 'PROVISIONED' }, ProvisionedThroughput: { ReadCapacityUnits: 5, WriteCapacityUnits: 5 } },
+      }),
+    };
+
+    const sites: Array<{ site: string; line: RegExp; safe: string; secret: string; eu: RegionAnswers }> = [
+      {
+        site: 'Resource Explorer Search failure (resourceExplorer.service.ts)',
+        line: /^\[ResourceExplorer\] Search failed for region eu-west-1:/,
+        safe: 'AccessDeniedException',
+        secret: 'assumed-role',
+        eu: { explorer: { SearchCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'checkSecurityGroups (complianceScanner.ts)',
+        line: /^\[Compliance\] checkSecurityGroups failed/,
+        safe: 'AccessDeniedException',
+        secret: 'assumed-role',
+        eu: { ec2: { DescribeSecurityGroupsCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'DynamoDB DescribeTable',
+        line: /^\[Discovery\] DynamoDB DescribeTable unavailable for a table \(eu-west-1\): unavailable/,
+        safe: 'a table',
+        secret: TABLE,
+        eu: { explorer: found(tableArn, 'dynamodb', 'AWS::DynamoDB::Table'), dynamodb: { DescribeTableCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'Application Auto Scaling DescribeScalableTargets',
+        line: /^\[Discovery\] Application Auto Scaling DescribeScalableTargets unavailable for a table \(eu-west-1\): unavailable/,
+        safe: 'a table',
+        secret: TABLE,
+        eu: {
+          explorer: found(tableArn, 'dynamodb', 'AWS::DynamoDB::Table'),
+          dynamodb: provisionedTable,
+          autoscaling: { DescribeScalableTargetsCommand: () => { throw scpDenied(); } },
+        },
+      },
+      {
+        site: 'Aurora enrichment unavailable',
+        line: /^\[Discovery\] Aurora cluster enrichment unavailable this cycle: AccessDeniedException/,
+        safe: 'AccessDeniedException',
+        secret: 'assumed-role',
+        eu: { explorer: found(clusterArn, 'rds', 'AWS::RDS::DBCluster'), rds: { DescribeDBClustersCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'Aurora reclassification (an ARN)',
+        line: /^\[Discovery\] Reclassifying a DB cluster out of 'aurora'/,
+        safe: 'a DB cluster',
+        secret: CLUSTER,
+        eu: {
+          explorer: found(clusterArn, 'rds', 'AWS::RDS::DBCluster'),
+          rds: { DescribeDBClustersCommand: () => ({ DBClusters: [{ DBClusterIdentifier: CLUSTER, Engine: 'mysql', Status: 'available' }] }) },
+        },
+      },
+      {
+        site: 'DescribeVolumes (instance volume encryption)',
+        line: /^\[Discovery\] DescribeVolumes failed for 1 volume\(s\):/,
+        safe: 'AccessDeniedException',
+        secret: 'assumed-role',
+        eu: {
+          ec2: {
+            ...instanceWith({ BlockDeviceMappings: [{ DeviceName: '/dev/xvda', Ebs: { VolumeId: VOLUME } }] }),
+            // Only the instance's volume lookup is refused; the EBS listing itself answers.
+            DescribeVolumesCommand: (input: any) => {
+              if (input?.VolumeIds) throw scpDenied();
+              return { Volumes: [] };
+            },
+          },
+        },
+      },
+      {
+        site: 'DescribeSecurityGroups (instance exposure)',
+        line: /^\[Discovery\] DescribeSecurityGroups failed in eu-west-1; instance exposure recorded as unknown:/,
+        safe: 'AccessDeniedException',
+        secret: 'assumed-role',
+        eu: { ec2: { ...instanceWith({ SecurityGroups: [{ GroupId: SG }] }), DescribeSecurityGroupsCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'Lambda listing',
+        line: /^\[Lambda Discovery\] Error:/,
+        safe: 'AccessDeniedException',
+        secret: 'assumed-role',
+        eu: { lambda: { ListFunctionsCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'Load balancer listing',
+        line: /^\[Load Balancer Discovery\] Error:/,
+        safe: 'AccessDeniedException',
+        secret: 'assumed-role',
+        eu: { elb: { DescribeLoadBalancersCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'Lambda usage (a function name)',
+        line: /^Error fetching CloudWatch usage for Lambda function in this region:/,
+        safe: 'AccessDeniedException',
+        secret: FN,
+        eu: {
+          lambda: { ListFunctionsCommand: () => ({ Functions: [{ FunctionName: FN, FunctionArn: `arn:aws:lambda:${EU}:${ACCOUNT}:function:${FN}`, Runtime: 'nodejs20.x', MemorySize: 128 }] }) },
+          cloudwatch: { GetMetricStatisticsCommand: () => { throw scpDenied(); } },
+        },
+      },
+      {
+        site: 'AWS Backup: access denied (an ARN)',
+        line: /^\[AWS Backup\] Access denied checking recovery points for a resource/,
+        safe: 'AccessDeniedException',
+        secret: INSTANCE,
+        eu: { ec2: instanceWith(), backup: { ListRecoveryPointsByResourceCommand: () => { throw scpDenied(); } } },
+      },
+      {
+        site: 'AWS Backup: any other failure (an ARN)',
+        line: /^\[AWS Backup\] Failed to check recovery points for a resource:/,
+        safe: 'InternalFailure',
+        secret: INSTANCE,
+        eu: { ec2: instanceWith(), backup: { ListRecoveryPointsByResourceCommand: () => { throw otherFailure(); } } },
+      },
+      {
+        site: 'AWS Backup: page limit (an ARN)',
+        line: /^\[AWS Backup\] Recovery points for a resource not fully read \(page limit\)/,
+        safe: 'a resource',
+        secret: INSTANCE,
+        eu: { ec2: instanceWith(), backup: { ListRecoveryPointsByResourceCommand: () => ({ RecoveryPoints: [], NextToken: 'more' }) } },
+      },
+    ];
+
+    it.each(sites)('$site: logged by its safe text, with no AWS message and no resource name', async ({ line, safe, secret, eu }) => {
+      const orgId = await insertOrg();
+      mockAws({ [EU]: eu });
+      await service().discoverAllResources(orgId);
+      const all = [console.log, console.error, console.warn].flatMap((fn) =>
+        (fn as jest.Mock).mock.calls.map((args) => args.map((a: unknown) => (typeof a === 'string' ? a : JSON.stringify(a ?? null))).join(' '))
+      );
+      const siteLines = all.filter((text) => line.test(text));
+      // The case reached its site (in eu-west-1's run).
+      expect(siteLines.length).toBeGreaterThan(0);
+      for (const text of siteLines) {
+        expect(text).toContain(safe);
+        expect(text).not.toContain(secret);
+        expect(text).not.toContain(ACCOUNT);
+        expect(text).not.toContain('service control policy');
+      }
+      // And no line of the scan carries the account ID or AWS's refusal text.
+      const logs = all.join('\n');
+      expect(logs).not.toContain(ACCOUNT);
+      expect(logs).not.toContain('assumed-role');
+    }, 60_000);
+  });
 
   it('flag off: the same home Search refusal is logged with AWS\'s text, exactly as before (logs unchanged without the flag)', async () => {
     const orgId = await insertOrg({ flag: false });
