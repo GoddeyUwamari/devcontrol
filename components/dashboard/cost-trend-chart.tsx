@@ -8,8 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 import { DASHBOARD_ICON_STROKE } from './icon-stroke';
 import {
-  AreaChart,
-  Area,
   BarChart,
   Bar,
   XAxis,
@@ -187,7 +185,9 @@ export function CostTrendChart({
 
   // Per-service breakdown (byServiceDisplay) takes priority when present; falls back
   // to the fixed 5-category view for cache entries / rolling-deploy responses written
-  // before that field existed.
+  // before that field existed, or a range with no service breakdown at all. Both are
+  // the same stacked bars, so a period Cost Explorer has not reported yet is a gap
+  // (zero-height bars), never a line drawn down to $0 (review L-7).
   const hasServiceBreakdown = data.some((d) => d.byServiceDisplay && d.byServiceDisplay.length > 0);
 
   // Stable service order + color, built from first-seen order across all points —
@@ -210,32 +210,35 @@ export function CostTrendChart({
 
   // Recharts needs flat { date, [seriesKey]: amount } rows; byServiceDisplay arrives
   // as a per-point array, so reshape it into that flat form for the stacked bar chart.
-  const chartData = hasServiceBreakdown
-    ? data.map((point) => {
-        const row: Record<string, string | number | boolean | undefined> = {
-          date: point.date,
-          forecast: point.forecast,
-          total: point.total,
-          lineItems: point.lineItems,
-          provisional: point.provisional,
-        };
-        for (const s of serviceSeries) row[s.key] = 0;
-        for (const item of point.byServiceDisplay || []) {
-          row[item.service] = item.amount;
-        }
-        // Topmost visible, non-zero series for this day — the only segment that
-        // gets rounded top corners, so the stack reads as one column with a
-        // rounded cap rather than every segment having its own pill shape.
-        for (let i = serviceSeries.length - 1; i >= 0; i--) {
-          const s = serviceSeries[i];
-          if (!hiddenSeries.has(s.key) && Number(row[s.key]) > 0) {
-            row.__topKey = s.key;
-            break;
-          }
-        }
-        return row;
-      })
-    : data;
+  // The category view reads the point's own category fields.
+  const chartData = data.map((point) => {
+    const row: Record<string, string | number | boolean | undefined> = {
+      date: point.date,
+      forecast: point.forecast,
+      total: point.total,
+      lineItems: point.lineItems,
+      provisional: point.provisional,
+    };
+    if (hasServiceBreakdown) {
+      for (const s of serviceSeries) row[s.key] = 0;
+      for (const item of point.byServiceDisplay || []) {
+        row[item.service] = item.amount;
+      }
+    } else {
+      for (const s of categorySeries) row[s.key] = point[s.key as 'compute' | 'storage' | 'database' | 'network' | 'other'];
+    }
+    // Topmost visible, non-zero series for this day — the only segment that
+    // gets rounded top corners, so the stack reads as one column with a
+    // rounded cap rather than every segment having its own pill shape.
+    for (let i = series.length - 1; i >= 0; i--) {
+      const s = series[i];
+      if (!hiddenSeries.has(s.key) && Number(row[s.key]) > 0) {
+        row.__topKey = s.key;
+        break;
+      }
+    }
+    return row;
+  });
 
   // Custom Bar shape: square on every side except the top-left/top-right corners
   // of the topmost non-zero segment in each stack, and no stroke — so stacked
@@ -334,96 +337,44 @@ export function CostTrendChart({
         <>
         {/* Chart */}
         <ResponsiveContainer width="100%" height={300}>
-          {hasServiceBreakdown ? (
-            <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                dataKey="date"
-                tickFormatter={formatDate}
-                stroke="#9ca3af"
-                tick={CHART_TICK}
-              />
-              <YAxis
-                domain={[0, 'auto']}
-                tickFormatter={formatCurrency}
-                stroke="#9ca3af"
-                tick={CHART_TICK}
-              />
-              <Tooltip content={<CustomTooltip />} />
+          <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis
+              dataKey="date"
+              tickFormatter={formatDate}
+              stroke="#9ca3af"
+              tick={CHART_TICK}
+            />
+            <YAxis
+              domain={[0, 'auto']}
+              tickFormatter={formatCurrency}
+              stroke="#9ca3af"
+              tick={CHART_TICK}
+            />
+            <Tooltip content={<CustomTooltip />} />
 
-              {/* Forecast separator line */}
-              {data.some(d => d.forecast) && (
-                <ReferenceLine
-                  x={data.find(d => d.forecast)?.date}
-                  stroke="#9ca3af"
-                  strokeDasharray="5 5"
-                  label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
-                />
-              )}
-
-              {serviceSeries.map((s) => (
-                <Bar
-                  key={s.key}
-                  dataKey={s.key}
-                  name={s.name}
-                  stackId="services"
-                  fill={s.color}
-                  shape={StackedBarSegment}
-                  hide={hiddenSeries.has(s.key)}
-                />
-              ))}
-            </BarChart>
-          ) : (
-            <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-              <defs>
-                {series.map((s) => (
-                  <linearGradient key={s.key} id={`gradient-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={s.color} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={s.color} stopOpacity={0.05} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                dataKey="date"
-                tickFormatter={formatDate}
+            {/* Forecast separator line */}
+            {data.some(d => d.forecast) && (
+              <ReferenceLine
+                x={data.find(d => d.forecast)?.date}
                 stroke="#9ca3af"
-                tick={CHART_TICK}
+                strokeDasharray="5 5"
+                label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
               />
-              <YAxis
-                domain={[0, 'auto']}
-                tickFormatter={formatCurrency}
-                stroke="#9ca3af"
-                tick={CHART_TICK}
+            )}
+
+            {series.map((s) => (
+              <Bar
+                key={s.key}
+                dataKey={s.key}
+                name={s.name}
+                stackId="services"
+                fill={s.color}
+                shape={StackedBarSegment}
+                hide={hiddenSeries.has(s.key)}
               />
-              <Tooltip content={<CustomTooltip />} />
-
-              {/* Forecast separator line */}
-              {data.some(d => d.forecast) && (
-                <ReferenceLine
-                  x={data.find(d => d.forecast)?.date}
-                  stroke="#9ca3af"
-                  strokeDasharray="5 5"
-                  label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
-                />
-              )}
-
-              {series.map((s) => (
-                <Area
-                  key={s.key}
-                  type="monotone"
-                  dataKey={s.key}
-                  stackId="1"
-                  stroke={s.color}
-                  fill={`url(#gradient-${s.key})`}
-                  fillOpacity={1}
-                  strokeWidth={2}
-                  hide={hiddenSeries.has(s.key)}
-                  strokeDasharray={data.some(d => d.forecast) ? "5 5" : undefined}
-                />
-              ))}
-            </AreaChart>
-          )}
+            ))}
+          </BarChart>
         </ResponsiveContainer>
 
         {/* Legend with Toggle — below the chart. Wraps to multiple lines below
