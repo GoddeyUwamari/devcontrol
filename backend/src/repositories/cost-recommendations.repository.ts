@@ -149,23 +149,47 @@ async function activeResourceIds(client: PoolClient, organizationId: string, iss
 }
 
 /**
- * For each resource of `issue` with an open occurrence, its newest decision. One
- * finding can have many open rows; the latest decision is the one in force.
+ * The decision in force for a finding of one issue: `get(resourceId, region)`.
+ *
+ * One finding can have many open rows; the newest decision OF THE SAME REGION is
+ * the one in force (home region HR-1, D.2.3). resource_id is not region-unique
+ * (FD-1: a Lambda function name, a DynamoDB table name, an RI instance type), so
+ * a decision taken on a resource in one region must never hide a resource with
+ * the same id in another. A decision with no region (written before regions
+ * were recorded) and a finding with no region match any region, as before.
  */
+export interface OpenDecisions {
+  get(resourceId: string, region: string | null): RecommendationStatus | undefined;
+}
+
+/** Whether a decision recorded in `decisionRegion` applies to a finding in `findingRegion`. */
+export function decisionRegionMatches(decisionRegion: string | null, findingRegion: string | null): boolean {
+  return decisionRegion === null || findingRegion === null || decisionRegion === findingRegion;
+}
+
+/** For each resource of `issue` with an open occurrence, its decisions, newest first (see OpenDecisions). */
 async function latestOpenDecisions(
   client: PoolClient,
   organizationId: string,
   issue: string
-): Promise<Map<string, RecommendationStatus>> {
-  const { rows } = await client.query<{ resource_id: string; status: RecommendationStatus }>(
-    `SELECT DISTINCT ON (resource_id) resource_id, status
+): Promise<OpenDecisions> {
+  const { rows } = await client.query<{ resource_id: string; aws_region: string | null; status: RecommendationStatus }>(
+    `SELECT resource_id, aws_region, status
      FROM cost_recommendations
      WHERE organization_id = $1 AND issue = $2
        AND status IN ('RESOLVED', 'DISMISSED') AND occurrence_ended_at IS NULL
      ORDER BY resource_id, updated_at DESC, id DESC`,
     [organizationId, issue]
   );
-  return new Map(rows.map((row) => [row.resource_id, row.status]));
+  const byResource = new Map<string, Array<{ region: string | null; status: RecommendationStatus }>>();
+  for (const row of rows) {
+    const list = byResource.get(row.resource_id) ?? [];
+    list.push({ region: row.aws_region, status: row.status });
+    byResource.set(row.resource_id, list);
+  }
+  return {
+    get: (resourceId, region) => byResource.get(resourceId)?.find((d) => decisionRegionMatches(d.region, region))?.status,
+  };
 }
 
 /**
@@ -613,7 +637,7 @@ export class CostRecommendationsRepository {
           // Each hidden resource this detector listed but could not evaluate: its own
           // outcome this run is unknown (another resource's result never decides it).
           for (const resourceId of new Set(unknownResourceIds)) {
-            if (openDecisions.has(resourceId)) hiddenObserved.push({ outcome: 'unknown', resourceId, issue: observation.issue });
+            if (openDecisions.get(resourceId, regionLimit) !== undefined) hiddenObserved.push({ outcome: 'unknown', resourceId, issue: observation.issue });
           }
 
           // A category that asks for it (the low-activity rule, FP2b-Q12) keeps no
@@ -647,6 +671,8 @@ export class CostRecommendationsRepository {
                  SELECT 1 FROM cost_recommendations
                  WHERE organization_id = $1::UUID AND resource_id = $2::VARCHAR AND issue = $5::VARCHAR
                    AND status IN ('RESOLVED', 'DISMISSED') AND occurrence_ended_at IS NULL
+                   -- Home region HR-1 (D.2.3): only a decision of the same region (or of no region) hides it.
+                   AND (aws_region IS NULL OR $9::VARCHAR IS NULL OR aws_region = $9::VARCHAR)
                )
                ON CONFLICT (organization_id, resource_id, issue) WHERE status = 'ACTIVE' DO NOTHING`,
               [
@@ -665,7 +691,7 @@ export class CostRecommendationsRepository {
             const inserted = result.rowCount || 0;
             insertedCount += inserted;
             counts.detected += 1;
-            const decision = openDecisions.get(rec.resource_id);
+            const decision = openDecisions.get(rec.resource_id, rec.aws_region ?? null);
             if (inserted > 0) {
               counts.persisted += 1;
               if (previouslyActive.has(rec.resource_id)) counts.refreshed += 1;
