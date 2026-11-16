@@ -11,6 +11,7 @@
  * Alarm names and the resources they watch are untrusted text.
  */
 import { collectSection, errorSection, notConnected, type ContextSection, type EvidenceFailureCode } from '../../../ai-context-contract';
+import { homeRegionOf } from '../../../../repositories/aws-accounts.repository';
 import { cloudWatchAlarmsService, type AlarmsResult } from '../../../cloudwatch-alarms.service';
 import { cloudWatchService, type CloudWatchMetrics } from '../../../cloudwatch.service';
 import { RESOURCE_HEALTH_MAX_AGE_MS, resourceHealthFrom, countByState, type ResourceHealthState } from '../../../resource-health';
@@ -285,15 +286,19 @@ export const cpuTelemetryProvider = defineProvider<CpuTelemetryEvidence>({
           datapointsExpected: typeof m.cpu_evidence?.datapoints_expected === 'number' ? m.cpu_evidence.datapoints_expected : null,
         }];
       });
+      // Home region HR-D21: only the home region's observations. The sweep writes them
+      // per (account, region = home region); after a home region change the old
+      // region's rows stay, and must not be counted as the current collection.
+      const homeRegion = homeRegionOf({ region: account.data?.region ?? null });
       const collection = await withOrgClient(organizationId, async (client) => {
         const obs = await client.query(
           `SELECT COUNT(*)::int AS tracked, COUNT(last_datapoint_at)::int AS with_datapoints, MAX(last_datapoint_at) AS newest
-             FROM resource_telemetry_observations WHERE organization_id = $1`,
-          [organizationId]
+             FROM resource_telemetry_observations WHERE organization_id = $1 AND region = $2`,
+          [organizationId, homeRegion]
         );
         const scopes = await client.query(
-          `SELECT MAX(last_full_success_at) AS last_full FROM observability_collection_scopes WHERE organization_id = $1`,
-          [organizationId]
+          `SELECT MAX(last_full_success_at) AS last_full FROM observability_collection_scopes WHERE organization_id = $1 AND region = $2`,
+          [organizationId, homeRegion]
         );
         const o = obs.rows[0];
         return o.tracked > 0
