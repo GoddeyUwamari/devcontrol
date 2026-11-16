@@ -8,12 +8,24 @@ import {
   homeRegionOf,
   isAwsAccountAmbiguous,
 } from '../repositories/aws-accounts.repository';
-import type { RegionScanStatus } from '../repositories/multi-region-foundation.repository';
+import { MULTI_REGION_DISCOVERY_FLAG, RegionScanStatus } from '../repositories/multi-region-foundation.repository';
 import {
   DISCOVERY_WARNING_LISTING_TRUNCATED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   splitDiscoveryMessage,
 } from '../services/discovery-warnings';
+import {
+  REGION_CODE_ACCESS_DENIED,
+  REGION_CODE_ACCESS_DENIED_SCP,
+  REGION_CODE_CALL_TIMEOUT,
+  REGION_CODE_DEADLINE,
+  REGION_CODE_ERROR,
+  REGION_CODE_NOT_READY,
+  REGION_CODE_SCAN_BUDGET,
+  REGION_CODE_THROTTLED,
+} from '../services/region-run';
 import { MAX_LEASE_AGE_SECONDS } from '../services/scan-lease';
 import { SCAN_KIND_DISCOVERY } from '../services/scan-session';
 import { parseAccountIdFromArn } from '../utils/awsAccountId';
@@ -92,6 +104,105 @@ export interface ServicesCoverage {
   tags_unknown_by_type: Record<string, number>;
   regions: RegionCount[];
   total: number;
+  /**
+   * Multi-region PR 2: present ONLY for an organization whose multi_region_discovery
+   * flag is on (organization_feature_flags). Without the flag the key is absent and
+   * the response is byte-identical to the one before PR 2 (a contract test pins it).
+   */
+  multi_region?: MultiRegionCoverage;
+}
+
+/**
+ * What a multi-region scan has recorded per region (multi-region PR 2, Step 1 §10),
+ * read from the database only. Additive to the keys above, which keep their meaning.
+ *
+ * SCAN SELECTION (founder decision, approved mock state (d)): while a discovery scan
+ * runs, `progress` is THAT scan's ("9 of 17 done") and each region carries its own
+ * last recorded result: the running scan's when the region is done in it
+ * (result_of = 'running_scan'), otherwise the result of the last scan that finished
+ * that region (result_of = 'earlier_scan'). With no scan running, `progress` is null
+ * and every result is the latest scan's. A region running or waiting never reads 0
+ * resources: its count is what was stored before the running scan began, or null.
+ */
+export interface MultiRegionCoverage {
+  home_region: string | null;
+  /**
+   * The regions savings (cost recommendations) are checked in: the home region only
+   * (FD-1, review H-1). Empty when no home region is known. Data for PR 3's line; no
+   * per-region cost is reported.
+   */
+  savings_regions: string[];
+  /** Regions of the latest list the account has NOT enabled (opt-in regions), by name. Never scanned, never in a count. */
+  not_enabled_regions: string[];
+  /** The enabled regions of the latest list, home first, then by name: one entry each. */
+  regions: MultiRegionRegion[];
+  /** How many enabled regions' last recorded result is in each state (null enabled: no list stored yet). */
+  regions_checked: RegionsChecked;
+  /** The running discovery scan's progress over its regions; null when no scan runs. */
+  progress: MultiRegionProgress | null;
+  /**
+   * Region-scoped warning codes, each with its region, from each region's last
+   * recorded result (aws_account_regions.last_error_code): Resource Explorer
+   * no_index / no_view, the truncation codes and scan_budget. Codes only, never text.
+   */
+  region_warnings: Array<{ code: string; region: string }>;
+  /**
+   * Whether region_warnings can name every region a Resource Explorer warning came
+   * from: true when every scanned region's last result is ok. A region with another
+   * outcome (partial, denied, failed, timed_out) records that outcome's code in its one
+   * code column, so a Resource Explorer warning in it would not be named.
+   */
+  region_warnings_complete: boolean;
+}
+
+export interface MultiRegionRegion {
+  region: string;
+  home: boolean;
+  /** An opt-in region the account has enabled (opt_in_status 'opted-in'). */
+  opt_in: boolean;
+  /** The region's last recorded result (which scan wrote it: result_of). */
+  status: RegionScanStatus;
+  /** A code on MULTI_REGION_ERROR_CODES, or null; never the stored message. */
+  error_code: string | null;
+  last_scan_finished_at: Date | null;
+  last_success_at: Date | null;
+  /** As region_status[].stale: a status was written and is older than STALE_AFTER_SECONDS (database clock). */
+  stale: boolean;
+  /** null: never scanned. 'running_scan': done in the scan running now. 'earlier_scan': any earlier scan. */
+  result_of: 'running_scan' | 'earlier_scan' | null;
+  /** Only while a scan runs (else null): done in it, started and not done, or not started yet. */
+  scan_state: 'done' | 'running' | 'waiting' | null;
+  /**
+   * Resources stored for the region (the Services list's rows: this organization, not
+   * terminated). Done (or no scan running): every such row now. Running or waiting:
+   * the rows first stored before the running scan began, i.e. the earlier result,
+   * never what the running scan has written so far. null when the region was never
+   * scanned (a never-scanned region's rows, e.g. S3 buckets, are in `regions` above).
+   */
+  resources: number | null;
+}
+
+export interface RegionsChecked {
+  /** enabled_regions.count; null while no list is stored. */
+  enabled: number | null;
+  /** Last result ok: checked completely. */
+  complete: number;
+  /** Last result partial: checked, a listing cut off. */
+  partial: number;
+  /** Last result denied, failed or timed_out: not checked completely. */
+  not_checked: number;
+  /** Never scanned. */
+  never_scanned: number;
+}
+
+export interface MultiRegionProgress {
+  /** The running job's started_at: a region is done in this scan when its result was started then (null: not recorded, none done). */
+  scan_started_at: Date | null;
+  /** The regions the scan covers: home plus the enabled (and allow-listed) regions of the latest list. */
+  regions_total: number;
+  regions_done: number;
+  regions_running: number;
+  regions_waiting: number;
 }
 
 interface RegionCount {
@@ -137,6 +248,39 @@ export const REGION_ERROR_CODES: readonly string[] = [DISCOVERY_WARNING_TRUNCATE
 
 function regionErrorCode(code: unknown): string | null {
   return typeof code === 'string' && REGION_ERROR_CODES.includes(code) ? code : null;
+}
+
+/**
+ * The region codes multi_region passes on (PR 2): every code a multi-region scan
+ * writes to aws_account_regions.last_error_code (region-run.ts), and the Resource
+ * Explorer codes it writes on an `ok` region (RR-M2). Any other stored value is null.
+ * region_status[].last_error_code keeps REGION_ERROR_CODES, unchanged.
+ */
+export const MULTI_REGION_ERROR_CODES: readonly string[] = [
+  ...REGION_ERROR_CODES,
+  REGION_CODE_ACCESS_DENIED,
+  REGION_CODE_ACCESS_DENIED_SCP,
+  REGION_CODE_NOT_READY,
+  REGION_CODE_DEADLINE,
+  REGION_CODE_THROTTLED,
+  REGION_CODE_CALL_TIMEOUT,
+  REGION_CODE_SCAN_BUDGET,
+  REGION_CODE_ERROR,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
+];
+
+/** The region codes that are warnings (the scan still completed): reported in region_warnings with their region. */
+export const REGION_WARNING_CODES: readonly string[] = [
+  DISCOVERY_WARNING_TRUNCATED_INDEX,
+  DISCOVERY_WARNING_LISTING_TRUNCATED,
+  REGION_CODE_SCAN_BUDGET,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
+];
+
+function multiRegionErrorCode(code: unknown): string | null {
+  return typeof code === 'string' && MULTI_REGION_ERROR_CODES.includes(code) ? code : null;
 }
 
 /** One region_status element as json_agg returns it: timestamps as text. */
@@ -279,6 +423,202 @@ function coverageStatement(orgId: string, homeRegion: string | null, awsAccountI
 }
 
 /**
+ * The multi-region statement (PR 2): one read, only for a flagged organization, so
+ * the coverage statement above is unchanged for every other.
+ *
+ *   listed    every row of the latest region list (enabled or not);
+ *   running   the discovery job the account's held lease names, while it is running
+ *             or pending (the scan_in_progress rule): its started_at and the regions
+ *             it has started (resource_discovery_jobs.regions, which a multi-region
+ *             scan empties when it begins and extends as each region starts);
+ *   counts    per region, the Services list's rows (inventoryWhere: this organization,
+ *             not terminated) now, and those first stored before the running scan
+ *             began (none while no scan runs).
+ *
+ * A region is done in the running scan when its status was written by it
+ * (last_scan_started_at = the job's started_at: recordRegionScanStatus writes the
+ * job's started_at). The scan's region list is the scanner's own rule
+ * (listScanRegions + regionsToScan): home, then every enabled and allow-listed region
+ * of the latest list.
+ */
+function multiRegionStatement(orgId: string, homeRegion: string | null, awsAccountId: string | null) {
+  const { where, values } = inventoryWhere(orgId, {});
+  const home = values.length + 1;
+  const account = values.length + 2;
+  const staleAfter = values.length + 3;
+  const scanKind = values.length + 4;
+  const text = `WITH listed AS (
+       SELECT ar.region, ar.enabled, ar.scan_enabled, ar.opt_in_status, ar.last_scan_status, ar.last_scan_started_at,
+              ar.last_scan_finished_at, ar.last_success_at, ar.last_error_code
+         FROM aws_account_regions ar
+        WHERE ar.organization_id = $1 AND ar.aws_account_id = $${account}::text
+          AND ar.last_listed_at = (SELECT MAX(l.last_listed_at) FROM aws_account_regions l
+                                    WHERE l.organization_id = $1 AND l.aws_account_id = $${account}::text)
+     ),
+     running AS (
+       SELECT true AS present, lj.started_at, COALESCE(lj.regions, '{}') AS started_regions
+         FROM aws_scan_leases sl
+         JOIN resource_discovery_jobs lj ON lj.id = sl.job_id AND lj.organization_id = $1
+        WHERE sl.organization_id = $1 AND sl.aws_account_id = $${account}::text AND sl.scan_kind = $${scanKind}::text
+          AND sl.released_at IS NULL AND sl.expires_at > clock_timestamp()
+          AND lj.status IN ('running', 'pending')
+        LIMIT 1
+     ),
+     counts AS (
+       SELECT r.region,
+              COUNT(*)::int AS now_count,
+              -- A row with no recorded first discovery predates the column's default: earlier.
+              COUNT(*) FILTER (WHERE COALESCE(r.first_discovered_at, r.created_at) IS NULL
+                                  OR COALESCE(r.first_discovered_at, r.created_at) < (SELECT started_at FROM running))::int AS before_count
+         FROM aws_resources r
+        WHERE ${where}
+        GROUP BY r.region
+     )
+     SELECT
+       COALESCE((SELECT present FROM running), false) AS scanning,
+       (SELECT started_at FROM running) AS running_started_at,
+       (SELECT started_regions FROM running) AS running_started_regions,
+       COALESCE((SELECT json_agg(listed.region ORDER BY listed.region COLLATE "C") FROM listed WHERE NOT listed.enabled), '[]'::json) AS not_enabled,
+       COALESCE((SELECT json_agg(json_build_object(
+                  'region', listed.region,
+                  'scan_enabled', listed.scan_enabled,
+                  'opt_in_status', listed.opt_in_status,
+                  'status', listed.last_scan_status,
+                  'last_scan_started_at', listed.last_scan_started_at,
+                  'last_scan_finished_at', listed.last_scan_finished_at,
+                  'last_success_at', listed.last_success_at,
+                  'last_error_code', listed.last_error_code,
+                  'stale', listed.last_scan_status <> 'never_scanned'
+                           AND COALESCE(listed.last_scan_finished_at < now() - make_interval(secs => $${staleAfter}), false),
+                  'done_in_running_scan', listed.last_scan_started_at IS NOT NULL
+                           AND listed.last_scan_started_at = (SELECT started_at FROM running),
+                  'now_count', COALESCE(counts.now_count, 0),
+                  'before_count', COALESCE(counts.before_count, 0))
+                ORDER BY (listed.region = $${home}::text) DESC, listed.region COLLATE "C")
+           FROM listed LEFT JOIN counts ON counts.region = listed.region
+          WHERE listed.enabled), '[]'::json) AS regions`;
+  return { text, values: [...values, homeRegion, awsAccountId, STALE_AFTER_SECONDS, SCAN_KIND_DISCOVERY] };
+}
+
+/** One element of the multi-region statement's `regions`, as json_agg returns it (timestamps as text). */
+interface MultiRegionRowJson {
+  region: string;
+  scan_enabled: boolean;
+  opt_in_status: string | null;
+  status: RegionScanStatus;
+  last_scan_started_at: string | null;
+  last_scan_finished_at: string | null;
+  last_success_at: string | null;
+  last_error_code: string | null;
+  stale: boolean;
+  done_in_running_scan: boolean;
+  now_count: number;
+  before_count: number;
+}
+
+const NOT_CHECKED_STATUSES: readonly string[] = ['denied', 'failed', 'timed_out'];
+
+/**
+ * Whether multi-region discovery is on for the organization (fail-safe OFF, as the
+ * scanner reads it): a flag that cannot be read leaves the response as it was.
+ */
+async function multiRegionFlagOn(db: AwsAccountsQueryable, orgId: string): Promise<boolean> {
+  try {
+    // isOrganizationFeatureEnabled's statement, on this route's executor type.
+    const { rows } = await db.query(
+      `SELECT enabled FROM organization_feature_flags WHERE organization_id = $1 AND flag = $2`,
+      [orgId, MULTI_REGION_DISCOVERY_FLAG]
+    );
+    return rows[0]?.enabled === true;
+  } catch (error: unknown) {
+    console.warn(`[Services/coverage] multi_region_flag_unreadable: org ${orgId} (${error instanceof Error ? error.name : 'unknown error'})`);
+    return false;
+  }
+}
+
+/** The multi_region key (PR 2) for a flagged organization. */
+export async function readMultiRegionCoverage(
+  db: AwsAccountsQueryable,
+  orgId: string,
+  homeRegion: string | null,
+  awsAccountId: string | null
+): Promise<MultiRegionCoverage> {
+  const { text, values } = multiRegionStatement(orgId, homeRegion, awsAccountId);
+  const { rows } = await db.query(text, values);
+  const row = rows[0];
+  const scanning: boolean = row.scanning;
+  const runningStartedAt: Date | null = row.running_started_at;
+  const started = new Set<string>(row.running_started_regions ?? []);
+  const listed: MultiRegionRowJson[] = row.regions;
+
+  const regions = listed.map((entry): MultiRegionRegion => {
+    const done = scanning && entry.done_in_running_scan;
+    const neverScanned = entry.status === 'never_scanned';
+    const scanState: MultiRegionRegion['scan_state'] = !scanning ? null : done ? 'done' : started.has(entry.region) ? 'running' : 'waiting';
+    // A region not done in the running scan shows its earlier result: the rows stored
+    // before the scan began, never the running scan's partial writes and never a 0 it
+    // has not yet had the chance to fill.
+    const resources = neverScanned && !done ? null : scanning && !done ? entry.before_count : entry.now_count;
+    return {
+      region: entry.region,
+      home: entry.region === homeRegion,
+      opt_in: entry.opt_in_status === 'opted-in',
+      status: entry.status,
+      error_code: multiRegionErrorCode(entry.last_error_code),
+      last_scan_finished_at: toDate(entry.last_scan_finished_at),
+      last_success_at: toDate(entry.last_success_at),
+      stale: entry.stale,
+      result_of: neverScanned ? null : done ? 'running_scan' : 'earlier_scan',
+      scan_state: scanState,
+      resources,
+    };
+  });
+
+  // The scan's own region list (regionsToScan): home first, then every enabled and
+  // allow-listed region of the latest list; home only when no list is stored.
+  let progress: MultiRegionProgress | null = null;
+  if (scanning) {
+    const scanList = new Set(listed.filter((entry) => entry.scan_enabled).map((entry) => entry.region));
+    if (homeRegion !== null) scanList.add(homeRegion);
+    const byRegion = new Map(regions.map((entry) => [entry.region, entry]));
+    let done = 0;
+    let running = 0;
+    for (const region of scanList) {
+      const state = byRegion.get(region);
+      if (state?.scan_state === 'done') done++;
+      else if (started.has(region)) running++;
+    }
+    progress = {
+      scan_started_at: runningStartedAt,
+      regions_total: scanList.size,
+      regions_done: done,
+      regions_running: running,
+      regions_waiting: scanList.size - done - running,
+    };
+  }
+
+  const scanned = regions.filter((entry) => entry.status !== 'never_scanned');
+  return {
+    home_region: homeRegion,
+    savings_regions: homeRegion === null ? [] : [homeRegion],
+    not_enabled_regions: row.not_enabled,
+    regions,
+    regions_checked: {
+      enabled: listed.length > 0 ? listed.length : null,
+      complete: regions.filter((entry) => entry.status === 'ok').length,
+      partial: regions.filter((entry) => entry.status === 'partial').length,
+      not_checked: regions.filter((entry) => NOT_CHECKED_STATUSES.includes(entry.status)).length,
+      never_scanned: regions.filter((entry) => entry.status === 'never_scanned').length,
+    },
+    progress,
+    region_warnings: regions
+      .filter((entry) => entry.error_code !== null && REGION_WARNING_CODES.includes(entry.error_code))
+      .map((entry) => ({ code: entry.error_code!, region: entry.region })),
+    region_warnings_complete: scanned.every((entry) => entry.status === 'ok'),
+  };
+}
+
+/**
  * The organization's scan coverage. Throws AwsAccountAmbiguousError when it
  * has more than one eligible AWS account.
  */
@@ -296,6 +636,12 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
 
   const resourceTypes: string[] | null = row.status === null ? null : row.resource_types ?? [];
   const inLastScan = (type: string) => resourceTypes?.includes(type) ?? false;
+
+  // PR 2: only a flagged organization gets the multi_region key; for every other the
+  // object below is built exactly as before.
+  const multiRegion = (await multiRegionFlagOn(db, orgId))
+    ? { multi_region: await readMultiRegionCoverage(db, orgId, homeRegion, awsAccountId) }
+    : {};
 
   return {
     account: account
@@ -344,6 +690,7 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
     tags_unknown_by_type: row.tags_unknown_by_type,
     regions: row.regions,
     total: row.total,
+    ...multiRegion,
   };
 }
 
