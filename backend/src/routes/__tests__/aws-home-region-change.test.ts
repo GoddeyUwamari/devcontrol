@@ -21,7 +21,7 @@
  *
  * Placeholders only.
  */
-import awsRoutes, { HOME_REGION_FORBIDDEN_MESSAGE } from '../aws.routes';
+import awsRoutes, { HOME_REGION_FORBIDDEN_MESSAGE, HOME_REGION_SCAN_ADMISSION_WAIT_MS, homeRegionTestHooks, resetHomeRegionTestHooks } from '../aws.routes';
 import nlQueryRoutes from '../nl-query.routes';
 import { NLQueryService } from '../../services/nl-query.service';
 import { ScanAlreadyRunningError } from '../../services/scan-session';
@@ -202,6 +202,26 @@ describe('scan_started says whether the follow-up scan actually started (review 
     const org = await connectedOrg();
     discover.mockRejectedValue(Object.assign(new Error('placeholder'), { name: 'AwsAssumeRoleFailedError' }));
     expect((await (await put(org, { region: 'us-west-2' })).json()).data.scan_started).toBe(false);
+  });
+
+  it('the scan never says whether it took the lease within the wait: PUT 200, scan_started is false, no error (re-check RR-L1)', async () => {
+    const org = await connectedOrg();
+    homeRegionTestHooks.scanAdmissionWaitMs = 50;
+    try {
+      // A scan that neither reports its lease nor ends (e.g. a slow AssumeRole).
+      discover.mockImplementation(() => new Promise(() => undefined) as any);
+      const started = Date.now();
+      const res = await put(org, { region: 'us-west-2' });
+      const elapsed = Date.now() - started;
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ success: true, data: { from: 'us-east-1', to: 'us-west-2', scan_started: false } });
+      expect(elapsed).toBeLessThan(HOME_REGION_SCAN_ADMISSION_WAIT_MS);
+      expect((await stateOf(org)).region).toBe('us-west-2');
+      expect((console.warn as jest.Mock).mock.calls.some((args) => String(args[0]).includes('not confirmed started within 50 ms'))).toBe(true);
+    } finally {
+      resetHomeRegionTestHooks();
+    }
   });
 
   it('the scan took the lease and is still running: scan_started is true, without waiting for the scan to end', async () => {

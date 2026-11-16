@@ -894,13 +894,23 @@ router.put('/accounts/home-region', requireCurrentOwnerForHomeRegion, async (req
 export const HOME_REGION_SCAN_ADMISSION_WAIT_MS = 10_000
 
 /**
+ * Test seam (re-check RR-L1): the wait above, so a suite can exercise the
+ * "not confirmed within the wait" path without waiting 10 s. Production uses the
+ * default; a suite restores it with resetHomeRegionTestHooks().
+ */
+export const homeRegionTestHooks: { scanAdmissionWaitMs?: number } = {}
+export function resetHomeRegionTestHooks(): void {
+  delete homeRegionTestHooks.scanAdmissionWaitMs
+}
+
+/**
  * Starts the scan after a home region change and resolves, at the latest after
  * `waitMs`, with whether it actually started: true once it took the scan lease
  * (or finished), false when another scan held the lease (skipped), when it failed
  * before the lease (e.g. AssumeRole), or when that was not known within `waitMs`
  * (logged; the scan itself goes on). The scan is never awaited to its end.
  */
-function startFollowUpScan(orgId: string, waitMs = HOME_REGION_SCAN_ADMISSION_WAIT_MS): Promise<boolean> {
+function startFollowUpScan(orgId: string, waitMs = homeRegionTestHooks.scanAdmissionWaitMs ?? HOME_REGION_SCAN_ADMISSION_WAIT_MS): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false
     const settle = (started: boolean) => {
