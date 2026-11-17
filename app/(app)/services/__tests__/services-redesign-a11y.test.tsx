@@ -1,28 +1,32 @@
 /**
  * Accessibility and forced dark mode for the Services redesign (PR 3b,
- * pr3-step1.md §I.6, §I.7): structural checks on every state fixture (axe-core
- * isn't a declared dependency, so the rules that matter here are written out:
- * names, references, unique ids, list structure, decorative icons; contrast is
- * checked in the screenshots, not in jsdom), the table's header scopes and the global
- * subheading, the group disclosures, the scan hint, decorative dots; and the
- * page rendered under a forced `.dark` root, with every redesign surface on
- * the theme tokens and every ink paired with a dark: value. No theme switch
- * exists; dark mode is only forced here.
+ * pr3-step1.md §I.6, §I.7): axe-core (a devDependency, pr3b-review F3) on
+ * every state fixture, the open Unknown tooltip, the banner, demo mode and the
+ * phone list on its own (with its tap-open time), each also run through the
+ * written-out structural checks below (names, references, unique ids, list
+ * structure, decorative icons); colour contrast can't be computed in jsdom and
+ * is checked in the screenshots. Then the table's header scopes and the global
+ * subheading, the group disclosures, decorative dots; and the page rendered
+ * under a forced `.dark` root, with every redesign surface on the theme tokens
+ * and every ink paired with a dark: value. No theme switch exists; dark mode
+ * is only forced here.
  */
 process.env.TZ = 'UTC'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import axe from 'axe-core'
 import ServicesPage from '../page'
-import { R_NOW, docExample, flaggedCoverage, mrRegion, redesignStats } from './redesign-fixtures'
+import { R_NOW, STATE_FIXTURES, docExample, flaggedCoverage, mrRegion, scanOf, tab1 } from './redesign-fixtures'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/services',
 }))
-vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
+let demoMode = false
+vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => demoMode }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: any) => selector({ enabled: false }) }))
 vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ tier: 'pro', isPro: true }) }))
 vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' } }) }))
@@ -32,19 +36,14 @@ vi.mock('@/lib/hooks/use-registered-services', () => ({
 }))
 const mockGetCoverage = vi.fn()
 const mockGetStats = vi.fn()
+const mockGetServices = vi.fn()
+const mockDiscover = vi.fn()
 vi.mock('@/lib/services/aws-services.service', () => ({
   default: {
-    getServices: async (req: any = {}) => ({
-      services: [{
-        id: 'u1', name: 'example-cdn', type: 'cloudfront', environment: 'production', region: null, aws_region: 'global', status: 'unknown', uptime: null,
-        owner: null, team: null, monthly_cost: null, last_deployed: null, last_seen_at: null, metadata: {}, priority_severity: 'high', needs_attention: true,
-        reason: 'Open to the internet', ownership: 'unknown', attention_cause: 'finding',
-      }],
-      pagination: { page: 1, limit: req.limit ?? 50, total: 1, total_pages: 1, has_more: false }, counts: { needs_attention: 1, no_flagged_issues: 0 },
-    }),
+    getServices: (...args: unknown[]) => mockGetServices(...args),
     getStats: () => mockGetStats(),
     getCoverage: () => mockGetCoverage(),
-    discoverServices: vi.fn(),
+    discoverServices: () => mockDiscover(),
   },
 }))
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 'acct-1' }], connection: 'connected' }) } }))
@@ -59,6 +58,7 @@ function emptyAndWaiting() {
   mr.regions.push(mrRegion('sa-east-1', { result_of: 'earlier_scan', scan_state: 'waiting', state: 'not_started', resources: 0, resources_from: 'earlier_success' }))
   return flaggedCoverage(mr, { cloudfront: 1 })
 }
+/** The doc examples the state fixtures don't already draw, plus two variants. */
 const STATES: Record<string, () => unknown> = {
   all_checked: () => flaggedCoverage(docExample('all_checked'), { cloudfront: 2 }),
   in_progress: emptyAndWaiting,
@@ -66,20 +66,46 @@ const STATES: Record<string, () => unknown> = {
   not_enabled: () => flaggedCoverage(docExample('not_enabled')),
   latest_scan_failed: () => flaggedCoverage(docExample('latest_scan_failed')),
   empty_regions: () => flaggedCoverage(docExample('empty_regions')),
+  budget_incomplete: () => flaggedCoverage(docExample('budget_incomplete')),
+  unattributed_warning: () => flaggedCoverage(docExample('unattributed_warning')),
 }
 
 async function show(coverage: unknown) {
-  mockGetCoverage.mockResolvedValue(coverage)
-  mockGetStats.mockResolvedValue(redesignStats({ needs_attention: 1 }))
+  const scan = scanOf(coverage)
+  mockGetCoverage.mockResolvedValue(scan.coverage)
+  mockGetStats.mockResolvedValue(scan.stats)
+  mockGetServices.mockImplementation(async (req: any = {}) => scan.list(req))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(<QueryClientProvider client={client}><ServicesPage /></QueryClientProvider>)
   await screen.findByTestId('organising-line')
   await waitFor(() => expect(screen.queryByText(/Loading/)).toBeNull())
-  return view
+  await waitFor(() => expect(screen.queryByText('Loading resources…')).toBeNull())
+  return Object.assign(view, { scan })
+}
+
+const scopeOf = (container: HTMLElement) => container.querySelector('[data-services-redesign]') as HTMLElement
+
+// jsdom has no layout, so it has no document.elementFromPoint; axe's modal
+// check calls it, and without it aria-hidden-focus errors into "incomplete"
+// instead of running. Nothing is ever drawn on top here, so null is the truth.
+if (typeof document.elementFromPoint !== 'function') document.elementFromPoint = () => null
+
+/**
+ * axe-core's violations in `context`, every rule of the standard set except
+ * colour contrast (jsdom has no layout or computed colours; contrast is
+ * checked in the screenshots). One line per rule and node. An "incomplete"
+ * result (a rule that errored or couldn't decide) counts too, so no rule is
+ * skipped silently.
+ */
+async function axeViolations(context: Element): Promise<string[]> {
+  const result = await axe.run(context, { rules: { 'color-contrast': { enabled: false } } })
+  const line = (kind: string) => (v: axe.Result) => v.nodes.map((n) => `${kind} ${v.id} (${v.impact}): ${n.target.join(' ')} · ${n.failureSummary?.split('\n')[1]?.trim() ?? ''}`)
+  return [...result.violations.flatMap(line('violation')), ...result.incomplete.flatMap(line('incomplete'))]
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  demoMode = false
   vi.useFakeTimers({ toFake: ['Date'], now: R_NOW })
   vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
   vi.stubEnv('NEXT_PUBLIC_SERVICES_REDESIGN', 'true')
@@ -124,13 +150,71 @@ function problems(root: HTMLElement): string[] {
   return out
 }
 
-// Whole-page renders are slow on a cold worker: a wider budget than the 5 s default.
-describe('structural a11y checks', { timeout: 20_000 }, () => {
-  it.each(Object.keys(STATES))('%s: no problems in the redesign', async (name) => {
-    const { container } = await show(STATES[name]())
-    const scope = container.querySelector('[data-services-redesign]') as HTMLElement
+// Whole-page renders (and axe over them) are slow on a cold worker: a wider budget than the 5 s default.
+describe('axe-core and the structural checks on every state', { timeout: 30_000 }, () => {
+  it.each(Object.keys(STATE_FIXTURES))('state fixture %s: no axe violation, no structural problem', async (name) => {
+    const { container } = await show(STATE_FIXTURES[name]())
+    const scope = scopeOf(container)
     expect(scope).not.toBeNull()
+    expect(await axeViolations(scope)).toEqual([])
     expect(problems(scope)).toEqual([])
+  })
+
+  it.each(Object.keys(STATES))('doc example %s: no axe violation, no structural problem', async (name) => {
+    const { container } = await show(STATES[name]())
+    expect(await axeViolations(scopeOf(container))).toEqual([])
+    expect(problems(scopeOf(container))).toEqual([])
+  })
+
+  it('t14: the Unknown · tags unreadable tooltip open', async () => {
+    const { container } = await show(tab1())
+    const attention = screen.getByRole('heading', { name: 'What needs attention' }).closest('section')!
+    const tip = within(attention).getAllByRole('button', { name: /Unknown · tags unreadable/ })[0]
+    fireEvent.focus(tip)
+    expect(document.getElementById(tip.getAttribute('aria-describedby')!)).toHaveAttribute('data-open', 'true')
+    expect(await axeViolations(scopeOf(container))).toEqual([])
+    expect(problems(scopeOf(container))).toEqual([])
+  })
+
+  it('t01 with the scan banner after Scan now', async () => {
+    const c = tab1()
+    const { container } = await show(c)
+    mockDiscover.mockResolvedValue({ message: 'x', warnings: [], errors: [], discovered: 4, updated: 12, jobId: c.multi_region.scan.id })
+    fireEvent.click(screen.getByRole('button', { name: 'Scan now' }))
+    await screen.findByTestId('scan-banner')
+    expect(await axeViolations(scopeOf(container))).toEqual([])
+    expect(problems(scopeOf(container))).toEqual([])
+  })
+
+  it.each(['t01-all-checked', 't05-single-region-flag-off', 't13-codes'])('the phone list of %s on its own, with a tap-open time open', async (name) => {
+    await show(STATE_FIXTURES[name]())
+    const list = document.querySelector('[data-layout="stacked"]') as HTMLElement
+    const time = within(list).queryAllByRole('button').find((b) => b.querySelector('time'))
+    if (time) {
+      fireEvent.click(time)
+      expect(document.getElementById(time.getAttribute('aria-describedby')!)).toHaveAttribute('data-open', 'true')
+    }
+    expect(await axeViolations(list)).toEqual([])
+    expect(problems(list)).toEqual([])
+  })
+
+  it('demo mode', async () => {
+    demoMode = true
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(<QueryClientProvider client={client}><ServicesPage /></QueryClientProvider>)
+    await screen.findByTestId('organising-line')
+    expect(await axeViolations(scopeOf(container))).toEqual([])
+    expect(problems(scopeOf(container))).toEqual([])
+  })
+
+  it('axe finds a violation in a broken fragment (self-check)', async () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<button></button><ul><p>x</p></ul><span aria-hidden="true"><button type="button">x</button></span><div role="buton">x</div>'
+    document.body.appendChild(div)
+    const found = (await axeViolations(div)).join('\n')
+    for (const rule of ['violation button-name', 'violation list', 'violation aria-hidden-focus', 'violation aria-roles']) expect(found).toContain(rule)
+    expect(found).not.toContain('incomplete')
+    div.remove()
   })
 
   it('the checker finds each kind of problem (self-check)', () => {

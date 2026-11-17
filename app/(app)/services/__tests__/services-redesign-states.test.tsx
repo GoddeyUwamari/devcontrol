@@ -10,7 +10,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ServicesPage from '../page'
-import { R_NOW, docExample, flaggedCoverage, mrRegion, redesignStats, tab1, tab3Throttled, tab5 } from './redesign-fixtures'
+import {
+  R_NOW, STATE_FIXTURES, TAB13_FAILED, TAB13_PARTIAL, docExample, flaggedCoverage, mrRegion, redesignStats, scanOf,
+  tab1, tab13, tab3Throttled, tab5, tab8EarlierDenied,
+} from './redesign-fixtures'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -48,23 +51,6 @@ vi.mock('@/lib/services/platform-stats.service', () => ({
   },
 }))
 
-// ── Rows the list requests return ──
-
-function row(id: string, o: Record<string, unknown> = {}) {
-  return {
-    id, name: `example-${id}`, type: 'ec2', environment: 'production', region: null, aws_region: 'us-east-1', status: 'healthy', uptime: null,
-    owner: 'owner-a@example.com', team: 'platform', monthly_cost: null, last_deployed: null, last_seen_at: '2026-11-15T10:03:00.000Z', metadata: {},
-    priority_severity: null, needs_attention: false, reason: null, ownership: 'owned', attention_cause: null, ...o,
-  }
-}
-const ATTENTION_ROWS = [
-  row('db', { needs_attention: true, priority_severity: 'critical', reason: 'Publicly accessible database', attention_cause: 'finding' }),
-  row('cdn', { type: 'cloudfront', aws_region: 'global', needs_attention: true, priority_severity: 'high', reason: 'Open to the internet', attention_cause: 'finding', ownership: 'unknown', owner: null, team: null }),
-]
-function page(services: unknown[], total: number, needs = 3) {
-  return { services, pagination: { page: 1, limit: 50, total, total_pages: 1, has_more: false }, counts: { needs_attention: needs, no_flagged_issues: total - needs } }
-}
-
 // ── Rendering ──
 
 function renderPage() {
@@ -72,13 +58,21 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><ServicesPage /></QueryClientProvider>)
 }
 
-async function show(coverage: unknown, stats = redesignStats()) {
-  mockGetCoverage.mockResolvedValue(coverage)
-  mockGetStats.mockResolvedValue(stats)
+/** One state, rendered from one row set (scanOf: coverage, /stats and the list agree). `stats` overrides /stats only for the deliberate-mismatch control. */
+function serve(coverage: unknown, stats?: unknown) {
+  const scan = scanOf(coverage)
+  mockGetCoverage.mockResolvedValue(scan.coverage)
+  mockGetStats.mockResolvedValue(stats ?? scan.stats)
+  mockGetServices.mockImplementation(async (req: any = {}) => scan.list(req))
+  return scan
+}
+
+async function show(coverage: unknown, stats?: unknown) {
+  const scan = serve(coverage, stats)
   const view = renderPage()
   await screen.findByTestId('organising-line')
   await waitFor(() => expect(screen.queryByText(/Loading/)).toBeNull())
-  return view
+  return Object.assign(view, { scan })
 }
 
 const text = (el: Element | null) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
@@ -99,7 +93,7 @@ const legend = () => [...screen.getByRole('list', { name: 'Status legend' }).que
 const notChecked = () => screen.getByTestId('not-checked')
 
 async function scanNow(outcome: { jobId: string | null; discovered?: number; updated?: number }, after?: unknown) {
-  if (after !== undefined) mockGetCoverage.mockResolvedValue(after)
+  if (after !== undefined) serve(after)
   mockDiscover.mockResolvedValue({ message: 'x', warnings: [], errors: [], discovered: outcome.discovered ?? 4, updated: outcome.updated ?? 12, jobId: outcome.jobId ?? undefined })
   fireEvent.click(screen.getByRole('button', { name: 'Scan now' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Scan now' })).toBeEnabled())
@@ -112,7 +106,6 @@ beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
   vi.stubEnv('NEXT_PUBLIC_SERVICES_REDESIGN', 'true')
   vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'false')
-  mockGetServices.mockImplementation(async (req: any = {}) => (req.needs_attention ? page(ATTENTION_ROWS, 3) : page([row('web'), ...ATTENTION_ROWS], 12)))
 })
 afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers() })
 
@@ -157,9 +150,9 @@ describe('tab 1: all regions checked', () => {
   it('tiles: attention scope, Resources from /stats total with S21, Services and spend without Coming soon', async () => {
     await show(tab1())
     const tiles = screen.getByRole('region', { name: 'Summary' })
-    expect(text(within(tiles).getByTestId('attention-scope'))).toBe('in 2 regions')
+    expect(text(within(tiles).getByTestId('attention-scope'))).toBe('in 2 regions, plus 1 global (CloudFront)')
     const resources = within(tiles).getByRole('heading', { name: 'Resources' }).parentElement!
-    expect(text(resources)).toBe('Resources12in 3 regions, plus 2 global (CloudFront)')
+    expect(text(resources)).toBe('Resources9in 3 regions, plus 2 global (CloudFront)')
     expect(text(within(tiles).getByRole('heading', { name: 'Services' }).parentElement!)).toBe('Services0registered')
     expect(text(within(tiles).getByRole('heading', { name: 'AWS spend, month to date' }).parentElement!)).toMatch(/whole account · billed, from Cost Explorer/)
     expect(text(tiles)).not.toMatch(/Coming soon|per service/)
@@ -184,7 +177,7 @@ describe('tab 1: all regions checked', () => {
     await show(tab1())
     expect(text(screen.getByTestId('attention-count'))).toBe('3 resources need attention')
     const list = screen.getByRole('heading', { name: 'All resources' }).parentElement!
-    expect(text(list)).toMatch(/^All resources12 resources/)
+    expect(text(list)).toMatch(/^All resources9 resources/)
     expect(text(list)).not.toMatch(/in us-east-1|plus S3/)
     expect(text(notChecked().querySelector('summary'))).toBe("Not checked: IAM · CloudFront tags · 2 resources' tags · other resource types. Details")
     expect([...notChecked().querySelectorAll('li')].map((li) => li.getAttribute('data-line'))).toEqual(['iam', 'cloudfront-tags', 'tags-unknown', 'types'])
@@ -245,7 +238,7 @@ describe('tab 3: regions not checked', () => {
     const banner = await screen.findByTestId('scan-banner')
     expect(banner).toHaveAttribute('data-tone', 'warning')
     expect(text(banner.querySelector('p'))).toBe("Scan finished · 2 of 3 regions checked · ap-south-1 couldn't be checked · 4 new · 12 updated")
-    expect(text(notChecked().querySelector('summary'))).toBe("Not checked: ap-south-1 on the last scan · IAM · CloudFront tags · 2 resources' tags · other resource types. Details")
+    expect(text(notChecked().querySelector('summary'))).toBe("Not checked: ap-south-1 on the last scan · IAM · CloudFront tags · 3 resources' tags · other resource types. Details")
     expect(text(notChecked().querySelector('[data-line="region-ap-south-1"]'))).toBe("ap-south-1 couldn't be checked on the last scan (AWS was busy).")
   })
 
@@ -296,8 +289,8 @@ describe('tab 5: single-region account (multi-region off for the organization)',
     expect(text(document.querySelector('[data-line="footer-0"]'))).toBe('S3 and CloudFront are checked in every region on each scan: 3 S3 buckets outside us-east-1.')
     expect(legend().map((l) => l.split(':')[0])).toEqual(['Complete', 'Not scanned yet', 'Not enabled'])
     const tiles = screen.getByRole('region', { name: 'Summary' })
-    expect(text(within(tiles).getByRole('heading', { name: 'Resources' }).parentElement!)).toBe('Resources12in us-east-1, plus S3 in every region and CloudFront')
-    expect(text(screen.getByRole('heading', { name: 'All resources' }).parentElement!)).toMatch(/^All resources12 resources in us-east-1, plus S3 in every region and CloudFront/)
+    expect(text(within(tiles).getByRole('heading', { name: 'Resources' }).parentElement!)).toBe('Resources14in us-east-1, plus S3 in every region and CloudFront')
+    expect(text(screen.getByRole('heading', { name: 'All resources' }).parentElement!)).toMatch(/^All resources14 resources in us-east-1, plus S3 in every region and CloudFront/)
     expect(text(notChecked().querySelector('summary'))).toBe("Not checked: other enabled regions (S3 only) · IAM · CloudFront tags · 2 resources' tags · other resource types. Details")
     expect(document.body.textContent).not.toMatch(/with resources|empty ·|partly checked|from an earlier scan/)
   })
@@ -346,7 +339,7 @@ describe('tab 6: "1 of 1"', () => {
     expect(rowKeys()).toEqual(['region-eu-west-1', 'global-heading', 'cloudfront'])
     expect(homeLine()).toBe('Cost savings, Operational Health and Security Hub run in your home region, eu-west-1, only.')
     const tiles = screen.getByRole('region', { name: 'Summary' })
-    expect(text(within(tiles).getByRole('heading', { name: 'Resources' }).parentElement!)).toBe('Resources12in eu-west-1, plus 2 global (CloudFront)')
+    expect(text(within(tiles).getByRole('heading', { name: 'Resources' }).parentElement!)).toBe('Resources5in eu-west-1, plus 2 global (CloudFront)')
     await scanNow({ jobId: c.multi_region.scan.id, discovered: 0, updated: 3 })
     expect(text((await screen.findByTestId('scan-banner')).querySelector('p'))).toBe('Scan finished · 1 of 1 region checked · 0 new · 3 updated')
   })
@@ -428,17 +421,11 @@ describe('tab 13: warning and failure texts', () => {
     ['us-west-1', 'discovery_listing_truncated', 'us-west-1 was only partly scanned: some listings stopped at their page limit, so some resources there may be missing and deleted ones may still be listed until a complete scan.'],
     ['us-west-2', 'deletion_detection_paused_truncated_index', 'us-west-2 was only partly scanned: its resource index has more than 1,000 items, so some resources there may be missing and deleted ones may still be listed until a complete scan.'],
   ]
-  function codes() {
-    const mr = docExample('all_checked')
-    mr.coverage_status = 'completed_with_regions_not_checked'
-    mr.regions = [
-      mr.regions[0],
-      ...CODES.map(([r, state, code]) => mrRegion(r, { state, error_code: code, status: state === 'failed' || state === 'not_ready' ? 'failed' : state === 'denied' ? 'denied' : 'timed_out', resources: null, resources_from: null, last_success_at: null })),
-      ...PARTIAL.map(([r, code]) => mrRegion(r, { state: 'checked_with_warnings', error_code: code, status: code.startsWith('resource') ? 'ok' : 'partial', resources: 2 })),
-    ].sort((a: any, b: any) => (a.home ? -1 : b.home ? 1 : a.region < b.region ? -1 : 1))
-    Object.assign(mr.scan, { regions_total: 12, regions_checked: 4, regions_with_resources: 4, regions_empty: 0, regions_zero_with_warnings: 0 })
-    return flaggedCoverage(mr, { warnings: ['scan_deadline'] })
-  }
+  const codes = tab13
+  it('the text table covers exactly the fixture\'s regions', () => {
+    expect(CODES.map(([r, state, code]) => [r, state, code])).toEqual(TAB13_FAILED)
+    expect(PARTIAL.map(([r, code]) => [r, code])).toEqual(TAB13_PARTIAL)
+  })
 
   it.each(CODES)('%s %s/%s: label, short Details, note, reason line', async (region, _state, _code, label, short, note) => {
     await show(codes())
@@ -504,7 +491,8 @@ describe('tab 14: Coming soon, ownership, the Unknown tooltip', () => {
     fireEvent.click(tip)
     expect(body).toHaveAttribute('data-open', 'true')
     const list = screen.getByRole('heading', { name: 'All resources' }).closest('section')!
-    expect(within(list).getAllByRole('button', { name: /Unknown · tags unreadable/ })).toHaveLength(1)
+    // One per CloudFront distribution: their tags are the unreadable ones (/stats ownership.unknown = 2).
+    expect(within(list).getAllByRole('button', { name: /Unknown · tags unreadable/ })).toHaveLength(2)
   })
 })
 
@@ -526,7 +514,7 @@ describe('reconciliation and truth rules', () => {
     }
   })
 
-  it('the Resources tile is /stats total, never the column summed (RR-L3: a partial-then-failed region reads —)', async () => {
+  it('DELIBERATE MISMATCH (N9 control, not a state fixture): the Resources tile is /stats total, never the column summed (RR-L3: a partial-then-failed region reads —)', async () => {
     const mr = docExample('all_checked')
     mr.coverage_status = 'completed_with_regions_not_checked'
     mr.regions[1] = mrRegion('ap-south-1', { status: 'failed', error_code: 'error', state: 'failed', resources: null, resources_from: null, last_success_at: null })
@@ -561,6 +549,101 @@ describe('reconciliation and truth rules', () => {
     const items = [...stacked().children].map((li) => li.getAttribute('data-row'))
     expect(items).toEqual(['region-us-east-1', 'region-ap-south-1', 'region-eu-west-1', 'empty', 'not-enabled', 'global-heading', 'cloudfront'])
     expect(text(stacked().querySelector('[data-row="cloudfront"]'))).toMatch(/^CloudFront · 2 distributionsResources2StatusComplete/)
+  })
+})
+
+// ── pr3b-review F1: one row set per state ──
+
+/** The leading count of a Resources cell ("31from an earlier scan" → 31); "—" (null) adds nothing. */
+const leading = (cell: string) => Number(cell.match(/^([\d,]+)/)?.[1].replace(/,/g, '') ?? 0)
+/** An unflagged organization's not-scanned group lists its S3 buckets under the "—". */
+const s3Listed = (cell: string) => Number(cell.match(/([\d,]+) S3 buckets? listed/)?.[1].replace(/,/g, '') ?? 0)
+const tileValue = () => Number(text(within(screen.getByRole('region', { name: 'Summary' })).getByRole('heading', { name: 'Resources' }).parentElement!).match(/^Resources([\d,]+)/)![1].replace(/,/g, ''))
+
+describe('F1: every state fixture reconciles (one row set: coverage, /stats and the list)', () => {
+  it.each(Object.keys(STATE_FIXTURES))('%s: Resources card = region rows + CloudFront; the list total = the card', async (name) => {
+    const { scan } = await show(STATE_FIXTURES[name]())
+    const tile = tileValue()
+    expect(tile).toBe(scan.services.length)
+    // The table: every region and group row (group sums included), then the CloudFront row.
+    let rows = 0
+    for (const tr of table().querySelectorAll('tbody > tr')) {
+      if (tr.getAttribute('data-row') === 'global-heading') continue
+      const cell = text(tr.children[1])
+      rows += leading(cell) + s3Listed(cell)
+    }
+    expect(rows).toBe(tile)
+    // The phone list carries the same numbers.
+    let phone = 0
+    for (const li of stacked().children) {
+      const dd = li.querySelector('dl > dd')
+      if (dd) phone += leading(text(dd)) + s3Listed(text(dd))
+    }
+    expect(phone).toBe(tile)
+    // All resources: its heading count and the pager both say the card's number.
+    const list = screen.getByRole('heading', { name: 'All resources' }).closest('section')!
+    expect(text(list)).toMatch(new RegExp(`^All resources${tile.toLocaleString('en-US')} resources?`))
+    await waitFor(() => expect(text(list)).toContain(`Showing 1–${Math.min(50, tile)} of ${tile}`))
+  })
+})
+
+// ── pr3b-review L-1: result_of = latest_scan ──
+
+describe('L-1: a region that failed in an EARLIER scan is not "not checked" on the latest scan', () => {
+  it('latest_scan_failed + ap-south-1 denied earlier: its row keeps the old state, but no note, no reason line, no banner name', async () => {
+    const c = tab8EarlierDenied()
+    await show(c)
+    expect(orgLine()).toBe('Last scan failed after checking 1 of 3 regions · 1 with resources')
+    expect(cells('region-ap-south-1').slice(0, 3)).toEqual(['ap-south-1', '3from an earlier scan', "Couldn't check: access denied"])
+    expect(notes().map(([k]) => k)).toEqual(['latest-failed'])
+    expect(notChecked().querySelector('[data-line="region-ap-south-1"]')).toBeNull()
+    expect(text(notChecked())).not.toMatch(/ap-south-1/)
+    await scanNow({ jobId: c.multi_region.scan.id })
+    const banner = await screen.findByTestId('scan-banner')
+    expect(text(banner.querySelector('p'))).toBe('Scan failed · it checked 1 of 3 regions, then stopped before finishing · try Scan now again')
+    expect(document.body.textContent).not.toMatch(/ap-south-1 couldn't be checked/)
+  })
+})
+
+// ── pr3b-review F2: phone rows ──
+
+describe('F2: phone rows show the relative time only; the exact time opens on tap or focus', () => {
+  it('no exact time is visible in the stacked list; each time is a button described by its exact time', async () => {
+    await show(tab1())
+    const list = stacked() as HTMLElement
+    const visible = list.cloneNode(true) as Element
+    for (const tip of visible.querySelectorAll('[role="tooltip"]')) tip.remove()
+    expect(text(visible)).not.toMatch(/2026 at|UTC|November/)
+    for (const tip of list.querySelectorAll('[role="tooltip"]')) {
+      expect(tip).toHaveAttribute('data-open', 'false')
+      expect(tip.className).toMatch(/(?<![\w:-])hidden(?![\w-])/)
+    }
+    const times = within(list).getAllByRole('button', { name: 'today, 10:03 AM' })
+    expect(times.length).toBeGreaterThan(0)
+    const time = times[0]
+    expect(time).toHaveAccessibleDescription('Sunday, November 15, 2026 at 10:03:00 AM UTC')
+    expect(time.querySelector('time')).toHaveAttribute('dateTime', '2026-11-15T10:03:00.000Z')
+    const tip = document.getElementById(time.getAttribute('aria-describedby')!)!
+    expect(tip).toHaveAttribute('role', 'tooltip')
+    fireEvent.click(time)
+    expect(tip).toHaveAttribute('data-open', 'true')
+    expect(tip.className).toMatch(/(?<![\w:-])block(?![\w-])/)
+    fireEvent.keyDown(time, { key: 'Escape' })
+    expect(tip).toHaveAttribute('data-open', 'false')
+    fireEvent.focus(time)
+    expect(tip).toHaveAttribute('data-open', 'true')
+    fireEvent.blur(time)
+    expect(tip).toHaveAttribute('data-open', 'false')
+    fireEvent.mouseEnter(time.parentElement!)
+    expect(tip).toHaveAttribute('data-open', 'true')
+  })
+
+  it('the desktop table keeps its hover/focus tooltip time (no tap button)', async () => {
+    await show(tab1())
+    const time = table().querySelector('tr[data-row="region-us-east-1"] time')!
+    expect(time.closest('button')).toBeNull()
+    expect(time).toHaveAttribute('tabindex', '0')
+    expect(text(time)).toBe('today, 10:03 AM (Sunday, November 15, 2026 at 10:03:00 AM UTC)')
   })
 })
 
