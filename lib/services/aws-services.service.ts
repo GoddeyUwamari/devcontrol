@@ -84,7 +84,22 @@ export interface AWSServicesStats {
  *   them, and nothing may assume them. Nothing renders them before M6.
  */
 export interface ServicesCoverage {
-  account: { connected: boolean; status: string | null; home_region: string | null }
+  account: {
+    connected: boolean
+    status: string | null
+    home_region: string | null
+    /**
+     * Home region HR-1: the former home region and when it changed (ISO), present
+     * only after this connection's home region was changed; absent otherwise.
+     */
+    previous_home_region?: string
+    home_region_changed_at?: string
+    /**
+     * PR 3c (G2b): the former home region's regional resources still stored (not S3,
+     * not terminated), present only alongside previous_home_region. Never derived here.
+     */
+    previous_home_region_resources?: number
+  }
   scope: {
     home_region: { region: string; count: number } | null
     s3: { in_last_scan: boolean; regions: { region: string | null; count: number }[] }
