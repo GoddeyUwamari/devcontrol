@@ -1,4 +1,5 @@
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client'
+import { excludeDemoOrganizationSql } from '../demo/demo-workspace'
 
 export const register = new Registry()
 
@@ -119,6 +120,7 @@ export async function updateBusinessMetrics(dbPool: any) {
         COUNT(*) as total,
         COUNT(*) FILTER (WHERE status = 'active') as active
       FROM services
+      WHERE ${excludeDemoOrganizationSql('services.organization_id')}
     `)
 
     if (services.rows.length > 0) {
@@ -131,6 +133,7 @@ export async function updateBusinessMetrics(dbPool: any) {
       SELECT cost_per_month
       FROM infrastructure_resources
       WHERE resource_type = 'AWS_COST_TOTAL' AND aws_id = 'cost-explorer-total'
+        AND ${excludeDemoOrganizationSql('infrastructure_resources.organization_id')}
       LIMIT 1
     `)
 
@@ -146,6 +149,7 @@ export async function updateBusinessMetrics(dbPool: any) {
         FROM infrastructure_resources
         WHERE status IN ('Running', 'Active')
         AND resource_type != 'AWS_COST_TOTAL'
+        AND ${excludeDemoOrganizationSql('infrastructure_resources.organization_id')}
       `)
 
       if (infra.rows.length > 0) {
@@ -168,6 +172,7 @@ export async function updateBusinessMetrics(dbPool: any) {
         COALESCE(SUM(CASE WHEN severity = 'LOW' THEN 1 ELSE 0 END), 0) as low
       FROM cost_recommendations
       WHERE status = 'ACTIVE'
+        AND ${excludeDemoOrganizationSql('cost_recommendations.organization_id')}
     `)
 
     if (recommendations.rows.length > 0) {
@@ -187,6 +192,7 @@ export async function updateBusinessMetrics(dbPool: any) {
       SELECT COUNT(*) as total
       FROM deployments
       WHERE deployed_at >= $1
+        AND ${excludeDemoOrganizationSql('deployments.organization_id')}
     `, [thirtyDaysAgo])
 
     if (deploymentFreq.rows.length > 0) {
@@ -203,6 +209,7 @@ export async function updateBusinessMetrics(dbPool: any) {
         FROM deployments
         WHERE status = 'success'
           AND deployed_at >= $1
+          AND ${excludeDemoOrganizationSql('deployments.organization_id')}
       )
       SELECT AVG(EXTRACT(EPOCH FROM (deployed_at - previous_deploy_at)) / 3600) as avg_hours
       FROM successful_deployments
@@ -220,6 +227,7 @@ export async function updateBusinessMetrics(dbPool: any) {
         COUNT(*) FILTER (WHERE status = 'failed') as failed
       FROM deployments
       WHERE deployed_at >= $1
+        AND ${excludeDemoOrganizationSql('deployments.organization_id')}
     `, [thirtyDaysAgo])
 
     if (failureRate.rows.length > 0) {
@@ -239,6 +247,7 @@ export async function updateBusinessMetrics(dbPool: any) {
           LEAD(deployed_at) OVER (PARTITION BY service_id ORDER BY deployed_at) as next_deploy_at
         FROM deployments
         WHERE deployed_at >= $1
+          AND ${excludeDemoOrganizationSql('deployments.organization_id')}
       )
       SELECT AVG(EXTRACT(EPOCH FROM (next_deploy_at - deployed_at)) / 60) as avg_minutes
       FROM deployments_ordered
@@ -260,6 +269,7 @@ export async function updateBusinessMetrics(dbPool: any) {
         COALESCE(AVG(duration_minutes) FILTER (WHERE status = 'resolved'), 0) as avg_mttr
       FROM alert_history
       WHERE started_at >= $1
+        AND ${excludeDemoOrganizationSql('alert_history.organization_id')}
     `, [thirtyDaysAgo])
 
     if (alerts.rows.length > 0) {

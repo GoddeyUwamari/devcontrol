@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { excludeDemoOrganizationSql } from '../demo/demo-workspace';
 
 export interface ScheduledReport {
   id: string;
@@ -177,7 +178,9 @@ export class ScheduledReportsRepository {
 
   /**
    * Find all due reports across all organizations (for cron job)
-   * Returns enabled reports where next_run_at <= NOW()
+   * Returns enabled reports where next_run_at <= NOW(), never the demo
+   * organization's (it cannot hold one: admin migration 202611141200 refuses
+   * the row; excluded here all the same, like every job).
    */
   async findDueReports(): Promise<ScheduledReport[]> {
     const query = `
@@ -185,6 +188,7 @@ export class ScheduledReportsRepository {
       WHERE enabled = true
         AND next_run_at IS NOT NULL
         AND next_run_at <= NOW()
+        AND ${excludeDemoOrganizationSql('scheduled_reports.organization_id')}
       ORDER BY next_run_at ASC
     `;
 

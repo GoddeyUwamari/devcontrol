@@ -1195,6 +1195,87 @@ psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
 It loses each user's previous sign-in time (display only). It drops the column
 only if it carries the migration's marker, and its `schema_migrations` row.
 
+## Classification -- `202611141200_demo_workspace_foundation.sql`
+
+The database half of the demo workspace (one server-side organization with
+synthetic sample data). One transaction, all or nothing, as `postgres`:
+
+- **`organizations.is_demo`** (boolean, NOT NULL, default false; catalog-only
+  add), the partial unique index **`organizations_single_demo_uidx`** (at most
+  one demo organization), and the trigger **`organizations_demo_flag_immutable`**:
+  `is_demo` is fixed when the row is inserted, so no existing organization can
+  become the demo and the demo can never become an ordinary organization.
+- **`organizations_demo_holds_no_billing_or_credentials`** (CHECK): the demo is
+  on the free tier, its `subscription_status` is NULL or `'free'`, and every
+  Stripe, subscription-period, processed-event, payment-failure, grace,
+  checkout-reservation, trial and stored-AWS-credential column is NULL
+  (`subscription_cancel_at_period_end` not true; `billing_lifecycle_state`
+  `'healthy'`). Absence is NULL in all of these: the application never writes
+  `''`, and an empty string is refused too. Every other organization keeps
+  every state it can hold today.
+- **`demo_workspace_access`** (`user_id` PK → `users` ON DELETE CASCADE,
+  `granted_at`, `source` `'self'|'founder'`): who may enter the demo. It has no
+  organization column, so a grant can name no organization; the one it admits
+  to is "the `is_demo` organization". A grant can be inserted only while a demo
+  organization exists. It is not a tenant table (T-OWN: no `organization_id`
+  or `org_id`), because it is read before the tenant tag is set, like
+  `organization_memberships`. `devcontrol` gets `SELECT, INSERT, DELETE` only.
+- **`demo_workspace_refuse_row`** (BEFORE INSERT OR UPDATE OF
+  `organization_id`) on `organization_invitations`, `scheduled_reports`,
+  `observability_collection_scopes`, `aws_org_external_ids` and
+  `aws_connection_checks`: a row for the demo organization is refused
+  (SQLSTATE 23514).
+- **`demo_workspace_constrain_aws_account`** on `aws_accounts`, attached only if
+  that table exists (production has it; CI creates it as a fixture after the
+  bootstrap): the demo's row must be the documentation account `111122223333`,
+  a role in it, and no External ID.
+
+The four trigger functions are `postgres`-owned `SECURITY DEFINER` with
+`search_path = pg_catalog, pg_temp` and schema-qualified references, so a
+refusal never depends on the caller's grants or on row level security (in CI,
+`devcontrol` cannot read `organizations` at all). They return `trigger`, and
+EXECUTE is revoked from `PUBLIC`.
+
+Not covered, pending production verification (no canonical migration creates
+them, so their production shape is unverified): `sso_configurations`,
+`api_usage`, `tenants`. Not in production: `api_keys`, `webhook_endpoints`.
+
+**Ownership caveat:** in production `organization_invitations` is owned by
+`devcontrol` (T-OWN allowlist, `C-G2-tenant-rls-off`); the other trigger
+tables are `postgres`-owned. A table's owner can always disable or drop a
+trigger on it, so the refusal on `organization_invitations` is advisory until
+C-G2 moves that table to `postgres`, and the request guard (PR-1b) must not
+rely on it. This migration changes no ownership.
+
+It is administrative because it alters the `postgres`-owned `organizations`,
+creates a table and functions (since `202611091300` `devcontrol` has no CREATE
+on `public`) and creates triggers on tables the application role does not own
+(except `organization_invitations`, above). Apply it by hand
+**before** PR-1a (shared demo exclusion) is merged: PR-1a's jobs and metrics
+select with `o.is_demo = false` and fail without the column. The release
+running before PR-1a never reads any of it. Locks, each held to commit and
+bounded by a 3 s lock timeout: ACCESS EXCLUSIVE on `organizations` (the column
+and the validating CHECK), SHARE for the index, SHARE ROW EXCLUSIVE on `users`
+(the new foreign key) and on each table that gets a trigger.
+
+### Rollback
+
+`202611141200_demo_workspace_foundation_rollback.sql`, manual only, as
+`postgres`, in one transaction, **after** reverting the application to a
+release before PR-1a:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611141200_demo_workspace_foundation_rollback.sql
+```
+
+It refuses while any organization has `is_demo = true`: dropping the column
+would turn the demo into an ordinary organization with none of the
+protections. Delete the demo first, deliberately. It loses every demo access
+grant (export `demo_workspace_access` first if the list matters); no other
+row changes. It drops only marked objects, never with CASCADE, and its
+`schema_migrations` row.
+
 ## Classification -- `202611161200_add_aws_connection_checks_home_region_proposal.sql`
 
 Adds four nullable columns with no default to `aws_connection_checks`, for the

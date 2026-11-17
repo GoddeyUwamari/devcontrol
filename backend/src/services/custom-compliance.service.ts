@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { assertConnectionUnchanged, currentConnectionIdentity, isConnectionChanged } from './aws-connection-fence';
+import { DEMO_EXCLUSION_SQL } from '../demo/demo-workspace';
 import {
   ComplianceFrameworksRepository,
   ComplianceFrameworkRule,
@@ -149,6 +150,15 @@ type ScanClaim = {
 export interface CustomComplianceServiceOptions {
   /** Overrides SCAN_TIMEOUT_MS (tests). */
   scanTimeoutMs?: number;
+}
+
+/**
+ * The organizations whose interrupted scans startup recovery may mark failed:
+ * every organization except the demo (demo/demo-workspace.ts), in id order.
+ */
+export async function listScanRecoveryOrganizations(executor: Pool | PoolClient): Promise<Array<{ id: string }>> {
+  const { rows } = await executor.query<{ id: string }>(`SELECT o.id FROM organizations o WHERE ${DEMO_EXCLUSION_SQL} ORDER BY o.id`);
+  return rows;
 }
 
 export class CustomComplianceService {
@@ -484,7 +494,7 @@ export class CustomComplianceService {
     let marked = 0;
 
     try {
-      const { rows: organizations } = await client.query('SELECT id FROM organizations ORDER BY id');
+      const organizations = await listScanRecoveryOrganizations(client);
       for (const { id: organizationId } of organizations) {
         await client.query(SET_TENANT_SQL, [organizationId]);
         const { rows: frameworks } = await client.query(

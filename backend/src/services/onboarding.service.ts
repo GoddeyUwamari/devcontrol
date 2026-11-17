@@ -7,6 +7,7 @@
 import { pool } from '../config/database';
 import { PoolClient } from 'pg';
 import { hasEligibleAwsAccount } from '../repositories/aws-accounts.repository';
+import { excludeDemoOrganizationSql } from '../demo/demo-workspace';
 
 // Simple error class
 class AppError extends Error {
@@ -513,6 +514,7 @@ export class OnboardingService {
         ) as avg_hours_to_complete
       FROM onboarding_progress
       WHERE completed_at IS NOT NULL
+        AND ${excludeDemoOrganizationSql('onboarding_progress.organization_id')}
     `);
 
     return result.rows[0];
@@ -532,6 +534,7 @@ export class OnboardingService {
         COUNT(*) FILTER (WHERE resources_discovered_at IS NOT NULL) as completed_discovery,
         COUNT(*) FILTER (WHERE completed_at IS NOT NULL) as completed_all
       FROM onboarding_progress
+      WHERE ${excludeDemoOrganizationSql('onboarding_progress.organization_id')}
     `);
 
     const data = result.rows[0];

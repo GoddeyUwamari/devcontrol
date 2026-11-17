@@ -14,6 +14,7 @@ import {
 import { checkResourceLimit } from '../middleware/subscription.middleware';
 import { validateParams } from '../middleware/validation';
 import { organizationMemberParamsSchema } from '../validators/schemas';
+import { DEMO_EXCLUSION_SQL } from '../demo/demo-workspace';
 
 const router = Router();
 
@@ -39,8 +40,9 @@ router.get('/founding-count', async (req, res) => {
   try {
     const { pool } = await import('../config/database');
     const result = await pool.query(
-      `SELECT COUNT(*)::int AS count FROM organizations
-       WHERE subscription_tier != 'free' AND subscription_tier IS NOT NULL`
+      // The demo organization is stored on free (its CHECK); excluded all the same.
+      `SELECT COUNT(*)::int AS count FROM organizations o
+       WHERE o.subscription_tier != 'free' AND o.subscription_tier IS NOT NULL AND ${DEMO_EXCLUSION_SQL}`
     );
     res.json({ count: result.rows[0].count });
   } catch {

@@ -97,6 +97,7 @@ export const EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   sessions: 'authentication',
   organization_memberships: 'identity and roles',
   organization_invitations: 'identity',
+  demo_workspace_access: 'identity: which users may enter the demo workspace',
   platform_staff: 'internal staff access',
   role_permissions: 'authorization configuration',
   teams: 'workspace configuration',

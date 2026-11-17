@@ -30,6 +30,7 @@
  */
 import { pool } from '../config/database';
 import type { PoolClient } from 'pg';
+import { DEMO_EXCLUSION_SQL } from '../demo/demo-workspace';
 
 export type ActivationFunnelEventName =
   | 'signup_completed'
@@ -199,9 +200,19 @@ const ACTIVATION_STAGE_SEQUENCE: ActivationFunnelEventName[] = [
   'first_value_viewed',
 ];
 
+/**
+ * The organizations the activation funnel counts: every organization except
+ * the demo (demo/demo-workspace.ts), whose sample data is never a funnel stage.
+ */
+export async function listActivationFunnelOrganizations(
+  executor: Pick<PoolClient, 'query'> = pool
+): Promise<string[]> {
+  const { rows } = await executor.query<{ id: string }>(`SELECT o.id FROM organizations o WHERE ${DEMO_EXCLUSION_SQL}`);
+  return rows.map((r) => r.id);
+}
+
 export async function getActivationFunnelSummary(): Promise<ActivationFunnelSummary> {
-  const { rows: orgRows } = await pool.query<{ id: string }>('SELECT id FROM organizations');
-  const organizationIds = orgRows.map((r) => r.id);
+  const organizationIds = await listActivationFunnelOrganizations();
 
   const client = await pool.connect();
   const perOrg: OrgFirstOccurrences[] = [];
