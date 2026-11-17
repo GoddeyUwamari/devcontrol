@@ -21,7 +21,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import { isNotReportedYet, isStillUpdating, NOT_REPORTED_LEGEND, NOT_REPORTED_PLACEHOLDER_NOTE, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
-import { sevenDayPoints, trendDateLabel } from './cost-trend-window';
+import { sevenDayPoints, trendDateLabel, xAxisInterval } from './cost-trend-window';
 import { KEEP_CLEAR_OF_FLOATING } from '@/lib/floating-keep-clear';
 
 /** Fill opacity of a period AWS Cost Explorer is still updating: the same colors, lighter. */
@@ -434,7 +434,7 @@ export function CostTrendChart({
               tick={DateTick}
               height={twoLineDates ? 44 : 30}
               // 7 days: every date shown, never skipped (round 2); 30/90 days and months may skip.
-              interval={dateRange === '7d' ? 0 : 'preserveEnd'}
+              interval={xAxisInterval(dateRange)}
             />
             <YAxis
               domain={[0, 'auto']}

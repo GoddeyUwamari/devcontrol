@@ -36,7 +36,7 @@ vi.mock('recharts', async (importOriginal) => {
 })
 
 import { CostTrendChart, UPDATING_BAR_OPACITY } from '../cost-trend-chart'
-import { sevenDayPoints, sevenFullUtcDays, trendDateLabel } from '../cost-trend-window'
+import { sevenDayPoints, sevenFullUtcDays, trendDateLabel, xAxisInterval } from '../cost-trend-window'
 
 const NOV17_BODY = JSON.parse(fs.readFileSync(
   path.resolve(__dirname, '../../../backend/src/controllers/__tests__/__fixtures__/trend-lag/trend-7d-2026-11-17.new.json'), 'utf8',
@@ -75,6 +75,12 @@ describe('7-day view: exactly the 7 full UTC days ending yesterday', () => {
     expect(sevenFullUtcDays(new Date('2026-11-18T00:00:00.000Z'))[6]).toBe('2026-11-17')
     expect(sevenFullUtcDays(new Date('2026-12-02T12:00:00.000Z'))).toEqual(['2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01'])
     expect(sevenDayPoints(NOV17, NOW).map((p) => p.date)).toEqual(DAYS)
+  })
+
+  it('7 days never skips a label (interval 0); 30/90 days and months may (preserveEnd)', () => {
+    // jsdom cannot measure text, so recharts never skips there: the choice itself is pinned here.
+    expect(xAxisInterval('7d')).toBe(0)
+    expect((['30d', '90d', '6mo', '1yr'] as const).map(xAxisInterval)).toEqual(['preserveEnd', 'preserveEnd', 'preserveEnd', 'preserveEnd'])
   })
 
   it('labels are read from the date itself (no time-zone shift): "Nov 10", months "Nov 2026"', () => {

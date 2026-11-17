@@ -46,3 +46,11 @@ export function trendDateLabel(date: string, monthly: boolean): string {
   if (!y || !m || (!monthly && !d)) return date
   return monthly ? `${MONTHS[m - 1]} ${y}` : `${MONTHS[m - 1]} ${d}`
 }
+
+/**
+ * The x-axis tick interval: 0 (every label, never skipped) on the 7-day view;
+ * the 30/90-day and monthly views may skip labels to fit ('preserveEnd').
+ */
+export function xAxisInterval(range: '7d' | '30d' | '90d' | '6mo' | '1yr'): 0 | 'preserveEnd' {
+  return range === '7d' ? 0 : 'preserveEnd'
+}
