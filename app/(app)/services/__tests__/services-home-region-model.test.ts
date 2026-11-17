@@ -19,7 +19,7 @@ import {
 import { REDESIGN_COPY, describeCoverageCard, describeNotChecked, formerHomeOf, organisingLine, resourcesCaptions } from '../redesignModel'
 import { regionOptionLabel } from '../allResources'
 import { R_NOW, docExample, flaggedCoverage, tab5 } from './redesign-fixtures'
-import { ACCOUNT_ID, CHANGED_AT, preview, previewFor, proposal, split, splitSeven, tab12Coverage, tab12Scan } from './home-region-fixtures'
+import { ACCOUNT_ID, CHANGED_AT, preview, previewFor, proposal, split, splitSeven, tab12Scan } from './home-region-fixtures'
 
 const S = JSON.parse(fs.readFileSync(path.join(__dirname, '__fixtures__', 'services-redesign', 'home-region-strings.json'), 'utf8'))
 const OWNER = { canChange: true, scanRunning: false, home: 'us-east-1', multiRegion: false, accountId: ACCOUNT_ID }
@@ -31,7 +31,7 @@ describe('exact strings (fixture)', () => {
     expect(C.proposalTitle('R')).toBe(S.proposal.title)
     expect(C.proposalBody('84', 'R', 'H', '3', true)).toBe(S.proposal.bodyFlagOff)
     expect(C.proposalBody('84', 'R', 'H', '3', false)).toBe(S.proposal.bodyFlagOn)
-    expect([C.use('R'), C.keep('H')]).toEqual(S.proposal.buttons)
+    expect([C.proposalUse('R'), C.keep('H')]).toEqual(S.proposal.buttons)
     expect(C.proposalFootnote('A', 'S', 'E')).toBe(S.proposal.footnote)
     expect(C.scanRunning).toBe(S.proposal.scanRunning)
     expect(C.ownerOnlyChange).toBe(S.proposal.member)

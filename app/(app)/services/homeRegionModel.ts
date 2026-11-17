@@ -28,7 +28,7 @@ export const HOME_REGION_COPY = {
     `${p}% of this account's regional AWS spend in the last 30 days was in ${r}; ${h} (your home region now) had ${q}%. `
     + 'Your home region is where DevControl checks cost savings, Operational Health and Security Hub'
     + (flagOff ? ', and the one region it scans for resources (S3 and CloudFront are checked everywhere)' : '') + '.',
-  use: (r: string) => `Use ${r}`,
+  proposalUse: (r: string) => `Use ${r}`,
   keep: (h: string) => `Keep ${h}`,
   proposalFootnote: (acct: string, start: string, end: string) =>
     `Based on AWS Cost Explorer usage charges for account ${acct}, ${start} – ${end}. Credits, refunds and tax aren't included. You can change your home region at any time on the Services page.`,
@@ -219,7 +219,7 @@ export function homeRegionBanner(
       body: HOME_REGION_COPY.proposalBody(percentText(lead.share), r, h, percentText(p.current.share), !o.multiRegion),
       bars: spendBars(p),
       owner: o.canChange
-        ? { primary: HOME_REGION_COPY.use(r), keep: HOME_REGION_COPY.keep(h), disabled: o.scanRunning, hint: o.scanRunning ? HOME_REGION_COPY.scanRunning : null }
+        ? { primary: HOME_REGION_COPY.proposalUse(r), keep: HOME_REGION_COPY.keep(h), disabled: o.scanRunning, hint: o.scanRunning ? HOME_REGION_COPY.scanRunning : null }
         : null,
       memberLine: o.canChange ? null : HOME_REGION_COPY.ownerOnlyChange,
       note: null,
