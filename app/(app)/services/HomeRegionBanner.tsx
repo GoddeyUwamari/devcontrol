@@ -32,7 +32,7 @@ export function HomeRegionBanner({ view, busy, onPrimary, onKeep }: {
       <Icon size={20} aria-hidden="true" className={cn('mt-0.5 shrink-0', TONE.muted)} />
       <div className="min-w-0 flex-1">
         <h2 id={titleId} className={cn('m-0 text-body font-semibold', TONE.ink)}>
-          {view.region ? <>Your AWS costs point to <span className="font-mono">{view.region}</span> as your home region.</> : view.title}
+          {view.region ? <>Your AWS costs point to <span className="whitespace-nowrap font-mono">{view.region}</span> as your home region.</> : view.title}
         </h2>
         <p className={cn('m-0 mt-1 text-ui', TONE.body)}>{view.body}</p>
         <ul aria-label={HOME_REGION_COPY.barsLabel} data-testid="spend-bars" className="m-0 mt-3 flex list-none flex-col gap-1.5 p-0 text-ui">
@@ -40,8 +40,8 @@ export function HomeRegionBanner({ view, busy, onPrimary, onKeep }: {
             const lead = view.kind === 'proposal' && bar.region && bar.label === view.region
             return (
               <li key={bar.key} data-bar={bar.key} data-lead={lead ? 'true' : undefined}
-                className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_3.5rem_6rem] items-center gap-2 max-sm:grid-cols-[minmax(0,1fr)_3.5rem_6rem]">
-                <span className={cn('truncate', TONE.ink)}>
+                className="grid grid-cols-[minmax(0,13rem)_minmax(0,1fr)_3.5rem_6rem] items-center gap-2 max-sm:grid-cols-[minmax(0,1fr)_3.5rem_6rem]">
+                <span className={cn('min-w-0 break-words', TONE.ink)}>
                   {bar.region ? <span className="font-mono">{bar.label}</span> : bar.label}
                   {bar.homeNow && <span className={TONE.muted}> {HOME_REGION_COPY.homeNow}</span>}
                 </span>

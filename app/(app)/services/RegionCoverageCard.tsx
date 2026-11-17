@@ -100,7 +100,7 @@ function Name({ row }: { row: PanelRow }) {
     <>
       <span className={cn('whitespace-nowrap font-mono', TONE.ink)}>{row.label}</span>
       {row.home && <span className={TONE.homeBadge}>Home</span>}
-      {row.formerHome && <span data-chip="former-home" className={cn('ml-1.5 rounded border border-dashed border-border px-1.5 py-0.5 text-label', TONE.muted)}>{REDESIGN_COPY.formerHomeChip}</span>}
+      {row.formerHome && <span data-chip="former-home" className={cn('ml-1.5 whitespace-nowrap rounded border border-dashed border-border px-1.5 py-0.5 text-label', TONE.muted)}>{REDESIGN_COPY.formerHomeChip}</span>}
       {row.sublabel && <span className={cn('text-meta font-normal', TONE.muted)}> · {row.sublabel}</span>}
     </>
   )
