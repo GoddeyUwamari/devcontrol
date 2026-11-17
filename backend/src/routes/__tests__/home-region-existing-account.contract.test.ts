@@ -16,7 +16,8 @@
  *   - GET /api/aws/accounts for the owner (ids and times normalized). HR-1 adds
  *     keys (home_region_proposal, previous_home_region, home_region_changed_at)
  *     which for such an account must be null; with them removed the response is
- *     the recorded one.
+ *     the recorded one. PR 3c adds can_change_home_region (G9), true for the
+ *     owner, also removed before the comparison.
  *
  * Real routes and repositories against live Postgres; only authService.verifyToken
  * is stubbed (role-gate harness). Placeholders only.
@@ -150,6 +151,9 @@ describe('an existing us-east-1 account is unchanged by HR-1 (T7)', () => {
       expect(body[added] ?? null).toBeNull();
       delete body[added];
     }
+    // PR 3c (G9): the one key added after HR-1, true for this caller (the current owner). The snapshot is not re-recorded.
+    expect(body.can_change_home_region).toBe(true);
+    delete body.can_change_home_region;
     for (const account of body.data) {
       for (const volatile of ['id', 'org_id', 'account_id', 'connected_at']) {
         if (account[volatile] !== null && account[volatile] !== undefined) account[volatile] = `<${volatile}>`;

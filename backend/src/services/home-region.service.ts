@@ -247,8 +247,12 @@ function countsOf(entries: Array<{ issue: string; n: number }>): CostFindingCoun
   return { total, by_issue };
 }
 
-/** Regional resources stored in `region` (not S3, which is account-wide, nor anything terminated). */
-async function regionalResourcesIn(db: Db, organizationId: string, region: string): Promise<number> {
+/**
+ * Regional resources stored in `region` (not S3, which is account-wide, nor anything
+ * terminated). The dialog's resources_kept_in_old_region, and (PR 3c, G2b) the
+ * coverage's account.previous_home_region_resources: one definition, one number.
+ */
+export async function regionalResourcesIn(db: AwsAccountsQueryable, organizationId: string, region: string): Promise<number> {
   const { rows } = await db.query(
     `SELECT count(*)::int AS n FROM aws_resources
       WHERE organization_id = $1 AND region = $2 AND resource_type <> 's3' AND status IS DISTINCT FROM 'terminated'`,

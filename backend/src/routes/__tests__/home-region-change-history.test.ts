@@ -85,6 +85,8 @@ describe('after a change: the former home region and the change time', () => {
     const body = await coverage(org);
     expect(body.coverage.account).toEqual({
       connected: true, status: 'active', home_region: 'us-west-2', previous_home_region: 'us-east-1', home_region_changed_at: at,
+      // PR 3c (G2b): the former home region's regional resources still stored (none here).
+      previous_home_region_resources: 0,
     });
     expect(await (await accounts(org)).json()).toMatchObject({ previous_home_region: 'us-east-1', home_region_changed_at: at });
   });
