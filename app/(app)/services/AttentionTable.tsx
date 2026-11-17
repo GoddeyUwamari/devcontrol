@@ -152,7 +152,7 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll, re
   const regionText = (row: AWSService) => {
     const former = redesign?.formerHome
     if (former && row.aws_region === former.region && row.last_seen_at) {
-      return <>{row.aws_region}<span data-testid="former-home-checked" className="block font-sans"> · last checked {shortDate(row.last_seen_at)}</span></>
+      return <>{row.aws_region}<span data-testid="former-home-checked" className="block whitespace-normal font-sans text-meta"> · last checked {shortDate(row.last_seen_at)}</span></>
     }
     return row.aws_region ?? '—'
   }
