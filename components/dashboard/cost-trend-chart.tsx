@@ -326,7 +326,8 @@ export function CostTrendChart({
     const label = formatDate(payload?.value ?? '');
     const [month, day] = label.split(' ');
     return (
-      <text x={x} y={y} textAnchor="middle" className="recharts-text recharts-cartesian-axis-tick-value" fontSize={CHART_TICK.fontSize} fill={CHART_TICK.fill}>
+      // Size and colour come only from CHART_TICK, like the y-axis and the Forecast label.
+      <text {...CHART_TICK} x={x} y={y} textAnchor="middle" className="recharts-text recharts-cartesian-axis-tick-value">
         {twoLineDates && day ? (
           <>
             <tspan x={x} dy="0.71em">{month}</tspan>
