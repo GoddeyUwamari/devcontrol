@@ -25,6 +25,9 @@ vi.mock('recharts', async (importOriginal) => {
 
 import { CostTrendChart } from '../cost-trend-chart'
 
+// The 7-day view draws the 7 full UTC days ending yesterday: Nov 25 .. Dec 1 at this clock.
+const DEC2 = new Date('2026-12-02T12:00:00Z')
+
 const point = (date: string, compute: number, lineItems: number, provisional: boolean) =>
   ({ date, compute, storage: 0, database: 0, network: 0, other: 0, total: compute, lineItems, provisional })
 
@@ -45,7 +48,7 @@ function paintedByIndex(container: HTMLElement): boolean[][] {
 describe('cost trend chart: no $0 for an unreported period without a service breakdown (L-7)', () => {
   it.each(['7d', '6mo'] as const)('%s: category data draws stacked bars, and the unreported point paints nothing', (range) => {
     const { container } = render(
-      <CostTrendChart data={[point('2026-11-30', 13.3, 2, true), point('2026-12-01', 0, 0, true)]} dateRange={range} onDateRangeChange={() => {}} />
+      <CostTrendChart data={[point('2026-11-30', 13.3, 2, true), point('2026-12-01', 0, 0, true)]} dateRange={range} onDateRangeChange={() => {}} now={DEC2} />
     )
     expect(container.querySelector('.recharts-area')).toBeNull()
     expect(container.querySelector('.recharts-area-curve')).toBeNull()
@@ -63,7 +66,7 @@ describe('cost trend chart: no $0 for an unreported period without a service bre
       { date: '2026-11-29', compute: 5, storage: 3, database: 0, network: 0, other: 0, total: 8, lineItems: 2, provisional: false },
       point('2026-12-01', 0, 0, true),
     ]
-    const { container } = render(<CostTrendChart data={data} dateRange="7d" onDateRangeChange={() => {}} />)
+    const { container } = render(<CostTrendChart data={data} dateRange="7d" onDateRangeChange={() => {}} now={DEC2} />)
     const bars = paintedByIndex(container)
     expect(bars.map((series) => series[0])).toEqual([true, true, false, false, false])
   })

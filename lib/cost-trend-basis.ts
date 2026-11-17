@@ -57,6 +57,12 @@ export const STILL_UPDATING_LEGEND = 'Latest days still updating'
 /** Shown under a daily trend that leaves out days Cost Explorer has not reported yet. */
 export const NOT_REPORTED_DAYS_NOTE = "Days AWS Cost Explorer hasn't reported yet are not drawn"
 
+/** The legend entry for the hatched placeholder of a period Cost Explorer has not reported yet (Dashboard trend, round 2). */
+export const NOT_REPORTED_LEGEND = 'Not reported yet'
+
+/** Shown under the Dashboard's daily trend, which draws those days as a hatched placeholder (round 2). */
+export const NOT_REPORTED_PLACEHOLDER_NOTE = "Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)"
+
 const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 /**

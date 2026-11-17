@@ -61,9 +61,13 @@ describe('periods AWS Cost Explorer has not reported yet (DAY1-D14)', () => {
   const point = (date: string, total: number, lineItems: number, provisional: boolean) =>
     ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, lineItems, provisional })
 
-  it('daily: says unreported days are not drawn', () => {
-    render(<CostTrendChart data={[point('2026-11-30', 13.3, 2, true), point('2026-12-01', 0, 0, true)]} dateRange="7d" onDateRangeChange={() => {}} />)
-    expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent("Days AWS Cost Explorer hasn't reported yet are not drawn")
+  // The 7-day view draws the 7 full UTC days ending yesterday: Nov 25 .. Dec 1 at this clock.
+  const DEC2 = new Date('2026-12-02T12:00:00Z')
+
+  it('daily: says unreported days are hatched, with no amount (round 2: drawn as a placeholder, never $0)', () => {
+    render(<CostTrendChart data={[point('2026-11-30', 13.3, 2, true), point('2026-12-01', 0, 0, true)]} dateRange="7d" onDateRangeChange={() => {}} now={DEC2} />)
+    expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent("Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)")
+    expect(screen.getByTestId('cost-trend-not-reported-legend')).toHaveTextContent('Not reported yet')
   })
 
   it('monthly on Dec 1: "December: no billed days yet"', () => {
@@ -75,12 +79,13 @@ describe('periods AWS Cost Explorer has not reported yet (DAY1-D14)', () => {
     // Reported days $40, $40, $70 average $50: $70 is no spike. Counting two
     // unreported days as $0 would make the average $30 and flag $70 as one.
     const data = [point('2026-11-27', 40, 2, false), point('2026-11-28', 40, 2, false), point('2026-11-29', 70, 2, false), point('2026-11-30', 0, 0, true), point('2026-12-01', 0, 0, true)]
-    render(<CostTrendChart data={data} dateRange="7d" onDateRangeChange={() => {}} />)
+    render(<CostTrendChart data={data} dateRange="7d" onDateRangeChange={() => {}} now={DEC2} />)
+    expect(screen.getByTestId('cost-trend-not-reported')).toBeInTheDocument()
     expect(screen.queryByText(/unexpected AWS bill increase/)).toBeNull()
   })
 
   it('points without the flags: no note', () => {
-    render(<CostTrendChart data={[{ date: '2026-12-01', compute: 0, storage: 0, database: 0, network: 0, other: 0, total: 0 }]} dateRange="7d" onDateRangeChange={() => {}} />)
+    render(<CostTrendChart data={[{ date: '2026-12-01', compute: 0, storage: 0, database: 0, network: 0, other: 0, total: 0 }]} dateRange="7d" onDateRangeChange={() => {}} now={DEC2} />)
     expect(screen.queryByTestId('cost-trend-not-reported')).toBeNull()
   })
 })

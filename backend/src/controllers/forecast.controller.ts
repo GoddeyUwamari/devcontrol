@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
-import { CostForecastService } from '../services/cost-forecast.service';
+import { CostForecastService, InsufficientForecastHistoryError } from '../services/cost-forecast.service';
 import { ForecastAIService } from '../services/forecast-ai.service';
 import { ScenarioPlanningService } from '../services/scenario-planning.service';
 import { releaseRequestConnection } from '../middleware/request-lifecycle';
@@ -57,6 +57,17 @@ export class ForecastController {
         forecast,
       });
     } catch (error: any) {
+      if (error instanceof InsufficientForecastHistoryError) {
+        // Not a failure: too few days AWS Cost Explorer has finished (a newly
+        // connected account). The page shows a "not enough history yet" state.
+        return res.status(422).json({
+          success: false,
+          code: error.code,
+          error: 'Not enough finished days of cost history to forecast yet',
+          finishedDays: error.finishedDays,
+          requiredDays: error.requiredDays,
+        });
+      }
       logForecastError('Error', error);
       res.status(500).json({
         success: false,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CHART_TICK } from '@/lib/chart-theme';
 import { formatUsdCents } from '@/lib/utils';
@@ -18,12 +18,25 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
 } from 'recharts';
-import { format, parseISO } from 'date-fns';
-import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
+import { isNotReportedYet, isStillUpdating, NOT_REPORTED_LEGEND, NOT_REPORTED_PLACEHOLDER_NOTE, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
+import { sevenDayPoints, trendDateLabel, xAxisInterval } from './cost-trend-window';
+import { KEEP_CLEAR_OF_FLOATING } from '@/lib/floating-keep-clear';
 
 /** Fill opacity of a period AWS Cost Explorer is still updating: the same colors, lighter. */
 export const UPDATING_BAR_OPACITY = 0.45;
+
+/**
+ * The hatch of a period AWS Cost Explorer has not reported yet, from the
+ * --app-chart-placeholder-* tokens (globals.css, light and dark). The same hatch
+ * draws the placeholder column and its legend swatch.
+ */
+/** The narrowest band (px) one-line "Nov 10" fits with a gap; below it the 7-day dates take two lines. */
+const DATE_LABEL_MIN_BAND = 46;
+
+const PLACEHOLDER_SWATCH_BACKGROUND =
+  'repeating-linear-gradient(135deg, var(--app-chart-placeholder-hatch) 0 1.5px, var(--app-chart-placeholder-fill) 1.5px 4px)';
 
 interface CostServiceAmount {
   service: string;
@@ -61,6 +74,8 @@ interface CostTrendChartProps {
   dateRange?: '7d' | '30d' | '90d' | '6mo' | '1yr';
   onDateRangeChange?: (range: '7d' | '30d' | '90d' | '6mo' | '1yr') => void;
   onExport?: () => void;
+  /** The clock for the 7-day view (the 7 full UTC days ending yesterday). Defaults to now. */
+  now?: Date;
 }
 
 export function CostTrendChart({
@@ -70,8 +85,13 @@ export function CostTrendChart({
   dateRange = '90d',
   onDateRangeChange,
   onExport,
+  now,
 }: CostTrendChartProps) {
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  // The chart's measured width (0 until ResponsiveContainer reports it).
+  const [chartWidth, setChartWidth] = useState(0);
+  // One hatch pattern per chart instance; useId's colons are not safe in url(#…).
+  const hatchId = `cost-trend-hatch-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
   if (isLoading) {
     return (
@@ -103,22 +123,15 @@ export function CostTrendChart({
     return `$${value.toFixed(0)}`;
   };
 
-  const formatDate = (dateStr: string) => {
-    try {
-      const date = parseISO(dateStr);
-      if (dateRange === '7d') return format(date, 'EEE');
-      if (dateRange === '30d' || dateRange === '90d') return format(date, 'MMM d');
-      return format(date, 'MMM yyyy');
-    } catch {
-      return dateStr;
-    }
-  };
+  const monthly = dateRange === '6mo' || dateRange === '1yr';
+  // Dates on every view ("Nov 10"), months on the monthly ones (round 2).
+  const formatDate = (dateStr: string) => (typeof dateStr === 'string' ? trendDateLabel(dateStr, monthly) : String(dateStr));
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length && isNotReportedYet(payload[0]?.payload ?? {})) {
       // A period Cost Explorer has not reported yet has no amounts to list (never $0).
       return (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-[15rem]">
           <p className="text-ui font-semibold text-ink mb-1">{formatDate(label)}</p>
           <p className="text-meta text-ink-muted m-0">{NOT_REPORTED_TOOLTIP}</p>
         </div>
@@ -128,7 +141,7 @@ export function CostTrendChart({
       // The amount so far, once: Cost Explorer may still add charges to this period.
       const soFar = Number(payload[0]?.payload?.total ?? 0);
       return (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-[15rem]">
           <p className="text-ui font-semibold text-ink mb-1">{formatDate(label)}</p>
           <p className="text-meta text-ink-muted m-0">{stillUpdatingTooltip(formatUsdCents(soFar))}</p>
         </div>
@@ -137,7 +150,7 @@ export function CostTrendChart({
     if (active && payload && payload.length) {
       const isForecast = payload[0]?.payload?.forecast;
       return (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-[15rem]">
           <p className="text-ui font-semibold text-ink mb-2">
             {formatDate(label)}
             {isForecast && <span className="text-meta text-ink-muted ml-2">(Forecast)</span>}
@@ -205,7 +218,10 @@ export function CostTrendChart({
   // before that field existed, or a range with no service breakdown at all. Both are
   // the same stacked bars, so a period Cost Explorer has not reported yet is a gap
   // (zero-height bars), never a line drawn down to $0 (review L-7).
-  const hasServiceBreakdown = data.some((d) => d.byServiceDisplay && d.byServiceDisplay.length > 0);
+  // The 7-day view: exactly the 7 full UTC days ending yesterday (round 2).
+  const shown = dateRange === '7d' ? sevenDayPoints(data, now ?? new Date()) : data;
+
+  const hasServiceBreakdown = shown.some((d) => d.byServiceDisplay && d.byServiceDisplay.length > 0);
 
   // Stable service order + color, built from first-seen order across all points —
   // the backend already guarantees a consistent top-N+Other set across the whole
@@ -213,7 +229,7 @@ export function CostTrendChart({
   const serviceSeries: { key: string; name: string; color: string }[] = [];
   if (hasServiceBreakdown) {
     const seen = new Set<string>();
-    for (const point of data) {
+    for (const point of shown) {
       for (const item of point.byServiceDisplay || []) {
         if (!seen.has(item.service)) {
           seen.add(item.service);
@@ -228,7 +244,7 @@ export function CostTrendChart({
   // Recharts needs flat { date, [seriesKey]: amount } rows; byServiceDisplay arrives
   // as a per-point array, so reshape it into that flat form for the stacked bar chart.
   // The category view reads the point's own category fields.
-  const chartData = data.map((point) => {
+  const chartData = shown.map((point) => {
     const row: Record<string, string | number | boolean | undefined> = {
       date: point.date,
       forecast: point.forecast,
@@ -293,11 +309,56 @@ export function CostTrendChart({
   const MIN_SPIKE_DELTA = 20; // dollars above average required to flag
   // Periods Cost Explorer has not reported yet are not $0 days, and a period it
   // is still updating is a partial amount: both are left out of the average.
-  const reported = data.filter((d) => !isNotReportedYet(d) && !isStillUpdating(d));
-  const hasUpdating = data.some((d) => isStillUpdating(d));
+  const reported = shown.filter((d) => !isNotReportedYet(d) && !isStillUpdating(d));
+  const hasUpdating = shown.some((d) => isStillUpdating(d));
   const avgTotal = reported.length > 0 ? reported.reduce((sum, d) => sum + d.total, 0) / reported.length : 0;
   const hasSpike = reported.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
-  const notReportedNote = unreportedTrendNote(data, dateRange === '6mo' || dateRange === '1yr' ? 'month' : 'day');
+  // Not-reported periods are drawn as a light hatched placeholder (round 2): never a $0 bar.
+  const notReportedDates = shown.filter((d) => isNotReportedYet(d)).map((d) => d.date);
+  const notReportedNote = notReportedDates.length === 0 ? null : monthly ? unreportedTrendNote(shown, 'month') : NOT_REPORTED_PLACEHOLDER_NOTE;
+
+  // 7 days on a phone: "Nov 10" (~40 px at 12 px) does not fit a ~35 px band, so
+  // each date takes two lines ("Nov" over "10") instead of overlapping or being
+  // skipped (round 2). The plot is the chart width less the y-axis (60) and margin (8).
+  const twoLineDates = dateRange === '7d' && chartWidth > 0 && (chartWidth - 68) / Math.max(1, shown.length) < DATE_LABEL_MIN_BAND;
+  const DateTick = (props: { x?: number; y?: number; payload?: { value: string } }) => {
+    const { x = 0, y = 0, payload } = props;
+    const label = formatDate(payload?.value ?? '');
+    const [month, day] = label.split(' ');
+    return (
+      // Size and colour come only from CHART_TICK, like the y-axis and the Forecast label.
+      <text {...CHART_TICK} x={x} y={y} textAnchor="middle" className="recharts-text recharts-cartesian-axis-tick-value">
+        {twoLineDates && day ? (
+          <>
+            <tspan x={x} dy="0.71em">{month}</tspan>
+            <tspan x={x} dy="1.2em">{day}</tspan>
+          </>
+        ) : (
+          <tspan x={x} dy="0.71em">{label}</tspan>
+        )}
+      </text>
+    );
+  };
+
+  // A full-height column, inset to the bar width (recharts' default 10% category gap each side).
+  const NotReportedPlaceholder = (props: { x?: number; y?: number; width?: number; height?: number }) => {
+    const { x = 0, y = 0, width = 0, height = 0 } = props;
+    if (!(width > 0) || !(height > 0)) return <g />;
+    const inset = width * 0.1;
+    return (
+      <rect
+        x={x + inset}
+        y={y}
+        width={width - 2 * inset}
+        height={height}
+        rx={3}
+        fill={`url(#${hatchId})`}
+        style={{ stroke: 'var(--app-chart-placeholder-hatch)' }}
+        strokeWidth={1}
+        data-testid="cost-trend-not-reported-placeholder"
+      />
+    );
+  };
 
   return (
     <Card className="transition-shadow hover:shadow-md">
@@ -358,14 +419,23 @@ export function CostTrendChart({
         ) : (
         <>
         {/* Chart */}
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height={300} onResize={(width) => setChartWidth(width)}>
+          <BarChart data={chartData} margin={{ top: 10, right: dateRange === '7d' ? 8 : 30, left: 0, bottom: 0 }}>
+            <defs>
+              <pattern id={hatchId} patternUnits="userSpaceOnUse" width={6} height={6} patternTransform="rotate(45)">
+                <rect width={6} height={6} style={{ fill: 'var(--app-chart-placeholder-fill)' }} />
+                <line x1={0} y1={0} x2={0} y2={6} style={{ stroke: 'var(--app-chart-placeholder-hatch)' }} strokeWidth={2} />
+              </pattern>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis
               dataKey="date"
               tickFormatter={formatDate}
               stroke="#9ca3af"
-              tick={CHART_TICK}
+              tick={DateTick}
+              height={twoLineDates ? 44 : 30}
+              // 7 days: every date shown, never skipped (round 2); 30/90 days and months may skip.
+              interval={xAxisInterval(dateRange)}
             />
             <YAxis
               domain={[0, 'auto']}
@@ -375,10 +445,14 @@ export function CostTrendChart({
             />
             <Tooltip content={<CustomTooltip />} />
 
+            {notReportedDates.map((date) => (
+              <ReferenceArea key={date} x1={date} x2={date} ifOverflow="hidden" shape={NotReportedPlaceholder} />
+            ))}
+
             {/* Forecast separator line */}
-            {data.some(d => d.forecast) && (
+            {shown.some(d => d.forecast) && (
               <ReferenceLine
-                x={data.find(d => d.forecast)?.date}
+                x={shown.find(d => d.forecast)?.date}
                 stroke="#9ca3af"
                 strokeDasharray="5 5"
                 label={{ value: 'Forecast', position: 'top', ...CHART_TICK }}
@@ -405,6 +479,8 @@ export function CostTrendChart({
             tighter gaps/padding than the old sm: tier so it actually fits
             the chart card's real width once the dashboard grid narrows it
             to 3/5 columns at lg — not just wide open-viewport widths. */}
+        {/* The legend and its notes: the floating "Live updates" pill never covers them (round 2). */}
+        <div {...{ [KEEP_CLEAR_OF_FLOATING]: '' }}>
         <div className="flex items-center justify-center gap-1 md:gap-2 mt-4 flex-wrap md:flex-nowrap">
           {series.map((s) => (
             <button
@@ -423,6 +499,10 @@ export function CostTrendChart({
               <span>{s.name}</span>
             </button>
           ))}
+        </div>
+        {(hasUpdating || notReportedDates.length > 0) && (
+          // The report-state entries: their own row, so the series row keeps its one line at md and up.
+          <div className="flex items-center justify-center gap-1 md:gap-2 mt-1 flex-wrap">
           {hasUpdating && (
             <span
               className="flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 text-label font-medium whitespace-nowrap shrink-0 text-ink-muted"
@@ -433,12 +513,23 @@ export function CostTrendChart({
               <span>{STILL_UPDATING_LEGEND}</span>
             </span>
           )}
-        </div>
+          {notReportedDates.length > 0 && (
+            <span
+              className="flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 text-label font-medium whitespace-nowrap shrink-0 text-ink-muted"
+              data-testid="cost-trend-not-reported-legend"
+            >
+              <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border border-[var(--app-chart-placeholder-hatch)]" style={{ background: PLACEHOLDER_SWATCH_BACKGROUND }} />
+              <span>{NOT_REPORTED_LEGEND}</span>
+            </span>
+          )}
+          </div>
+        )}
 
         {/* Anomaly Indicators */}
         {notReportedNote && (
           <p className="text-meta text-ink-muted mt-2 mb-0" data-testid="cost-trend-not-reported">{notReportedNote}</p>
         )}
+        </div>
         {hasSpike && (
           <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
             <p className="text-ui text-orange-800">

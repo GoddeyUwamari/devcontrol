@@ -892,4 +892,13 @@ body { overflow-x: hidden; }
 :root[data-surface="app"] [data-sonner-toaster] {
   font-family: var(--font-geist-sans);
 }
+/* A chart period AWS Cost Explorer has not reported yet: a light hatched placeholder (cost trend, trend-lag round 2). */
+[data-surface="app"] {
+  --app-chart-placeholder-fill: #F8FAFC;
+  --app-chart-placeholder-hatch: #CBD5E1;
+}
+:root[data-surface="app"].dark {
+  --app-chart-placeholder-fill: #1E293B;
+  --app-chart-placeholder-hatch: #475569;
+}
 /* === END APP SURFACE === */

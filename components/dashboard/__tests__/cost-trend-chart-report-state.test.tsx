@@ -3,9 +3,11 @@
  * (trend-lag-build.md), as the new backend returns it
  * (backend/src/controllers/__tests__/__fixtures__/trend-lag/trend-7d-2026-11-16.new.json,
  * pinned by trend-lag-real-evidence.test.ts from the verbatim production response):
- *   - Nov 14-16 (not reported): a gap, tooltip "Not reported yet by AWS Cost
- *     Explorer", never amounts or $0.00 (on the old backend Nov 14 listed every
- *     service at $0.00);
+ *   - Nov 14-15 (not reported): a hatched placeholder (round 2), tooltip "Not
+ *     reported yet by AWS Cost Explorer", never amounts or $0.00 (on the old
+ *     backend Nov 14 listed every service at $0.00);
+ *   - Nov 16 is today at the evidence's clock: the 7-day view draws the 7 full
+ *     UTC days ending yesterday, Nov 9-15 (round 2);
  *   - Nov 13 (updating): a lighter bar, tooltip "Still updating · $0.06 so far.
  *     AWS Cost Explorer may still add charges.", legend "Latest days still updating";
  *   - Nov 9-12 (final): unchanged.
@@ -37,13 +39,14 @@ const REAL = JSON.parse(fs.readFileSync(
   path.resolve(__dirname, '../../../backend/src/controllers/__tests__/__fixtures__/trend-lag/trend-7d-2026-11-16.new.json'), 'utf8',
 )).data as Array<{ date: string; reportState: string }>
 const indexOf = (date: string) => REAL.findIndex((p) => p.date === date)
+const NOW = new Date('2026-11-16T11:30:00.000Z')
 const show = (index: number) => {
   open.index = index
-  return render(<CostTrendChart data={REAL as never} dateRange="7d" onDateRangeChange={() => {}} />)
+  return render(<CostTrendChart data={REAL as never} dateRange="7d" onDateRangeChange={() => {}} now={NOW} />)
 }
 
 describe('real evidence 2026-11-16 (7d)', () => {
-  it.each(['2026-11-14', '2026-11-15', '2026-11-16'])('%s: "Not reported yet by AWS Cost Explorer", with no amounts and no $0.00', async (date) => {
+  it.each(['2026-11-14', '2026-11-15'])('%s: "Not reported yet by AWS Cost Explorer", with no amounts and no $0.00', async (date) => {
     show(indexOf(date))
     const tip = await screen.findByText('Not reported yet by AWS Cost Explorer')
     expect(tip.parentElement!.textContent).not.toMatch(/\$/)
@@ -54,7 +57,7 @@ describe('real evidence 2026-11-16 (7d)', () => {
     show(indexOf('2026-11-13'))
     const tip = await screen.findByText('Still updating · $0.06 so far. AWS Cost Explorer may still add charges.')
     // The day label, then the one line: no per-service amounts.
-    expect(tip.parentElement!.textContent).toBe('FriStill updating · $0.06 so far. AWS Cost Explorer may still add charges.')
+    expect(tip.parentElement!.textContent).toBe('Nov 13Still updating · $0.06 so far. AWS Cost Explorer may still add charges.')
     expect(screen.queryByText('Not reported yet by AWS Cost Explorer')).toBeNull()
   })
 
@@ -65,13 +68,14 @@ describe('real evidence 2026-11-16 (7d)', () => {
     expect(screen.queryByText('Not reported yet by AWS Cost Explorer')).toBeNull()
   })
 
-  it('legend: "Latest days still updating"; the not-drawn note for Nov 14-16', async () => {
+  it('legend: "Latest days still updating" and "Not reported yet"; the hatched note for Nov 14-15', async () => {
     show(-1)
     expect(await screen.findByTestId('cost-trend-updating-legend')).toHaveTextContent('Latest days still updating')
-    expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent("Days AWS Cost Explorer hasn't reported yet are not drawn")
+    expect(screen.getByTestId('cost-trend-not-reported-legend')).toHaveTextContent('Not reported yet')
+    expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent("Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)")
   })
 
-  it('Nov 13 is drawn lighter; Nov 9-12 at full strength; Nov 14-16 draw nothing', async () => {
+  it('Nov 13 is drawn lighter; Nov 9-12 at full strength; Nov 14-15 draw no bar', async () => {
     const { container } = show(-1)
     await waitFor(() => expect(container.querySelectorAll('.recharts-bar-rectangle').length).toBeGreaterThan(0))
     const visible = [...container.querySelectorAll('.recharts-bar-rectangle')]
@@ -88,7 +92,8 @@ describe('real evidence 2026-11-16 (7d)', () => {
 describe('a backend without reportState (rolling deploy): unchanged', () => {
   it('no legend entry, no lighter bars', async () => {
     open.index = -1
-    render(<CostTrendChart data={[{ date: '2026-11-12', compute: 1, storage: 0, database: 0, network: 0, other: 0, total: 1, lineItems: 2, provisional: false }]} dateRange="7d" onDateRangeChange={() => {}} />)
+    render(<CostTrendChart data={[{ date: '2026-11-12', compute: 1, storage: 0, database: 0, network: 0, other: 0, total: 1, lineItems: 2, provisional: false }]} dateRange="7d" onDateRangeChange={() => {}} now={NOW} />)
+    expect(await screen.findByText('Nov 12')).toBeInTheDocument()
     await screen.findByText('AWS Cost Trends')
     expect(screen.queryByTestId('cost-trend-updating-legend')).toBeNull()
   })
@@ -101,7 +106,7 @@ describe('review L-1: the "so far" amount has a thousands separator, as on Costs
     render(<CostTrendChart data={[
       { date: '2026-11-12', compute: 900, storage: 0, database: 0, network: 0, other: 0, total: 900, lineItems: 8, reportState: 'final', provisional: false },
       { date: '2026-11-13', compute: 1234.5, storage: 0, database: 0, network: 0, other: 0, total: 1234.5, lineItems: 8, reportState: 'updating', provisional: true },
-    ]} dateRange="7d" onDateRangeChange={() => {}} />)
+    ]} dateRange="7d" onDateRangeChange={() => {}} now={NOW} />)
     const tip = await screen.findByText('Still updating · $1,234.50 so far. AWS Cost Explorer may still add charges.')
     expect(tip).toBeInTheDocument()
     expect(costsTrendTooltipLines({ reportState: 'updating', total: 1234.5 }, 'day')).toEqual([tip.textContent])

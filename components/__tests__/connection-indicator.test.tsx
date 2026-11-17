@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import { KEEP_CLEAR_OF_FLOATING, boxesOverlap } from '@/lib/floating-keep-clear'
 
 const socketState = vi.hoisted(() => ({ isConnected: false }))
 vi.mock('@/lib/hooks/useWebSocket', () => ({
@@ -55,5 +56,51 @@ describe('ConnectionIndicator', () => {
     const badge = screen.getByTestId('connection-indicator')
     expect(container.textContent).not.toMatch(/connected/i)
     expect(badge.getAttribute('aria-label')).not.toMatch(/connected/i)
+  })
+
+  describe('never covers a keep-clear element (trend-lag round 2: the Dashboard cost trend legend on a phone)', () => {
+    /** A 390 x 844 phone: the pill rests at left 16, bottom 16 (about 130 x 30). */
+    function setUp(legendTop: number) {
+      const legend = document.createElement('div')
+      legend.setAttribute(KEEP_CLEAR_OF_FLOATING, '')
+      const box = { top: legendTop }
+      legend.getBoundingClientRect = () => ({ left: 33, right: 357, top: box.top, bottom: box.top + 60, width: 324, height: 60, x: 33, y: box.top, toJSON: () => ({}) })
+      document.body.appendChild(legend)
+      const pill = { offsetLeft: 16, offsetTop: 844 - 16 - 30, offsetWidth: 130, offsetHeight: 30 }
+      for (const [k, v] of Object.entries(pill)) Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get() { return this.dataset?.testid === 'connection-indicator' ? v : 0 } })
+      return { legend, box }
+    }
+    const frame = () => act(async () => { window.dispatchEvent(new Event('scroll')); await new Promise((r) => requestAnimationFrame(() => r(null))) })
+    const cleanUp = (legend: HTMLElement) => {
+      legend.remove()
+      for (const k of ['offsetLeft', 'offsetTop', 'offsetWidth', 'offsetHeight']) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k]
+    }
+
+    it('slides out while its resting box overlaps the legend, and back once the legend scrolls clear; its label stays in the page', async () => {
+      const { legend, box } = setUp(300)
+      render(<ConnectionIndicator />)
+      const pill = screen.getByTestId('connection-indicator')
+      await frame()
+      expect(pill.dataset.steppedAside).toBeUndefined()
+      expect(pill.className).toContain('translate-x-0')
+
+      box.top = 780 // the legend now runs under the pill's corner
+      await frame()
+      expect(pill.dataset.steppedAside).toBe('true')
+      expect(pill.className).toContain('-translate-x-[calc(100%+2rem)]')
+      expect(screen.getByRole('status', { name: 'Live updates paused' }).textContent).toBe('Live updates paused')
+
+      box.top = 900 // scrolled past
+      await frame()
+      expect(pill.dataset.steppedAside).toBeUndefined()
+      cleanUp(legend)
+    })
+
+    it('boxesOverlap: shared area only; touching edges do not count', () => {
+      const a = { left: 0, right: 10, top: 0, bottom: 10 }
+      expect(boxesOverlap(a, { left: 5, right: 15, top: 5, bottom: 15 })).toBe(true)
+      expect(boxesOverlap(a, { left: 10, right: 20, top: 0, bottom: 10 })).toBe(false)
+      expect(boxesOverlap(a, { left: 0, right: 10, top: 10, bottom: 20 })).toBe(false)
+    })
   })
 })
