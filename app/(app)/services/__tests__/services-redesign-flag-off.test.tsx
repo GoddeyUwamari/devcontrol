@@ -156,6 +156,23 @@ describe('redesign flag off: the V2 page before PR 3b, byte for byte', () => {
     await expect(normalizeIds(container.innerHTML)).toMatchFileSnapshot('./__snapshots__/redesign-flag-off.after-discover.html')
   })
 
+  it.each([false, true])('the legacy page (V2 off), demo %s, whatever the redesign flag', async (demo) => {
+    demoMode = demo
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'false')
+    mockGetCoverage.mockImplementation(async () => flaggedOrg('all_checked'))
+    const renders: string[] = []
+    for (const value of [...OFF_VALUES, 'true']) {
+      stubRedesign(value)
+      const { container, unmount } = renderPage()
+      if (!demo) await waitFor(() => expect(mockGetStats).toHaveBeenCalled())
+      await waitFor(() => expect(screen.queryByText(/Loading/)).toBeNull())
+      renders.push(normalizeIds(container.innerHTML))
+      unmount()
+    }
+    for (const r of renders) expect(r).toBe(renders[0])
+    await expect(renders[0]).toMatchFileSnapshot(`./__snapshots__/redesign-flag-off.legacy-demo-${demo ? 'on' : 'off'}.html`)
+  })
+
   it('the redesign flag does nothing while NEXT_PUBLIC_SERVICES_V2 is off', async () => {
     vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'false')
     vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'true')

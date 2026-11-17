@@ -34,7 +34,8 @@ const REMOVED: Record<string, string[]> = {
     'idle resources — first insights in under 2 minutes', 'Idle EC2 instances draining budget', 'Underutilized RDS databases',
     'Unused S3 storage accumulating', 'Cancel anytime', 'Downsize RDS cluster', 'Rightsize idle EC2 instances', 'avg 12% CPU utilization',
   ],
-  'app/(app)/services/demo-fixture.ts': ["'Idle Instance'"],
+  // Moved out of the Services route folder in PR 3b (no region literal there).
+  'lib/demo/services-demo-fixture.ts': ["'Idle Instance'"],
   'app/(app)/cost-optimization/controls/page.tsx': ['CPU utilization threshold for idle'],
   'components/onboarding/welcome-modal.tsx': ['idle EC2 instances'],
   'app/(app)/costs/efficiency/page.tsx': ['Idle Resource Cost'],
