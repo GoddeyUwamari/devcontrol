@@ -25,6 +25,8 @@ export interface CostForecast {
   predictions: TimeSeriesPoint[];
   predictionStartDate: Date;
   predictionEndDate: Date;
+  /** Today (UTC) as the backend saw it: where the period totals start (review R3-L3). Absent from an older backend. */
+  forecastStartDate?: Date;
   forecastPeriod: ForecastPeriod;
   forecastMethod: ForecastMethod;
 

@@ -41,6 +41,7 @@ class ForecastService {
       historicalEndDate: new Date(forecast.historicalEndDate),
       predictionStartDate: new Date(forecast.predictionStartDate),
       predictionEndDate: new Date(forecast.predictionEndDate),
+      ...(forecast.forecastStartDate ? { forecastStartDate: new Date(forecast.forecastStartDate) } : {}),
       historicalData: forecast.historicalData.map((p: any) => ({
         ...p,
         date: new Date(p.date),

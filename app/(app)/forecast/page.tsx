@@ -25,6 +25,17 @@ import { cn } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme';
 
+/** "Nov 12": a chart category label for a UTC day. */
+const dayLabel = (d: Date | string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/** GET /api/forecast's 422 for fewer than 7 finished days (review R3-L4). */
+interface ShortHistory { finishedDays: number; requiredDays: number }
+function shortHistoryOf(error: unknown): ShortHistory | null {
+  const e = error as { status?: number; body?: { code?: string; finishedDays?: number; requiredDays?: number } } | null;
+  if (e?.status !== 422 || e.body?.code !== 'INSUFFICIENT_FORECAST_HISTORY') return null;
+  return { finishedDays: Number(e.body.finishedDays ?? 0), requiredDays: Number(e.body.requiredDays ?? 7) };
+}
+
 const stripMarkdown = (text: string) =>
   text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim();
 
@@ -41,6 +52,7 @@ export default function ForecastPage() {
   // Set when the server refused for the plan: its gate, never an error card or toast.
   const [tierRequired, setTierRequired] = useState<TierRequired | null>(null);
   const planNotice = usePlanNotice(tierRequired);
+  const [shortHistory, setShortHistory] = useState<ShortHistory | null>(null);
 
   const [customParams, setCustomParams] = useState({
     trafficMultiplier: 2,
@@ -74,13 +86,16 @@ export default function ForecastPage() {
 
   const loadForecast = async () => {
     setIsLoading(true);
+    setShortHistory(null);
     try {
       const data = await forecastService.getForecast('90d');
       if (mountedRef.current) setForecast(data);
     } catch (error: unknown) {
       if (!mountedRef.current) return;
       const required = tierRequiredOf(error);
+      const short = shortHistoryOf(error);
       if (required) setTierRequired(required);
+      else if (short) setShortHistory(short);
       else toast.error('Failed to load forecast data');
     } finally {
       if (mountedRef.current) setIsLoading(false);
@@ -104,15 +119,19 @@ export default function ForecastPage() {
 
   const chartData = useMemo(() => {
     if (!forecast) return [];
-    const combined: { date: string; fullDate: Date; historical: number | null; predicted: number | null; upper: number | null; lower: number | null }[] = [];
+    const combined: { date: string; fullDate: Date; historical: number | null; estimated: number | null; predicted: number | null; upper: number | null; lower: number | null }[] = [];
 
+    // A day the backend filled with the average (actual: false, review L-2) is an
+    // estimate, not spend: a hollow dot in a break of the actual line (R3-L2).
     forecast.historicalData.forEach((p) => {
-      combined.push({ date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), fullDate: new Date(p.date), historical: Math.round((p.value || 0) * 30), predicted: null, upper: null, lower: null });
+      const monthly = Math.round((p.value || 0) * 30);
+      const isEstimate = p.actual === false;
+      combined.push({ date: dayLabel(p.date), fullDate: new Date(p.date), historical: isEstimate ? null : monthly, estimated: isEstimate ? monthly : null, predicted: null, upper: null, lower: null });
     });
 
     const lastHistorical = forecast.historicalData[forecast.historicalData.length - 1];
     const lastMonthly = Math.round((lastHistorical.value || 0) * 30);
-    combined.push({ date: new Date(lastHistorical.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), fullDate: new Date(lastHistorical.date), historical: lastMonthly, predicted: lastMonthly, upper: null, lower: null });
+    combined.push({ date: dayLabel(lastHistorical.date), fullDate: new Date(lastHistorical.date), historical: lastMonthly, estimated: null, predicted: lastMonthly, upper: null, lower: null });
 
     const isDemo = forecast.organizationId === 'demo';
     const confidenceRange = isDemo ? 0 : (forecast.confidenceInterval.upper - forecast.confidenceInterval.lower) / 90;
@@ -120,7 +139,7 @@ export default function ForecastPage() {
     forecast.predictions.forEach((p, i) => {
       const monthly = Math.round((p.value || 0) * 30);
       const bandOffset = isDemo ? (12 + (i % 4)) : (confidenceRange * 30) / 2;
-      combined.push({ date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), fullDate: new Date(p.date), historical: null, predicted: monthly, upper: Math.round(monthly + bandOffset), lower: Math.round(monthly - bandOffset) });
+      combined.push({ date: dayLabel(p.date), fullDate: new Date(p.date), historical: null, estimated: null, predicted: monthly, upper: Math.round(monthly + bandOffset), lower: Math.round(monthly - bandOffset) });
     });
 
     return combined;
@@ -206,6 +225,22 @@ export default function ForecastPage() {
     );
   }
 
+  if (!forecast && shortHistory) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)] px-4">
+        <Card className="p-8 text-center max-w-md" data-testid="forecast-short-history">
+          <Brain className="w-12 h-12 text-ink-muted mx-auto mb-4" />
+          <h3 className="text-ui font-semibold mb-2">Not enough finished days yet</h3>
+          <p className="text-ui text-ink-muted mb-4">
+            The forecast needs at least {shortHistory.requiredDays} days that AWS Cost Explorer has finished reporting.
+            {' '}{shortHistory.finishedDays === 1 ? 'There is 1 so far' : `There are ${shortHistory.finishedDays} so far`}. Check back in a few days.
+          </p>
+          <Button variant="outline" onClick={loadForecast}><RefreshCw className="w-4 h-4 mr-2" />Check again</Button>
+        </Card>
+      </div>
+    );
+  }
+
   if (!forecast) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
@@ -220,7 +255,15 @@ export default function ForecastPage() {
   }
 
   const isDemoMode = forecast.organizationId === 'demo';
-  const allChartValues = chartData.flatMap(d => [d.historical, d.predicted, d.upper, d.lower].filter((v): v is number => v !== null));
+  const hasEstimatedDays = chartData.some(d => d.estimated !== null);
+  // The "Today" marker sits on today (forecastStartDate, review R3-L3), not on
+  // the last finished day; an older backend without it keeps the junction.
+  const todayLabel = forecast.forecastStartDate ? dayLabel(forecast.forecastStartDate) : chartData[forecast.historicalData.length]?.date;
+  const lastFinishedLabel = dayLabel(forecast.historicalEndDate);
+  // Days between the last finished day and today are predicted, not history: say so.
+  const historyEndsBeforeToday = !isDemoMode && !!forecast.forecastStartDate
+    && new Date(forecast.historicalEndDate).getTime() < new Date(forecast.forecastStartDate).getTime() - 86_400_000;
+  const allChartValues = chartData.flatMap(d => [d.historical, d.estimated, d.predicted, d.upper, d.lower].filter((v): v is number => v !== null));
   const minDataValue = allChartValues.length > 0 ? Math.min(...allChartValues) : 0;
   const maxDataValue = allChartValues.length > 0 ? Math.max(...allChartValues) : 300;
   const yMin = Math.floor((minDataValue * 0.85) / 10) * 10;
@@ -324,6 +367,9 @@ export default function ForecastPage() {
                     <div className="flex items-center gap-4 text-meta">
                       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-500" /><span className="text-ink-muted">Historical</span></div>
                       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-violet-500" /><span className="text-ink-muted">Predicted</span></div>
+                      {hasEstimatedDays && (
+                        <div className="flex items-center gap-1.5" data-testid="forecast-estimated-legend"><div className="w-3 h-3 rounded-full border-2 border-slate-400 bg-transparent" /><span className="text-ink-muted">Estimated (no data)</span></div>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -357,17 +403,25 @@ export default function ForecastPage() {
                       <YAxis tick={CHART_TICK} tickLine={{ stroke: '#E5E7EB' }} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} domain={[yMin, yMax]} />
                       <Tooltip
                         contentStyle={CHART_TOOLTIP.contentStyle}
-                        formatter={(value: any, name: any) => { if (value == null) return ['-', name ?? '']; return [`$${typeof value === 'number' ? value.toLocaleString() : value}/mo`, name === 'historical' ? 'Historical' : name === 'predicted' ? 'Predicted' : name ?? '']; }}
+                        formatter={(value: any, name: any) => { if (value == null) return ['-', name ?? '']; return [`$${typeof value === 'number' ? value.toLocaleString() : value}/mo`, name === 'historical' ? 'Historical' : name === 'estimated' ? 'Estimated (no data)' : name === 'predicted' ? 'Predicted' : name ?? '']; }}
                         labelStyle={CHART_TOOLTIP.labelStyle}
                       />
                       <Area type="monotone" dataKey="upper" stroke="none" fill="#AFA9EC" fillOpacity={0.15} />
                       <Area type="monotone" dataKey="lower" stroke="none" fill="white" fillOpacity={1} />
                       <Area type="monotone" dataKey="historical" stroke="#3B82F6" fill="url(#colorHistorical)" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#3B82F6' }} />
+                      {hasEstimatedDays && (
+                        <Area type="monotone" dataKey="estimated" stroke="none" fill="none" isAnimationActive={false} dot={{ r: 3.5, fill: '#FFFFFF', stroke: '#64748B', strokeWidth: 1.5 }} activeDot={{ r: 4, fill: '#FFFFFF', stroke: '#64748B' }} />
+                      )}
                       <Area type="monotone" dataKey="predicted" stroke="#8B5CF6" fill="url(#colorPredicted)" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 4, fill: '#8B5CF6' }} />
-                      <ReferenceLine x={chartData[forecast.historicalData.length]?.date} stroke="#EF4444" strokeDasharray="3 3" strokeWidth={2} label={{ value: 'Today', position: 'top', ...CHART_TICK, fill: '#B91C1C', fontWeight: 600 }} />
+                      <ReferenceLine x={todayLabel} stroke="#EF4444" strokeDasharray="3 3" strokeWidth={2} label={{ value: 'Today', position: 'top', ...CHART_TICK, fill: '#B91C1C', fontWeight: 600 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                   </div>
+                  )}
+                  {historyEndsBeforeToday && (
+                    <p className="text-meta text-ink-muted mt-2 mb-0" data-testid="forecast-history-end">
+                      Actual spend through {lastFinishedLabel}, the last day AWS Cost Explorer has finished. Later days are predicted. Next 30 days counts from today ({todayLabel}).
+                    </p>
                   )}
                 </CardContent>
               </Card>
