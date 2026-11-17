@@ -4,7 +4,7 @@
  *     7 finished days) is a friendly "not enough finished days yet" state, not
  *     the "Unable to Load Forecast" error card or an error toast;
  *   - R3-L2: days the backend filled with the average (actual: false) get
- *     their own legend entry ("Estimated (no data)");
+ *     their own legend entry ("Estimated (filled gap)");
  *   - R3-L3: the history ends on the last finished day; the page says so and
  *     that the next 30 days count from today (forecastStartDate).
  */
@@ -109,10 +109,12 @@ describe('R3-L2 / R3-L3 on a real forecast', () => {
     expect(screen.queryByTestId('forecast-history-end')).toBeNull()
   })
 
-  it('a filled gap day (actual: false) gets the "Estimated (no data)" legend entry; none without one', async () => {
+  it('a filled gap day (actual: false) gets the "Estimated (filled gap)" legend entry; none without one', async () => {
     getForecast.mockResolvedValue(forecast([...SEVEN.slice(0, 3), point('2026-11-09', 1, false), ...SEVEN.slice(4)], '2026-11-17'))
     const { unmount } = render(<ForecastPage />)
-    expect(await screen.findByTestId('forecast-estimated-legend')).toHaveTextContent('Estimated (no data)')
+    const legend = await screen.findByTestId('forecast-estimated-legend')
+    expect(legend.textContent).toBe('Estimated (filled gap)')
+    expect(document.body.textContent).not.toContain('Estimated (no data)')
     unmount()
     getForecast.mockResolvedValue(forecast(SEVEN, '2026-11-17'))
     render(<ForecastPage />)

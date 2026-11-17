@@ -368,7 +368,7 @@ export default function ForecastPage() {
                       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-500" /><span className="text-ink-muted">Historical</span></div>
                       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-violet-500" /><span className="text-ink-muted">Predicted</span></div>
                       {hasEstimatedDays && (
-                        <div className="flex items-center gap-1.5" data-testid="forecast-estimated-legend"><div className="w-3 h-3 rounded-full border-2 border-slate-400 bg-transparent" /><span className="text-ink-muted">Estimated (no data)</span></div>
+                        <div className="flex items-center gap-1.5" data-testid="forecast-estimated-legend"><div className="w-3 h-3 rounded-full border-2 border-slate-400 bg-transparent" /><span className="text-ink-muted">Estimated (filled gap)</span></div>
                       )}
                     </div>
                   </div>
@@ -403,7 +403,7 @@ export default function ForecastPage() {
                       <YAxis tick={CHART_TICK} tickLine={{ stroke: '#E5E7EB' }} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} domain={[yMin, yMax]} />
                       <Tooltip
                         contentStyle={CHART_TOOLTIP.contentStyle}
-                        formatter={(value: any, name: any) => { if (value == null) return ['-', name ?? '']; return [`$${typeof value === 'number' ? value.toLocaleString() : value}/mo`, name === 'historical' ? 'Historical' : name === 'estimated' ? 'Estimated (no data)' : name === 'predicted' ? 'Predicted' : name ?? '']; }}
+                        formatter={(value: any, name: any) => { if (value == null) return ['-', name ?? '']; return [`$${typeof value === 'number' ? value.toLocaleString() : value}/mo`, name === 'historical' ? 'Historical' : name === 'estimated' ? 'Estimated (filled gap)' : name === 'predicted' ? 'Predicted' : name ?? '']; }}
                         labelStyle={CHART_TOOLTIP.labelStyle}
                       />
                       <Area type="monotone" dataKey="upper" stroke="none" fill="#AFA9EC" fillOpacity={0.15} />
