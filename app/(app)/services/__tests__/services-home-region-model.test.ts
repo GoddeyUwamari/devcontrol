@@ -16,7 +16,8 @@ import {
   HOME_REGION_COPY, amountText, changeErrorText, changedText, connectionAccountId, dialogOptions, homeRegionBanner, percentText,
   periodText, previewRefusalText, spendBars, whatChanges,
 } from '../homeRegionModel'
-import { REDESIGN_COPY, describeCoverageCard, describeNotChecked, formerHomeOf, organisingLine, resourcesCaptions } from '../redesignModel'
+import { REDESIGN_COPY, dayText, describeCoverageCard, describeNotChecked, formerHomeOf, organisingLine, resourcesCaptions } from '../redesignModel'
+import { formatLocalDay } from '@/lib/utils/localTime'
 import { regionOptionLabel } from '../allResources'
 import { R_NOW, docExample, flaggedCoverage, tab5 } from './redesign-fixtures'
 import { ACCOUNT_ID, CHANGED_AT, preview, previewFor, proposal, split, splitSeven, tab12Scan } from './home-region-fixtures'
@@ -37,13 +38,15 @@ describe('exact strings (fixture)', () => {
     expect(C.ownerOnlyChange).toBe(S.proposal.member)
     expect([C.splitTitle, C.splitBody, C.choose, C.ownerOnlyChoose, C.splitNote, C.splitFootnote('A', 'S', 'E'), C.otherRegions(2), C.homeNow])
       .toEqual([S.split.title, S.split.body, S.split.choose, S.split.member, S.split.note, S.split.footnote, S.split.other, S.split.homeNow])
-    expect([C.dialogTitle, C.dialogTitleSplit, C.dialogIntro(false), C.dialogIntro(true), C.selectLabel, C.placeholder, C.optionCurrent('R'), C.optionAmount('R', '$1.00'), C.optionNoAmount('R'), C.onlyEnabled, C.whatChangesLater, C.whatChanges])
-      .toEqual([S.dialog.title, S.dialog.titleSplit, S.dialog.introFlagOn, S.dialog.introFlagOff, S.dialog.label, S.dialog.placeholder, S.dialog.current, S.dialog.amount, S.dialog.noAmount, S.dialog.onlyEnabled, S.dialog.later, S.dialog.whatChanges])
+    expect([C.dialogTitle, C.dialogTitleSplit, C.dialogIntro(false), C.dialogIntro(true), C.selectLabel, C.placeholder, C.optionCurrent('R'), C.optionAmount('R', '$1.00'), C.onlyEnabled, C.whatChangesLater, C.whatChanges])
+      .toEqual([S.dialog.title, S.dialog.titleSplit, S.dialog.introFlagOn, S.dialog.introFlagOff, S.dialog.label, S.dialog.placeholder, S.dialog.current, S.dialog.amount, S.dialog.onlyEnabled, S.dialog.later, S.dialog.whatChanges])
     expect([C.scanStarts('N'), C.costLeaving(3, 'O'), C.costLeaving(1, 'O'), C.resourcesKept(4, 'O'), C.resourcesKept(1, 'O'), C.securityHub('N')])
       .toEqual([S.dialog.scanStarts, S.dialog.costLeaving, S.dialog.costLeavingOne, S.dialog.kept, S.dialog.keptOne, S.dialog.securityHub])
     expect([C.confirmNone, C.confirm('N'), C.cancel]).toEqual([S.dialog.confirmNone, S.dialog.confirm, S.dialog.cancel])
     expect([C.errScan, C.errNotEnabled('R'), C.errOwner, C.errGeneric]).toEqual(S.errors)
     expect([C.changedScanStarted('N'), C.changedNextScan('N')]).toEqual(S.success)
+    expect(C.keepFailed).toBe(S.keepFailed)
+    expect(Object.keys(C)).not.toContain('optionNoAmount')
     expect(C.change).toBe(S.change)
   })
 
@@ -132,6 +135,17 @@ describe('banner: the server state only', () => {
     ])
   })
 
+  it('decision d: with the current home inside "Other regions" (no bar of its own), the body still states its share', () => {
+    const p = proposal({
+      shares: [{ region: 'us-west-2', share: 84, amount: 840 }, { region: 'eu-west-1', share: 6, amount: 60 }, { region: 'us-east-2', share: 3, amount: 30 }, { region: 'ap-south-1', share: 2, amount: 20 }, { region: 'sa-east-1', share: 1.5, amount: 15 }],
+      other_regions: { count: 3, share: 3.5, amount: 35 },
+      current: { region: 'us-east-1', share: 1.2, amount: 12 },
+    })
+    const v = homeRegionBanner(p, OWNER)!
+    expect(v.bars.some((b) => b.homeNow)).toBe(false)
+    expect(v.body).toContain('us-east-1 (your home region now) had 1.2%.')
+  })
+
   it('proposal while a scan runs: both buttons disabled with HR-S5', () => {
     expect(homeRegionBanner(proposal(), { ...OWNER, scanRunning: true })!.owner).toEqual({ primary: 'Use us-west-2', keep: 'Keep us-east-1', disabled: true, hint: 'You can switch when the current scan finishes.' })
   })
@@ -173,10 +187,10 @@ describe('banner: the server state only', () => {
 })
 
 describe('dialog', () => {
-  it('options: enabled and choosable only, region-name order, current not selectable, amounts from the open prompt', () => {
+  it('options: enabled and choosable only, region-name order, current not selectable, amounts from the open prompt; no server amount → the region name only (decision c)', () => {
     expect(dialogOptions(preview().regions, split())).toEqual([
-      { value: 'ap-northeast-1', label: 'ap-northeast-1 · —', disabled: false },
-      { value: 'eu-west-1', label: 'eu-west-1 · —', disabled: false },
+      { value: 'ap-northeast-1', label: 'ap-northeast-1', disabled: false },
+      { value: 'eu-west-1', label: 'eu-west-1', disabled: false },
       { value: 'us-east-1', label: 'us-east-1 (current)', disabled: true },
       { value: 'us-east-2', label: 'us-east-2 · $1,080.36 in the last 30 days', disabled: false },
       { value: 'us-west-2', label: 'us-west-2 · $1,215.40 in the last 30 days', disabled: false },
@@ -192,10 +206,10 @@ describe('dialog', () => {
     expect(dialogOptions(shuffled, proposal()).map((o) => o.value)).toEqual(['ap-northeast-1', 'eu-west-1', 'us-east-1', 'us-east-2', 'us-west-2'])
   })
 
-  it('an evidence amount of 0 → "—", never $0; no total anywhere', () => {
+  it('an evidence amount of 0 → the region name only, never $0 or "—"; no total anywhere', () => {
     const labels = dialogOptions(preview().regions, proposal({ shares: [{ region: 'us-west-2', share: 100, amount: 0 }] })).map((o) => o.label)
-    expect(labels.join('|')).not.toMatch(/\$0\b|\$0\.00/)
-    expect(labels).toContain('us-west-2 · —')
+    expect(labels.join('|')).not.toMatch(/\$0\b|\$0\.00|—/)
+    expect(labels).toContain('us-west-2')
   })
 
   it('What changes: scan, cost (n > 0), flag-off line (non-null, > 0), Security Hub, V2-5 last', () => {
@@ -236,7 +250,7 @@ describe('former home (flag off, tab 12)', () => {
     })
     expect(view.rows[1].home).toBeFalsy()
     expect(view.rows[2].label).toBe('2 regions not scanned yet')
-    expect(view.notes).toEqual([{ key: 'former-home', tone: 'info', parts: ["4 resources in us-east-1 are from earlier scans. us-east-1 hasn't been scanned since your home region moved to us-west-2 on Nov 14, 2026."] }])
+    expect(view.notes).toEqual([{ key: 'former-home', tone: 'info', parts: ["4 resources in us-east-1 are from earlier scans. us-east-1 hasn't been scanned since your home region moved to us-west-2 on Nov 14."] }])
     expect(view.legend.map((l) => l.key)).toEqual(['complete', 'not_scanned', 'no_longer', 'not_enabled'])
   })
 
@@ -267,11 +281,19 @@ describe('former home (flag off, tab 12)', () => {
     expect(view.notes[0].parts[0]).toMatch(/^1 resource in us-east-1 is from earlier scans\./)
   })
 
+  it('decision g: dates come from the shared helper (formatLocalDay): the year only outside the current one', () => {
+    const cov = c()
+    cov.account.home_region_changed_at = '2025-11-14T09:30:00.000Z'
+    expect(describeCoverageCard(cov, R_NOW).notes[0].parts[0]).toMatch(/moved to us-west-2 on Nov 14, 2025\.$/)
+    expect(describeNotChecked(cov, tab12Scan().stats, R_NOW, []).lines[1].text).toBe("us-east-1 hasn't been scanned since Nov 14, 2025, except for S3 buckets.")
+    expect(dayText('2026-11-14T09:30:00.000Z', R_NOW)).toBe(formatLocalDay('2026-11-14T09:30:00.000Z', R_NOW))
+  })
+
   it('V2-21 tile line, V2-47 in What we didn\'t check, HR-S17 filter option', () => {
     expect(resourcesCaptions(c()).earlier).toBe('4 in us-east-1 from earlier scans')
     const nc = describeNotChecked(c(), tab12Scan().stats, R_NOW, [])
     expect(nc.lines.map((l) => l.key).slice(0, 2)).toEqual(['regions', 'former-home'])
-    expect(nc.lines[1].text).toBe("us-east-1 hasn't been scanned since Nov 14, 2026, except for S3 buckets.")
+    expect(nc.lines[1].text).toBe("us-east-1 hasn't been scanned since Nov 14, except for S3 buckets.")
     expect(nc.summary).toMatch(/^Not checked: other enabled regions \(S3 only\) · us-east-1 since Nov 14 · /)
     expect(regionOptionLabel('us-east-1', 6, 'us-west-2', 'us-east-1')).toBe('us-east-1, no longer scanned (6)')
     expect(regionOptionLabel('us-west-2', 5, 'us-west-2', 'us-east-1')).toBe('us-west-2, home (5)')

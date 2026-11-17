@@ -55,7 +55,6 @@ export const HOME_REGION_COPY = {
   placeholder: 'Select a region',
   optionCurrent: (r: string) => `${r} (current)`,
   optionAmount: (r: string, amount: string) => `${r} · ${amount} in the last 30 days`,
-  optionNoAmount: (r: string) => `${r} · —`,
   onlyEnabled: 'Only regions enabled in this AWS account are listed.',
   whatChangesLater: '“What changes” appears once a region is selected.',
   whatChanges: 'What changes',
@@ -77,6 +76,8 @@ export const HOME_REGION_COPY = {
   errNotEnabled: (r: string) => `${r} isn't enabled in this AWS account.`,
   errOwner: 'Only an organization owner can change the home region.',
   errGeneric: "The home region couldn't be changed. Nothing was changed. Try again.",
+  // Keep / dismiss failed with any code but NO_OPEN_PROPOSAL (founder decision f)
+  keepFailed: "Your choice couldn't be saved. Nothing was changed. Try again.",
   // HR-S16 + the brief's scan_started false variant (FOUNDER APPROVAL REQUIRED: both)
   changedScanStarted: (r: string) => `Home region changed to ${r}. A scan has started.`,
   changedNextScan: (r: string) => `Home region changed to ${r}. The next scan will check it.`,
@@ -254,8 +255,9 @@ export interface DialogOption { value: string; label: string; disabled: boolean 
  * The dialog's options: the enabled, choosable regions of the account's stored
  * list (refusal = null), in region-name order, with the current home as
  * "{r} (current)" (not selectable). An amount only for a region the open
- * prompt's evidence names with an amount above 0; with evidence but no amount
- * for that region, "—". Without an open prompt (`evidence` null), no amounts.
+ * prompt's evidence names with an amount above 0; every other option is the
+ * region name only (founder decision c: no "· —"). Without an open prompt
+ * (`evidence` null), no amounts.
  */
 export function dialogOptions(
   regions: ReadonlyArray<{ region: string; current: boolean; refusal: string | null }>,
@@ -269,9 +271,8 @@ export function dialogOptions(
     .sort((a, b) => (a.region < b.region ? -1 : a.region > b.region ? 1 : 0))
     .map((r) => {
       if (r.current) return { value: r.region, label: HOME_REGION_COPY.optionCurrent(r.region), disabled: true }
-      if (!evidence) return { value: r.region, label: r.region, disabled: false }
-      const amount = amountText(amounts.get(r.region))
-      return { value: r.region, label: amount ? HOME_REGION_COPY.optionAmount(r.region, amount) : HOME_REGION_COPY.optionNoAmount(r.region), disabled: false }
+      const amount = evidence ? amountText(amounts.get(r.region)) : null
+      return { value: r.region, label: amount ? HOME_REGION_COPY.optionAmount(r.region, amount) : r.region, disabled: false }
     })
 }
 

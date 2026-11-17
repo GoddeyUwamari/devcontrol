@@ -263,7 +263,7 @@ export function ServicesOverview({
           <AttentionTable
             state={attentionState} totalResources={statsData?.total}
             onViewAll={() => showList({ show: 'needs_attention' })} onShowAll={() => showList({})}
-            redesign={{ needsAttention: stats.loading || stats.unavailable ? undefined : statsData?.needs_attention, formerHome: formerHomeOf(coverage) }}
+            redesign={{ needsAttention: stats.loading || stats.unavailable ? undefined : statsData?.needs_attention, formerHome: formerHomeOf(coverage), now }}
           />
         )}
         <YourServices state={registeredState} mappedToService={statsData?.mapped_to_service} totalResources={statsData?.total} redesign />

@@ -17,7 +17,7 @@
  * - CloudFront is global: never a region, never in a denominator.
  */
 import type { AWSServicesStats, MultiRegionCoverage, MultiRegionRegion, RegionCoverage, ServicesCoverage } from '@/lib/services/aws-services.service'
-import { formatLocalWhen } from '@/lib/utils/localTime'
+import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso } from '@/lib/scan-time'
 import { DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
 import {
@@ -183,14 +183,13 @@ export function formerHomeOf(c: ServicesCoverage | undefined): FormerHome | null
   }
 }
 
-/** "Nov 16, 2026" (local date). */
-export function longDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-/** "Nov 16" (local date). */
-export function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+/**
+ * A date with no time (HR-S18, HR-S19, V2-47): the app's shared helper
+ * (lib/utils/localTime formatLocalDay, founder decision g): "Nov 16", with the
+ * year only outside the current one ("Nov 16, 2025"), in local time.
+ */
+export function dayText(iso: string, now: number): string {
+  return formatLocalDay(iso, now) ?? iso
 }
 
 // ── Header scan line (Services only; Security and the Dashboard keep scanLine) ──
@@ -614,7 +613,7 @@ function globalRow(c: ServicesCoverage): GlobalRow | null {
   }
 }
 
-function notesOf(c: ServicesCoverage, mr: MultiRegionCoverage | null): CardNote[] {
+function notesOf(c: ServicesCoverage, mr: MultiRegionCoverage | null, now: number): CardNote[] {
   const notes: CardNote[] = []
   const lastDone = c.last_completed_scan?.completed_at ?? null
   if (mr) {
@@ -647,7 +646,7 @@ function notesOf(c: ServicesCoverage, mr: MultiRegionCoverage | null): CardNote[
       const n = former.earlier
       notes.push({
         key: 'former-home', tone: 'info',
-        parts: [`${num(n)} ${plural(n, 'resource', 'resources')} in ${former.region} ${plural(n, 'is', 'are')} from earlier scans. ${former.region} hasn't been scanned since your home region moved to ${home} on ${longDate(former.changedAt)}.`],
+        parts: [`${num(n)} ${plural(n, 'resource', 'resources')} in ${former.region} ${plural(n, 'is', 'are')} from earlier scans. ${former.region} hasn't been scanned since your home region moved to ${home} on ${dayText(former.changedAt, now)}.`],
       })
     }
   }
@@ -685,7 +684,7 @@ export function describeCoverageCard(c: ServicesCoverage, now: number): Coverage
     multiRegion: !!mr,
     line: organisingLine(c),
     homeLine: home ? REDESIGN_COPY.homeLine(home) : null,
-    notes: notesOf(c, mr),
+    notes: notesOf(c, mr, now),
     rows,
     global,
     legend: LEGEND_ORDER.filter((k) => present.has(k)).map((key) => ({ key, ...LEGEND_TEXT[key] })),
@@ -771,13 +770,13 @@ export function describeNotChecked(c: ServicesCoverage, stats: AWSServicesStats 
   const former = formerHomeOf(c)
   if (former) {
     const at = ordered.findIndex((l) => l.key === 'regions')
-    ordered.splice(at >= 0 ? at + 1 : 0, 0, { key: 'former-home', text: `${former.region} hasn't been scanned since ${longDate(former.changedAt)}, except for S3 buckets.` })
+    ordered.splice(at >= 0 ? at + 1 : 0, 0, { key: 'former-home', text: `${former.region} hasn't been scanned since ${dayText(former.changedAt, now)}, except for S3 buckets.` })
   }
   const lines: NotCheckedLine[] = [...regionLines.map(({ key, text }) => ({ key, text })), ...ordered]
   if (lines.length === 0) return { summary: null, lines }
   const items = [
     ...regionLines.map((l) => l.short),
-    ...ordered.map((l) => (l.key === 'former-home' && former ? `${former.region} since ${shortDate(former.changedAt)}` : SHORT_ITEM[l.key]?.(l, stats) ?? null)).filter((x): x is string => !!x),
+    ...ordered.map((l) => (l.key === 'former-home' && former ? `${former.region} since ${dayText(former.changedAt, now)}` : SHORT_ITEM[l.key]?.(l, stats) ?? null)).filter((x): x is string => !!x),
   ]
   return { summary: items.length > 0 ? `Not checked: ${items.join(' · ')}.` : NOT_CHECKED_HEADING, lines }
 }

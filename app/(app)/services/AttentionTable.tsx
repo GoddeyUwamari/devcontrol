@@ -9,7 +9,7 @@ import { TYPE_DISPLAY } from './resourceTypes'
 import { ownerDisplay } from './ownership'
 import { timeAgo } from './coverage'
 import { UnknownOwnerTip } from './UnknownOwnerTip'
-import { shortDate, type FormerHome } from './redesignModel'
+import { dayText, type FormerHome } from './redesignModel'
 
 /** Redesign (PR 3b) phone layout: each row a stacked block with its labels, so the list never scrolls sideways. */
 const PHONE_TABLE = 'max-sm:block'
@@ -146,13 +146,15 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll, re
     needsAttention: number | undefined
     /** PR 3c (HR-S19): the former home region (flag off): its rows read "{r} · last checked {date}". */
     formerHome?: FormerHome | null
+    /** The page's clock, for HR-S19's date (the shared helper's year rule). */
+    now: number
   }
 }) {
   // HR-S19 "{r} · last checked {date}": the suffix on its own line, so the column stays narrow.
   const regionText = (row: AWSService) => {
     const former = redesign?.formerHome
-    if (former && row.aws_region === former.region && row.last_seen_at) {
-      return <>{row.aws_region}<span data-testid="former-home-checked" className="block whitespace-normal font-sans text-meta"> · last checked {shortDate(row.last_seen_at)}</span></>
+    if (redesign && former && row.aws_region === former.region && row.last_seen_at) {
+      return <>{row.aws_region}<span data-testid="former-home-checked" className="block whitespace-normal font-sans text-meta"> · last checked {dayText(row.last_seen_at, redesign.now)}</span></>
     }
     return row.aws_region ?? '—'
   }

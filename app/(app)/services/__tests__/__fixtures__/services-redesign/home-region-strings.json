@@ -1,11 +1,14 @@
 {
-  "_source": "PR 3c exact strings: home-region-step1.md §H (HR-S1–S16), mock-v2-notes.md (V2-1…V2-9, V2-43…V2-47), pr3-step1.md §E.5, and the PR 3c brief (scan_started false variant; S35 n = 0). Placeholders: R, H, A (account), S/E (period), N (new), O (old).",
+  "_source": "PR 3c exact strings: home-region-step1.md §H (HR-S1–S16), mock-v2-notes.md (V2-1…V2-9, V2-43…V2-47), pr3-step1.md §E.5, and the PR 3c brief (scan_started false variant; S35 n = 0). Placeholders: R, H, A (account), S/E (period), N (new), O (old). Founder decisions Nov 17: c (no \"· —\"), f (keepFailed).",
   "change": "Change",
   "proposal": {
     "title": "Your AWS costs point to R as your home region.",
     "bodyFlagOff": "84% of this account's regional AWS spend in the last 30 days was in R; H (your home region now) had 3%. Your home region is where DevControl checks cost savings, Operational Health and Security Hub, and the one region it scans for resources (S3 and CloudFront are checked everywhere).",
     "bodyFlagOn": "84% of this account's regional AWS spend in the last 30 days was in R; H (your home region now) had 3%. Your home region is where DevControl checks cost savings, Operational Health and Security Hub.",
-    "buttons": ["Use R", "Keep H"],
+    "buttons": [
+      "Use R",
+      "Keep H"
+    ],
     "footnote": "Based on AWS Cost Explorer usage charges for account A, S – E. Credits, refunds and tax aren't included. You can change your home region at any time on the Services page.",
     "scanRunning": "You can switch when the current scan finishes.",
     "member": "Only an organization owner can change the home region."
@@ -29,7 +32,6 @@
     "placeholder": "Select a region",
     "current": "R (current)",
     "amount": "R · $1.00 in the last 30 days",
-    "noAmount": "R · —",
     "onlyEnabled": "Only regions enabled in this AWS account are listed.",
     "later": "“What changes” appears once a region is selected.",
     "whatChanges": "What changes",
@@ -58,5 +60,6 @@
     "status": "No longer scanned",
     "details": "Not scanned since your home region moved. S3 buckets here are still checked on every scan."
   },
-  "footerOffNone": "S3 and CloudFront are checked in every region on each scan."
+  "footerOffNone": "S3 and CloudFront are checked in every region on each scan.",
+  "keepFailed": "Your choice couldn't be saved. Nothing was changed. Try again."
 }

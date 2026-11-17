@@ -241,7 +241,7 @@ describe('tab 10: split spend', () => {
     await waitFor(() => expect(select).toBeEnabled())
     expect(select.value).toBe('')
     expect([...select.options].map((o) => o.textContent)).toEqual([
-      'Select a region', 'ap-northeast-1 · —', 'eu-west-1 · —', 'us-east-1 (current)',
+      'Select a region', 'ap-northeast-1', 'eu-west-1', 'us-east-1 (current)',
       'us-east-2 · $1,080.36 in the last 30 days', 'us-west-2 · $1,215.40 in the last 30 days',
     ])
     expect(d.textContent).toContain('“What changes” appears once a region is selected.')
@@ -282,12 +282,30 @@ describe('tab 10: split spend', () => {
     expect(invalidatedKeys()).toContain('services-aws-accounts')
   })
 
-  it('Keep → another failure: the banner stays (refetched) and its buttons work again', async () => {
+  it.each(['HOME_REGION_PROPOSAL_FAILED', 'HOME_REGION_PROPOSAL_UNAVAILABLE', 'CONNECTION_CHANGED', 'HOME_REGION_OWNER_ONLY', null])(
+    'Keep → %s (not NO_OPEN_PROPOSAL): the founder line in role=alert; the banner stays, refetched; buttons work again (decision f)', async (code) => {
+      await show(tab5(), accountsAnswer({ proposal: split() }))
+      mockDismiss.mockRejectedValue(new HomeRegionRequestError(code))
+      const before = mockAccounts.mock.calls.length
+      fireEvent.click(within(await screen.findByTestId('home-region-banner')).getByRole('button', { name: 'Keep us-east-1' }))
+      const alert = await within(banner()!).findByRole('alert')
+      expect(text(alert)).toBe("Your choice couldn't be saved. Nothing was changed. Try again.")
+      await waitFor(() => expect(mockAccounts.mock.calls.length).toBeGreaterThan(before))
+      for (const key of FIVE) expect(invalidatedKeys()).toContain(key)
+      await waitFor(() => expect(within(banner()!).getByRole('button', { name: 'Keep us-east-1' })).toBeEnabled())
+      // A retry that succeeds clears it and hides the banner.
+      mockDismiss.mockResolvedValue(undefined)
+      mockAccounts.mockResolvedValue(accountsAnswer({ proposal: split({ state: 'dismissed' }) }))
+      fireEvent.click(within(banner()!).getByRole('button', { name: 'Keep us-east-1' }))
+      await waitFor(() => expect(banner()).toBeNull())
+    })
+
+  it('Keep → 409 NO_OPEN_PROPOSAL shows no error line', async () => {
     await show(tab5(), accountsAnswer({ proposal: split() }))
-    mockDismiss.mockRejectedValue(new HomeRegionRequestError('HOME_REGION_PROPOSAL_FAILED'))
+    mockDismiss.mockRejectedValue(new HomeRegionRequestError('NO_OPEN_PROPOSAL'))
     fireEvent.click(within(await screen.findByTestId('home-region-banner')).getByRole('button', { name: 'Keep us-east-1' }))
-    await waitFor(() => expect(mockDismiss).toHaveBeenCalled())
-    await waitFor(() => expect(within(banner()!).getByRole('button', { name: 'Keep us-east-1' })).toBeEnabled())
+    await waitFor(() => expect(banner()).toBeNull())
+    expect(screen.queryByTestId('home-region-keep-error')).toBeNull()
   })
 })
 
@@ -474,7 +492,7 @@ describe('tab 12: former home (flag off)', () => {
       'Not scanned since your home region moved. S3 buckets here are still checked on every scan.',
     ])
     expect(document.querySelector('[data-row="region-us-east-1"] [data-status]')!.getAttribute('data-status')).toBe('no_longer')
-    expect(text(document.querySelector('[data-note="former-home"]'))).toBe("4 resources in us-east-1 are from earlier scans. us-east-1 hasn't been scanned since your home region moved to us-west-2 on Nov 14, 2026.")
+    expect(text(document.querySelector('[data-note="former-home"]'))).toBe("4 resources in us-east-1 are from earlier scans. us-east-1 hasn't been scanned since your home region moved to us-west-2 on Nov 14.")
     const legend = [...screen.getByRole('list', { name: 'Status legend' }).querySelectorAll('li')].map(text)
     expect(legend).toContain("No longer scanned: your former home region; it isn't scanned while multi-region scanning is off")
   })
@@ -490,7 +508,7 @@ describe('tab 12: former home (flag off)', () => {
     expect(options).toContain('us-east-1, no longer scanned (6)')
     expect(options).toContain('us-west-2, home (5)')
     const nc = screen.getByTestId('not-checked')
-    expect(nc.textContent).toContain("us-east-1 hasn't been scanned since Nov 14, 2026, except for S3 buckets.")
+    expect(nc.textContent).toContain("us-east-1 hasn't been scanned since Nov 14, except for S3 buckets.")
     expect(text(nc.querySelector('summary'))).toMatch(/^Not checked: other enabled regions \(S3 only\) · us-east-1 since Nov 14 · /)
     // One row set: the Resources tile is /stats total, and card regions + CloudFront + the listed bucket agree with it.
     expect(scan.stats.total).toBe(14)
@@ -545,6 +563,14 @@ describe('axe-core on the new states (phone list and open dialog/tooltip include
     fireEvent.click(time)
     expect(document.getElementById(time.getAttribute('aria-describedby')!)).toHaveAttribute('data-open', 'true')
     expect(await axeViolations(list)).toEqual([])
+  })
+
+  it('tab 10 with the Keep failure line (decision f)', async () => {
+    const { container } = await show(tab5(), accountsAnswer({ proposal: split() }))
+    mockDismiss.mockRejectedValue(new HomeRegionRequestError('HOME_REGION_PROPOSAL_FAILED'))
+    fireEvent.click(within(await screen.findByTestId('home-region-banner')).getByRole('button', { name: 'Keep us-east-1' }))
+    await screen.findByTestId('home-region-keep-error')
+    expect(await axeViolations(scopeOf(container))).toEqual([])
   })
 
   it('the success line', async () => {

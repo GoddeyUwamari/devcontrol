@@ -15,10 +15,12 @@ import { TONE } from './redesignTone'
  * line. The buttons never change anything by themselves: "Use"/"Choose" open
  * the change dialog, "Keep" asks the server to dismiss.
  */
-export function HomeRegionBanner({ view, busy, onPrimary, onKeep }: {
+export function HomeRegionBanner({ view, busy, error, onPrimary, onKeep }: {
   view: HomeRegionBannerView
   /** A Keep request is in flight. */
   busy: boolean
+  /** A failed Keep (any code but NO_OPEN_PROPOSAL): the founder's line, role=alert. */
+  error: string | null
   onPrimary: () => void
   onKeep: () => void
 }) {
@@ -65,6 +67,11 @@ export function HomeRegionBanner({ view, busy, onPrimary, onKeep }: {
           </div>
         ) : (
           view.memberLine && <p data-testid="home-region-member-line" className={cn('m-0 mt-3 text-meta', TONE.muted)}>{view.memberLine}</p>
+        )}
+        {error && (
+          <div role="alert" data-testid="home-region-keep-error" className="mt-3 rounded-lg border border-[var(--border-danger)] bg-[var(--bg-danger)] px-3 py-2 text-ui text-ink-danger dark:text-red-400">
+            {error}
+          </div>
         )}
         {view.note && <p className={cn('m-0 mt-3 text-meta', TONE.muted)}>{view.note}</p>}
         {view.footnote && <p data-testid="home-region-footnote" className={cn('m-0 mt-1 text-meta', TONE.muted)}>{view.footnote}</p>}

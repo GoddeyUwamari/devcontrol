@@ -32,6 +32,7 @@ export function useHomeRegion({ orgId, realMode, coverage }: { orgId: string | n
   const [dialog, setDialog] = useState<{ mode: DialogMode; preselect: string | null } | null>(null)
   const [changed, setChanged] = useState<string | null>(null)
   const [keeping, setKeeping] = useState(false)
+  const [keepError, setKeepError] = useState<string | null>(null)
   // A prompt the server said is no longer open (409 NO_OPEN_PROPOSAL), hidden while the refetch runs.
   const [closedPrompt, setClosedPrompt] = useState<string | null>(null)
 
@@ -61,12 +62,16 @@ export function useHomeRegion({ orgId, realMode, coverage }: { orgId: string | n
 
   async function keep() {
     setKeeping(true)
+    setKeepError(null)
     try {
       await awsAccountsService.dismissHomeRegionProposal()
       setClosedPrompt(promptKey)
       await invalidateAll()
     } catch (err: unknown) {
+      // 409 NO_OPEN_PROPOSAL: nothing open any more: refetch and hide. Any other failure:
+      // the founder's line (decision f), the banner stays, and everything is refetched.
       if (err instanceof HomeRegionRequestError && err.code === HOME_REGION_ERROR_CODES.noOpenProposal) setClosedPrompt(promptKey)
+      else setKeepError(HOME_REGION_COPY.keepFailed)
       await invalidateAll()
     } finally {
       setKeeping(false)
@@ -93,6 +98,7 @@ export function useHomeRegion({ orgId, realMode, coverage }: { orgId: string | n
         <HomeRegionBanner
           view={banner}
           busy={keeping}
+          error={keepError}
           onPrimary={() => setDialog(banner.kind === 'proposal' ? { mode: 'proposal', preselect: banner.region } : { mode: 'split', preselect: null })}
           onKeep={() => { void keep() }}
         />
