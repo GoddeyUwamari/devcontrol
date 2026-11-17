@@ -11,12 +11,22 @@
  *                 never $0.00. An older empty period is a real $0 (an account
  *                 that stopped spending), and a series with no line items at
  *                 all has no not_reported periods.
- *   updating      the most recent period with line items, when its last day is
- *                 on or after today-3 (UPDATING_WINDOW_DAYS): today-3, today-2,
- *                 today-1 and today, four UTC dates (review L-4). Today-3 must
- *                 be in it: the evidence's Nov 13 at 2026-11-16 was partial.
+ *   updating      the most recent period with line items, when EITHER
+ *                 - its last day is on or after today-3 (UPDATING_WINDOW_DAYS):
+ *                   today-3, today-2, today-1 and today, four UTC dates
+ *                   (review L-4). Today-3 must be in it: the evidence's Nov 13
+ *                   at 2026-11-16 was partial. This is only the minimum;
+ *                 - or its last day is on or after today-7 and a later period
+ *                   is not_reported (round 2, founder-approved 2026-11-17).
+ *                   While Cost Explorer has not reported the days after it,
+ *                   it has not finished this one either: the evidence's Nov 13
+ *                   ($0.06, ~1 hour of EC2) was still the last day with line
+ *                   items at 2026-11-17, when today-3 had moved past it.
+ *                 A last charge before today-7 (an account that stopped
+ *                 spending) is final, like every earlier period.
  *                 Its amount is "so far": Cost Explorer may still add charges.
- *   final         everything else.
+ *   final         everything else. Only the most recent period with line
+ *                 items can be updating: a final period never turns back.
  *
  * ResultByTime.Estimated is recorded on every point (`estimated`) but does NOT
  * decide the state (founder decision R-1, 2026-11-16): its day-level meaning
@@ -35,8 +45,9 @@
 export type CostReportState = 'final' | 'updating' | 'not_reported';
 
 /**
- * The most recent period with line items is "updating" while its last day is
- * on or after today (UTC) minus this many days: today-3 .. today.
+ * The most recent period with line items is "updating" at least while its last
+ * day is on or after today (UTC) minus this many days: today-3 .. today. A
+ * later not-reported period keeps it updating past that (costReportStates).
  */
 export const UPDATING_WINDOW_DAYS = 3;
 
@@ -82,9 +93,12 @@ export function costReportStates(periods: ReadonlyArray<ReportStateInput>, now: 
   });
   const recentFrom = updatingWindowStart(now);
   const notReportedFrom = notReportedWindowStart(now);
+  const isNotReported = (p: ReportStateInput, i: number) => lastWithLineItems >= 0 && i > lastWithLineItems && p.lastDay >= notReportedFrom;
+  // A later period Cost Explorer has not reported yet keeps the last charged one updating (round 2).
+  const laterNotReported = periods.some(isNotReported);
   return periods.map((p, i) => {
-    if (lastWithLineItems >= 0 && i > lastWithLineItems && p.lastDay >= notReportedFrom) return 'not_reported';
-    if (i === lastWithLineItems && p.lastDay >= recentFrom) return 'updating';
+    if (isNotReported(p, i)) return 'not_reported';
+    if (i === lastWithLineItems && (p.lastDay >= recentFrom || (p.lastDay >= notReportedFrom && laterNotReported))) return 'updating';
     return 'final';
   });
 }

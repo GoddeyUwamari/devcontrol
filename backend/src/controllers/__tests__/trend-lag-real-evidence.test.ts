@@ -347,13 +347,72 @@ describe('edge cases', () => {
     expect(data.some((p) => p.reportState === 'not_reported')).toBe(false);
   });
 
-  it('the most recent day with line items 4 days back is final (outside today-3 .. today); the days after it are not reported', async () => {
+  it('round 2: the most recent day with line items 4 days back stays updating while the days after it are not reported', async () => {
     useLedger(NOW, { through: '2026-11-12' });
     const { data } = await trendEndpoint('7d');
     expect(statesOf(data, '2026-11-11')).toEqual({
-      '2026-11-11': 'final', '2026-11-12': 'final',
+      '2026-11-11': 'final', '2026-11-12': 'updating',
       '2026-11-13': 'not_reported', '2026-11-14': 'not_reported', '2026-11-15': 'not_reported', '2026-11-16': 'not_reported',
     });
+  });
+});
+
+describe('round 2: the same evidence one day later (2026-11-17 03:00 UTC): Nov 13 is still the last day with line items', () => {
+  // The production report of the night of Nov 16 (Nov 17 UTC): Nov 13 ($0.06, ~1 hour of EC2) was drawn as a final day.
+  const NOV17 = '2026-11-17T03:00:00.000Z';
+  const NOV17_STATES = {
+    '2026-11-10': 'final', '2026-11-11': 'final', '2026-11-12': 'final',
+    '2026-11-13': 'updating',
+    '2026-11-14': 'not_reported', '2026-11-15': 'not_reported', '2026-11-16': 'not_reported', '2026-11-17': 'not_reported',
+  };
+
+  it('7d/30d/90d: Nov 13 updating (today-4, after the today-3 minimum), Nov 14-17 not reported, earlier days final', async () => {
+    for (const range of ['7d', '30d', '90d'] as const) {
+      useLedger(NOV17);
+      const { data } = await trendEndpoint(range);
+      expect(statesOf(data, '2026-11-10')).toEqual(NOV17_STATES);
+      expect(data.filter((p) => p.date < '2026-11-13').every((p) => p.reportState === 'final')).toBe(true);
+      expect(byDate(data)['2026-11-13'].provisional).toBe(true);
+    }
+  });
+
+  it('6mo: November updating', async () => {
+    useLedger(NOV17);
+    expect((await trendEndpoint('6mo')).data.slice(-1).map((m) => [m.date, m.reportState])).toEqual([['2026-11-01', 'updating']]);
+  });
+
+  it('month-over-month: Nov 1-12 vs Oct 1-12; the partial Nov 13 is on neither side', async () => {
+    useLedger(NOV17);
+    const summary = await costSummary();
+    expect(summary.data.monthOverMonth.data).toMatchObject({
+      currentWindow: { start: '2026-11-01', end: '2026-11-12' }, previousWindow: { start: '2026-10-01', end: '2026-10-12' }, currentWindowIncludesToday: false,
+    });
+    expect(summary.data.spend.data.monthState).toMatchObject({
+      state: 'month_to_date', billedThrough: '2026-11-13',
+      reportDays: { final: 12, updating: 1, notReported: 4, afterRecentCharge: true },
+    });
+  });
+
+  it('every AI path reads the same: the comparison ends Nov 12 and the latest days are still updating', async () => {
+    useLedger(NOV17);
+    const { costs } = await new AIChatContextRepository({ query: ambientPool.query } as unknown as Pool).gatherCostContext(ORG);
+    expect(costs.comparison.currentWindow).toEqual({ start: '2026-11-01', end: '2026-11-12' });
+    useLedger(NOV17);
+    const out = await aiSurfaces();
+    const latest = /latest days are still updating in AWS Cost Explorer/i;
+    expect(out.summaryFacts.some((l) => latest.test(l))).toBe(true);
+    expect(out.reportSentence).toMatch(latest);
+    expect(JSON.stringify(out.askAi)).toMatch(latest);
+  });
+
+  it('pins the 7d trend and the cost summary for Nov 17 (read by the frontend tests and the screenshot harness)', async () => {
+    for (const [name, get] of [['trend-7d-2026-11-17.new.json', () => trendEndpoint('7d')], ['summary-2026-11-17.new.json', costSummary]] as const) {
+      useLedger(NOV17);
+      const body = `${JSON.stringify(await get(), null, 2)}\n`;
+      const file = path.join(DIR, name);
+      if (WRITE) fs.writeFileSync(file, body);
+      expect(body).toBe(fs.readFileSync(file, 'utf8'));
+    }
   });
 });
 

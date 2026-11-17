@@ -50,6 +50,15 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+it('round 2, the Nov 17 evidence: history ends Nov 12; the partial Nov 13 ($0.06, still updating) is not history', async () => {
+  const NOV17 = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '../../controllers/__tests__/__fixtures__/trend-lag/trend-7d-2026-11-17.new.json'), 'utf8',
+  )).data;
+  (awsCostService.fetchCostTrend as jest.Mock).mockResolvedValue(NOV17);
+  const history = await service.getHistoricalCosts('org-test', 5);
+  expect(history.map((p) => [day(p), p.actual])).toEqual([['2026-11-10', true], ['2026-11-11', true], ['2026-11-12', true]]);
+});
+
 it('real evidence: final days only -- Nov 9-12; not Nov 13 (updating, partial) nor Nov 14-16 (not reported); all actual', async () => {
   (awsCostService.fetchCostTrend as jest.Mock).mockResolvedValue(REAL);
   const history = await service.getHistoricalCosts('org-test', 5);

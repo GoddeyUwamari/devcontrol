@@ -62,6 +62,75 @@ describe('costReportStates', () => {
     expect(costReportStates([day('2026-10-31', 5), day('2026-11-30', 0)], new Date('2026-11-02T00:00:00Z'))).toEqual(['updating', 'not_reported']);
   });
 
+  describe('round 2: the last charged day stays updating while a later day within today-7 is not reported', () => {
+    const NOV17 = new Date('2026-11-17T03:00:00.000Z');
+    /** Every UTC day from `from` through `through`, each with line items through `charged` and none after. */
+    const series = (from: string, through: string, charged: string) => {
+      const out: ReturnType<typeof day>[] = [];
+      for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${through}T00:00:00Z`); t += 86_400_000) {
+        const d = new Date(t).toISOString().slice(0, 10);
+        out.push(day(d, d <= charged ? 8 : 0));
+      }
+      return out;
+    };
+
+    it('the Nov 17 case: Nov 13 (last line items, today-4) updating, Nov 14-17 not reported, Nov 10-12 final', () => {
+      expect(updatingWindowStart(NOV17)).toBe('2026-11-14');
+      expect(costReportStates(series('2026-11-10', '2026-11-17', '2026-11-13'), NOV17))
+        .toEqual(['final', 'final', 'final', 'updating', 'not_reported', 'not_reported', 'not_reported', 'not_reported']);
+    });
+
+    it('normal 1-day and 2-day lag: unchanged (the last charged day is inside today-3 anyway)', () => {
+      expect(costReportStates(series('2026-11-13', '2026-11-17', '2026-11-16'), NOV17)).toEqual(['final', 'final', 'final', 'updating', 'not_reported']);
+      expect(costReportStates(series('2026-11-13', '2026-11-17', '2026-11-15'), NOV17)).toEqual(['final', 'final', 'updating', 'not_reported', 'not_reported']);
+    });
+
+    it('a 6-day lag: the last charge at today-6 is updating, today-5 .. today not reported', () => {
+      expect(costReportStates(series('2026-11-09', '2026-11-17', '2026-11-11'), NOV17))
+        .toEqual(['final', 'final', 'updating', 'not_reported', 'not_reported', 'not_reported', 'not_reported', 'not_reported', 'not_reported']);
+    });
+
+    it('the bound is today-7: a last charge on today-7 is updating, on today-8 final (a stopped account: no updating)', () => {
+      expect(notReportedWindowStart(NOV17)).toBe('2026-11-10');
+      const at7 = costReportStates(series('2026-11-08', '2026-11-17', '2026-11-10'), NOV17);
+      expect(at7.slice(0, 3)).toEqual(['final', 'final', 'updating']);
+      expect(at7.slice(3).every((s) => s === 'not_reported')).toBe(true);
+      const at8 = costReportStates(series('2026-11-08', '2026-11-17', '2026-11-09'), NOV17);
+      expect(at8).not.toContain('updating');
+      expect(at8.slice(0, 2)).toEqual(['final', 'final']);
+      expect(at8.filter((s) => s === 'not_reported')).toHaveLength(8);
+    });
+
+    it('a stopped account (last charge Oct 20, now Nov 17): no updating day; Oct 21..Nov 9 final $0, Nov 10..17 not reported (M-1)', () => {
+      const states = costReportStates(series('2026-10-15', '2026-11-17', '2026-10-20'), NOV17);
+      expect(states).not.toContain('updating');
+      expect(states.filter((s) => s === 'not_reported')).toHaveLength(8);
+    });
+
+    it('final days stay final: only the last charged day can be updating, however many empty days follow', () => {
+      const states = costReportStates(series('2026-11-10', '2026-11-17', '2026-11-13'), NOV17);
+      expect(states.filter((s) => s === 'updating')).toHaveLength(1);
+      // A zero day before the last charge is a real $0, still final.
+      expect(costReportStates([day('2026-11-11', 8), day('2026-11-12', 0), day('2026-11-13', 8), day('2026-11-14', 0)], NOV17))
+        .toEqual(['final', 'final', 'updating', 'not_reported']);
+    });
+
+    it('the series ends on the last charged day (nothing later): the today-3 minimum alone decides', () => {
+      expect(costReportStates([day('2026-11-12', 8), day('2026-11-13', 8)], NOV17)).toEqual(['final', 'final']);
+      expect(costReportStates([day('2026-11-13', 8), day('2026-11-14', 8)], NOV17)).toEqual(['final', 'updating']);
+    });
+
+    it('the month boundary: Oct 28 last charged at Nov 2 -> updating with Oct 29..Nov 2 not reported; monthly: October updating while November is empty', () => {
+      const NOV2 = new Date('2026-11-02T12:00:00.000Z');
+      expect(costReportStates(series('2026-10-26', '2026-11-02', '2026-10-28'), NOV2))
+        .toEqual(['final', 'final', 'updating', 'not_reported', 'not_reported', 'not_reported', 'not_reported', 'not_reported']);
+      expect(costReportStates([day('2026-09-30', 5), day('2026-10-31', 5), day('2026-11-30', 0)], new Date('2026-11-06T00:00:00Z')))
+        .toEqual(['final', 'updating', 'not_reported']);
+      // October ended before today-7 (Nov 9 at Nov 16): final, as M-1.
+      expect(costReportStates([day('2026-09-30', 5), day('2026-10-31', 5), day('2026-11-30', 0)], NOW)).toEqual(['final', 'final', 'not_reported']);
+    });
+  });
+
   it('provisional is true for updating and not_reported only', () => {
     expect([isProvisional('final'), isProvisional('updating'), isProvisional('not_reported')]).toEqual([false, true, true]);
   });
