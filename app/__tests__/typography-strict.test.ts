@@ -51,6 +51,11 @@ const G1 = [
   'app/(app)/services/AttentionTable.tsx',
   'app/(app)/services/CoverageStrip.tsx',
   'app/(app)/services/NotCheckedCard.tsx',
+  'app/(app)/services/NotCheckedLine.tsx',
+  'app/(app)/services/RedesignHeader.tsx',
+  'app/(app)/services/RegionCoverageCard.tsx',
+  'app/(app)/services/ScanBanner.tsx',
+  'app/(app)/services/UnknownOwnerTip.tsx',
   'app/(app)/services/ComingSoonTag.tsx',
   'app/(app)/services/RegionCoveragePanel.tsx',
   'app/(app)/services/ResourceFocus.tsx',
@@ -222,6 +227,8 @@ const STRICT = [
   ...COSTS,
   // G1: Infrastructure + Services, Invoices and AI Reports.
   ...G1,
+  // PR 3b: the Services redesign's colour classes live in a .ts module; scanned like the components that use them.
+  'app/(app)/services/redesignTone.ts',
   // Security V2.
   ...SECURITY,
   // SM: the Security menu pages (Anomalies, Compliance, Audit Logs).

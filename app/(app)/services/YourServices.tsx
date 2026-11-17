@@ -6,6 +6,7 @@ import type { RegisteredService } from '@/lib/types'
 import { AddServiceButton } from './AddServiceButton'
 import { ComingSoonTag } from './ComingSoonTag'
 import { NO_OWNER_SET, serviceOwnerLabel } from './ownership'
+import { REDESIGN_COPY } from './redesignModel'
 
 export type YourServicesState =
   | { status: 'loading' }
@@ -23,12 +24,20 @@ export type YourServicesState =
 /** Rows shown before "Show all N". */
 export const SERVICES_PREVIEW_ROWS = 10
 
-export function YourServices({ state, mappedToService, totalResources }: {
+export function YourServices({ state, mappedToService, totalResources, redesign = false }: {
   state: YourServicesState
   mappedToService: number | undefined
   totalResources: number | undefined
+  /**
+   * The Services redesign (PR 3b): no per-service column, no footer sentence
+   * or disabled button; one Coming soon line (V2-60) instead, and a secondary
+   * + Add Service (Scan now is the page's only primary button).
+   */
+  redesign?: boolean
 }) {
   const notMapped = mappedToService === 0
+  const showColumn = notMapped && !redesign
+  const addVariant = redesign ? 'secondary' : 'primary'
   // Expands and collapses in place: the rows are already loaded; nothing is fetched.
   const [showAll, setShowAll] = useState(false)
 
@@ -52,7 +61,7 @@ export function YourServices({ state, mappedToService, totalResources }: {
     body = (
       <div className="flex flex-col items-start gap-3 px-4 py-6">
         <p className="text-ui text-slate-700 m-0">No services registered yet.</p>
-        <AddServiceButton size="sm" />
+        <AddServiceButton size="sm" variant={addVariant} />
       </div>
     )
   } else {
@@ -69,7 +78,7 @@ export function YourServices({ state, mappedToService, totalResources }: {
               <th scope="col" className="px-3 py-2.5">Team</th>
               <th scope="col" className="px-3 py-2.5">Repository</th>
               <th scope="col" className="px-3 py-2.5">Registered</th>
-              {notMapped && <th scope="col" className="px-3 py-2.5">Resources · findings · cost · deploys <ComingSoonTag /></th>}
+              {showColumn && <th scope="col" className="px-3 py-2.5">Resources · findings · cost · deploys <ComingSoonTag /></th>}
             </tr>
           </thead>
           <tbody>
@@ -88,7 +97,7 @@ export function YourServices({ state, mappedToService, totalResources }: {
                   )}
                 </td>
                 <td className="px-3 py-3 text-slate-700 whitespace-nowrap">{new Date(service.createdAt).toLocaleDateString()}</td>
-                {notMapped && <td className="px-3 py-3 text-slate-600">Not mapped yet</td>}
+                {showColumn && <td className="px-3 py-3 text-slate-600">Not mapped yet</td>}
               </tr>
             ))}
           </tbody>
@@ -118,10 +127,15 @@ export function YourServices({ state, mappedToService, totalResources }: {
           <span className="text-ui text-slate-600">{state.services.length} registered</span>
         )}
         {/* The empty state carries its own Add Service. */}
-        {!(state.status === 'ready' && state.services.length === 0) && <span className="ml-auto"><AddServiceButton size="sm" /></span>}
+        {!(state.status === 'ready' && state.services.length === 0) && <span className="ml-auto"><AddServiceButton size="sm" variant={addVariant} /></span>}
       </div>
       {body}
-      {notMapped && typeof totalResources === 'number' && totalResources > 0 && (
+      {redesign && notMapped && typeof totalResources === 'number' && totalResources > 0 && (
+        <p data-testid="coming-soon-line" className="m-0 border-t border-border px-4 py-3 text-ui text-ink-muted dark:text-slate-400">
+          <ComingSoonTag /><span className="sr-only">:</span> {REDESIGN_COPY.comingSoon}
+        </p>
+      )}
+      {!redesign && notMapped && typeof totalResources === 'number' && totalResources > 0 && (
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50 px-4 py-3">
           <p className="m-0 flex-[1_1_320px] text-ui text-slate-600">
             None of the {totalResources} resources are mapped to a service yet. Mapping by tag or by hand fills in resources, findings, cost and deploys per service.

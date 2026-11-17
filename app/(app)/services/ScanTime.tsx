@@ -10,7 +10,13 @@ import { formatExact, formatWhen, type Rich } from './regionCoverage'
  * isn't reliably read on <time>). `exactLine` also prints the exact time
  * below it (the phone layout, where a tooltip can't be tapped open).
  */
-export function ScanTime({ iso, now, exactLine = false }: { iso: string; now: number; exactLine?: boolean }) {
+export function ScanTime({ iso, now, exactLine = false, exactClass = 'text-ink-muted' }: {
+  iso: string
+  now: number
+  exactLine?: boolean
+  /** The printed exact time's ink (the Services redesign pairs it with a dark: value). */
+  exactClass?: string
+}) {
   const text = formatWhen(iso, now)
   const exact = formatExact(iso)
   return (
@@ -25,7 +31,7 @@ export function ScanTime({ iso, now, exactLine = false }: { iso: string; now: nu
           <TooltipContent>{exact}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      {exactLine && <span aria-hidden="true" className="block text-meta text-ink-muted">{exact}</span>}
+      {exactLine && <span aria-hidden="true" className={`block text-meta ${exactClass}`}>{exact}</span>}
     </>
   )
 }

@@ -9,8 +9,10 @@ import { ComingSoonTag } from './ComingSoonTag'
  * from /stats). Resources whose tags could not be read are in neither.
  * Rendered only with /stats loaded.
  */
-export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter }: {
+export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter, redesign = false }: {
   stats: AWSServicesStats
+  /** The Services redesign (PR 3b): no disabled "Assign owner" or Coming soon tag; team bars neutral (rule 15). */
+  redesign?: boolean
   /** "Show the N": All resources with Show = Unowned. */
   onShowUnowned?: () => void
   /** "all teams": opens the Owner / team filter. Hidden when there are no teams. */
@@ -40,8 +42,8 @@ export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter }: {
                 <span className={bar.unowned ? 'font-semibold text-orange-900' : 'text-slate-900'}>{bar.label}</span>
                 <span className="text-slate-600">{bar.count}</span>
               </div>
-              <div aria-hidden="true" className={`h-1.5 rounded ${bar.unowned ? 'bg-orange-50' : 'bg-violet-50'}`}>
-                <div className={`h-1.5 rounded ${bar.unowned ? 'bg-orange-600' : 'bg-violet-600'}`} style={{ width: `${Math.round((bar.count / max) * 100)}%` }} />
+              <div aria-hidden="true" className={`h-1.5 rounded ${bar.unowned ? 'bg-orange-50' : redesign ? 'bg-muted' : 'bg-violet-50'}`}>
+                <div className={`h-1.5 rounded ${bar.unowned ? 'bg-orange-600' : redesign ? 'bg-slate-500 dark:bg-slate-400' : 'bg-violet-600'}`} style={{ width: `${Math.round((bar.count / max) * 100)}%` }} />
               </div>
             </li>
           ))}
@@ -57,10 +59,14 @@ export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter }: {
             Show the {unowned}
           </button>
         )}
-        <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-label text-slate-700 opacity-60 cursor-not-allowed">
-          Assign owner
-        </button>
-        <ComingSoonTag />
+        {!redesign && (
+          <>
+            <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-label text-slate-700 opacity-60 cursor-not-allowed">
+              Assign owner
+            </button>
+            <ComingSoonTag />
+          </>
+        )}
       </div>
     </section>
   )

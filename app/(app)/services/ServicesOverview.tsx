@@ -20,6 +20,15 @@ import { isServicesCoverageM6Enabled } from './servicesCoverageM6Flag'
 import { describeRegionCoverage } from './regionCoverage'
 import { RegionCoveragePanel } from './RegionCoveragePanel'
 import { useNowEachLocalDay } from './useNowEachLocalDay'
+import { isServicesRedesignEnabled } from './servicesRedesignFlag'
+import {
+  attentionScopeCaption, describeCoverageCard, describeNotChecked, redesignScanLine, resourcesCaptions, scanBanner, scanIsRunning,
+  type DiscoverOutcome,
+} from './redesignModel'
+import { RedesignHeader } from './RedesignHeader'
+import { ScanBanner } from './ScanBanner'
+import { RegionCoverageCard } from './RegionCoverageCard'
+import { NotCheckedLine } from './NotCheckedLine'
 
 /** While a scan is running, coverage is read again this often (M6 only). */
 export const SCAN_RUNNING_REFETCH_MS = 60_000
@@ -58,6 +67,11 @@ export function ServicesOverview({
     discoveryMsg: string | null
     warnings: readonly string[]
     onAutoDiscover: () => void
+    /**
+     * The last Scan now in this tab, set once the page re-read coverage after
+     * it (the redesign's scan banner); null before one, or while one runs.
+     */
+    outcome?: DiscoverOutcome | null
   }
   /** The upgrade prompt, kept above the coverage strip (Q3). */
   banners: React.ReactNode
@@ -70,13 +84,16 @@ export function ServicesOverview({
 }) {
   // Region coverage (multi-region M6), behind NEXT_PUBLIC_SERVICES_COVERAGE_M6.
   const m6 = isServicesCoverageM6Enabled()
+  // The Services redesign (PR 3b), behind its own flag: always the M6 / multi_region data path.
+  const redesign = isServicesRedesignEnabled()
   const coverageQuery = useQuery<ServicesCoverage>({
     queryKey: ['services-coverage', orgId],
     queryFn: () => awsServicesService.getCoverage(),
     enabled: realMode, retry: false, refetchOnWindowFocus: false,
     // M6: read again every minute only while a scan is running, and not while the tab is hidden.
-    ...(m6 ? {
-      refetchInterval: (query: { state: { data?: ServicesCoverage } }) => (query.state.data?.scan_in_progress ? SCAN_RUNNING_REFETCH_MS : false),
+    // The redesign also while its own Scan now runs, so the progress line appears.
+    ...(m6 || redesign ? {
+      refetchInterval: (query: { state: { data?: ServicesCoverage } }) => (query.state.data?.scan_in_progress || (redesign && discovery.isDiscovering) ? SCAN_RUNNING_REFETCH_MS : false),
       refetchIntervalInBackground: false,
     } : {}),
   })
@@ -166,7 +183,10 @@ export function ServicesOverview({
     : { loading: !orgId || costQuery.isPending, error: costQuery.isError, summary: costQuery.data }
 
   // "today" / "yesterday" in the region coverage, read again after each local midnight.
-  const now = useNowEachLocalDay(m6 && !demo)
+  const now = useNowEachLocalDay((m6 || redesign) && !demo)
+  // The redesign's scan banner, dismissed for this visit (component state only).
+  const scanNowRef = useRef<HTMLButtonElement>(null)
+  const [dismissedOutcome, setDismissedOutcome] = useState<DiscoverOutcome | null>(null)
   const regionView = m6 && !demo && coverageState.status === 'ready'
     ? describeRegionCoverage(coverageState.coverage, now, discovery.warnings)
     : null
@@ -180,6 +200,92 @@ export function ServicesOverview({
   // With no resources at all, the list below says why (no account, nothing
   // discovered); the attention and unowned cards have nothing to show.
   const noResources = !stats.loading && statsData?.total === 0
+
+  if (redesign) {
+    const coverage = coverageState.status === 'ready' ? coverageState.coverage : undefined
+    const connected = !!coverage?.account.connected
+    const outcome = discovery.outcome ?? null
+    // A failed re-read can't tell which scan it was: the counts only, no tone.
+    const banner = !outcome || outcome === dismissedOutcome ? null
+      : coverageQuery.isError ? { tone: 'neutral' as const, text: 'Scan finished', counts: `${outcome.discovered.toLocaleString('en-US')} new · ${outcome.updated.toLocaleString('en-US')} updated` }
+      : coverage ? scanBanner(coverage, outcome) : null
+    const captions = resourcesCaptions(coverage)
+    return (
+      <div data-services-redesign="">
+        {demo && (
+          <div role="note" className="mb-4 rounded-lg border border-[var(--border-warning)] bg-[var(--bg-warning)] px-4 py-2 text-meta text-ink-warning-strong dark:text-amber-300">
+            <strong>{SAMPLE_DATA_BANNER}</strong> Placeholder names only.
+          </div>
+        )}
+        <RedesignHeader
+          ref={scanNowRef}
+          scan={coverage && connected ? redesignScanLine(coverage, now) : null}
+          isDiscovering={discovery.isDiscovering}
+          scanRunning={scanIsRunning(coverage)}
+          onScanNow={discovery.onAutoDiscover}
+        />
+        {banner && (
+          <ScanBanner view={banner} onDismiss={() => { setDismissedOutcome(outcome); scanNowRef.current?.focus() }} />
+        )}
+        {banners}
+        {(pageError || listFailed) && <LoadErrorBanner />}
+        <SummaryTiles
+          stats={stats}
+          coverage={coverage}
+          registered={{
+            loading: registeredState.status === 'loading',
+            error: registeredState.status === 'error',
+            count: registeredState.status === 'ready' ? registeredState.services.length : undefined,
+          }}
+          spend={spend}
+          onShowUnowned={() => showList({ show: 'unowned' })}
+          redesign={{ attentionScope: attentionScopeCaption(statsData), resourcesScope: captions.scope, resourcesEarlier: captions.earlier }}
+        />
+        {coverage && connected ? (
+          <RegionCoverageCard view={describeCoverageCard(coverage, now)} now={now} />
+        ) : (
+          // Loading, error and no connected account: today's states, unchanged.
+          <CoverageStrip
+            state={coverageState}
+            statusHeadline={!stats.loading && listFailed ? 'Resource data unavailable' : statusHeadline}
+            inTabWarnings={discovery.warnings}
+            storedResources={!stats.loading && (statsData?.total ?? 0) > 0}
+          />
+        )}
+        {!noResources && (
+          <AttentionTable
+            state={attentionState} totalResources={statsData?.total}
+            onViewAll={() => showList({ show: 'needs_attention' })} onShowAll={() => showList({})}
+            redesign={{ needsAttention: stats.loading || stats.unavailable ? undefined : statsData?.needs_attention }}
+          />
+        )}
+        <YourServices state={registeredState} mappedToService={statsData?.mapped_to_service} totalResources={statsData?.total} redesign />
+        {!noResources && statsData && !stats.loading && (
+          <UnownedCard stats={statsData} onShowUnowned={() => showList({ show: 'unowned' })} onOpenTeamFilter={openTeamFilter} redesign />
+        )}
+        <div ref={listRef} className="scroll-mt-4">
+          <AllResourcesTable
+            state={listState}
+            filters={filters}
+            searchInput={searchInput}
+            onSearchInput={setSearchInput}
+            onFilters={(change) => applyFilters({ ...filters, search: searchInput, ...change })}
+            onClearFilters={() => applyFilters(DEFAULT_FILTERS)}
+            onPage={goToPage}
+            stats={stats}
+            coverage={coverage}
+            knownNoAccount={knownNoAccount}
+            teamSelectRef={teamSelectRef}
+            isDiscovering={discovery.isDiscovering}
+            onAutoDiscover={discovery.onAutoDiscover}
+            scanRunning={scanIsRunning(coverage)}
+            redesign
+          />
+        </div>
+        {coverage && <NotCheckedLine view={describeNotChecked(coverage, statsData, now, discovery.warnings)} />}
+      </div>
+    )
+  }
 
   return (
     <>

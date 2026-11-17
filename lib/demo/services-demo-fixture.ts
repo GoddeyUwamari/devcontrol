@@ -4,8 +4,13 @@
  * only (example-*, owner-*@example.com); issue strings are the scanner's own
  * wording; every number is computed from the rows below, so tiles, counts,
  * chips and lists agree. Nothing here is requested from an API.
+ *
+ * Lives in lib/demo (moved from app/(app)/services in PR 3b), so the Services
+ * route folder holds no region literal. The `multi_region` block (PR 3b) is a
+ * placeholder built from the same rows, for the redesign's demo view; the
+ * pages without the redesign ignore it.
  */
-import type { AWSService, AWSServicesStats, ResourceOwnership, ServicesCoverage } from '@/lib/services/aws-services.service'
+import type { AWSService, AWSServicesStats, MultiRegionCoverage, MultiRegionRegion, ResourceOwnership, ServicesCoverage } from '@/lib/services/aws-services.service'
 import type { CostSummary, RegisteredService } from '@/lib/types'
 
 export const SAMPLE_DATA_BANNER = 'SAMPLE DATA: illustrative, not live AWS inventory.'
@@ -109,6 +114,10 @@ export function servicesDemoFixture(now: number = Date.now()): ServicesDemoFixtu
     regions,
     teams: { top: teams.slice(0, 3), all: teams, total_teams: teams.length },
     mapped_to_service: 0,
+    attention_scope: {
+      regions: new Set(attention.map((s) => s.aws_region).filter((r) => r && r !== 'global')).size,
+      global: attention.filter((s) => s.aws_region === 'global').length,
+    },
   }
 
   const s3Regions = countBy(services.filter((s) => s.type === 's3'), (s) => s.aws_region!).map((c) => ({ region: c.key, count: c.count }))
@@ -126,6 +135,8 @@ export function servicesDemoFixture(now: number = Date.now()): ServicesDemoFixtu
     tags_unknown_by_type: unknownByType,
     regions,
     total: services.length,
+    multi_region: demoMultiRegion(regions, now, seen),
+    not_enabled_regions: [],
   }
 
   const created = new Date(now - 30 * 24 * 60 * 60_000).toISOString()
@@ -150,4 +161,36 @@ export function servicesDemoFixture(now: number = Date.now()): ServicesDemoFixtu
   }
 
   return { services, attention, stats, coverage, registered, costSummary }
+}
+
+/** A placeholder `multi_region` (all regions checked) for the regions the demo rows use; CloudFront stays global. */
+function demoMultiRegion(regions: { region: string; count: number }[], now: number, seen: string): MultiRegionCoverage {
+  const names = regions.map((r) => r.region).filter((r) => r !== 'global')
+  const ordered = [HOME_REGION, ...names.filter((r) => r !== HOME_REGION).sort()]
+  const rows: MultiRegionRegion[] = ordered.map((region) => ({
+    region, home: region === HOME_REGION, opt_in: false, status: 'ok', error_code: null,
+    last_scan_finished_at: seen, last_success_at: seen, stale: false, result_of: 'latest_scan', scan_state: null, state: 'checked',
+    resources: regions.find((r) => r.region === region)?.count ?? 0, resources_from: 'last_result',
+    empty: (regions.find((r) => r.region === region)?.count ?? 0) === 0,
+  }))
+  const withResources = rows.filter((r) => (r.resources ?? 0) > 0).length
+  return {
+    scan: {
+      id: 'demo-scan', status: 'completed', started_at: new Date(now - 50 * 60_000).toISOString(), completed_at: seen,
+      regions_total: rows.length, regions_checked: rows.length, regions_with_resources: withResources, regions_empty: rows.length - withResources, regions_zero_with_warnings: 0,
+    },
+    coverage_status: 'all_checked',
+    home_region: HOME_REGION,
+    savings_regions: [HOME_REGION],
+    not_enabled_regions: [],
+    regions: rows,
+    regions_checked: {
+      enabled: rows.length, complete: rows.length, partial: 0, not_checked: 0, not_reached: 0, never_scanned: 0,
+      by_state: { not_started: 0, in_progress: 0, checked: rows.length, checked_with_warnings: 0, failed: 0, not_checked_budget: 0, not_checked_deadline: 0, denied: 0, not_ready: 0, excluded: 0 },
+    },
+    progress: null,
+    region_warnings: [],
+    region_warnings_complete: true,
+    region_warnings_unattributed: [],
+  }
 }
