@@ -7,7 +7,7 @@
  *     (Nov 10-16), every label shown as a date ("Nov 10"), today (Nov 17) not drawn;
  *   - Nov 13 (the last day with line items, still updating) is drawn lighter, not final;
  *   - Nov 14-16 (not reported) are a light hatched placeholder from the
- *     --chart-placeholder-* tokens, with the "Not reported yet by AWS Cost
+ *     --app-chart-placeholder-* tokens, with the "Not reported yet by AWS Cost
  *     Explorer" tooltip and no amount.
  * Recharts runs for real: ResponsiveContainer gets a size, the Tooltip opens on
  * a chosen point (`active` + `defaultIndex`), bars are not animated.
@@ -133,8 +133,8 @@ describe('Nov 14-16 (not reported): a light hatched placeholder', () => {
     expect(placeholders.every((p) => p.getAttribute('fill') === fill && Number(p.getAttribute('height')) > 0)).toBe(true)
     // The pattern draws with the theme tokens (light + dark in globals.css), not fixed colours.
     const pattern = container.querySelector(`pattern${fill.slice(4, -1)}`)!
-    expect(pattern.innerHTML).toContain('var(--chart-placeholder-fill)')
-    expect(pattern.innerHTML).toContain('var(--chart-placeholder-hatch)')
+    expect(pattern.innerHTML).toContain('var(--app-chart-placeholder-fill)')
+    expect(pattern.innerHTML).toContain('var(--app-chart-placeholder-hatch)')
   })
 
   it('the placeholders sit over Nov 14, 15 and 16, right of every drawn bar', async () => {

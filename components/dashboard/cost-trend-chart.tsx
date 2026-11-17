@@ -29,14 +29,14 @@ export const UPDATING_BAR_OPACITY = 0.45;
 
 /**
  * The hatch of a period AWS Cost Explorer has not reported yet, from the
- * --chart-placeholder-* tokens (globals.css, light and dark). The same hatch
+ * --app-chart-placeholder-* tokens (globals.css, light and dark). The same hatch
  * draws the placeholder column and its legend swatch.
  */
 /** The narrowest band (px) one-line "Nov 10" fits with a gap; below it the 7-day dates take two lines. */
 const DATE_LABEL_MIN_BAND = 46;
 
 const PLACEHOLDER_SWATCH_BACKGROUND =
-  'repeating-linear-gradient(135deg, var(--chart-placeholder-hatch) 0 1.5px, var(--chart-placeholder-fill) 1.5px 4px)';
+  'repeating-linear-gradient(135deg, var(--app-chart-placeholder-hatch) 0 1.5px, var(--app-chart-placeholder-fill) 1.5px 4px)';
 
 interface CostServiceAmount {
   service: string;
@@ -352,7 +352,7 @@ export function CostTrendChart({
         height={height}
         rx={3}
         fill={`url(#${hatchId})`}
-        style={{ stroke: 'var(--chart-placeholder-hatch)' }}
+        style={{ stroke: 'var(--app-chart-placeholder-hatch)' }}
         strokeWidth={1}
         data-testid="cost-trend-not-reported-placeholder"
       />
@@ -422,8 +422,8 @@ export function CostTrendChart({
           <BarChart data={chartData} margin={{ top: 10, right: dateRange === '7d' ? 8 : 30, left: 0, bottom: 0 }}>
             <defs>
               <pattern id={hatchId} patternUnits="userSpaceOnUse" width={6} height={6} patternTransform="rotate(45)">
-                <rect width={6} height={6} style={{ fill: 'var(--chart-placeholder-fill)' }} />
-                <line x1={0} y1={0} x2={0} y2={6} style={{ stroke: 'var(--chart-placeholder-hatch)' }} strokeWidth={2} />
+                <rect width={6} height={6} style={{ fill: 'var(--app-chart-placeholder-fill)' }} />
+                <line x1={0} y1={0} x2={0} y2={6} style={{ stroke: 'var(--app-chart-placeholder-hatch)' }} strokeWidth={2} />
               </pattern>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -517,7 +517,7 @@ export function CostTrendChart({
               className="flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 text-label font-medium whitespace-nowrap shrink-0 text-ink-muted"
               data-testid="cost-trend-not-reported-legend"
             >
-              <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border border-[var(--chart-placeholder-hatch)]" style={{ background: PLACEHOLDER_SWATCH_BACKGROUND }} />
+              <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border border-[var(--app-chart-placeholder-hatch)]" style={{ background: PLACEHOLDER_SWATCH_BACKGROUND }} />
               <span>{NOT_REPORTED_LEGEND}</span>
             </span>
           )}
