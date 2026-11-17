@@ -99,6 +99,13 @@ const scopeOf = (container: HTMLElement) => container.querySelector('[data-servi
 const FIVE = ['services-aws-accounts', 'services-coverage', 'services-stats', 'services-attention', 'services-list']
 const invalidatedKeys = () => invalidate.mock.calls.map((c: any[]) => c[0]?.queryKey?.[0])
 
+/** tab5 with a scan running (coverage.scan_in_progress set). */
+function scanning(): Scan {
+  const c = tab5()
+  c.scan_in_progress = { since: '2026-11-15T16:00:00.000Z' }
+  return scanOf(c)
+}
+
 /** Defer a promise by hand. */
 function deferred<T>() {
   let resolve!: (v: T) => void
@@ -489,10 +496,12 @@ describe('tab 11: the change dialog', () => {
     ['HOME_REGION_CHANGE_BUSY', "The home region couldn't be changed. Nothing was changed. Try again."],
     ['HOME_REGION_CHANGE_FAILED', "The home region couldn't be changed. Nothing was changed. Try again."],
     [null, "The home region couldn't be changed. Nothing was changed. Try again."],
-  ])('PUT refused with %s: its text in role=alert; home region kept; the five queries refetched (L-3); confirm enabled for a retry (L-2)', async (code, message) => {
+  ])('PUT refused with %s: its text in role=alert; home region kept; the five queries refetched (L-3); confirm enabled for a retry (L-2), held while a scan runs for SCAN_IN_PROGRESS', async (code, message) => {
     await show(tab5())
     const d = await openAndPick('us-west-2')
     mockChange.mockRejectedValue(new HomeRegionRequestError(code))
+    // SCAN_IN_PROGRESS: the refetched coverage agrees a scan is running.
+    if (code === 'SCAN_IN_PROGRESS') serveScan(scanning())
     const coverageCalls = mockGetCoverage.mock.calls.length
     const accountCalls = mockAccounts.mock.calls.length
     fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
@@ -505,6 +514,71 @@ describe('tab 11: the change dialog', () => {
     await waitFor(() => expect(mockAccounts.mock.calls.length).toBeGreaterThan(accountCalls))
     expect(invalidatedKeys().slice().sort()).toEqual([...FIVE].sort())
     for (const key of FIVE) expect(invalidate.mock.calls.find((c: any[]) => c[0]?.queryKey?.[0] === key)![0].queryKey).toEqual([key, 'org-test'])
+    if (code === 'SCAN_IN_PROGRESS') {
+      await screen.findAllByText(/Scan in progress since/)
+      await act(async () => {})
+      expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeDisabled()
+      expect(text(within(d).getByRole('alert'))).toBe(message)
+    } else {
+      await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
+    }
+  })
+
+  it('SCAN_IN_PROGRESS while the scan runs (founder): confirm held under the HR-S15 text; a coverage refetch showing the scan ended re-enables it and the text goes', async () => {
+    await show(tab5())
+    const d = await openAndPick('us-west-2')
+    mockChange.mockRejectedValueOnce(new HomeRegionRequestError('SCAN_IN_PROGRESS'))
+    serveScan(scanning())
+    const coverageCalls = mockGetCoverage.mock.calls.length
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    await waitFor(() => expect(mockGetCoverage.mock.calls.length).toBeGreaterThan(coverageCalls))
+    // The refetched coverage has landed on the page (its scan line), so this is the held phase.
+    await screen.findAllByText(/Scan in progress since/)
+    await act(async () => {})
+    const confirm = within(d).getByRole('button', { name: 'Change to us-west-2' })
+    expect(confirm).toBeDisabled()
+    expect(text(within(d).getByRole('alert'))).toBe('A scan is running. You can change the home region when it finishes.')
+    // A click while held sends nothing.
+    fireEvent.click(confirm)
+    await act(async () => {})
+    expect(mockChange).toHaveBeenCalledTimes(1)
+    // The page's next coverage read (its every-minute poll during a scan) says the scan ended.
+    serveScan(scanOf(tab5()))
+    await act(async () => { await client.refetchQueries({ queryKey: ['services-coverage', 'org-test'] }) })
+    await waitFor(() => expect(confirm).toBeEnabled())
+    expect(within(d).queryByRole('alert')).toBeNull()
+    expect((within(d).getByLabelText('Home region') as HTMLSelectElement).value).toBe('us-west-2')
+    // Retry the same region, no re-pick.
+    mockChange.mockResolvedValueOnce({ from: 'us-east-1', to: 'us-west-2', source: 'manual', cost_findings_removed: { total: 0, by_issue: {} }, scan_started: true })
+    fireEvent.click(confirm)
+    expect(text(await screen.findByTestId('home-region-changed'))).toBe('Home region changed to us-west-2. A scan has started.')
+    expect(mockChange.mock.calls.map((c) => c[0])).toEqual(['us-west-2', 'us-west-2'])
+  })
+
+  it('SCAN_IN_PROGRESS: held until the refetch lands even though the cached coverage shows no scan; enabled once it shows the scan already ended', async () => {
+    await show(tab5())
+    const d = await openAndPick('us-west-2')
+    mockChange.mockRejectedValueOnce(new HomeRegionRequestError('SCAN_IN_PROGRESS'))
+    const cov = deferred<Scan['coverage']>()
+    mockGetCoverage.mockReturnValueOnce(cov.promise)
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    expect(text(await within(d).findByRole('alert'))).toBe('A scan is running. You can change the home region when it finishes.')
+    await act(async () => {})
+    const confirm = within(d).getByRole('button', { name: 'Change to us-west-2' })
+    expect(confirm).toBeDisabled()
+    await act(async () => cov.resolve(scanOf(tab5()).coverage))
+    await waitFor(() => expect(confirm).toBeEnabled())
+    expect(within(d).queryByRole('alert')).toBeNull()
+  })
+
+  it('other failures keep the L-2 retry even while a scan runs', async () => {
+    await show(tab5())
+    const d = await openAndPick('us-west-2')
+    mockChange.mockRejectedValueOnce(new HomeRegionRequestError('HOME_REGION_CHANGE_BUSY'))
+    serveScan(scanning())
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    expect(text(await within(d).findByRole('alert'))).toBe("The home region couldn't be changed. Nothing was changed. Try again.")
+    await screen.findAllByText(/Scan in progress since/)
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
   })
 
@@ -547,12 +621,12 @@ describe('tab 11: the change dialog', () => {
   it('L-2: a retry that fails again shows the error again, and the confirm stays usable', async () => {
     await show(tab5())
     const d = await openAndPick('us-west-2')
-    mockChange.mockRejectedValueOnce(new HomeRegionRequestError(null)).mockRejectedValueOnce(new HomeRegionRequestError('SCAN_IN_PROGRESS'))
+    mockChange.mockRejectedValueOnce(new HomeRegionRequestError(null)).mockRejectedValueOnce(new HomeRegionRequestError('REGION_NOT_ENABLED'))
     fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
     expect(text(await within(d).findByRole('alert'))).toBe("The home region couldn't be changed. Nothing was changed. Try again.")
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
     fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
-    await waitFor(() => expect(text(within(d).getByRole('alert'))).toBe('A scan is running. You can change the home region when it finishes.'))
+    await waitFor(() => expect(text(within(d).getByRole('alert'))).toBe("us-west-2 isn't enabled in this AWS account."))
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
     expect(mockChange).toHaveBeenCalledTimes(2)
   })
@@ -631,10 +705,23 @@ describe('axe-core on the new states (phone list and open dialog/tooltip include
     const { container } = await show(tab5())
     const d = await openAndPick('us-west-2')
     expect(await axeViolations(scopeOf(container))).toEqual([])
-    mockChange.mockRejectedValue(new HomeRegionRequestError('SCAN_IN_PROGRESS'))
+    mockChange.mockRejectedValue(new HomeRegionRequestError('HOME_REGION_CHANGE_BUSY'))
     fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
     await within(d).findByRole('alert')
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
+    expect(await axeViolations(scopeOf(container))).toEqual([])
+  })
+
+  it('tab 11: the dialog held after SCAN_IN_PROGRESS while the scan runs', async () => {
+    const { container } = await show(tab5())
+    const d = await openAndPick('us-west-2')
+    mockChange.mockRejectedValue(new HomeRegionRequestError('SCAN_IN_PROGRESS'))
+    serveScan(scanning())
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    await within(d).findByRole('alert')
+    await screen.findAllByText(/Scan in progress since/)
+    await act(async () => {})
+    expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeDisabled()
     expect(await axeViolations(scopeOf(container))).toEqual([])
   })
 

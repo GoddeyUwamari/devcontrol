@@ -8,7 +8,7 @@ import awsAccountsService, {
   HomeRegionRequestError, type HomeRegionChangeResult, type HomeRegionPreview, type HomeRegionProposalView,
 } from '@/lib/services/aws-accounts.service'
 import {
-  HOME_REGION_COPY, changeErrorText, dialogOptions, previewRefusalText, whatChanges, type DialogMode,
+  HOME_REGION_COPY, HOME_REGION_ERROR_CODES, changeErrorText, dialogOptions, previewRefusalText, whatChanges, type DialogMode,
 } from './homeRegionModel'
 import { TONE } from './redesignTone'
 
@@ -30,19 +30,26 @@ const FOCUSABLE = 'button:not([disabled]), select:not([disabled]), [href], input
  *   succeeds (the caller invalidates and refetches); on any failure the dialog
  *   stays open with the error by the server's CODE, the caller refetches, and
  *   the confirm stays enabled so the same region can be tried again (L-2).
+ *   Except SCAN_IN_PROGRESS (founder, Nov 17): the confirm stays disabled under
+ *   the HR-S15 scan text until the five refetches finish, and then for as long
+ *   as coverage.scan_in_progress is true. When a refetch (the page polls
+ *   coverage every minute during a scan) shows the scan ended, the text goes and
+ *   the confirm comes back by itself.
  * - role=dialog, aria-modal, labelled by its title; focus moves in and is
  *   trapped; Escape, Cancel and Close close it; the error box is role=alert.
  */
-export function HomeRegionDialog({ orgId, mode, preselect, evidence, onClose, onChanged, onFailed }: {
+export function HomeRegionDialog({ orgId, mode, preselect, evidence, scanInProgress, onClose, onChanged, onFailed }: {
   orgId: string
   mode: DialogMode
   preselect: string | null
   /** The open prompt's evidence (proposed / split), for the option amounts; null otherwise. */
   evidence: HomeRegionProposalView | null
+  /** The page's coverage.scan_in_progress, as of its last fetch. */
+  scanInProgress: boolean
   onClose: () => void
   onChanged: (result: HomeRegionChangeResult) => void
-  /** Any non-success: the caller refetches; the home region shown stays as it was. */
-  onFailed: () => void
+  /** Any non-success: the caller refetches (resolves when done); the home region shown stays as it was. */
+  onFailed: () => Promise<unknown>
 }) {
   const titleId = useId()
   const selectId = useId()
@@ -51,6 +58,9 @@ export function HomeRegionDialog({ orgId, mode, preselect, evidence, onClose, on
   const [selected, setSelected] = useState<string>(preselect ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A PUT refused with SCAN_IN_PROGRESS: 'refetching' until the caller's refetch finishes,
+  // then 'held' (blocking only while coverage.scan_in_progress is true).
+  const [scanHold, setScanHold] = useState<'refetching' | 'held' | null>(null)
 
   const base = useQuery<HomeRegionPreview>({
     queryKey: ['home-region-preview', orgId, null],
@@ -89,24 +99,32 @@ export function HomeRegionDialog({ orgId, mode, preselect, evidence, onClose, on
   const baseError = base.isError ? changeErrorText(codeOf(base.error), selected) : null
   const targetError = target.isError ? changeErrorText(codeOf(target.error), selected) : null
   const refusal = t?.refusal ? previewRefusalText(t.refusal, selected) : null
-  const shownError = error ?? baseError ?? targetError ?? refusal
+  const waitingForScan = scanHold === 'refetching' || (scanHold === 'held' && scanInProgress)
+  // The scan has ended (a refetch said so): its HR-S15 text no longer applies.
+  const putError = scanHold && !waitingForScan ? null : error
+  const shownError = putError ?? baseError ?? targetError ?? refusal
   // A failed PUT leaves the confirm enabled (L-2): "Try again" re-sends the same region and clears
-  // the error; only a preview refusal (or no preview yet) keeps it disabled.
-  const canConfirm = !!selected && !!t && t.refusal === null && !submitting
+  // the error. It stays disabled for a preview refusal (or no preview yet), and after a
+  // SCAN_IN_PROGRESS refusal while the scan runs.
+  const canConfirm = !!selected && !!t && t.refusal === null && !submitting && !waitingForScan
 
   async function confirm() {
     if (!canConfirm) return
     setSubmitting(true)
     setError(null)
+    setScanHold(null)
     try {
       const result = await awsAccountsService.changeHomeRegion(selected)
       onChanged(result)
     } catch (err: unknown) {
+      const scan = codeOf(err) === HOME_REGION_ERROR_CODES.scanInProgress
       setError(changeErrorText(codeOf(err), selected))
-      onFailed()
-    } finally {
+      if (scan) setScanHold('refetching')
       setSubmitting(false)
+      try { await onFailed() } finally { if (scan) setScanHold('held') }
+      return
     }
+    setSubmitting(false)
   }
 
   return (
@@ -123,7 +141,7 @@ export function HomeRegionDialog({ orgId, mode, preselect, evidence, onClose, on
         <div className="mt-4 flex flex-col gap-1">
           <label htmlFor={selectId} className={cn('text-label', TONE.ink)}>{HOME_REGION_COPY.selectLabel}</label>
           <select id={selectId} aria-describedby={helpId} value={selected} disabled={!base.data || submitting}
-            onChange={(e) => { setSelected(e.target.value); setError(null) }}
+            onChange={(e) => { setSelected(e.target.value); setError(null); setScanHold(null) }}
             className={cn('rounded-lg border border-border bg-card px-3 py-2 text-ui', TONE.ink, TONE.focus)}>
             {!base.data && <option value="">{HOME_REGION_COPY.loading}</option>}
             {base.data && <option value="" disabled>{HOME_REGION_COPY.placeholder}</option>}

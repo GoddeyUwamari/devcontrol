@@ -108,11 +108,12 @@ export function useHomeRegion({ orgId, realMode, coverage }: { orgId: string | n
       mode={dialog.mode}
       preselect={dialog.preselect}
       evidence={proposal && (proposal.state === 'proposed' || proposal.state === 'split') ? proposal : null}
+      scanInProgress={!!coverage?.scan_in_progress}
       onClose={() => setDialog(null)}
       onChanged={onChanged}
       // L-3: a failed change refetches the same five queries as a success (a change may have
       // committed before its response was lost).
-      onFailed={() => { void invalidateAll() }}
+      onFailed={invalidateAll}
     />
   ) : null
 
