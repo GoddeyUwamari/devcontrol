@@ -1,7 +1,9 @@
 /**
  * Accessibility and forced dark mode for the Services redesign (PR 3b,
- * pr3-step1.md §I.6, §I.7): axe on every state fixture (contrast is checked in
- * the screenshots, not in jsdom), the table's header scopes and the global
+ * pr3-step1.md §I.6, §I.7): structural checks on every state fixture (axe-core
+ * isn't a declared dependency, so the rules that matter here are written out:
+ * names, references, unique ids, list structure, decorative icons; contrast is
+ * checked in the screenshots, not in jsdom), the table's header scopes and the global
  * subheading, the group disclosures, the scan hint, decorative dots; and the
  * page rendered under a forced `.dark` root, with every redesign surface on
  * the theme tokens and every ink paired with a dark: value. No theme switch
@@ -12,7 +14,6 @@ process.env.TZ = 'UTC'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import axe from 'axe-core'
 import ServicesPage from '../page'
 import { R_NOW, docExample, flaggedCoverage, mrRegion, redesignStats } from './redesign-fixtures'
 
@@ -85,11 +86,60 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); document.documentElement.classList.remove('dark') })
 
-describe('axe', () => {
-  it.each(Object.keys(STATES))('%s: no violations in the redesign', async (name) => {
+/** A control's name, simply: aria-label, aria-labelledby, its label element, or its own visible text. */
+function nameOf(el: Element): string {
+  const label = el.getAttribute('aria-label')
+  if (label) return label
+  const by = el.getAttribute('aria-labelledby')
+  if (by) return by.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? '').join(' ')
+  if (el.id) { const l = document.querySelector(`label[for="${el.id}"]`); if (l?.textContent) return l.textContent }
+  const wrapping = el.closest('label')
+  if (wrapping?.textContent) return wrapping.textContent
+  const clone = el.cloneNode(true) as Element
+  for (const hidden of clone.querySelectorAll('[aria-hidden="true"]')) hidden.remove()
+  return clone.textContent ?? ''
+}
+
+/** The checks axe would make that apply to this page, as a list of problems. */
+function problems(root: HTMLElement): string[] {
+  const out: string[] = []
+  const ids = new Map<string, number>()
+  for (const el of root.querySelectorAll('[id]')) ids.set(el.id, (ids.get(el.id) ?? 0) + 1)
+  for (const [id, n] of ids) if (n > 1) out.push(`duplicate id ${id}`)
+  for (const el of root.querySelectorAll('[aria-describedby], [aria-labelledby], [aria-controls]')) {
+    for (const attr of ['aria-describedby', 'aria-labelledby', 'aria-controls']) {
+      for (const ref of (el.getAttribute(attr) ?? '').split(/\s+/).filter(Boolean)) if (!document.getElementById(ref)) out.push(`${attr} → missing #${ref}`)
+    }
+  }
+  for (const el of root.querySelectorAll('button, a[href], summary, select, input')) {
+    if (!nameOf(el).trim()) out.push(`no accessible name: ${el.outerHTML.slice(0, 80)}`)
+  }
+  for (const list of root.querySelectorAll('ul, ol')) {
+    for (const child of list.children) if (child.tagName !== 'LI') out.push(`list child ${child.tagName} in ${list.getAttribute('aria-label') ?? list.className}`)
+  }
+  for (const svg of root.querySelectorAll('svg')) if (svg.getAttribute('aria-hidden') !== 'true') out.push(`svg not aria-hidden in ${svg.parentElement?.outerHTML.slice(0, 60)}`)
+  for (const th of root.querySelectorAll('th')) if (!th.getAttribute('scope')) out.push(`th without scope: ${th.textContent}`)
+  const headings = [...root.querySelectorAll('h1, h2, h3, h4')].map((h) => Number(h.tagName[1]))
+  headings.forEach((level, i) => { if (i > 0 && level > headings[i - 1] + 1) out.push(`heading level skips to h${level}`) })
+  return out
+}
+
+// Whole-page renders are slow on a cold worker: a wider budget than the 5 s default.
+describe('structural a11y checks', { timeout: 20_000 }, () => {
+  it.each(Object.keys(STATES))('%s: no problems in the redesign', async (name) => {
     const { container } = await show(STATES[name]())
-    const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } })
-    expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([])
+    const scope = container.querySelector('[data-services-redesign]') as HTMLElement
+    expect(scope).not.toBeNull()
+    expect(problems(scope)).toEqual([])
+  })
+
+  it('the checker finds each kind of problem (self-check)', () => {
+    const div = document.createElement('div')
+    div.innerHTML = '<p id="a"></p><p id="a"></p><button aria-describedby="nope"></button><ul><p>x</p></ul><svg></svg><table><tr><th>t</th></tr></table><h2>a</h2><h4>b</h4>'
+    document.body.appendChild(div)
+    const found = problems(div).join('\n')
+    for (const kind of ['duplicate id a', 'missing #nope', 'no accessible name', 'list child P', 'svg not aria-hidden', 'th without scope', 'skips to h4']) expect(found).toContain(kind)
+    div.remove()
   })
 })
 

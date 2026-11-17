@@ -317,6 +317,25 @@ describe('tab 5: single-region account (multi-region off for the organization)',
   })
 })
 
+describe('tab 5: an unflagged organization whose home region moved (3c draws the former home)', () => {
+  it('"N of M" is home_only_coverage only: the former home\'s old ok never counts as checked', async () => {
+    const c = tab5()
+    c.account.home_region = 'us-west-2'
+    c.scope.home_region = { region: 'us-west-2', count: 0 }
+    c.region_status = [
+      { region: 'us-west-2', home: true, status: 'never_scanned', last_scan_finished_at: null, last_success_at: null, last_error_code: null, consecutive_failures: 0, stale: false },
+      { ...c.region_status[0], home: false },
+      ...c.region_status.slice(1).filter((r: any) => r.region !== 'us-west-2'),
+    ]
+    c.home_only_coverage = { regions_total: 4, regions_checked: 0 }
+    await show(c)
+    expect(orgLine()).toBe('0 of 4 regions checked · us-west-2')
+    expect(homeLine()).toBe('Cost savings, Operational Health and Security Hub run in your home region, us-west-2, only.')
+    expect(cells('region-us-west-2')).toEqual(['us-west-2Home', '—', 'Not scanned yet', '—', '—'])
+    expect(cells('region-us-east-1')).toEqual(['us-east-1', '9from an earlier scan', 'Complete', expect.stringMatching(/^today, 10:20 AM/), '—'])
+  })
+})
+
 // ── Tab 6 ──
 
 describe('tab 6: "1 of 1"', () => {

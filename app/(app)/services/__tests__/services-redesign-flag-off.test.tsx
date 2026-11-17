@@ -110,7 +110,8 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers() })
 
-describe('redesign flag off: the V2 page before PR 3b, byte for byte', () => {
+// Each case renders the whole page seven times (once per off value): a wider budget than the 5 s default.
+describe('redesign flag off: the V2 page before PR 3b, byte for byte', { timeout: 20_000 }, () => {
   it.each(Object.keys(STATES))('%s', async (name) => {
     const state = STATES[name]
     vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', state.m6 ? 'true' : 'false')

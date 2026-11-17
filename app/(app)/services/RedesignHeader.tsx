@@ -38,8 +38,8 @@ export const RedesignHeader = forwardRef<HTMLButtonElement, {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1')}>{SERVICES_HEADING}</h1>
-        <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0')}>{SERVICES_SUBTITLE}</p>
+        <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1 dark:text-slate-100')}>{SERVICES_HEADING}</h1>
+        <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0 dark:text-slate-400')}>{SERVICES_SUBTITLE}</p>
         {scan && (
           <p data-testid="services-scan-line" data-state={scan.state} role="status" className={cn('m-0 mt-1 flex items-center gap-2 text-meta', TONE.muted)}>
             <span aria-hidden="true" className={cn('inline-block size-2 shrink-0 rounded-full', SCAN_DOT[scan.state])} />
