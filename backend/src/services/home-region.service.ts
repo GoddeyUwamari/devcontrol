@@ -248,17 +248,16 @@ function countsOf(entries: Array<{ issue: string; n: number }>): CostFindingCoun
 }
 
 /**
- * Regional resources stored in `region` (not S3, which is account-wide, nor anything
- * terminated). The dialog's resources_kept_in_old_region, and (PR 3c, G2b) the
- * coverage's account.previous_home_region_resources: one definition, one number.
+ * The regional resources of `region` the Services list shows (not S3): the dialog's
+ * resources_kept_in_old_region. One shared function (PR 3c, founder decision O-1):
+ * services.routes.ts countListedRegionalResources, which coverage's
+ * previous_home_region_resources reads too, so every number the page shows for a
+ * former home region agrees with the All resources list. Loaded on use: the route
+ * module is not loaded with this service.
  */
-export async function regionalResourcesIn(db: AwsAccountsQueryable, organizationId: string, region: string): Promise<number> {
-  const { rows } = await db.query(
-    `SELECT count(*)::int AS n FROM aws_resources
-      WHERE organization_id = $1 AND region = $2 AND resource_type <> 's3' AND status IS DISTINCT FROM 'terminated'`,
-    [organizationId, region]
-  );
-  return rows[0].n;
+async function regionalResourcesIn(db: AwsAccountsQueryable, organizationId: string, region: string): Promise<number> {
+  const { countListedRegionalResources } = await import('../routes/services.routes');
+  return countListedRegionalResources(db, organizationId, region);
 }
 
 /**

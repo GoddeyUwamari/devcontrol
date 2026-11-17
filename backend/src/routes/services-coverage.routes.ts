@@ -10,7 +10,7 @@ import {
 } from '../repositories/aws-accounts.repository';
 import type { RegionScanStatus } from '../repositories/multi-region-foundation.repository';
 import { isMultiRegionDiscoveryOn } from '../repositories/multi-region-coverage.repository';
-import { readHomeRegionChange, regionalResourcesIn } from '../services/home-region.service';
+import { readHomeRegionChange } from '../services/home-region.service';
 import {
   DISCOVERY_WARNING_LISTING_TRUNCATED,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
@@ -36,7 +36,7 @@ export type { RegionState };
 import { MAX_LEASE_AGE_SECONDS } from '../services/scan-lease';
 import { SCAN_KIND_DISCOVERY } from '../services/scan-session';
 import { parseAccountIdFromArn } from '../utils/awsAccountId';
-import { INVENTORY_FROM, inventoryWhere } from './services.routes';
+import { INVENTORY_FROM, countListedRegionalResources, inventoryWhere } from './services.routes';
 import { requireCurrentMembership } from './services-intelligence.routes';
 
 const router = Router();
@@ -74,10 +74,10 @@ export interface ServicesCoverage {
   account: {
     connected: boolean; status: string | null; home_region: string | null; previous_home_region?: string; home_region_changed_at?: Date;
     /**
-     * PR 3c (G2b): the former home region's regional resources still stored (not S3,
-     * not terminated), exactly home-region.service.ts regionalResourcesIn: the number
-     * the change dialog showed as resources_kept_in_old_region. Present only alongside
-     * previous_home_region.
+     * PR 3c (G2b, founder decision O-1): the former home region's resources the
+     * Services list shows, other than S3 (services.routes.ts
+     * countListedRegionalResources, the one function the change dialog's
+     * resources_kept_in_old_region reads too). Present only alongside previous_home_region.
      */
     previous_home_region_resources?: number;
   };
@@ -918,9 +918,9 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
 
   // Home region HR-1: the latest change of this connection's home region, if any (absent otherwise).
   const change = account ? await readHomeRegionChange(db, orgId, account) : null;
-  // PR 3c (G2b): its resources from earlier scans, by HR-1's own definition (present only with the change).
+  // PR 3c (G2b, O-1): its listed non-S3 resources, by the one shared count (present only with the change).
   const former = change
-    ? { ...change, previous_home_region_resources: await regionalResourcesIn(db, orgId, change.previous_home_region) }
+    ? { ...change, previous_home_region_resources: await countListedRegionalResources(db, orgId, change.previous_home_region) }
     : null;
 
   return {

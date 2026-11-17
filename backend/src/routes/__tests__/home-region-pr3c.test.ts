@@ -5,10 +5,11 @@
  *        membership (the same check as the home-region routes), never the JWT role
  *        claim. Owner true; admin, member and viewer false.
  *   G2b  GET /api/services/coverage `account.previous_home_region_resources`: the
- *        former home region's regional resources still stored, exactly HR-1's
- *        regionalResourcesIn (not S3, not terminated); the number the change dialog
- *        showed as resources_kept_in_old_region. Present only alongside
- *        previous_home_region. Never the Services inventory count of the region.
+ *        former home region's resources the Services list shows, other than S3
+ *        (founder decision O-1: one shared function, services.routes.ts
+ *        countListedRegionalResources, which the change dialog's
+ *        resources_kept_in_old_region reads too). Present only alongside
+ *        previous_home_region. A row with no status is not listed, so not counted.
  *   Owner-only code (founder decision Nov 17): the 403 of the three home-region
  *        routes keeps its message and gains `code: HOME_REGION_OWNER_ONLY`; every
  *        other owner-only route's 403 is unchanged (no code).
@@ -25,8 +26,8 @@ import { Client } from 'pg';
 import { STSClient } from '@aws-sdk/client-sts';
 import awsRoutes, { CHECK_AGAIN_FORBIDDEN_MESSAGE, HOME_REGION_FORBIDDEN_MESSAGE, HOME_REGION_OWNER_ONLY_CODE } from '../aws.routes';
 import servicesCoverageRoutes from '../services-coverage.routes';
+import servicesRoutes, { countListedRegionalResources } from '../services.routes';
 import { AWSResourceDiscoveryService } from '../../services/awsResourceDiscovery';
-import { regionalResourcesIn } from '../../services/home-region.service';
 import { createRoleGateHarness } from './role-gate-harness';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import { HOME_REGION_FIXTURE_TABLES, PROPOSAL, homeRegionRouteFixtures, type Org } from './home-region-route-fixtures';
@@ -73,6 +74,7 @@ beforeAll(async () => {
   } as typeof Client.prototype.query;
   await harness.listen((app) => {
     app.use('/api/services/coverage', servicesCoverageRoutes);
+    app.use('/api/services', servicesRoutes);
     app.use('/api/aws', awsRoutes);
   });
 });
@@ -189,12 +191,12 @@ describe('G2b coverage account.previous_home_region_resources', () => {
     expect('previous_home_region_resources' in (await coverage(org)).account).toBe(false);
   });
 
-  it('flag off: the former home region\'s regional, not-terminated, non-S3 rows; equal to the dialog\'s resources_kept_in_old_region', async () => {
+  it('flag off: the former home region\'s listed non-S3 rows; equal to the dialog\'s resources_kept_in_old_region', async () => {
     const org = await connectedOrg();
     const other = await connectedOrg();
     await resource(org, 'us-east-1', 'ec2');
     await resource(org, 'us-east-1', 'rds', 'available');
-    await resource(org, 'us-east-1', 'lambda', null);
+    await resource(org, 'us-east-1', 'lambda', null); // no status: not listed, so not counted (O-1)
     await resource(org, 'us-east-1', 's3'); // S3: account-wide, still checked: never counted
     await resource(org, 'us-east-1', 's3');
     await resource(org, 'us-east-1', 'ec2', 'terminated'); // terminated: never counted
@@ -202,15 +204,13 @@ describe('G2b coverage account.previous_home_region_resources', () => {
     await resource(org, 'global', 'cloudfront');
     await resource(other, 'us-east-1', 'ec2'); // another organization's row in the same region
     const kept = (await (await preview(org, 'us-west-2')).json()).data.target.resources_kept_in_old_region;
-    expect(kept).toBe(3);
+    expect(kept).toBe(2);
     expect((await put(org, { region: 'us-west-2' })).status).toBe(200);
     const body = await coverage(org);
     expect(body.account).toMatchObject({ home_region: 'us-west-2', previous_home_region: 'us-east-1', previous_home_region_resources: kept });
-    // Not the Services inventory count of the region: that one holds the 2 S3 buckets, and
-    // (inventoryWhere: status <> 'terminated') leaves out the row with no status, which
-    // HR-1's definition (status IS DISTINCT FROM 'terminated') counts. ec2 + rds + 2 S3 = 4.
+    // The region's listed count is the S3 buckets plus exactly these: ec2 + rds + 2 S3 = 4.
     expect(body.regions.find((r: { region: string }) => r.region === 'us-east-1').count).toBe(4);
-    expect(body.account.previous_home_region_resources).toBe(3);
+    expect(body.account.previous_home_region_resources).toBe(2);
   });
 
   it('flag on: present too, by the same definition', async () => {
@@ -272,6 +272,30 @@ describe('G2b coverage account.previous_home_region_resources', () => {
   });
 });
 
+describe('O-1 (founder decision): one shared count, so the dialog, note, row, tile and list agree', () => {
+  it('with a status-less resource: dialog kept = coverage k = the list\'s non-S3 rows; the row count = S3 + k = the list total', async () => {
+    const org = await connectedOrg();
+    await resource(org, 'us-east-1', 'ec2');
+    await resource(org, 'us-east-1', 'rds', 'available');
+    await resource(org, 'us-east-1', 'lambda', null); // no status: the list doesn't show it
+    await resource(org, 'us-east-1', 'ec2', null);    // and another
+    await resource(org, 'us-east-1', 's3');
+    await resource(org, 'us-east-1', 'ec2', 'terminated');
+    const kept = (await (await preview(org, 'us-west-2')).json()).data.target.resources_kept_in_old_region;
+    expect((await put(org, { region: 'us-west-2' })).status).toBe(200);
+    const cov = await coverage(org);
+    const k = cov.account.previous_home_region_resources;
+    const rowCount = cov.regions.find((r: { region: string }) => r.region === 'us-east-1').count;
+    const s3 = cov.scope.s3.regions.find((r: { region: string }) => r.region === 'us-east-1').count;
+    const list = await (await harness.sendAs(org.orgId, org.viewer, 'GET', '/services?region=us-east-1&page=1&limit=100')).json();
+    const listed = list.services as Array<{ type: string }>;
+    // The dialog (resources_kept_in_old_region), the note / row / tile (k) and the list's non-S3 rows: one number.
+    expect([kept, k, listed.filter((r) => r.type !== 's3').length]).toEqual([2, 2, 2]);
+    // The region row's count (the list's rows of the region) is the S3 buckets plus k, and the list's total.
+    expect([rowCount, s3 + k, list.pagination.total]).toEqual([3, 3, 3]);
+  });
+});
+
 describe('G2b tenancy', () => {
   it('explicit predicate: two organizations with the same former home region each get their own count', async () => {
     const a = await connectedOrg();
@@ -291,14 +315,14 @@ describe('G2b tenancy', () => {
     for (let i = 0; i < 3; i++) await resource(b, 'us-east-1', 'ec2');
     const client = await pool.connect();
     const texts: string[] = [];
-    // regionalResourcesIn itself, its organization predicate replaced by a no-op.
+    // The shared count itself, its organization predicate replaced by a no-op.
     const stripped = {
       query: (text: string, values: unknown[]) => {
-        const t = text.split('organization_id = $1').join('$1::uuid IS NOT NULL');
+        const t = text.split('r.organization_id = $1').join('$1::uuid IS NOT NULL');
         texts.push(t);
         return client.query(t, values);
       },
-    } as unknown as Parameters<typeof regionalResourcesIn>[0];
+    } as unknown as Parameters<typeof countListedRegionalResources>[0];
     try {
       await client.query('BEGIN');
       await client.query('GRANT SELECT ON aws_resources TO devcontrol');
@@ -306,11 +330,12 @@ describe('G2b tenancy', () => {
       const role = await client.query('SELECT current_user AS name, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user');
       expect(role.rows[0]).toEqual({ name: 'devcontrol', rolsuper: false, rolbypassrls: false });
       await client.query("SELECT set_config('app.current_organization_id', $1, true)", [a.orgId]);
-      expect(await regionalResourcesIn(stripped, b.orgId, 'us-east-1')).toBe(1);
+      expect(await countListedRegionalResources(stripped, b.orgId, 'us-east-1')).toBe(1);
       await client.query("SELECT set_config('app.current_organization_id', $1, true)", [b.orgId]);
-      expect(await regionalResourcesIn(stripped, a.orgId, 'us-east-1')).toBe(3);
+      expect(await countListedRegionalResources(stripped, a.orgId, 'us-east-1')).toBe(3);
       await client.query("SELECT set_config('app.current_organization_id', '', true)");
-      expect(await regionalResourcesIn(stripped, a.orgId, 'us-east-1')).toBe(0);
+      expect(await countListedRegionalResources(stripped, a.orgId, 'us-east-1')).toBe(0);
+      expect(texts.length).toBe(3);
       expect(texts.every((t) => !/organization_id = \$1/.test(t))).toBe(true);
     } finally {
       await client.query('ROLLBACK');
@@ -336,11 +361,12 @@ describe('docs §16 (PR 3c): the example blocks are real answers', () => {
     expect(Object.keys(docExamples('example-owner-only')).sort()).toEqual(['refused']);
   });
 
-  it('former home: coverage.account after a change from us-east-1 to us-west-2 (2 EC2 + 1 S3 + 1 terminated left in us-east-1)', async () => {
+  it('former home: coverage.account after a change from us-east-1 to us-west-2 (2 EC2 + 1 S3 + 1 terminated + 1 with no status left in us-east-1)', async () => {
     const org = await connectedOrg();
     await resource(org, 'us-east-1', 'ec2');
     await resource(org, 'us-east-1', 'ec2');
     await resource(org, 'us-east-1', 's3');
+    await resource(org, 'us-east-1', 'lambda', null);
     await resource(org, 'us-east-1', 'ec2', 'terminated');
     // The change as HR-1 records it: the region, and its audit event at a fixed time.
     await pool.query(`UPDATE aws_accounts SET region = 'us-west-2' WHERE id = $1`, [org.rowId]);

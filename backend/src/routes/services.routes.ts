@@ -376,6 +376,27 @@ const COST_RECOMMENDATIONS_SQL = `(SELECT json_agg(json_build_object('issue', cr
  * organization predicate comes first and every filter is ANDed after it (RLS
  * sits underneath as a second layer, not a replacement).
  */
+/**
+ * The resources in `region`, other than S3 buckets, that the Services list shows
+ * (multi-region PR 3c, founder decision O-1): exactly INVENTORY_FROM + inventoryWhere,
+ * the All resources list's own rows (this organization, not terminated; a row with no
+ * status is not listed either), filtered to the region. S3 is left out because it is
+ * listed and checked in every region on every scan.
+ *
+ * The one count of a former home region's resources from earlier scans: the change
+ * dialog's resources_kept_in_old_region and coverage's previous_home_region_resources
+ * both read it, so the dialog, the note, the region row, the tile and the list agree.
+ */
+export async function countListedRegionalResources(
+  db: { query(text: string, values?: unknown[]): Promise<{ rows: any[] }> },
+  orgId: string,
+  region: string
+): Promise<number> {
+  const { where, values } = inventoryWhere(orgId, { region });
+  const { rows } = await db.query(`SELECT count(*)::int AS n FROM ${INVENTORY_FROM} WHERE ${where} AND r.resource_type <> 's3'`, values);
+  return rows[0].n;
+}
+
 export function inventoryWhere(orgId: string, filters: ServiceListFilters): { where: string; values: unknown[] } {
   // Services list/stats represent current infrastructure — a soft-terminated
   // resource (see resourceReconciliation.service.ts) is no longer a "service" and

@@ -1259,16 +1259,17 @@ These blocks are checked against the routes by `home-region-pr3c.test.ts` (the `
 
 ### 16.1 `coverage.account.previous_home_region_resources` (G2b)
 
-- **What it counts:** the former home region's regional resources that are still stored, by HR-1's own `regionalResourcesIn` (`home-region.service.ts`):
+- **What it counts:** the former home region's resources that the Services list shows, other than S3 buckets. This is one shared function, `countListedRegionalResources` (`services.routes.ts`), over the All resources list's own rows (`INVENTORY_FROM` + `inventoryWhere`):
   - rows of this organization in that region;
-  - not S3 (S3 is listed in every region on every scan, so it is "checked", not "from earlier scans");
-  - not terminated.
-- It is the same number the change dialog showed as `resources_kept_in_old_region` before the change. It is read live on each request.
-- **Never** the Services inventory count of the region (`coverage.regions[].count`, which includes S3), and never inferred from findings or cost.
+  - not terminated;
+  - a row with no status isn't listed, so it isn't counted (founder decision O-1);
+  - not S3: S3 is listed in every region on every scan, so it is "checked", not "from earlier scans".
+- The change dialog's `resources_kept_in_old_region` reads the **same function**. So the dialog, the note, the region row, the tile and the list always agree: the region's `coverage.regions[].count` is the region's S3 count (`scope.s3.regions`) plus this number (tested). It is read live on each request.
+- Never inferred from findings or cost.
 - **Present only alongside `previous_home_region`**, with the flag off and on. Absent otherwise, so an account that never changed keeps its byte-identical response.
 - `0` is a real zero: nothing but S3 is left there.
 
-The home region moved from us-east-1 to us-west-2 on Nov 16. Two EC2 instances, one S3 bucket and one terminated instance are left in us-east-1:
+The home region moved from us-east-1 to us-west-2 on Nov 16. Left in us-east-1: two EC2 instances, one S3 bucket, one terminated instance, and one Lambda function with no status (not listed, so not counted):
 
 <!-- example-former-home: changed -->
 ```json
