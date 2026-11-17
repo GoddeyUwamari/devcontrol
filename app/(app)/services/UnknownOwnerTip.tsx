@@ -31,7 +31,9 @@ export function UnknownOwnerTip({ label }: { label: string }) {
         id={id}
         data-open={open ? 'true' : 'false'}
         className={cn(
-          'absolute left-0 top-full z-20 mt-1 w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border bg-popover px-3 py-2 text-meta text-popover-foreground shadow-md',
+          // Anchored at the chip's right edge: left-anchored, it was cut off by the attention
+          // list's scroll box on a 390 px screen (fix-round shot t14).
+          'absolute right-0 top-full z-20 mt-1 w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border bg-popover px-3 py-2 text-meta text-popover-foreground shadow-md',
           open ? 'block' : 'hidden',
         )}
       >

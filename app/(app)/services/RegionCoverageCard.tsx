@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { AlertTriangle, Info, OctagonAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CardNote, CoverageCardView, GlobalRow, PanelRow, RowStatus } from './redesignModel'
 import { REDESIGN_COPY } from './redesignModel'
+import { formatExact, formatWhen } from './regionCoverage'
 import { RichText, ScanTime } from './ScanTime'
 import { DOT, STATUS_INK, SURFACE, TONE } from './redesignTone'
 
@@ -36,10 +37,49 @@ function Resources({ value, note }: { value: number | null; note?: string }) {
   )
 }
 
-function LastFull({ value, now, exactLine = false }: { value: PanelRow['lastFull']; now: number; exactLine?: boolean }) {
+/**
+ * The phone rows' scan time (pr3b-review F2): only the relative time shows;
+ * the exact time is a role="tooltip" that describes the button, opening on
+ * tap, hover and keyboard focus (Escape closes it), as UnknownOwnerTip does.
+ * The desktop table keeps ScanTime's hover/focus tooltip.
+ */
+function TapScanTime({ iso, now }: { iso: string; now: number }) {
+  const id = useId()
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative inline-block" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        aria-describedby={id}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen(true)}
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
+        className={cn('rounded-sm text-left underline decoration-dotted underline-offset-2', TONE.body, TONE.focus)}
+      >
+        <time dateTime={iso}>{formatWhen(iso, now)}</time>
+      </button>
+      <span
+        role="tooltip"
+        id={id}
+        data-open={open ? 'true' : 'false'}
+        className={cn(
+          // Anchored at the time's right edge: the time sits in the row's second column, so a
+          // left-anchored box ran past a 390 px screen (fix-round shot t15); this one never does.
+          'absolute right-0 top-full z-20 mt-1 w-60 max-w-[80vw] whitespace-normal rounded-lg border border-border bg-popover px-3 py-2 text-meta text-popover-foreground shadow-md',
+          open ? 'block' : 'hidden',
+        )}
+      >
+        {formatExact(iso)}
+      </span>
+    </span>
+  )
+}
+
+function LastFull({ value, now, phone = false }: { value: PanelRow['lastFull']; now: number; phone?: boolean }) {
   if (value === null) return <span className={TONE.muted}>—</span>
   if (typeof value === 'string') return <span>{value}</span>
-  return <ScanTime iso={value.iso} now={now} exactLine={exactLine} exactClass={TONE.muted} />
+  return phone ? <TapScanTime iso={value.iso} now={now} /> : <ScanTime iso={value.iso} now={now} />
 }
 
 /** The group's regions behind "Show regions" / "Hide regions" (a native disclosure). */
@@ -102,7 +142,7 @@ function StackedRow({ row, now }: { row: PanelRow; now: number }) {
       <dl className="m-0 mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
         <dt className={TONE.muted}>Resources</dt><dd className="m-0 [&>span]:items-start [&>span]:text-left"><Resources value={row.resources} note={row.resourcesNote} /></dd>
         <dt className={TONE.muted}>Status</dt><dd className="m-0"><Status status={row.status} /></dd>
-        {row.lastFull !== null && <><dt className={TONE.muted}>Last full scan</dt><dd className={cn('m-0', TONE.body)}><LastFull value={row.lastFull} now={now} exactLine /></dd></>}
+        {row.lastFull !== null && <><dt className={TONE.muted}>Last full scan</dt><dd className={cn('m-0', TONE.body)}><LastFull value={row.lastFull} now={now} phone /></dd></>}
         {row.details && <><dt className={TONE.muted}>Details</dt><dd className={cn('m-0', TONE.body)}><Details row={row} open={open} /></dd></>}
       </dl>
     </li>
