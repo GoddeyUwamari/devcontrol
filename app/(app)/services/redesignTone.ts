@@ -48,6 +48,7 @@ export const DOT = {
   couldnt: 'bg-[var(--fill-danger)]',
   notdone: 'bg-[var(--fill-warning)]',
   not_scanned: 'border-[1.5px] border-slate-500 bg-transparent dark:border-slate-400',
+  no_longer: 'border-[1.5px] border-dashed border-slate-500 bg-transparent dark:border-slate-400',
   not_enabled: 'h-0.5 rounded-none bg-slate-500 dark:bg-slate-400',
 } as const
 
@@ -60,5 +61,6 @@ export const STATUS_INK = {
   couldnt: TONE.danger,
   notdone: TONE.warning,
   not_scanned: TONE.muted,
+  no_longer: TONE.muted,
   not_enabled: TONE.muted,
 } as const

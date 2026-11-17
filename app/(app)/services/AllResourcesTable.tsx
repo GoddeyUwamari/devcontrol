@@ -8,7 +8,7 @@ import { RESOURCE_TYPE_CHIPS, TYPE_DISPLAY } from './resourceTypes'
 import { Details, OwnerCell, SEVERITY_LABEL, environmentLabel, typeLabel } from './AttentionTable'
 import { ComingSoonTag } from './ComingSoonTag'
 import { resourcesScopeCaption, timeAgo } from './coverage'
-import { allResourcesScope, REDESIGN_COPY } from './redesignModel'
+import { allResourcesScope, REDESIGN_COPY, formerHomeOf } from './redesignModel'
 import type { StatsState } from './SummaryTiles'
 import {
   type AllResourcesFilters, type ShowFilter, MAX_SEARCH_LENGTH,
@@ -124,6 +124,8 @@ export function AllResourcesTable({
   const id = (name: string) => `${ids}-${name}`
   const statsData = stats.stats
   const home = coverage?.account.connected ? coverage.scope.home_region?.region ?? null : null
+  // PR 3c (HR-S17): the former home region's option, redesign and flag off only.
+  const formerHome = redesign ? formerHomeOf(coverage)?.region ?? null : null
   const teams = statsData?.teams
   const moreTeams = teams ? teams.total_teams - teams.all.length : 0
   const filtered = hasActiveFilter(filters)
@@ -292,7 +294,7 @@ export function AllResourcesTable({
         <label htmlFor={id('region')} className={labelClass}>Region
           <select id={id('region')} value={filters.region} onChange={(e) => onFilters({ region: e.target.value })} className={selectClass}>
             <option value="all">All scanned regions</option>
-            {(statsData?.regions ?? []).map((r) => <option key={r.region} value={r.region}>{regionOptionLabel(r.region, r.count, home)}</option>)}
+            {(statsData?.regions ?? []).map((r) => <option key={r.region} value={r.region}>{regionOptionLabel(r.region, r.count, home, formerHome)}</option>)}
           </select>
         </label>
         <label htmlFor={id('env')} className={labelClass}>Environment

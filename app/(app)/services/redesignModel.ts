@@ -39,6 +39,11 @@ export const REDESIGN_COPY = {
   connected: 'AWS account connected',
   globalHeading: 'Global resources (not a region)',
   footerMulti: 'S3 and CloudFront are checked on every scan.',
+  /** S35 flag off with no S3 bucket outside the home region (founder copy fix, PR 3c): no count clause. */
+  footerOffNone: 'S3 and CloudFront are checked in every region on each scan.',
+  formerHomeChip: 'former home',
+  noLongerScanned: 'No longer scanned',
+  formerHomeDetails: 'Not scanned since your home region moved. S3 buckets here are still checked on every scan.',
   listRead: 'The region list was last read ',
   fromEarlier: 'from an earlier scan',
   neverScanned: 'never scanned',
@@ -157,6 +162,35 @@ export function multiRegionOf(c: ServicesCoverage): MultiRegionCoverage | null {
 /** The home region: `multi_region.home_region` when flagged, otherwise the account's. */
 export function homeRegionOf(c: ServicesCoverage): string | null {
   return c.multi_region?.home_region ?? c.account.home_region ?? c.scope.home_region?.region ?? null
+}
+
+/**
+ * PR 3c: the former home region of an UNFLAGGED organization (multi_region
+ * absent), from the coverage response's own keys (HR-1 previous_home_region /
+ * home_region_changed_at, G2b previous_home_region_resources). It is not
+ * scanned (only the home region is), so it is never "checked". Null when
+ * flagged (the old home is still scanned there) or never changed.
+ */
+export interface FormerHome { region: string; changedAt: string; earlier: number | null }
+export function formerHomeOf(c: ServicesCoverage | undefined): FormerHome | null {
+  if (!c || c.multi_region) return null
+  const a = c.account
+  if (!a.connected || !a.previous_home_region || !a.home_region_changed_at || a.previous_home_region === homeRegionOf(c)) return null
+  return {
+    region: a.previous_home_region,
+    changedAt: a.home_region_changed_at,
+    earlier: typeof a.previous_home_region_resources === 'number' ? a.previous_home_region_resources : null,
+  }
+}
+
+/** "Nov 16, 2026" (local date). */
+export function longDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** "Nov 16" (local date). */
+export function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 // ── Header scan line (Services only; Security and the Dashboard keep scanLine) ──
@@ -305,7 +339,7 @@ export function organisingLine(c: ServicesCoverage): OrganisingLine {
 
 // ── Coverage card: notes, panel rows, legend, footer ──
 
-export type StatusKey = 'complete' | 'partial' | 'scanning' | 'waiting' | 'couldnt' | 'notdone' | 'not_scanned' | 'not_enabled'
+export type StatusKey = 'complete' | 'partial' | 'scanning' | 'waiting' | 'couldnt' | 'notdone' | 'not_scanned' | 'no_longer' | 'not_enabled'
 export interface RowStatus { key: StatusKey; label: string }
 
 export const LEGEND_TEXT: Record<StatusKey, { label: string; text: string }> = {
@@ -316,9 +350,10 @@ export const LEGEND_TEXT: Record<StatusKey, { label: string; text: string }> = {
   couldnt: { label: "Couldn't check", text: "the last scan couldn't check this region; results from an earlier scan stay listed" },
   notdone: { label: 'Not ready / not reached / not finished', text: "the last scan didn't check this region; the next scan tries again" },
   not_scanned: { label: 'Not scanned yet', text: 'enabled in this account, not scanned yet' },
+  no_longer: { label: 'No longer scanned', text: "your former home region; it isn't scanned while multi-region scanning is off" },
   not_enabled: { label: 'Not enabled', text: "an opt-in region this account hasn't enabled; nothing to scan" },
 }
-const LEGEND_ORDER: StatusKey[] = ['complete', 'partial', 'scanning', 'waiting', 'couldnt', 'notdone', 'not_scanned', 'not_enabled']
+const LEGEND_ORDER: StatusKey[] = ['complete', 'partial', 'scanning', 'waiting', 'couldnt', 'notdone', 'not_scanned', 'no_longer', 'not_enabled']
 
 const STATUS = (key: StatusKey, label = LEGEND_TEXT[key].label): RowStatus => ({ key, label })
 
@@ -331,6 +366,8 @@ export interface PanelRow {
   /** A region name (monospace), or a group label. */
   label: string
   home?: boolean
+  /** PR 3c: the former home region (flag off): the "former home" chip. */
+  formerHome?: boolean
   sublabel?: string
   /** A group's regions, behind "Show regions". */
   regions?: string[]
@@ -492,11 +529,13 @@ function storedCount(c: ServicesCoverage, region: string): number {
 }
 
 /** The panel's rows for an unflagged organization (home region only; G7 for not enabled). */
-function homeOnlyRows(c: ServicesCoverage, home: string): PanelRow[] {
+function homeOnlyRows(c: ServicesCoverage, home: string, now: number): PanelRow[] {
   const running = !!c.scan_in_progress
   const list = c.scope.enabled_regions.known ? c.region_status ?? [] : []
   const rows: PanelRow[] = []
   const notScanned: string[] = []
+  const former = formerHomeOf(c)
+  let formerRow: PanelRow | null = null
   if (list.length === 0) {
     // No region list yet: the home region from the jobs alone.
     const attempt = latestAttempt(c)
@@ -511,6 +550,7 @@ function homeOnlyRows(c: ServicesCoverage, home: string): PanelRow[] {
     })
   }
   for (const r of list) {
+    if (former && !r.home && r.region === former.region) { formerRow = formerHomeRow(c, r, former, now); continue }
     if (!r.home && r.status === 'never_scanned') { notScanned.push(r.region); continue }
     const { status, code } = homeOnlyStatus(r, running)
     const ok = r.status === 'ok' || r.status === 'partial'
@@ -525,10 +565,36 @@ function homeOnlyRows(c: ServicesCoverage, home: string): PanelRow[] {
         : code ? SHORT_DETAILS[code] : null,
     })
   }
+  // The former home sits right after the home row (mock tab 12).
+  if (formerRow) rows.splice(rows.length > 0 && rows[0].home ? 1 : 0, 0, formerRow)
   if (notScanned.length > 0) rows.push(notScannedGroup(c, notScanned))
   const notEnabled = notEnabledGroup(c.not_enabled_regions ?? [])
   if (notEnabled) rows.push(notEnabled)
   return rows
+}
+
+/**
+ * The former home row (flag off, PR 3c): "former home" chip, "No longer
+ * scanned" (never a checked status, whatever its old result), V2-45 and V2-46.
+ * Resources: the stored count of the region (coverage `regions`, as every row);
+ * V2-45 names the S3 buckets checked by the last completed scan (only when S3
+ * was in it) and the G2b count from earlier scans. A 0 segment is left out.
+ */
+function formerHomeRow(c: ServicesCoverage, r: RegionCoverage, former: FormerHome, now: number): PanelRow {
+  const s3 = c.scope.s3.regions.find((x) => x.region === former.region)?.count ?? 0
+  const done = c.last_completed_scan?.completed_at ?? null
+  const when = done ? formatWhen(done, now) : ''
+  const day = when.includes(', ') ? when.slice(0, when.lastIndexOf(', ')) : when
+  const note = seg([
+    claimed(c).s3 && s3 > 0 && day && `${num(s3)} S3 ${plural(s3, 'bucket', 'buckets')} checked ${day}`,
+    former.earlier !== null && former.earlier > 0 && `${num(former.earlier)} from earlier scans`,
+  ])
+  return {
+    key: `region-${r.region}`, kind: 'region', label: r.region, formerHome: true,
+    resources: storedCount(c, r.region), resourcesNote: note || undefined,
+    status: STATUS('no_longer'), lastFull: r.last_success_at ? { iso: r.last_success_at } : null,
+    details: REDESIGN_COPY.formerHomeDetails,
+  }
 }
 
 /** S3 / CloudFront are claimed only when in the newest scan's scope AND in the last completed scan (M6 Q5). */
@@ -570,8 +636,20 @@ function notesOf(c: ServicesCoverage, mr: MultiRegionCoverage | null): CardNote[
         notes.push({ key: `stale-${r.region}`, tone: 'warn', parts: ['These results may be out of date. ', `${r.region} was last scanned `, { iso: r.last_scan_finished_at }, '; scans normally run every 6 hours.'] })
       }
     }
-  } else if (latestAttempt(c) === 'unfinished' && c.last_scan) {
-    notes.push({ key: 'latest-failed', tone: 'danger', parts: failedNote(c.last_scan.completed_at ?? c.last_scan.started_at, lastDone) })
+  } else {
+    if (latestAttempt(c) === 'unfinished' && c.last_scan) {
+      notes.push({ key: 'latest-failed', tone: 'danger', parts: failedNote(c.last_scan.completed_at ?? c.last_scan.started_at, lastDone) })
+    }
+    // HR-S18 (PR 3c): the former home's resources from earlier scans, only when there are some.
+    const former = formerHomeOf(c)
+    const home = homeRegionOf(c)
+    if (former && home && former.earlier !== null && former.earlier > 0) {
+      const n = former.earlier
+      notes.push({
+        key: 'former-home', tone: 'info',
+        parts: [`${num(n)} ${plural(n, 'resource', 'resources')} in ${former.region} ${plural(n, 'is', 'are')} from earlier scans. ${former.region} hasn't been scanned since your home region moved to ${home} on ${longDate(former.changedAt)}.`],
+      })
+    }
   }
   return notes
 }
@@ -585,7 +663,7 @@ function failedNote(at: string | null, lastDone: string | null): Rich {
 export function describeCoverageCard(c: ServicesCoverage, now: number): CoverageCardView {
   const mr = multiRegionOf(c)
   const home = homeRegionOf(c)
-  const rows = mr ? multiRegionRows(c, mr, now) : home ? homeOnlyRows(c, home) : []
+  const rows = mr ? multiRegionRows(c, mr, now) : home ? homeOnlyRows(c, home, now) : []
   const global = globalRow(c)
   const present = new Set<StatusKey>()
   for (const r of rows) if (r.status) present.add(r.status.key)
@@ -626,7 +704,12 @@ export function attentionScopeCaption(stats: AWSServicesStats | undefined): stri
 /** The Resources tile's captions: S21 / S21b and V2-21 for a flagged organization; today's caption otherwise. */
 export function resourcesCaptions(c: ServicesCoverage | undefined): { scope: string | null; earlier: string | null } {
   const mr = c ? multiRegionOf(c) : null
-  if (!c || !mr) return { scope: resourcesScopeCaption(c), earlier: null }
+  if (!c || !mr) {
+    // V2-21 flag off (PR 3c): the former home's resources from earlier scans (G2b), when there are some.
+    const former = formerHomeOf(c)
+    const k = former?.earlier ?? 0
+    return { scope: resourcesScopeCaption(c), earlier: former && k > 0 ? `${num(k)} in ${former.region} from earlier scans` : null }
+  }
   const withResources = mr.regions.filter((r) => (r.resources ?? 0) > 0)
   const cf = c.scope.cloudfront.count
   const plusGlobal = cf > 0 ? `, plus ${num(cf)} global (CloudFront)` : ''
@@ -681,11 +764,17 @@ export function describeNotChecked(c: ServicesCoverage, stats: AWSServicesStats 
     return i >= 0 ? i : LINE_ORDER.length
   }
   const ordered = [...base].sort((a, b) => rank(a.key) - rank(b.key))
+  // V2-47 (PR 3c, flag off): the former home region, right after the "other enabled regions" line.
+  const former = formerHomeOf(c)
+  if (former) {
+    const at = ordered.findIndex((l) => l.key === 'regions')
+    ordered.splice(at >= 0 ? at + 1 : 0, 0, { key: 'former-home', text: `${former.region} hasn't been scanned since ${longDate(former.changedAt)}, except for S3 buckets.` })
+  }
   const lines: NotCheckedLine[] = [...regionLines.map(({ key, text }) => ({ key, text })), ...ordered]
   if (lines.length === 0) return { summary: null, lines }
   const items = [
     ...regionLines.map((l) => l.short),
-    ...ordered.map((l) => SHORT_ITEM[l.key]?.(l, stats) ?? null).filter((x): x is string => !!x),
+    ...ordered.map((l) => (l.key === 'former-home' && former ? `${former.region} since ${shortDate(former.changedAt)}` : SHORT_ITEM[l.key]?.(l, stats) ?? null)).filter((x): x is string => !!x),
   ]
   return { summary: items.length > 0 ? `Not checked: ${items.join(' · ')}.` : NOT_CHECKED_HEADING, lines }
 }

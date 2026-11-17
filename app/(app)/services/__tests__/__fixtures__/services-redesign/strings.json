@@ -37,7 +37,11 @@
     "notEnabledOpen": "If you enable one in AWS, the next scan includes it.",
     "optIn": "opt-in, enabled",
     "scanDeadline": "The scan reached its time limit after checking the regions, so some later checks (IAM security, compliance, unused-resource and cost-savings checks) didn't run or didn't finish. Region results are kept; the next scan runs them again.",
-    "unattributed": "Resource Explorer wasn't available in at least one region on the last scan, so some resource types may be missing there."
+    "unattributed": "Resource Explorer wasn't available in at least one region on the last scan, so some resource types may be missing there.",
+    "footerOffNone": "S3 and CloudFront are checked in every region on each scan.",
+    "formerHomeChip": "former home",
+    "noLongerScanned": "No longer scanned",
+    "formerHomeDetails": "Not scanned since your home region moved. S3 buckets here are still checked on every scan."
   },
   "labels": {
     "access_denied": "Couldn't check: access denied",
@@ -88,6 +92,7 @@
     "couldnt": "Couldn't check: the last scan couldn't check this region; results from an earlier scan stay listed",
     "notdone": "Not ready / not reached / not finished: the last scan didn't check this region; the next scan tries again",
     "not_scanned": "Not scanned yet: enabled in this account, not scanned yet",
+    "no_longer": "No longer scanned: your former home region; it isn't scanned while multi-region scanning is off",
     "not_enabled": "Not enabled: an opt-in region this account hasn't enabled; nothing to scan"
   },
   "page": {

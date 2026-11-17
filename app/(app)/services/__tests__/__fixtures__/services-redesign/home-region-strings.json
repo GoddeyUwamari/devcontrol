@@ -1,0 +1,62 @@
+{
+  "_source": "PR 3c exact strings: home-region-step1.md §H (HR-S1–S16), mock-v2-notes.md (V2-1…V2-9, V2-43…V2-47), pr3-step1.md §E.5, and the PR 3c brief (scan_started false variant; S35 n = 0). Placeholders: R, H, A (account), S/E (period), N (new), O (old).",
+  "change": "Change",
+  "proposal": {
+    "title": "Your AWS costs point to R as your home region.",
+    "bodyFlagOff": "84% of this account's regional AWS spend in the last 30 days was in R; H (your home region now) had 3%. Your home region is where DevControl checks cost savings, Operational Health and Security Hub, and the one region it scans for resources (S3 and CloudFront are checked everywhere).",
+    "bodyFlagOn": "84% of this account's regional AWS spend in the last 30 days was in R; H (your home region now) had 3%. Your home region is where DevControl checks cost savings, Operational Health and Security Hub.",
+    "buttons": ["Use R", "Keep H"],
+    "footnote": "Based on AWS Cost Explorer usage charges for account A, S – E. Credits, refunds and tax aren't included. You can change your home region at any time on the Services page.",
+    "scanRunning": "You can switch when the current scan finishes.",
+    "member": "Only an organization owner can change the home region."
+  },
+  "split": {
+    "title": "Your AWS spend is distributed across multiple regions.",
+    "body": "We couldn't identify one clear home region from your last 30 days of regional AWS spend. Choose where DevControl should run cost savings, Operational Health and Security Hub checks.",
+    "choose": "Choose your home region",
+    "member": "Only an organization owner can choose the home region.",
+    "note": "Your selection controls home-region-only checks. It does not enable multi-region discovery.",
+    "footnote": "Based on AWS Cost Explorer usage charges for account A, S – E. Credits, refunds and tax aren't included.",
+    "other": "Other regions (2)",
+    "homeNow": "(home now)"
+  },
+  "dialog": {
+    "title": "Change home region",
+    "titleSplit": "Choose your home region",
+    "introFlagOn": "Your home region is where DevControl checks cost savings, Operational Health and Security Hub.",
+    "introFlagOff": "Your home region is where DevControl checks cost savings, Operational Health and Security Hub. It's also the one region scanned for resources, apart from S3 and CloudFront.",
+    "label": "Home region",
+    "placeholder": "Select a region",
+    "current": "R (current)",
+    "amount": "R · $1.00 in the last 30 days",
+    "noAmount": "R · —",
+    "onlyEnabled": "Only regions enabled in this AWS account are listed.",
+    "later": "“What changes” appears once a region is selected.",
+    "whatChanges": "What changes",
+    "scanStarts": "A scan of N starts right away.",
+    "costLeaving": "3 cost findings in O leave your savings total. They come back if you switch back.",
+    "costLeavingOne": "1 cost finding in O leaves your savings total. It comes back if you switch back.",
+    "kept": "The 4 resources already found in O stay listed, marked “no longer scanned”.",
+    "keptOne": "The 1 resource already found in O stays listed, marked “no longer scanned”.",
+    "securityHub": "Security Hub findings from N appear after your next sync.",
+    "confirmNone": "Change home region",
+    "confirm": "Change to N",
+    "cancel": "Cancel"
+  },
+  "errors": [
+    "A scan is running. You can change the home region when it finishes.",
+    "R isn't enabled in this AWS account.",
+    "Only an organization owner can change the home region.",
+    "The home region couldn't be changed. Nothing was changed. Try again."
+  ],
+  "success": [
+    "Home region changed to N. A scan has started.",
+    "Home region changed to N. The next scan will check it."
+  ],
+  "former": {
+    "chip": "former home",
+    "status": "No longer scanned",
+    "details": "Not scanned since your home region moved. S3 buckets here are still checked on every scan."
+  },
+  "footerOffNone": "S3 and CloudFront are checked in every region on each scan."
+}
