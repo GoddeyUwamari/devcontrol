@@ -1,0 +1,70 @@
+{
+  "finished": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "running": {
+    "state": "running",
+    "text": "Scan running…"
+  },
+  "failed": {
+    "state": "failed",
+    "text": "Last scan failed: today, 2:00 PM"
+  },
+  "abandoned": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "yesterday": {
+    "state": "finished",
+    "text": "Last scan: yesterday, 8:00 PM"
+  },
+  "none": {
+    "state": "none",
+    "text": "No scan has finished yet."
+  },
+  "flagged.all_checked": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.in_progress": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.budget_incomplete": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.regional_failure": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.empty_regions": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.not_enabled": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.latest_scan_failed": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.home_not_us_east_1": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.single_region": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "flagged.unattributed_warning": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  },
+  "unflagged.pr3a": {
+    "state": "finished",
+    "text": "Last scan: today, 1:00 PM"
+  }
+}
