@@ -148,9 +148,12 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll, re
     formerHome?: FormerHome | null
   }
 }) {
+  // HR-S19 "{r} · last checked {date}": the suffix on its own line, so the column stays narrow.
   const regionText = (row: AWSService) => {
     const former = redesign?.formerHome
-    if (former && row.aws_region === former.region && row.last_seen_at) return `${row.aws_region} · last checked ${shortDate(row.last_seen_at)}`
+    if (former && row.aws_region === former.region && row.last_seen_at) {
+      return <>{row.aws_region}<span data-testid="former-home-checked" className="block font-sans"> · last checked {shortDate(row.last_seen_at)}</span></>
+    }
     return row.aws_region ?? '—'
   }
   const [expanded, setExpanded] = useState<string | null>(null)

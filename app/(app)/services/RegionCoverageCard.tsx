@@ -32,7 +32,7 @@ function Resources({ value, note }: { value: number | null; note?: string }) {
   return (
     <span className="inline-flex flex-col items-end text-right sm:items-end">
       {value === null ? <span className={TONE.muted}>—</span> : <span className={cn('tabular-nums', TONE.ink)}>{value.toLocaleString('en-US')}</span>}
-      {note && <span className={cn('text-meta', TONE.muted)}>{note}</span>}
+      {note && <span className={cn('max-w-[14rem] text-meta', TONE.muted)}>{note}</span>}
     </span>
   )
 }
@@ -98,7 +98,7 @@ function Name({ row }: { row: PanelRow }) {
   if (row.kind === 'group') return <span className={TONE.ink}>{row.label}</span>
   return (
     <>
-      <span className={cn('font-mono', TONE.ink)}>{row.label}</span>
+      <span className={cn('whitespace-nowrap font-mono', TONE.ink)}>{row.label}</span>
       {row.home && <span className={TONE.homeBadge}>Home</span>}
       {row.formerHome && <span data-chip="former-home" className={cn('ml-1.5 rounded border border-dashed border-border px-1.5 py-0.5 text-label', TONE.muted)}>{REDESIGN_COPY.formerHomeChip}</span>}
       {row.sublabel && <span className={cn('text-meta font-normal', TONE.muted)}> · {row.sublabel}</span>}

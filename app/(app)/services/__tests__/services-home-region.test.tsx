@@ -483,8 +483,9 @@ describe('tab 12: former home (flag off)', () => {
     const { scan } = await show(tab12Scan())
     expect(text(screen.getByTestId('resources-earlier'))).toBe('4 in us-east-1 from earlier scans')
     const attention = screen.getByRole('heading', { name: 'What needs attention' }).closest('section')!
-    await waitFor(() => expect(within(attention).getAllByText(/last checked/)).toHaveLength(1))
-    expect(within(attention).getByText('us-east-1 · last checked Nov 14')).toBeTruthy()
+    await waitFor(() => expect(within(attention).getAllByTestId('former-home-checked')).toHaveLength(1))
+    const cell = within(attention).getByTestId('former-home-checked').closest('td')!
+    expect(text(cell)).toBe('us-east-1 · last checked Nov 14')
     const options = [...(screen.getByLabelText('Region') as HTMLSelectElement).options].map((o) => o.textContent)
     expect(options).toContain('us-east-1, no longer scanned (6)')
     expect(options).toContain('us-west-2, home (5)')
