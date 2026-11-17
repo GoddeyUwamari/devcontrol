@@ -28,16 +28,20 @@ const point = (date: string, total: number, lineItems: number, provisional: bool
   ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, lineItems, provisional })
 
 describe('cost trend chart tooltip (approved string)', () => {
-  it.each(['7d', '6mo'] as const)('%s: an unreported point says "Not reported yet by AWS Cost Explorer", with no amounts', async (range) => {
+  it.each([
+    ['7d', [point('2026-11-30', 13.3, 2, true), point('2026-12-01', 0, 0, true)]],
+    ['6mo', [point('2026-11-01', 399, 2, true), point('2026-12-01', 0, 0, true)]],
+  ] as const)('%s: an unreported point says "Not reported yet by AWS Cost Explorer", with no amounts', async (range, data) => {
     open.index = 1
-    render(<CostTrendChart data={[point('2026-11-01', 399, 2, true), point('2026-12-01', 0, 0, true)]} dateRange={range} onDateRangeChange={() => {}} />)
+    // 7d draws the 7 full UTC days ending yesterday: Nov 25 .. Dec 1 on Dec 2.
+    render(<CostTrendChart data={[...data]} dateRange={range} onDateRangeChange={() => {}} now={new Date('2026-12-02T12:00:00Z')} />)
     await waitFor(() => expect(screen.getByText('Not reported yet by AWS Cost Explorer')).toBeInTheDocument())
     expect(screen.getByText('Not reported yet by AWS Cost Explorer').parentElement!.textContent).not.toMatch(/\$/)
   })
 
   it('a reported point keeps its breakdown, not the unreported string', async () => {
     open.index = 0
-    render(<CostTrendChart data={[point('2026-11-30', 13.3, 2, true), point('2026-12-01', 0, 0, true)]} dateRange="7d" onDateRangeChange={() => {}} />)
+    render(<CostTrendChart data={[point('2026-11-30', 13.3, 2, true), point('2026-12-01', 0, 0, true)]} dateRange="7d" onDateRangeChange={() => {}} now={new Date('2026-12-02T12:00:00Z')} />)
     await waitFor(() => expect(document.body.textContent).toMatch(/\$13\.30/))
     expect(screen.queryByText('Not reported yet by AWS Cost Explorer')).toBeNull()
   })

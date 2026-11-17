@@ -46,6 +46,31 @@ describe('real evidence 2026-11-16', () => {
   })
 })
 
+describe('round 2: the same data at 2026-11-17 (backend summary): Nov 13 still updating, Nov 14-17 not reported', () => {
+  const NOV17: CostSummary = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, '../../../../backend/src/controllers/__tests__/__fixtures__/trend-lag/summary-2026-11-17.new.json'), 'utf8',
+  )).data
+
+  it('the backend: Nov 1-12 vs Oct 1-12; 12 final / 1 updating / 4 not reported days after a recent charge', () => {
+    expect(NOV17.monthOverMonth.data).toMatchObject({ currentWindow: { start: '2026-11-01', end: '2026-11-12' }, previousWindow: { start: '2026-10-01', end: '2026-10-12' } })
+    expect(NOV17.spend.data?.monthState?.reportDays).toEqual({ final: 12, updating: 1, notReported: 4, afterRecentCharge: true })
+  })
+
+  it('Dashboard tile + Costs card: "latest days still updating"; the comparison names Nov 1–12 vs Oct 1–12, never Nov 1–13', () => {
+    const card = computeDashboardSpendCard({ costSummary: NOV17, ...ok })
+    expect(card.caption).toBe('Nov 1–17 (UTC) · Actual · AWS Cost Explorer · latest days still updating')
+    expect(card.evidence!.comparison).toContain('Nov 1–12 vs Oct 1–12')
+    expect(card.evidence!.comparison).not.toMatch(/Nov 1–13/)
+    expect(describeSpend(NOV17.spend, ok).sub).toBe(`Nov 1–17 (UTC) · Actual · AWS Cost Explorer · ${LATEST_DAYS_REPORTING}`)
+  })
+
+  it('Costs month-over-month KPI: a real comparison over the finished days', () => {
+    const mom = describeMonthOverMonth(NOV17.monthOverMonth, ok, { noFinishedDay: noFinalDayThisMonth(NOV17.spend) })
+    expect(mom.direction).not.toBeNull()
+    expect(mom.includesToday).toBe(false)
+  })
+})
+
 describe('M-1: an account that stopped spending (backend summary, last charge Oct 20, now Nov 16)', () => {
   const STOPPED: CostSummary = JSON.parse(fs.readFileSync(
     path.resolve(__dirname, '../../../../backend/src/controllers/__tests__/__fixtures__/trend-lag/summary-stopped-2026-11-16.new.json'), 'utf8',
