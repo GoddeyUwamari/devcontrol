@@ -674,7 +674,10 @@ export function describeCoverageCard(c: ServicesCoverage, now: number): Coverage
     footer.push([REDESIGN_COPY.footerMulti])
   } else if (home && scope.s3) {
     const outside = c.scope.s3.regions.filter((r) => r.region !== home).reduce((n, r) => n + r.count, 0)
-    footer.push([`S3 and CloudFront are checked in every region on each scan: ${num(outside)} S3 ${plural(outside, 'bucket', 'buckets')} outside ${home}.`])
+    // Founder copy fix (PR 3c): with no bucket outside the home region, no count clause.
+    footer.push([outside > 0
+      ? `S3 and CloudFront are checked in every region on each scan: ${num(outside)} S3 ${plural(outside, 'bucket', 'buckets')} outside ${home}.`
+      : REDESIGN_COPY.footerOffNone])
   }
   const { listed_at: listedAt, stale } = c.scope.enabled_regions
   if (listedAt && (stale === true || mr?.regions.some((r) => r.opt_in))) footer.push([REDESIGN_COPY.listRead, { iso: listedAt }, '.'])
