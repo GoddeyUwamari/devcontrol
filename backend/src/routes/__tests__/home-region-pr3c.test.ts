@@ -45,7 +45,7 @@ interface Recorded { text: string }
 const recorded: Recorded[] = [];
 const originalClientQuery = Client.prototype.query;
 
-const coverage = async (org: Org, as: string = org.viewer) => {
+const coverage = async (org: Pick<Org, 'orgId' | 'viewer'>, as: string = org.viewer) => {
   const res = await harness.sendAs(org.orgId, as, 'GET', '/services/coverage');
   expect(res.status).toBe(200);
   return (await res.json()).coverage;
@@ -230,6 +230,11 @@ describe('G2b coverage account.previous_home_region_resources', () => {
     expect((await coverage(org)).account.previous_home_region_resources).toBe(2);
     await pool.query(`UPDATE aws_resources SET status = 'terminated' WHERE id = (SELECT id FROM aws_resources WHERE organization_id = $1 AND region = 'us-east-1' LIMIT 1)`, [org.orgId]);
     expect((await coverage(org)).account.previous_home_region_resources).toBe(1);
+  });
+
+  it('no connection: the account carries exactly its three keys (no former-home key, no count)', async () => {
+    const org = await harness.buildOrg();
+    expect((await coverage(org)).account).toEqual({ connected: false, status: null, home_region: null });
   });
 
   it('zero is a real 0 (present with the former home region)', async () => {
