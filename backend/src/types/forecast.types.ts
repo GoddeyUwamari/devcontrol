@@ -24,6 +24,12 @@ export interface CostForecast {
   predictions: TimeSeriesPoint[];
   predictionStartDate: Date;
   predictionEndDate: Date;
+  /**
+   * Today (UTC midnight): where the period totals (predicted30Day ..) start.
+   * Predictions before it cover the days after the last finished day that
+   * AWS Cost Explorer has not finished yet (review R3-L3).
+   */
+  forecastStartDate?: Date;
   forecastPeriod: ForecastPeriod;
   forecastMethod: ForecastMethod;
 

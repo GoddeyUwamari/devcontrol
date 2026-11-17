@@ -4,6 +4,28 @@ import { CostForecast, TimeSeriesPoint, ForecastPeriod } from '../types/forecast
 import { ForecastMLService } from './forecast-ml.service';
 import awsCostService from './aws-cost.service';
 
+/** The forecast needs at least this many days AWS Cost Explorer has finished reporting. */
+export const MIN_FINISHED_FORECAST_DAYS = 7;
+
+/**
+ * Fewer finished days than MIN_FINISHED_FORECAST_DAYS (a newly connected
+ * account): not a failure, so the API answers with this state instead of a
+ * server error (review R3-L4). Filled gap days are estimates and do not count.
+ */
+export class InsufficientForecastHistoryError extends Error {
+  readonly code = 'INSUFFICIENT_FORECAST_HISTORY';
+  constructor(readonly finishedDays: number, readonly requiredDays: number = MIN_FINISHED_FORECAST_DAYS) {
+    super(`Need at least ${requiredDays} finished days of cost history for forecasting (have ${finishedDays})`);
+    this.name = 'InsufficientForecastHistoryError';
+  }
+}
+
+/** YYYY-MM-DD (UTC) of a date. */
+const utcDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Whole UTC days from `from` to `to` (both YYYY-MM-DD); negative when `to` is earlier. */
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+
 export class CostForecastService {
   private mlService: ForecastMLService;
 
@@ -16,34 +38,44 @@ export class CostForecastService {
    */
   async generateForecast(
     organizationId: string,
-    period: ForecastPeriod = '90d'
+    period: ForecastPeriod = '90d',
+    now: Date = new Date()
   ): Promise<CostForecast> {
     console.log(`[Cost Forecast] Generating forecast for org ${organizationId}...`);
 
-    // Get historical cost data (last 90 days)
+    // Get historical cost data (last 90 days): finished days, plus estimated gap fills between them.
     const historicalData = await this.getHistoricalCosts(organizationId, 90);
 
-    if (historicalData.length < 7) {
-      throw new Error('Need at least 7 days of historical data for forecasting');
+    const finishedDays = historicalData.filter(p => p.actual !== false).length;
+    if (finishedDays < MIN_FINISHED_FORECAST_DAYS) {
+      throw new InsufficientForecastHistoryError(finishedDays);
     }
 
     // Determine forecast days
     const forecastDays = this.getForecastDays(period);
 
+    // History ends on the last FINISHED day (review L-2), a few days before
+    // today. The days in between are predicted too (they continue the line),
+    // but every period total starts at today (UTC): "next 30 days" is today
+    // .. today+29, not a window that began days ago (review R3-L3).
+    const today = utcDay(now);
+    const lead = Math.max(0, daysBetween(utcDay(historicalData[historicalData.length - 1].date), today) - 1);
+
     // Generate ML predictions
     const { predictions, confidence, confidenceInterval } =
-      this.mlService.generateForecast(historicalData, forecastDays, 'ensemble');
+      this.mlService.generateForecast(historicalData, forecastDays + lead, 'ensemble');
+    const ahead = predictions.slice(lead);
 
     // Calculate metrics
     const growthRate = this.mlService.calculateGrowthRate(historicalData);
     const trend = this.mlService.detectTrend(historicalData);
     const volatility = this.mlService.calculateVolatility(historicalData);
 
-    // Calculate specific period predictions
-    const predicted30Day = this.sumPredictions(predictions.slice(0, 30));
-    const predicted60Day = this.sumPredictions(predictions.slice(0, 60));
-    const predicted90Day = this.sumPredictions(predictions.slice(0, 90));
-    const predictedQuarter = this.sumPredictions(predictions.slice(0, 90));
+    // Calculate specific period predictions, from today
+    const predicted30Day = this.sumPredictions(ahead.slice(0, 30));
+    const predicted60Day = this.sumPredictions(ahead.slice(0, 60));
+    const predicted90Day = this.sumPredictions(ahead.slice(0, 90));
+    const predictedQuarter = this.sumPredictions(ahead.slice(0, 90));
     const predictedYear = predicted90Day * 4; // Rough estimate
 
     // Historical stats
@@ -63,6 +95,7 @@ export class CostForecastService {
 
       predictions,
       predictionStartDate: predictions[0].date,
+      forecastStartDate: new Date(`${today}T00:00:00.000Z`),
       predictionEndDate: predictions[predictions.length - 1].date,
       forecastPeriod: period,
       forecastMethod: 'ensemble',
@@ -104,29 +137,26 @@ export class CostForecastService {
   ): Promise<TimeSeriesPoint[]> {
     const range = days <= 7 ? '7d' : days <= 30 ? '30d' : '90d';
 
-    try {
-      const trend = await awsCostService.fetchCostTrend(organizationId, range);
+    // A failed Cost Explorer read propagates (the forecast fails as an
+    // error), so it is never mistaken for "not enough finished days yet".
+    const trend = await awsCostService.fetchCostTrend(organizationId, range);
 
-      // Final days only (review L-2): a day Cost Explorer has not reported yet
-      // is not a $0 day of history, and a day it is still updating is a partial
-      // amount. Points from a backend without reportState count as final.
-      const dataPoints: TimeSeriesPoint[] = trend.filter(point => (point.reportState ?? 'final') === 'final').map(point => ({
-        date: new Date(point.date),
-        value: point.total,
-        actual: true,
-      }));
+    // Final days only (review L-2): a day Cost Explorer has not reported yet
+    // is not a $0 day of history, and a day it is still updating is a partial
+    // amount. Points from a backend without reportState count as final.
+    const dataPoints: TimeSeriesPoint[] = trend.filter(point => (point.reportState ?? 'final') === 'final').map(point => ({
+      date: new Date(point.date),
+      value: point.total,
+      actual: true,
+    }));
 
-      // Fewer final days than requested (e.g. account newly connected): fill
-      // the gaps BETWEEN real days only, labelled as estimates (fillGaps).
-      if (dataPoints.length < days && dataPoints.length > 0) {
-        return this.fillGaps(dataPoints, days);
-      }
-
-      return dataPoints;
-    } catch (error) {
-      console.error('[Cost Forecast] Error fetching historical costs:', error);
-      return [];
+    // Fewer final days than requested (e.g. account newly connected): fill
+    // the gaps BETWEEN real days only, labelled as estimates (fillGaps).
+    if (dataPoints.length < days && dataPoints.length > 0) {
+      return this.fillGaps(dataPoints, days);
     }
+
+    return dataPoints;
   }
 
   /**
