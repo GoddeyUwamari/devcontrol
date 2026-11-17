@@ -59,6 +59,12 @@ export interface AWSServicesStats {
   teams?: { top: { team: string; count: number }[]; all: { team: string; count: number }[]; total_teams: number }
   /** Resources whose service_id names a registered service of this organization. */
   mapped_to_service?: number
+  /**
+   * Where the needs_attention resources are (PR 3a, G1): distinct regions, and
+   * how many are global (CloudFront, never a region). Same rows and predicate
+   * as needs_attention. Absent from an older backend.
+   */
+  attention_scope?: { regions: number; global: number }
 }
 
 /**
@@ -115,6 +121,77 @@ export interface ServicesCoverage {
   tags_unknown_by_type: Record<string, number>
   regions: { region: string | null; count: number }[]
   total: number
+  /**
+   * Multi-region PR 2: present only for an organization with multi-region
+   * discovery on. The contract is docs/SERVICES_COVERAGE_MULTI_REGION.md: read
+   * the fields as given, never combine them to work out a state.
+   */
+  multi_region?: MultiRegionCoverage
+  /** PR 3a (G7): the latest region list's not-enabled (opt-in) regions, for every organization; [] with no list. */
+  not_enabled_regions?: string[]
+  /** PR 3a (G8): "N of M" when multi_region is absent (home region only); null with no account or no list. */
+  home_only_coverage?: { regions_total: number; regions_checked: number } | null
+}
+
+/** GET /api/services/coverage → multi_region (doc §3). */
+export type MultiRegionCoverageStatus = 'in_progress' | 'all_checked' | 'completed_with_regions_not_checked' | 'latest_scan_failed' | 'unavailable'
+
+/** One field to read per region (doc §5). */
+export type MultiRegionState =
+  | 'not_started' | 'in_progress' | 'checked' | 'checked_with_warnings' | 'failed'
+  | 'not_checked_budget' | 'not_checked_deadline' | 'denied' | 'not_ready' | 'excluded'
+
+export interface MultiRegionRegion {
+  region: string
+  home: boolean
+  opt_in: boolean
+  status: string
+  error_code: string | null
+  last_scan_finished_at: string | null
+  last_success_at: string | null
+  stale: boolean
+  result_of: 'running_scan' | 'latest_scan' | 'earlier_scan' | null
+  scan_state: 'done' | 'running' | 'waiting' | 'excluded' | null
+  state: MultiRegionState
+  /** null when no successful check backs a count: never shown as 0. */
+  resources: number | null
+  resources_from: 'last_result' | 'earlier_success' | null
+  empty: boolean
+}
+
+export interface MultiRegionCoverage {
+  scan: {
+    id: string
+    status: string
+    started_at: string | null
+    completed_at: string | null
+    regions_total: number
+    regions_checked: number
+    /** PR 3a (G6): with_resources + empty + zero_with_warnings = regions_checked. */
+    regions_with_resources: number
+    regions_empty: number
+    regions_zero_with_warnings: number
+  } | null
+  coverage_status: MultiRegionCoverageStatus
+  home_region: string | null
+  savings_regions: string[]
+  not_enabled_regions: string[]
+  /** The enabled regions of the latest list, home first, then by name. */
+  regions: MultiRegionRegion[]
+  regions_checked: {
+    enabled: number | null
+    complete: number
+    partial: number
+    not_checked: number
+    not_reached: number
+    never_scanned: number
+    by_state: Record<MultiRegionState, number>
+  }
+  progress: { scan_started_at: string; regions_total: number; regions_done: number; regions_running: number; regions_waiting: number } | null
+  region_warnings: { code: string; region: string }[]
+  region_warnings_complete: boolean
+  /** PR 3a (G11): Resource Explorer codes no region of this scan carries. */
+  region_warnings_unattributed: string[]
 }
 
 /**

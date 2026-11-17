@@ -8,6 +8,7 @@ import { RESOURCE_TYPE_CHIPS, TYPE_DISPLAY } from './resourceTypes'
 import { Details, OwnerCell, SEVERITY_LABEL, environmentLabel, typeLabel } from './AttentionTable'
 import { ComingSoonTag } from './ComingSoonTag'
 import { resourcesScopeCaption, timeAgo } from './coverage'
+import { allResourcesScope, REDESIGN_COPY } from './redesignModel'
 import type { StatsState } from './SummaryTiles'
 import {
   type AllResourcesFilters, type ShowFilter, MAX_SEARCH_LENGTH,
@@ -34,7 +35,7 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }
 
-function Row({ row }: { row: AWSService }) {
+function Row({ row, explainUnknown = false }: { row: AWSService; explainUnknown?: boolean }) {
   const [open, setOpen] = useState(false)
   // "Last seen" is read against the time the row mounted.
   const [now] = useState(() => Date.now())
@@ -64,7 +65,7 @@ function Row({ row }: { row: AWSService }) {
         </td>
         <td className="px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700">{row.aws_region ?? '—'}</td>
         <td className="px-3 py-3 whitespace-nowrap text-slate-700">{environmentLabel(row)}</td>
-        <td className="px-3 py-3 whitespace-nowrap"><OwnerCell row={row} withTeam={false} /></td>
+        <td className="px-3 py-3 whitespace-nowrap"><OwnerCell row={row} withTeam={false} explainUnknown={explainUnknown} /></td>
         <td className="px-3 py-3 whitespace-nowrap text-slate-700">{owner || !row.team ? <span className="text-slate-600">—</span> : row.team}</td>
         <td className="px-3 py-3 min-w-[200px]">
           {row.needs_attention ? (
@@ -94,7 +95,7 @@ function Row({ row }: { row: AWSService }) {
  */
 export function AllResourcesTable({
   state, filters, searchInput, onSearchInput, onFilters, onClearFilters, onPage,
-  stats, coverage, knownNoAccount, teamSelectRef, isDiscovering, onAutoDiscover, scanRunning = false,
+  stats, coverage, knownNoAccount, teamSelectRef, isDiscovering, onAutoDiscover, scanRunning = false, redesign = false,
 }: {
   state: AllResourcesState
   filters: AllResourcesFilters
@@ -112,6 +113,12 @@ export function AllResourcesTable({
   onAutoDiscover: () => void
   /** A discovery scan is running on the server (M6 only): Auto Discover is disabled. */
   scanRunning?: boolean
+  /**
+   * The Services redesign (PR 3b): "{n} resources" for a flagged organization
+   * (S23), no Group by control, "Scan now" (S38/S39) as a secondary button
+   * (Scan now in the header is the only primary one), the Unknown tooltip.
+   */
+  redesign?: boolean
 }) {
   const ids = useId()
   const id = (name: string) => `${ids}-${name}`
@@ -172,10 +179,21 @@ export function AllResourcesTable({
         <div className="px-5 py-10 text-center">
           <Layers size={18} className="text-slate-500 mx-auto mb-3" aria-hidden="true" />
           <p className="text-ui font-semibold text-slate-900 mb-1">No resources discovered yet</p>
-          <p className="text-meta text-slate-600 mb-4 leading-relaxed">Run Auto Discover to scan your connected account.</p>
-          <button type="button" onClick={onAutoDiscover} disabled={isDiscovering || scanRunning} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label inline-flex items-center gap-1.5">
-            {scanRunning && !isDiscovering ? <><Scan size={13} aria-hidden="true" /> Scan running…</> : <><Scan size={13} aria-hidden="true" /> Auto Discover</>}
-          </button>
+          {redesign ? (
+            <>
+              <p className="text-meta text-slate-600 mb-4 leading-relaxed">{REDESIGN_COPY.emptyListAction}</p>
+              <button type="button" onClick={onAutoDiscover} disabled={isDiscovering || scanRunning} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-label text-ink hover:bg-muted disabled:cursor-not-allowed disabled:text-ink-muted dark:text-slate-100">
+                <Scan size={13} aria-hidden="true" /> {isDiscovering || scanRunning ? REDESIGN_COPY.scanning : REDESIGN_COPY.scanNow}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-meta text-slate-600 mb-4 leading-relaxed">Run Auto Discover to scan your connected account.</p>
+              <button type="button" onClick={onAutoDiscover} disabled={isDiscovering || scanRunning} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label inline-flex items-center gap-1.5">
+                {scanRunning && !isDiscovering ? <><Scan size={13} aria-hidden="true" /> Scan running…</> : <><Scan size={13} aria-hidden="true" /> Auto Discover</>}
+              </button>
+            </>
+          )}
         </div>
       )
     } else if (isPositiveEmpty(filters) && n !== 0) {
@@ -200,7 +218,7 @@ export function AllResourcesTable({
               ? `Try a different resource type, or clear filters to see all ${n} resource${n !== 1 ? 's' : ''}.`
               : 'Try a different resource type, or clear filters to see all resources.'}
           </p>
-          <button type="button" onClick={onClearFilters} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label">
+          <button type="button" onClick={onClearFilters} className={redesign ? 'rounded-lg border border-border bg-card px-4 py-2 text-label text-ink hover:bg-muted dark:text-slate-100' : 'bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label'}>
             Clear filter
           </button>
         </div>
@@ -223,7 +241,7 @@ export function AllResourcesTable({
               </tr>
             </thead>
             <tbody>
-              {state.page.services.map((row) => <Row key={row.id} row={row} />)}
+              {state.page.services.map((row) => <Row key={row.id} row={row} explainUnknown={redesign} />)}
             </tbody>
           </table>
         </div>
@@ -241,7 +259,7 @@ export function AllResourcesTable({
     )
   }
 
-  const scope = resourcesScopeCaption(coverage)
+  const scope = redesign ? allResourcesScope(coverage) : resourcesScopeCaption(coverage)
   const noFlagged = page?.counts.no_flagged_issues
   return (
     <section aria-labelledby={id('heading')} className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
@@ -307,12 +325,14 @@ export function AllResourcesTable({
         >
           Production
         </button>
-        <div role="group" aria-label="Group by" className="ml-auto flex flex-wrap items-center gap-1.5 text-meta text-slate-600">
-          <span aria-hidden="true">Group by</span>
-          <button type="button" aria-pressed="true" className="rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1 font-semibold text-violet-900">Resource</button>
-          <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 opacity-60 cursor-not-allowed">Service</button>
-          <ComingSoonTag />
-        </div>
+        {!redesign && (
+          <div role="group" aria-label="Group by" className="ml-auto flex flex-wrap items-center gap-1.5 text-meta text-slate-600">
+            <span aria-hidden="true">Group by</span>
+            <button type="button" aria-pressed="true" className="rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1 font-semibold text-violet-900">Resource</button>
+            <button type="button" disabled className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 opacity-60 cursor-not-allowed">Service</button>
+            <ComingSoonTag />
+          </div>
+        )}
         </div>
       </div>
       {body}

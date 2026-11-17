@@ -8,6 +8,12 @@ import { SeverityBadge } from '@/components/ui/severity-badge'
 import { TYPE_DISPLAY } from './resourceTypes'
 import { ownerDisplay } from './ownership'
 import { timeAgo } from './coverage'
+import { UnknownOwnerTip } from './UnknownOwnerTip'
+
+/** Redesign (PR 3b) phone layout: each row a stacked block with its labels, so the list never scrolls sideways. */
+const PHONE_TABLE = 'max-sm:block'
+const PHONE_ROW = 'max-sm:block max-sm:py-2'
+const PHONE_CELL = 'max-sm:flex max-sm:min-w-0 max-sm:gap-3 max-sm:whitespace-normal max-sm:px-4 max-sm:py-1 max-sm:text-left max-sm:before:w-20 max-sm:before:shrink-0 max-sm:before:text-ink-muted max-sm:before:content-[attr(data-label)]'
 
 /** Rows in the compact table (Q18): the server's order, severity then name. */
 export const ATTENTION_ROWS = 6
@@ -40,12 +46,14 @@ export function typeLabel(type: string) {
  * ("{owner} · {team}", "No Owner tag · {team}"); tables with their own Team
  * column pass false, so the team is shown once.
  */
-export function OwnerCell({ row, withTeam = true }: { row: AWSService; withTeam?: boolean }) {
+export function OwnerCell({ row, withTeam = true, explainUnknown = false }: { row: AWSService; withTeam?: boolean; explainUnknown?: boolean }) {
   const owner = ownerDisplay(row)
   switch (owner.kind) {
     case 'unowned':
       return <span className="rounded px-2 py-0.5 text-label bg-orange-50 text-orange-900">Unowned</span>
     case 'unknown':
+      // The redesign explains Unknown vs Unowned in a tooltip (V2-50).
+      if (explainUnknown) return <UnknownOwnerTip label={owner.label} />
       return <span className="rounded px-2 py-0.5 text-label bg-slate-100 text-slate-700">{owner.label}</span>
     case 'owner':
       return <span className="text-slate-700">{owner.label}{withTeam && owner.team ? ` · ${owner.team}` : ''}</span>
@@ -123,14 +131,20 @@ function Action({ row, expanded, onToggle, detailsId }: { row: AWSService; expan
  * the organization (no filters), in the server's order. "View all N" opens the
  * full list below with Needs attention selected.
  */
-export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: {
+export function AttentionTable({ state, totalResources, onViewAll, onShowAll, redesign }: {
   state: AttentionState
   /** /stats' total, for the empty state's sentence; undefined when unknown. */
   totalResources: number | undefined
   onViewAll: () => void
   onShowAll: () => void
+  /**
+   * The Services redesign (PR 3b): "{n} resources need attention" (S7) in the
+   * heading, the Unknown tooltip (V2-50), and a stacked phone layout.
+   */
+  redesign?: { needsAttention: number | undefined }
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  const ph = (base: string, phone: string) => (redesign ? `${base} ${phone}` : base)
   const total = state.status === 'ready' ? state.page.pagination.total : null
 
   let body: React.ReactNode
@@ -163,8 +177,8 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
   } else {
     body = (
       <div className="overflow-x-auto">
-        <table className="w-full text-ui">
-          <thead>
+        <table className={ph('w-full text-ui', PHONE_TABLE)}>
+          <thead className={redesign ? 'max-sm:hidden' : undefined}>
             <tr className="border-b border-slate-100 bg-slate-50 text-left text-label uppercase tracking-[0.04em] text-slate-600">
               <th scope="col" className="px-4 py-2.5">Severity</th>
               <th scope="col" className="px-3 py-2.5">Issue</th>
@@ -174,30 +188,30 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
               <th scope="col" className="px-4 py-2.5 text-right">Action</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className={redesign ? 'max-sm:block' : undefined}>
             {state.page.services.map((row) => {
               const isOpen = expanded === row.id
               const detailsId = `attention-details-${row.id}`
               return (
                 <Fragment key={row.id}>
-                  <tr className="border-b border-slate-100 align-middle">
-                    <td className="px-4 py-3 whitespace-nowrap">
+                  <tr className={ph('border-b border-slate-100 align-middle', PHONE_ROW)}>
+                    <td className={ph('px-4 py-3 whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Severity' : undefined}>
                       {row.priority_severity && <SeverityBadge severity={row.priority_severity} label={SEVERITY_LABEL[row.priority_severity]} />}
                     </td>
-                    <td className="px-3 py-3 min-w-[220px] text-slate-900">{row.reason ?? '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">
+                    <td className={ph('px-3 py-3 min-w-[220px] text-slate-900', PHONE_CELL)} data-label={redesign ? 'Issue' : undefined}>{row.reason ?? '—'}</td>
+                    <td className={ph('px-3 py-3 whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Resource' : undefined}>
                       <span className="font-medium text-slate-900">{row.name}</span>{' '}
                       <span className="text-meta text-slate-600">{typeLabel(row.type)}</span>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700">{row.aws_region ?? '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap"><OwnerCell row={row} /></td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <td className={ph('px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700', PHONE_CELL)} data-label={redesign ? 'Region' : undefined}>{row.aws_region ?? '—'}</td>
+                    <td className={ph('px-3 py-3 whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Owner' : undefined}><OwnerCell row={row} explainUnknown={!!redesign} /></td>
+                    <td className={ph('px-4 py-3 text-right whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Action' : undefined}>
                       <Action row={row} expanded={isOpen} detailsId={detailsId} onToggle={() => setExpanded(isOpen ? null : row.id)} />
                     </td>
                   </tr>
                   {isOpen && (
-                    <tr id={detailsId} className="border-b border-slate-100 bg-slate-50">
-                      <td colSpan={6} className="px-4 py-4"><Details row={row} /></td>
+                    <tr id={detailsId} className={ph('border-b border-slate-100 bg-slate-50', 'max-sm:block')}>
+                      <td colSpan={6} className={ph('px-4 py-4', 'max-sm:block')}><Details row={row} /></td>
                     </tr>
                   )}
                 </Fragment>
@@ -213,6 +227,11 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll }: 
     <section aria-labelledby="attention-heading" className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-100 px-4 py-3.5">
         <h2 id="attention-heading" className="m-0 text-section text-slate-900">What needs attention</h2>
+        {redesign && typeof redesign.needsAttention === 'number' && redesign.needsAttention > 0 && (
+          <span data-testid="attention-count" className="text-ui font-semibold text-slate-900">
+            {redesign.needsAttention.toLocaleString('en-US')} {redesign.needsAttention === 1 ? 'resource needs' : 'resources need'} attention
+          </span>
+        )}
         <span className="text-ui text-slate-600">{ATTENTION_DESCRIPTION}</span>
         {total !== null && total > 0 && (
           <button type="button" onClick={onViewAll} className="ml-auto text-ui font-semibold text-violet-700 hover:underline">

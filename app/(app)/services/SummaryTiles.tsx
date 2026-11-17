@@ -69,14 +69,28 @@ function GapCaption({ gap }: { gap: 'no-account' | 'not-scanned' }) {
     : <p className="m-0 text-meta text-slate-600">{NOT_SCANNED_TEXT}</p>
 }
 
-function Tile({ label, value, tone, children }: { label: string; value: string; tone?: 'danger'; children?: React.ReactNode }) {
+function Tile({ label, value, tone, aside, children }: { label: string; value: string; tone?: 'danger'; aside?: string | null; children?: React.ReactNode }) {
+  const kpi = <p className={`m-0 text-kpi tabular-nums leading-none ${tone === 'danger' ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
   return (
     <div className={`bg-white rounded-xl p-4 border flex flex-col gap-1.5 ${tone === 'danger' ? 'border-red-200' : 'border-slate-200'}`}>
       <h2 className="m-0 text-label uppercase tracking-[0.04em] text-slate-700">{label}</h2>
-      <p className={`m-0 text-kpi tabular-nums leading-none ${tone === 'danger' ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
+      {aside ? (
+        // The redesign's scope beside the count (V2-20).
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">{kpi}<span data-testid="attention-scope" className="text-meta text-slate-700">{aside}</span></div>
+      ) : kpi}
       {children}
     </div>
   )
+}
+
+/** The Services redesign's captions (PR 3b, redesignModel); absent: today's tiles. */
+export interface RedesignTiles {
+  /** V2-20, next to the Needs attention count. */
+  attentionScope: string | null
+  /** S21 / S21b (flagged) or today's scope. */
+  resourcesScope: string | null
+  /** V2-21. */
+  resourcesEarlier: string | null
 }
 
 const SEVERITY_CHIPS = [
@@ -87,8 +101,10 @@ const SEVERITY_CHIPS = [
 ] as const
 
 /** The five tiles (Q11): Needs attention, Unowned, Resources, Services, AWS spend. */
-export function SummaryTiles({ stats: statsState, coverage, registered, spend, onShowUnowned }: {
+export function SummaryTiles({ stats: statsState, coverage, registered, spend, onShowUnowned, redesign }: {
   stats: StatsState
+  /** The Services redesign (PR 3b): scope captions from the server's fields, and no Coming soon tags. */
+  redesign?: RedesignTiles
   coverage: ServicesCoverage | undefined
   registered: RegisteredState
   spend: SpendState
@@ -100,7 +116,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
   const readable = ownership ? ownership.owned + ownership.unowned : 0
   const unownedPercent = ownership && readable > 0 ? Math.round((ownership.unowned / readable) * 100) : null
   const bySeverity = stats?.attention_by_severity
-  const scope = resourcesScopeCaption(coverage)
+  const scope = redesign ? redesign.resourcesScope : resourcesScopeCaption(coverage)
   const spendView = describeServicesSpend(spend)
   // With no account, or no scan yet, a 0 would read as "scanned, nothing
   // found": the inventory tiles show "—" and say why instead.
@@ -111,7 +127,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
 
   return (
     <section aria-label="Summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-      <Tile label="Needs attention" value={count(stats?.needs_attention)} tone={flagged ? 'danger' : undefined}>
+      <Tile label="Needs attention" value={count(stats?.needs_attention)} tone={flagged ? 'danger' : undefined} aside={redesign && flagged ? redesign.attentionScope : null}>
         {bySeverity && flagged && (
           <ul aria-label="Needs attention by severity" className="m-0 flex list-none flex-wrap gap-1.5 p-0">
             {SEVERITY_CHIPS.filter((s) => bySeverity[s.key] > 0).map((s) => (
@@ -138,17 +154,18 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
       <Tile label="Resources" value={count(stats?.total)}>
         {gap && <GapCaption gap={gap} />}
         {!gap && scope && <p className="m-0 text-meta text-slate-600">{scope}</p>}
+        {!gap && redesign?.resourcesEarlier && <p data-testid="resources-earlier" className="m-0 text-meta text-slate-600">{redesign.resourcesEarlier}</p>}
       </Tile>
 
       <Tile label="Services" value={kpi(registered.count, { loading: registered.loading, unavailable: registered.error })}>
         <p className="m-0 text-meta text-slate-600">
-          registered{stats?.mapped_to_service === 0 && stats.total > 0 && <> · resources not mapped to services yet <ComingSoonTag /></>}
+          registered{!redesign && stats?.mapped_to_service === 0 && stats.total > 0 && <> · resources not mapped to services yet <ComingSoonTag /></>}
         </p>
       </Tile>
 
       <Tile label="AWS spend, month to date" value={spendView.kind === 'loading' ? '…' : spendView.kind === 'billed' ? spendView.value : '—'}>
         {(spendView.kind === 'billed' || spendView.kind === 'no_billed_days') && (
-          <p className="m-0 text-meta text-slate-600">{spendView.notes.join(' · ')} · per service <ComingSoonTag /></p>
+          <p className="m-0 text-meta text-slate-600">{spendView.notes.join(' · ')}{!redesign && <> · per service <ComingSoonTag /></>}</p>
         )}
         {spendView.kind === 'unavailable' && (
           <p className="m-0 text-meta text-slate-600">

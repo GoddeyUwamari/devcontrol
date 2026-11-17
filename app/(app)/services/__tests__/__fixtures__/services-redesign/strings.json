@@ -1,0 +1,99 @@
+{
+  "_source": "PR 3b brief (approved failure texts), mock v2.1/v2.2, pr3-step1.md §E. {r} = the region the text is about (placeholder R below).",
+  "header": {
+    "scanNow": "Scan now",
+    "scanning": "Scanning…",
+    "hint": "A scan is already running for this AWS account.",
+    "finished": "Last scan finished {when}",
+    "running": "Scan in progress since {time} · {d} of {t} regions done",
+    "runningFlagOff": "Scan in progress since {time} · showing results from {when}",
+    "failed": "Last scan: {when} · didn't finish",
+    "none": "No scan has finished yet."
+  },
+  "banner": {
+    "green": "Scan finished · {c} of {t} regions checked",
+    "amberOne": "Scan finished · {c} of {t} regions checked · {r} couldn't be checked",
+    "amberMany": "Scan finished · {c} of {t} regions checked · {k} regions couldn't be checked",
+    "red": "Scan failed · it checked {c} of {t} regions, then stopped before finishing · try Scan now again",
+    "counts": "{n} new · {u} updated",
+    "flagOffAmber": "Scan finished · {c} of {m} regions checked · {home} couldn't be checked",
+    "dismiss": "Dismiss"
+  },
+  "card": {
+    "heading": "Region coverage",
+    "connected": "AWS account connected",
+    "homeLine": "Cost savings, Operational Health and Security Hub run in your home region, R, only.",
+    "regionListUnread": "We haven't read this account's region list yet. It's read during each scan.",
+    "globalHeading": "Global resources (not a region)",
+    "footerMulti": "S3 and CloudFront are checked on every scan.",
+    "fromEarlier": "from an earlier scan",
+    "neverScanned": "never scanned",
+    "emptyDetails": "Each scanned completely; nothing found.",
+    "scanningDetails": "Results shown are from the last scan that finished.",
+    "waitingDetails": "Queued in this scan. Earlier results shown.",
+    "waitingNeverDetails": "Queued in this scan. It hasn't been scanned before.",
+    "notScannedDetails": "Not scanned yet. Resources here, other than S3 buckets, aren't in any count.",
+    "notEnabledDetails": "Opt-in regions this account hasn't enabled. Nothing to scan.",
+    "notEnabledOpen": "If you enable one in AWS, the next scan includes it.",
+    "optIn": "opt-in, enabled",
+    "scanDeadline": "The scan reached its time limit after checking the regions, so some later checks (IAM security, compliance, unused-resource and cost-savings checks) didn't run or didn't finish. Region results are kept; the next scan runs them again.",
+    "unattributed": "Resource Explorer wasn't available in at least one region on the last scan, so some resource types may be missing there."
+  },
+  "labels": {
+    "access_denied": "Couldn't check: access denied",
+    "access_denied_scp": "Couldn't check: blocked by a policy",
+    "throttled": "Couldn't check: AWS was busy",
+    "call_timeout": "Couldn't check: AWS didn't respond",
+    "error": "Couldn't check: scan error",
+    "region_not_ready": "Not ready yet",
+    "region_deadline": "Not finished: time limit",
+    "scan_budget": "Not reached"
+  },
+  "shortDetails": {
+    "access_denied": "AWS refused our read role. Earlier results stay listed.",
+    "access_denied_scp": "An organization policy may block access. Earlier results stay listed.",
+    "throttled": "AWS was busy. Try again with Scan now.",
+    "call_timeout": "AWS didn't respond in time. Try again with Scan now.",
+    "error": "The scan ran into an error. Try again with Scan now.",
+    "region_not_ready": "AWS isn't ready here yet. The next scan tries again.",
+    "region_deadline": "Took longer than the time limit. The next scan tries again.",
+    "scan_budget": "The scan ran out of time before this region. The next scan tries again."
+  },
+  "reasonLines": {
+    "access_denied": "R couldn't be checked on the last scan (access denied).",
+    "access_denied_scp": "R couldn't be checked on the last scan (blocked by a policy).",
+    "throttled": "R couldn't be checked on the last scan (AWS was busy).",
+    "call_timeout": "R couldn't be checked on the last scan (AWS didn't respond).",
+    "error": "R couldn't be checked on the last scan (scan error).",
+    "region_not_ready": "R wasn't checked on the last scan (AWS wasn't ready there yet).",
+    "region_deadline": "R wasn't finished on the last scan (time limit for one region).",
+    "scan_budget": "R wasn't reached on the last scan (the scan ran out of time)."
+  },
+  "notes": {
+    "access_denied": "AWS refused our read role in R. Resources found there earlier stay listed until a complete scan.",
+    "access_denied_scp": "AWS denied access to R (an organization policy may block it). Resources found there earlier stay listed.",
+    "throttled": "AWS was busy and slowed our requests in R, so it couldn't be checked on the last scan. Try again with Scan now. The 31 resources found there earlier stay listed until a complete scan.",
+    "throttledNoCount": "AWS was busy and slowed our requests in R, so it couldn't be checked on the last scan. Try again with Scan now.",
+    "call_timeout": "AWS didn't respond in time in R. Try again with Scan now. Resources found there earlier stay listed.",
+    "error": "The scan ran into an error in R. Try again with Scan now. If it keeps happening, contact support.",
+    "region_not_ready": "R is enabled, but AWS isn't ready to answer there yet. The next scan tries again.",
+    "region_deadline": "R took longer than the time limit for one region, so it wasn't finished. The next scan tries again. Resources found there earlier stay listed.",
+    "scan_budget": "The scan reached its overall time limit before it got to R. The next scan tries again."
+  },
+  "legend": {
+    "complete": "Complete: the last scan of this region finished with nothing missed",
+    "partial": "Partial: some resource types or listings were missed; see the details",
+    "scanning": "Scanning: a scan is running; counts may change when it finishes",
+    "waiting": "Waiting: queued in the running scan; earlier results shown",
+    "couldnt": "Couldn't check: the last scan couldn't check this region; results from an earlier scan stay listed",
+    "notdone": "Not ready / not reached / not finished: the last scan didn't check this region; the next scan tries again",
+    "not_scanned": "Not scanned yet: enabled in this account, not scanned yet",
+    "not_enabled": "Not enabled: an opt-in region this account hasn't enabled; nothing to scan"
+  },
+  "page": {
+    "comingSoon": "service mapping and owner assignment. Map resources to services and assign owners to see findings, cost, spend and deploys per service.",
+    "unknownTooltip": "We couldn't read this resource's tags, so we don't know who owns it. Unowned is different: we read the tags and found neither an Owner nor a Team tag.",
+    "notCheckedEnd": "So nothing on this page looks more complete than it is.",
+    "emptyListAction": "Run Scan now to scan your connected account."
+  }
+}

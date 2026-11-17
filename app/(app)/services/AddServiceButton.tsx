@@ -14,16 +14,24 @@ export const ADD_SERVICE_ADMIN_ONLY_TEXT = 'Only admins can add services'
  * no message, so it never offers an action it can't confirm. UI only: POST
  * /api/services enforces the role, and the form shows its 403.
  */
-export function AddServiceButton({ size = 'md' }: { size?: 'sm' | 'md' }) {
+export function AddServiceButton({ size = 'md', variant = 'primary' }: {
+  size?: 'sm' | 'md'
+  /** 'secondary' in the Services redesign (PR 3b), where Scan now is the only primary button. */
+  variant?: 'primary' | 'secondary'
+}) {
   const role = useCurrentRole()
   const reasonId = useId()
   const canAdd = role === 'owner' || role === 'admin'
   const sizeClass = size === 'sm' ? 'px-3 py-1.5 text-label' : 'px-3.5 py-2 text-label'
   const label = <><Plus size={13} aria-hidden="true" /> Add Service</>
+  // The primary classes are today's, unchanged (the redesign flag-off snapshots).
+  const secondary = 'inline-flex items-center gap-1.5 rounded-lg border border-border bg-card font-semibold text-ink dark:text-slate-100'
 
   if (canAdd) {
     return (
-      <Link href="/services/new" className={`inline-flex items-center gap-1.5 rounded-lg bg-violet-600 font-semibold text-white no-underline hover:bg-violet-700 ${sizeClass}`}>
+      <Link href="/services/new" className={variant === 'secondary'
+        ? `${secondary} no-underline hover:bg-muted ${sizeClass}`
+        : `inline-flex items-center gap-1.5 rounded-lg bg-violet-600 font-semibold text-white no-underline hover:bg-violet-700 ${sizeClass}`}>
         {label}
       </Link>
     )
@@ -34,7 +42,9 @@ export function AddServiceButton({ size = 'md' }: { size?: 'sm' | 'md' }) {
         type="button"
         disabled
         aria-describedby={role !== null ? reasonId : undefined}
-        className={`inline-flex items-center gap-1.5 rounded-lg bg-violet-600 font-semibold text-white opacity-50 cursor-not-allowed ${sizeClass}`}
+        className={variant === 'secondary'
+          ? `inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted font-semibold text-ink-muted cursor-not-allowed dark:text-slate-400 ${sizeClass}`
+          : `inline-flex items-center gap-1.5 rounded-lg bg-violet-600 font-semibold text-white opacity-50 cursor-not-allowed ${sizeClass}`}
       >
         {label}
       </button>

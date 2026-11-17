@@ -12,7 +12,7 @@ import {
 } from '../allResources'
 import { NOT_CHECKED_COPY, notCheckedLines, unknownTagsText } from '../notChecked'
 import { DISCOVERY_WARNING_LISTING_TRUNCATED, INTERNAL_WARNINGS, LISTING_TRUNCATED_TEXT, UNKNOWN_WARNING_TEXT, describeCoverage, shownWarnings } from '../coverage'
-import { servicesDemoFixture } from '../demo-fixture'
+import { servicesDemoFixture } from '@/lib/demo/services-demo-fixture'
 
 const f = (change: Partial<AllResourcesFilters> = {}): AllResourcesFilters => ({ ...DEFAULT_FILTERS, ...change })
 

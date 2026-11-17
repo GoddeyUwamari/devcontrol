@@ -18,21 +18,12 @@ import { connectedAccountsCaption } from './accountCaption'
 import { RegisteredServices } from './RegisteredServices'
 import { TYPE_DISPLAY, RESOURCE_TYPE_CHIPS } from './resourceTypes'
 import { isServicesV2Enabled } from './servicesV2Flag'
+import { isServicesRedesignEnabled } from './servicesRedesignFlag'
 import { ServicesOverview } from './ServicesOverview'
+import type { DiscoverOutcome } from './redesignModel'
 import { ResourceFocus } from './ResourceFocus'
-import { servicesDemoFixture } from './demo-fixture'
-
-const _now = Date.now()
-
-const DEMO_SERVICES: AWSService[] = [
-  { id: '1', name: 'api-gateway',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',    uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 45).toISOString(),         owner: 'sarah.chen',   team: 'Platform Team',  monthly_cost: null, metadata: {}, priority_severity: null,   needs_attention: false, reason: null } as any,
-  { id: '2', name: 'auth-service',         environment: 'production', region: 'us-east-1', status: 'healthy', type: 'ecs',    uptime: 99.7, lastDeployed: new Date(_now - 1000 * 60 * 120).toISOString(),        owner: 'mike.johnson', team: 'Auth Team',      monthly_cost: null, metadata: {}, priority_severity: null,   needs_attention: false, reason: null } as any,
-  { id: '3', name: 'payment-processor',    environment: 'staging',    region: 'us-west-2', status: 'warning', type: 'lambda', uptime: 98.2, lastDeployed: new Date(_now - 1000 * 60 * 5).toISOString(),           owner: 'alex.wong',    team: 'Payments Team',  monthly_cost: null, metadata: {}, priority_severity: 'high',   needs_attention: true,  reason: 'Lambda invocation spike detected (+178%) · retry loop suspected' } as any,
-  { id: '4', name: 'notification-service', environment: 'production', region: 'us-east-1', status: 'healthy', type: 'lambda', uptime: 99.9, lastDeployed: new Date(_now - 1000 * 60 * 60 * 6).toISOString(),      owner: 'emma.davis',   team: 'Platform Team',  monthly_cost: null, metadata: {}, priority_severity: null,   needs_attention: false, reason: null } as any,
-  { id: '5', name: 'analytics-worker',     environment: 'production', region: 'eu-west-1', status: 'healthy', type: 'ec2',    uptime: 99.5, lastDeployed: new Date(_now - 1000 * 60 * 60 * 24).toISOString(),     owner: 'david.kim',    team: 'Data Team',      monthly_cost: 623.4, metadata: {}, priority_severity: 'medium', needs_attention: true,  reason: 'Cost inefficiency detected — over-provisioned' } as any,
-]
-
-const DEMO_STATS: AWSServicesStats = { total: 5, healthy: 3, needs_attention: 2, avg_uptime: 99.4, aws_accounts_connected: 1 }
+import { servicesDemoFixture } from '@/lib/demo/services-demo-fixture'
+import { DEMO_SERVICES, DEMO_STATS } from '@/lib/demo/services-legacy-demo'
 
 // Sort rank for the merged severity scale — critical first. Any resource
 // without a priority_severity is healthy and sorts after all of these.
@@ -150,6 +141,9 @@ export default function ServicesPage() {
   // The last discovery run's warnings, kept until the next run.
   const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([])
   const [discoveryError,    setDiscoveryError]    = useState<string | null>(null)
+  // The last discovery run's numbers and job id, set once coverage was read
+  // again after it: the Services redesign's scan banner (PR 3b) only.
+  const [discoverOutcome,   setDiscoverOutcome]   = useState<DiscoverOutcome | null>(null)
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
   const demoMode      = useDemoMode()
@@ -157,6 +151,8 @@ export default function ServicesPage() {
   const isDemoActive  = demoMode || salesDemoMode
   // The Phase 1 redesign (top half) behind NEXT_PUBLIC_SERVICES_V2; off renders today's page.
   const servicesV2    = isServicesV2Enabled()
+  // The Services redesign (PR 3b) inside V2: only its page background gains a dark value.
+  const redesignPage  = servicesV2 && isServicesRedesignEnabled()
   const v2Demo        = useMemo(() => (servicesV2 && isDemoActive ? servicesDemoFixture() : null), [servicesV2, isDemoActive])
   const { tier }      = usePlan()
   // Every query below is keyed by organization and disabled until it is known,
@@ -274,7 +270,7 @@ export default function ServicesPage() {
       setTimeout(() => setDiscoveryComplete(false), 4000)
       return
     }
-    setIsDiscovering(true); setDiscoveryComplete(false); setDiscoveryMsg(null); setDiscoveryWarnings([]); setDiscoveryError(null)
+    setIsDiscovering(true); setDiscoveryComplete(false); setDiscoveryMsg(null); setDiscoveryWarnings([]); setDiscoveryError(null); setDiscoverOutcome(null)
     try {
       const result = await awsServicesService.discoverServices()
       setDiscoveryMsg(result.message); setDiscoveryComplete(true)
@@ -288,6 +284,8 @@ export default function ServicesPage() {
           queryClient.invalidateQueries({ queryKey: ['services-attention', orgId] }),
         ] : []),
       ])
+      // After the re-read, so the banner reads the coverage that describes this scan.
+      setDiscoverOutcome({ jobId: result.jobId ?? null, discovered: result.discovered, updated: result.updated })
       // A scan can flip compliance_scan_completed, which changes isPreliminary —
       // without this, the security score (dashboard/security pages) stays on its
       // pre-scan cached value for up to staleTime (5 min).
@@ -425,7 +423,9 @@ export default function ServicesPage() {
   const resourceFocus = <Suspense fallback={null}><ResourceFocus orgId={orgId} isDemoActive={isDemoActive} /></Suspense>
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans">
+    <div className={redesignPage
+      ? 'min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans dark:bg-background'
+      : 'min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto font-sans'}>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
 
       {servicesV2 ? (
@@ -435,7 +435,7 @@ export default function ServicesPage() {
           demo={v2Demo}
           stats={{ loading: statsLoading, unavailable: statsUnavailable, stats: displayStats }}
           statusHeadline={statusHeadlineV2}
-          discovery={{ isDiscovering, discoveryComplete, discoveryMsg, warnings: discoveryWarnings, onAutoDiscover: handleAutoDiscover }}
+          discovery={{ isDiscovering, discoveryComplete, discoveryMsg, warnings: discoveryWarnings, onAutoDiscover: handleAutoDiscover, outcome: discoverOutcome }}
           banners={<>{resourceFocus}{upgradePrompt}</>}
           pageError={error}
           knownNoAccount={knownNoAccount}
