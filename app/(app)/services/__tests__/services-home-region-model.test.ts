@@ -35,6 +35,7 @@ describe('exact strings (fixture)', () => {
     expect([C.proposalUse('R'), C.keep('H')]).toEqual(S.proposal.buttons)
     expect(C.proposalFootnote('A', 'S', 'E')).toBe(S.proposal.footnote)
     expect(C.scanRunning).toBe(S.proposal.scanRunning)
+    expect(C.scanRunning).toBe(S.split.scanRunning)
     expect(C.ownerOnlyChange).toBe(S.proposal.member)
     expect([C.splitTitle, C.splitBody, C.choose, C.ownerOnlyChoose, C.splitNote, C.splitFootnote('A', 'S', 'E'), C.otherRegions(2), C.homeNow])
       .toEqual([S.split.title, S.split.body, S.split.choose, S.split.member, S.split.note, S.split.footnote, S.split.other, S.split.homeNow])
@@ -148,6 +149,12 @@ describe('banner: the server state only', () => {
 
   it('proposal while a scan runs: both buttons disabled with HR-S5', () => {
     expect(homeRegionBanner(proposal(), { ...OWNER, scanRunning: true })!.owner).toEqual({ primary: 'Use us-west-2', keep: 'Keep us-east-1', disabled: true, hint: 'You can switch when the current scan finishes.' })
+  })
+
+  it('split while a scan runs (L-7): both buttons disabled with the same HR-S5 hint; member unchanged', () => {
+    expect(homeRegionBanner(split(), { ...OWNER, scanRunning: true })!.owner).toEqual({ primary: 'Choose your home region', keep: 'Keep us-east-1', disabled: true, hint: 'You can switch when the current scan finishes.' })
+    const m = homeRegionBanner(split(), { ...OWNER, canChange: false, scanRunning: true })!
+    expect([m.owner, m.memberLine]).toEqual([null, 'Only an organization owner can choose the home region.'])
   })
 
   it('proposal, member: no buttons, the HR-S15 line; flag on: no bracket', () => {

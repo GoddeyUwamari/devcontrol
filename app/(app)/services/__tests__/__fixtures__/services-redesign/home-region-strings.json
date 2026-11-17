@@ -1,5 +1,5 @@
 {
-  "_source": "PR 3c exact strings: home-region-step1.md §H (HR-S1–S16), mock-v2-notes.md (V2-1…V2-9, V2-43…V2-47), pr3-step1.md §E.5, and the PR 3c brief (scan_started false variant; S35 n = 0). Placeholders: R, H, A (account), S/E (period), N (new), O (old). Founder decisions Nov 17: c (no \"· —\"), f (keepFailed).",
+  "_source": "PR 3c exact strings: home-region-step1.md §H (HR-S1–S16), mock-v2-notes.md (V2-1…V2-9, V2-43…V2-47), pr3-step1.md §E.5, and the PR 3c brief (scan_started false variant; S35 n = 0). Placeholders: R, H, A (account), S/E (period), N (new), O (old). Founder decisions Nov 17: c (no \"· —\"), f (keepFailed), L-7 (the split buttons wait for a running scan with the proposal's HR-S5 hint).",
   "change": "Change",
   "proposal": {
     "title": "Your AWS costs point to R as your home region.",
@@ -18,6 +18,7 @@
     "body": "We couldn't identify one clear home region from your last 30 days of regional AWS spend. Choose where DevControl should run cost savings, Operational Health and Security Hub checks.",
     "choose": "Choose your home region",
     "member": "Only an organization owner can choose the home region.",
+    "scanRunning": "You can switch when the current scan finishes.",
     "note": "Your selection controls home-region-only checks. It does not enable multi-region discovery.",
     "footnote": "Based on AWS Cost Explorer usage charges for account A, S – E. Credits, refunds and tax aren't included.",
     "other": "Other regions (2)",

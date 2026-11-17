@@ -236,7 +236,10 @@ export function homeRegionBanner(
       region: null,
       body: HOME_REGION_COPY.splitBody,
       bars: spendBars(p),
-      owner: o.canChange ? { primary: HOME_REGION_COPY.choose, keep: HOME_REGION_COPY.keep(home), disabled: false, hint: null } : null,
+      // L-7 (founder, Nov 17): as the proposal (HR-S5), both owner buttons wait for a running scan.
+      owner: o.canChange
+        ? { primary: HOME_REGION_COPY.choose, keep: HOME_REGION_COPY.keep(home), disabled: o.scanRunning, hint: o.scanRunning ? HOME_REGION_COPY.scanRunning : null }
+        : null,
       memberLine: o.canChange ? null : HOME_REGION_COPY.ownerOnlyChoose,
       note: HOME_REGION_COPY.splitNote,
       footnote: period && o.accountId ? HOME_REGION_COPY.splitFootnote(o.accountId, period.start, period.end) : null,

@@ -19,8 +19,8 @@ import { REDESIGN_COPY } from './redesignModel'
  * change dialog, the success line, and the owner-only "Change" handler for the
  * coverage card. Reads the page's GET /api/aws/accounts query (same key, same
  * cache) and the coverage response. Writes only through the three home-region
- * routes; after a change or a dismiss it invalidates accounts, coverage, stats,
- * attention and the list, and never edits a cache by hand (no optimistic UI).
+ * routes; after a change or a dismiss, failed or not, it invalidates accounts,
+ * coverage, stats, attention and the list, and never edits a cache by hand (no optimistic UI).
  */
 export function useHomeRegion({ orgId, realMode, coverage }: { orgId: string | null; realMode: boolean; coverage: ServicesCoverage | undefined }) {
   const queryClient = useQueryClient()
@@ -54,10 +54,6 @@ export function useHomeRegion({ orgId, realMode, coverage }: { orgId: string | n
     queryClient.invalidateQueries({ queryKey: ['services-stats', orgId] }),
     queryClient.invalidateQueries({ queryKey: ['services-attention', orgId] }),
     queryClient.invalidateQueries({ queryKey: ['services-list', orgId] }),
-  ])
-  const refetchCurrent = () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['services-aws-accounts', orgId] }),
-    queryClient.invalidateQueries({ queryKey: ['services-coverage', orgId] }),
   ])
 
   async function keep() {
@@ -114,7 +110,9 @@ export function useHomeRegion({ orgId, realMode, coverage }: { orgId: string | n
       evidence={proposal && (proposal.state === 'proposed' || proposal.state === 'split') ? proposal : null}
       onClose={() => setDialog(null)}
       onChanged={onChanged}
-      onFailed={() => { void refetchCurrent() }}
+      // L-3: a failed change refetches the same five queries as a success (a change may have
+      // committed before its response was lost).
+      onFailed={() => { void invalidateAll() }}
     />
   ) : null
 

@@ -28,7 +28,8 @@ const FOCUSABLE = 'button:not([disabled]), select:not([disabled]), [href], input
  * - "What changes" from the GET preview for the picked region.
  * - No optimistic update: the page's home region changes only after the PUT
  *   succeeds (the caller invalidates and refetches); on any failure the dialog
- *   stays open with the error by the server's CODE, and the caller refetches.
+ *   stays open with the error by the server's CODE, the caller refetches, and
+ *   the confirm stays enabled so the same region can be tried again (L-2).
  * - role=dialog, aria-modal, labelled by its title; focus moves in and is
  *   trapped; Escape, Cancel and Close close it; the error box is role=alert.
  */
@@ -89,7 +90,9 @@ export function HomeRegionDialog({ orgId, mode, preselect, evidence, onClose, on
   const targetError = target.isError ? changeErrorText(codeOf(target.error), selected) : null
   const refusal = t?.refusal ? previewRefusalText(t.refusal, selected) : null
   const shownError = error ?? baseError ?? targetError ?? refusal
-  const canConfirm = !!selected && !!t && t.refusal === null && !submitting && !error
+  // A failed PUT leaves the confirm enabled (L-2): "Try again" re-sends the same region and clears
+  // the error; only a preview refusal (or no preview yet) keeps it disabled.
+  const canConfirm = !!selected && !!t && t.refusal === null && !submitting
 
   async function confirm() {
     if (!canConfirm) return

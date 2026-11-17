@@ -252,6 +252,35 @@ describe('tab 10: split spend', () => {
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-east-2' })).toBeEnabled())
   })
 
+  it.each([
+    ['running', true],
+    ['not running', false],
+  ])('a scan %s (L-7): Choose and Keep disabled with the HR-S5 hint only while it runs', async (_name, running) => {
+    const c = tab5()
+    if (running) c.scan_in_progress = { since: '2026-11-15T16:00:00.000Z' }
+    await show(c, accountsAnswer({ proposal: split() }))
+    const b = await screen.findByTestId('home-region-banner')
+    expect(b.getAttribute('data-kind')).toBe('split')
+    for (const name of ['Choose your home region', 'Keep us-east-1']) {
+      const btn = within(b).getByRole('button', { name })
+      if (running) {
+        expect(btn).toBeDisabled()
+        expect(text(document.getElementById(btn.getAttribute('aria-describedby')!))).toBe('You can switch when the current scan finishes.')
+      } else {
+        expect(btn).toBeEnabled()
+        expect(btn).not.toHaveAttribute('aria-describedby')
+      }
+    }
+    expect(b.textContent?.includes('You can switch when the current scan finishes.')).toBe(running)
+    if (running) {
+      fireEvent.click(within(b).getByRole('button', { name: 'Choose your home region' }))
+      fireEvent.click(within(b).getByRole('button', { name: 'Keep us-east-1' }))
+      await act(async () => {})
+      expect(dialog()).toBeNull()
+      expect(mockDismiss).not.toHaveBeenCalled()
+    }
+  })
+
   it('member: V2-8, no buttons', async () => {
     await show(tab5(), accountsAnswer({ proposal: split(), canChange: false }))
     const b = await screen.findByTestId('home-region-banner')
@@ -460,7 +489,7 @@ describe('tab 11: the change dialog', () => {
     ['HOME_REGION_CHANGE_BUSY', "The home region couldn't be changed. Nothing was changed. Try again."],
     ['HOME_REGION_CHANGE_FAILED', "The home region couldn't be changed. Nothing was changed. Try again."],
     [null, "The home region couldn't be changed. Nothing was changed. Try again."],
-  ])('PUT refused with %s: its text in role=alert; home region kept; accounts and coverage refetched', async (code, message) => {
+  ])('PUT refused with %s: its text in role=alert; home region kept; the five queries refetched (L-3); confirm enabled for a retry (L-2)', async (code, message) => {
     await show(tab5())
     const d = await openAndPick('us-west-2')
     mockChange.mockRejectedValue(new HomeRegionRequestError(code))
@@ -474,7 +503,58 @@ describe('tab 11: the change dialog', () => {
     expect(screen.queryByTestId('home-region-changed')).toBeNull()
     await waitFor(() => expect(mockGetCoverage.mock.calls.length).toBeGreaterThan(coverageCalls))
     await waitFor(() => expect(mockAccounts.mock.calls.length).toBeGreaterThan(accountCalls))
-    expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeDisabled()
+    expect(invalidatedKeys().slice().sort()).toEqual([...FIVE].sort())
+    for (const key of FIVE) expect(invalidate.mock.calls.find((c: any[]) => c[0]?.queryKey?.[0] === key)![0].queryKey).toEqual([key, 'org-test'])
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
+  })
+
+  it('L-3: a failed change refetches stats, attention and the list too (a change whose response was lost)', async () => {
+    await show(tab5())
+    const d = await openAndPick('us-west-2')
+    mockChange.mockRejectedValue(new HomeRegionRequestError(null))
+    const statsCalls = mockGetStats.mock.calls.length
+    const listCalls = mockGetServices.mock.calls.length
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    await within(d).findByRole('alert')
+    await waitFor(() => expect(mockGetStats.mock.calls.length).toBeGreaterThan(statsCalls))
+    await waitFor(() => expect(mockGetServices.mock.calls.length).toBeGreaterThan(listCalls))
+    for (const key of FIVE) expect(invalidatedKeys()).toContain(key)
+  })
+
+  it('L-2: after a failure the SAME region can be tried again without a re-pick; the retry clears the error, then succeeds', async () => {
+    await show(tab5())
+    const d = await openAndPick('us-west-2')
+    const select = within(d).getByLabelText('Home region') as HTMLSelectElement
+    mockChange.mockRejectedValueOnce(new HomeRegionRequestError('HOME_REGION_CHANGE_BUSY'))
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    expect(text(await within(d).findByRole('alert'))).toBe("The home region couldn't be changed. Nothing was changed. Try again.")
+    const confirm = within(d).getByRole('button', { name: 'Change to us-west-2' })
+    await waitFor(() => expect(confirm).toBeEnabled())
+    expect(select.value).toBe('us-west-2')
+    // Retry with no change event: the error clears as soon as Confirm is pressed.
+    const put = deferred<any>()
+    mockChange.mockReturnValueOnce(put.promise)
+    fireEvent.click(confirm)
+    await waitFor(() => expect(within(d).queryByRole('alert')).toBeNull())
+    expect(confirm).toBeDisabled() // in flight
+    expect(mockChange).toHaveBeenCalledTimes(2)
+    expect(mockChange.mock.calls.map((c) => c[0])).toEqual(['us-west-2', 'us-west-2'])
+    await act(async () => put.resolve({ from: 'us-east-1', to: 'us-west-2', source: 'manual', cost_findings_removed: { total: 0, by_issue: {} }, scan_started: true }))
+    expect(text(await screen.findByTestId('home-region-changed'))).toBe('Home region changed to us-west-2. A scan has started.')
+    expect(dialog()).toBeNull()
+  })
+
+  it('L-2: a retry that fails again shows the error again, and the confirm stays usable', async () => {
+    await show(tab5())
+    const d = await openAndPick('us-west-2')
+    mockChange.mockRejectedValueOnce(new HomeRegionRequestError(null)).mockRejectedValueOnce(new HomeRegionRequestError('SCAN_IN_PROGRESS'))
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    expect(text(await within(d).findByRole('alert'))).toBe("The home region couldn't be changed. Nothing was changed. Try again.")
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
+    fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
+    await waitFor(() => expect(text(within(d).getByRole('alert'))).toBe('A scan is running. You can change the home region when it finishes.'))
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
+    expect(mockChange).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -540,6 +620,7 @@ describe('axe-core on the new states (phone list and open dialog/tooltip include
     ['tab 9 scan running', () => { const c = tab5(); c.scan_in_progress = { since: '2026-11-15T16:00:00.000Z' }; return show(c, accountsAnswer({ proposal: proposal() })) }],
     ['tab 10 owner', () => show(tab5(), accountsAnswer({ proposal: splitSeven() }))],
     ['tab 10 member', () => show(tab5(), accountsAnswer({ proposal: split(), canChange: false }))],
+    ['tab 10 scan running (L-7)', () => { const c = tab5(); c.scan_in_progress = { since: '2026-11-15T16:00:00.000Z' }; return show(c, accountsAnswer({ proposal: split() })) }],
     ['tab 12', () => show(tab12Scan())],
   ])('%s', async (_name, run) => {
     const { container } = await run()
@@ -553,6 +634,7 @@ describe('axe-core on the new states (phone list and open dialog/tooltip include
     mockChange.mockRejectedValue(new HomeRegionRequestError('SCAN_IN_PROGRESS'))
     fireEvent.click(within(d).getByRole('button', { name: 'Change to us-west-2' }))
     await within(d).findByRole('alert')
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Change to us-west-2' })).toBeEnabled())
     expect(await axeViolations(scopeOf(container))).toEqual([])
   })
 
