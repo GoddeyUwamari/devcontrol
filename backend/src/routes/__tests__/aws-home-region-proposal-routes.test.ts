@@ -15,7 +15,7 @@
  *
  * Placeholders only.
  */
-import awsRoutes, { HOME_REGION_FORBIDDEN_MESSAGE } from '../aws.routes';
+import awsRoutes, { HOME_REGION_FORBIDDEN_MESSAGE, HOME_REGION_OWNER_ONLY_CODE } from '../aws.routes';
 import { createRoleGateHarness } from './role-gate-harness';
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import { HOME_REGION_FIXTURE_TABLES, PROPOSAL, REGIONS, VIEW_EVIDENCE, homeRegionRouteFixtures } from './home-region-route-fixtures';
@@ -68,7 +68,8 @@ describe('POST /api/aws/accounts/home-region/proposal/dismiss (HR-D16)', () => {
     const before = await stateOf(org);
     const res = await dismiss(org, org[role]);
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ success: false, message: HOME_REGION_FORBIDDEN_MESSAGE });
+    // PR 3c: the message is kept and the code added (HOME_REGION_OWNER_ONLY).
+    expect(await res.json()).toEqual({ success: false, code: HOME_REGION_OWNER_ONLY_CODE, message: HOME_REGION_FORBIDDEN_MESSAGE });
     expect(await stateOf(org)).toEqual(before);
   });
 
@@ -118,7 +119,7 @@ describe('GET /api/aws/accounts: home_region_proposal (state, region and the sto
     const org = await connectedOrg();
     const none = await (await accounts(org)).json();
     expect(none.home_region_proposal).toBeNull();
-    expect(Object.keys(none).sort()).toEqual(['connection', 'data', 'home_region_changed_at', 'home_region_proposal', 'previous_home_region', 'success']);
+    expect(Object.keys(none).sort()).toEqual(['can_change_home_region', 'connection', 'data', 'home_region_changed_at', 'home_region_proposal', 'previous_home_region', 'success']);
     await setProposal(org, 'unavailable', null);
     expect((await (await accounts(org)).json()).home_region_proposal).toEqual({
       state: 'unavailable', region: null, period: null, shares: [], other_regions: null, current: null, non_region_amount: null,

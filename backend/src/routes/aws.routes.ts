@@ -99,7 +99,35 @@ const requireCurrentOwner = requireCurrentOwnerWith('Only an organization owner 
 
 /** The home region is changed by the owner only (home region HR-D4; wording HR-S15). */
 export const HOME_REGION_FORBIDDEN_MESSAGE = 'Only an organization owner can change the home region.'
-const requireCurrentOwnerForHomeRegion = requireCurrentOwnerWith(HOME_REGION_FORBIDDEN_MESSAGE)
+/**
+ * The code of that refusal (PR 3c, founder decision Nov 17): the change dialog maps
+ * errors by code, never by HTTP status alone. Only the three home-region routes
+ * send it; requireCurrentOwnerWith (every other owner-only route) is unchanged.
+ */
+export const HOME_REGION_OWNER_ONLY_CODE = 'HOME_REGION_OWNER_ONLY'
+
+/**
+ * The owner check of the home-region routes: the same check as
+ * requireCurrentOwnerWith (the CURRENT membership, never the JWT role claim), with
+ * the 403 body { success: false, code: HOME_REGION_OWNER_ONLY, message: HR-S15 }.
+ */
+async function requireCurrentOwnerForHomeRegion(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, message: 'Authentication required' })
+      return
+    }
+    await requireCurrentRole(pool, req.user.organizationId, req.user.userId, ['owner'])
+    next()
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAccessError && err.statusCode === 403) {
+      res.status(403).json({ success: false, code: HOME_REGION_OWNER_ONLY_CODE, message: HOME_REGION_FORBIDDEN_MESSAGE })
+      return
+    }
+    console.error('[aws] owner check error:', err)
+    res.status(500).json({ success: false, message: 'Failed to verify permissions' })
+  }
+}
 
 /** Check again is owner-only too (B4, approved copy). */
 export const CHECK_AGAIN_FORBIDDEN_MESSAGE = 'Only an organization owner can check the AWS connection again.'
@@ -1021,6 +1049,10 @@ router.get('/accounts', async (req: Request, res: Response) => {
       home_region_proposal,
       previous_home_region: change?.previous_home_region ?? null,
       home_region_changed_at: change?.home_region_changed_at ?? null,
+      // PR 3c (G9): whether the caller may change the home region, from the CURRENT
+      // membership (the same check as the home-region routes); the page shows Change,
+      // Use/Keep and Choose/Keep only when true. The routes refuse anyone else anyway.
+      can_change_home_region: owner,
     })
   } catch (err: any) {
     console.error('[aws/accounts GET]', err)

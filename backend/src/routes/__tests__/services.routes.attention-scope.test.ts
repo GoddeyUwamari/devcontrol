@@ -12,8 +12,8 @@
  *   - Row-level security alone (the non-superuser devcontrol role, every explicit
  *     organization predicate stripped) gives the same rows.
  *
- * Not here (no HR-1 on main): the old home region's cost-only attention leaving both
- * numbers after a home-region change. That test belongs to PR 3c.
+ * After a home-region change, the old home region's cost-only attention leaving both
+ * numbers: services-attention-home-change.test.ts (PR 3c, with HR-1 on main).
  *
  * Real routes over an in-process HTTP server against live Postgres; only
  * authService.verifyToken is stubbed (role-gate harness). Placeholders only.

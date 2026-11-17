@@ -32,7 +32,7 @@ function Resources({ value, note }: { value: number | null; note?: string }) {
   return (
     <span className="inline-flex flex-col items-end text-right sm:items-end">
       {value === null ? <span className={TONE.muted}>—</span> : <span className={cn('tabular-nums', TONE.ink)}>{value.toLocaleString('en-US')}</span>}
-      {note && <span className={cn('text-meta', TONE.muted)}>{note}</span>}
+      {note && <span className={cn('max-w-[14rem] text-meta', TONE.muted)}>{note}</span>}
     </span>
   )
 }
@@ -98,8 +98,9 @@ function Name({ row }: { row: PanelRow }) {
   if (row.kind === 'group') return <span className={TONE.ink}>{row.label}</span>
   return (
     <>
-      <span className={cn('font-mono', TONE.ink)}>{row.label}</span>
+      <span className={cn('whitespace-nowrap font-mono', TONE.ink)}>{row.label}</span>
       {row.home && <span className={TONE.homeBadge}>Home</span>}
+      {row.formerHome && <span data-chip="former-home" className={cn('ml-1.5 whitespace-nowrap rounded border border-dashed border-border px-1.5 py-0.5 text-label', TONE.muted)}>{REDESIGN_COPY.formerHomeChip}</span>}
       {row.sublabel && <span className={cn('text-meta font-normal', TONE.muted)}> · {row.sublabel}</span>}
     </>
   )
@@ -155,12 +156,17 @@ function globalAsRow(g: GlobalRow): PanelRow {
 
 /**
  * Region coverage (mock v2.2): the organising line, the home-region line
- * (HR-S8; "Change" is PR 3c), the notes, every enabled region (individual
+ * (HR-S8, then the owner-only "Change", PR 3c), the notes, every enabled region (individual
  * rows, then the collapsed groups), the global CloudFront row under its own
  * subheading and outside every region count, the legend of the states shown,
  * and the footer. A table from the sm breakpoint, a stacked list below it.
  */
-export function RegionCoverageCard({ view, now }: { view: CoverageCardView; now: number }) {
+export function RegionCoverageCard({ view, now, onChangeHomeRegion }: {
+  view: CoverageCardView
+  now: number
+  /** PR 3c: the owner-only "Change" after HR-S8 (only when the server says the caller may change it). */
+  onChangeHomeRegion?: (() => void) | null
+}) {
   const global = view.global ? globalAsRow(view.global) : null
   return (
     <section id={REGION_COVERAGE_CARD_ID} aria-labelledby="region-coverage-heading" className={cn(TONE.card, 'mb-6 scroll-mt-4')}>
@@ -176,7 +182,18 @@ export function RegionCoverageCard({ view, now }: { view: CoverageCardView; now:
           {view.line.failed && <span aria-hidden="true" className={cn('inline-block h-2 w-2 shrink-0 rounded-full', DOT.couldnt)} />}
           {view.line.text}
         </p>
-        {view.homeLine && <p data-testid="home-line" className={cn('m-0 text-ui', TONE.muted)}>{view.homeLine}</p>}
+        {view.homeLine && (
+          <p className={cn('m-0 text-ui', TONE.muted)}>
+            <span data-testid="home-line">{view.homeLine}</span>
+            {onChangeHomeRegion && (
+              <>
+                {' '}
+                <button type="button" data-testid="change-home-region" aria-label="Change home region" onClick={onChangeHomeRegion}
+                  className={cn('rounded-sm font-medium', TONE.link, TONE.focus)}>Change</button>
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       {view.notes.length > 0 && (

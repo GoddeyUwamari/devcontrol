@@ -36,7 +36,7 @@ export type { RegionState };
 import { MAX_LEASE_AGE_SECONDS } from '../services/scan-lease';
 import { SCAN_KIND_DISCOVERY } from '../services/scan-session';
 import { parseAccountIdFromArn } from '../utils/awsAccountId';
-import { INVENTORY_FROM, inventoryWhere } from './services.routes';
+import { INVENTORY_FROM, countListedRegionalResources, inventoryWhere } from './services.routes';
 import { requireCurrentMembership } from './services-intelligence.routes';
 
 const router = Router();
@@ -71,7 +71,16 @@ export interface ServicesCoverage {
    * absent means never changed, so the response of every account that never
    * changed stays byte-identical (the flag-off and flag-on contracts).
    */
-  account: { connected: boolean; status: string | null; home_region: string | null; previous_home_region?: string; home_region_changed_at?: Date };
+  account: {
+    connected: boolean; status: string | null; home_region: string | null; previous_home_region?: string; home_region_changed_at?: Date;
+    /**
+     * PR 3c (G2b, founder decision O-1): the former home region's resources the
+     * Services list shows, other than S3 (services.routes.ts
+     * countListedRegionalResources, the one function the change dialog's
+     * resources_kept_in_old_region reads too). Present only alongside previous_home_region.
+     */
+    previous_home_region_resources?: number;
+  };
   scope: {
     home_region: { region: string; count: number } | null;
     s3: { in_last_scan: boolean; regions: RegionCount[] };
@@ -909,10 +918,14 @@ export async function readServicesCoverage(db: AwsAccountsQueryable, orgId: stri
 
   // Home region HR-1: the latest change of this connection's home region, if any (absent otherwise).
   const change = account ? await readHomeRegionChange(db, orgId, account) : null;
+  // PR 3c (G2b, O-1): its listed non-S3 resources, by the one shared count (present only with the change).
+  const former = change
+    ? { ...change, previous_home_region_resources: await countListedRegionalResources(db, orgId, change.previous_home_region) }
+    : null;
 
   return {
     account: account
-      ? { connected: true, status: account.status, home_region: homeRegion, ...(change ?? {}) }
+      ? { connected: true, status: account.status, home_region: homeRegion, ...(former ?? {}) }
       : { connected: false, status: null, home_region: null },
     scope: {
       home_region: homeRegion === null ? null : { region: homeRegion, count: row.home_count },

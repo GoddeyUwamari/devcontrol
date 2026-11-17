@@ -94,6 +94,10 @@ describe('getConnectionChecks', () => {
 
   it('GET /accounts carries connection.health', async () => {
     mockGet.mockResolvedValue({ data: { success: true, data: [], connection: { state: 'connected', health: { state: 'lost', since: AT } } } })
-    await expect(awsAccountsService.getAccountsAndConnection()).resolves.toEqual({ accounts: [], connection: 'connected', health: { state: 'lost', since: AT } })
+    await expect(awsAccountsService.getAccountsAndConnection()).resolves.toEqual({
+      accounts: [], connection: 'connected', health: { state: 'lost', since: AT },
+      // PR 3c: the home-region keys, absent here (an older server): no proposal, and Change never offered (absent = false).
+      homeRegion: { proposal: null, previousHomeRegion: null, homeRegionChangedAt: null, canChangeHomeRegion: false },
+    })
   })
 })

@@ -22,13 +22,14 @@ import { RegionCoveragePanel } from './RegionCoveragePanel'
 import { useNowEachLocalDay } from './useNowEachLocalDay'
 import { isServicesRedesignEnabled } from './servicesRedesignFlag'
 import {
-  attentionScopeCaption, describeCoverageCard, describeNotChecked, redesignScanLine, resourcesCaptions, scanBanner, scanIsRunning,
+  attentionScopeCaption, describeCoverageCard, describeNotChecked, formerHomeOf, redesignScanLine, resourcesCaptions, scanBanner, scanIsRunning,
   type DiscoverOutcome,
 } from './redesignModel'
 import { RedesignHeader } from './RedesignHeader'
 import { ScanBanner } from './ScanBanner'
 import { RegionCoverageCard } from './RegionCoverageCard'
 import { NotCheckedLine } from './NotCheckedLine'
+import { useHomeRegion } from './useHomeRegion'
 
 /** While a scan is running, coverage is read again this often (M6 only). */
 export const SCAN_RUNNING_REFETCH_MS = 60_000
@@ -196,6 +197,9 @@ export function ServicesOverview({
     ? scanLine({ status: 'ready', data: coverageState.coverage }, now)
     : null
 
+  // PR 3c: the home-region banner, dialog and Change (redesign only; nothing in demo mode).
+  const homeRegion = useHomeRegion({ orgId, realMode: realMode && redesign, coverage: redesign && !demo && coverageState.status === 'ready' ? coverageState.coverage : undefined })
+
   const statsData = stats.stats
   // With no resources at all, the list below says why (no account, nothing
   // discovered); the attention and unowned cards have nothing to show.
@@ -227,6 +231,9 @@ export function ServicesOverview({
         {banner && (
           <ScanBanner view={banner} onDismiss={() => { setDismissedOutcome(outcome); scanNowRef.current?.focus() }} />
         )}
+        {/* PR 3c: the scan banner, then the home-region banner, then the five cards. */}
+        {homeRegion.bannerNode}
+        {homeRegion.dialogNode}
         {banners}
         {(pageError || listFailed) && <LoadErrorBanner />}
         <SummaryTiles
@@ -242,7 +249,7 @@ export function ServicesOverview({
           redesign={{ attentionScope: attentionScopeCaption(statsData), resourcesScope: captions.scope, resourcesEarlier: captions.earlier }}
         />
         {coverage && connected ? (
-          <RegionCoverageCard view={describeCoverageCard(coverage, now)} now={now} />
+          <RegionCoverageCard view={describeCoverageCard(coverage, now)} now={now} onChangeHomeRegion={demo ? null : homeRegion.onChange} />
         ) : (
           // Loading, error and no connected account: today's states, unchanged.
           <CoverageStrip
@@ -256,7 +263,7 @@ export function ServicesOverview({
           <AttentionTable
             state={attentionState} totalResources={statsData?.total}
             onViewAll={() => showList({ show: 'needs_attention' })} onShowAll={() => showList({})}
-            redesign={{ needsAttention: stats.loading || stats.unavailable ? undefined : statsData?.needs_attention }}
+            redesign={{ needsAttention: stats.loading || stats.unavailable ? undefined : statsData?.needs_attention, formerHome: formerHomeOf(coverage), now }}
           />
         )}
         <YourServices state={registeredState} mappedToService={statsData?.mapped_to_service} totalResources={statsData?.total} redesign />

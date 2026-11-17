@@ -1252,3 +1252,66 @@ The home region moved from us-east-1 to us-west-2, and us-west-2 has not been sc
   }
 }
 ```
+
+## 16. Home region fields for the Services page (PR 3c)
+
+These blocks are checked against the routes by `home-region-pr3c.test.ts` (the `example-former-home`, `example-accounts` and `example-owner-only` markers). Placeholders only.
+
+### 16.1 `coverage.account.previous_home_region_resources` (G2b)
+
+- **What it counts:** the former home region's resources that the Services list shows, other than S3 buckets. This is one shared function, `countListedRegionalResources` (`services.routes.ts`), over the All resources list's own rows (`INVENTORY_FROM` + `inventoryWhere`):
+  - rows of this organization in that region;
+  - not terminated;
+  - a row with no status isn't listed, so it isn't counted (founder decision O-1);
+  - not S3: S3 is listed in every region on every scan, so it is "checked", not "from earlier scans".
+- The change dialog's `resources_kept_in_old_region` reads the **same function**. So the dialog, the note, the region row, the tile and the list always agree: the region's `coverage.regions[].count` is the region's S3 count (`scope.s3.regions`) plus this number (tested). It is read live on each request.
+- Never inferred from findings or cost.
+- **Present only alongside `previous_home_region`**, with the flag off and on. Absent otherwise, so an account that never changed keeps its byte-identical response.
+- `0` is a real zero: nothing but S3 is left there.
+
+The home region moved from us-east-1 to us-west-2 on Nov 16. Left in us-east-1: two EC2 instances, one S3 bucket, one terminated instance, and one Lambda function with no status (not listed, so not counted):
+
+<!-- example-former-home: changed -->
+```json
+{
+  "connected": true,
+  "status": "active",
+  "home_region": "us-west-2",
+  "previous_home_region": "us-east-1",
+  "home_region_changed_at": "2026-11-16T09:02:00.000Z",
+  "previous_home_region_resources": 2
+}
+```
+
+### 16.2 `GET /api/aws/accounts` → `can_change_home_region` (G9)
+
+- `true` only when the caller's **current** membership in this organization is `owner`. This is the same check the home-region routes make, and the JWT role claim is never read.
+- Always a boolean. The page shows Change, "Use {R}" / "Keep {H}" and "Choose your home region" / "Keep {home}" only when it is `true`.
+- The routes still refuse everyone else (16.3). The field only hides the controls.
+
+<!-- example-accounts: owner -->
+```json
+{
+  "can_change_home_region": true
+}
+```
+
+<!-- example-accounts: member -->
+```json
+{
+  "can_change_home_region": false
+}
+```
+
+### 16.3 Owner-only refusal code
+
+`PUT /api/aws/accounts/home-region`, `GET /api/aws/accounts/home-region` and `POST /api/aws/accounts/home-region/proposal/dismiss` answer a caller who isn't the current owner with 403, the HR-S15 message and the code `HOME_REGION_OWNER_ONLY`. The page maps errors by `code`, never by HTTP status alone. Every other owner-only route keeps its 403 body (message only).
+
+<!-- example-owner-only: refused -->
+```json
+{
+  "success": false,
+  "code": "HOME_REGION_OWNER_ONLY",
+  "message": "Only an organization owner can change the home region."
+}
+```

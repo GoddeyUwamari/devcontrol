@@ -66,6 +66,10 @@ const G1 = [
   'app/(app)/services/UnownedCard.tsx',
   'app/(app)/services/YourServices.tsx',
   'app/(app)/services/new/page.tsx',
+  // PR 3c: the home-region dialog, its banners and the hook that renders the "home region changed" notice.
+  'app/(app)/services/HomeRegionBanner.tsx',
+  'app/(app)/services/HomeRegionDialog.tsx',
+  'app/(app)/services/useHomeRegion.tsx',
   'app/(app)/invoices/page.tsx',
   'app/(app)/invoices/[id]/page.tsx',
   'app/(app)/ai-reports/page.tsx',

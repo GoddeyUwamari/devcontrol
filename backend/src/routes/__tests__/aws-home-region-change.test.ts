@@ -21,7 +21,7 @@
  *
  * Placeholders only.
  */
-import awsRoutes, { HOME_REGION_FORBIDDEN_MESSAGE, HOME_REGION_SCAN_ADMISSION_WAIT_MS, homeRegionTestHooks, resetHomeRegionTestHooks } from '../aws.routes';
+import awsRoutes, { HOME_REGION_FORBIDDEN_MESSAGE, HOME_REGION_OWNER_ONLY_CODE, HOME_REGION_SCAN_ADMISSION_WAIT_MS, homeRegionTestHooks, resetHomeRegionTestHooks } from '../aws.routes';
 import nlQueryRoutes from '../nl-query.routes';
 import { NLQueryService } from '../../services/nl-query.service';
 import { ScanAlreadyRunningError } from '../../services/scan-session';
@@ -326,9 +326,12 @@ describe('refusals change nothing (T4)', () => {
     const before = await stateOf(org);
     const res = await put(org, { region: 'us-west-2' }, org[role]);
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ success: false, message: HOME_REGION_FORBIDDEN_MESSAGE });
+    // PR 3c: the message is kept and the code added (HOME_REGION_OWNER_ONLY), on the PUT and the GET preview.
+    expect(await res.json()).toEqual({ success: false, code: HOME_REGION_OWNER_ONLY_CODE, message: HOME_REGION_FORBIDDEN_MESSAGE });
     expect(await stateOf(org)).toEqual(before);
-    expect((await preview(org, 'us-west-2', org[role])).status).toBe(403);
+    const refusedPreview = await preview(org, 'us-west-2', org[role]);
+    expect(refusedPreview.status).toBe(403);
+    expect(await refusedPreview.json()).toEqual({ success: false, code: HOME_REGION_OWNER_ONLY_CODE, message: HOME_REGION_FORBIDDEN_MESSAGE });
     expect(await stateOf(org)).toEqual(before);
     expect(discover).not.toHaveBeenCalled();
   });

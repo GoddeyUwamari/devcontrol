@@ -67,6 +67,119 @@ export interface AwsAccountsAndConnection {
   connection: AwsConnectionState
   /** `connection.health` (AWS connect PR D1); null from a server without it, or when it couldn't be read. */
   health?: ConnectionHealthSummary | null
+  /** The home-region keys of the same body (HR-1 + PR 3c G9); absent from an older server. */
+  homeRegion?: HomeRegionAccountView
+}
+
+// ── Home region (HR-1; multi-region PR 3c) ──
+
+/**
+ * GET /api/aws/accounts `home_region_proposal.state` (backend home-region-proposal.ts
+ * HomeRegionProposalView). The page shows a banner only for `proposed` and `split`,
+ * exactly as the server says: it never works a state out from shares or amounts.
+ */
+export type HomeRegionProposalState =
+  | 'proposed' | 'waiting' | 'not_applicable' | 'split' | 'split_waiting'
+  | 'accepted' | 'dismissed' | 'superseded' | 'no_signal' | 'unavailable'
+const PROPOSAL_STATES: readonly string[] = ['proposed', 'waiting', 'not_applicable', 'split', 'split_waiting', 'accepted', 'dismissed', 'superseded', 'no_signal', 'unavailable']
+
+export interface RegionSpendShare { region: string; share: number; amount: number }
+
+export interface HomeRegionProposalView {
+  state: HomeRegionProposalState
+  region: string | null
+  /** [start, end) as Cost Explorer dates (end is exclusive). */
+  period: { start: string; end: string } | null
+  shares: RegionSpendShare[]
+  other_regions: { count: number; share: number; amount: number } | null
+  current: RegionSpendShare | null
+  non_region_amount: number | null
+}
+
+export interface HomeRegionAccountView {
+  proposal: HomeRegionProposalView | null
+  previousHomeRegion: string | null
+  homeRegionChangedAt: string | null
+  /** G9: the caller's CURRENT membership is owner. Anything but `true` reads false (absent = false). */
+  canChangeHomeRegion: boolean
+}
+
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const isShare = (v: unknown): v is RegionSpendShare => {
+  const s = v as RegionSpendShare | null
+  return !!s && typeof s.region === 'string' && isNum(s.share) && isNum(s.amount)
+}
+const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+
+/** `home_region_proposal` of a GET /api/aws/accounts body, as sent; null when absent or not recognized (no banner). */
+export function parseHomeRegionProposal(body: unknown): HomeRegionProposalView | null {
+  const p = body as Record<string, unknown> | null | undefined
+  if (!p || typeof p !== 'object' || typeof p.state !== 'string' || !PROPOSAL_STATES.includes(p.state)) return null
+  const period = p.period as { start?: unknown; end?: unknown } | null | undefined
+  const other = p.other_regions as { count?: unknown; share?: unknown; amount?: unknown } | null | undefined
+  return {
+    state: p.state as HomeRegionProposalState,
+    region: typeof p.region === 'string' ? p.region : null,
+    period: period && isDay(period.start) && isDay(period.end) ? { start: period.start, end: period.end } : null,
+    shares: Array.isArray(p.shares) ? p.shares.filter(isShare).map(({ region, share, amount }) => ({ region, share, amount })) : [],
+    other_regions: other && isNum(other.count) && isNum(other.share) && isNum(other.amount) ? { count: other.count, share: other.share, amount: other.amount } : null,
+    current: isShare(p.current) ? { region: p.current.region, share: p.current.share, amount: p.current.amount } : null,
+    non_region_amount: isNum(p.non_region_amount) ? p.non_region_amount : null,
+  }
+}
+
+/** The home-region keys of a GET /api/aws/accounts body. */
+export function parseHomeRegionAccount(body: Record<string, unknown>): HomeRegionAccountView {
+  return {
+    proposal: parseHomeRegionProposal(body.home_region_proposal),
+    previousHomeRegion: typeof body.previous_home_region === 'string' ? body.previous_home_region : null,
+    homeRegionChangedAt: isDateOrNull(body.home_region_changed_at) ? body.home_region_changed_at : null,
+    canChangeHomeRegion: body.can_change_home_region === true,
+  }
+}
+
+/** GET /api/aws/accounts/home-region[?region=] (owner): what the change dialog shows. */
+export interface HomeRegionPreview {
+  current_home_region: string
+  multi_region: boolean
+  scan_in_progress: boolean
+  regions: Array<{ region: string; opt_in_status: string | null; current: boolean; refusal: 'region_not_enabled' | 'region_excluded' | null }>
+  target?: {
+    region: string
+    /** Null when a change to it would be accepted now; otherwise the refusal's name (not a code). */
+    refusal: string | null
+    cost_findings_leaving: { total: number; by_issue: Record<string, number> }
+    /** Multi-region off: the resources that stay listed in the old home region; null with multi-region on. */
+    resources_kept_in_old_region: number | null
+  }
+}
+
+/** PUT /api/aws/accounts/home-region 200 `data`. */
+export interface HomeRegionChangeResult {
+  from: string
+  to: string
+  source: 'proposal' | 'split_choice' | 'manual'
+  cost_findings_removed: { total: number; by_issue: Record<string, number> }
+  /** True only when the follow-up scan took the scan lease (review L-6). */
+  scan_started: boolean
+}
+
+/**
+ * A refused or failed home-region request. `code` is the server's error code
+ * (SCAN_IN_PROGRESS, REGION_NOT_ENABLED, HOME_REGION_OWNER_ONLY, NO_OPEN_PROPOSAL, …),
+ * or null when the response carried none (a network error, an older server).
+ * The page maps by code, never by HTTP status alone.
+ */
+export class HomeRegionRequestError extends Error {
+  constructor(readonly code: string | null) {
+    super(`HOME_REGION_REQUEST_FAILED${code ? `: ${code}` : ''}`)
+    this.name = 'HomeRegionRequestError'
+  }
+}
+
+function homeRegionError(err: unknown): HomeRegionRequestError {
+  const code = errorResponse(err)?.data?.code
+  return new HomeRegionRequestError(typeof code === 'string' ? code : null)
 }
 
 const CONNECTION_STATES: readonly string[] = ['connected', 'not_connected', 'ambiguous']
@@ -292,6 +405,36 @@ const awsAccountsService = {
       accounts,
       connection: parseAwsConnection(response.data.connection, accounts),
       health: parseConnectionHealth(response.data.connection),
+      homeRegion: parseHomeRegionAccount(response.data as unknown as Record<string, unknown>),
+    }
+  },
+
+  /** The change dialog's data (owner only). Throws HomeRegionRequestError with the server's code. */
+  async getHomeRegionPreview(region?: string): Promise<HomeRegionPreview> {
+    try {
+      const response = await api.get<{ success: boolean; data: HomeRegionPreview }>('/api/aws/accounts/home-region', region === undefined ? undefined : { params: { region } })
+      return handleApiResponse(response)
+    } catch (err: unknown) {
+      throw homeRegionError(err)
+    }
+  },
+
+  /** Changes the home region (owner only). Throws HomeRegionRequestError with the server's code; nothing changed then. */
+  async changeHomeRegion(region: string): Promise<HomeRegionChangeResult> {
+    try {
+      const response = await api.put<{ success: boolean; data: HomeRegionChangeResult }>('/api/aws/accounts/home-region', { region })
+      return handleApiResponse(response)
+    } catch (err: unknown) {
+      throw homeRegionError(err)
+    }
+  },
+
+  /** Keeps the current home region: closes the open proposal or split prompt (owner only). */
+  async dismissHomeRegionProposal(): Promise<void> {
+    try {
+      await api.post('/api/aws/accounts/home-region/proposal/dismiss', {})
+    } catch (err: unknown) {
+      throw homeRegionError(err)
     }
   },
 

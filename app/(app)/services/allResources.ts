@@ -88,9 +88,12 @@ export function filterMissTitle(filters: AllResourcesFilters): string {
   return 'No resources match these filters'
 }
 
-/** The Region filter's option text: the stored region and how many resources are there. */
-export function regionOptionLabel(region: string, count: number, homeRegion: string | null): string {
-  const what = region === 'global' ? 'global, CloudFront' : region === homeRegion ? `${region}, home` : region
+/**
+ * The Region filter's option text: the stored region and how many resources are there.
+ * `formerHome` (PR 3c, redesign, flag off only): the former home region, HR-S17.
+ */
+export function regionOptionLabel(region: string, count: number, homeRegion: string | null, formerHome: string | null = null): string {
+  const what = region === 'global' ? 'global, CloudFront' : region === homeRegion ? `${region}, home` : region === formerHome ? `${region}, no longer scanned` : region
   return `${what} (${count})`
 }
 

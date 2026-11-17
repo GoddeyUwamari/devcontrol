@@ -9,6 +9,7 @@ import { TYPE_DISPLAY } from './resourceTypes'
 import { ownerDisplay } from './ownership'
 import { timeAgo } from './coverage'
 import { UnknownOwnerTip } from './UnknownOwnerTip'
+import { dayText, type FormerHome } from './redesignModel'
 
 /** Redesign (PR 3b) phone layout: each row a stacked block with its labels, so the list never scrolls sideways. */
 const PHONE_TABLE = 'max-sm:block'
@@ -141,8 +142,22 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll, re
    * The Services redesign (PR 3b): "{n} resources need attention" (S7) in the
    * heading, the Unknown tooltip (V2-50), and a stacked phone layout.
    */
-  redesign?: { needsAttention: number | undefined }
+  redesign?: {
+    needsAttention: number | undefined
+    /** PR 3c (HR-S19): the former home region (flag off): its rows read "{r} · last checked {date}". */
+    formerHome?: FormerHome | null
+    /** The page's clock, for HR-S19's date (the shared helper's year rule). */
+    now: number
+  }
 }) {
+  // HR-S19 "{r} · last checked {date}": the suffix on its own line, so the column stays narrow.
+  const regionText = (row: AWSService) => {
+    const former = redesign?.formerHome
+    if (redesign && former && row.aws_region === former.region && row.last_seen_at) {
+      return <>{row.aws_region}<span data-testid="former-home-checked" className="block whitespace-normal font-sans text-meta"> · last checked {dayText(row.last_seen_at, redesign.now)}</span></>
+    }
+    return row.aws_region ?? '—'
+  }
   const [expanded, setExpanded] = useState<string | null>(null)
   const ph = (base: string, phone: string) => (redesign ? `${base} ${phone}` : base)
   const total = state.status === 'ready' ? state.page.pagination.total : null
@@ -203,7 +218,7 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll, re
                       <span className="font-medium text-slate-900">{row.name}</span>{' '}
                       <span className="text-meta text-slate-600">{typeLabel(row.type)}</span>
                     </td>
-                    <td className={ph('px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700', PHONE_CELL)} data-label={redesign ? 'Region' : undefined}>{row.aws_region ?? '—'}</td>
+                    <td className={ph('px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700', PHONE_CELL)} data-label={redesign ? 'Region' : undefined}>{regionText(row)}</td>
                     <td className={ph('px-3 py-3 whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Owner' : undefined}><OwnerCell row={row} explainUnknown={!!redesign} /></td>
                     <td className={ph('px-4 py-3 text-right whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Action' : undefined}>
                       <Action row={row} expanded={isOpen} detailsId={detailsId} onToggle={() => setExpanded(isOpen ? null : row.id)} />

@@ -30,7 +30,9 @@ function sourceFiles(dir: string): string[] {
 }
 const rel = (f: string) => path.relative(process.cwd(), f)
 
-const REDESIGN_FILES = ['RedesignHeader.tsx', 'ScanBanner.tsx', 'RegionCoverageCard.tsx', 'UnknownOwnerTip.tsx', 'NotCheckedLine.tsx', 'redesignTone.ts', 'redesignModel.ts', 'servicesRedesignFlag.ts']
+const REDESIGN_FILES = ['RedesignHeader.tsx', 'ScanBanner.tsx', 'RegionCoverageCard.tsx', 'UnknownOwnerTip.tsx', 'NotCheckedLine.tsx', 'redesignTone.ts', 'redesignModel.ts', 'servicesRedesignFlag.ts',
+  // PR 3c (home region)
+  'HomeRegionBanner.tsx', 'HomeRegionDialog.tsx', 'useHomeRegion.tsx', 'homeRegionModel.ts']
   .map((f) => path.join(ROOT, f))
 
 describe('no AWS region literal in app/(app)/services (outside tests)', () => {
