@@ -92,11 +92,23 @@ describe('rollover: 2026-10-31T23:59Z vs 2026-11-01T00:37Z (Oct 31 8:37 PM EDT)'
     await service.fetchCostTrend(ORG, '7d');
     at('2026-11-01T00:37:00Z');
     await service.fetchCostTrend(ORG, '7d');
+    // 7d is served from the 30d request (today-bar TB-D1): today-30 .. today.
     expect(inputs().map((i) => i.TimePeriod)).toEqual([
-      { Start: '2026-10-24', End: '2026-11-01' },
-      { Start: '2026-10-25', End: '2026-11-02' },
+      { Start: '2026-10-01', End: '2026-11-01' },
+      { Start: '2026-10-02', End: '2026-11-02' },
     ]);
     expect(await service.getCostTrendFetchedAt(ORG, '7d')).toBe('2026-11-01T00:37:00.000Z');
+  });
+
+  it('trend: 7d after 30d (or 30d after 7d) is the same cached request, no second Cost Explorer call', async () => {
+    at('2026-11-16T11:30:00Z');
+    const thirty = await service.fetchCostTrend(ORG, '30d');
+    const seven = await service.fetchCostTrend(ORG, '7d');
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(1);
+    expect(seven.map((p) => p.date)).toEqual(thirty.slice(-8).map((p) => p.date));
+    expect(seven[0].date).toBe('2026-11-09');
+    expect(seven[7].date).toBe('2026-11-16');
+    expect(await service.getCostTrendFetchedAt(ORG, '7d')).toBe(await service.getCostTrendFetchedAt(ORG, '30d'));
   });
 
   it('expired entries for past periods are dropped when a new one is stored', async () => {

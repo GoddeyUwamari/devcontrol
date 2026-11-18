@@ -302,6 +302,35 @@ export function trendPeriodUtc(range: CostTrendRange, now: Date): { start: strin
 }
 
 /**
+ * The range the 7d trend is served from (today-bar TB-D1): the 7-day and
+ * 30-day views then share each day's reportState, because costReportStates()
+ * decides a day by the series around it (the last period with line items in
+ * that series). Decided over 8 days alone, an account whose last charge was
+ * before today-7 read as final $0 days in 7d but not reported in 30d.
+ */
+export const SEVEN_DAY_TREND_SOURCE = '30d' satisfies CostTrendRange
+
+/** Points in the 7d trend: today-7 .. today (trendPeriodUtc('7d')). */
+export const SEVEN_DAY_TREND_POINTS = 8
+
+/**
+ * The 7d trend from the 30d series: its points from today-7 (the series' last
+ * point is today) on, as copies, so the cached 30d points are never changed.
+ * reportState and every amount are the 30d points' own. Only byServiceDisplay
+ * is recomputed, over these days (TB-D7): its top services are this week's,
+ * as when 7d had its own request.
+ */
+export function sevenDayTrendFrom(series: ReadonlyArray<CostTrendPoint>): CostTrendPoint[] {
+  if (series.length === 0) return []
+  const last = series[series.length - 1].date.slice(0, 10)
+  const [y, m, d] = last.split('-').map(Number)
+  const from = utcDate(new Date(Date.UTC(y, m - 1, d - (SEVEN_DAY_TREND_POINTS - 1))))
+  const points = series.filter((p) => p.date.slice(0, 10) >= from).map((p) => ({ ...p }))
+  attachServiceDisplayBreakdown(points)
+  return points
+}
+
+/**
  * Map a raw Cost Explorer SERVICE name to a short display name. Falls back to
  * stripping the "Amazon"/"AWS" prefix and truncating, so an unmapped service still
  * renders reasonably instead of showing the full Cost Explorer string.
@@ -737,7 +766,9 @@ class AWSCostService {
     } catch {
       return null
     }
-    const cached = this.costTrendCache.get(AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), range, trendPeriodUtc(range, new Date())))
+    // 7d is read from the 30d entry (fetchCostTrend).
+    const source = range === '7d' ? SEVEN_DAY_TREND_SOURCE : range
+    const cached = this.costTrendCache.get(AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), source, trendPeriodUtc(source, new Date())))
     return cached ? new Date(cached.timestamp).toISOString() : null
   }
 
@@ -752,6 +783,11 @@ class AWSCostService {
    */
   async fetchCostTrend(organizationId: string, range: CostTrendRange): Promise<CostTrendPoint[]> {
     this.requireOrganizationId(organizationId)
+
+    // 7d is the 30d series' last 8 days (today-7 .. today), from the same
+    // request and cache entry (today-bar TB-D1): each day's reportState is then
+    // the 30-day view's, never one decided over 8 days alone (round-2 L-2).
+    if (range === '7d') return sevenDayTrendFrom(await this.fetchCostTrend(organizationId, SEVEN_DAY_TREND_SOURCE))
 
     // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
     const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)

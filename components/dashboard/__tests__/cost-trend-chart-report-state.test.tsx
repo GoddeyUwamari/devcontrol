@@ -6,11 +6,12 @@
  *   - Nov 14-15 (not reported): a hatched placeholder (round 2), tooltip "Not
  *     reported yet by AWS Cost Explorer", never amounts or $0.00 (on the old
  *     backend Nov 14 listed every service at $0.00);
- *   - Nov 16 is today at the evidence's clock: the 7-day view draws the 7 full
- *     UTC days ending yesterday, Nov 9-15 (round 2);
+ *   - Nov 16 is today at the evidence's clock: the 7-day view draws the 7 UTC
+ *     days ending today, Nov 10-16 (today-bar T1); today is not reported, so
+ *     it is hatched too, labelled "Today", tooltip "Today · not reported yet" (T3);
  *   - Nov 13 (updating): a lighter bar, tooltip "Still updating · $0.06 so far.
  *     AWS Cost Explorer may still add charges.", legend "Latest days still updating";
- *   - Nov 9-12 (final): unchanged.
+ *   - Nov 10-12 (final): unchanged; Nov 9 (today-7) is not drawn.
  * Recharts runs for real: ResponsiveContainer gets a size, the Tooltip opens on
  * a chosen point (`active` + `defaultIndex`), bars are not animated.
  */
@@ -38,7 +39,10 @@ import { CostTrendChart, UPDATING_BAR_OPACITY } from '../cost-trend-chart'
 const REAL = JSON.parse(fs.readFileSync(
   path.resolve(__dirname, '../../../backend/src/controllers/__tests__/__fixtures__/trend-lag/trend-7d-2026-11-16.new.json'), 'utf8',
 )).data as Array<{ date: string; reportState: string }>
-const indexOf = (date: string) => REAL.findIndex((p) => p.date === date)
+/** The drawn days: Nov 10 .. Nov 16 (the response's today-7, Nov 9, is not drawn). */
+const SHOWN = REAL.filter((p) => p.date >= '2026-11-10')
+/** The tooltip index of a drawn day. */
+const indexOf = (date: string) => SHOWN.findIndex((p) => p.date === date)
 const NOW = new Date('2026-11-16T11:30:00.000Z')
 const show = (index: number) => {
   open.index = index
@@ -68,14 +72,22 @@ describe('real evidence 2026-11-16 (7d)', () => {
     expect(screen.queryByText('Not reported yet by AWS Cost Explorer')).toBeNull()
   })
 
-  it('legend: "Latest days still updating" and "Not reported yet"; the hatched note for Nov 14-15', async () => {
+  it('Nov 16 (today, not reported): hatched, labelled "Today", tooltip "Today · not reported yet" (T3)', async () => {
+    const { container } = show(indexOf('2026-11-16'))
+    expect((await screen.findByTestId('cost-trend-today-tooltip')).textContent).toBe('Today · not reported yet')
+    const ticks = [...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value')].map((t) => t.textContent)
+    expect(ticks).toEqual(['Nov 10', 'Nov 11', 'Nov 12', 'Nov 13', 'Nov 14', 'Nov 15', 'Today'])
+    expect(screen.getAllByTestId('cost-trend-not-reported-placeholder')).toHaveLength(3)
+  })
+
+  it('legend: "Latest days still updating" and "Not reported yet"; the hatched note for Nov 14-16', async () => {
     show(-1)
     expect(await screen.findByTestId('cost-trend-updating-legend')).toHaveTextContent('Latest days still updating')
     expect(screen.getByTestId('cost-trend-not-reported-legend')).toHaveTextContent('Not reported yet')
     expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent("Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)")
   })
 
-  it('Nov 13 is drawn lighter; Nov 9-12 at full strength; Nov 14-15 draw no bar', async () => {
+  it('Nov 13 is drawn lighter; Nov 10-12 at full strength; Nov 14-16 draw no bar', async () => {
     const { container } = show(-1)
     await waitFor(() => expect(container.querySelectorAll('.recharts-bar-rectangle').length).toBeGreaterThan(0))
     const visible = [...container.querySelectorAll('.recharts-bar-rectangle')]

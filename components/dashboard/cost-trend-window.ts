@@ -1,12 +1,14 @@
 /**
- * Which trend points the Dashboard cost trend draws, and how its x-axis reads
- * (trend-lag round 2, founder-approved 2026-11-17).
+ * Which trend points the Dashboard cost trend draws, and how its x-axis reads.
  *
- * The backend's 7d range is DAILY today-7 .. today (AWSCostService
- * trendPeriodUtc). Today is never a full day, so the 7-day view draws exactly
- * the 7 full UTC days ending yesterday: today-7 .. today-1. Each point keeps
- * its own report state, which the backend decided over the whole series
- * (cost-trend-report-state.ts): leaving today out never changes another day.
+ * The backend's 7d range is DAILY today-7 .. today: the 30d series' last 8
+ * days (AWSCostService.fetchCostTrend, today-bar TB-D1), so every day carries
+ * the 30-day view's report state. The 7-day view draws the 7 UTC days ending
+ * TODAY: today-6 .. today, the last bar labelled "Today" (founder option b,
+ * 2026-11-18: Cost Explorer can report a partial current day). Today is never
+ * drawn as a finished day (cost-trend-chart.tsx). Each point keeps its own
+ * report state, which the backend decided over the whole series
+ * (cost-trend-report-state.ts): choosing which days to draw never changes one.
  */
 
 /** Bars in the 7-day view. */
@@ -22,16 +24,24 @@ function addUtcDays(day: string, n: number): string {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
 }
 
-/** The 7 full UTC days ending yesterday: today-7 .. today-1 (YYYY-MM-DD, oldest first). */
-export function sevenFullUtcDays(now: Date): string[] {
+/** The 7 UTC days ending today: today-6 .. today (YYYY-MM-DD, oldest first). */
+export function sevenUtcDaysEndingToday(now: Date): string[] {
   const today = utcDayOf(now)
-  return Array.from({ length: SEVEN_DAY_BARS }, (_, i) => addUtcDays(today, i - SEVEN_DAY_BARS))
+  return Array.from({ length: SEVEN_DAY_BARS }, (_, i) => addUtcDays(today, i - (SEVEN_DAY_BARS - 1)))
 }
 
-/** The points of `points` that fall on the 7 full UTC days ending yesterday, in their order. */
+/** The points of `points` that fall on the 7 UTC days ending today, in their order. */
 export function sevenDayPoints<T extends { date: string }>(points: ReadonlyArray<T>, now: Date): T[] {
-  const days = new Set(sevenFullUtcDays(now))
+  const days = new Set(sevenUtcDaysEndingToday(now))
   return points.filter((p) => days.has(p.date.slice(0, 10)))
+}
+
+/** The 7-day view's x-axis label for today's bar (T1). */
+export const TODAY_LABEL = 'Today'
+
+/** Whether a daily point is today (UTC, Cost Explorer's day boundary). */
+export function isUtcToday(date: string, now: Date): boolean {
+  return date.slice(0, 10) === utcDayOf(now)
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

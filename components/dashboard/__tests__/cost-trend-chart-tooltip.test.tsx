@@ -33,7 +33,7 @@ describe('cost trend chart tooltip (approved string)', () => {
     ['6mo', [point('2026-11-01', 399, 2, true), point('2026-12-01', 0, 0, true)]],
   ] as const)('%s: an unreported point says "Not reported yet by AWS Cost Explorer", with no amounts', async (range, data) => {
     open.index = 1
-    // 7d draws the 7 full UTC days ending yesterday: Nov 25 .. Dec 1 on Dec 2.
+    // 7d draws the 7 UTC days ending today: Nov 26 .. Dec 2 on Dec 2 (today-bar T1).
     render(<CostTrendChart data={[...data]} dateRange={range} onDateRangeChange={() => {}} now={new Date('2026-12-02T12:00:00Z')} />)
     await waitFor(() => expect(screen.getByText('Not reported yet by AWS Cost Explorer')).toBeInTheDocument())
     expect(screen.getByText('Not reported yet by AWS Cost Explorer').parentElement!.textContent).not.toMatch(/\$/)

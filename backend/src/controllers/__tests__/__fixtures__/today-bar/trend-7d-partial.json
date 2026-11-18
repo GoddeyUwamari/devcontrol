@@ -1,0 +1,357 @@
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2026-11-11",
+      "compute": 1.2,
+      "storage": 0.3,
+      "database": 0,
+      "network": 0,
+      "other": 0.05,
+      "total": 1.55,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 1.2
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.3
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.05
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 1.2,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.3,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.05,
+          "color": "#eb6834"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-12",
+      "compute": 1.2,
+      "storage": 0.3,
+      "database": 0,
+      "network": 0,
+      "other": 0.05,
+      "total": 1.55,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 1.2
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.3
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.05
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 1.2,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.3,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.05,
+          "color": "#eb6834"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-13",
+      "compute": 1.2,
+      "storage": 0.3,
+      "database": 0,
+      "network": 0,
+      "other": 0.05,
+      "total": 1.55,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 1.2
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.3
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.05
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 1.2,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.3,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.05,
+          "color": "#eb6834"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-14",
+      "compute": 1.2,
+      "storage": 0.3,
+      "database": 0,
+      "network": 0,
+      "other": 0.05,
+      "total": 1.55,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 1.2
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.3
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.05
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 1.2,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.3,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.05,
+          "color": "#eb6834"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-15",
+      "compute": 1.2,
+      "storage": 0.3,
+      "database": 0,
+      "network": 0,
+      "other": 0.05,
+      "total": 1.55,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 1.2
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.3
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.05
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 1.2,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.3,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.05,
+          "color": "#eb6834"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-16",
+      "compute": 1.2,
+      "storage": 0.3,
+      "database": 0,
+      "network": 0,
+      "other": 0.05,
+      "total": 1.55,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 1.2
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.3
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.05
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 1.2,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.3,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.05,
+          "color": "#eb6834"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-17",
+      "compute": 1.2,
+      "storage": 0.3,
+      "database": 0,
+      "network": 0,
+      "other": 0.05,
+      "total": 1.55,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 1.2
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.3
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.05
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "final",
+      "provisional": false,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 1.2,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.3,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.05,
+          "color": "#eb6834"
+        }
+      ]
+    },
+    {
+      "date": "2026-11-18",
+      "compute": 0.17,
+      "storage": 0.04,
+      "database": 0,
+      "network": 0,
+      "other": 0.01,
+      "total": 0.22000000000000003,
+      "byService": [
+        {
+          "service": "Amazon Elastic Compute Cloud - Compute",
+          "amount": 0.17
+        },
+        {
+          "service": "Amazon Simple Storage Service",
+          "amount": 0.04
+        },
+        {
+          "service": "AmazonCloudWatch",
+          "amount": 0.01
+        }
+      ],
+      "lineItems": 3,
+      "estimated": true,
+      "reportState": "updating",
+      "provisional": true,
+      "byServiceDisplay": [
+        {
+          "service": "EC2",
+          "amount": 0.17,
+          "color": "#2a78d6"
+        },
+        {
+          "service": "S3",
+          "amount": 0.04,
+          "color": "#1baf7a"
+        },
+        {
+          "service": "CloudWatch",
+          "amount": 0.01,
+          "color": "#eb6834"
+        }
+      ]
+    }
+  ]
+}

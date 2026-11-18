@@ -20,8 +20,8 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { isNotReportedYet, isStillUpdating, NOT_REPORTED_LEGEND, NOT_REPORTED_PLACEHOLDER_NOTE, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
-import { sevenDayPoints, trendDateLabel, xAxisInterval } from './cost-trend-window';
+import { isNotReportedYet, isStillUpdating, NOT_REPORTED_LEGEND, NOT_REPORTED_PLACEHOLDER_NOTE, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TODAY_NOT_REPORTED_TOOLTIP, todaySoFarTooltip, todayUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
+import { isUtcToday, sevenDayPoints, TODAY_LABEL, trendDateLabel, xAxisInterval } from './cost-trend-window';
 import { KEEP_CLEAR_OF_FLOATING } from '@/lib/floating-keep-clear';
 
 /** Fill opacity of a period AWS Cost Explorer is still updating: the same colors, lighter. */
@@ -74,7 +74,7 @@ interface CostTrendChartProps {
   dateRange?: '7d' | '30d' | '90d' | '6mo' | '1yr';
   onDateRangeChange?: (range: '7d' | '30d' | '90d' | '6mo' | '1yr') => void;
   onExport?: () => void;
-  /** The clock for the 7-day view (the 7 full UTC days ending yesterday). Defaults to now. */
+  /** The clock for the 7-day view (the 7 UTC days ending today) and for which bar is today. Defaults to now. */
   now?: Date;
 }
 
@@ -126,8 +126,25 @@ export function CostTrendChart({
   const monthly = dateRange === '6mo' || dateRange === '1yr';
   // Dates on every view ("Nov 10"), months on the monthly ones (round 2).
   const formatDate = (dateStr: string) => (typeof dateStr === 'string' ? trendDateLabel(dateStr, monthly) : String(dateStr));
+  const clock = now ?? new Date();
+  // Today's daily point (UTC): never drawn or described as a finished day (today-bar T2/T3/TB-D2).
+  const isToday = (date: unknown) => !monthly && typeof date === 'string' && isUtcToday(date, clock);
+  // The 7-day view labels its last bar "Today" (T1); the 30/90-day axes keep their dates.
+  const tickLabel = (dateStr: string) => (dateRange === '7d' && isToday(dateStr) ? TODAY_LABEL : formatDate(dateStr));
 
   const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length && isToday(payload[0]?.payload?.date)) {
+      // Today, one line: still updating, not reported yet, or (a final $0 from the backend) "so far".
+      const point = payload[0].payload;
+      const soFar = formatUsdCents(Number(point.total ?? 0));
+      const text = isNotReportedYet(point) ? TODAY_NOT_REPORTED_TOOLTIP : isStillUpdating(point) ? todayUpdatingTooltip(soFar) : todaySoFarTooltip(soFar);
+      const rest = text.slice(TODAY_LABEL.length);
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-[15rem]" data-testid="cost-trend-today-tooltip">
+          <p className="text-ui text-ink m-0"><span className="font-semibold">{TODAY_LABEL}</span>{rest}</p>
+        </div>
+      );
+    }
     if (active && payload && payload.length && isNotReportedYet(payload[0]?.payload ?? {})) {
       // A period Cost Explorer has not reported yet has no amounts to list (never $0).
       return (
@@ -218,7 +235,7 @@ export function CostTrendChart({
   // before that field existed, or a range with no service breakdown at all. Both are
   // the same stacked bars, so a period Cost Explorer has not reported yet is a gap
   // (zero-height bars), never a line drawn down to $0 (review L-7).
-  // The 7-day view: exactly the 7 full UTC days ending yesterday (round 2).
+  // The 7-day view: the 7 UTC days ending today, today's bar last (today-bar T1).
   const shown = dateRange === '7d' ? sevenDayPoints(data, now ?? new Date()) : data;
 
   const hasServiceBreakdown = shown.some((d) => d.byServiceDisplay && d.byServiceDisplay.length > 0);
@@ -252,6 +269,8 @@ export function CostTrendChart({
       lineItems: point.lineItems,
       reportState: point.reportState,
       provisional: point.provisional,
+      // Today: drawn lighter whatever its state (TB-D2), like a day still updating.
+      __today: isToday(point.date),
     };
     if (hasServiceBreakdown) {
       for (const s of serviceSeries) row[s.key] = 0;
@@ -280,7 +299,8 @@ export function CostTrendChart({
   const StackedBarSegment = (props: any) => {
     const { x, y, width, height, fill, payload, dataKey } = props;
     // A period Cost Explorer is still updating: the same color, lighter.
-    const fillOpacity = isStillUpdating(payload ?? {}) ? UPDATING_BAR_OPACITY : undefined;
+    // Today is never a finished day (TB-D2): lighter too, whatever its state.
+    const fillOpacity = isStillUpdating(payload ?? {}) || payload?.__today ? UPDATING_BAR_OPACITY : undefined;
     if (!(height > 0) || !(width > 0)) {
       // Recharts' shape prop requires a ReactElement, not null, even for a
       // zero-amount day — render nothing visible instead of skipping output.
@@ -308,11 +328,14 @@ export function CostTrendChart({
   const SPIKE_RATIO = 1.5;
   const MIN_SPIKE_DELTA = 20; // dollars above average required to flag
   // Periods Cost Explorer has not reported yet are not $0 days, and a period it
-  // is still updating is a partial amount: both are left out of the average.
-  const reported = shown.filter((d) => !isNotReportedYet(d) && !isStillUpdating(d));
-  const hasUpdating = shown.some((d) => isStillUpdating(d));
+  // is still updating is a partial amount: both are left out of the average,
+  // and so is today, never a finished day.
+  const reported = shown.filter((d) => !isNotReportedYet(d) && !isStillUpdating(d) && !isToday(d.date));
+  // A lighter bar is drawn: a day still updating, or today with an amount.
+  const hasUpdating = shown.some((d) => isStillUpdating(d) || (isToday(d.date) && !isNotReportedYet(d) && d.total > 0));
   const avgTotal = reported.length > 0 ? reported.reduce((sum, d) => sum + d.total, 0) / reported.length : 0;
   const hasSpike = reported.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
+  const hasAmount = shown.some((d) => d.total > 0);
   // Not-reported periods are drawn as a light hatched placeholder (round 2): never a $0 bar.
   const notReportedDates = shown.filter((d) => isNotReportedYet(d)).map((d) => d.date);
   const notReportedNote = notReportedDates.length === 0 ? null : monthly ? unreportedTrendNote(shown, 'month') : NOT_REPORTED_PLACEHOLDER_NOTE;
@@ -323,7 +346,7 @@ export function CostTrendChart({
   const twoLineDates = dateRange === '7d' && chartWidth > 0 && (chartWidth - 68) / Math.max(1, shown.length) < DATE_LABEL_MIN_BAND;
   const DateTick = (props: { x?: number; y?: number; payload?: { value: string } }) => {
     const { x = 0, y = 0, payload } = props;
-    const label = formatDate(payload?.value ?? '');
+    const label = tickLabel(payload?.value ?? '');
     const [month, day] = label.split(' ');
     return (
       // Size and colour come only from CHART_TICK, like the y-axis and the Forecast label.
@@ -420,7 +443,9 @@ export function CostTrendChart({
         <>
         {/* Chart */}
         <ResponsiveContainer width="100%" height={300} onResize={(width) => setChartWidth(width)}>
-          <BarChart data={chartData} margin={{ top: 10, right: dateRange === '7d' ? 8 : 30, left: 0, bottom: 0 }}>
+          {/* accessibilityLayer: the chart takes focus and the arrow keys move the tooltip
+              day by day, so a zero-height bar (today at $0 so far) is reachable too (TB-D3). */}
+          <BarChart accessibilityLayer data={chartData} margin={{ top: 10, right: dateRange === '7d' ? 8 : 30, left: 0, bottom: 0 }}>
             <defs>
               <pattern id={hatchId} patternUnits="userSpaceOnUse" width={6} height={6} patternTransform="rotate(45)">
                 <rect width={6} height={6} style={{ fill: 'var(--app-chart-placeholder-fill)' }} />
@@ -430,7 +455,7 @@ export function CostTrendChart({
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis
               dataKey="date"
-              tickFormatter={formatDate}
+              tickFormatter={tickLabel}
               stroke="#9ca3af"
               tick={DateTick}
               height={twoLineDates ? 44 : 30}
@@ -438,7 +463,12 @@ export function CostTrendChart({
               interval={xAxisInterval(dateRange)}
             />
             <YAxis
-              domain={[0, 'auto']}
+              // Every drawn amount $0 (a stopped account's week of gaps, a $0 week): [0, 0] would
+              // collapse the scale and drop the hatched placeholders and the axis ticks with it.
+              // allowDataOverflow: recharts reads the domain from the data first, and an all-$0
+              // stack gives none; [0, 1] is then the scale as given.
+              domain={hasAmount ? [0, 'auto'] : [0, 1]}
+              allowDataOverflow={!hasAmount}
               tickFormatter={formatCurrency}
               stroke="#9ca3af"
               tick={CHART_TICK}
